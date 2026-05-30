@@ -58,8 +58,8 @@ Phase plans are pre-drafted in `docs/` and intended to be revised at each phase'
 
 | # | Phase | Plan | Status |
 |---|---|---|---|
-| 0 | Repo bootstrap | [phase-0-bootstrap.md](./phase-0-bootstrap.md) | Not started |
-| 1 | Core port & modernise | [phase-1-core-port.md](./phase-1-core-port.md) | Not started |
+| 0 | Repo bootstrap | [phase-0-bootstrap.md](./phase-0-bootstrap.md) | Complete |
+| 1 | Core port & modernise | [phase-1-core-port.md](./phase-1-core-port.md) | Ready |
 | 2 | Profiles + pagination | [phase-2-profiles-pagination.md](./phase-2-profiles-pagination.md) | Not started |
 | 3 | PSR-15 middleware suite | [phase-3-middleware.md](./phase-3-middleware.md) | Not started |
 | 4 | Validation | [phase-4-validation.md](./phase-4-validation.md) | Not started |
@@ -157,7 +157,7 @@ Decisions captured here apply across phases. Phase-local decisions live in each 
 ## Tooling baseline
 
 - **CI**: GitHub Actions
-- **Test matrix**: PHP 8.3, 8.4 × `lowest`, `highest` composer dependency versions
+- **Test matrix**: PHP 8.3, 8.4, 8.5 × `lowest`, `highest` composer dependency versions (8.5 added at Phase 0 kick-off; 8.3 remains the floor)
 - **Test runner**: PHPUnit (latest stable supporting target PHP versions)
 - **Static analysis**: PHPStan level 9
 - **Code style**: PHP-CS-Fixer with PER-CS 2.0
