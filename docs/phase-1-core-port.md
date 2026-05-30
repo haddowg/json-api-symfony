@@ -1,0 +1,294 @@
+# Phase 1 — Core Port & Modernise
+
+## Goal & scope
+
+Port the core of woohoolabs/yin into `haddowg/json-api` and modernise it for PHP 8.3+ idioms. By the end of this phase the package provides equivalent JSON:API 1.1 server-side functionality to yin, with a cleaner API surface and a modern internal codebase, ready for higher-level features (profiles, middleware, atomic ops, attributes) to build on top.
+
+**In scope:**
+
+- Port yin's source under `haddowg\JsonApi\…`, keeping the existing namespace structure
+- Apply modern language features throughout (readonly properties, enums, typed properties, constructor promotion, first-class callable syntax, named arguments where they aid clarity, `match` over `switch` where appropriate)
+- Migrate from `ExceptionFactory` indirection to a typed exception hierarchy
+- Drop `SerializerInterface` and inline `json_encode` calls with `JSON_THROW_ON_ERROR`
+- Upgrade to PSR-7 v2 interface signatures (return types, parameter types)
+- Port yin's existing test suite, modernise (PHPUnit attributes over annotations, typed assertions), and tag with `@group spec:*` markers
+- Verify JSON:API 1.1 spec compliance progressively during the port; record gaps in the decision log
+
+**Out of scope:**
+
+- Profile infrastructure (Phase 2)
+- PSR-15 middleware (Phase 3)
+- Schema validation integration (Phase 4)
+- Atomic Operations extension (post-1.0 candidate)
+- Attribute-driven resources/hydrators (post-1.0 candidate)
+- Documentation rewrites (Phase 5)
+- Pagination changes beyond modernisation — leave profile pairing for Phase 2
+
+## Prerequisites
+
+- Phase 0 complete: repository scaffolded, CI green, tooling in place
+- Local checkout of [woohoolabs/yin](https://github.com/woohoolabs/yin) for reference (don't depend on it, only mine for structure/tests)
+
+## Kick-off
+
+Before writing any implementation code:
+
+1. Read `docs/phase-0-bootstrap.md` — specifically its decision log and handover output — and reconcile against the current repository state.
+2. Read this plan in full. Resolve every open question (and any new ones surfaced during the read) by asking the maintainer interactively using whatever ask-user-question tool the executor's environment provides (e.g. `AskUserQuestion` in Claude Code). Do not guess or silently defer. Record each answer in the decision log.
+3. Walk the current state of [woohoolabs/yin](https://github.com/woohoolabs/yin) `master` to confirm the subsystem inventory in the task list is still accurate (yin may have changed since this plan was written).
+4. **Forward-compatibility check.** The Phase 4.5 fluent schema layer ships an abstract base `Schema` that implements yin's `Resource` (per-resource-type serializer) and `Hydrator` contracts by walking a field list. The `Resource` + `Hydrator` public surface ported in this phase must be **clean enough that an abstract base can implement them by composition, not inheritance**. Concretely: no leaked internal types in public method signatures; no required behaviour that depends on `parent::` calls into the abstract base; constructor signatures that don't pin consumers to a specific dependency layout. Review the public surface against this constraint before locking it in. Defer awkward yin idioms rather than carry them forward. (Vocabulary note: yin's `Resource` is the per-resource-type serializer class. Yin previously called this `AbstractResourceTransformer` and deprecated it in favour of `AbstractResource`. The JSON:API spec's "resource object" is a different concept — that lives at `Schema\Resource\ResourceObject` in current yin, renamed to `Document\Resource\ResourceObject` in Phase 4.5.)
+5. **Heads-up on the Phase 4.5 namespace rename.** Phase 4.5 introduces a top-level fluent `Schema` class at `haddowg\JsonApi\Schema\Schema`. The existing `Schema\*` subdirectories (`Schema\Document\*`, `Schema\Resource\*`, etc.) are likely to be renamed to `Document\*` at the same time, because their contents are document parts and the rename improves readability. The rename is not strictly required (a class can live inside its own subnamespace) but is the current intent; treat the yin layout as ported as-is for this phase, knowing it may move. The rename, if it happens, is mechanical.
+6. Revise the task list as needed and commit the plan revision as a single commit before starting implementation.
+
+## Task list
+
+Tasks are grouped by yin subsystem. Within each group, work through file-by-file. Commit incrementally; each commit should leave CI green.
+
+### Pattern documentation (`CLAUDE.md`)
+
+As types are ported, capture the canonical modernisation pattern for each kind of component in a `CLAUDE.md` at the repository root. This file is read by future Claude Code sessions (including after context compaction or session restart) and ensures consistency across the port. It is not consumer-facing documentation — it is an executor-facing playbook.
+
+- [ ] Create `CLAUDE.md` at repository root with the following sections:
+  - **Project orientation** — one paragraph: what the package is, what it forks, where the spec lives.
+  - **Operational rules** — the batching/worktree/convergence rules from the master plan's "Required operational rules in `CLAUDE.md`" section. Copy them in verbatim so executors don't need to chase across files.
+  - **Type system principles** — short standing guidance on when to use PHPStan generics and when not. Default to generics on consumer-visible parametric types (`Page<T>`, `DataResponse<T>`, `Field<T>`, `Each<T>`, `In<T>`, `OperationHandler<TOperation>`, registry lookup methods with `class-string<T>` → narrowed return type, etc.). Skip generics on internal types, on PSR-* boundary types, and where `instanceof` / `match` already narrows just as well as a template parameter would. Apply at port time alongside each type, not as a retroactive sweep. The full rationale lives in `PLAN.md`'s high-level decisions; this section is the executor-facing shorthand. Include a couple of small code sketches showing the generic and non-generic shapes side by side.
+  - **Modernisation patterns** — organised by component kind (see list below); each entry is a paragraph plus minimal code sketch.
+- [ ] Component kinds to cover under Modernisation patterns. Add an entry the first time a representative is ported; refine it if a later port reveals a better pattern:
+  - **Value objects / data classes** (e.g. `Link`, `ErrorSource`, `JsonApiObject`) — whole-class `readonly class` by default (downgrade to per-property only on a concrete need such as memoization, recorded in the decision log), promoted constructor properties, factory methods over multi-form constructors
+  - **Internal document classes** (`AbstractDocument` and subclasses) — abstract method contracts, lifecycle, immutability boundary. **Marked `@internal`**; users never subclass these. Pattern entry covers how the response value objects construct and render them.
+  - **Response value objects** (`DataResponse`, `MetaResponse`, etc.) — immutable, fluent `with…` methods returning new instances, rendering contract against a `Server`. This is the public response surface; the pattern entry is the canonical reference for adding new response types post-1.0.
+  - **Operations** (the per-verb `JsonApiOperation` family — `FetchResourceOperation`, `CreateResourceOperation`, etc.) — readonly value objects, one class per verb, common `JsonApiOperation` interface, `Target` + `QueryParameters` + `OperationContext` shared shape. Pattern entry covers what an operation carries, when to add a new verb (post-1.0 atomic-ops adds three), and how the `OperationHandler` dispatches via `match` on operation type.
+  - **Resources** (yin's per-resource-type serializer classes, `AbstractResource` / `ResourceInterface`) — class shape, method contracts, included-relationship handling. Note for executors: yin's legacy `AbstractResourceTransformer` is **not** ported; only the current `AbstractResource` is.
+  - **Hydrators** — class shape, method contracts, request → domain-object flow. Helper traits are ported as **instance-method traits** (drop yin's `static`; convert `self::`/`static::` call sites to `$this->`); traits stay a code-sharing convenience for the inheritance path, while the contract itself remains implementable by composition.
+  - **Exceptions** — interface implementation, `getErrors(): list<Error>` + `getStatusCode(): int` shape, status mapping, naming convention
+  - **Enums** — when to introduce one (replacing class constants), naming, backed vs pure
+  - **Negotiation parsers** — input/output shape, error throwing pattern
+  - **Paginators** — class shape, link-emission contract, profile-association pattern (refined in Phase 2)
+- [ ] Each pattern entry should be short (a paragraph + a minimal code sketch). Treat it like a style guide; if it gets long, the abstraction is wrong.
+- [ ] Apply the operational rules as work proceeds: port the first instance of each component kind sequentially, write the pattern entry, then batch the remaining instances of that kind to subagents in separate worktrees. Do not fan out before the pattern exists. After every fan-out, run a consolidation review against the pattern entry before starting any further batch; record the outcome in the decision log.
+- [ ] Update `CLAUDE.md` whenever a port reveals a refinement to an established pattern; the previous pattern entry is replaced, with a one-line note in the decision log explaining the shift. If a refinement surfaces mid-batch, halt the batch, update the playbook, then resume.
+- [ ] At phase close, walk every section of `CLAUDE.md` against the ported code and confirm the patterns are still accurate
+
+### Foundational types
+
+- [ ] Port `JsonApi/Request/RequestInterface` and concrete `JsonApiRequest` — modernise to use PSR-7 v2 signatures
+- [ ] **Yin's `Responder` is not ported as a public class.** Its responsibility — turning a domain-level result into a PSR-7 response carrying a JSON:API document — moves into the rendering paths of the response value objects (see "Response value objects" below). If a sliver of internal helper code remains useful, port it as an internal type; the public surface is the response value objects, not a separate responder.
+- [ ] **Do not port yin's `JsonApi` orchestrator class.** Its role as the user entry point is superseded: the response value objects (`DataResponse::make()` etc.) are the response surface and render against a `Server` directly; `Server` is the config/dispatch root. There is no `respond()->ok(...)` facade. Record the drop in the decision log (mirrors the `Responder` and `AbstractSimpleResourceDocument` drops).
+- [ ] Port enums for HTTP status, error categories etc. where yin uses class constants (introduce native enums)
+
+### Exception hierarchy (replaces `ExceptionFactory`)
+
+- [ ] Define `haddowg\JsonApi\Exception\JsonApiException` interface (extending `\Throwable`) with `getErrors(): list<Error>` and `getStatusCode(): int`. The exception carries error *data*, not a built document; document construction is owned by the `ErrorResponse` value object / error-handler middleware, which consume `getErrors()`.
+- [ ] Port each exception yin's `DefaultExceptionFactory` produces as a concrete class implementing the interface (e.g. `ResourceNotFound`, `MediaTypeUnsupported`, `MediaTypeUnacceptable`, `ResourceTypeUnacceptable`, `RelationshipNotExists`, etc.). Maintain a checklist mapping each `DefaultExceptionFactory` method → new exception class to confirm full coverage.
+- [ ] Replace all internal `$exceptionFactory->create…()` calls with `throw new …()`
+- [ ] Delete `ExceptionFactoryInterface` and `DefaultExceptionFactory` (do not port)
+- [ ] Document the exception → HTTP status mapping in a single source-of-truth location (will become docs/exceptions.md in the docs phase)
+
+### Document & schema (internal types)
+
+Documents are **internal types** in this package — consumers never subclass them. The public response surface is the response value objects (see next section). The document classes are ported because they're the right internal vehicle for emitting JSON:API document bodies, but they don't appear in PHPDoc examples, getting-started docs, or anywhere a consumer would import from.
+
+- [ ] Port `JsonApi/Schema/Document/AbstractDocument`, `AbstractSingleResourceDocument`, `AbstractCollectionDocument`, `ErrorDocument`. Mark as `@internal` in PHPDoc. Recommendation: move to a `haddowg\JsonApi\Document\Internal\*` (or just `Internal\Document\*`) namespace at port time so the API boundary is clear; decide at kick-off.
+- [ ] **Do not port `AbstractSimpleResourceDocument`.** Yin's own docs flag it as a footgun ("doesn't support sparse fieldsets, automatic inclusion of related resources"); the Phase 4.5 schema layer makes writing a proper resource near-free, eliminating the need for a "simple" shortcut. Record the drop in the decision log.
+- [ ] Port `JsonApi/Schema/Resource/*` (ResourceObject, ResourceIdentifier, etc.)
+- [ ] Port `JsonApi/Schema/Link/*` (Link, DocumentLinks, ResourceLinks, RelationshipLinks, etc.)
+- [ ] **Link audit.** During the port, confirm two things about the link types:
+  - Custom link keys (beyond the spec's `self` / `related` / `first` / `prev` / `next` / `last` / `describedby` / etc.) can be set alongside the spec-defined ones. The spec allows arbitrary keys; consumers shouldn't have to fight the types to add custom relations.
+  - URI templates (RFC 6570) are representable on `Link`. The JSON:API link object form is `{href, meta}` plus optionally a templated indicator; if yin's `Link` doesn't already support template-shaped values, add the support during the port. Small addition.
+- [ ] Port `JsonApi/Schema/Relationship/*` (ToOneRelationship, ToManyRelationship)
+- [ ] Port `JsonApi/Schema/JsonApiObject`, `Error`, `ErrorSource`
+- [ ] Port `JsonApi/Schema/Meta` handling
+- [ ] Apply `readonly` to value-object-like classes; keep mutability only where genuinely needed.
+- [ ] **Document hierarchy audit.** As documents are being ported, apply boilerplate-reduction consistent with documents being per-request stateful response objects but internal-only:
+  - Default `getJsonApi()` to `new JsonApiObject('1.1')` in `AbstractDocument`; subclasses override only for custom `jsonapi.meta`.
+  - Standardise the absent-member convention: nullable return types throughout, with `null` meaning "omit." Decide between `?Meta` and `array` returning `[]`; record the choice in the decision log.
+  - Decouple pagination link generation from the collection class. Pagination links emit from `Page` value objects (Phase 2) rather than from `DocumentLinks::setPagination($uri, $collection)` requiring `PaginationLinkProviderInterface` on the collection. Coordinate the deletion of `PaginationLinkProviderInterface` with the Phase 2 paginator refactor.
+
+### Response value objects (public API)
+
+The public surface for "return a JSON:API response" is a small set of immutable response value objects. Consumers never construct documents directly. The orchestrator's `Responder` class either shrinks dramatically or disappears entirely; its responsibility moves into these objects' rendering paths.
+
+- [ ] `haddowg\JsonApi\Response\DataResponse` — wraps a model, iterable, `Page`, or `null` as the `data` member. The 95% case.
+- [ ] `haddowg\JsonApi\Response\MetaResponse` — wraps top-level meta, no `data` member. Spec-allowed.
+- [ ] `haddowg\JsonApi\Response\RelatedResponse` — for `GET /api/posts/1/tags` (related resources of a relationship). Carries the parent model, the relationship name, and the related data.
+- [ ] `haddowg\JsonApi\Response\IdentifierResponse` — for `GET /api/posts/1/relationships/tags` (resource identifiers only, no full resource serialization).
+- [ ] `haddowg\JsonApi\Response\ErrorResponse` — wraps one or more `JsonApiException` instances (or already-built `Error` value objects). The error handler middleware in Phase 3 produces these from caught exceptions; consumers can also construct them directly.
+- [ ] Each response value object has fluent `withMeta(array $meta)`, `withLinks(Link|Links $links)`, `withJsonApi(JsonApiObject $jsonApi)`, `withHeader(string $name, string $value)`, `withHeaders(array $headers)`, `withEncodeOptions(int $flags)` methods. All return new immutable instances.
+- [ ] Each response value object has a rendering contract — given a `Server` (from Phase 4.5; in Phase 1 a thin placeholder or test fixture) and the active request, produces a PSR-7 response. The contract should be future-compatible with the Phase 4.5 `Server` so that Phase 4.5 doesn't have to revise the response signatures.
+- [ ] Response value objects can be returned from a PSR-15 inner handler — the error handler middleware (Phase 3, amended) detects them and renders. Or rendered explicitly via `->toPsrResponse($server, $request)`.
+- [ ] **Document hierarchy and response value objects are tested together.** A throwaway test fixture in `tests/` constructs each response type, configures it, renders it against a minimal server, and asserts the output JSON. Both single and collection paths covered.
+
+### Operation abstraction (public API)
+
+To keep handlers decoupled from PSR-7, the package introduces a `JsonApiOperation` value object representing one semantic JSON:API operation (fetch a resource, create a resource, update a relationship, etc.). The recommended consumer-facing handler interface, `OperationHandler`, takes a `JsonApiOperation` — not a PSR-7 request — and returns a response value object. A wrapper adapter bridges PSR-15 and `OperationHandler` at the chain's edge.
+
+This shape is forward-compatible with the post-1.0 Atomic Operations extension: an atomic-ops dispatcher (post-1.0) constructs multiple `JsonApiOperation` instances from one PSR-7 request and dispatches each through the same `OperationHandler`, without any operation needing a synthetic PSR-7 request. Operations are also useful in 1.0 for integration tests and any consumer wanting to invoke JSON:API logic programmatically without HTTP.
+
+- [ ] **Verb type.** Ship `JsonApiOperation` as an interface (`haddowg\JsonApi\Operation\JsonApiOperation`) plus a small family of per-verb implementations. One class per verb:
+  - `FetchResourceOperation` (`GET /posts` or `GET /posts/1`)
+  - `CreateResourceOperation` (`POST /posts`)
+  - `UpdateResourceOperation` (`PATCH /posts/1`)
+  - `DeleteResourceOperation` (`DELETE /posts/1`)
+  - `FetchRelationshipOperation` (`GET /posts/1/relationships/author`)
+  - `FetchRelatedOperation` (`GET /posts/1/author`)
+  - `UpdateRelationshipOperation` (`PATCH /posts/1/relationships/author`)
+  - `AddToRelationshipOperation` (`POST /posts/1/relationships/tags`)
+  - `RemoveFromRelationshipOperation` (`DELETE /posts/1/relationships/tags`)
+
+  Per-verb classes (rather than a single class with a `Verb` enum field) let each operation carry exactly the fields it needs — a `FetchResourceOperation` has no request body field; a `CreateResourceOperation` has no resource id field; etc. Handlers can dispatch via `match (true) { $op instanceof CreateResourceOperation => …, … }` with PHPStan narrowing each branch.
+- [ ] **Common shape.** Every operation implements `JsonApiOperation` and exposes at minimum:
+  - `target(): Target` — a small value object: resource type (string), optional resource id, optional relationship name. Covers every URL shape in the JSON:API spec.
+  - `queryParameters(): QueryParameters` — parsed value object holding sparse fieldsets, includes, sorts, filters, and pagination params (already exists in Phase 1's negotiation/parsing work; the operation references it).
+  - `context(): OperationContext` — typed bag carrying the active `Server`, the originating PSR-7 request (nullable; populated for HTTP-originated operations, `null` for programmatically-dispatched or atomic-batch operations), and any adapter-thread-through state.
+- [ ] **Per-verb-specific fields.** Operations that have a request body (create, update, update-relationship, add-to-relationship, remove-from-relationship) expose `body(): JsonApiRequest` (the parsed JSON:API request document — Phase 1 already ports this).
+- [ ] **`OperationHandler` interface.** The recommended consumer-facing handler shape:
+  ```php
+  interface OperationHandler
+  {
+      public function handle(JsonApiOperation $operation): DataResponse|MetaResponse|RelatedResponse|IdentifierResponse|ErrorResponse;
+  }
+  ```
+  The handler does not import PSR-7. It can reach the originating request via `$operation->context()->httpRequest()` when genuinely needed (file uploads, custom headers, framework auth context), but most handlers won't.
+
+  The return type union is the response value object set defined above. Post-1.0 atomic operations will introduce a `OperationResult` supertype that the response value objects implement plus an `AtomicOperationResult` variant for the within-batch case; the union stays valid because each member becomes an `OperationResult`. No 1.0 breaking change.
+- [ ] **`Psr7ToOperationHandlerAdapter`** — a small class implementing PSR-15 `RequestHandlerInterface` that wraps an `OperationHandler`. Translates the PSR-7 request into the appropriate per-verb `JsonApiOperation` (using the parsed JSON:API request representation attached by Phase 3's body-parsing middleware, plus the active `Server` from the request attribute or constructor), invokes `$handler->handle($operation)`, takes the returned response value object, renders to PSR-7 against the `Server`. This is what gets passed as the innermost handler when a consumer wires the middleware stack — see Phase 3 for the integration.
+- [ ] **PSR-15 handlers remain supported.** Consumers who want to write a traditional `RequestHandlerInterface` (e.g. for framework router integration that hands them PSR-7) can do so; the `Server` accepts either an `OperationHandler` (wrapped in the adapter automatically) or a PSR-15 handler directly. The recommended path is `OperationHandler`; PSR-15 is an escape hatch.
+- [ ] **Programmatic dispatch.** Construct an operation directly, dispatch via `$server->dispatch($operation): DataResponse|...`. Useful for integration tests (no need to mount the middleware stack), internal calls, and post-1.0 atomic-ops machinery. The `OperationContext::httpRequest()` returns `null` for programmatically-dispatched operations; document this clearly so consumers don't reach for the HTTP request expecting it to be there.
+- [ ] **Unit tests** for each per-verb operation class (construction, accessor behaviour, immutability). **Integration test** for `Psr7ToOperationHandlerAdapter` end-to-end (PSR-7 in → operation parsed → handler called → response value object returned → PSR-7 out). **Programmatic dispatch test** demonstrating an operation constructed and dispatched without any PSR-7 involvement.
+
+### Resource
+
+- [ ] Port `JsonApi/Schema/Resource/AbstractResource` (yin's per-resource-type serializer) and `ResourceInterface`, and any supporting traits used by current `AbstractResource` (not by the deprecated `AbstractResourceTransformer`).
+- [ ] Do **not** port `JsonApi/Transformer/AbstractResourceTransformer` or `Transformer/ResourceTransformerInterface` — those are deprecated in yin in favour of the `Schema\Resource\*` classes ported above. Confirm during the kick-off yin walk that the deprecation is still in place; record a one-line note in the decision log either way.
+- [ ] Port included-relationship/sparse-fieldset logic from `AbstractResource`.
+- [ ] Keep class-based API as primary entry point (attribute layer is a post-1.0 candidate).
+
+### Hydrator
+
+- [ ] Port `JsonApi/Hydrator/AbstractHydrator`, `CreateHydratorTrait`, `UpdateHydratorTrait` (or modern equivalents)
+- [ ] Port `JsonApi/Hydrator/Relationship/*` types
+- [ ] Replace exception factory dependencies with typed exception throws
+
+### Negotiation
+
+- [ ] Port `JsonApi/Negotiation/RequestValidator` (the parts that do content-type/accept negotiation only — JSON-schema body validation deferred to Phase 4)
+- [ ] Port `JsonApi/Negotiation/ResponseValidator` similarly trimmed
+- [ ] Verify that content-type and Accept header handling correctly applies JSON:API 1.1 semantics (no parameters except `ext` and `profile` are spec-significant; reject unknown parameters per spec)
+
+### Pagination
+
+- [ ] Port `JsonApi/Schema/Pagination/*` paginator implementations (PageBased, OffsetBased, CursorBased, FixedPageBased and their link providers)
+- [ ] Modernise internals only; profile association deferred to Phase 2 (leave a TODO comment referencing Phase 2 where appropriate)
+
+### Tests
+
+Tests are ported file-by-file alongside their implementations (per the master plan's operational rules), not in a deferred bulk pass at end of phase. The items below are cross-cutting concerns that apply across all ported test files.
+
+- [ ] Establish the `tests/` directory layout to mirror `src/` so the file-by-file pairing is mechanical
+- [ ] Convention: for every source file ported, port the corresponding yin test file in the same commit (or an adjacent commit on the same branch); the implementation is not considered ported until its tests are green under the new API
+- [ ] Convert PHPUnit docblock annotations (`@test`, `@dataProvider`) to PHPUnit attributes (`#[Test]`, `#[DataProvider]`) as each test is ported
+- [ ] Add `#[Group('spec:<section>')]` to each test that asserts a spec behaviour, as each test is ported. Use spec anchor names (e.g. `spec:document-structure`, `spec:fetching-data`, `spec:fetching-resources`, `spec:fetching-relationships`, `spec:inclusion-of-related-resources`, `spec:sparse-fieldsets`, `spec:sorting`, `spec:pagination`, `spec:filtering`, `spec:crud`, `spec:errors`, `spec:content-negotiation`).
+- [ ] Record yin's published coverage figure in the decision log before porting begins; that figure is the floor for this phase
+- [ ] Ensure all ported tests pass on PHP 8.3 and 8.4 against `lowest` and `highest` dependency strategies (verified by the standing CI matrix, not a one-shot check at phase close)
+- [ ] If a yin test asserts behaviour that the new typed-exception or otherwise-modernised API no longer surfaces, rewrite the test to assert the new equivalent rather than skipping it; record the rewrite in the decision log so spec coverage isn't silently lost
+
+### Spec compliance verification (progressive)
+
+- [ ] Maintain `docs/spec-compliance.md` (created during this phase) — a living checklist of JSON:API 1.1 normative requirements (MUST/SHOULD) with status: covered-by-test, covered-by-code-only, not-covered, intentionally-unsupported. Include a short preamble noting that this document tracks **JSON:API spec compliance only**; OpenAPI spec generation (a post-1.0 candidate) is a separate concern and should not be conflated with it.
+- [ ] As each subsystem is ported, fill in the relevant rows
+- [ ] At end of phase, the document is the truth-of-record for the spec compliance gap
+
+### API surface review
+
+- [ ] Walk the public API once everything is ported; flag any awkward or redundant surface area in the decision log for resolution before phase close
+- [ ] Confirm no remnants of `SerializerInterface` or `ExceptionFactoryInterface` in any public-facing type
+- [ ] **Confirm yin's `Resource` (serializer) and `Hydrator` contracts can be implemented by composition.** Concretely: write a throwaway test fixture class (in `tests/`) that implements both `ResourceInterface` and the hydrator contract directly — no inheritance from `AbstractResource` or `AbstractHydrator` — and confirm it can be constructed, registered, and exercised end-to-end. This proves the contracts are public API, not just internal vehicles for the port, and that the Phase 4.5 schema base can implement them on top.
+- [ ] **Generics coverage sanity check.** Walk every public type introduced this phase and confirm it carries a `@template` parameter where the type carries a consumer-visible parametric payload (response value objects, per-verb operations, the placeholder `Server`). Skipped intentionally on internal types, PSR-* boundaries, and types where `instanceof` narrows just as well — record any skip rationale in the decision log. The CLAUDE.md "Type system principles" section is the reference.
+- [ ] **Enable cherry-picked `phpstan-strict-rules`.** Add only the generics-related rules from `phpstan-strict-rules` to `phpstan.neon.dist` (or the equivalent vendor-extension config); leave non-generic rules (`noVariableVariables`, etc.) off. Confirm CI green with the additions.
+
+## Decision log
+
+_(Appended to during execution.)_
+
+| Date | Decision | Rationale | Affects |
+|---|---|---|---|
+| 2026-05-30 | Pin `phpunit/phpunit: ^12`; native attributes only (annotations removed in 12) | PHPUnit 12 supports PHP 8.3 + 8.4; PHPUnit 13 drops 8.3 (requires 8.4+/8.5). 8.3 is our floor. Bump to 13 when 8.3 is dropped on a major. | this phase |
+| 2026-05-30 | Value objects use whole-class `readonly class` by default | Simplest, strongest immutability guarantee; compatible with the fluent `with…`/clone pattern. Downgrade an individual class to per-property only on concrete need (e.g. memoization). | this phase |
+| 2026-05-30 | Port yin's helper traits as instance-method traits (drop `static`, `self::`/`static::` → `$this->`) | Keeps code-sharing ergonomics without static-state/`static::` footguns; mockable; contract stays composition-implementable (no-inheritance fixture proves it). | this phase |
+| 2026-05-30 | `JsonApiException` exposes `getErrors(): list<Error>` + `getStatusCode(): int`; no `toErrorDocument()` | Exceptions carry error *data*, not built (internal) documents. `ErrorResponse`/error-handler middleware own document construction and handle caught exceptions and direct `Error[]` via one path. | this phase, Phase 3, Phase 4 |
+| 2026-05-30 | Do not port yin's `JsonApi` orchestrator class | Its state lives on `Server`; VOs render against `Server` directly. A `respond()` facade would be a redundant shadow of `Server`. VOs + `Server` are the single public surface. | this phase, Phase 5 |
+
+## Open questions
+
+- Response value objects need a `Server` to render against (for base URI, version, default `jsonapi.meta`, etc.). Phase 4.5 introduces the full `Server`. Phase 1 needs **a placeholder shape** so the response classes have a stable rendering signature. Options: (a) a minimal `Server` interface shipped in Phase 1 with the fields the response objects use, expanded by Phase 4.5; (b) a temporary "rendering context" record that Phase 4.5 replaces with `Server`. Lean: (a). Confirm at kick-off and design accordingly.
+
+## Acceptance criteria
+
+The phase is done when all of the following hold:
+
+1. All task-list items are checked off.
+2. Every yin core subsystem in scope has an equivalent under `haddowg\JsonApi\…`.
+3. The exception hierarchy fully replaces `ExceptionFactory`; no `ExceptionFactory*` types exist in the package.
+4. `SerializerInterface` does not exist in the package.
+5. PHPStan level 9 passes with no baseline (or a baseline with explicitly justified entries).
+6. Test suite passes on the full CI matrix.
+7. Coverage is at or above yin's published coverage as a floor (record the floor figure in the decision log before porting begins).
+8. `docs/spec-compliance.md` exists and is filled in for every section covered by this phase.
+9. `CLAUDE.md` exists at the repository root with a pattern entry for every component kind listed in the Pattern documentation task; entries are accurate against the ported code.
+10. A test fixture in `tests/` implements both yin's `Resource` (serializer) contract and the `Hydrator` contract directly (no inheritance from the abstract bases) and is exercised end-to-end. This proves the contracts are usable as the integration surface for the Phase 4.5 schema layer.
+11. The five response value objects (`DataResponse`, `MetaResponse`, `RelatedResponse`, `IdentifierResponse`, `ErrorResponse`) exist, are immutable, expose the fluent `with…` methods listed in the task, and have unit tests covering their fluent surface plus a rendering test against a minimal `Server` placeholder/fixture.
+12. Document classes (`AbstractDocument` and subclasses) are marked `@internal` (and ideally moved to an `Internal\` subnamespace). No user-facing documentation example, getting-started, or test fixture subclasses an `AbstractDocument*` directly — the documented path is "use the response value objects."
+13. `AbstractSimpleResourceDocument` is **not** present in the ported codebase. The decision log records the drop with a one-line rationale.
+14. The `JsonApiOperation` interface and its per-verb implementations (`FetchResourceOperation`, `CreateResourceOperation`, `UpdateResourceOperation`, `DeleteResourceOperation`, `FetchRelationshipOperation`, `FetchRelatedOperation`, `UpdateRelationshipOperation`, `AddToRelationshipOperation`, `RemoveFromRelationshipOperation`) exist as readonly value objects. The `OperationHandler` interface exists. Each per-verb operation has unit tests covering construction, accessors, and immutability.
+15. `Psr7ToOperationHandlerAdapter` exists, implements PSR-15 `RequestHandlerInterface`, and has an integration test that goes PSR-7 in → operation parsed → handler called → response value object returned → PSR-7 out for at least one fetch operation and one create operation.
+16. A test demonstrates programmatic dispatch: an operation is constructed directly (no PSR-7 request involved), dispatched through an `OperationHandler`, and produces the expected response value object. `OperationContext::httpRequest()` returns `null` in this test.
+
+### Verification plan
+
+```bash
+# From a clean clone of the repo at the phase-1 head
+composer install
+composer test                                # full suite passes
+composer phpstan                             # exits 0 at level 9
+composer cs-check                            # exits 0
+
+# Spec-group sanity: every advertised spec group has at least one test
+for group in document-structure fetching-resources fetching-relationships \
+             inclusion-of-related-resources sparse-fieldsets sorting \
+             pagination filtering crud errors content-negotiation; do
+  vendor/bin/phpunit --group "spec:$group" --list-tests \
+    || echo "FAIL: spec:$group has no tests"
+done
+
+# Lowest-deps run (catches missing version constraints)
+composer update --prefer-lowest --prefer-stable
+composer test
+```
+
+Then verify on GitHub:
+
+- CI matrix is green: PHP 8.3 and 8.4, lowest and highest dep strategies.
+- Codecov coverage report uploaded; coverage figure recorded in the decision log.
+- A tagged `0.1.0` release candidate is prepared (release-please PR present), or a tag-and-release is performed manually if maintainer prefers to defer release-please's first cut.
+
+API surface review walkthrough:
+
+- Read each public class/interface under `src/` and confirm: types are sound, naming is consistent, deprecated yin patterns are gone, readonly used where appropriate, enums used over magic strings/constants.
+- Record any deferred cleanup items as open issues against the repo, not as blockers.
+
+## Handover output
+
+Before declaring the phase complete, produce the following for Phase 2:
+
+1. **Status table update** — Phase 1 → `Complete`, Phase 2 → `Ready`.
+2. **Phase 2 plan review** — `docs/phase-2-profiles-pagination.md` already exists as a pre-drafted plan. Read it end-to-end against this phase's decision log and current repository state. Confirm it still covers at minimum:
+   - Profile abstraction design (interface(s), how a profile declares its URI, keywords it defines, lifecycle hooks)
+   - Profile registry / discovery mechanism
+   - Content negotiation integration: how `profile` media-type parameters are parsed, how supported profiles are advertised
+   - Pagination refactor to consume the profile infrastructure as first consumer; each built-in paginator's associated profile URI (or decision to not associate one if no published profile exists)
+   - Test plan including spec sections relevant to extensions and profiles (`spec:extensions-and-profiles`)
+   - Append revisions to the plan as a single commit; the actual kick-off revision happens at the start of Phase 2, but corrections forced by Phase 1 decisions belong here.
+3. **Spec compliance snapshot** — `docs/spec-compliance.md` reflects the state at end of Phase 1; any remaining gaps are flagged for the appropriate later phase.
+4. **Open questions resolved** — every entry in the Open questions section above has an answer recorded in the decision log. Resolve any remaining or newly-surfaced questions by asking the maintainer interactively using whatever ask-user-question tool the executor's environment provides. Open questions are not passed forward to Phase 2.
+5. **Decision log finalised** — all phase-local decisions captured here; any decisions affecting future phases promoted to the cross-phase log in `PLAN.md`.
+6. **Open issues filed** for any deferred clean-up identified in the API surface review.
