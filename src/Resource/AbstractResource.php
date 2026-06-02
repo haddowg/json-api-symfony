@@ -43,10 +43,6 @@ abstract class AbstractResource implements SerializerInterface, HydratorInterfac
      */
     public static string $type = '';
 
-    protected ?JsonApiRequestInterface $request = null;
-
-    protected mixed $object = null;
-
     protected ?SerializerResolver $serializerResolver = null;
 
     /**
@@ -143,23 +139,22 @@ abstract class AbstractResource implements SerializerInterface, HydratorInterfac
             return '';
         }
 
-        $request = $this->request ?? throw new \LogicException('No active request; getId() called outside a transformation.');
-        $value = $idField->serialize($object, $request, $idField->name());
+        $value = $idField->serializeWithoutRequest($object);
 
         return \is_scalar($value) ? (string) $value : '';
     }
 
-    public function getMeta(mixed $object): array
+    public function getMeta(mixed $object, JsonApiRequestInterface $request): array
     {
         return [];
     }
 
-    public function getLinks(mixed $object): ?ResourceLinks
+    public function getLinks(mixed $object, JsonApiRequestInterface $request): ?ResourceLinks
     {
         return null;
     }
 
-    public function getAttributes(mixed $object): array
+    public function getAttributes(mixed $object, JsonApiRequestInterface $request): array
     {
         $attributes = [];
         foreach ($this->attributeFields() as $field) {
@@ -175,7 +170,7 @@ abstract class AbstractResource implements SerializerInterface, HydratorInterfac
         return [];
     }
 
-    public function getRelationships(mixed $object): array
+    public function getRelationships(mixed $object, JsonApiRequestInterface $request): array
     {
         $resolver = $this->serializerResolver;
         if ($resolver === null) {
@@ -189,24 +184,6 @@ abstract class AbstractResource implements SerializerInterface, HydratorInterfac
         }
 
         return $relationships;
-    }
-
-    /**
-     * @internal
-     */
-    public function initializeTransformation(JsonApiRequestInterface $request, mixed $object): void
-    {
-        $this->request = $request;
-        $this->object = $object;
-    }
-
-    /**
-     * @internal
-     */
-    public function clearTransformation(): void
-    {
-        $this->request = null;
-        $this->object = null;
     }
 
     public function hydrate(JsonApiRequestInterface $request, mixed $domainObject): mixed

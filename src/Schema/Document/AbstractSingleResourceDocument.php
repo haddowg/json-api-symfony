@@ -16,7 +16,6 @@ use haddowg\JsonApi\Transformer\ResourceTransformer;
  *
  * @internal
  *
- * @see https://github.com/woohoolabs/yin — original work (MIT), from which this derives.
  */
 abstract class AbstractSingleResourceDocument extends AbstractResourceDocument
 {
@@ -24,21 +23,7 @@ abstract class AbstractSingleResourceDocument extends AbstractResourceDocument
 
     public function getResource(): SerializerInterface
     {
-        if ($this->request !== null) {
-            $this->resource->initializeTransformation($this->request, $this->object);
-        }
-
         return $this->resource;
-    }
-
-    /**
-     * Returns the resource ID for the current domain object.
-     *
-     * Shortcut for the resource serializer's getId().
-     */
-    public function getResourceId(): string
-    {
-        return $this->getResource()->getId($this->object);
     }
 
     /**

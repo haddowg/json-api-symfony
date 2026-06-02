@@ -20,8 +20,8 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * A relationship document MAY carry top-level jsonapi/meta/links per JSON:API 1.1.
- * yin omitted them on the relationship path; the engine now merges the document-level
- * members on top of the relationship's own data/meta/links.
+ * The engine merges those document-level members on top of the relationship's own
+ * data/meta/links.
  */
 #[Group('spec:document-structure')]
 final class RelationshipDocumentMetaTest extends TestCase
@@ -48,8 +48,6 @@ final class RelationshipDocumentMetaTest extends TestCase
                 return null;
             }
 
-            public function initializeTransformation(ResourceDocumentTransformation $transformation): void {}
-
             public function getData(ResourceDocumentTransformation $transformation, ResourceTransformer $transformer): DataInterface
             {
                 return new SingleResourceData();
@@ -68,8 +66,6 @@ final class RelationshipDocumentMetaTest extends TestCase
                     'meta' => ['relMeta' => true],
                 ];
             }
-
-            public function clearTransformation(): void {}
         };
 
         $transformation = new ResourceDocumentTransformation(

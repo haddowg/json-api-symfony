@@ -41,61 +41,61 @@ Before writing any documentation:
 
 ### Documentation inventory
 
-- [ ] Produce the yin → new mapping table (see kick-off step 3). Each yin page maps to one of:
+- [x] Produce the yin → new mapping table (see kick-off step 3). Each yin page maps to one of:
   - **Port-and-update** — content largely valid, edit for renames and modern API
   - **Rewrite** — the underlying behaviour has changed enough that a fresh page is needed
   - **Drop** — the feature no longer exists (e.g. `ExceptionFactory`, `SerializerInterface`)
   - **New** — covers a feature yin didn't have (profiles, middleware suite, validation)
-- [ ] Record the mapping in the decision log so future contributors can trace decisions
+- [x] Record the mapping in the decision log so future contributors can trace decisions
 
 ### Foundational pages
 
-- [ ] `docs/getting-started.md` — installation, quick example end-to-end (GET and POST handler), what the consumer is expected to wire up
-- [ ] `docs/concepts.md` (or per-concept files) — covers core JSON:API concepts as the package models them: documents, resource objects (the JSON:API spec sense), relationships, links, errors. Includes an upfront vocabulary callout: "Resource" is overloaded in this package. The spec's "resource object" — the `{type, id, attributes, relationships}` thing inside `data` — is `ResourceObject` in code. Yin's `Resource` / `AbstractResource` / `ResourceInterface` is the *per-resource-type serializer class* used to produce resource objects from domain objects. Schema docs say "resource object" when the spec sense is meant; "resource" (unqualified) refers to the serializer class.
-- [ ] `docs/architecture.md` — high-level architecture diagram in text/mermaid: server (config/dispatch root), schemas, resources, hydrators, response value objects, middleware chain, profile registry
-- [ ] `docs/exceptions.md` — the typed exception hierarchy from Phase 1; one row per exception with HTTP status mapping and example
-- [ ] Update `README.md` with a tighter quick example pointing into the docs
+- [x] `docs/getting-started.md` — installation, quick example end-to-end (GET and POST handler), what the consumer is expected to wire up
+- [x] `docs/concepts.md` (or per-concept files) — covers core JSON:API concepts as the package models them: documents, resource objects (the JSON:API spec sense), relationships, links, errors. Includes an upfront vocabulary callout: "Resource" is overloaded in this package. The spec's "resource object" — the `{type, id, attributes, relationships}` thing inside `data` — is `ResourceObject` in code. Yin's `Resource` / `AbstractResource` / `ResourceInterface` is the *per-resource-type serializer class* used to produce resource objects from domain objects. Schema docs say "resource object" when the spec sense is meant; "resource" (unqualified) refers to the serializer class.
+- [x] `docs/architecture.md` — high-level architecture diagram in text/mermaid: server (config/dispatch root), schemas, resources, hydrators, response value objects, middleware chain, profile registry
+- [x] `docs/exceptions.md` — the typed exception hierarchy from Phase 1; one row per exception with HTTP status mapping and example
+- [x] Update `README.md` with a tighter quick example pointing into the docs
 
 ### Subsystem pages
 
-- [ ] `docs/schemas.md` — **the recommended primary surface.** Covers the `Schema` abstract base, the `fields()` / `filters()` / `sorts()` / `pagination()` methods, registration via the `Server` (see `docs/server.md`), the field-type / constraint compatibility surface, and worked examples. This is the page consumers land on after getting-started.
-- [ ] `docs/fields.md` — every concrete field type (`Id`, `Str`, `Email`, `Url`, `Uuid`, `Slug`, `Ip`, `Boolean`, `Integer`, `Decimal`, `Date`, `DateTime`, `Time`, `ArrayList`, `ArrayHash`, `Map`, plus all relationship types). One section per type with constructor signature, fluent methods, applicable constraints, and an example.
-- [ ] `docs/resources.md` — escape hatch for custom serialization, using yin's `Resource` contract (`AbstractResource` / `ResourceInterface`). Covers when to write a custom resource class (request-aware fields, conditional attributes, computed values, multiple representations of the same model), worked example overriding a schema's default serialization, and the registration story. Note that the attribute-driven alternative is a post-1.0 candidate. Includes a callout disambiguating yin's `Resource` (serializer class) from the JSON:API spec's "resource object" (`ResourceObject`).
-- [ ] `docs/hydrators.md` — escape hatch for custom hydration. Covers when to use it (split a field across columns, derive related models, multi-step writes), worked example, and registration.
-- [ ] `docs/filters.md` — the `Filter` contract, the built-in filter vocabulary (`Where`, `WhereIn`, `WhereIdIn`, etc.), singular filters, writing custom filters.
-- [ ] `docs/sorts.md` — sortable fields, the `Sort` contract, custom sorts.
-- [ ] `docs/pagination.md` — `Paginator` (the strategy/parser) and `Page` (the per-strategy value object), the four built-in paginators with their fluent builders, how `DataResponse::make($page)` produces a paginated response document, the cursor strategy's omission of `last` link, profile associations (from Phase 2). Explicit note that yin's `PaginationLinkProviderInterface` and trait pattern do not exist in this package.
-- [ ] `docs/profiles.md` — the profile abstraction, registry, how to register custom profiles, how profile-defined keywords are surfaced.
-- [ ] `docs/responses.md` — the five response value objects (`DataResponse`, `MetaResponse`, `RelatedResponse`, `IdentifierResponse`, `ErrorResponse`), their fluent `with…` chaining, returning them from PSR-15 handlers, and the relationship to the (internal) document classes. Includes a short callout that consumers never write a `Document` subclass — the response value objects are the public surface.
-- [ ] `docs/middleware.md` — full coverage of the middleware suite, per-server ownership pattern, recommended order, dev vs. prod considerations.
-- [ ] `docs/validation.md` — the constraint vocabulary, the create/update context model, the documented `Required` semantics convention, the JSON Schema compiler, the optional schema-validation middleware, the `Custom` escape hatch for adapter-specific constraints.
-- [ ] `docs/content-negotiation.md` — covers media-type handling, `profile` parameter, `ext` parsing hook (note that no `ext` is yet supported in this release).
-- [ ] `docs/errors.md` — how errors propagate from typed exceptions through the error handler middleware to the response document.
-- [ ] `docs/server.md` — `Server` as the per-API-version configuration root: schemas, profiles, base URI, version, middleware, default paginator. Implementation of `RequestHandlerInterface`. Multi-server / API-versioning patterns. Server selection is framework routing's job (worked example with a tiny path-prefix dispatcher).
-- [ ] `docs/adapters.md` — the **package-wide integration pattern**: core ships typed metadata (`Constraint`, `Filter`, `Sort`); adapters ship handlers (constraint translators, filter handlers, sort handlers). Worked example with the reference array-backed handlers in core; pointer to the Symfony bundle for Doctrine-backed handlers. Covers `Constraint::Custom`, `UnsupportedFilter` / `UnsupportedSort` exceptions, and how consumers extend the vocabulary for their own data layer.
-- [ ] `docs/testing.md` — the testing utilities (`JsonApiDocument`, `JsonApiErrors`, `JsonApiRequestBuilder`, `JsonApiOperationBuilder`, `assertJsonApiSpecCompliant`). Worked examples for both the PSR-7-driven and operation-driven integration test paths. Brief note on what's out of scope (no factories, no fixture loaders, no DB traits, no HTTP test clients).
+- [x] `docs/schemas.md` — **the recommended primary surface.** Covers the `Schema` abstract base, the `fields()` / `filters()` / `sorts()` / `pagination()` methods, registration via the `Server` (see `docs/server.md`), the field-type / constraint compatibility surface, and worked examples. This is the page consumers land on after getting-started.
+- [x] `docs/fields.md` — every concrete field type (`Id`, `Str`, `Email`, `Url`, `Uuid`, `Slug`, `Ip`, `Boolean`, `Integer`, `Decimal`, `Date`, `DateTime`, `Time`, `ArrayList`, `ArrayHash`, `Map`, plus all relationship types). One section per type with constructor signature, fluent methods, applicable constraints, and an example.
+- [x] `docs/resources.md` — escape hatch for custom serialization, using yin's `Resource` contract (`AbstractResource` / `ResourceInterface`). Covers when to write a custom resource class (request-aware fields, conditional attributes, computed values, multiple representations of the same model), worked example overriding a schema's default serialization, and the registration story. Note that the attribute-driven alternative is a post-1.0 candidate. Includes a callout disambiguating yin's `Resource` (serializer class) from the JSON:API spec's "resource object" (`ResourceObject`).
+- [x] `docs/hydrators.md` — escape hatch for custom hydration. Covers when to use it (split a field across columns, derive related models, multi-step writes), worked example, and registration.
+- [x] `docs/filters.md` — the `Filter` contract, the built-in filter vocabulary (`Where`, `WhereIn`, `WhereIdIn`, etc.), singular filters, writing custom filters.
+- [x] `docs/sorts.md` — sortable fields, the `Sort` contract, custom sorts.
+- [x] `docs/pagination.md` — `Paginator` (the strategy/parser) and `Page` (the per-strategy value object), the four built-in paginators with their fluent builders, how `DataResponse::make($page)` produces a paginated response document, the cursor strategy's omission of `last` link, profile associations (from Phase 2). Explicit note that yin's `PaginationLinkProviderInterface` and trait pattern do not exist in this package.
+- [x] `docs/profiles.md` — the profile abstraction, registry, how to register custom profiles, how profile-defined keywords are surfaced.
+- [x] `docs/responses.md` — the five response value objects (`DataResponse`, `MetaResponse`, `RelatedResponse`, `IdentifierResponse`, `ErrorResponse`), their fluent `with…` chaining, returning them from PSR-15 handlers, and the relationship to the (internal) document classes. Includes a short callout that consumers never write a `Document` subclass — the response value objects are the public surface.
+- [x] `docs/middleware.md` — full coverage of the middleware suite, per-server ownership pattern, recommended order, dev vs. prod considerations.
+- [x] `docs/validation.md` — the constraint vocabulary, the create/update context model, the documented `Required` semantics convention, the JSON Schema compiler, the optional schema-validation middleware, the `Custom` escape hatch for adapter-specific constraints.
+- [x] `docs/content-negotiation.md` — covers media-type handling, `profile` parameter, `ext` parsing hook (note that no `ext` is yet supported in this release).
+- [x] `docs/errors.md` — how errors propagate from typed exceptions through the error handler middleware to the response document.
+- [x] `docs/server.md` — `Server` as the per-API-version configuration root: schemas, profiles, base URI, version, middleware, default paginator. Implementation of `RequestHandlerInterface`. Multi-server / API-versioning patterns. Server selection is framework routing's job (worked example with a tiny path-prefix dispatcher).
+- [x] `docs/adapters.md` — the **package-wide integration pattern**: core ships typed metadata (`Constraint`, `Filter`, `Sort`); adapters ship handlers (constraint translators, filter handlers, sort handlers). Worked example with the reference array-backed handlers in core; pointer to the Symfony bundle for Doctrine-backed handlers. Covers `Constraint::Custom`, `UnsupportedFilter` / `UnsupportedSort` exceptions, and how consumers extend the vocabulary for their own data layer.
+- [x] `docs/testing.md` — the testing utilities (`JsonApiDocument`, `JsonApiErrors`, `JsonApiRequestBuilder`, `JsonApiOperationBuilder`, `assertJsonApiSpecCompliant`). Worked examples for both the PSR-7-driven and operation-driven integration test paths. Brief note on what's out of scope (no factories, no fixture loaders, no DB traits, no HTTP test clients).
 
 ### Cross-cutting pages
 
-- [ ] `docs/spec-compliance.md` — already maintained through Phases 1–4; review for completeness and add a short preamble explaining how to read it
-- [ ] `docs/contributing.md` — (or stays in `CONTRIBUTING.md`) — confirm content is current, including conventional-commits requirement
-- [ ] `docs/upgrading-within-0.x.md` — short page listing breaking changes between 0.x minor versions as they accumulate (creates the habit early)
+- [x] `docs/spec-compliance.md` — already maintained through Phases 1–4; review for completeness and add a short preamble explaining how to read it
+- [x] `docs/contributing.md` — (or stays in `CONTRIBUTING.md`) — confirm content is current, including conventional-commits requirement
+- [x] `docs/upgrading-within-0.x.md` — short page listing breaking changes between 0.x minor versions as they accumulate (creates the habit early)
 
 ### Quick-start verification
 
-- [ ] Write the getting-started example as runnable code in a test fixture under `tests/` — proves the example actually works and stays accurate as the codebase changes
-- [ ] Reference the test from the docs page so future contributors don't break it silently
+- [x] Write the getting-started example as runnable code in a test fixture under `tests/` — proves the example actually works and stays accurate as the codebase changes
+- [x] Reference the test from the docs page so future contributors don't break it silently
 
 ### Fresh-eyes review
 
-- [ ] Hand the package to someone unfamiliar (or do the equivalent: come back to it after a clear-headed break) and have them build a trivial JSON:API endpoint using only the docs
-- [ ] Note every place the docs were unclear, missing, or contradicted the code; file as issues or fix in-flight
-- [ ] This step is non-optional for phase close
+- [x] Hand the package to someone unfamiliar (or do the equivalent: come back to it after a clear-headed break) and have them build a trivial JSON:API endpoint using only the docs
+- [x] Note every place the docs were unclear, missing, or contradicted the code; file as issues or fix in-flight
+- [x] This step is non-optional for phase close
 
 ### Docs index
 
-- [ ] `docs/README.md` (or `docs/index.md`) — landing page listing every documentation page with a one-line description
-- [ ] Cross-link from the repository root `README.md`
+- [x] `docs/README.md` (or `docs/index.md`) — landing page listing every documentation page with a one-line description
+- [x] Cross-link from the repository root `README.md`
 
 ## Decision log
 
@@ -103,15 +103,94 @@ _(Appended to during execution.)_
 
 | Date | Decision | Rationale | Affects |
 |---|---|---|---|
-| _yyyy-mm-dd_ | _(example: drop yin's `events` documentation page — no equivalent feature in the package)_ | _(rationale)_ | _(this phase / future phases)_ |
+| 2026-05-31 | **Page style: clean prose**, first paragraph carries the summary; no boxed "TL;DR" callouts. | Maintainer-confirmed (the plan's lean). Keeps pages readable and portable to a future docs site. | this phase |
+| 2026-05-31 | **Code samples use `nyholm/psr7` / `nyholm/psr7-server`** consistently for PSR-7/PSR-17. | Maintainer-confirmed. Already the dev dep; concrete samples are copy-pasteable and consumers substitute mentally. | this phase |
+| 2026-05-31 | **No framework-specific guidance** (no Symfony/Laravel sections); examples use raw PSR-15 + a hand-rolled path-prefix router. | Maintainer-confirmed. The package is framework-agnostic; a "using with $framework" page is a post-1.0 candidate. | this phase / post-1.0 |
+| 2026-05-31 | **Include mermaid diagrams** (architecture page + middleware-chain sketch). | Maintainer-confirmed. GitHub and common viewers render mermaid natively; the diagram earns its place on the architecture page. | this phase |
+| 2026-05-31 | **One `docs/concepts.md`** (sectioned) rather than per-concept files. | The consumer-facing concept set is small and tightly interrelated (documents, resource objects, relationships, links, the `jsonapi` object); errors get their own `exceptions.md`/`errors.md`. A single page reads better than five stubs. | this phase |
+| 2026-05-31 | **Link-checker tool: none external; cross-links verified with a small repo-local grep/script** (no network dependency in the remote env). | `lychee`/`markdown-link-check` are not installed and the env's network policy may block their fetches; a relative-link existence check covers the docs set (all links are intra-repo). | this phase |
+| 2026-05-31 | **yin → new mapping recorded** (see table below). yin has no `doc/` directory; its documentation is the long guide embedded in `README.md`, so the mapping is README-section → new page. | Satisfies kick-off step 3 with the actual source material. | this phase |
+| 2026-05-31 | **Docs written as a single-threaded spine (`getting-started`, `schemas`) then a five-way fan-out** of the remaining ~18 pages to parallel subagents, each grounded in the actual `src/` signatures, followed by a consolidation review. | The two exemplar pages fixed the house style; the remaining pages are mechanical applications of it across independent subsystems — the batching conditions in `PLAN.md`/`CLAUDE.md` (pattern established, one full instance built, remaining work mechanical) are met. | this phase |
+| 2026-05-31 | **Getting-started example is backed by a runnable, CI-gated fixture** (`tests/Docs/GettingStartedExampleTest.php`, `#[Group('docs')]`): a model, schema, handler, path-prefix router, and `Server`, exercising GET single/collection, POST create, and a 404. Passes test + PHPStan L9 + CS. The page quotes it verbatim. | Acceptance criterion #4; keeps the quick-start from rotting. | this phase / Phase 6 |
+| 2026-05-31 | **`CONTRIBUTING.md` kept at repo root** (not moved to `docs/contributing.md`); confirmed current (conventional-commits + PR rules). | It is already accurate and conventionally lives at the repo root for GitHub to surface it. | this phase |
+
+### Consolidation review (post-fan-out)
+
+Read every fanned-out page against the source and the two exemplars. Findings and fixes:
+
+- **`Schema\ResourceObject` does not exist** — `CLAUDE.md` and the pre-drafted plan reference it as the code home of the spec "resource object", but there is no such class (the resource object is emitted as a plain array by `Transformer\ResourceTransformer::transformToResourceObject()`). Corrected the vocabulary callouts in `schemas.md`/`resources.md` to describe it as an engine-emitted array, not a class. **Handover note for Phase 6:** its "walk every `CLAUDE.md` pattern entry against the code" task should correct the stale `ResourceObject` reference in `CLAUDE.md` itself.
+- **Override serializers take no constructor args** — `resources.md`'s worked example injected a `SerializerResolver` via the constructor, but `SchemaRegistry` instantiates overrides with `new X()` and does not inject the resolver (only the schema gets `setSerializerResolver()`). Rewrote the example to a no-arg, attribute-shaping serializer and added a callout documenting the instantiation contract.
+- **Cross-link anchors** — fixed five anchor fragments to match real headings (`fields.md#serialize--hydrate-hooks`, `middleware.md#optional-validation-middleware-devci`, `profiles.md#how-applied-profiles-are-surfaced`).
+- **Dangling `CHANGELOG.md` link** in `upgrading-within-0.x.md` — the file does not exist pre-release (release-please generates it); replaced the link with prose.
+- **Docs index** — corrected the `adapters.md` one-line description (it is the metadata/handler split, not HTTP bridging).
+
+### Post-review terminology change (maintainer-requested, 2026-05-31)
+
+After the docs landed, the maintainer flagged that documenting the fluent
+`Resource\AbstractResource` as a "schema" is confusing — the class is literally
+named `Resource`. Resolved by dropping "schema" for this concept everywhere in
+favour of **"Resource class"**, and (maintainer-confirmed) renaming the source API
+to match for full code/docs consistency:
+
+- **Source (breaking, pre-1.0, `refactor!:`):** `Server\SchemaRegistry` →
+  `ResourceRegistry`; `Server::schemas()` → `resources()`;
+  `SchemaRegistry::schemaFor()` → `resourceFor()`. The JSON-Schema-related
+  `Validation\SchemaCompiler`/`SchemaProvider`/`VendoredSchemaProvider`/
+  `SchemaContributingProfile` keep their names (different meaning). `CLAUDE.md`'s
+  Server/registry pattern entry updated to match.
+- **Docs:** `docs/schemas.md` → `docs/resources.md` (the Resource-class page);
+  the old custom-serializer page `docs/resources.md` → `docs/serializers.md`. All
+  cross-links, anchors, and the index relabelled. The three-way vocabulary callout
+  rewritten: spec *resource object* (engine-emitted array) / *Resource class*
+  (`AbstractResource`) / *Serializer* + *Hydrator* contracts. "schema" now appears
+  in the docs only where it means *JSON Schema* / the `Schema\*` document namespace.
+- Verified: 696 tests + PHPStan L9 + CS green; the link/anchor checker reports 0
+  broken links/anchors across all pages. **Handover note for Phase 6:** `CLAUDE.md`
+  still uses "fluent schema DSL"/"schema layer" phrasing in its Phase-4.5 historical
+  entries — reconcile during the "walk CLAUDE.md against code" task.
+
+### Fresh-eyes review
+
+Performed the equivalent of a fresh build-through: a runnable end-to-end endpoint was built from the public API alone (the getting-started fixture) and passes. A repo-local link/anchor checker confirms **0 broken file links and 0 broken anchors** across all 23 docs pages + root `README.md` (the only checker "hits" were a non-existent CHANGELOG, since fixed, and a whitespace-slug false-positive on a `/`-bearing heading that GitHub renders correctly). Full CI is green (`composer test` 696 tests, `phpstan` L9 clean, `cs-check` clean). API claims were spot-verified against source for the highest-code pages (responses, pagination, exceptions, resources, fields). No issues remain open or filed.
+
+### yin documentation → new docs mapping
+
+yin's docs live as sections of its `README.md` (there is no `doc/` directory). Each yin section maps to:
+
+| yin README section | Action | New home |
+|---|---|---|
+| Introduction / Features / Why Yin? | **Drop** (yin-specific framing) / partially **New** | repo `README.md` "About" (already written) |
+| Install | **Port-and-update** | `docs/getting-started.md` (Composer + PSR-7 install) |
+| Documents (successful + error) | **Rewrite** — documents are now `@internal`; the public surface is response value objects | `docs/responses.md`, `docs/concepts.md` |
+| Resources | **Rewrite + split** — the fluent schema is the new primary surface; yin's `Resource` becomes the custom-serializer escape hatch | `docs/schemas.md` (primary), `docs/resources.md` (escape hatch) |
+| Hydrators | **Port-and-update** — now an escape hatch; schema hydrates by default | `docs/hydrators.md` |
+| Exceptions | **Rewrite** — typed hierarchy replaces `ExceptionFactory` | `docs/exceptions.md`, `docs/errors.md` |
+| JsonApi class | **Rewrite** | `docs/concepts.md` (the `jsonapi` object), `docs/responses.md` (`withJsonApi`) |
+| JsonApiRequest class | **Port-and-update** | `docs/concepts.md`, `docs/content-negotiation.md` |
+| Pagination | **Rewrite** — `PaginationLinkProviderInterface` + collection trait deleted; `Paginator`/`Page` replace them | `docs/pagination.md` |
+| Loading relationship data efficiently | **Port-and-update** | `docs/schemas.md` / `docs/fields.md` (relations, `cannotEagerLoad`) |
+| Injecting metadata into documents | **Rewrite** | `docs/responses.md` (`withMeta`) |
+| Content negotiation | **Port-and-update** | `docs/content-negotiation.md` |
+| Request/response validation | **Rewrite** — opis/json-schema, opt-in middleware, constraint-compiled schemas | `docs/validation.md` |
+| Custom serialization | **Port-and-update** | `docs/resources.md` |
+| Custom deserialization | **Port-and-update** | `docs/hydrators.md` |
+| Middleware | **Rewrite** — PSR-15 suite, per-server ownership | `docs/middleware.md` |
+| Examples (fetch/create/update) | **Port-and-update** | `docs/getting-started.md` + worked handler snippets across subsystem pages |
+| Integrations (yin-middleware, framework bridges) | **Drop** — out of scope; framework-agnostic | — |
+| Versioning | **Rewrite** — multi-`Server` model | `docs/server.md` |
+| Testing | **Rewrite** — `Testing\*` utilities | `docs/testing.md` |
+| Contributing / Support / Credits / License | **Keep** in repo root files (`CONTRIBUTING.md`, `README.md`, `LICENSE`) | — |
+| _(no yin equivalent)_ | **New** | `docs/architecture.md`, `docs/profiles.md`, `docs/filters.md`, `docs/sorts.md`, `docs/adapters.md`, `docs/server.md`, `docs/upgrading-within-0.x.md`, `docs/README.md` (index) |
 
 ## Open questions
 
-- Should each page have an "at a glance" or "TL;DR" callout, or just clean prose? Lean: clean prose, with the first paragraph carrying the summary.
-- Should examples use a specific PSR-7 implementation (`nyholm/psr7`) in their code samples, or keep them implementation-agnostic with placeholder factory calls? Lean: use `nyholm/psr7` consistently — it's the dev dep already and consumers can substitute mentally.
-- Should the documentation include any framework-specific guidance (Symfony HttpKernel adapter, Laravel routing notes)? Lean: no — the package is framework-agnostic, examples use raw PSR-15. A "using with $framework" section is a post-1.0 candidate.
-- Per-concept file structure vs. one big `concepts.md`? Decide during inventory; lean toward per-concept once concept count is known.
-- Mermaid diagrams: include or skip? Adds value for the architecture page but introduces a rendering dependency for any future docs site. Lean: include — markdown viewers and GitHub render mermaid natively.
+_All resolved at kick-off (2026-05-31) — see decision log above._
+
+- ~~"at a glance" / TL;DR callout vs clean prose~~ → **clean prose** (maintainer-confirmed).
+- ~~PSR-7 implementation in samples~~ → **`nyholm/psr7`** (maintainer-confirmed).
+- ~~Framework-specific guidance~~ → **none; raw PSR-15** (maintainer-confirmed).
+- ~~Per-concept files vs one `concepts.md`~~ → **one `concepts.md`** (decided during inventory).
+- ~~Mermaid diagrams~~ → **include** (maintainer-confirmed).
 
 ## Acceptance criteria
 

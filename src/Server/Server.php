@@ -29,7 +29,7 @@ use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 
 /**
- * The per-API-version configuration root: the schema registry (+ overrides), the
+ * The per-API-version configuration root: the Resource registry (+ overrides), the
  * profile registry, base URI, JSON:API version, default `jsonapi.meta`, default
  * paginator, `json_encode` flags, the PSR-17 factories, and the ordered
  * middleware list for one API surface.
@@ -41,12 +41,12 @@ use Psr\Http\Server\RequestHandlerInterface;
  * bypassing the chain (for integration tests and programmatic calls).
  *
  * Multiple servers = multiple API versions; routing outside core dispatches to
- * the right one. The {@see ServerInterface} render contract is unchanged from
- * the Phase-1 placeholder, so the response value objects drop in as-is.
+ * the right one. It implements the {@see ServerInterface} render contract, so
+ * the response value objects drop in as-is.
  */
 final class Server implements ServerInterface, RequestHandlerInterface, SerializerResolver
 {
-    private SchemaRegistry $schemas;
+    private ResourceRegistry $resources;
 
     private ProfileRegistry $profiles;
 
@@ -76,7 +76,7 @@ final class Server implements ServerInterface, RequestHandlerInterface, Serializ
 
     public function __construct()
     {
-        $this->schemas = new SchemaRegistry();
+        $this->resources = new ResourceRegistry();
         $this->profiles = new ProfileRegistry();
     }
 
@@ -138,7 +138,7 @@ final class Server implements ServerInterface, RequestHandlerInterface, Serializ
     }
 
     /**
-     * Registers a resource (schema) for its declared type, with optional
+     * Registers a Resource class for its declared type, with optional
      * serializer / hydrator overrides.
      *
      * @param class-string<AbstractResource>         $resource
@@ -148,8 +148,8 @@ final class Server implements ServerInterface, RequestHandlerInterface, Serializ
     public function register(string $resource, ?string $serializer = null, ?string $hydrator = null): self
     {
         $self = clone $this;
-        $self->schemas = clone $this->schemas;
-        $self->schemas->register($resource, $serializer, $hydrator);
+        $self->resources = clone $this->resources;
+        $self->resources->register($resource, $serializer, $hydrator);
 
         return $self;
     }
@@ -179,7 +179,7 @@ final class Server implements ServerInterface, RequestHandlerInterface, Serializ
     /**
      * Sets the inner handler the middleware chain wraps. An {@see OperationHandler}
      * is wrapped in {@see Psr7ToOperationHandlerAdapter} automatically; a bare
-     * PSR-15 handler is accepted as an escape hatch.
+     * PSR-15 handler is also accepted directly.
      */
     public function withHandler(OperationHandler|RequestHandlerInterface $handler): self
     {
@@ -228,11 +228,11 @@ final class Server implements ServerInterface, RequestHandlerInterface, Serializ
             ?? throw new \LogicException('No PSR-17 stream factory configured; call withPsr17().');
     }
 
-    // --- Schema registry accessors ------------------------------------------
+    // --- Resource registry accessors ------------------------------------------
 
-    public function schemas(): SchemaRegistry
+    public function resources(): ResourceRegistry
     {
-        return $this->schemas;
+        return $this->resources;
     }
 
     public function defaultPaginator(): ?Paginator
@@ -242,17 +242,17 @@ final class Server implements ServerInterface, RequestHandlerInterface, Serializ
 
     public function serializerFor(string $type): SerializerInterface
     {
-        return $this->schemas->serializerFor($type);
+        return $this->resources->serializerFor($type);
     }
 
     public function hasSerializerFor(string $type): bool
     {
-        return $this->schemas->hasSerializerFor($type);
+        return $this->resources->hasSerializerFor($type);
     }
 
     public function hydratorFor(string $type): HydratorInterface
     {
-        return $this->schemas->hydratorFor($type);
+        return $this->resources->hydratorFor($type);
     }
 
     // --- PSR-15 entry point + programmatic dispatch -------------------------

@@ -13,7 +13,6 @@ use haddowg\JsonApi\Transformer\ResourceTransformer;
  *
  * @internal
  *
- * @see https://github.com/woohoolabs/yin — original work (MIT), from which this derives.
  */
 interface ResourceDocumentInterface extends DocumentInterface
 {
@@ -29,15 +28,5 @@ interface ResourceDocumentInterface extends DocumentInterface
     /**
      * @internal
      */
-    public function initializeTransformation(ResourceDocumentTransformation $transformation): void;
-
-    /**
-     * @internal
-     */
     public function getData(ResourceDocumentTransformation $transformation, ResourceTransformer $transformer): DataInterface;
-
-    /**
-     * @internal
-     */
-    public function clearTransformation(): void;
 }

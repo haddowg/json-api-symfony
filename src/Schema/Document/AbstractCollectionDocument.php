@@ -16,7 +16,6 @@ use haddowg\JsonApi\Transformer\ResourceTransformer;
  *
  * @internal
  *
- * @see https://github.com/woohoolabs/yin — original work (MIT), from which this derives.
  */
 abstract class AbstractCollectionDocument extends AbstractResourceDocument
 {
@@ -25,23 +24,6 @@ abstract class AbstractCollectionDocument extends AbstractResourceDocument
     public function getResource(): SerializerInterface
     {
         return $this->resource;
-    }
-
-    protected function hasItems(): bool
-    {
-        foreach ($this->getItems() as $ignored) {
-            return true;
-        }
-
-        return false;
-    }
-
-    /**
-     * @return iterable<mixed>
-     */
-    protected function getItems(): iterable
-    {
-        return \is_iterable($this->object) ? $this->object : [];
     }
 
     /**
@@ -60,7 +42,8 @@ abstract class AbstractCollectionDocument extends AbstractResourceDocument
         );
         $data = new CollectionData();
 
-        foreach ($this->getItems() as $item) {
+        $items = \is_iterable($transformation->object) ? $transformation->object : [];
+        foreach ($items as $item) {
             $resourceTransformation->object = $item;
 
             $resourceObject = $transformer->transformToResourceObject($resourceTransformation, $data);
