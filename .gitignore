@@ -1,0 +1,35 @@
+# Composer
+/vendor/
+composer.lock
+
+# PHPUnit
+/.phpunit.cache/
+/.phpunit.result.cache
+coverage.xml
+/coverage/
+
+# PHPStan
+/.phpstan.cache/
+
+# PHP-CS-Fixer
+/.php-cs-fixer.cache
+
+# IDE / editor
+/.idea/
+/.vscode/
+/.fleet/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Agent tooling (transient worktrees / session state)
+/.claude/
+
+# Local overrides
+/.env
+/.env.local
+phpunit.xml
+phpstan.neon
+.php-cs-fixer.php

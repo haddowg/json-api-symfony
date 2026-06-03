@@ -1,0 +1,89 @@
+{
+    "name": "haddowg/json-api-symfony",
+    "description": "Symfony bundle for haddowg/json-api: idiomatic routing, content negotiation, validation, and a Doctrine data layer for spec-compliant JSON:API 1.1 endpoints.",
+    "type": "symfony-bundle",
+    "keywords": [
+        "json-api",
+        "jsonapi",
+        "symfony",
+        "bundle",
+        "psr-15",
+        "api",
+        "rest",
+        "doctrine"
+    ],
+    "homepage": "https://github.com/haddowg/json-api-symfony",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Gregory Haddow",
+            "homepage": "https://github.com/haddowg"
+        }
+    ],
+    "require": {
+        "php": "^8.3",
+        "haddowg/json-api": "*",
+        "psr/http-factory": "^1.0",
+        "psr/http-message": "^2.0",
+        "symfony/config": "^6.4 || ^7.0",
+        "symfony/dependency-injection": "^6.4 || ^7.0",
+        "symfony/http-foundation": "^6.4 || ^7.0",
+        "symfony/http-kernel": "^6.4 || ^7.0",
+        "symfony/psr-http-message-bridge": "^6.4 || ^7.0",
+        "symfony/routing": "^6.4 || ^7.0",
+        "nyholm/psr7": "^1.8"
+    },
+    "require-dev": {
+        "doctrine/doctrine-bundle": "^2.12",
+        "doctrine/orm": "^3.0",
+        "friendsofphp/php-cs-fixer": "^3.64",
+        "phpstan/phpstan": "^2.0",
+        "phpunit/phpunit": "^12.0",
+        "symfony/browser-kit": "^6.4 || ^7.0",
+        "symfony/framework-bundle": "^6.4 || ^7.0",
+        "symfony/validator": "^6.4 || ^7.0"
+    },
+    "suggest": {
+        "doctrine/orm": "Enables the reference Doctrine data provider/persister for zero-handler CRUD endpoints (^3.0).",
+        "symfony/validator": "Enables translating JSON:API resource constraints into Symfony Validator rules for create/update validation (^6.4 || ^7.0)."
+    },
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../json-api",
+            "options": {
+                "symlink": true
+            }
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "haddowg\\JsonApiBundle\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "haddowg\\JsonApiBundle\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "preferred-install": "dist"
+    },
+    "scripts": {
+        "test": "phpunit",
+        "test-coverage": "phpunit --coverage-clover coverage.xml",
+        "phpstan": "phpstan analyse --memory-limit=1G",
+        "cs-check": "php-cs-fixer fix --dry-run --diff",
+        "cs-fix": "php-cs-fixer fix"
+    },
+    "scripts-descriptions": {
+        "test": "Run the PHPUnit test suite",
+        "test-coverage": "Run the test suite and emit a Clover coverage report",
+        "phpstan": "Run PHPStan static analysis",
+        "cs-check": "Check code style without modifying files",
+        "cs-fix": "Apply code style fixes"
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
