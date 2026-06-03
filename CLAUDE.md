@@ -13,11 +13,16 @@ supplies the framework integration (DI, routing, the request lifecycle) and a
 **reference Doctrine ORM data layer**.
 
 - **The core lives as a sibling checkout** at `../json-api`
-  (`/Users/gregory.haddow/Sites/json-api`). `composer.json` resolves it through a
-  **path repository** (`repositories: [{type: path, url: ../json-api}]`) because
-  core is **not yet on Packagist**. The core repo's own `CLAUDE.md` is the
-  authority on the library's internals; read it for anything below the bundle's
-  integration seam.
+  (`/Users/gregory.haddow/Sites/json-api`). The bundle requires it as
+  `haddowg/json-api: dev-main` with **no repository in `composer.json`**. Local
+  dev resolves it through a **global** Composer path repository
+  (`composer config -g repositories.haddowg-json-api '{"type":"path","url":"/abs/path/to/json-api","options":{"symlink":true}}'`)
+  that symlinks the sibling checkout — so **keep core on its `main` branch**, since
+  a path repo reports `dev-<branch>` and only `dev-main` satisfies the constraint
+  (a committed project repo would shadow the global one, so there deliberately
+  isn't one). CI injects a **global VCS repository** instead, resolving `dev-main`
+  from GitHub with no extra checkout. Pin `^1.0` once core ships to Packagist. The
+  core repo's own `CLAUDE.md` is the authority on the library's internals.
 - This bundle and core are **co-evolving pre-1.0**: building the bundle is a
   forcing function to validate the core has everything required for a proper
   integration use case before core's 1.0 freezes its API. When the bundle hits
@@ -69,6 +74,10 @@ supplies the framework integration (DI, routing, the request lifecycle) and a
 
 The full decision record and the phase plan live in the **core repo's auto-memory**
 at `~/.claude/projects/-Users-gregory-haddow-Sites-json-api/memory/json-api-symfony-bundle-plan.md`.
+
+Record bundle architecture decisions as ADRs under `docs/adr/` — follow
+[`docs/adr/ADR-FORMAT.md`](docs/adr/ADR-FORMAT.md) (a short title stating the
+decision, then 1–3 sentences of *why*). The ADRs already written: `0001`–`0004`.
 
 ## Phases (vertical slices, Doctrine-backed from Phase 1)
 

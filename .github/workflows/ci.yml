@@ -12,12 +12,6 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# Steps run inside the bundle checkout; the sibling core checkout resolves the
-# `../json-api` Composer path repository until core is published to Packagist.
-defaults:
-  run:
-    working-directory: json-api-symfony
-
 jobs:
   tests:
     name: "Tests (PHP ${{ matrix.php }}, ${{ matrix.dependencies }})"
@@ -31,17 +25,9 @@ jobs:
         php: ['8.3', '8.4', '8.5']
         dependencies: [lowest, highest]
     steps:
-      - name: Checkout bundle
+      - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          path: json-api-symfony
-          persist-credentials: false
-
-      - name: Checkout core (haddowg/json-api)
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          repository: haddowg/json-api
-          path: json-api
           persist-credentials: false
 
       - name: Set up PHP
@@ -51,11 +37,19 @@ jobs:
           coverage: none
           tools: composer:v2
 
+      # Resolve the unpublished haddowg/json-api from GitHub (a global VCS
+      # repository, so the committed composer.json stays clean for local dev,
+      # where a global path repository symlinks a sibling checkout instead).
+      # Drop this and pin a tagged ^1.0 once core is published to Packagist.
+      - name: Configure Composer to resolve haddowg/json-api (dev-main)
+        run: |
+          composer config -g github-oauth.github.com "${{ secrets.GITHUB_TOKEN }}"
+          composer config -g repositories.haddowg-json-api '{"type":"vcs","url":"https://github.com/haddowg/json-api"}'
+
       - name: Install dependencies
         uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
         with:
           dependency-versions: ${{ matrix.dependencies }}
-          working-directory: json-api-symfony
 
       - name: Run tests
         run: composer test
@@ -67,17 +61,9 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Checkout bundle
+      - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          path: json-api-symfony
-          persist-credentials: false
-
-      - name: Checkout core (haddowg/json-api)
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          repository: haddowg/json-api
-          path: json-api
           persist-credentials: false
 
       - name: Set up PHP
@@ -87,10 +73,13 @@ jobs:
           coverage: none
           tools: composer:v2
 
+      - name: Configure Composer to resolve haddowg/json-api (dev-main)
+        run: |
+          composer config -g github-oauth.github.com "${{ secrets.GITHUB_TOKEN }}"
+          composer config -g repositories.haddowg-json-api '{"type":"vcs","url":"https://github.com/haddowg/json-api"}'
+
       - name: Install dependencies
         uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
-        with:
-          working-directory: json-api-symfony
 
       - name: Run PHPStan
         run: composer phpstan
@@ -102,17 +91,9 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Checkout bundle
+      - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          path: json-api-symfony
-          persist-credentials: false
-
-      - name: Checkout core (haddowg/json-api)
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          repository: haddowg/json-api
-          path: json-api
           persist-credentials: false
 
       - name: Set up PHP
@@ -122,10 +103,13 @@ jobs:
           coverage: none
           tools: composer:v2
 
+      - name: Configure Composer to resolve haddowg/json-api (dev-main)
+        run: |
+          composer config -g github-oauth.github.com "${{ secrets.GITHUB_TOKEN }}"
+          composer config -g repositories.haddowg-json-api '{"type":"vcs","url":"https://github.com/haddowg/json-api"}'
+
       - name: Install dependencies
         uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
-        with:
-          working-directory: json-api-symfony
 
       - name: Check coding standards
         run: composer cs-check
