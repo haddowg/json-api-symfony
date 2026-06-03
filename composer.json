@@ -22,7 +22,7 @@
     ],
     "require": {
         "php": "^8.3",
-        "haddowg/json-api": "*",
+        "haddowg/json-api": "dev-main",
         "psr/http-factory": "^1.0",
         "psr/http-message": "^2.0",
         "symfony/config": "^6.4 || ^7.0",
@@ -47,15 +47,6 @@
         "doctrine/orm": "Enables the reference Doctrine data provider/persister for zero-handler CRUD endpoints (^3.0).",
         "symfony/validator": "Enables translating JSON:API resource constraints into Symfony Validator rules for create/update validation (^6.4 || ^7.0)."
     },
-    "repositories": [
-        {
-            "type": "path",
-            "url": "../json-api",
-            "options": {
-                "symlink": true
-            }
-        }
-    ],
     "autoload": {
         "psr-4": {
             "haddowg\\JsonApiBundle\\": "src/"

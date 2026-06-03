@@ -33,19 +33,26 @@ validation, and a Doctrine data layer for spec-compliant
 
 ## Installation
 
-`haddowg/json-api` is not yet on Packagist. During co-development, clone it as a
-sibling directory (`../json-api`) — this repository's `composer.json` resolves it
-through a path repository:
+`haddowg/json-api` is not yet on Packagist, so this bundle requires it as
+`dev-main`. For local development, clone it as a sibling checkout (kept on its
+`main` branch) and register it as a **global** Composer path repository — that
+keeps the committed `composer.json` clean while symlinking your local core:
 
 ```
 Sites/
-├── json-api/            # the core library
+├── json-api/            # the core library (checked out on `main`)
 └── json-api-symfony/    # this bundle
 ```
 
 ```bash
+composer config -g repositories.haddowg-json-api \
+  '{"type":"path","url":"/absolute/path/to/json-api","options":{"symlink":true}}'
 composer install
 ```
+
+CI resolves `dev-main` straight from GitHub (a VCS repository) with no extra
+checkout. Once core is published to Packagist this becomes a normal `^1.0`
+dependency.
 
 ## Status & roadmap
 
