@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\DataProvider;
 
-use haddowg\JsonApi\Operation\QueryParameters;
-
 /**
  * The read-half data-source SPI: the storage-agnostic contract the
  * {@see \haddowg\JsonApiBundle\Operation\ReadOperationHandler} delegates to for
@@ -16,9 +14,11 @@ use haddowg\JsonApi\Operation\QueryParameters;
  * which type(s) a provider answers for. Writes (create/update/delete) land in a
  * separate persister SPI in a later phase; this interface stays read-only.
  *
- * {@see fetchCollection()} already accepts the parsed
- * {@see QueryParameters} so the signature is stable across the filter/sort/
- * pagination work of later phases, even though the Phase-0 read path ignores it.
+ * {@see fetchCollection()} receives a fully-resolved {@see CollectionCriteria}
+ * (declared filter/sort vocabularies, requested query parameters, pagination
+ * window) — the handler does the resolving, the provider only matches and
+ * executes, sharing the matching via {@see CriteriaApplier} so every provider
+ * agrees on the spec semantics and differs only in execution.
  */
 interface DataProviderInterface
 {
@@ -34,11 +34,14 @@ interface DataProviderInterface
     public function fetchOne(string $type, string $id): ?object;
 
     /**
-     * The collection of resources of `$type`. The parsed query parameters are
-     * passed for forward compatibility with later filter/sort/pagination work;
-     * a Phase-0 provider may ignore them.
+     * The collection of resources of `$type` satisfying `$criteria`: filtered
+     * and sorted per the requested parameters, windowed when the criteria carry
+     * a pagination window (in which case the result also carries the
+     * pre-window total).
      *
-     * @return iterable<object>
+     * @throws \haddowg\JsonApi\Exception\FilterParamUnrecognized when a requested filter key is not declared
+     * @throws \haddowg\JsonApi\Exception\SortingUnsupported      when sorting is requested but no sorts are declared
+     * @throws \haddowg\JsonApi\Exception\SortParamUnrecognized   when a requested sort field is not declared
      */
-    public function fetchCollection(string $type, QueryParameters $queryParameters): iterable;
+    public function fetchCollection(string $type, CollectionCriteria $criteria): CollectionResult;
 }
