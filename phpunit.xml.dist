@@ -10,6 +10,9 @@
          failOnRisky="true"
          failOnWarning="true"
          colors="true">
+    <extensions>
+        <bootstrap class="Zenstruck\Foundry\PHPUnit\FoundryExtension"/>
+    </extensions>
     <testsuites>
         <testsuite name="haddowg/json-api-symfony test suite">
             <directory>tests</directory>

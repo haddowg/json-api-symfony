@@ -14,5 +14,6 @@ final class Article
         public string $id,
         public string $title,
         public string $body,
+        public string $category = '',
     ) {}
 }
