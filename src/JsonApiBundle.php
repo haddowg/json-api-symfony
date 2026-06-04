@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
+use haddowg\JsonApiBundle\DependencyInjection\Compiler\DoctrineEntityMapPass;
 use haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceLocatorPass;
 use Symfony\Component\Config\Definition\Configurator\DefinitionConfigurator;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -67,13 +68,15 @@ final class JsonApiBundle extends AbstractBundle
 
         // #[AsJsonApiResource] also tags a class as a Resource (so an attribute on
         // a class that is not an AbstractResource subclass is still discovered),
-        // and its `type` override is recorded as a tag attribute for later phases.
+        // and its overrides (`type`, `server`, the Doctrine `entity` mapping) are
+        // recorded as tag attributes for the compiler passes to read.
         $builder->registerAttributeForAutoconfiguration(
             AsJsonApiResource::class,
             static function (Definition $definition, AsJsonApiResource $attribute): void {
                 $definition->addTag(self::RESOURCE_TAG, \array_filter([
                     'type' => $attribute->type,
                     'server' => $attribute->server,
+                    'entity' => $attribute->entity,
                 ], static fn(mixed $value): bool => $value !== null));
             },
         );
@@ -84,6 +87,7 @@ final class JsonApiBundle extends AbstractBundle
         parent::build($container);
 
         $container->addCompilerPass(new ResourceLocatorPass());
+        $container->addCompilerPass(new DoctrineEntityMapPass());
     }
 
     /**
