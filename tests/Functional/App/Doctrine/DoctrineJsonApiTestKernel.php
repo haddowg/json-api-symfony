@@ -74,24 +74,35 @@ final class DoctrineJsonApiTestKernel extends Kernel
             'router' => ['utf8' => true],
         ]);
 
+        $orm = [
+            'auto_generate_proxy_classes' => true,
+            'report_fields_where_declared' => true,
+            'auto_mapping' => false,
+            'mappings' => [
+                'JsonApiTestApp' => [
+                    'type' => 'attribute',
+                    'dir' => __DIR__,
+                    'prefix' => 'haddowg\JsonApiBundle\Tests\Functional\App\Doctrine',
+                    'is_bundle' => false,
+                ],
+            ],
+        ];
+
+        // Symfony 8 removed var-exporter's LazyGhostTrait, and Doctrine ORM
+        // then requires PHP >= 8.4 native lazy objects for its proxies. Set
+        // conditionally: the option only exists on DoctrineBundle versions new
+        // enough to support that stack, while the lowest supported deps
+        // (Symfony 6.4) still ship LazyGhost and predate the option.
+        if (!\trait_exists(\Symfony\Component\VarExporter\LazyGhostTrait::class)) {
+            $orm['enable_native_lazy_objects'] = true;
+        }
+
         $container->extension('doctrine', [
             'dbal' => [
                 'driver' => 'pdo_sqlite',
                 'memory' => true,
             ],
-            'orm' => [
-                'auto_generate_proxy_classes' => true,
-                'report_fields_where_declared' => true,
-                'auto_mapping' => false,
-                'mappings' => [
-                    'JsonApiTestApp' => [
-                        'type' => 'attribute',
-                        'dir' => __DIR__,
-                        'prefix' => 'haddowg\JsonApiBundle\Tests\Functional\App\Doctrine',
-                        'is_bundle' => false,
-                    ],
-                ],
-            ],
+            'orm' => $orm,
         ]);
 
         $container->extension('json_api', [
