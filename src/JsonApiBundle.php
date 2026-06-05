@@ -35,7 +35,11 @@ final class JsonApiBundle extends AbstractBundle
 
     /**
      * Tag applied to every {@see DataProviderInterface}. The data-provider
-     * registry reads it to resolve a provider per resource type.
+     * registry reads it to resolve a provider per resource type: providers are
+     * consulted in descending tag `priority` order (default `0`), first
+     * `supports()` match wins. The bundled Doctrine provider registers at
+     * `-128`, so an application provider shadows it for the types it supports
+     * without any priority configuration.
      */
     public const string DATA_PROVIDER_TAG = 'haddowg.json_api.data_provider';
 

@@ -1,0 +1,51 @@
+<?php
+
+declare(strict_types=1);
+
+namespace haddowg\JsonApiBundle\Tests\Functional\App\Doctrine;
+
+use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
+use haddowg\JsonApiBundle\DataProvider\CollectionResult;
+use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
+use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
+use haddowg\JsonApiBundle\Tests\Functional\App\Article;
+
+/**
+ * An application-style provider for `articles` registered alongside the
+ * Doctrine fallback: plain autoconfiguration, no explicit tag priority — the
+ * exact shape a user writes to take over one type. It serves a fixture set the
+ * database never contains, so any read it answers is attributable to it.
+ *
+ * @implements DataProviderInterface<Article>
+ */
+final class OverridingArticleProvider implements DataProviderInterface
+{
+    public const string TITLE = 'From the override provider';
+
+    /**
+     * @var InMemoryDataProvider<Article>
+     */
+    private readonly InMemoryDataProvider $inner;
+
+    public function __construct()
+    {
+        $this->inner = new InMemoryDataProvider('articles', [
+            '1' => new Article('1', self::TITLE, 'Not a database row.'),
+        ]);
+    }
+
+    public function supports(string $type): bool
+    {
+        return $type === 'articles';
+    }
+
+    public function fetchOne(string $type, string $id): ?Article
+    {
+        return $this->inner->fetchOne($type, $id);
+    }
+
+    public function fetchCollection(string $type, CollectionCriteria $criteria): CollectionResult
+    {
+        return $this->inner->fetchCollection($type, $criteria);
+    }
+}
