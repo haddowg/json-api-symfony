@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
+use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineExtensionInterface;
 use haddowg\JsonApiBundle\DependencyInjection\Compiler\DoctrineEntityMapPass;
 use haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceLocatorPass;
 use Symfony\Component\Config\Definition\Configurator\DefinitionConfigurator;
@@ -43,6 +44,14 @@ final class JsonApiBundle extends AbstractBundle
      */
     public const string DATA_PROVIDER_TAG = 'haddowg.json_api.data_provider';
 
+    /**
+     * Tag applied to every {@see DoctrineExtensionInterface}. The Doctrine
+     * provider applies every supporting extension to each query it builds, in
+     * descending tag `priority` order (default `0`), before the requested
+     * criteria.
+     */
+    public const string DOCTRINE_EXTENSION_TAG = 'haddowg.json_api.doctrine_extension';
+
     public function configure(DefinitionConfigurator $definition): void
     {
         $definition->rootNode()
@@ -69,6 +78,9 @@ final class JsonApiBundle extends AbstractBundle
 
         $builder->registerForAutoconfiguration(DataProviderInterface::class)
             ->addTag(self::DATA_PROVIDER_TAG);
+
+        $builder->registerForAutoconfiguration(DoctrineExtensionInterface::class)
+            ->addTag(self::DOCTRINE_EXTENSION_TAG);
 
         // #[AsJsonApiResource] also tags a class as a Resource (so an attribute on
         // a class that is not an AbstractResource subclass is still discovered),
