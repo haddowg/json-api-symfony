@@ -16,12 +16,12 @@ namespace haddowg\JsonApiBundle\DataProvider;
 final class DataProviderRegistry
 {
     /**
-     * @var list<DataProviderInterface>
+     * @var list<DataProviderInterface<object>>
      */
     private readonly array $providers;
 
     /**
-     * @param iterable<DataProviderInterface> $providers
+     * @param iterable<DataProviderInterface<object>> $providers
      */
     public function __construct(iterable $providers)
     {
@@ -31,6 +31,8 @@ final class DataProviderRegistry
     /**
      * The provider whose {@see DataProviderInterface::supports()} is true for
      * `$type`.
+     *
+     * @return DataProviderInterface<object>
      *
      * @throws \LogicException when no registered provider supports the type
      */

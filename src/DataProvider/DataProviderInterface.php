@@ -19,6 +19,14 @@ namespace haddowg\JsonApiBundle\DataProvider;
  * window) — the handler does the resolving, the provider only matches and
  * executes, sharing the matching via {@see CriteriaApplier} so every provider
  * agrees on the spec semantics and differs only in execution.
+ *
+ * `TEntity` is the domain-object type the provider yields — covariant, so a
+ * single-model provider (`DataProviderInterface<Article>`) is substitutable
+ * wherever a `DataProviderInterface<object>` is expected (the registry holds
+ * the heterogeneous set that way). A multi-type provider like the Doctrine one
+ * implements `DataProviderInterface<object>`.
+ *
+ * @template-covariant TEntity of object
  */
 interface DataProviderInterface
 {
@@ -30,6 +38,8 @@ interface DataProviderInterface
     /**
      * The single resource of `$type` with `$id`, or `null` when none exists
      * (the handler maps `null` to a JSON:API `404`).
+     *
+     * @return TEntity|null
      */
     public function fetchOne(string $type, string $id): ?object;
 
@@ -38,6 +48,8 @@ interface DataProviderInterface
      * and sorted per the requested parameters, windowed when the criteria carry
      * a pagination window (in which case the result also carries the
      * pre-window total).
+     *
+     * @return CollectionResult<TEntity>
      *
      * @throws \haddowg\JsonApi\Exception\FilterParamUnrecognized when a requested filter key is not declared
      * @throws \haddowg\JsonApi\Exception\SortingUnsupported      when sorting is requested but no sorts are declared

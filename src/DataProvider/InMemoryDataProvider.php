@@ -21,12 +21,17 @@ use haddowg\JsonApi\Resource\Sort\InMemory\ArraySortHandler;
  *
  * It lives in `src/` (not `tests/`) so it is reusable as a documented worked
  * example, mirroring how core ships its `InMemory\Array{Filter,Sort}Handler`.
- * One instance answers for a single `$type`.
+ * One instance answers for a single `$type`, so `TEntity` is inferred from the
+ * seed items at construction.
+ *
+ * @template TEntity of object
+ *
+ * @implements DataProviderInterface<TEntity>
  */
 final class InMemoryDataProvider implements DataProviderInterface
 {
     /**
-     * @var array<string, object>
+     * @var array<string, TEntity>
      */
     private readonly array $itemsById;
 
@@ -37,7 +42,7 @@ final class InMemoryDataProvider implements DataProviderInterface
     private readonly ArraySortHandler $sortHandler;
 
     /**
-     * @param iterable<int|string, object> $items objects keyed by id
+     * @param iterable<int|string, TEntity> $items objects keyed by id
      */
     public function __construct(
         private readonly string $type,
@@ -66,7 +71,7 @@ final class InMemoryDataProvider implements DataProviderInterface
 
     public function fetchCollection(string $type, CollectionCriteria $criteria): CollectionResult
     {
-        /** @var list<object> $items */
+        /** @var list<TEntity> $items */
         $items = $this->applier->apply(
             $criteria,
             \array_values($this->itemsById),

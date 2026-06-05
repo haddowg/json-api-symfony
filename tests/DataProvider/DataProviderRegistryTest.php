@@ -35,8 +35,12 @@ final class DataProviderRegistryTest extends TestCase
         $registry->forType('comments');
     }
 
+    /**
+     * @return DataProviderInterface<object>
+     */
     private function provider(string $type): DataProviderInterface
     {
+        /** @implements DataProviderInterface<object> */
         return new class ($type) implements DataProviderInterface {
             public function __construct(private readonly string $type) {}
 

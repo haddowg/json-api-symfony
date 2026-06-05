@@ -29,6 +29,11 @@ use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
  * The `type → entity-class` map is populated by the
  * {@see \haddowg\JsonApiBundle\DependencyInjection\Compiler\DoctrineEntityMapPass}
  * from each resource's `#[AsJsonApiResource(entity: …)]` declaration.
+ *
+ * One instance serves every entity-mapped type — a different entity class per
+ * type — so `TEntity` cannot narrow past `object`.
+ *
+ * @implements DataProviderInterface<object>
  */
 final class DoctrineDataProvider implements DataProviderInterface
 {
