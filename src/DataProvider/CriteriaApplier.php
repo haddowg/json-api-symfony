@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\DataProvider;
 use haddowg\JsonApi\Exception\FilterParamUnrecognized;
 use haddowg\JsonApi\Exception\SortingUnsupported;
 use haddowg\JsonApi\Exception\SortParamUnrecognized;
+use haddowg\JsonApi\Resource\Filter\FilterDefaults;
 use haddowg\JsonApi\Resource\Filter\FilterHandlerInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Sort\SortDirective;
@@ -20,12 +21,17 @@ use haddowg\JsonApi\Resource\Sort\SortInterface;
  * through the provider's core filter/sort handlers, threading the query value
  * through (`TQuery` is a `QueryBuilder` for Doctrine, a `list` in memory).
  *
- * Every provider runs this same matching, so the spec semantics — unknown
- * filter key → 400 {@see FilterParamUnrecognized}, sorting against an empty
- * sort vocabulary → 400 {@see SortingUnsupported}, unknown sort field → 400
- * {@see SortParamUnrecognized}, `-` prefix → descending — are decided once,
- * and a provider only ever differs in *execution*. That is what keeps the
- * in-memory provider an attributable conformance witness for the Doctrine one.
+ * Every provider runs this same matching, so the spec semantics — declared
+ * filter defaults folded into the requested map (absent key → the filter's
+ * declared default, a requested key always wins) via core's
+ * {@see FilterDefaults}, unknown filter key → 400 {@see FilterParamUnrecognized},
+ * sorting against an empty sort vocabulary → 400 {@see SortingUnsupported},
+ * unknown sort field → 400 {@see SortParamUnrecognized}, `-` prefix →
+ * descending — are decided once, and a provider only ever differs in
+ * *execution*. That is what keeps the in-memory provider an attributable
+ * conformance witness for the Doctrine one. Because defaults are folded before
+ * the filters reach a handler, they also narrow the pre-window `COUNT` of a
+ * paginated fetch, so totals describe the defaulted collection.
  */
 final class CriteriaApplier
 {
@@ -71,7 +77,14 @@ final class CriteriaApplier
      */
     private function applyFilters(CollectionCriteria $criteria, mixed $query, FilterHandlerInterface $handler): mixed
     {
-        foreach ($criteria->queryParameters->filter as $key => $value) {
+        // Fold each declared filter's default into the requested map first: an
+        // absent key takes its filter's declared default, a requested key wins.
+        // A defaulted key is always declared (the default came from a declared
+        // filter), so the unrecognised-key guard below only ever fires for a
+        // genuinely undeclared requested key.
+        $requested = FilterDefaults::apply($criteria->queryParameters->filter, $criteria->filters);
+
+        foreach ($requested as $key => $value) {
             $filter = $this->filterFor($criteria->filters, (string) $key)
                 ?? throw new FilterParamUnrecognized((string) $key);
 
