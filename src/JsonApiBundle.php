@@ -76,6 +76,10 @@ final class JsonApiBundle extends AbstractBundle
             ->children()
                 ->scalarNode('base_uri')->defaultValue('')->end()
                 ->scalarNode('version')->defaultValue('1.1')->end()
+                ->booleanNode('schema_validation')
+                    ->info('Validate write bodies against the JSON:API JSON Schema (requires opis/json-schema). A dev/CI structural linter, separate from the always-on Symfony Validator bridge.')
+                    ->defaultFalse()
+                ->end()
             ->end();
     }
 
@@ -88,6 +92,26 @@ final class JsonApiBundle extends AbstractBundle
         $builder->setParameter('haddowg_json_api.version', $this->stringConfig($config, 'version', '1.1'));
 
         $container->import(\dirname(__DIR__) . '/config/services.php');
+
+        // The optional opis structural linter: registered (so the RequestListener
+        // picks it up) only when explicitly enabled. opis/json-schema is a
+        // `suggest` dependency, so a misconfiguration (enabled without it) fails
+        // the build with a clear message rather than at the first write.
+        if (($config['schema_validation'] ?? false) === true) {
+            if (!\class_exists(\Opis\JsonSchema\Validator::class)) {
+                throw new \LogicException(
+                    'json_api.schema_validation is enabled but opis/json-schema is not installed; '
+                    . 'require opis/json-schema (dev/CI) to use the structural document linter.',
+                );
+            }
+
+            $services = $container->services();
+            $services->set(\haddowg\JsonApi\Validation\VendoredSchemaProvider::class);
+            $services->set(\haddowg\JsonApi\Validation\DocumentValidator::class)
+                ->args([
+                    \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApi\Validation\VendoredSchemaProvider::class),
+                ]);
+        }
 
         // Any service extending AbstractResource is auto-tagged for registration;
         // ResourceLocatorPass keys them by class-string for the Server factory.

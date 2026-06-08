@@ -38,6 +38,7 @@
         "doctrine/orm": "^3.0",
         "egulias/email-validator": "^4.0",
         "friendsofphp/php-cs-fixer": "^3.64",
+        "opis/json-schema": "^2.6",
         "phpstan/phpstan": "^2.0",
         "phpunit/phpunit": "^12.0",
         "symfony/browser-kit": "^6.4 || ^7.0",
@@ -48,7 +49,8 @@
     "suggest": {
         "doctrine/orm": "Enables the reference Doctrine data provider/persister for zero-handler CRUD endpoints (^3.0).",
         "symfony/validator": "Enables translating JSON:API resource constraints into Symfony Validator rules for create/update validation (^6.4 || ^7.0).",
-        "egulias/email-validator": "Enables strict (RFC 5322) translation of the email.strict constraint; without it the Email rule falls back to Symfony's HTML5 mode (^4.0)."
+        "egulias/email-validator": "Enables strict (RFC 5322) translation of the email.strict constraint; without it the Email rule falls back to Symfony's HTML5 mode (^4.0).",
+        "opis/json-schema": "Enables the optional dev/CI structural document linter (json_api.schema_validation) that validates write bodies against the JSON:API JSON Schema (^2.6)."
     },
     "autoload": {
         "psr-4": {
