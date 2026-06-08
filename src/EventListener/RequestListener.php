@@ -9,6 +9,7 @@ use haddowg\JsonApi\Operation\OperationContext;
 use haddowg\JsonApi\Operation\OperationFactory;
 use haddowg\JsonApi\Request\JsonApiRequest;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Validation\DocumentValidator;
 use haddowg\JsonApiBundle\Operation\TargetResolver;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use Symfony\Bridge\PsrHttpMessage\Factory\PsrHttpFactory;
@@ -49,6 +50,7 @@ final class RequestListener
         private readonly TargetResolver $targetResolver,
         private readonly PsrHttpFactory $psrHttpFactory,
         private readonly OperationFactory $operationFactory = new OperationFactory(),
+        private readonly ?DocumentValidator $schemaValidator = null,
     ) {}
 
     public function onKernelRequest(RequestEvent $event): void
@@ -82,6 +84,7 @@ final class RequestListener
         if (\in_array($jsonApiRequest->getMethod(), ['POST', 'PATCH'], true)) {
             $validator->validateJsonBody($jsonApiRequest);
             $validator->validateTopLevelMembers($jsonApiRequest);
+            $this->validateSchema($jsonApiRequest);
         }
 
         $operation = $this->operationFactory->fromRequest(
@@ -95,5 +98,24 @@ final class RequestListener
         $request->attributes->set(self::RESPONSE_ATTRIBUTE, $response);
         $request->attributes->set(self::SERVER_ATTRIBUTE, $server);
         $request->attributes->set(self::PSR_REQUEST_ATTRIBUTE, $jsonApiRequest);
+    }
+
+    /**
+     * Runs the optional opis structural linter over the parsed write body, when
+     * `json_api.schema_validation` wired one. A schema failure throws core's
+     * {@see \haddowg\JsonApi\Exception\RequestBodyInvalidJsonApi} (`400`), which
+     * the exception listener renders. This is a belt-and-braces document-shape
+     * check, separate from the semantic Symfony Validator bridge (`422`).
+     */
+    private function validateSchema(JsonApiRequestInterface $request): void
+    {
+        if ($this->schemaValidator === null) {
+            return;
+        }
+
+        $document = $request->getParsedBody();
+        if ($document !== null) {
+            $this->schemaValidator->validateRequest($document);
+        }
     }
 }

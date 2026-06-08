@@ -114,8 +114,11 @@ return static function (ContainerConfigurator $container): void {
     // --- Kernel listeners -----------------------------------------------------
 
     // RequestListener runs after Symfony's RouterListener (priority 32) so route
-    // defaults (_jsonapi_type/_jsonapi_server) are populated first.
+    // defaults (_jsonapi_type/_jsonapi_server) are populated first. Its schema
+    // validator is null unless json_api.schema_validation registered the optional
+    // opis DocumentValidator.
     $services->set(RequestListener::class)
+        ->arg('$schemaValidator', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApi\Validation\DocumentValidator::class)->nullOnInvalid())
         ->tag('kernel.event_listener', ['event' => 'kernel.request', 'method' => 'onKernelRequest', 'priority' => 16]);
 
     $services->set(ViewListener::class)
