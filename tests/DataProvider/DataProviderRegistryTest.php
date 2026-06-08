@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\DataProvider;
 
-use haddowg\JsonApi\Operation\QueryParameters;
+use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
+use haddowg\JsonApiBundle\DataProvider\CollectionResult;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
 use PHPUnit\Framework\Attributes\Test;
@@ -34,8 +35,12 @@ final class DataProviderRegistryTest extends TestCase
         $registry->forType('comments');
     }
 
+    /**
+     * @return DataProviderInterface<object>
+     */
     private function provider(string $type): DataProviderInterface
     {
+        /** @implements DataProviderInterface<object> */
         return new class ($type) implements DataProviderInterface {
             public function __construct(private readonly string $type) {}
 
@@ -49,9 +54,9 @@ final class DataProviderRegistryTest extends TestCase
                 return null;
             }
 
-            public function fetchCollection(string $type, QueryParameters $queryParameters): iterable
+            public function fetchCollection(string $type, CollectionCriteria $criteria): CollectionResult
             {
-                return [];
+                return new CollectionResult([]);
             }
         };
     }

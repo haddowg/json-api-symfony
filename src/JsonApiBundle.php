@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
+use haddowg\JsonApiBundle\DependencyInjection\Compiler\DoctrineEntityMapPass;
 use haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceLocatorPass;
 use Symfony\Component\Config\Definition\Configurator\DefinitionConfigurator;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -34,7 +35,11 @@ final class JsonApiBundle extends AbstractBundle
 
     /**
      * Tag applied to every {@see DataProviderInterface}. The data-provider
-     * registry reads it to resolve a provider per resource type.
+     * registry reads it to resolve a provider per resource type: providers are
+     * consulted in descending tag `priority` order (default `0`), first
+     * `supports()` match wins. The bundled Doctrine provider registers at
+     * `-128`, so an application provider shadows it for the types it supports
+     * without any priority configuration.
      */
     public const string DATA_PROVIDER_TAG = 'haddowg.json_api.data_provider';
 
@@ -67,13 +72,15 @@ final class JsonApiBundle extends AbstractBundle
 
         // #[AsJsonApiResource] also tags a class as a Resource (so an attribute on
         // a class that is not an AbstractResource subclass is still discovered),
-        // and its `type` override is recorded as a tag attribute for later phases.
+        // and its overrides (`type`, `server`, the Doctrine `entity` mapping) are
+        // recorded as tag attributes for the compiler passes to read.
         $builder->registerAttributeForAutoconfiguration(
             AsJsonApiResource::class,
             static function (Definition $definition, AsJsonApiResource $attribute): void {
                 $definition->addTag(self::RESOURCE_TAG, \array_filter([
                     'type' => $attribute->type,
                     'server' => $attribute->server,
+                    'entity' => $attribute->entity,
                 ], static fn(mixed $value): bool => $value !== null));
             },
         );
@@ -84,6 +91,7 @@ final class JsonApiBundle extends AbstractBundle
         parent::build($container);
 
         $container->addCompilerPass(new ResourceLocatorPass());
+        $container->addCompilerPass(new DoctrineEntityMapPass());
     }
 
     /**

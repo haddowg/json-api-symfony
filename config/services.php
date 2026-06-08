@@ -120,12 +120,20 @@ return static function (ContainerConfigurator $container): void {
 
     // --- Doctrine reference provider (only when doctrine/orm is installed) -----
 
-    if (\class_exists(\Doctrine\ORM\EntityManagerInterface::class)) {
+    // interface_exists, not class_exists: EntityManagerInterface is an interface.
+    // The DoctrineEntityMapPass removes this definition again when no resource
+    // maps an entity, so non-Doctrine applications never reference the (absent)
+    // EntityManagerInterface service.
+    if (\interface_exists(\Doctrine\ORM\EntityManagerInterface::class)) {
+        // priority -128: the reference provider is always the *fallback* — it
+        // supports every entity-mapped type, so an application provider at the
+        // default priority (0) shadows it for the types it supports without any
+        // priority configuration.
         $services->set(DoctrineDataProvider::class)
             ->args([
                 '$entityManager' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\Doctrine\ORM\EntityManagerInterface::class),
                 '$entityClassByType' => [],
             ])
-            ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+            ->tag(JsonApiBundle::DATA_PROVIDER_TAG, ['priority' => -128]);
     }
 };

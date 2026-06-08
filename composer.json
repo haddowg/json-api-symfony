@@ -41,7 +41,8 @@
         "phpunit/phpunit": "^12.0",
         "symfony/browser-kit": "^6.4 || ^7.0",
         "symfony/framework-bundle": "^6.4 || ^7.0",
-        "symfony/validator": "^6.4 || ^7.0"
+        "symfony/validator": "^6.4 || ^7.0",
+        "zenstruck/foundry": "^2.10"
     },
     "suggest": {
         "doctrine/orm": "Enables the reference Doctrine data provider/persister for zero-handler CRUD endpoints (^3.0).",

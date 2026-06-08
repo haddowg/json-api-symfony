@@ -81,13 +81,30 @@ decision, then 1–3 sentences of *why*). The ADRs already written: `0001`–`00
 
 ## Phases (vertical slices, Doctrine-backed from Phase 1)
 
-0. Skeleton + thinnest read (`GET /{type}`, `/{type}/{id}`) — forces core's lazy
-   resolver + lifecycle-logic extraction + a PSR-7-free render seam.
-1. Full read (collections, sparse fieldsets, includes, sort, filters, pagination)
-   — Doctrine Filter/Sort handlers; first filter/sort vocab audit vs a real
-   QueryBuilder.
-2. Writes (POST/PATCH/DELETE) + the Symfony Validator bridge — constraint-vocab
-   completeness audit.
+> **Current status (2026-06-03): Phase 1 implemented** (branch
+> `feat/phase-1-full-read`). Full read queries run end-to-end on **both**
+> providers: collection fetches are criteria-driven (ADR 0006) over the reshaped
+> `DataProvider` SPI (`CollectionCriteria` → `CollectionResult`, shared
+> `CriteriaApplier` matching), the Doctrine provider pushes filter/sort/window
+> down to a QueryBuilder, and the type→entity mapping is declared via
+> `#[AsJsonApiResource(entity: …)]` (ADR 0005). Requires core's
+> pagination-window seam + `FilterParamUnrecognized` + the composite
+> sort-handler contract + the ASCII-case-insensitive `like` reference semantics
+> (core ADRs 0015/0016, branch `feat/pagination-window-seam` — PR/tag pending).
+> Functional acceptance:
+> `ReadQueryConformanceTestCase` runs identical assertions against the in-memory
+> kernel and a Doctrine kernel (in-memory SQLite, seeded through
+> `zenstruck/foundry` factories). **Phase 2 is next.**
+
+0. ✅ Skeleton + thinnest read (`GET /{type}`, `/{type}/{id}`) — forced core's lazy
+   resolver + lifecycle-logic extraction + a PSR-7-free render seam. **Done.**
+1. ✅ Full read (collections, sparse fieldsets, sort, filters, pagination) —
+   forced core's `PaginatorInterface::window()` push-down seam +
+   `FilterParamUnrecognized`; Doctrine filter/sort handlers audited vs a real
+   QueryBuilder. `include` is deferred to Phase 3 with relationships (no
+   relations exist to include yet). **Done.**
+2. **(next)** Writes (POST/PATCH/DELETE) + the Symfony Validator bridge —
+   constraint-vocab completeness audit.
 3. Relationships (related + relationship endpoints + mutations; compound includes).
 4. Capstone: the generic zero-handler CRUD engine over the SPI.
 5. v1 consolidation: docs, example app, and the core public-API surface review

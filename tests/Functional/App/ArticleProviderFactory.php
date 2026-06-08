@@ -13,11 +13,16 @@ use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
  */
 final class ArticleProviderFactory
 {
+    /**
+     * @return InMemoryDataProvider<Article>
+     */
     public static function create(): InMemoryDataProvider
     {
-        return new InMemoryDataProvider('articles', [
-            '1' => new Article('1', 'JSON:API in PHP', 'A worked example.'),
-            '2' => new Article('2', 'Second article', 'Another one.'),
-        ]);
+        $articles = [];
+        foreach (ArticleFixtures::data() as $id => $article) {
+            $articles[(string) $id] = new Article((string) $id, $article['title'], $article['body'], $article['category']);
+        }
+
+        return new InMemoryDataProvider('articles', $articles);
     }
 }
