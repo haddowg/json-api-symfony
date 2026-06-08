@@ -19,6 +19,7 @@ use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
+use haddowg\JsonApiBundle\Validation\ResourceValidator;
 
 /**
  * The generic CRUD handler the {@see \haddowg\JsonApiBundle\Server\ServerFactory}
@@ -55,6 +56,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
     public function __construct(
         private readonly DataProviderRegistry $providers,
         private readonly DataPersisterRegistry $persisters,
+        private readonly ?ResourceValidator $validator = null,
     ) {}
 
     public function handle(\haddowg\JsonApi\Operation\JsonApiOperationInterface $operation): DataResponse|NoContentResponse|ErrorResponse
@@ -118,6 +120,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $server = $this->server($operation->context());
         $type = $operation->target()->type;
 
+        $this->validate($server, $type, $operation->body(), creating: true);
+
         $persister = $this->persisters->forType($type);
         $serializer = $server->serializerFor($type);
 
@@ -142,6 +146,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return ErrorResponse::fromException(new ResourceNotFound());
         }
 
+        $this->validate($server, $type, $operation->body(), creating: false);
+
         $serializer = $server->serializerFor($type);
 
         $entity = $server->hydratorFor($type)->hydrate($operation->body(), $entity);
@@ -165,6 +171,27 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $this->persisters->forType($type)->delete($type, $entity);
 
         return NoContentResponse::create();
+    }
+
+    /**
+     * Runs the Symfony Validator bridge over the request document, when one is
+     * wired (it is optional — `symfony/validator` is a `suggest` dependency). A
+     * bare serializer/hydrator pair declares no constraints, so there is nothing
+     * to validate.
+     */
+    private function validate(Server $server, string $type, JsonApiRequestInterface $body, bool $creating): void
+    {
+        if ($this->validator === null) {
+            return;
+        }
+
+        try {
+            $resource = $server->resources()->resourceFor($type);
+        } catch (NoResourceRegistered) {
+            return;
+        }
+
+        $this->validator->validate($resource, $body, $creating);
     }
 
     private function server(OperationContext $context): Server

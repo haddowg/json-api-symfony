@@ -4,10 +4,6 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
-use Doctrine\ORM\EntityManagerInterface;
-use Doctrine\ORM\Tools\SchemaTool;
-use haddowg\JsonApiBundle\Tests\Functional\App\ArticleFixtures;
-use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\ArticleEntityFactory;
 use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\DoctrineJsonApiTestKernel;
 
 /**
@@ -20,27 +16,10 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\DoctrineJsonApiTestKerne
  */
 final class DoctrineWriteTest extends WriteConformanceTestCase
 {
+    use SeedsDoctrineArticles;
+
     protected static function getKernelClass(): string
     {
         return DoctrineJsonApiTestKernel::class;
-    }
-
-    protected function afterBoot(): void
-    {
-        $entityManager = static::getContainer()->get('doctrine.orm.entity_manager');
-        \assert($entityManager instanceof EntityManagerInterface);
-
-        $schemaTool = new SchemaTool($entityManager);
-        $schemaTool->createSchema($entityManager->getMetadataFactory()->getAllMetadata());
-
-        ArticleEntityFactory::createSequence(
-            \array_map(
-                static fn(int|string $id, array $article): array => ['id' => (string) $id, ...$article],
-                \array_keys(ArticleFixtures::data()),
-                \array_values(ArticleFixtures::data()),
-            ),
-        );
-
-        $entityManager->clear();
     }
 }
