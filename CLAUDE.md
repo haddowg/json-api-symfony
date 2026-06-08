@@ -77,33 +77,39 @@ at `~/.claude/projects/-Users-gregory-haddow-Sites-json-api/memory/json-api-symf
 
 Record bundle architecture decisions as ADRs under `docs/adr/` — follow
 [`docs/adr/ADR-FORMAT.md`](docs/adr/ADR-FORMAT.md) (a short title stating the
-decision, then 1–3 sentences of *why*). The ADRs already written: `0001`–`0004`.
+decision, then 1–3 sentences of *why*). The ADRs already written: `0001`–`0013`.
 
 ## Phases (vertical slices, Doctrine-backed from Phase 1)
 
-> **Current status (2026-06-08): Phase 1 merged to `main`** (PRs #1–#4). Full
-> read queries run end-to-end on **both** providers: collection fetches are
-> criteria-driven (ADR 0006) over the reshaped `DataProvider` SPI
-> (`CollectionCriteria` → `CollectionResult`, shared `CriteriaApplier`
-> matching, generic over the entity type), the Doctrine provider pushes
-> filter/sort/window down to a QueryBuilder, and the type→entity mapping is
-> declared via `#[AsJsonApiResource(entity: …)]` (ADR 0005). Provider
-> resolution is priority-ordered first-match with the Doctrine provider as the
-> `-128` fallback (ADR 0007). Two query-shaping seams landed on top of the base
-> read surface: a tagged `DoctrineExtensionInterface` for base constraints the
-> client cannot undo (applied before criteria, carries a writes-ready
-> `QueryPurpose`; ADR 0008), and overridable **filter defaults** folded once in
-> the shared `CriteriaApplier` so both providers honour them (ADR 0009,
-> consuming core's `FilterDefaults` / ADR 0017). Built on core's
-> pagination-window seam + `FilterParamUnrecognized` + composite sort-handler +
-> ASCII-case-insensitive `like` (core ADRs 0015/0016) — all merged to core
-> `main`; the bundle resolves core as `dev-main` and **stays there through all
-> of pre-1.0** (no intermediate `0.x` tag pin — the core pin to `^1.0` happens
-> only at v1; see the `core-dependency-stays-on-dev-main-until-v1` bundle
-> auto-memory). Functional acceptance: `ReadQueryConformanceTestCase` (+ the
-> filter-default and Doctrine-extension conformance pairs) runs identical
-> assertions against the in-memory kernel and a Doctrine kernel (in-memory
-> SQLite, seeded through `zenstruck/foundry` factories). **Phase 2 is next.**
+> **Current status (2026-06-08): Phase 2 merged to `main`** (PRs #6–#8; Phase 1
+> = #1–#4). Resource writes (`POST /{type}`, `PATCH`/`DELETE` `/{type}/{id}`) run
+> end-to-end on **both** providers over a new **`DataPersister` SPI** — the write
+> twin of `DataProvider`: per-type first-match resolution with the reference
+> Doctrine persister as the `-128` fallback and an in-memory witness sharing one
+> `InMemoryStore` with the read provider (so a write is immediately readable);
+> entities flow as `object` and the SPI carries `instantiate()` since the
+> persister owns the storage mapping (ADR 0010). The read handler grew
+> create/update/delete arms and became the single **`CrudOperationHandler`**:
+> resolve persister, drive core's per-type hydrator, commit, render `201`+Location
+> / `200` / `204` (ADR 0011). A first-class **Symfony Validator bridge**
+> translates core's constraint vocabulary (declared metadata core never executes)
+> into Symfony rules, validates the document **before hydration**, and renders
+> violations as `422` with `source.pointer`; it is **optional** (`symfony/validator`
+> is `suggest`), resolves `Required`/`Nullable` by create/update `Context`, and
+> exposes an `$id`-keyed `Custom` extension point (ADR 0012). An **optional opis
+> structural linter** (`json_api.schema_validation`, off by default) validates
+> write bodies against the JSON:API JSON Schema → `400`, separate from the
+> semantic `422` bridge (ADR 0013). Built on two core changes — error-document
+> status fidelity (a uniform `422` bag no longer collapses to `400`; core #25) and
+> a settable response status + `NoContentResponse` for `201`/`204` (core #26),
+> both merged to core `main`; the bundle stays on `dev-main` through pre-1.0 (see
+> the `core-dependency-stays-on-dev-main-until-v1` bundle auto-memory). Functional
+> acceptance: `WriteConformanceTestCase` + `ValidationConformanceTestCase` (+ a
+> `SchemaValidationTest`) run identical assertions against the in-memory and
+> Doctrine-sqlite kernels. **Deferred to a follow-up** (loud, ADR 0012): the
+> closure-based `When` and the date/timezone constraint translations; and the core
+> *vocabulary gaps* the bridge surfaced for the v1 review — no cross-field rule,
+> no `Valid`-style cascade, no `UniqueEntity`. **Phase 3 (relationships) is next.**
 
 0. ✅ Skeleton + thinnest read (`GET /{type}`, `/{type}/{id}`) — forced core's lazy
    resolver + lifecycle-logic extraction + a PSR-7-free render seam. **Done.**
@@ -112,9 +118,16 @@ decision, then 1–3 sentences of *why*). The ADRs already written: `0001`–`00
    `FilterParamUnrecognized`; Doctrine filter/sort handlers audited vs a real
    QueryBuilder. `include` is deferred to Phase 3 with relationships (no
    relations exist to include yet). **Done.**
-2. **(next)** Writes (POST/PATCH/DELETE) + the Symfony Validator bridge —
-   constraint-vocab completeness audit.
-3. Relationships (related + relationship endpoints + mutations; compound includes).
+2. ✅ Writes (POST/PATCH/DELETE) + the Symfony Validator bridge — forced core's
+   error-document status fidelity + settable response status/`NoContentResponse`;
+   constraint-vocab completeness audited (mechanical set translated; `When` +
+   date/timezone deferred; cross-field / `Valid`-cascade / `UniqueEntity` gaps
+   recorded for v1). **Done.**
+3. **(next)** Relationships (related + relationship endpoints + mutations; compound
+   includes). Entry notes: `AbstractResource` does not implement core's
+   `UpdateRelationshipHydratorInterface`, and `FullReplacementProhibited` /
+   `RemovalProhibited` are defined-but-never-thrown — relationship-endpoint
+   hydration is the first core gap to close.
 4. Capstone: the generic zero-handler CRUD engine over the SPI.
 5. v1 consolidation: docs, example app, and the core public-API surface review
    with this bundle as the integration witness.
