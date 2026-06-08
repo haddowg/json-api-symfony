@@ -17,6 +17,10 @@ use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Server\ResourceLocator;
 use haddowg\JsonApiBundle\Server\ServerFactory;
 use haddowg\JsonApiBundle\Server\ServerProvider;
+use haddowg\JsonApiBundle\Validation\ConstraintTranslator;
+use haddowg\JsonApiBundle\Validation\JsonPointerBuilder;
+use haddowg\JsonApiBundle\Validation\ResourceValidator;
+use haddowg\JsonApiBundle\Validation\StrictEmailConstraintTranslator;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 
 /*
@@ -75,7 +79,10 @@ return static function (ContainerConfigurator $container): void {
 
     // --- Operations + data providers -----------------------------------------
 
-    $services->set(CrudOperationHandler::class);
+    // The validator argument is optional: it resolves to the ResourceValidator
+    // only when the Symfony Validator bridge is wired (below), else null.
+    $services->set(CrudOperationHandler::class)
+        ->arg('$validator', \Symfony\Component\DependencyInjection\Loader\Configurator\service(ResourceValidator::class)->nullOnInvalid());
 
     // Core's stateless verb x target-shape dispatch factory; autowired into the
     // RequestListener so the bundle reuses core's operation-construction decision.
@@ -154,5 +161,24 @@ return static function (ContainerConfigurator $container): void {
                 '$entityClassByType' => [],
             ])
             ->tag(JsonApiBundle::DATA_PERSISTER_TAG, ['priority' => -128]);
+    }
+
+    // --- Symfony Validator bridge (only when symfony/validator is installed) ---
+
+    // symfony/validator is a `suggest` dependency: without it the bridge stays
+    // absent and the CrudOperationHandler's optional validator is null, so writes
+    // run unvalidated. With it, the ResourceValidator translates each resource's
+    // declared constraints to Symfony rules and renders violations as 422s.
+    if (\interface_exists(\Symfony\Component\Validator\Validator\ValidatorInterface::class)) {
+        $services->set(JsonPointerBuilder::class);
+
+        // The one Custom translator core needs (`email.strict`); autoconfigured to
+        // the custom-translator tag. Applications add their own the same way.
+        $services->set(StrictEmailConstraintTranslator::class);
+
+        $services->set(ConstraintTranslator::class)
+            ->arg('$customTranslators', \Symfony\Component\DependencyInjection\Loader\Configurator\tagged_iterator(JsonApiBundle::CUSTOM_CONSTRAINT_TRANSLATOR_TAG));
+
+        $services->set(ResourceValidator::class);
     }
 };
