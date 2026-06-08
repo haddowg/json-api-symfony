@@ -16,15 +16,16 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Article;
  * exact shape a user writes to take over one type. It serves a fixture set the
  * database never contains, so any read it answers is attributable to it.
  *
- * @implements DataProviderInterface<Article>
+ * It delegates to an {@see InMemoryDataProvider}, so it takes that provider's
+ * object-typed reads (like the reference Doctrine provider, which is also
+ * `DataProviderInterface<object>`).
+ *
+ * @implements DataProviderInterface<object>
  */
 final class OverridingArticleProvider implements DataProviderInterface
 {
     public const string TITLE = 'From the override provider';
 
-    /**
-     * @var InMemoryDataProvider<Article>
-     */
     private readonly InMemoryDataProvider $inner;
 
     public function __construct()
@@ -39,7 +40,7 @@ final class OverridingArticleProvider implements DataProviderInterface
         return $type === 'articles';
     }
 
-    public function fetchOne(string $type, string $id): ?Article
+    public function fetchOne(string $type, string $id): ?object
     {
         return $this->inner->fetchOne($type, $id);
     }

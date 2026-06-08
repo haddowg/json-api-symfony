@@ -6,7 +6,7 @@ namespace haddowg\JsonApiBundle\DataProvider;
 
 /**
  * Resolves the {@see DataProviderInterface} for a resource type from the tagged
- * provider services. The {@see \haddowg\JsonApiBundle\Operation\ReadOperationHandler}
+ * provider services. The {@see \haddowg\JsonApiBundle\Operation\CrudOperationHandler}
  * asks it for a provider, then calls `fetchOne()` / `fetchCollection()`.
  *
  * Resolution is first-`supports()`-match over the injected iteration order. The

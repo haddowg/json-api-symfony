@@ -11,7 +11,7 @@ use haddowg\JsonApi\Resource\Sort\SortInterface;
 
 /**
  * Everything a {@see DataProviderInterface} needs to answer a collection fetch,
- * resolved by the {@see \haddowg\JsonApiBundle\Operation\ReadOperationHandler}
+ * resolved by the {@see \haddowg\JsonApiBundle\Operation\CrudOperationHandler}
  * from the operation and the resource declaration so providers stay decoupled
  * from core's `AbstractResource` API:
  *

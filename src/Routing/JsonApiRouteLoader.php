@@ -15,8 +15,9 @@ use Symfony\Component\Routing\RouteCollection;
 
 /**
  * A Symfony route loader for the custom `type: jsonapi` resource. For every
- * registered resource type it auto-registers the Phase-0 read endpoint pair:
- * `GET /{type}` (collection) and `GET /{type}/{id}` (single).
+ * registered resource type it auto-registers the standard resource endpoint set:
+ * `GET /{type}` (collection) and `GET`/`PATCH`/`DELETE` `/{type}/{id}` (single),
+ * plus `POST /{type}` (create). Relationship endpoints arrive in a later phase.
  *
  * Concrete per-type paths are emitted (one literal path per type) rather than a
  * single parametric `/{type}` catch-all, so the router natively `404`s unknown
@@ -60,14 +61,32 @@ final class JsonApiRouteLoader extends Loader
                 ExceptionListener::ROUTE_MARKER => true,
             ];
 
+            $collectionPath = '/' . $resourceType;
+            $resourcePath = $collectionPath . '/{id}';
+
             $routes->add(
                 \sprintf('jsonapi.%s.index', $resourceType),
-                new Route('/' . $resourceType, $defaults, methods: ['GET']),
+                new Route($collectionPath, $defaults, methods: ['GET']),
+            );
+
+            $routes->add(
+                \sprintf('jsonapi.%s.create', $resourceType),
+                new Route($collectionPath, $defaults, methods: ['POST']),
             );
 
             $routes->add(
                 \sprintf('jsonapi.%s.show', $resourceType),
-                new Route('/' . $resourceType . '/{id}', $defaults, methods: ['GET']),
+                new Route($resourcePath, $defaults, methods: ['GET']),
+            );
+
+            $routes->add(
+                \sprintf('jsonapi.%s.update', $resourceType),
+                new Route($resourcePath, $defaults, methods: ['PATCH']),
+            );
+
+            $routes->add(
+                \sprintf('jsonapi.%s.delete', $resourceType),
+                new Route($resourcePath, $defaults, methods: ['DELETE']),
             );
         }
 

@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle;
 
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
+use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineExtensionInterface;
 use haddowg\JsonApiBundle\DependencyInjection\Compiler\DoctrineEntityMapPass;
@@ -45,6 +46,15 @@ final class JsonApiBundle extends AbstractBundle
     public const string DATA_PROVIDER_TAG = 'haddowg.json_api.data_provider';
 
     /**
+     * Tag applied to every {@see DataPersisterInterface}. The data-persister
+     * registry reads it to resolve a persister per resource type, with the same
+     * descending-`priority`, first-`supports()`-match semantics as
+     * {@see self::DATA_PROVIDER_TAG}; the bundled Doctrine persister registers at
+     * `-128` as the fallback.
+     */
+    public const string DATA_PERSISTER_TAG = 'haddowg.json_api.data_persister';
+
+    /**
      * Tag applied to every {@see DoctrineExtensionInterface}. The Doctrine
      * provider applies every supporting extension to each query it builds, in
      * descending tag `priority` order (default `0`), before the requested
@@ -78,6 +88,9 @@ final class JsonApiBundle extends AbstractBundle
 
         $builder->registerForAutoconfiguration(DataProviderInterface::class)
             ->addTag(self::DATA_PROVIDER_TAG);
+
+        $builder->registerForAutoconfiguration(DataPersisterInterface::class)
+            ->addTag(self::DATA_PERSISTER_TAG);
 
         $builder->registerForAutoconfiguration(DoctrineExtensionInterface::class)
             ->addTag(self::DOCTRINE_EXTENSION_TAG);

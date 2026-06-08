@@ -5,32 +5,47 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\DependencyInjection\Compiler;
 
 use haddowg\JsonApi\Resource\AbstractResource;
+use haddowg\JsonApiBundle\DataPersister\Doctrine\DoctrineDataPersister;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineDataProvider;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 
 /**
- * Builds the `type → Doctrine entity class` map for the
- * {@see DoctrineDataProvider} from the discovered Resource services: every
- * `#[AsJsonApiResource(entity: …)]` contributes one entry, keyed by the
- * attribute's `type` override or the class's `static $type` (the same
- * precedence the runtime registry applies). Compile-time validation — a missing
- * entity class, an undeterminable type, or two resources mapping one type to
- * different entities — fails the container build rather than a request.
+ * Builds the `type → Doctrine entity class` map for the reference Doctrine
+ * adapter — the {@see DoctrineDataProvider} (reads) and the
+ * {@see DoctrineDataPersister} (writes) — from the discovered Resource services:
+ * every `#[AsJsonApiResource(entity: …)]` contributes one entry, keyed by the
+ * attribute's `type` override or the class's `static $type` (the same precedence
+ * the runtime registry applies). Compile-time validation — a missing entity
+ * class, an undeterminable type, or two resources mapping one type to different
+ * entities — fails the container build rather than a request.
  *
- * A no-op when the Doctrine provider is not registered (no `doctrine/orm`), so
+ * A no-op when the Doctrine services are not registered (no `doctrine/orm`), so
  * the attribute stays inert in non-Doctrine applications. With an **empty** map
- * the provider definition is removed instead: it could never answer for a type,
- * and an application that has `doctrine/orm` in the vendor tree but no Doctrine
+ * those definitions are removed instead: they could never answer for a type, and
+ * an application that has `doctrine/orm` in the vendor tree but no Doctrine
  * integration wired (no `EntityManagerInterface` service) must not keep a
  * definition referencing that absent service alive.
  */
 final class DoctrineEntityMapPass implements CompilerPassInterface
 {
+    /**
+     * The reference Doctrine adapter definitions the map is shared across.
+     */
+    private const array MAPPED_DEFINITIONS = [
+        DoctrineDataProvider::class,
+        DoctrineDataPersister::class,
+    ];
+
     public function process(ContainerBuilder $container): void
     {
-        if (!$container->hasDefinition(DoctrineDataProvider::class)) {
+        $definitions = \array_values(\array_filter(
+            self::MAPPED_DEFINITIONS,
+            static fn(string $id): bool => $container->hasDefinition($id),
+        ));
+
+        if ($definitions === []) {
             return;
         }
 
@@ -70,12 +85,16 @@ final class DoctrineEntityMapPass implements CompilerPassInterface
         }
 
         if ($map === []) {
-            $container->removeDefinition(DoctrineDataProvider::class);
+            foreach ($definitions as $id) {
+                $container->removeDefinition($id);
+            }
 
             return;
         }
 
-        $container->getDefinition(DoctrineDataProvider::class)->setArgument('$entityClassByType', $map);
+        foreach ($definitions as $id) {
+            $container->getDefinition($id)->setArgument('$entityClassByType', $map);
+        }
     }
 
     /**

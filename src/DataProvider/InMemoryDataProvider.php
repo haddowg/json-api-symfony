@@ -9,9 +9,10 @@ use haddowg\JsonApi\Resource\Filter\InMemory\ArrayFilterHandler;
 use haddowg\JsonApi\Resource\Sort\InMemory\ArraySortHandler;
 
 /**
- * An in-memory read provider: a test double and conformance witness. It holds a
- * per-type map of domain objects keyed by id and answers `fetchOne()` /
- * `fetchCollection()` straight from it, so a slice runs with zero database.
+ * An in-memory read provider: a test double and conformance witness. It reads
+ * from a per-type {@see InMemoryStore} of domain objects keyed by id and answers
+ * `fetchOne()` / `fetchCollection()` straight from it, so a slice runs with zero
+ * database.
  *
  * Collections run the same {@see CriteriaApplier} matching as the Doctrine
  * provider, executed through core's reference in-memory handlers
@@ -21,19 +22,16 @@ use haddowg\JsonApi\Resource\Sort\InMemory\ArraySortHandler;
  *
  * It lives in `src/` (not `tests/`) so it is reusable as a documented worked
  * example, mirroring how core ships its `InMemory\Array{Filter,Sort}Handler`.
- * One instance answers for a single `$type`, so `TEntity` is inferred from the
- * seed items at construction.
+ * One instance answers for a single `$type`. To make a slice writable, pass an
+ * identifier closure and hand {@see store()} to an
+ * {@see \haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister}; the two then
+ * share one store, so writes are immediately readable.
  *
- * @template TEntity of object
- *
- * @implements DataProviderInterface<TEntity>
+ * @implements DataProviderInterface<object>
  */
 final class InMemoryDataProvider implements DataProviderInterface
 {
-    /**
-     * @var array<string, TEntity>
-     */
-    private readonly array $itemsById;
+    private readonly InMemoryStore $store;
 
     private readonly CriteriaApplier $applier;
 
@@ -42,21 +40,28 @@ final class InMemoryDataProvider implements DataProviderInterface
     private readonly ArraySortHandler $sortHandler;
 
     /**
-     * @param iterable<int|string, TEntity> $items objects keyed by id
+     * @param iterable<int|string, object>    $items    objects keyed by id
+     * @param (\Closure(object): string)|null $identify reads an item's id; required only if a
+     *                                                  persister writes through {@see store()}
      */
     public function __construct(
         private readonly string $type,
         iterable $items,
+        ?\Closure $identify = null,
     ) {
-        $byId = [];
-        foreach ($items as $id => $item) {
-            $byId[(string) $id] = $item;
-        }
-
-        $this->itemsById = $byId;
+        $this->store = new InMemoryStore($items, $identify);
         $this->applier = new CriteriaApplier();
         $this->filterHandler = new ArrayFilterHandler();
         $this->sortHandler = new ArraySortHandler();
+    }
+
+    /**
+     * The backing store, shared with an {@see \haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister}
+     * to make this type writable.
+     */
+    public function store(): InMemoryStore
+    {
+        return $this->store;
     }
 
     public function supports(string $type): bool
@@ -66,15 +71,15 @@ final class InMemoryDataProvider implements DataProviderInterface
 
     public function fetchOne(string $type, string $id): ?object
     {
-        return $this->itemsById[$id] ?? null;
+        return $this->store->find($id);
     }
 
     public function fetchCollection(string $type, CollectionCriteria $criteria): CollectionResult
     {
-        /** @var list<TEntity> $items */
+        /** @var list<object> $items */
         $items = $this->applier->apply(
             $criteria,
-            \array_values($this->itemsById),
+            $this->store->all(),
             $this->filterHandler,
             $this->sortHandler,
         );
