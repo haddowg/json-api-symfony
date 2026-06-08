@@ -3,13 +3,15 @@
 declare(strict_types=1);
 
 use haddowg\JsonApiBundle\Controller\JsonApiController;
+use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
+use haddowg\JsonApiBundle\DataPersister\Doctrine\DoctrineDataPersister;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineDataProvider;
 use haddowg\JsonApiBundle\EventListener\ExceptionListener;
 use haddowg\JsonApiBundle\EventListener\RequestListener;
 use haddowg\JsonApiBundle\EventListener\ViewListener;
 use haddowg\JsonApiBundle\JsonApiBundle;
-use haddowg\JsonApiBundle\Operation\ReadOperationHandler;
+use haddowg\JsonApiBundle\Operation\CrudOperationHandler;
 use haddowg\JsonApiBundle\Operation\TargetResolver;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Server\ResourceLocator;
@@ -18,13 +20,14 @@ use haddowg\JsonApiBundle\Server\ServerProvider;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 
 /*
- * Phase-0 bundle service wiring.
+ * Bundle service wiring.
  *
  * Registers the PSR-7 <-> HttpFoundation bridge, the immutable Server factory and
- * its provider, the read operation handler, the data-provider SPI registry, the
- * Target resolver + route loader, and the three kernel listeners that drive the
- * request lifecycle. Global/vendor classes are referenced inline with a leading
- * backslash (the CS config disables global_namespace_import).
+ * its provider, the CRUD operation handler, the data-provider and data-persister
+ * SPI registries, the Target resolver + route loader, and the three kernel
+ * listeners that drive the request lifecycle. Global/vendor classes are
+ * referenced inline with a leading backslash (the CS config disables
+ * global_namespace_import).
  */
 return static function (ContainerConfigurator $container): void {
     $services = $container->services()
@@ -65,14 +68,14 @@ return static function (ContainerConfigurator $container): void {
             '$streamFactory' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\Psr\Http\Message\StreamFactoryInterface::class),
             '$baseUri' => '%haddowg_json_api.base_uri%',
             '$version' => '%haddowg_json_api.version%',
-            '$handler' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(ReadOperationHandler::class),
+            '$handler' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(CrudOperationHandler::class),
         ]);
 
     $services->set(ServerProvider::class);
 
     // --- Operations + data providers -----------------------------------------
 
-    $services->set(ReadOperationHandler::class);
+    $services->set(CrudOperationHandler::class);
 
     // Core's stateless verb x target-shape dispatch factory; autowired into the
     // RequestListener so the bundle reuses core's operation-construction decision.
@@ -83,6 +86,11 @@ return static function (ContainerConfigurator $container): void {
     $services->set(DataProviderRegistry::class)
         ->args([
             '$providers' => \Symfony\Component\DependencyInjection\Loader\Configurator\tagged_iterator(JsonApiBundle::DATA_PROVIDER_TAG),
+        ]);
+
+    $services->set(DataPersisterRegistry::class)
+        ->args([
+            '$persisters' => \Symfony\Component\DependencyInjection\Loader\Configurator\tagged_iterator(JsonApiBundle::DATA_PERSISTER_TAG),
         ]);
 
     // --- Routing + controller -------------------------------------------------
@@ -136,5 +144,15 @@ return static function (ContainerConfigurator $container): void {
                 '$extensions' => \Symfony\Component\DependencyInjection\Loader\Configurator\tagged_iterator(JsonApiBundle::DOCTRINE_EXTENSION_TAG),
             ])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG, ['priority' => -128]);
+
+        // The write twin, same -128 fallback. Both $entityClassByType arguments
+        // are filled by the DoctrineEntityMapPass (which also removes both
+        // definitions when no resource maps an entity).
+        $services->set(DoctrineDataPersister::class)
+            ->args([
+                '$entityManager' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\Doctrine\ORM\EntityManagerInterface::class),
+                '$entityClassByType' => [],
+            ])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG, ['priority' => -128]);
     }
 };

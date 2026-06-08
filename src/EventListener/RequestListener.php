@@ -25,7 +25,8 @@ use Symfony\Component\HttpKernel\Event\RequestEvent;
  *  3. converts the Symfony request to a PSR-7 request and wraps it in core's
  *     {@see JsonApiRequest} (the idempotent guard every core middleware uses);
  *  4. runs the negotiation + query-param validation core's middleware would,
- *     by calling {@see RequestValidator} directly (no `Middleware\*` class);
+ *     by calling {@see RequestValidator} directly (no `Middleware\*` class), plus
+ *     body well-formedness + top-level-member checks on a write verb;
  *  5. builds the matching operation via core's
  *     {@see \haddowg\JsonApi\Operation\OperationFactory} (the same verb × shape
  *     dispatch the PSR-15 adapter uses) and calls `Server::dispatch()`;
@@ -74,6 +75,14 @@ final class RequestListener
         $validator = new RequestValidator();
         $validator->negotiate($jsonApiRequest);
         $validator->validateQueryParams($jsonApiRequest);
+
+        // A write body (POST/PATCH carry one; DELETE does not) must be well-formed
+        // JSON with valid top-level members before core's hydrator reads it — the
+        // belt core's RequestBodyParsingMiddleware would run, called directly.
+        if (\in_array($jsonApiRequest->getMethod(), ['POST', 'PATCH'], true)) {
+            $validator->validateJsonBody($jsonApiRequest);
+            $validator->validateTopLevelMembers($jsonApiRequest);
+        }
 
         $operation = $this->operationFactory->fromRequest(
             $jsonApiRequest,

@@ -137,9 +137,6 @@ final class InMemoryDataProviderTest extends TestCase
         ));
     }
 
-    /**
-     * @return InMemoryDataProvider<Article>
-     */
     private function articles(): InMemoryDataProvider
     {
         return new InMemoryDataProvider('articles', [

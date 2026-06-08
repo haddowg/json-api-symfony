@@ -51,14 +51,23 @@ abstract class JsonApiFunctionalTestCase extends KernelTestCase
         $this->restoreHandlers();
     }
 
-    protected function handle(string $path): Response
+    /**
+     * @param array<string, mixed>|null $body a JSON:API document to send (POST/PATCH);
+     *                                         null sends no body (GET/DELETE)
+     */
+    protected function handle(string $path, string $method = 'GET', ?array $body = null): Response
     {
         $kernel = static::$kernel;
         self::assertNotNull($kernel);
 
-        $request = Request::create($path, 'GET', server: [
-            'HTTP_ACCEPT' => 'application/vnd.api+json',
-        ]);
+        $server = ['HTTP_ACCEPT' => 'application/vnd.api+json'];
+        $content = null;
+        if ($body !== null) {
+            $server['CONTENT_TYPE'] = 'application/vnd.api+json';
+            $content = \json_encode($body, \JSON_THROW_ON_ERROR);
+        }
+
+        $request = Request::create($path, $method, server: $server, content: $content);
 
         // catch: true is the production path — exceptions route through
         // kernel.exception, where the bundle's ExceptionListener renders

@@ -81,20 +81,29 @@ decision, then 1–3 sentences of *why*). The ADRs already written: `0001`–`00
 
 ## Phases (vertical slices, Doctrine-backed from Phase 1)
 
-> **Current status (2026-06-03): Phase 1 implemented** (branch
-> `feat/phase-1-full-read`). Full read queries run end-to-end on **both**
-> providers: collection fetches are criteria-driven (ADR 0006) over the reshaped
-> `DataProvider` SPI (`CollectionCriteria` → `CollectionResult`, shared
-> `CriteriaApplier` matching), the Doctrine provider pushes filter/sort/window
-> down to a QueryBuilder, and the type→entity mapping is declared via
-> `#[AsJsonApiResource(entity: …)]` (ADR 0005). Requires core's
-> pagination-window seam + `FilterParamUnrecognized` + the composite
-> sort-handler contract + the ASCII-case-insensitive `like` reference semantics
-> (core ADRs 0015/0016, branch `feat/pagination-window-seam` — PR/tag pending).
-> Functional acceptance:
-> `ReadQueryConformanceTestCase` runs identical assertions against the in-memory
-> kernel and a Doctrine kernel (in-memory SQLite, seeded through
-> `zenstruck/foundry` factories). **Phase 2 is next.**
+> **Current status (2026-06-08): Phase 1 merged to `main`** (PRs #1–#4). Full
+> read queries run end-to-end on **both** providers: collection fetches are
+> criteria-driven (ADR 0006) over the reshaped `DataProvider` SPI
+> (`CollectionCriteria` → `CollectionResult`, shared `CriteriaApplier`
+> matching, generic over the entity type), the Doctrine provider pushes
+> filter/sort/window down to a QueryBuilder, and the type→entity mapping is
+> declared via `#[AsJsonApiResource(entity: …)]` (ADR 0005). Provider
+> resolution is priority-ordered first-match with the Doctrine provider as the
+> `-128` fallback (ADR 0007). Two query-shaping seams landed on top of the base
+> read surface: a tagged `DoctrineExtensionInterface` for base constraints the
+> client cannot undo (applied before criteria, carries a writes-ready
+> `QueryPurpose`; ADR 0008), and overridable **filter defaults** folded once in
+> the shared `CriteriaApplier` so both providers honour them (ADR 0009,
+> consuming core's `FilterDefaults` / ADR 0017). Built on core's
+> pagination-window seam + `FilterParamUnrecognized` + composite sort-handler +
+> ASCII-case-insensitive `like` (core ADRs 0015/0016) — all merged to core
+> `main`; the bundle resolves core as `dev-main` and **stays there through all
+> of pre-1.0** (no intermediate `0.x` tag pin — the core pin to `^1.0` happens
+> only at v1; see the `core-dependency-stays-on-dev-main-until-v1` bundle
+> auto-memory). Functional acceptance: `ReadQueryConformanceTestCase` (+ the
+> filter-default and Doctrine-extension conformance pairs) runs identical
+> assertions against the in-memory kernel and a Doctrine kernel (in-memory
+> SQLite, seeded through `zenstruck/foundry` factories). **Phase 2 is next.**
 
 0. ✅ Skeleton + thinnest read (`GET /{type}`, `/{type}/{id}`) — forced core's lazy
    resolver + lifecycle-logic extraction + a PSR-7-free render seam. **Done.**
@@ -111,10 +120,12 @@ decision, then 1–3 sentences of *why*). The ADRs already written: `0001`–`00
    with this bundle as the integration witness.
 
 **Per-phase handover contract:** a runnable Doctrine+sqlite functional slice; the
-enumerated core PRs each merged + tagged + ADR'd *before* the bundle phase consumes
-them; the bundle pinned to that exact core tag (not `^0.x` — pre-1.0 minors break);
-green PHPStan L9 + PER-CS 2.0 + the spec-grouped suite on **both** the Doctrine and
-in-memory providers.
+enumerated core changes each merged to core `main` + ADR'd *before* the bundle
+phase consumes them (consumed immediately on `dev-main` — **no per-phase tag
+pin**; the core pin to `^1.0` happens once, at v1, see the
+`core-dependency-stays-on-dev-main-until-v1` bundle auto-memory); green PHPStan
+L9 + PER-CS 2.0 + the spec-grouped suite on **both** the Doctrine and in-memory
+providers.
 
 ## Tooling & conventions (inherited from core)
 
@@ -143,6 +154,8 @@ composer cs-check   # PHP-CS-Fixer, PER-CS 2.0
 ## Working with the sibling core
 
 When a slice needs a core change: make it in `../json-api` on its own branch (with
-an ADR under `docs/adr/` and tests), get it green there, then consume it here.
-During local development the path repository symlinks core, so changes are visible
-immediately; pin to a released tag at each phase boundary for reproducibility.
+an ADR under `docs/adr/` and tests), get it green there, merge it to core `main`,
+then consume it here. During local development the path repository symlinks core,
+so changes are visible immediately (after a `git pull` of the sibling on `main`).
+The bundle stays on `dev-main` for all of pre-1.0 and pins core only at v1 — see
+the `core-dependency-stays-on-dev-main-until-v1` bundle auto-memory.

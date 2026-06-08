@@ -13,9 +13,6 @@ use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
  */
 final class ArticleProviderFactory
 {
-    /**
-     * @return InMemoryDataProvider<Article>
-     */
     public static function create(): InMemoryDataProvider
     {
         $articles = [];

@@ -6,7 +6,7 @@ namespace haddowg\JsonApiBundle\DataProvider;
 
 /**
  * The read-half data-source SPI: the storage-agnostic contract the
- * {@see \haddowg\JsonApiBundle\Operation\ReadOperationHandler} delegates to for
+ * {@see \haddowg\JsonApiBundle\Operation\CrudOperationHandler} delegates to for
  * `GET /{type}` and `GET /{type}/{id}`.
  *
  * A provider is resolved per resource type via
