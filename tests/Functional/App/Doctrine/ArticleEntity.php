@@ -28,5 +28,7 @@ class ArticleEntity
         public string $category = '',
         #[ORM\Column(type: 'datetime_immutable', nullable: true)]
         public ?\DateTimeImmutable $publishedAt = null,
+        #[ORM\Column(nullable: true)]
+        public ?string $couponCode = null,
     ) {}
 }

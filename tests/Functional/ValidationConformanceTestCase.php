@@ -150,6 +150,31 @@ abstract class ValidationConformanceTestCase extends JsonApiFunctionalTestCase
         self::assertSame(201, $response->getStatusCode());
     }
 
+    #[Test]
+    #[Group('spec:crud')]
+    public function aConditionalConstraintIsEnforcedOnlyWhenItsConditionHolds(): void
+    {
+        // couponCode is length-checked only when it looks like a promo code, so a
+        // short "PROMO-X" fails the when()-declared rule at its pointer...
+        $promoTooShort = $this->handle('/articles', 'POST', [
+            'data' => ['type' => 'articles', 'attributes' => [
+                'title' => 'A fine title', 'category' => 'news', 'couponCode' => 'PROMO-X',
+            ]],
+        ]);
+
+        self::assertSame(422, $promoTooShort->getStatusCode());
+        self::assertSame(['/data/attributes/couponCode'], $this->pointers($promoTooShort));
+
+        // ...while an equally short non-promo code skips the rule and is accepted.
+        $nonPromoShort = $this->handle('/articles', 'POST', [
+            'data' => ['type' => 'articles', 'attributes' => [
+                'title' => 'A fine title', 'category' => 'guide', 'couponCode' => 'FREE',
+            ]],
+        ]);
+
+        self::assertSame(201, $nonPromoShort->getStatusCode());
+    }
+
     /**
      * The `source.pointer` of every error in the response document.
      *

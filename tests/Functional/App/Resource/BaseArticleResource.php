@@ -32,7 +32,8 @@ use Symfony\Component\Clock\Clock;
  * and an enum) that are inert on reads but exercised by the write/validation
  * conformance suites — the same declaration drives both halves. `publishedAt`
  * adds an optional date attribute whose closure bound ("not in the future")
- * exercises the date-constraint bridge under a frozen clock.
+ * exercises the date-constraint bridge under a frozen clock, and `couponCode`
+ * carries a `when()`-declared conditional rule that the bridge executes.
  */
 abstract class BaseArticleResource extends AbstractResource
 {
@@ -49,6 +50,16 @@ abstract class BaseArticleResource extends AbstractResource
             // time ("must not be in the future"). Exercises the After/Before bridge
             // and the clock-frozen closure-bound path; inert on reads.
             DateTime::make('publishedAt')->nullable()->before(static fn(): \DateTimeImmutable => Clock::get()->now()),
+            // Conditional constraint declared with when(): a coupon code is only
+            // length-checked when it looks like a promo code, so a short "FREE"
+            // passes while a short "PROMO-X" fails — exercising the When bridge
+            // declare→execute path end to end.
+            Str::make('couponCode')->nullable()->when(
+                static fn(mixed $value): bool => \is_string($value) && \str_starts_with($value, 'PROMO-'),
+                static function (Str $field): void {
+                    $field->minLength(12);
+                },
+            ),
         ];
     }
 
