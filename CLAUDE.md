@@ -60,7 +60,8 @@ supplies the framework integration (DI, routing, the request lifecycle) and a
 - **Validation.** First-class **Symfony Validator bridge**: translate core
   `ConstraintInterface` VOs → Symfony `Constraint`s, validate on create/update in
   the hydration path, map violations → JSON:API `422` with `source.pointer`.
-  `Custom`/`When` via extension-point translators keyed by `$id`. Core's
+  `Custom` via extension-point translators keyed by `$id`; `When` and the date
+  bounds (`After`/`Before`/`Between`) via `Callback`. Core's
   opis JSON-Schema validation is wired as an optional dev/CI toggle.
 - **Data layer = Provider/Persister SPI, Doctrine reference impl.** The generic
   CRUD handler is storage-agnostic over a bundle `DataProvider` (fetch one /
@@ -106,10 +107,19 @@ decision, then 1–3 sentences of *why*). The ADRs already written: `0001`–`00
 > the `core-dependency-stays-on-dev-main-until-v1` bundle auto-memory). Functional
 > acceptance: `WriteConformanceTestCase` + `ValidationConformanceTestCase` (+ a
 > `SchemaValidationTest`) run identical assertions against the in-memory and
-> Doctrine-sqlite kernels. **Deferred to a follow-up** (loud, ADR 0012): the
-> closure-based `When` and the date/timezone constraint translations; and the core
-> *vocabulary gaps* the bridge surfaced for the v1 review — no cross-field rule,
-> no `Valid`-style cascade, no `UniqueEntity`. **Phase 3 (relationships) is next.**
+> Doctrine-sqlite kernels. The follow-up has since landed (PRs #10/#11, core
+> #27/#28, ADR 0012 updated): `When` and the date bounds (`After`/`Before`/`Between`)
+> are now translated via `Callback` — `When` conditionally re-validates the inner
+> constraints; the date bounds coerce the value to `\DateTimeImmutable` and compare
+> against a bound resolved at validation time, so a closure bound such as "now"
+> reflects the request (exercised under a frozen `symfony/clock`). Core gained a
+> `when()` field builder, so a conditional rule is both declarable and executable —
+> proven declare→execute on both providers. `Timezone` was **removed from core**
+> (impractical against wire offsets — an ISO-8601 value carries an offset, not a
+> named zone; core ADR 0020). The translator's `default => throw` now fires only
+> for a constraint outside core's vocabulary. Still open for the v1 core-surface
+> review — the *vocabulary gaps* the bridge surfaced: no cross-field rule, no
+> `Valid`-style cascade, no `UniqueEntity`. **Phase 3 (relationships) is next.**
 
 0. ✅ Skeleton + thinnest read (`GET /{type}`, `/{type}/{id}`) — forced core's lazy
    resolver + lifecycle-logic extraction + a PSR-7-free render seam. **Done.**
@@ -120,9 +130,9 @@ decision, then 1–3 sentences of *why*). The ADRs already written: `0001`–`00
    relations exist to include yet). **Done.**
 2. ✅ Writes (POST/PATCH/DELETE) + the Symfony Validator bridge — forced core's
    error-document status fidelity + settable response status/`NoContentResponse`;
-   constraint-vocab completeness audited (mechanical set translated; `When` +
-   date/timezone deferred; cross-field / `Valid`-cascade / `UniqueEntity` gaps
-   recorded for v1). **Done.**
+   constraint-vocab translation now **complete** — `When` + the date bounds via
+   `Callback` (with a core `when()` field builder), `Timezone` removed from core;
+   cross-field / `Valid`-cascade / `UniqueEntity` gaps recorded for v1. **Done.**
 3. **(next)** Relationships (related + relationship endpoints + mutations; compound
    includes). Entry notes: `AbstractResource` does not implement core's
    `UpdateRelationshipHydratorInterface`, and `FullReplacementProhibited` /
