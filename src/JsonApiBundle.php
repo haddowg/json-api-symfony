@@ -55,12 +55,13 @@ final class JsonApiBundle extends AbstractBundle
     public const string DATA_PERSISTER_TAG = 'haddowg.json_api.data_persister';
 
     /**
-     * Tag applied to every {@see \haddowg\JsonApiBundle\Validation\CustomConstraintTranslatorInterface}.
+     * Tag applied to every {@see \haddowg\JsonApiBundle\Validation\ConstraintTranslatorInterface}.
      * The {@see \haddowg\JsonApiBundle\Validation\ConstraintTranslator} consults them
-     * (descending tag `priority`, first `supports()` match) to translate core's
-     * `$id`-keyed `Custom` constraints into Symfony rules.
+     * (descending tag `priority`, first `supports()` match) to translate a custom
+     * constraint value object — one outside core's built-in vocabulary — into
+     * Symfony rules.
      */
-    public const string CUSTOM_CONSTRAINT_TRANSLATOR_TAG = 'haddowg.json_api.custom_constraint_translator';
+    public const string CONSTRAINT_TRANSLATOR_TAG = 'haddowg.json_api.constraint_translator';
 
     /**
      * Tag applied to every {@see DoctrineExtensionInterface}. The Doctrine
@@ -127,12 +128,12 @@ final class JsonApiBundle extends AbstractBundle
         $builder->registerForAutoconfiguration(DoctrineExtensionInterface::class)
             ->addTag(self::DOCTRINE_EXTENSION_TAG);
 
-        // The custom-constraint-translator interface references Symfony Validator
-        // types, so only register its autoconfiguration when the optional
+        // The constraint-translator interface references Symfony Validator types,
+        // so only register its autoconfiguration when the optional
         // symfony/validator dependency is installed.
         if (\interface_exists(\Symfony\Component\Validator\Validator\ValidatorInterface::class)) {
-            $builder->registerForAutoconfiguration(\haddowg\JsonApiBundle\Validation\CustomConstraintTranslatorInterface::class)
-                ->addTag(self::CUSTOM_CONSTRAINT_TRANSLATOR_TAG);
+            $builder->registerForAutoconfiguration(\haddowg\JsonApiBundle\Validation\ConstraintTranslatorInterface::class)
+                ->addTag(self::CONSTRAINT_TRANSLATOR_TAG);
         }
 
         // #[AsJsonApiResource] also tags a class as a Resource (so an attribute on

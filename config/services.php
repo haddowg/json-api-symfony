@@ -20,7 +20,6 @@ use haddowg\JsonApiBundle\Server\ServerProvider;
 use haddowg\JsonApiBundle\Validation\ConstraintTranslator;
 use haddowg\JsonApiBundle\Validation\JsonPointerBuilder;
 use haddowg\JsonApiBundle\Validation\ResourceValidator;
-use haddowg\JsonApiBundle\Validation\StrictEmailConstraintTranslator;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 
 /*
@@ -175,12 +174,11 @@ return static function (ContainerConfigurator $container): void {
     if (\interface_exists(\Symfony\Component\Validator\Validator\ValidatorInterface::class)) {
         $services->set(JsonPointerBuilder::class);
 
-        // The one Custom translator core needs (`email.strict`); autoconfigured to
-        // the custom-translator tag. Applications add their own the same way.
-        $services->set(StrictEmailConstraintTranslator::class);
-
+        // Applications register translators for their own constraint VOs by tagging
+        // a ConstraintTranslatorInterface; the translator consults them for anything
+        // outside the built-in vocabulary.
         $services->set(ConstraintTranslator::class)
-            ->arg('$customTranslators', \Symfony\Component\DependencyInjection\Loader\Configurator\tagged_iterator(JsonApiBundle::CUSTOM_CONSTRAINT_TRANSLATOR_TAG));
+            ->arg('$extensionTranslators', \Symfony\Component\DependencyInjection\Loader\Configurator\tagged_iterator(JsonApiBundle::CONSTRAINT_TRANSLATOR_TAG));
 
         $services->set(ResourceValidator::class);
     }

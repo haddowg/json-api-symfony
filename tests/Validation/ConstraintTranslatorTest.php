@@ -9,7 +9,6 @@ use haddowg\JsonApi\Resource\Constraint\Before;
 use haddowg\JsonApi\Resource\Constraint\Between;
 use haddowg\JsonApi\Resource\Constraint\ConstraintInterface;
 use haddowg\JsonApi\Resource\Constraint\Context;
-use haddowg\JsonApi\Resource\Constraint\Custom;
 use haddowg\JsonApi\Resource\Constraint\Each;
 use haddowg\JsonApi\Resource\Constraint\EmailFormat;
 use haddowg\JsonApi\Resource\Constraint\ExclusiveMax;
@@ -30,7 +29,7 @@ use haddowg\JsonApi\Resource\Constraint\UrlFormat;
 use haddowg\JsonApi\Resource\Constraint\UuidFormat;
 use haddowg\JsonApi\Resource\Constraint\When;
 use haddowg\JsonApiBundle\Validation\ConstraintTranslator;
-use haddowg\JsonApiBundle\Validation\StrictEmailConstraintTranslator;
+use haddowg\JsonApiBundle\Validation\ConstraintTranslatorInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -110,20 +109,36 @@ final class ConstraintTranslatorTest extends TestCase
     }
 
     #[Test]
-    public function itTranslatesTheStrictEmailCustomConstraint(): void
+    public function itTranslatesAStrictEmailFormatToStrictMode(): void
     {
+        // strict is typed config on EmailFormat now, not a Custom('email.strict').
+        // egulias/email-validator is a dev dependency, so strict mode is available.
         self::assertEquals(
             [new Email(mode: Email::VALIDATION_MODE_STRICT)],
-            $this->translator()->translate(new Custom(StrictEmailConstraintTranslator::ID, true)),
+            $this->translator()->translate(new EmailFormat(true)),
         );
     }
 
     #[Test]
-    public function itRejectsACustomConstraintWithNoRegisteredTranslator(): void
+    public function itDelegatesAConstraintOutsideTheVocabularyToARegisteredTranslator(): void
     {
-        $this->expectException(\LogicException::class);
+        $constraint = $this->customConstraint();
 
-        $this->translator()->translate(new Custom('unregistered.id'));
+        $translator = new ConstraintTranslator([
+            new class implements ConstraintTranslatorInterface {
+                public function supports(ConstraintInterface $constraint): bool
+                {
+                    return true;
+                }
+
+                public function translate(ConstraintInterface $constraint): array
+                {
+                    return [new Length(min: 5)];
+                }
+            },
+        ]);
+
+        self::assertEquals([new Length(min: 5)], $translator->translate($constraint));
     }
 
     #[Test]
@@ -188,25 +203,31 @@ final class ConstraintTranslatorTest extends TestCase
     }
 
     #[Test]
-    public function itRejectsAConstraintOutsideTheCoreVocabulary(): void
+    public function itRejectsAConstraintWithNoRegisteredTranslator(): void
     {
-        // Every core constraint is now translated; the default arm guards only
-        // against a constraint the bridge has never heard of.
-        $unknown = new class implements ConstraintInterface {
+        // A constraint outside the built-in vocabulary with no extension translator
+        // registered fails loud rather than being silently skipped.
+        $this->expectException(\LogicException::class);
+
+        $this->translator()->translate($this->customConstraint());
+    }
+
+    private function translator(): ConstraintTranslator
+    {
+        return new ConstraintTranslator();
+    }
+
+    /**
+     * A bespoke constraint outside core's built-in vocabulary.
+     */
+    private function customConstraint(): ConstraintInterface
+    {
+        return new class implements ConstraintInterface {
             public function context(): Context
             {
                 return new Context();
             }
         };
-
-        $this->expectException(\LogicException::class);
-
-        $this->translator()->translate($unknown);
-    }
-
-    private function translator(): ConstraintTranslator
-    {
-        return new ConstraintTranslator([new StrictEmailConstraintTranslator()]);
     }
 
     /**
