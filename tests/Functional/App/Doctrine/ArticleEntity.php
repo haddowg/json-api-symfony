@@ -26,5 +26,7 @@ class ArticleEntity
         public string $body = '',
         #[ORM\Column]
         public string $category = '',
+        #[ORM\Column(type: 'datetime_immutable', nullable: true)]
+        public ?\DateTimeImmutable $publishedAt = null,
     ) {}
 }

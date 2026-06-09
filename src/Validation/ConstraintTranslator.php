@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Validation;
 
+use haddowg\JsonApi\Resource\Constraint\After;
+use haddowg\JsonApi\Resource\Constraint\Before;
+use haddowg\JsonApi\Resource\Constraint\Between;
 use haddowg\JsonApi\Resource\Constraint\ConstraintInterface;
 use haddowg\JsonApi\Resource\Constraint\Custom;
 use haddowg\JsonApi\Resource\Constraint\Each;
@@ -27,8 +30,10 @@ use haddowg\JsonApi\Resource\Constraint\SlugFormat;
 use haddowg\JsonApi\Resource\Constraint\UniqueItems;
 use haddowg\JsonApi\Resource\Constraint\UrlFormat;
 use haddowg\JsonApi\Resource\Constraint\UuidFormat;
+use haddowg\JsonApi\Resource\Constraint\When;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\Constraints\All;
+use Symfony\Component\Validator\Constraints\Callback;
 use Symfony\Component\Validator\Constraints\Choice;
 use Symfony\Component\Validator\Constraints\Count;
 use Symfony\Component\Validator\Constraints\DivisibleBy;
@@ -43,6 +48,7 @@ use Symfony\Component\Validator\Constraints\Regex;
 use Symfony\Component\Validator\Constraints\Unique;
 use Symfony\Component\Validator\Constraints\Url;
 use Symfony\Component\Validator\Constraints\Uuid;
+use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
 /**
  * Translates a core {@see ConstraintInterface} value object into the Symfony
@@ -57,11 +63,15 @@ use Symfony\Component\Validator\Constraints\Uuid;
  * plus `NotBlank`/`NotNull`, not as standalone value constraints.
  *
  * The `$id`-keyed {@see Custom} escape hatch is delegated to the registered
- * {@see CustomConstraintTranslatorInterface}s. The closure-based
- * {@see \haddowg\JsonApi\Resource\Constraint\When} and the date/timezone value
- * constraints (`After`/`Before`/`Between`/`Timezone`) are not yet translated — a
- * resource using one raises a clear error rather than silently skipping it; they
- * land in a follow-up (see ADR 0012).
+ * {@see CustomConstraintTranslatorInterface}s. The closure-carrying constraints —
+ * {@see When} (a condition closure) and {@see After}/{@see Before}/{@see Between}
+ * (bounds that may be a closure evaluated at validation time) — have no stock
+ * Symfony equivalent that accepts a PHP closure, so each translates to a
+ * {@see Callback}: `When` evaluates its condition and, when true, validates the
+ * value against the translated inner constraints; the date bounds coerce the value
+ * to a `\DateTimeImmutable` and compare it against the resolved bound. With those
+ * handled the `default` arm is reached only by a constraint outside core's
+ * vocabulary.
  */
 final class ConstraintTranslator
 {
@@ -115,6 +125,10 @@ final class ConstraintTranslator
             $constraint instanceof Pattern => [new Regex(pattern: $this->delimit($constraint->regex))],
             $constraint instanceof SlugFormat => [new Regex(pattern: $this->delimit($constraint->regex))],
             $constraint instanceof Each => [new All(constraints: $this->translateAll($constraint->constraints))],
+            $constraint instanceof When => [$this->conditional($constraint)],
+            $constraint instanceof After => [$this->dateBound($constraint->bound, true, 'This value should be after {{ limit }}.')],
+            $constraint instanceof Before => [$this->dateBound($constraint->bound, false, 'This value should be before {{ limit }}.')],
+            $constraint instanceof Between => [$this->dateRange($constraint->min, $constraint->max)],
             $constraint instanceof Custom => $this->translateCustom($constraint),
             default => throw new \LogicException(\sprintf(
                 'The JSON:API constraint %s is not yet translated by the Symfony Validator bridge.',
@@ -141,6 +155,113 @@ final class ConstraintTranslator
         }
 
         return $translated;
+    }
+
+    /**
+     * Translates {@see When} to a {@see Callback} that evaluates the condition
+     * closure against the value and, only when it returns true, validates the value
+     * against the translated inner constraints. Core's condition is an arbitrary PHP
+     * closure, which Symfony's own `When` (an ExpressionLanguage string) cannot
+     * express — so the conditional logic runs in the callback.
+     */
+    private function conditional(When $constraint): Callback
+    {
+        $condition = $constraint->condition;
+        $inner = $this->translateAll($constraint->constraints);
+
+        return new Callback(callback: static function (mixed $value, ExecutionContextInterface $context) use ($condition, $inner): void {
+            if ($condition($value) === true) {
+                $context->getValidator()->inContext($context)->validate($value, $inner);
+            }
+        });
+    }
+
+    /**
+     * A {@see Callback} enforcing a single date bound ({@see After}/{@see Before}).
+     * The value is coerced to a `\DateTimeImmutable`; an absent, empty or unparseable
+     * value is left to other layers (presence rules, the hydrator) and skipped. The
+     * bound is resolved at validation time, so a closure bound such as "now" reflects
+     * the moment of the request.
+     *
+     * @param \DateTimeInterface|\Closure(): \DateTimeInterface $bound
+     * @param bool $after true for a lower bound (`After`), false for an upper bound (`Before`)
+     */
+    private function dateBound(\DateTimeInterface|\Closure $bound, bool $after, string $message): Callback
+    {
+        return new Callback(callback: static function (mixed $value, ExecutionContextInterface $context) use ($bound, $after, $message): void {
+            $date = self::toDateTime($value);
+            if ($date === null) {
+                return;
+            }
+
+            $limit = self::resolveBound($bound);
+            if ($after ? $date <= $limit : $date >= $limit) {
+                $context->buildViolation($message)
+                    ->setParameter('{{ limit }}', $limit->format(\DateTimeInterface::ATOM))
+                    ->addViolation();
+            }
+        });
+    }
+
+    /**
+     * A {@see Callback} enforcing an inclusive `[min, max]` date range ({@see Between}),
+     * with the same value coercion and validation-time bound resolution as
+     * {@see dateBound()}.
+     *
+     * @param \DateTimeInterface|\Closure(): \DateTimeInterface $min
+     * @param \DateTimeInterface|\Closure(): \DateTimeInterface $max
+     */
+    private function dateRange(\DateTimeInterface|\Closure $min, \DateTimeInterface|\Closure $max): Callback
+    {
+        return new Callback(callback: static function (mixed $value, ExecutionContextInterface $context) use ($min, $max): void {
+            $date = self::toDateTime($value);
+            if ($date === null) {
+                return;
+            }
+
+            $lower = self::resolveBound($min);
+            $upper = self::resolveBound($max);
+            if ($date < $lower || $date > $upper) {
+                $context->buildViolation('This value should be between {{ min }} and {{ max }}.')
+                    ->setParameter('{{ min }}', $lower->format(\DateTimeInterface::ATOM))
+                    ->setParameter('{{ max }}', $upper->format(\DateTimeInterface::ATOM))
+                    ->addViolation();
+            }
+        });
+    }
+
+    /**
+     * Coerces a raw attribute value to a comparable instant, or null when it is not
+     * a non-empty date string. Presence and format are other layers' concern, so a
+     * bound check simply does not apply to a value it cannot read as a date.
+     */
+    private static function toDateTime(mixed $value): ?\DateTimeImmutable
+    {
+        if (!\is_string($value) || $value === '') {
+            return null;
+        }
+
+        try {
+            return new \DateTimeImmutable($value);
+        } catch (\Exception) {
+            return null;
+        }
+    }
+
+    /**
+     * Resolves a fixed or closure bound to a `\DateTimeImmutable`, evaluating a
+     * closure now so a deferred bound reflects validation time.
+     *
+     * @param \DateTimeInterface|\Closure(): \DateTimeInterface $bound
+     */
+    private static function resolveBound(\DateTimeInterface|\Closure $bound): \DateTimeImmutable
+    {
+        $resolved = $bound instanceof \Closure ? $bound() : $bound;
+        if (!$resolved instanceof \DateTimeInterface) {
+            throw new \LogicException('A date constraint bound closure must return a \DateTimeInterface.');
+        }
+
+        return \DateTimeImmutable::createFromInterface($resolved);
     }
 
     /**

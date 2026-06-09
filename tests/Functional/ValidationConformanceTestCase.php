@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional;
 
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
+use Symfony\Component\Clock\Test\ClockSensitiveTrait;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -21,6 +22,8 @@ use Symfony\Component\HttpFoundation\Response;
  */
 abstract class ValidationConformanceTestCase extends JsonApiFunctionalTestCase
 {
+    use ClockSensitiveTrait;
+
     #[Test]
     #[Group('spec:crud')]
     public function creatingWithoutARequiredAttributeReturns422WithAPointer(): void
@@ -105,6 +108,43 @@ abstract class ValidationConformanceTestCase extends JsonApiFunctionalTestCase
     {
         $response = $this->handle('/articles', 'POST', [
             'data' => ['type' => 'articles', 'attributes' => ['title' => 'Perfectly valid', 'category' => 'guide']],
+        ]);
+
+        self::assertSame(201, $response->getStatusCode());
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function creatingWithADateThatViolatesAClosureBoundReturns422AtThatPointer(): void
+    {
+        // The clock is frozen so the resource's `before(now)` bound is deterministic:
+        // a publish date a day in the future must fail "not in the future".
+        self::mockTime(new \DateTimeImmutable('2026-06-08T12:00:00+00:00'));
+
+        $response = $this->handle('/articles', 'POST', [
+            'data' => ['type' => 'articles', 'attributes' => [
+                'title' => 'A fine title',
+                'category' => 'news',
+                'publishedAt' => '2026-06-09T12:00:00+00:00',
+            ]],
+        ]);
+
+        self::assertSame(422, $response->getStatusCode());
+        self::assertSame(['/data/attributes/publishedAt'], $this->pointers($response));
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function creatingWithADateWithinAClosureBoundPasses(): void
+    {
+        self::mockTime(new \DateTimeImmutable('2026-06-08T12:00:00+00:00'));
+
+        $response = $this->handle('/articles', 'POST', [
+            'data' => ['type' => 'articles', 'attributes' => [
+                'title' => 'A fine title',
+                'category' => 'guide',
+                'publishedAt' => '2026-06-01T12:00:00+00:00',
+            ]],
         ]);
 
         self::assertSame(201, $response->getStatusCode());

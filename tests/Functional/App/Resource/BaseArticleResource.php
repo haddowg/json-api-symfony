@@ -7,10 +7,12 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\Resource;
 use haddowg\JsonApi\Pagination\PagePaginator;
 use haddowg\JsonApi\Pagination\PaginatorInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
+use haddowg\JsonApi\Resource\Field\DateTime;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Filter\WhereIdIn;
+use Symfony\Component\Clock\Clock;
 
 /**
  * The shared `articles` declaration both functional kernels serve: one set of
@@ -28,7 +30,9 @@ use haddowg\JsonApi\Resource\Filter\WhereIdIn;
  *
  * `title` and `category` also carry validation constraints (required + length,
  * and an enum) that are inert on reads but exercised by the write/validation
- * conformance suites — the same declaration drives both halves.
+ * conformance suites — the same declaration drives both halves. `publishedAt`
+ * adds an optional date attribute whose closure bound ("not in the future")
+ * exercises the date-constraint bridge under a frozen clock.
  */
 abstract class BaseArticleResource extends AbstractResource
 {
@@ -41,6 +45,10 @@ abstract class BaseArticleResource extends AbstractResource
             Str::make('title')->sortable()->required()->minLength(3)->maxLength(50),
             Str::make('body'),
             Str::make('category')->sortable()->in(['guide', 'news', 'opinion']),
+            // Optional + nullable, with a closure date bound resolved at validation
+            // time ("must not be in the future"). Exercises the After/Before bridge
+            // and the clock-frozen closure-bound path; inert on reads.
+            DateTime::make('publishedAt')->nullable()->before(static fn(): \DateTimeImmutable => Clock::get()->now()),
         ];
     }
 
