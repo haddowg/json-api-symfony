@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Validation;
 
+use haddowg\JsonApi\Resource\Constraint\After;
+use haddowg\JsonApi\Resource\Constraint\Before;
+use haddowg\JsonApi\Resource\Constraint\Between;
 use haddowg\JsonApi\Resource\Constraint\ConstraintInterface;
+use haddowg\JsonApi\Resource\Constraint\Context;
 use haddowg\JsonApi\Resource\Constraint\Custom;
 use haddowg\JsonApi\Resource\Constraint\Each;
 use haddowg\JsonApi\Resource\Constraint\EmailFormat;
@@ -21,15 +25,17 @@ use haddowg\JsonApi\Resource\Constraint\MinLength;
 use haddowg\JsonApi\Resource\Constraint\MultipleOf;
 use haddowg\JsonApi\Resource\Constraint\NotIn;
 use haddowg\JsonApi\Resource\Constraint\Pattern;
-use haddowg\JsonApi\Resource\Constraint\Timezone;
 use haddowg\JsonApi\Resource\Constraint\UniqueItems;
 use haddowg\JsonApi\Resource\Constraint\UrlFormat;
 use haddowg\JsonApi\Resource\Constraint\UuidFormat;
+use haddowg\JsonApi\Resource\Constraint\When;
 use haddowg\JsonApiBundle\Validation\ConstraintTranslator;
 use haddowg\JsonApiBundle\Validation\StrictEmailConstraintTranslator;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Clock\Clock;
+use Symfony\Component\Clock\Test\ClockSensitiveTrait;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\Constraints\All;
 use Symfony\Component\Validator\Constraints\Choice;
@@ -46,9 +52,12 @@ use Symfony\Component\Validator\Constraints\Regex;
 use Symfony\Component\Validator\Constraints\Unique;
 use Symfony\Component\Validator\Constraints\Url;
 use Symfony\Component\Validator\Constraints\Uuid;
+use Symfony\Component\Validator\Validation;
 
 final class ConstraintTranslatorTest extends TestCase
 {
+    use ClockSensitiveTrait;
+
     /**
      * @param list<Constraint> $expected
      */
@@ -118,17 +127,95 @@ final class ConstraintTranslatorTest extends TestCase
     }
 
     #[Test]
-    public function itRejectsAConstraintItDoesNotYetTranslate(): void
+    public function itAppliesWhenConstraintsOnlyWhileTheConditionHolds(): void
     {
-        // Date/timezone value constraints are a documented follow-up; the bridge
-        // fails loud rather than silently skipping the rule.
+        // Require a min length of 3, but only for a non-empty string value.
+        $when = new When(
+            condition: static fn(mixed $value): bool => \is_string($value) && $value !== '',
+            constraints: [new MinLength(3)],
+        );
+
+        self::assertSame(1, $this->violations($when, 'ab'));  // condition holds, too short → violation
+        self::assertSame(0, $this->violations($when, 'abc')); // condition holds, long enough → ok
+        self::assertSame(0, $this->violations($when, ''));    // condition fails → inner skipped
+    }
+
+    #[Test]
+    public function itTranslatesAfterToAStrictLowerDateBound(): void
+    {
+        $after = new After(new \DateTimeImmutable('2026-01-01T00:00:00+00:00'));
+
+        self::assertSame(0, $this->violations($after, '2026-06-01T00:00:00+00:00')); // after → ok
+        self::assertSame(1, $this->violations($after, '2025-12-01T00:00:00+00:00')); // before → violation
+        self::assertSame(1, $this->violations($after, '2026-01-01T00:00:00+00:00')); // equal → violation (strict)
+        self::assertSame(0, $this->violations($after, null));                        // absent → not this rule's concern
+        self::assertSame(0, $this->violations($after, 'not a date'));                // unparseable → skipped
+    }
+
+    #[Test]
+    public function itTranslatesBeforeToAStrictUpperDateBound(): void
+    {
+        $before = new Before(new \DateTimeImmutable('2026-01-01T00:00:00+00:00'));
+
+        self::assertSame(0, $this->violations($before, '2025-06-01T00:00:00+00:00')); // before → ok
+        self::assertSame(1, $this->violations($before, '2026-06-01T00:00:00+00:00')); // after → violation
+        self::assertSame(1, $this->violations($before, '2026-01-01T00:00:00+00:00')); // equal → violation (strict)
+    }
+
+    #[Test]
+    public function itTranslatesBetweenToAnInclusiveDateRange(): void
+    {
+        $between = new Between(
+            new \DateTimeImmutable('2026-01-01T00:00:00+00:00'),
+            new \DateTimeImmutable('2026-12-31T00:00:00+00:00'),
+        );
+
+        self::assertSame(0, $this->violations($between, '2026-06-01T00:00:00+00:00')); // inside
+        self::assertSame(0, $this->violations($between, '2026-01-01T00:00:00+00:00')); // lower bound inclusive
+        self::assertSame(0, $this->violations($between, '2026-12-31T00:00:00+00:00')); // upper bound inclusive
+        self::assertSame(1, $this->violations($between, '2025-12-31T00:00:00+00:00')); // below
+        self::assertSame(1, $this->violations($between, '2027-01-01T00:00:00+00:00')); // above
+    }
+
+    #[Test]
+    public function itResolvesAClosureBoundAtValidationTimeAgainstTheClock(): void
+    {
+        self::mockTime(new \DateTimeImmutable('2026-06-08T12:00:00+00:00'));
+        $after = new After(static fn(): \DateTimeImmutable => Clock::get()->now());
+
+        self::assertSame(0, $this->violations($after, '2026-06-09T00:00:00+00:00')); // after frozen now → ok
+        self::assertSame(1, $this->violations($after, '2026-06-07T00:00:00+00:00')); // before frozen now → violation
+    }
+
+    #[Test]
+    public function itRejectsAConstraintOutsideTheCoreVocabulary(): void
+    {
+        // Every core constraint is now translated; the default arm guards only
+        // against a constraint the bridge has never heard of.
+        $unknown = new class implements ConstraintInterface {
+            public function context(): Context
+            {
+                return new Context();
+            }
+        };
+
         $this->expectException(\LogicException::class);
 
-        $this->translator()->translate(new Timezone(['UTC']));
+        $this->translator()->translate($unknown);
     }
 
     private function translator(): ConstraintTranslator
     {
         return new ConstraintTranslator([new StrictEmailConstraintTranslator()]);
+    }
+
+    /**
+     * Runs the translated Symfony constraints against a value through a real
+     * validator and returns the violation count, so the produced rules are
+     * exercised — not just their shape.
+     */
+    private function violations(ConstraintInterface $constraint, mixed $value): int
+    {
+        return \count(Validation::createValidator()->validate($value, $this->translator()->translate($constraint)));
     }
 }

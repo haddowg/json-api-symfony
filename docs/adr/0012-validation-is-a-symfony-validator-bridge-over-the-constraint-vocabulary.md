@@ -20,11 +20,20 @@ writes run unvalidated. Core's one shipped `Custom` constraint (`email.strict`) 
 handled through an `$id`-keyed `CustomConstraintTranslatorInterface` extension
 point applications extend by tagging a service.
 
-Deliberately **deferred** to a follow-up (loud `LogicException`, never a silent
-skip): the closure-based `When` and the date/timezone value constraints
-(`After`/`Before`/`Between`/`Timezone`), which need a conditional-evaluation
-validator and a date-bearing fixture to exercise honestly. The audit also surfaced
-genuine vocabulary gaps core has no constraint for — cross-field rules
-(`endDate after startDate`), a `Valid`-style cascade into nested/related resources,
-and DB-uniqueness (`UniqueEntity`) — recorded for the v1 core-surface review rather
-than worked around here.
+The closure-carrying constraints initially deferred here are now translated. They
+have no stock Symfony equivalent that accepts a PHP closure (Symfony's own `When`
+takes an ExpressionLanguage string, and the comparison constraints coerce only the
+*bound*, never a raw string value), so each becomes a `Callback`: `When` evaluates
+its condition and, when true, re-validates the value against the translated inner
+constraints; `After`/`Before`/`Between` coerce the value to a `\DateTimeImmutable`
+and compare it against a bound resolved at validation time — so a closure bound such
+as "now" reflects the moment of the request (exercised under a frozen `symfony/clock`
+in the conformance suite). `Timezone` was removed from core rather than translated:
+an ISO-8601 value on the wire carries an offset, not a named zone, so it could not be
+resolved well (core ADR 0020). With those handled, the bridge's `default` arm is
+reached only by a constraint outside core's vocabulary.
+
+The audit also surfaced genuine vocabulary gaps core has no constraint for —
+cross-field rules (`endDate after startDate`), a `Valid`-style cascade into
+nested/related resources, and DB-uniqueness (`UniqueEntity`) — recorded for the v1
+core-surface review rather than worked around here.

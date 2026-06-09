@@ -18,5 +18,6 @@ final class Article
         public string $title = '',
         public string $body = '',
         public string $category = '',
+        public ?\DateTimeImmutable $publishedAt = null,
     ) {}
 }
