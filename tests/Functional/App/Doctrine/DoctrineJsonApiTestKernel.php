@@ -116,6 +116,8 @@ final class DoctrineJsonApiTestKernel extends Kernel
             ->autoconfigure();
 
         $services->set(DoctrineArticleResource::class);
+        $services->set(DoctrineAuthorResource::class);
+        $services->set(DoctrineCommentResource::class);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

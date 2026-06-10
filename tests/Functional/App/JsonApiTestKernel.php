@@ -8,6 +8,8 @@ use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\ArticleResource;
+use haddowg\JsonApiBundle\Tests\Functional\App\Resource\AuthorResource;
+use haddowg\JsonApiBundle\Tests\Functional\App\Resource\CommentResource;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Component\Config\Loader\LoaderInterface;
@@ -80,9 +82,19 @@ final class JsonApiTestKernel extends Kernel
             ->autoconfigure();
 
         $services->set(ArticleResource::class);
+        $services->set(AuthorResource::class);
+        $services->set(CommentResource::class);
 
         $services->set('test.articles_provider', InMemoryDataProvider::class)
-            ->factory([ArticleProviderFactory::class, 'create'])
+            ->factory([ArticleProviderFactory::class, 'createArticles'])
+            ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+
+        $services->set('test.authors_provider', InMemoryDataProvider::class)
+            ->factory([ArticleProviderFactory::class, 'createAuthors'])
+            ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+
+        $services->set('test.comments_provider', InMemoryDataProvider::class)
+            ->factory([ArticleProviderFactory::class, 'createComments'])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
     }
 

@@ -1,0 +1,182 @@
+<?php
+
+declare(strict_types=1);
+
+namespace haddowg\JsonApiBundle\Tests\Functional;
+
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\Test;
+
+/**
+ * The Phase-3 foundation acceptance suite: a resource's declared relationships
+ * render as JSON:API linkage on reads. `GET /articles/{id}` and a collection
+ * item from `GET /articles` must each carry a `relationships` member whose
+ * to-one `author` is a single resource identifier and whose to-many `comments`
+ * is a list of resource identifiers, with the correct related `type` and ids.
+ *
+ * Abstract over the kernel so the **same assertions** run against the in-memory
+ * provider ({@see InMemoryRelationshipReadTest}) and the Doctrine provider
+ * ({@see DoctrineRelationshipReadTest}); both serve the shared
+ * `BaseArticleResource` relationship declaration over the shared
+ * {@see \haddowg\JsonApiBundle\Tests\Functional\App\ArticleFixtures} seeds, so a
+ * failure on one provider localizes the bug to that provider's execution.
+ *
+ * Foundation only: this asserts linkage in the `relationships` member, not
+ * related/relationship endpoints, `include`, links or mutations — those are
+ * later slices.
+ */
+abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTestCase
+{
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    public function aToOneRelationshipRendersASingleResourceIdentifier(): void
+    {
+        // Article 1 is authored by a1 (see ArticleFixtures::relationships()).
+        $relationships = $this->relationshipsOf($this->fetchResource('/articles/1'));
+
+        $author = $relationships['author'] ?? null;
+        self::assertIsArray($author);
+        self::assertArrayHasKey('data', $author);
+        self::assertSame(['type' => 'authors', 'id' => 'a1'], $author['data']);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    public function aToManyRelationshipRendersAListOfResourceIdentifiers(): void
+    {
+        // Article 1 owns comments c1 and c2 in declaration order.
+        $relationships = $this->relationshipsOf($this->fetchResource('/articles/1'));
+
+        $comments = $relationships['comments'] ?? null;
+        self::assertIsArray($comments);
+        self::assertArrayHasKey('data', $comments);
+
+        self::assertSame(
+            [
+                ['type' => 'comments', 'id' => 'c1'],
+                ['type' => 'comments', 'id' => 'c2'],
+            ],
+            $this->normaliseIdentifiers($comments['data']),
+        );
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    public function anEmptyToManyRelationshipRendersAnEmptyList(): void
+    {
+        // Article 4 has an author (a2) but no comments.
+        $relationships = $this->relationshipsOf($this->fetchResource('/articles/4'));
+
+        $author = $relationships['author'] ?? null;
+        self::assertIsArray($author);
+        self::assertSame(['type' => 'authors', 'id' => 'a2'], $author['data']);
+
+        $comments = $relationships['comments'] ?? null;
+        self::assertIsArray($comments);
+        self::assertArrayHasKey('data', $comments);
+        self::assertSame([], $comments['data']);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    public function relationshipsRenderOnACollectionItem(): void
+    {
+        // The same linkage must appear on a primary-data item of a collection
+        // fetch, not only on a single-resource fetch.
+        $document = $this->fetchDocument('/articles?filter[id]=3');
+
+        $data = $document['data'] ?? null;
+        self::assertIsArray($data);
+        self::assertCount(1, $data);
+
+        $resource = $data[0] ?? null;
+        self::assertIsArray($resource);
+        self::assertSame('articles', $resource['type'] ?? null);
+        self::assertSame('3', $resource['id'] ?? null);
+
+        $relationships = $resource['relationships'] ?? null;
+        self::assertIsArray($relationships);
+
+        // Article 3 is authored by a1 and owns comments c4 and c5.
+        $author = $relationships['author'] ?? null;
+        self::assertIsArray($author);
+        self::assertSame(['type' => 'authors', 'id' => 'a1'], $author['data']);
+
+        $comments = $relationships['comments'] ?? null;
+        self::assertIsArray($comments);
+        self::assertSame(
+            [
+                ['type' => 'comments', 'id' => 'c4'],
+                ['type' => 'comments', 'id' => 'c5'],
+            ],
+            $this->normaliseIdentifiers($comments['data']),
+        );
+    }
+
+    // --- helpers ---------------------------------------------------------------
+
+    /**
+     * Fetches `$path` and returns the decoded document, asserting a 200 JSON:API
+     * response.
+     *
+     * @return array<string, mixed>
+     */
+    private function fetchDocument(string $path): array
+    {
+        $response = $this->handle($path);
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame('application/vnd.api+json', $response->headers->get('Content-Type'));
+
+        return $this->decode($response);
+    }
+
+    /**
+     * The primary-data resource object of a single-resource fetch.
+     *
+     * @return array<string, mixed>
+     */
+    private function fetchResource(string $path): array
+    {
+        $data = $this->fetchDocument($path)['data'] ?? null;
+        self::assertIsArray($data);
+
+        /** @var array<string, mixed> $data */
+        return $data;
+    }
+
+    /**
+     * The `relationships` member of a resource object.
+     *
+     * @param array<string, mixed> $resource
+     *
+     * @return array<string, mixed>
+     */
+    private function relationshipsOf(array $resource): array
+    {
+        $relationships = $resource['relationships'] ?? null;
+        self::assertIsArray($relationships);
+
+        /** @var array<string, mixed> $relationships */
+        return $relationships;
+    }
+
+    /**
+     * Reduces a to-many `data` payload to a list of `{type, id}` identifiers in
+     * document order, so the assertion is independent of any extra members.
+     *
+     * @return list<array{type: mixed, id: mixed}>
+     */
+    private function normaliseIdentifiers(mixed $data): array
+    {
+        self::assertIsArray($data);
+
+        $identifiers = [];
+        foreach ($data as $identifier) {
+            self::assertIsArray($identifier);
+            $identifiers[] = ['type' => $identifier['type'] ?? null, 'id' => $identifier['id'] ?? null];
+        }
+
+        return $identifiers;
+    }
+}

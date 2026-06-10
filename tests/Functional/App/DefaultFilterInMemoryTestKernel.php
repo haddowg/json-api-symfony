@@ -80,7 +80,7 @@ final class DefaultFilterInMemoryTestKernel extends Kernel
         $services->set(DefaultFilterArticleResource::class);
 
         $services->set('test.articles_provider', InMemoryDataProvider::class)
-            ->factory([ArticleProviderFactory::class, 'create'])
+            ->factory([ArticleProviderFactory::class, 'createArticles'])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
     }
 
