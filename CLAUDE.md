@@ -60,8 +60,9 @@ supplies the framework integration (DI, routing, the request lifecycle) and a
 - **Validation.** First-class **Symfony Validator bridge**: translate core
   `ConstraintInterface` VOs → Symfony `Constraint`s, validate on create/update in
   the hydration path, map violations → JSON:API `422` with `source.pointer`.
-  `Custom` via extension-point translators keyed by `$id`; `When` and the date
-  bounds (`After`/`Before`/`Between`) via `Callback`. Core's
+  `When` and the date bounds (`After`/`Before`/`Between`) via `Callback`; a custom
+  constraint VO (attached with core's `constrain()`) via a class-keyed
+  `ConstraintTranslatorInterface` extension point. Core's
   opis JSON-Schema validation is wired as an optional dev/CI toggle.
 - **Data layer = Provider/Persister SPI, Doctrine reference impl.** The generic
   CRUD handler is storage-agnostic over a bundle `DataProvider` (fetch one /
@@ -97,7 +98,8 @@ decision, then 1–3 sentences of *why*). The ADRs already written: `0001`–`00
 > into Symfony rules, validates the document **before hydration**, and renders
 > violations as `422` with `source.pointer`; it is **optional** (`symfony/validator`
 > is `suggest`), resolves `Required`/`Nullable` by create/update `Context`, and
-> exposes an `$id`-keyed `Custom` extension point (ADR 0012). An **optional opis
+> exposes a class-keyed `ConstraintTranslatorInterface` extension point for custom
+> constraint VOs (ADR 0012). An **optional opis
 > structural linter** (`json_api.schema_validation`, off by default) validates
 > write bodies against the JSON:API JSON Schema → `400`, separate from the
 > semantic `422` bridge (ADR 0013). Built on two core changes — error-document
