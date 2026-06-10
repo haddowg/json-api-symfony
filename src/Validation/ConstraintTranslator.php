@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Validation;
 
+use Egulias\EmailValidator\EmailValidator;
 use haddowg\JsonApi\Resource\Constraint\After;
 use haddowg\JsonApi\Resource\Constraint\Before;
 use haddowg\JsonApi\Resource\Constraint\Between;
 use haddowg\JsonApi\Resource\Constraint\ConstraintInterface;
-use haddowg\JsonApi\Resource\Constraint\Custom;
 use haddowg\JsonApi\Resource\Constraint\Each;
 use haddowg\JsonApi\Resource\Constraint\EmailFormat;
 use haddowg\JsonApi\Resource\Constraint\ExclusiveMax;
@@ -62,32 +62,34 @@ use Symfony\Component\Validator\Context\ExecutionContextInterface;
  * context, since Symfony expresses them as a field's `Required`/`Optional` wrapper
  * plus `NotBlank`/`NotNull`, not as standalone value constraints.
  *
- * The `$id`-keyed {@see Custom} escape hatch is delegated to the registered
- * {@see CustomConstraintTranslatorInterface}s. The closure-carrying constraints —
- * {@see When} (a condition closure) and {@see After}/{@see Before}/{@see Between}
- * (bounds that may be a closure evaluated at validation time) — have no stock
- * Symfony equivalent that accepts a PHP closure, so each translates to a
- * {@see Callback}: `When` evaluates its condition and, when true, validates the
- * value against the translated inner constraints; the date bounds coerce the value
- * to a `\DateTimeImmutable` and compare it against the resolved bound. With those
- * handled the `default` arm is reached only by a constraint outside core's
- * vocabulary.
+ * The closure-carrying constraints — {@see When} (a condition closure) and
+ * {@see After}/{@see Before}/{@see Between} (bounds that may be a closure evaluated
+ * at validation time) — have no stock Symfony equivalent that accepts a PHP
+ * closure, so each translates to a {@see Callback}: `When` evaluates its condition
+ * and, when true, validates the value against the translated inner constraints; the
+ * date bounds coerce the value to a `\DateTimeImmutable` and compare it against the
+ * resolved bound.
+ *
+ * A constraint outside this built-in vocabulary is delegated to the registered
+ * {@see ConstraintTranslatorInterface}s (first {@see ConstraintTranslatorInterface::supports()}
+ * match wins) — the typed extension point applications use for their own
+ * constraint value objects; if none matches, translation fails loud.
  */
 final class ConstraintTranslator
 {
     /**
-     * @var list<CustomConstraintTranslatorInterface>
+     * @var list<ConstraintTranslatorInterface>
      */
-    private readonly array $customTranslators;
+    private readonly array $extensionTranslators;
 
     /**
-     * @param iterable<CustomConstraintTranslatorInterface> $customTranslators in priority order
+     * @param iterable<ConstraintTranslatorInterface> $extensionTranslators in priority order
      */
-    public function __construct(iterable $customTranslators = [])
+    public function __construct(iterable $extensionTranslators = [])
     {
-        $this->customTranslators = \is_array($customTranslators)
-            ? \array_values($customTranslators)
-            : \iterator_to_array($customTranslators, false);
+        $this->extensionTranslators = \is_array($extensionTranslators)
+            ? \array_values($extensionTranslators)
+            : \iterator_to_array($extensionTranslators, false);
     }
 
     /**
@@ -114,7 +116,7 @@ final class ConstraintTranslator
             $constraint instanceof MinProperties => [new Count(min: \max(0, $constraint->value))],
             $constraint instanceof MaxProperties => [new Count(max: \max(0, $constraint->value))],
             $constraint instanceof UniqueItems => [new Unique()],
-            $constraint instanceof EmailFormat => [new Email()],
+            $constraint instanceof EmailFormat => [$this->email($constraint)],
             $constraint instanceof UrlFormat => [$this->url($constraint)],
             $constraint instanceof UuidFormat => [$this->uuid($constraint)],
             $constraint instanceof IpFormat => [new Ip(version: match ($constraint->version) {
@@ -129,11 +131,7 @@ final class ConstraintTranslator
             $constraint instanceof After => [$this->dateBound($constraint->bound, true, 'This value should be after {{ limit }}.')],
             $constraint instanceof Before => [$this->dateBound($constraint->bound, false, 'This value should be before {{ limit }}.')],
             $constraint instanceof Between => [$this->dateRange($constraint->min, $constraint->max)],
-            $constraint instanceof Custom => $this->translateCustom($constraint),
-            default => throw new \LogicException(\sprintf(
-                'The JSON:API constraint %s is not yet translated by the Symfony Validator bridge.',
-                $constraint::class,
-            )),
+            default => $this->translateExtension($constraint),
         };
     }
 
@@ -265,19 +263,39 @@ final class ConstraintTranslator
     }
 
     /**
+     * Translates {@see EmailFormat}, reading its typed `strict` flag. Strict mode
+     * needs `egulias/email-validator`; without it strict degrades to HTML5 rather
+     * than failing the request, keeping that package a `suggest`.
+     */
+    private function email(EmailFormat $constraint): Email
+    {
+        if (!$constraint->strict) {
+            return new Email();
+        }
+
+        return new Email(mode: \class_exists(EmailValidator::class)
+            ? Email::VALIDATION_MODE_STRICT
+            : Email::VALIDATION_MODE_HTML5);
+    }
+
+    /**
+     * Delegates a constraint outside the built-in vocabulary to the first
+     * registered {@see ConstraintTranslatorInterface} that supports it.
+     *
      * @return list<Constraint>
      */
-    private function translateCustom(Custom $constraint): array
+    private function translateExtension(ConstraintInterface $constraint): array
     {
-        foreach ($this->customTranslators as $translator) {
-            if ($translator->supports($constraint->id)) {
+        foreach ($this->extensionTranslators as $translator) {
+            if ($translator->supports($constraint)) {
                 return $translator->translate($constraint);
             }
         }
 
         throw new \LogicException(\sprintf(
-            'No CustomConstraintTranslator is registered for the custom JSON:API constraint id "%s".',
-            $constraint->id,
+            'No translator is registered for the JSON:API constraint %s. Implement a %s and tag it, or use a built-in constraint.',
+            $constraint::class,
+            ConstraintTranslatorInterface::class,
         ));
     }
 

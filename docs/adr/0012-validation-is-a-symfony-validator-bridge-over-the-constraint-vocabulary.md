@@ -16,9 +16,13 @@ typed exception core does not ship — rendered by the existing exception listen
 
 The bridge is **optional**: `symfony/validator` is a `suggest` dependency, so it is
 wired only when installed, and the handler's validator is nullable — without it,
-writes run unvalidated. Core's one shipped `Custom` constraint (`email.strict`) is
-handled through an `$id`-keyed `CustomConstraintTranslatorInterface` extension
-point applications extend by tagging a service.
+writes run unvalidated. Email strictness is read off the typed `EmailFormat::$strict`
+flag (strict mode needs `egulias/email-validator`, degrading to HTML5 without it).
+A constraint outside core's built-in vocabulary is delegated to a class-keyed
+`ConstraintTranslatorInterface` extension point — applications register a translator
+for their own typed constraint VO by tagging a service; the bridge consults them
+(first `supports()` match) and fails loud if none matches. This replaces the removed
+`$id`-keyed `Custom` escape hatch (core ADR 0021).
 
 The closure-carrying constraints initially deferred here are now translated. They
 have no stock Symfony equivalent that accepts a PHP closure (Symfony's own `When`
@@ -30,8 +34,9 @@ and compare it against a bound resolved at validation time — so a closure boun
 as "now" reflects the moment of the request (exercised under a frozen `symfony/clock`
 in the conformance suite). `Timezone` was removed from core rather than translated:
 an ISO-8601 value on the wire carries an offset, not a named zone, so it could not be
-resolved well (core ADR 0020). With those handled, the bridge's `default` arm is
-reached only by a constraint outside core's vocabulary.
+resolved well (core ADR 0020). With those handled, the only constraints reaching the
+`default` arm are those outside core's built-in vocabulary — which it routes to the
+extension translators above.
 
 The audit also surfaced genuine vocabulary gaps core has no constraint for —
 cross-field rules (`endDate after startDate`), a `Valid`-style cascade into
