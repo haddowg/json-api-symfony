@@ -9,6 +9,8 @@ use haddowg\JsonApi\Resource\Filter\FilterHandlerInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\UnsupportedFilter;
 use haddowg\JsonApi\Resource\Filter\Where;
+use haddowg\JsonApi\Resource\Filter\WhereDoesntHave;
+use haddowg\JsonApi\Resource\Filter\WhereHas;
 use haddowg\JsonApi\Resource\Filter\WhereIdIn;
 use haddowg\JsonApi\Resource\Filter\WhereIdNotIn;
 use haddowg\JsonApi\Resource\Filter\WhereIn;
@@ -33,9 +35,13 @@ use haddowg\JsonApi\Resource\Filter\WhereNull;
  * - {@see WhereIn}/{@see WhereIdIn} with an empty value list match nothing
  *   (`IN ()` is not valid SQL); the negated variants then match everything.
  * - {@see WhereNull}/{@see WhereNotNull} ignore the request value entirely.
- * - The relationship filters (`WhereHas`/`WhereDoesntHave`) are not executable
- *   until the relationship phase and raise {@see UnsupportedFilter} (a 500 —
- *   declaring one today is a server configuration error, not a client mistake).
+ * - {@see WhereHas}/{@see WhereDoesntHave} are relationship-existence filters:
+ *   they ignore the request value and match rows whose named association has (or
+ *   lacks) at least one related row. Pushed down as a correlated `EXISTS` (or
+ *   `NOT EXISTS`) subquery over the association — set-membership, not a join, so
+ *   the primary-data rows are neither duplicated nor need a `DISTINCT`, and a
+ *   to-one and a to-many translate identically. Mirrors the in-memory handler's
+ *   non-empty-collection / non-null witness.
  *
  * Columns come from the server-side resource declaration, never the client, and
  * are validated as DQL field paths (dots allowed for embeddables) before being
@@ -64,8 +70,48 @@ final class DoctrineFilterHandler implements FilterHandlerInterface
             $filter instanceof WhereIdNotIn => $this->whereIn($query, $filter->column, $this->toList($value, $filter->delimiter), true),
             $filter instanceof WhereNull => $query->andWhere(\sprintf('%s IS NULL', $this->path($query, $filter->column))),
             $filter instanceof WhereNotNull => $query->andWhere(\sprintf('%s IS NOT NULL', $this->path($query, $filter->column))),
+            $filter instanceof WhereHas => $this->whereHas($query, $filter->relationship, false),
+            $filter instanceof WhereDoesntHave => $this->whereHas($query, $filter->relationship, true),
             default => throw new UnsupportedFilter($filter),
         };
+    }
+
+    /**
+     * Relationship-existence predicate as a correlated `EXISTS` (or, negated,
+     * `NOT EXISTS`) subquery over the named association. The subquery re-roots on
+     * the same entity, joins the association, and correlates its root back to the
+     * outer query's root — so a row matches iff it has at least one related row.
+     * This is set-membership (not a join into the primary `SELECT`), so the
+     * primary-data rows are neither multiplied nor in need of a `DISTINCT`, and a
+     * to-one and a to-many translate identically.
+     */
+    private function whereHas(QueryBuilder $query, string $relationship, bool $negate): QueryBuilder
+    {
+        if (\preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $relationship) !== 1) {
+            throw new \LogicException(\sprintf('"%s" is not a valid Doctrine association name.', $relationship));
+        }
+
+        $rootAlias = $this->rootAlias($query);
+        $rootEntity = $query->getRootEntities()[0]
+            ?? throw new \LogicException('The QueryBuilder has no root entity to filter on.');
+
+        $subQuery = $query->getEntityManager()->createQueryBuilder();
+
+        // A per-subquery alias so several relationship filters on one query keep
+        // distinct subquery scopes (\spl_object_id is unique for the lifetime of
+        // this builder, which lives only as long as this DQL string is built).
+        $subAlias = 'jsonapi_has_' . \spl_object_id($subQuery);
+        $relAlias = $subAlias . '_rel';
+
+        $subQuery
+            ->select('1')
+            ->from($rootEntity, $subAlias)
+            ->innerJoin($subAlias . '.' . $relationship, $relAlias)
+            ->andWhere(\sprintf('%s = %s', $subAlias, $rootAlias));
+
+        $exists = $query->expr()->exists($subQuery->getDQL());
+
+        return $query->andWhere($negate ? $query->expr()->not($exists) : $exists);
     }
 
     private function where(Where $filter, QueryBuilder $query, mixed $value): QueryBuilder
