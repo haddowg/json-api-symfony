@@ -30,5 +30,7 @@ class ArticleEntity
         public ?\DateTimeImmutable $publishedAt = null,
         #[ORM\Column(nullable: true)]
         public ?string $couponCode = null,
+        #[ORM\Column(type: 'datetime_immutable', nullable: true)]
+        public ?\DateTimeImmutable $expiresAt = null,
     ) {}
 }

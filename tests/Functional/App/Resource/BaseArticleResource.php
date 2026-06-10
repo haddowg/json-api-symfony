@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\Resource;
 use haddowg\JsonApi\Pagination\PagePaginator;
 use haddowg\JsonApi\Pagination\PaginatorInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
+use haddowg\JsonApi\Resource\Constraint\Comparison;
 use haddowg\JsonApi\Resource\Field\DateTime;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Str;
@@ -32,8 +33,10 @@ use Symfony\Component\Clock\Clock;
  * and an enum) that are inert on reads but exercised by the write/validation
  * conformance suites — the same declaration drives both halves. `publishedAt`
  * adds an optional date attribute whose closure bound ("not in the future")
- * exercises the date-constraint bridge under a frozen clock, and `couponCode`
- * carries a `when()`-declared conditional rule that the bridge executes.
+ * exercises the date-constraint bridge under a frozen clock, `couponCode`
+ * carries a `when()`-declared conditional rule that the bridge executes, and
+ * `expiresAt` carries a `CompareField` cross-field rule (must be after
+ * `publishedAt`) the bridge evaluates document-first.
  */
 abstract class BaseArticleResource extends AbstractResource
 {
@@ -60,6 +63,9 @@ abstract class BaseArticleResource extends AbstractResource
                     $field->minLength(12);
                 },
             ),
+            // Cross-field rule: expiresAt must be after publishedAt — exercises the
+            // document-level CompareField execution path.
+            DateTime::make('expiresAt')->nullable()->compareWith('publishedAt', Comparison::GreaterThan),
         ];
     }
 
