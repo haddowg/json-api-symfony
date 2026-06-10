@@ -31,6 +31,7 @@ use haddowg\JsonApi\Response\IdentifierResponse;
 use haddowg\JsonApi\Response\NoContentResponse;
 use haddowg\JsonApi\Response\RelatedResponse;
 use haddowg\JsonApi\Server\Server;
+use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
@@ -59,6 +60,15 @@ use haddowg\JsonApiBundle\Validation\ResourceValidator;
  *    (a `404` when absent), hydrates the body onto it, and persists it (`200`);
  *  - {@see DeleteResourceOperation} loads the target (a `404` when absent),
  *    deletes it, and renders `204`.
+ *
+ * A `data.relationships` member on a create/update is **not** hydrated by core (a
+ * scalar linkage id would land on a typed association property): the handler strips
+ * it from the body so core hydrates only id + attributes, then sets each named
+ * association through the persister's relationship seam
+ * ({@see DataPersisterInterface::mutateRelationship()}, {@see Mode::Replace}) with
+ * the commit deferred so the single {@see DataPersisterInterface::create()}/
+ * {@see DataPersisterInterface::update()} flush owns it — a not-yet-persisted create
+ * target is never flushed mid-association (ADR 0018).
  *
  * Relationship reads share the same provider-resolution shape: load the parent
  * through the read provider (a `404` when absent), resolve the named relation on
@@ -376,14 +386,23 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
     {
         $server = $this->server($operation->context());
         $type = $operation->target()->type;
+        $body = $operation->body();
 
-        $this->validate($server, $type, $operation->body(), creating: true);
+        $this->validate($server, $type, $body, creating: true);
 
         $persister = $this->persisters->forType($type);
         $serializer = $server->serializerFor($type);
 
-        $entity = $server->hydratorFor($type)->hydrate($operation->body(), $persister->instantiate($type));
+        // Embedded relationships are stripped from the body so core hydrates only
+        // attributes + id; the persister then sets the associations (resolving
+        // linkage ids → managed references / stored objects) so a typed entity
+        // never has a scalar id assigned to an association property (ADR 0018).
+        $relationships = $this->extractRelationships($server, $type, $body);
+
+        $entity = $server->hydratorFor($type)->hydrate($this->withoutRelationships($body), $persister->instantiate($type));
         \assert(\is_object($entity));
+
+        $this->applyRelationships($persister, $type, $entity, $relationships);
 
         $this->validateEntity($server, $type, $entity, creating: true);
 
@@ -399,24 +418,150 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $server = $this->server($operation->context());
         $type = $operation->target()->type;
         $id = $operation->target()->id;
+        $body = $operation->body();
 
         $entity = $id !== null ? $this->providers->forType($type)->fetchOne($type, $id) : null;
         if ($entity === null) {
             return ErrorResponse::fromException(new ResourceNotFound());
         }
 
-        $this->validate($server, $type, $operation->body(), creating: false);
+        $this->validate($server, $type, $body, creating: false);
 
         $serializer = $server->serializerFor($type);
+        $persister = $this->persisters->forType($type);
 
-        $entity = $server->hydratorFor($type)->hydrate($operation->body(), $entity);
+        // As for create: hydrate attributes via core, then replace the associations
+        // named in `data.relationships` through the persister seam (ADR 0018).
+        $relationships = $this->extractRelationships($server, $type, $body);
+
+        $entity = $server->hydratorFor($type)->hydrate($this->withoutRelationships($body), $entity);
         \assert(\is_object($entity));
+
+        $this->applyRelationships($persister, $type, $entity, $relationships);
 
         $this->validateEntity($server, $type, $entity, creating: false);
 
-        $entity = $this->persisters->forType($type)->update($type, $entity);
+        $entity = $persister->update($type, $entity);
 
         return DataResponse::fromResource($entity, $serializer);
+    }
+
+    /**
+     * Collects the writable relationships present in the write body, each paired
+     * with its parsed linkage, so the handler can apply them through the persister
+     * seam after core hydrates the attributes. A relationship that is unknown to
+     * the resource or read-only for this operation is skipped (core's hydrator and
+     * the validator own those rules); a bare serializer/hydrator pair declares no
+     * relations, so there is nothing to collect.
+     *
+     * @return list<array{relation: RelationInterface, linkage: ToOneRelationship|ToManyRelationship}>
+     */
+    private function extractRelationships(Server $server, string $type, JsonApiRequestInterface $body): array
+    {
+        try {
+            $resource = $server->resources()->resourceFor($type);
+        } catch (NoResourceRegistered) {
+            return [];
+        }
+
+        $collected = [];
+        foreach ($this->bodyRelationshipNames($body) as $name) {
+            $relation = $resource->relationNamed($name);
+            if ($relation === null) {
+                continue;
+            }
+
+            if ($relation->isToMany()) {
+                if ($body->hasToManyRelationship($name)) {
+                    $collected[] = ['relation' => $relation, 'linkage' => $body->getToManyRelationship($name)];
+                }
+
+                continue;
+            }
+
+            if ($body->hasToOneRelationship($name)) {
+                $collected[] = ['relation' => $relation, 'linkage' => $body->getToOneRelationship($name)];
+            }
+        }
+
+        return $collected;
+    }
+
+    /**
+     * Applies each collected relationship to the hydrated entity through the
+     * persister's relationship seam in {@see Mode::Replace} — the persister resolves
+     * the linkage ids to the related references/objects and sets the association —
+     * deferring the commit (`$flush = false`) so the subsequent
+     * {@see DataPersisterInterface::create()}/{@see DataPersisterInterface::update()}
+     * owns the single flush and a not-yet-persisted create target is never flushed
+     * mid-association (ADR 0018).
+     *
+     * @param list<array{relation: RelationInterface, linkage: ToOneRelationship|ToManyRelationship}> $relationships
+     */
+    private function applyRelationships(
+        DataPersisterInterface $persister,
+        string $type,
+        object $entity,
+        array $relationships,
+    ): void {
+        foreach ($relationships as $relationship) {
+            $persister->mutateRelationship(
+                $type,
+                $entity,
+                $relationship['relation'],
+                $relationship['linkage'],
+                Mode::Replace,
+                flush: false,
+            );
+        }
+    }
+
+    /**
+     * The relationship names present in the write body's `data.relationships`
+     * member, or an empty list when the document carries none.
+     *
+     * @return list<string>
+     */
+    private function bodyRelationshipNames(JsonApiRequestInterface $body): array
+    {
+        $data = $body->getResource();
+        if (!\is_array($data)) {
+            return [];
+        }
+
+        $relationships = $data['relationships'] ?? null;
+        if (!\is_array($relationships)) {
+            return [];
+        }
+
+        /** @var list<string> $names */
+        $names = \array_values(\array_filter(\array_keys($relationships), '\is_string'));
+
+        return $names;
+    }
+
+    /**
+     * A copy of the write body with `data.relationships` removed, so core's
+     * per-type hydrator hydrates only the id + attributes and never assigns a
+     * scalar linkage id to a typed association property — the bundle applies the
+     * associations through the persister seam instead (ADR 0018).
+     */
+    private function withoutRelationships(JsonApiRequestInterface $body): JsonApiRequestInterface
+    {
+        /** @var array<string, mixed> $document */
+        $document = (array) $body->getParsedBody();
+        $data = $document['data'] ?? null;
+        if (!\is_array($data) || !isset($data['relationships'])) {
+            return $body;
+        }
+
+        unset($data['relationships']);
+        $document['data'] = $data;
+
+        $stripped = $body->withParsedBody($document);
+        \assert($stripped instanceof JsonApiRequestInterface);
+
+        return $stripped;
     }
 
     private function delete(DeleteResourceOperation $operation): NoContentResponse|ErrorResponse

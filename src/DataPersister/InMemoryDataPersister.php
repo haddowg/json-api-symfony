@@ -78,24 +78,23 @@ final class InMemoryDataPersister implements DataPersisterInterface
         RelationInterface $relation,
         ToOneRelationship|ToManyRelationship $linkage,
         Mode $mode,
+        bool $flush = true,
     ): object {
         $property = $relation->column() ?? $relation->name();
         $relatedType = $relation->relatedTypes()[0] ?? '';
 
         if ($linkage instanceof ToOneRelationship) {
             // Replace (or, when the linkage is empty, clear) the to-one reference.
-            $related = $linkage->resourceIdentifier?->id !== null
+            $entity->{$property} = $linkage->resourceIdentifier?->id !== null
                 ? $this->resolveRelated($relatedType, $linkage->resourceIdentifier->id)
                 : null;
-
-            $entity->{$property} = $related;
-            $this->store->save($entity);
-
-            return $entity;
+        } else {
+            $entity->{$property} = $this->applyToMany($entity, $property, $relatedType, $linkage, $mode);
         }
 
-        $entity->{$property} = $this->applyToMany($entity, $property, $relatedType, $linkage, $mode);
-        $this->store->save($entity);
+        if ($flush) {
+            $this->store->save($entity);
+        }
 
         return $entity;
     }
