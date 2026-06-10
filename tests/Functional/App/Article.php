@@ -20,5 +20,6 @@ final class Article
         public string $category = '',
         public ?\DateTimeImmutable $publishedAt = null,
         public ?string $couponCode = null,
+        public ?\DateTimeImmutable $expiresAt = null,
     ) {}
 }

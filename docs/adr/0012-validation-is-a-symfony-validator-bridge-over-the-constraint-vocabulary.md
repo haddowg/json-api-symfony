@@ -38,7 +38,13 @@ resolved well (core ADR 0020). With those handled, the only constraints reaching
 `default` arm are those outside core's built-in vocabulary — which it routes to the
 extension translators above.
 
-The audit also surfaced genuine vocabulary gaps core has no constraint for —
-cross-field rules (`endDate after startDate`), a `Valid`-style cascade into
-nested/related resources, and DB-uniqueness (`UniqueEntity`) — recorded for the v1
-core-surface review rather than worked around here.
+`CompareField` (a cross-field rule, e.g. `endDate after startDate`) is the one
+constraint the bridge does **not** validate per-field: the per-field `Collection`
+sees each value in isolation, so the bridge evaluates `CompareField` at the
+**document** level after the `Collection` pass — reading the sibling value straight
+from the `attributes` array, coercing the pair to numbers or dates where it can,
+and pointing any violation at the owning field. This closed the cross-field gap the
+audit had recorded.
+
+The remaining recorded gaps are a `Valid`-style cascade into nested/related
+resources and DB-uniqueness (`UniqueEntity`).

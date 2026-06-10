@@ -152,6 +152,36 @@ abstract class ValidationConformanceTestCase extends JsonApiFunctionalTestCase
 
     #[Test]
     #[Group('spec:crud')]
+    public function aCrossFieldRuleComparesAgainstTheSiblingValue(): void
+    {
+        self::mockTime(new \DateTimeImmutable('2026-06-08T12:00:00+00:00'));
+
+        // expiresAt must be after publishedAt: an earlier expiry fails at its pointer...
+        $expiresBeforePublished = $this->handle('/articles', 'POST', [
+            'data' => ['type' => 'articles', 'attributes' => [
+                'title' => 'A fine title', 'category' => 'news',
+                'publishedAt' => '2026-06-06T12:00:00+00:00',
+                'expiresAt' => '2026-06-05T12:00:00+00:00',
+            ]],
+        ]);
+
+        self::assertSame(422, $expiresBeforePublished->getStatusCode());
+        self::assertSame(['/data/attributes/expiresAt'], $this->pointers($expiresBeforePublished));
+
+        // ...while a later expiry is accepted.
+        $expiresAfterPublished = $this->handle('/articles', 'POST', [
+            'data' => ['type' => 'articles', 'attributes' => [
+                'title' => 'A fine title', 'category' => 'guide',
+                'publishedAt' => '2026-06-06T12:00:00+00:00',
+                'expiresAt' => '2026-06-07T12:00:00+00:00',
+            ]],
+        ]);
+
+        self::assertSame(201, $expiresAfterPublished->getStatusCode());
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
     public function aConditionalConstraintIsEnforcedOnlyWhenItsConditionHolds(): void
     {
         // couponCode is length-checked only when it looks like a promo code, so a
