@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Validation;
 
 use Egulias\EmailValidator\EmailValidator;
 use haddowg\JsonApi\Resource\Constraint\After;
+use haddowg\JsonApi\Resource\Constraint\AtLeastOneOf;
 use haddowg\JsonApi\Resource\Constraint\Before;
 use haddowg\JsonApi\Resource\Constraint\Between;
 use haddowg\JsonApi\Resource\Constraint\ConstraintInterface;
@@ -26,6 +27,7 @@ use haddowg\JsonApi\Resource\Constraint\MinProperties;
 use haddowg\JsonApi\Resource\Constraint\MultipleOf;
 use haddowg\JsonApi\Resource\Constraint\NotIn;
 use haddowg\JsonApi\Resource\Constraint\Pattern;
+use haddowg\JsonApi\Resource\Constraint\Sequentially;
 use haddowg\JsonApi\Resource\Constraint\SlugFormat;
 use haddowg\JsonApi\Resource\Constraint\UniqueItems;
 use haddowg\JsonApi\Resource\Constraint\UrlFormat;
@@ -33,6 +35,7 @@ use haddowg\JsonApi\Resource\Constraint\UuidFormat;
 use haddowg\JsonApi\Resource\Constraint\When;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\Constraints\All;
+use Symfony\Component\Validator\Constraints\AtLeastOneOf as SymfonyAtLeastOneOf;
 use Symfony\Component\Validator\Constraints\Callback;
 use Symfony\Component\Validator\Constraints\Choice;
 use Symfony\Component\Validator\Constraints\Count;
@@ -45,6 +48,7 @@ use Symfony\Component\Validator\Constraints\Length;
 use Symfony\Component\Validator\Constraints\LessThan;
 use Symfony\Component\Validator\Constraints\LessThanOrEqual;
 use Symfony\Component\Validator\Constraints\Regex;
+use Symfony\Component\Validator\Constraints\Sequentially as SymfonySequentially;
 use Symfony\Component\Validator\Constraints\Unique;
 use Symfony\Component\Validator\Constraints\Url;
 use Symfony\Component\Validator\Constraints\Uuid;
@@ -127,6 +131,8 @@ final class ConstraintTranslator
             $constraint instanceof Pattern => [new Regex(pattern: $this->delimit($constraint->regex))],
             $constraint instanceof SlugFormat => [new Regex(pattern: $this->delimit($constraint->regex))],
             $constraint instanceof Each => [new All(constraints: $this->translateAll($constraint->constraints))],
+            $constraint instanceof Sequentially => [new SymfonySequentially(constraints: $this->translateAll($constraint->constraints))],
+            $constraint instanceof AtLeastOneOf => [new SymfonyAtLeastOneOf(constraints: $this->alternatives($constraint->constraints))],
             $constraint instanceof When => [$this->conditional($constraint)],
             $constraint instanceof After => [$this->dateBound($constraint->bound, true, 'This value should be after {{ limit }}.')],
             $constraint instanceof Before => [$this->dateBound($constraint->bound, false, 'This value should be before {{ limit }}.')],
@@ -150,6 +156,29 @@ final class ConstraintTranslator
             foreach ($this->translate($constraint) as $symfonyConstraint) {
                 $translated[] = $symfonyConstraint;
             }
+        }
+
+        return $translated;
+    }
+
+    /**
+     * Translates each alternative of an {@see AtLeastOneOf} into a single Symfony
+     * constraint, wrapping a multi-constraint translation in a Symfony
+     * {@see SymfonySequentially} so every element of the Symfony `AtLeastOneOf` is
+     * one (possibly composite) constraint.
+     *
+     * @param list<ConstraintInterface> $alternatives
+     *
+     * @return list<Constraint>
+     */
+    private function alternatives(array $alternatives): array
+    {
+        $translated = [];
+        foreach ($alternatives as $alternative) {
+            $constraints = $this->translate($alternative);
+            $translated[] = \count($constraints) === 1
+                ? $constraints[0]
+                : new SymfonySequentially(constraints: $constraints);
         }
 
         return $translated;
