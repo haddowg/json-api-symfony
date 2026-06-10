@@ -79,7 +79,7 @@ at `~/.claude/projects/-Users-gregory-haddow-Sites-json-api/memory/json-api-symf
 
 Record bundle architecture decisions as ADRs under `docs/adr/` — follow
 [`docs/adr/ADR-FORMAT.md`](docs/adr/ADR-FORMAT.md) (a short title stating the
-decision, then 1–3 sentences of *why*). The ADRs already written: `0001`–`0013`.
+decision, then 1–3 sentences of *why*). The ADRs already written: `0001`–`0014`.
 
 ## Phases (vertical slices, Doctrine-backed from Phase 1)
 
@@ -118,10 +118,16 @@ decision, then 1–3 sentences of *why*). The ADRs already written: `0001`–`00
 > `when()` field builder, so a conditional rule is both declarable and executable —
 > proven declare→execute on both providers. `Timezone` was **removed from core**
 > (impractical against wire offsets — an ISO-8601 value carries an offset, not a
-> named zone; core ADR 0020). The translator's `default => throw` now fires only
-> for a constraint outside core's vocabulary. Still open for the v1 core-surface
-> review — the *vocabulary gaps* the bridge surfaced: no cross-field rule, no
-> `Valid`-style cascade, no `UniqueEntity`. **Phase 3 (relationships) is next.**
+> named zone; core ADR 0020). A class-keyed `ConstraintTranslatorInterface` is the
+> typed extension point for an app's own constraint VOs (the `$id`-keyed `Custom`
+> escape hatch was removed; core ADR 0021). The vocabulary then grew to close most
+> of the surfaced gaps: composition combinators `Sequentially`/`AtLeastOneOf`
+> (core ADR 0022), the cross-field `CompareField` executed document-level against
+> the sibling value (core ADR 0023), and `UniqueEntity` over a reusable
+> post-hydration **entity-validation seam** (`EntityConstraintInterface`, bundle
+> ADR 0014) — so a duplicate is caught against the repository before commit. The
+> one *vocabulary gap* still open for the v1 core-surface review is a `Valid`-style
+> cascade into nested/related resources. **Phase 3 (relationships) is next.**
 
 0. ✅ Skeleton + thinnest read (`GET /{type}`, `/{type}/{id}`) — forced core's lazy
    resolver + lifecycle-logic extraction + a PSR-7-free render seam. **Done.**
@@ -134,7 +140,10 @@ decision, then 1–3 sentences of *why*). The ADRs already written: `0001`–`00
    error-document status fidelity + settable response status/`NoContentResponse`;
    constraint-vocab translation now **complete** — `When` + the date bounds via
    `Callback` (with a core `when()` field builder), `Timezone` removed from core;
-   cross-field / `Valid`-cascade / `UniqueEntity` gaps recorded for v1. **Done.**
+   `Custom` replaced by a typed `constrain()` + class-keyed translator; composition
+   (`Sequentially`/`AtLeastOneOf`), cross-field (`CompareField`) and `UniqueEntity`
+   (post-hydration entity-validation seam) added — only the `Valid`-cascade gap
+   remains for v1. **Done.**
 3. **(next)** Relationships (related + relationship endpoints + mutations; compound
    includes). Entry notes: `AbstractResource` does not implement core's
    `UpdateRelationshipHydratorInterface`, and `FullReplacementProhibited` /
