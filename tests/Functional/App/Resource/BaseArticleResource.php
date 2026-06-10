@@ -92,6 +92,15 @@ abstract class BaseArticleResource extends AbstractResource
             // predicate, so it always emits.
             BelongsTo::make('lazyAuthor')->type('authors')->storedAs('author')->linkageOnlyWhenLoaded(),
             HasMany::make('lazyComments')->type('comments')->storedAs('featuredComments')->linkageOnlyWhenLoaded(),
+            // Mutability variants (Phase 3 S3): relationship-endpoint mutation
+            // guards. `lockedAuthor` reuses the `author` property but forbids
+            // replacement (a PATCH to its endpoint is FullReplacementProhibited);
+            // `lockedComments` reuses the `comments` property but forbids removal
+            // (a DELETE to its endpoint is RemovalProhibited). They read identically
+            // to `author`/`comments`, so they don't perturb the read assertions —
+            // only the mutation guards exercise them.
+            BelongsTo::make('lockedAuthor')->type('authors')->storedAs('author')->cannotReplace(),
+            HasMany::make('lockedComments')->type('comments')->storedAs('comments')->cannotRemove(),
         ];
     }
 

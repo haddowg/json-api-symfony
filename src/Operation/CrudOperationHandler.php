@@ -4,17 +4,26 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Operation;
 
+use haddowg\JsonApi\Exception\FullReplacementProhibited;
 use haddowg\JsonApi\Exception\NoResourceRegistered;
 use haddowg\JsonApi\Exception\RelationshipNotExists;
+use haddowg\JsonApi\Exception\RelationshipTypeInappropriate;
+use haddowg\JsonApi\Exception\RemovalProhibited;
 use haddowg\JsonApi\Exception\ResourceNotFound;
+use haddowg\JsonApi\Hydrator\Relationship\ToManyRelationship;
+use haddowg\JsonApi\Hydrator\Relationship\ToOneRelationship;
+use haddowg\JsonApi\Operation\AddToRelationshipOperation;
 use haddowg\JsonApi\Operation\CreateResourceOperation;
 use haddowg\JsonApi\Operation\DeleteResourceOperation;
 use haddowg\JsonApi\Operation\FetchRelatedOperation;
 use haddowg\JsonApi\Operation\FetchRelationshipOperation;
 use haddowg\JsonApi\Operation\FetchResourceOperation;
 use haddowg\JsonApi\Operation\OperationContext;
+use haddowg\JsonApi\Operation\RemoveFromRelationshipOperation;
+use haddowg\JsonApi\Operation\UpdateRelationshipOperation;
 use haddowg\JsonApi\Operation\UpdateResourceOperation;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Response\DataResponse;
 use haddowg\JsonApi\Response\ErrorResponse;
@@ -65,6 +74,17 @@ use haddowg\JsonApiBundle\Validation\ResourceValidator;
  *    type's serializer with the relationship name set, emitting linkage only
  *    ({@see IdentifierResponse::forRelationship()}).
  *
+ * Relationship mutations ({@see UpdateRelationshipOperation} replace,
+ * {@see AddToRelationshipOperation} add, {@see RemoveFromRelationshipOperation}
+ * remove) share that parent-load + relation-resolve shape, then validate the
+ * request shape against the relation (cardinality + the
+ * {@see RelationInterface::allowsReplace()}/{@see RelationInterface::allowsRemove()}
+ * mutability flags, throwing core's typed `400`/`403`s) and delegate the
+ * storage-correct apply to the persister's relationship seam
+ * ({@see DataPersisterInterface::mutateRelationship()}) — core owns the rules, the
+ * persister owns the id → object/reference resolution and the association write
+ * (ADR 0017) — rendering the resulting linkage (`200`).
+ *
  * Core's typed exceptions (unknown filter/sort keys, hydration failures, the
  * validator bridge's `422`) propagate to the route-scoped `kernel.exception`
  * listener, which owns all error rendering on JSON:API routes. The generic
@@ -88,6 +108,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $operation instanceof CreateResourceOperation => $this->create($operation),
             $operation instanceof UpdateResourceOperation => $this->update($operation),
             $operation instanceof DeleteResourceOperation => $this->delete($operation),
+            $operation instanceof UpdateRelationshipOperation => $this->mutateRelationship($operation, $operation->body(), Mode::Replace),
+            $operation instanceof AddToRelationshipOperation => $this->mutateRelationship($operation, $operation->body(), Mode::Add),
+            $operation instanceof RemoveFromRelationshipOperation => $this->mutateRelationship($operation, $operation->body(), Mode::Remove),
             default => ErrorResponse::fromException(new ResourceNotFound()),
         };
     }
@@ -203,6 +226,109 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         }
 
         return IdentifierResponse::forRelationship($parent, $server->serializerFor($type), $relationshipName);
+    }
+
+    /**
+     * `PATCH`/`POST`/`DELETE /{type}/{id}/relationships/{relationship}` — the
+     * relationship-mutation arms (replace / add to / remove from), one shape:
+     *  1. load the parent through the read provider (a `404` when absent);
+     *  2. resolve the named relation (a JSON:API `404` {@see RelationshipNotExists}
+     *     when unknown);
+     *  3. validate the request shape against the relation — cardinality (add/remove
+     *     only on a to-many → {@see RelationshipTypeInappropriate}, `400`) and
+     *     mutability flags ({@see FullReplacementProhibited}/{@see RemovalProhibited},
+     *     `403`) — letting core's typed exceptions propagate to the exception
+     *     listener as the right status;
+     *  4. parse the linkage with core's relationship-endpoint body parser;
+     *  5. apply the mutation through the persister's storage-owning relationship
+     *     seam ({@see DataPersisterInterface::mutateRelationship()}), which resolves
+     *     the linkage ids to the related objects/references and commits;
+     *  6. render the resulting linkage ({@see IdentifierResponse::forRelationship()},
+     *     `200`).
+     *
+     * The validation lives here (not in the persister) so core owns the request-shape
+     * rules and the persister owns only the storage-correct apply — the composition
+     * the Phase-3 S3 plan settled on (ADR 0017).
+     */
+    private function mutateRelationship(
+        UpdateRelationshipOperation|AddToRelationshipOperation|RemoveFromRelationshipOperation $operation,
+        JsonApiRequestInterface $body,
+        Mode $mode,
+    ): IdentifierResponse|ErrorResponse {
+        $server = $this->server($operation->context());
+        $target = $operation->target();
+        $type = $target->type;
+        $relationshipName = (string) $target->relationship;
+
+        $parent = $this->loadParent($type, $target->id);
+        if ($parent === null) {
+            return ErrorResponse::fromException(new ResourceNotFound());
+        }
+
+        $relation = $this->resolveRelation($server, $type, $relationshipName);
+        if ($relation === null) {
+            return ErrorResponse::fromException(new RelationshipNotExists($relationshipName));
+        }
+
+        // Add / remove are to-many operations: a POST / DELETE to a to-one
+        // relationship endpoint is a cardinality error (400).
+        if ($mode !== Mode::Replace && $relation->isToMany() === false) {
+            throw new RelationshipTypeInappropriate($relationshipName, 'to-one', 'to-many');
+        }
+
+        $linkage = $relation->isToMany()
+            ? $body->getRelationshipLinkageToMany($relationshipName)
+            : $body->getRelationshipLinkageToOne($relationshipName);
+
+        $this->guardMutability($relation, $relationshipName, $linkage, $mode);
+
+        $parent = $this->persisters->forType($type)->mutateRelationship($type, $parent, $relation, $linkage, $mode);
+
+        return IdentifierResponse::forRelationship($parent, $server->serializerFor($type), $relationshipName);
+    }
+
+    /**
+     * Enforces the relation's mutability flags for the requested mutation, throwing
+     * core's typed `403`s:
+     *  - a to-one clear (`data: null`) is a removal — gated by `allowsRemove()`;
+     *    a non-null to-one `PATCH` is a replacement — gated by `allowsReplace()`;
+     *  - a to-many `PATCH` is a replacement — gated by `allowsReplace()`; a to-many
+     *    `DELETE` is a removal — gated by `allowsRemove()`.
+     *
+     * @param ToOneRelationship|ToManyRelationship $linkage
+     *
+     * @throws FullReplacementProhibited
+     * @throws RemovalProhibited
+     */
+    private function guardMutability(
+        RelationInterface $relation,
+        string $relationshipName,
+        ToOneRelationship|ToManyRelationship $linkage,
+        Mode $mode,
+    ): void {
+        if ($linkage instanceof ToOneRelationship) {
+            if ($linkage->isEmpty()) {
+                if ($relation->allowsRemove() === false) {
+                    throw new RemovalProhibited($relationshipName);
+                }
+
+                return;
+            }
+
+            if ($relation->allowsReplace() === false) {
+                throw new FullReplacementProhibited($relationshipName);
+            }
+
+            return;
+        }
+
+        if ($mode === Mode::Replace && $relation->allowsReplace() === false) {
+            throw new FullReplacementProhibited($relationshipName);
+        }
+
+        if ($mode === Mode::Remove && $relation->allowsRemove() === false) {
+            throw new RemovalProhibited($relationshipName);
+        }
     }
 
     /**

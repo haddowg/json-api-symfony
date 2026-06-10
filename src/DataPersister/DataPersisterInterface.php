@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\DataPersister;
 
+use haddowg\JsonApi\Hydrator\Relationship\ToManyRelationship;
+use haddowg\JsonApi\Hydrator\Relationship\ToOneRelationship;
+use haddowg\JsonApi\Resource\Field\Mode;
+use haddowg\JsonApi\Resource\Field\RelationInterface;
+
 /**
  * The write-half data-source SPI: the storage-agnostic contract the
  * {@see \haddowg\JsonApiBundle\Operation\CrudOperationHandler} delegates to for
@@ -27,8 +32,13 @@ namespace haddowg\JsonApiBundle\DataPersister;
  * needs a narrower static type, so — unlike the covariant read provider — this
  * contract is not templated over the entity type.
  *
- * Relationship mutation (the `/{type}/{id}/relationships/{rel}` endpoints) is a
- * later phase; this interface covers whole-resource writes only.
+ * The `/{type}/{id}/relationships/{rel}` endpoints add {@see mutateRelationship()}:
+ * core validates the request shape (cardinality + mutability flags), then the
+ * persister resolves the linkage's resource-identifier ids to the actual related
+ * objects/references and mutates the parent's association — the persister owns the
+ * storage mapping (ADR 0010), so it owns the id → object resolution a relationship
+ * mutation needs. The whole-resource writes ({@see create()}/{@see update()}/
+ * {@see delete()}) stay unchanged.
  */
 interface DataPersisterInterface
 {
@@ -59,4 +69,34 @@ interface DataPersisterInterface
      * Removes the given resource of `$type` from the store.
      */
     public function delete(string $type, object $entity): void;
+
+    /**
+     * Applies a relationship-endpoint mutation to `$entity` and commits it.
+     *
+     * Core has already loaded `$entity` (the parent, of `$type`) through the read
+     * provider and validated the request shape — cardinality (add/remove only on a
+     * to-many) and the relation's mutability flags
+     * ({@see RelationInterface::allowsReplace()} / {@see RelationInterface::allowsRemove()}).
+     * The persister resolves the `$linkage`'s resource-identifier ids to the
+     * related objects/references (via its own storage) and mutates `$relation`'s
+     * association on the parent under `$mode`:
+     *  - {@see Mode::Replace} ({@see ToOneRelationship}) — set or clear the to-one
+     *    reference (an empty linkage clears it);
+     *  - {@see Mode::Replace} ({@see ToManyRelationship}) — set the whole to-many set;
+     *  - {@see Mode::Add} — add the linkage members to the to-many set
+     *    (idempotent — an already-present member is not duplicated);
+     *  - {@see Mode::Remove} — remove the linkage members from the to-many set.
+     *
+     * The mutated parent is committed and returned (so the handler can render the
+     * resulting linkage).
+     *
+     * @param ToOneRelationship|ToManyRelationship $linkage the parsed relationship-endpoint linkage
+     */
+    public function mutateRelationship(
+        string $type,
+        object $entity,
+        RelationInterface $relation,
+        ToOneRelationship|ToManyRelationship $linkage,
+        Mode $mode,
+    ): object;
 }

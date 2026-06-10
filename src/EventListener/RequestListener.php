@@ -78,12 +78,30 @@ final class RequestListener
         $validator->negotiate($jsonApiRequest);
         $validator->validateQueryParams($jsonApiRequest);
 
-        // A write body (POST/PATCH carry one; DELETE does not) must be well-formed
-        // JSON with valid top-level members before core's hydrator reads it — the
-        // belt core's RequestBodyParsingMiddleware would run, called directly.
-        if (\in_array($jsonApiRequest->getMethod(), ['POST', 'PATCH'], true)) {
+        // A write body must be well-formed JSON before core's hydrator reads it —
+        // the belt core's RequestBodyParsingMiddleware would run, called directly.
+        // POST/PATCH always carry a body; a resource DELETE does not, but a
+        // *relationship* DELETE (remove-from) carries the `{data:[…]}` linkage to
+        // remove, so it is validated too.
+        $method = $jsonApiRequest->getMethod();
+        $carriesBody = \in_array($method, ['POST', 'PATCH'], true)
+            || ($method === 'DELETE' && $target->isRelationshipEndpoint);
+        if ($carriesBody) {
             $validator->validateJsonBody($jsonApiRequest);
-            $validator->validateTopLevelMembers($jsonApiRequest);
+
+            // The required-top-level-member rule is a resource-document rule: a
+            // resource body's `data` must be present (and an object). A
+            // relationship-endpoint body's `data` is *linkage* — legitimately
+            // `null` (to-one clear) or `[]` (to-many clear), both of which the rule
+            // would reject as "missing". The exact linkage shape is instead
+            // validated by core's relationship-linkage parser
+            // ({@see \haddowg\JsonApi\Request\JsonApiRequest::getRelationshipLinkageToOne()}
+            // / `getRelationshipLinkageToMany()`) when the handler reads it, so the
+            // rule is skipped for relationship-endpoint writes.
+            if ($target->isRelationshipEndpoint === false) {
+                $validator->validateTopLevelMembers($jsonApiRequest);
+            }
+
             $this->validateSchema($jsonApiRequest);
         }
 

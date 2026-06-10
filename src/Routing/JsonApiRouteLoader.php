@@ -17,10 +17,10 @@ use Symfony\Component\Routing\RouteCollection;
  * A Symfony route loader for the custom `type: jsonapi` resource. For every
  * registered resource type it auto-registers the standard resource endpoint set:
  * `GET /{type}` (collection) and `GET`/`PATCH`/`DELETE` `/{type}/{id}` (single),
- * `POST /{type}` (create), plus the read relationship endpoints
+ * `POST /{type}` (create), plus the relationship endpoints
  * `GET /{type}/{id}/{relationship}` (related resources) and
- * `GET /{type}/{id}/relationships/{relationship}` (relationship linkage).
- * Relationship mutations arrive in a later slice.
+ * `GET`/`PATCH`/`POST`/`DELETE` `/{type}/{id}/relationships/{relationship}`
+ * (relationship linkage read + replace/add/remove mutations).
  *
  * Concrete per-type paths are emitted (one literal path per type) rather than a
  * single parametric `/{type}` catch-all, so the router natively `404`s unknown
@@ -105,14 +105,28 @@ final class JsonApiRouteLoader extends Loader
 
             // The four-segment linkage route is listed before the three-segment
             // related route so the literal `relationships` segment is never
-            // captured as a `{relationship}` name.
+            // captured as a `{relationship}` name. GET reads linkage; PATCH/POST/
+            // DELETE mutate it (replace / add to / remove from the relationship).
+            $relationshipDefaults = [...$defaults, TargetResolver::RELATIONSHIP_ENDPOINT_ATTRIBUTE => true];
+
             $routes->add(
                 \sprintf('jsonapi.%s.relationship.show', $resourceType),
-                new Route(
-                    $relationshipPath,
-                    [...$defaults, TargetResolver::RELATIONSHIP_ENDPOINT_ATTRIBUTE => true],
-                    methods: ['GET'],
-                ),
+                new Route($relationshipPath, $relationshipDefaults, methods: ['GET']),
+            );
+
+            $routes->add(
+                \sprintf('jsonapi.%s.relationship.update', $resourceType),
+                new Route($relationshipPath, $relationshipDefaults, methods: ['PATCH']),
+            );
+
+            $routes->add(
+                \sprintf('jsonapi.%s.relationship.add', $resourceType),
+                new Route($relationshipPath, $relationshipDefaults, methods: ['POST']),
+            );
+
+            $routes->add(
+                \sprintf('jsonapi.%s.relationship.remove', $resourceType),
+                new Route($relationshipPath, $relationshipDefaults, methods: ['DELETE']),
             );
 
             $routes->add(
