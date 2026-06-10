@@ -30,6 +30,18 @@ class ArticleEntity
     #[ORM\OneToMany(targetEntity: CommentEntity::class, mappedBy: 'article')]
     public Collection $comments;
 
+    /**
+     * A second, independent to-many of comments, mapped by the comment's
+     * `featuredArticle` owning side. The load-aware `lazyComments` relation reads
+     * this collection (not `comments`), so no eager relation initialises it during
+     * a plain fetch — keeping the uninitialised-PersistentCollection omission case
+     * a deterministic functional assertion.
+     *
+     * @var Collection<int, CommentEntity>
+     */
+    #[ORM\OneToMany(targetEntity: CommentEntity::class, mappedBy: 'featuredArticle')]
+    public Collection $featuredComments;
+
     public function __construct(
         #[ORM\Id]
         #[ORM\Column]
@@ -51,5 +63,6 @@ class ArticleEntity
         public ?AuthorEntity $author = null,
     ) {
         $this->comments = new ArrayCollection();
+        $this->featuredComments = new ArrayCollection();
     }
 }

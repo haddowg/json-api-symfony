@@ -21,6 +21,11 @@ final class Article
 {
     /**
      * @param list<Comment> $comments
+     * @param list<Comment> $featuredComments a second, independent comment list
+     *                                        backing the load-aware `lazyComments`
+     *                                        relation, mirroring the Doctrine
+     *                                        entity's separate `featuredComments`
+     *                                        association
      */
     public function __construct(
         public string $id = '',
@@ -32,5 +37,6 @@ final class Article
         public ?\DateTimeImmutable $expiresAt = null,
         public ?Author $author = null,
         public array $comments = [],
+        public array $featuredComments = [],
     ) {}
 }

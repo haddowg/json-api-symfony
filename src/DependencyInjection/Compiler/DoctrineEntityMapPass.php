@@ -8,6 +8,7 @@ use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApiBundle\DataPersister\Doctrine\DoctrineDataPersister;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineDataProvider;
 use haddowg\JsonApiBundle\JsonApiBundle;
+use haddowg\JsonApiBundle\Serializer\Doctrine\DoctrineRelationshipLoadState;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 
@@ -26,16 +27,30 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
  * those definitions are removed instead: they could never answer for a type, and
  * an application that has `doctrine/orm` in the vendor tree but no Doctrine
  * integration wired (no `EntityManagerInterface` service) must not keep a
- * definition referencing that absent service alive.
+ * definition referencing that absent service alive. The
+ * {@see DoctrineRelationshipLoadState} predicate, which also depends on the
+ * `EntityManagerInterface` but carries no entity-map argument, is removed on the
+ * same empty-map condition (so the {@see \haddowg\JsonApiBundle\Server\ServerFactory}'s
+ * optional dependency resolves to null in a non-Doctrine-integrated app).
  */
 final class DoctrineEntityMapPass implements CompilerPassInterface
 {
     /**
-     * The reference Doctrine adapter definitions the map is shared across.
+     * The reference Doctrine adapter definitions the `type → entity` map is
+     * shared across.
      */
     private const array MAPPED_DEFINITIONS = [
         DoctrineDataProvider::class,
         DoctrineDataPersister::class,
+    ];
+
+    /**
+     * Doctrine-dependent definitions that take no entity map but must share the
+     * provider/persister's lifecycle: removed when the map is empty, never given
+     * the `$entityClassByType` argument.
+     */
+    private const array LIFECYCLE_ONLY_DEFINITIONS = [
+        DoctrineRelationshipLoadState::class,
     ];
 
     public function process(ContainerBuilder $container): void
@@ -48,6 +63,11 @@ final class DoctrineEntityMapPass implements CompilerPassInterface
         if ($definitions === []) {
             return;
         }
+
+        $lifecycleOnly = \array_values(\array_filter(
+            self::LIFECYCLE_ONLY_DEFINITIONS,
+            static fn(string $id): bool => $container->hasDefinition($id),
+        ));
 
         $map = [];
 
@@ -85,7 +105,7 @@ final class DoctrineEntityMapPass implements CompilerPassInterface
         }
 
         if ($map === []) {
-            foreach ($definitions as $id) {
+            foreach ([...$definitions, ...$lifecycleOnly] as $id) {
                 $container->removeDefinition($id);
             }
 

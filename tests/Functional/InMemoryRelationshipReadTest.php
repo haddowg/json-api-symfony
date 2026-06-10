@@ -45,4 +45,65 @@ final class InMemoryRelationshipReadTest extends RelationshipReadConformanceTest
         self::assertSame(['type' => 'authors', 'id' => 'a1'], $editor['data'] ?? null);
         self::assertArrayNotHasKey('links', $editor);
     }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    public function aToManyRelationshipUnderTheLoadStatePolicyStillEmitsDataInMemory(): void
+    {
+        // `lazyComments` opts into linkageOnlyWhenLoaded(), but the in-memory
+        // kernel wires no load-state predicate (no doctrine/orm), so core treats
+        // every relation as loaded: the in-memory `comments` are materialised
+        // objects, so the `data` member is present exactly as for the always-on
+        // `comments` relation. The policy is inert without a storage adapter.
+        $relationships = $this->relationshipsOf('/articles/1');
+
+        $lazyComments = $relationships['lazyComments'] ?? null;
+        self::assertIsArray($lazyComments);
+        self::assertArrayHasKey('data', $lazyComments);
+        self::assertSame(
+            [
+                ['type' => 'comments', 'id' => 'c1'],
+                ['type' => 'comments', 'id' => 'c2'],
+            ],
+            $this->normaliseIdentifiers($lazyComments['data']),
+        );
+    }
+
+    /**
+     * Reduces a to-many `data` payload to a list of `{type, id}` identifiers.
+     *
+     * @return list<array{type: mixed, id: mixed}>
+     */
+    private function normaliseIdentifiers(mixed $data): array
+    {
+        self::assertIsArray($data);
+
+        $identifiers = [];
+        foreach ($data as $identifier) {
+            self::assertIsArray($identifier);
+            $identifiers[] = ['type' => $identifier['type'] ?? null, 'id' => $identifier['id'] ?? null];
+        }
+
+        return $identifiers;
+    }
+
+    /**
+     * The `relationships` member of a resource object on a single-resource fetch.
+     *
+     * @return array<string, mixed>
+     */
+    private function relationshipsOf(string $path): array
+    {
+        $response = $this->handle($path);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        $data = $this->decode($response)['data'] ?? null;
+        self::assertIsArray($data);
+
+        $relationships = $data['relationships'] ?? null;
+        self::assertIsArray($relationships);
+
+        /** @var array<string, mixed> $relationships */
+        return $relationships;
+    }
 }

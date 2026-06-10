@@ -74,6 +74,24 @@ abstract class BaseArticleResource extends AbstractResource
             // linkage via the serializer registered for each related type.
             BelongsTo::make('author')->type('authors'),
             HasMany::make('comments')->type('comments'),
+            // Load-aware relationships opting into linkageOnlyWhenLoaded() so the
+            // storage-aware load-state predicate decides whether `data` is
+            // emitted. They exercise the predicate on both providers without
+            // changing the always-emitting `author`/`comments` above (the
+            // regression baseline).
+            //
+            // `lazyAuthor` reuses the `author` property: a to-one, which the
+            // Doctrine predicate always reports loaded (a lazy proxy carries its
+            // id), so data always emits.
+            //
+            // `lazyComments` is backed by the SEPARATE `featuredComments`
+            // association — one no eager relation reads — so on Doctrine that
+            // collection stays an uninitialised PersistentCollection through a
+            // plain fetch and the predicate omits its `data` (links only) unless
+            // the relationship is included (include-wins). In-memory has no
+            // predicate, so it always emits.
+            BelongsTo::make('lazyAuthor')->type('authors')->storedAs('author')->linkageOnlyWhenLoaded(),
+            HasMany::make('lazyComments')->type('comments')->storedAs('featuredComments')->linkageOnlyWhenLoaded(),
         ];
     }
 

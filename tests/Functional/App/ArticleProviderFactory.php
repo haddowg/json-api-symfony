@@ -57,6 +57,7 @@ final class ArticleProviderFactory
         }
 
         $relationships = ArticleFixtures::relationships();
+        $featured = ArticleFixtures::featuredComments();
 
         $articles = [];
         foreach (ArticleFixtures::data() as $id => $article) {
@@ -64,12 +65,8 @@ final class ArticleProviderFactory
             $links = $relationships[$id] ?? ['author' => null, 'comments' => []];
 
             $author = $links['author'] !== null ? ($authors[$links['author']] ?? null) : null;
-            $articleComments = [];
-            foreach ($links['comments'] as $commentId) {
-                if (isset($comments[$commentId])) {
-                    $articleComments[] = $comments[$commentId];
-                }
-            }
+            $articleComments = self::pick($comments, $links['comments']);
+            $featuredComments = self::pick($comments, $featured[$id] ?? []);
 
             $articles[$id] = new Article(
                 $id,
@@ -81,9 +78,30 @@ final class ArticleProviderFactory
                 null,
                 $author,
                 $articleComments,
+                $featuredComments,
             );
         }
 
         return ['articles' => $articles, 'authors' => $authors, 'comments' => $comments];
+    }
+
+    /**
+     * The comment objects for the given ids, in order, skipping any unknown id.
+     *
+     * @param array<string, Comment> $comments
+     * @param list<string>           $ids
+     *
+     * @return list<Comment>
+     */
+    private static function pick(array $comments, array $ids): array
+    {
+        $picked = [];
+        foreach ($ids as $commentId) {
+            if (isset($comments[$commentId])) {
+                $picked[] = $comments[$commentId];
+            }
+        }
+
+        return $picked;
     }
 }

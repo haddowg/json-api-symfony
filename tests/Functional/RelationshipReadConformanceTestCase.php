@@ -126,6 +126,47 @@ abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTest
 
     #[Test]
     #[Group('spec:fetching-relationships')]
+    public function aRelationshipWithoutTheLoadStatePolicyAlwaysEmitsData(): void
+    {
+        // Regression: the `comments` to-many does NOT opt into
+        // linkageOnlyWhenLoaded(), so its `data` member is always present on both
+        // providers regardless of any injected load-state predicate — the policy
+        // is strictly opt-in and changes nothing for relations that do not enable
+        // it.
+        $relationships = $this->relationshipsOf($this->fetchResource('/articles/1'));
+
+        $comments = $relationships['comments'] ?? null;
+        self::assertIsArray($comments);
+        self::assertArrayHasKey('data', $comments);
+        self::assertSame(
+            [
+                ['type' => 'comments', 'id' => 'c1'],
+                ['type' => 'comments', 'id' => 'c2'],
+            ],
+            $this->normaliseIdentifiers($comments['data']),
+        );
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    public function aToOneRelationshipUnderTheLoadStatePolicyStillEmitsData(): void
+    {
+        // `lazyAuthor` opts into linkageOnlyWhenLoaded() but is a to-one: the
+        // Doctrine predicate reports a to-one as always loaded (a lazy ManyToOne
+        // proxy carries its identifier, so emitting the identifier needs no DB
+        // load), and the in-memory kernel injects no predicate at all — so on
+        // BOTH providers the `data` member is present and carries the author
+        // identifier.
+        $relationships = $this->relationshipsOf($this->fetchResource('/articles/1'));
+
+        $lazyAuthor = $relationships['lazyAuthor'] ?? null;
+        self::assertIsArray($lazyAuthor);
+        self::assertArrayHasKey('data', $lazyAuthor);
+        self::assertSame(['type' => 'authors', 'id' => 'a1'], $lazyAuthor['data']);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
     public function relationshipsRenderOnACollectionItem(): void
     {
         // The same linkage must appear on a primary-data item of a collection

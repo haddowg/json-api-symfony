@@ -81,4 +81,25 @@ final class ArticleFixtures
             '5' => ['author' => 'a1', 'comments' => []],
         ];
     }
+
+    /**
+     * The second, independent to-many linkage per article id: the comment ids
+     * each article *features*, backing the load-aware `lazyComments` relation. A
+     * separate association from {@see relationships()}'s `comments`, so on
+     * Doctrine the `featuredComments` collection stays an uninitialised
+     * PersistentCollection through a plain fetch (the omission case) while
+     * `?include=lazyComments` initialises and emits it (include-wins).
+     *
+     * @return array<int|string, list<string>>
+     */
+    public static function featuredComments(): array
+    {
+        return [
+            '1' => ['c1', 'c2'],
+            '2' => [],
+            '3' => [],
+            '4' => [],
+            '5' => [],
+        ];
+    }
 }

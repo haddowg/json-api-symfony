@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Server;
 
 use haddowg\JsonApi\Operation\OperationHandlerInterface;
+use haddowg\JsonApi\Serializer\RelationshipLoadStateInterface;
 use haddowg\JsonApi\Server\Server;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
@@ -25,6 +26,14 @@ use Psr\Http\Message\StreamFactoryInterface;
  * one).
  *
  * The built Server is an immutable value, so it is memoized and shared.
+ *
+ * When a {@see RelationshipLoadStateInterface} is wired (the reference Doctrine
+ * predicate, present only on a Doctrine application), it is threaded into the
+ * Server through core's
+ * {@see Server::withRelationshipLoadState()} injector so a relation that opted
+ * into load-aware linkage can omit `data` rather than force a lazy load; when no
+ * predicate is wired the argument is null and core treats every relation as
+ * loaded (today's behaviour).
  */
 final class ServerFactory
 {
@@ -37,6 +46,7 @@ final class ServerFactory
         private readonly string $baseUri,
         private readonly string $version,
         private readonly OperationHandlerInterface $handler,
+        private readonly ?RelationshipLoadStateInterface $relationshipLoadState = null,
     ) {}
 
     /**
@@ -52,6 +62,7 @@ final class ServerFactory
             ->withBaseUri($this->baseUri)
             ->withVersion($this->version)
             ->withPsr17($this->responseFactory, $this->streamFactory)
+            ->withRelationshipLoadState($this->relationshipLoadState)
             ->withContainer($this->resources);
 
         foreach ($this->resources->classes() as $resourceClass) {
