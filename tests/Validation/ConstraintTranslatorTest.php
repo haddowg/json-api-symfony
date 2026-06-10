@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Validation;
 
 use haddowg\JsonApi\Resource\Constraint\After;
+use haddowg\JsonApi\Resource\Constraint\AtLeastOneOf;
 use haddowg\JsonApi\Resource\Constraint\Before;
 use haddowg\JsonApi\Resource\Constraint\Between;
 use haddowg\JsonApi\Resource\Constraint\ConstraintInterface;
@@ -24,6 +25,7 @@ use haddowg\JsonApi\Resource\Constraint\MinLength;
 use haddowg\JsonApi\Resource\Constraint\MultipleOf;
 use haddowg\JsonApi\Resource\Constraint\NotIn;
 use haddowg\JsonApi\Resource\Constraint\Pattern;
+use haddowg\JsonApi\Resource\Constraint\Sequentially;
 use haddowg\JsonApi\Resource\Constraint\UniqueItems;
 use haddowg\JsonApi\Resource\Constraint\UrlFormat;
 use haddowg\JsonApi\Resource\Constraint\UuidFormat;
@@ -190,6 +192,26 @@ final class ConstraintTranslatorTest extends TestCase
         self::assertSame(0, $this->violations($between, '2026-12-31T00:00:00+00:00')); // upper bound inclusive
         self::assertSame(1, $this->violations($between, '2025-12-31T00:00:00+00:00')); // below
         self::assertSame(1, $this->violations($between, '2027-01-01T00:00:00+00:00')); // above
+    }
+
+    #[Test]
+    public function itTranslatesSequentiallyApplyingConstraintsInOrder(): void
+    {
+        $sequentially = new Sequentially([new MinLength(3), new Pattern('^[a-z]+$')]);
+
+        self::assertSame(0, $this->violations($sequentially, 'abcd')); // passes both
+        self::assertSame(1, $this->violations($sequentially, 'ab'));   // fails minLength (stops there)
+        self::assertSame(1, $this->violations($sequentially, 'ABCD')); // passes length, fails pattern
+    }
+
+    #[Test]
+    public function itTranslatesAtLeastOneOf(): void
+    {
+        $atLeastOneOf = new AtLeastOneOf([new MinLength(8), new In(['none'])]);
+
+        self::assertSame(0, $this->violations($atLeastOneOf, 'longenough')); // satisfies the length alternative
+        self::assertSame(0, $this->violations($atLeastOneOf, 'none'));        // satisfies the enum alternative
+        self::assertGreaterThan(0, $this->violations($atLeastOneOf, 'short')); // satisfies neither
     }
 
     #[Test]
