@@ -58,6 +58,16 @@ class ArticleEntity
         public ?string $couponCode = null,
         #[ORM\Column(type: 'datetime_immutable', nullable: true)]
         public ?\DateTimeImmutable $expiresAt = null,
+        /**
+         * The nested structured `address` attribute (a
+         * {@see \haddowg\JsonApi\Resource\Field\Map}) persisted to a single JSON
+         * column rather than spread across per-child columns, mirroring the in-memory
+         * {@see \haddowg\JsonApiBundle\Tests\Functional\App\Article}'s `$address`.
+         *
+         * @var array<string, mixed>|null
+         */
+        #[ORM\Column(type: 'json', nullable: true)]
+        public ?array $address = null,
         #[ORM\ManyToOne(targetEntity: AuthorEntity::class)]
         #[ORM\JoinColumn(name: 'author_id', referencedColumnName: 'id', nullable: true)]
         public ?AuthorEntity $author = null,

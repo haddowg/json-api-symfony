@@ -12,6 +12,7 @@ use haddowg\JsonApi\Resource\Constraint\Nullable;
 use haddowg\JsonApi\Resource\Constraint\Required;
 use haddowg\JsonApi\Resource\Field\FieldInterface;
 use haddowg\JsonApi\Resource\Field\Id;
+use haddowg\JsonApi\Resource\Field\Map;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Schema\Error\Error;
 use haddowg\JsonApi\Schema\Error\ErrorSource;
@@ -48,6 +49,17 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
  * the exception to per-field validation: it is evaluated at the **document** level,
  * after the {@see Collection} pass, because the comparison needs the sibling field's
  * value — which the `Collection` validates in isolation.
+ *
+ * A {@see Map} attribute (a structured nested object) validates its child
+ * constraints by **recursion**: the bridge builds a nested {@see Collection} from
+ * the Map's children that mirrors the top-level one (the same `allowExtraFields`,
+ * and per-child {@see Required}/{@see Nullable} resolution by create/update
+ * context), so a child violation maps to `/data/attributes/<map>/<child>` — Symfony
+ * nests the property path (`[address][postcode]`) and the {@see JsonPointerBuilder}
+ * already flattens it. This is an *implicit* cascade: a structured attribute's
+ * children validate consistently with top-level attributes, with no `Valid` marker.
+ * Only one level deep (a Map's direct children); a child that is itself a Map, and
+ * a list-of-objects, are out of scope here (see ADR 0020).
  */
 final class ResourceValidator
 {
@@ -270,9 +282,14 @@ final class ResourceValidator
         return $compares;
     }
 
-    private function fieldConstraint(FieldInterface $field, bool $creating): RequiredField|Optional
+    /**
+     * @param bool $descend whether to descend into a {@see Map} child's own children;
+     *                      true at the top level, false one level in so the cascade
+     *                      stops at a Map's direct children (ADR 0020)
+     */
+    private function fieldConstraint(FieldInterface $field, bool $creating, bool $descend = true): RequiredField|Optional
     {
-        $constraints = $this->valueConstraints($field, $creating);
+        $constraints = $this->valueConstraints($field, $creating, $descend);
 
         $isRequired = $this->hasRequired($field, $creating);
         $isNullable = $this->hasNullable($field, $creating);
@@ -292,11 +309,25 @@ final class ResourceValidator
     }
 
     /**
+     * @param bool $descend whether a {@see Map} field's children are validated by a
+     *                      nested Collection; false stops the cascade one level in
+     *
      * @return list<\Symfony\Component\Validator\Constraint>
      */
-    private function valueConstraints(FieldInterface $field, bool $creating): array
+    private function valueConstraints(FieldInterface $field, bool $creating, bool $descend = true): array
     {
         $constraints = [];
+
+        // A structured attribute (Map) validates its children by recursion: a
+        // nested Collection mirroring the top-level one carries the per-child rules,
+        // so a child violation maps to /data/attributes/<map>/<child>. One level
+        // only — a child that is itself a Map (or a list-of-objects) is not
+        // descended into here ($descend is false one level in), which also bounds
+        // the recursion (ADR 0020).
+        if ($descend && $field instanceof Map) {
+            $constraints[] = $this->nestedCollection($field, $creating);
+        }
+
         foreach ($field->constraints() as $constraint) {
             if (!$constraint->context()->appliesTo($creating)) {
                 continue;
@@ -316,6 +347,32 @@ final class ResourceValidator
         }
 
         return $constraints;
+    }
+
+    /**
+     * Builds the nested {@see Collection} validating a {@see Map}'s direct children,
+     * mirroring the top-level attribute Collection: each child is wrapped by the same
+     * {@see fieldConstraint()} (so its Required/Optional and Nullable resolution
+     * honours the create/update context exactly as a top-level field would), and
+     * unknown keys are ignored (`allowExtraFields: true`). The recursion is one level
+     * deep by design — a child that is itself a {@see Map}, or a list-of-objects, is
+     * out of scope here (ADR 0020), so a nested Map's *own* children are not
+     * descended into, which also guards against unbounded recursion.
+     */
+    private function nestedCollection(Map $map, bool $creating): Collection
+    {
+        $fields = [];
+        foreach ($map->children() as $child) {
+            if ($child->isReadOnly($creating)) {
+                continue;
+            }
+
+            // descend: false — one level only; a nested Map child's own children are
+            // not validated here (ADR 0020), which also bounds the recursion.
+            $fields[$child->name()] = $this->fieldConstraint($child, $creating, descend: false);
+        }
+
+        return new Collection(fields: $fields, allowExtraFields: true);
     }
 
     private function hasRequired(FieldInterface $field, bool $creating): bool
