@@ -30,11 +30,13 @@ use haddowg\JsonApi\Resource\Constraint\UniqueItems;
 use haddowg\JsonApi\Resource\Constraint\UrlFormat;
 use haddowg\JsonApi\Resource\Constraint\UuidFormat;
 use haddowg\JsonApi\Resource\Constraint\When;
+use haddowg\JsonApiBundle\Validation\Constraint\UniqueEntity;
 use haddowg\JsonApiBundle\Validation\ConstraintTranslator;
 use haddowg\JsonApiBundle\Validation\ConstraintTranslatorInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity as DoctrineUniqueEntity;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Clock\Test\ClockSensitiveTrait;
 use Symfony\Component\Validator\Constraint;
@@ -118,6 +120,15 @@ final class ConstraintTranslatorTest extends TestCase
         self::assertEquals(
             [new Email(mode: Email::VALIDATION_MODE_STRICT)],
             $this->translator()->translate(new EmailFormat(true)),
+        );
+    }
+
+    #[Test]
+    public function itTranslatesUniqueEntityToTheDoctrineConstraint(): void
+    {
+        self::assertEquals(
+            [new DoctrineUniqueEntity(fields: ['email'], message: 'This value is already used.')],
+            $this->translator()->translate(new UniqueEntity(['email'])),
         );
     }
 

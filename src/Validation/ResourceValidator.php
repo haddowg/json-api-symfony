@@ -96,13 +96,7 @@ final class ResourceValidator
 
         $violations = $this->validator->validate($attributes, new Collection(fields: $fields, allowExtraFields: true));
         foreach ($violations as $violation) {
-            $errors[] = new Error(
-                status: '422',
-                code: 'VALIDATION_FAILED',
-                title: 'Unprocessable Entity',
-                detail: (string) $violation->getMessage(),
-                source: ErrorSource::fromPointer($this->pointers->forAttribute((string) $violation->getPropertyPath())),
-            );
+            $errors[] = $this->error((string) $violation->getMessage(), (string) $violation->getPropertyPath());
         }
 
         // Cross-field rules are validated at the document level, where the sibling
@@ -122,6 +116,59 @@ final class ResourceValidator
     }
 
     /**
+     * The entity-level pass: validates the hydrated entity against the resource's
+     * {@see EntityConstraintInterface} constraints (uniqueness and the like, which
+     * need the persisted object, not the request document). The write handler calls
+     * this after hydration and before commit; it is a no-op for a resource that
+     * declares none.
+     *
+     * @throws ValidationFailed when the entity violates an entity-level constraint
+     */
+    public function validateEntity(AbstractResource $resource, object $entity, bool $creating): void
+    {
+        $constraints = [];
+        foreach ($resource->fields() as $field) {
+            foreach ($field->constraints() as $constraint) {
+                if (!$constraint instanceof EntityConstraintInterface || !$constraint->context()->appliesTo($creating)) {
+                    continue;
+                }
+                foreach ($this->translator->translate($constraint) as $symfonyConstraint) {
+                    $constraints[] = $symfonyConstraint;
+                }
+            }
+        }
+
+        if ($constraints === []) {
+            return;
+        }
+
+        $violations = $this->validator->validate($entity, $constraints);
+        if (\count($violations) === 0) {
+            return;
+        }
+
+        $errors = [];
+        foreach ($violations as $violation) {
+            // An entity violation's path is a bare property name (e.g. `email`);
+            // wrap it so the pointer builder maps it to /data/attributes/<name>.
+            $errors[] = $this->error((string) $violation->getMessage(), '[' . (string) $violation->getPropertyPath() . ']');
+        }
+
+        throw new ValidationFailed($errors);
+    }
+
+    private function error(string $detail, string $bracketedPath): Error
+    {
+        return new Error(
+            status: '422',
+            code: 'VALIDATION_FAILED',
+            title: 'Unprocessable Entity',
+            detail: $detail,
+            source: ErrorSource::fromPointer($this->pointers->forAttribute($bracketedPath)),
+        );
+    }
+
+    /**
      * @param array<mixed, mixed> $attributes
      */
     private function compareError(string $owner, CompareField $compare, array $attributes): ?Error
@@ -138,12 +185,9 @@ final class ResourceValidator
             return null;
         }
 
-        return new Error(
-            status: '422',
-            code: 'VALIDATION_FAILED',
-            title: 'Unprocessable Entity',
-            detail: \sprintf('This value should be %s the value of "%s".', $this->describe($compare->operator), $compare->field),
-            source: ErrorSource::fromPointer($this->pointers->forAttribute('[' . $owner . ']')),
+        return $this->error(
+            \sprintf('This value should be %s the value of "%s".', $this->describe($compare->operator), $compare->field),
+            '[' . $owner . ']',
         );
     }
 
@@ -262,6 +306,9 @@ final class ResourceValidator
             }
             if ($constraint instanceof CompareField) {
                 continue; // cross-field; validated at the document level, not per-field
+            }
+            if ($constraint instanceof EntityConstraintInterface) {
+                continue; // validated against the hydrated entity, not the document
             }
             foreach ($this->translator->translate($constraint) as $symfonyConstraint) {
                 $constraints[] = $symfonyConstraint;
