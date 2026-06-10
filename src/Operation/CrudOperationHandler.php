@@ -128,6 +128,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $entity = $server->hydratorFor($type)->hydrate($operation->body(), $persister->instantiate($type));
         \assert(\is_object($entity));
 
+        $this->validateEntity($server, $type, $entity, creating: true);
+
         $entity = $persister->create($type, $entity);
 
         return DataResponse::fromResource($entity, $serializer)
@@ -152,6 +154,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         $entity = $server->hydratorFor($type)->hydrate($operation->body(), $entity);
         \assert(\is_object($entity));
+
+        $this->validateEntity($server, $type, $entity, creating: false);
 
         $entity = $this->persisters->forType($type)->update($type, $entity);
 
@@ -192,6 +196,27 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         }
 
         $this->validator->validate($resource, $body, $creating);
+    }
+
+    /**
+     * Runs the bridge's entity-level pass over the hydrated entity (uniqueness and
+     * other {@see \haddowg\JsonApiBundle\Validation\EntityConstraintInterface} rules
+     * that need the persisted object). A no-op without the optional validator, or
+     * for a resource that declares no entity-level constraint.
+     */
+    private function validateEntity(Server $server, string $type, object $entity, bool $creating): void
+    {
+        if ($this->validator === null) {
+            return;
+        }
+
+        try {
+            $resource = $server->resources()->resourceFor($type);
+        } catch (NoResourceRegistered) {
+            return;
+        }
+
+        $this->validator->validateEntity($resource, $entity, $creating);
     }
 
     private function server(OperationContext $context): Server

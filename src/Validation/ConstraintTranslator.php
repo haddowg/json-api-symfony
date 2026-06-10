@@ -33,6 +33,8 @@ use haddowg\JsonApi\Resource\Constraint\UniqueItems;
 use haddowg\JsonApi\Resource\Constraint\UrlFormat;
 use haddowg\JsonApi\Resource\Constraint\UuidFormat;
 use haddowg\JsonApi\Resource\Constraint\When;
+use haddowg\JsonApiBundle\Validation\Constraint\UniqueEntity;
+use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity as DoctrineUniqueEntity;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\Constraints\All;
 use Symfony\Component\Validator\Constraints\AtLeastOneOf as SymfonyAtLeastOneOf;
@@ -137,6 +139,10 @@ final class ConstraintTranslator
             $constraint instanceof After => [$this->dateBound($constraint->bound, true, 'This value should be after {{ limit }}.')],
             $constraint instanceof Before => [$this->dateBound($constraint->bound, false, 'This value should be before {{ limit }}.')],
             $constraint instanceof Between => [$this->dateRange($constraint->min, $constraint->max)],
+            $constraint instanceof UniqueEntity => [new DoctrineUniqueEntity(
+                fields: $constraint->fields,
+                message: $constraint->message ?? 'This value is already used.',
+            )],
             default => $this->translateExtension($constraint),
         };
     }
