@@ -66,10 +66,15 @@ final class ArticleFixtures
     }
 
     /**
-     * The relationship linkage per article id: the single author id and the list
-     * of comment ids each article owns.
+     * The relationship linkage per article id: the single author id (`null` for an
+     * authorless article) and the list of comment ids each article owns.
      *
-     * @return array<int|string, array{author: string, comments: list<string>}>
+     * Article 5 is deliberately authorless (`author => null`) so the
+     * related/relationship-endpoint suites can witness a null to-one: it keeps the
+     * collection at five rows (so the read-query count assertions are untouched)
+     * while `GET /articles/5/author` renders `data:null` on both providers.
+     *
+     * @return array<int|string, array{author: ?string, comments: list<string>}>
      */
     public static function relationships(): array
     {
@@ -78,7 +83,7 @@ final class ArticleFixtures
             '2' => ['author' => 'a2', 'comments' => ['c3']],
             '3' => ['author' => 'a1', 'comments' => ['c4', 'c5']],
             '4' => ['author' => 'a2', 'comments' => []],
-            '5' => ['author' => 'a1', 'comments' => []],
+            '5' => ['author' => null, 'comments' => []],
         ];
     }
 
