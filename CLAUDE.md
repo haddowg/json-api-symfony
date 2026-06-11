@@ -79,7 +79,7 @@ at `~/.claude/projects/-Users-gregory-haddow-Sites-json-api/memory/json-api-symf
 
 Record bundle architecture decisions as ADRs under `docs/adr/` — follow
 [`docs/adr/ADR-FORMAT.md`](docs/adr/ADR-FORMAT.md) (a short title stating the
-decision, then 1–3 sentences of *why*). The ADRs already written: `0001`–`0031`.
+decision, then 1–3 sentences of *why*). The ADRs already written: `0001`–`0032`.
 
 ## Phases (vertical slices, Doctrine-backed from Phase 1)
 
@@ -188,10 +188,20 @@ decision, then 1–3 sentences of *why*). The ADRs already written: `0001`–`00
 > single-valued inverse association, or an `IN`-subquery rooted on the related entity
 > for an owning-side / many-to-many relation (ADR 0031) — with per-relation default
 > pagination resolving relation → related resource → server default (bundle ADR 0030,
-> core ADRs 0034–0035 for paginated `RelatedResponse` + the per-relation paginator). Functional acceptance includes a dual-provider
-> `RelatedCollectionParamsConformanceTestCase`; the whole suite is green on both
-> kernels (PHPStan L9 + PER-CS 2.0 + 305 spec-grouped tests). **Phase 5 (v1
-> consolidation: docs, example app, core public-API review) is next.**
+> core ADRs 0034–0035 for paginated `RelatedResponse` + the per-relation paginator).
+> The remaining related-endpoint gap then closed: **polymorphic** `MorphTo` /
+> `MorphToMany` endpoints render through per-object serializer resolution
+> (`RelationInterface::resolveSerializer`) and a `PolymorphicSerializer` decorator —
+> the to-one resolves its serializer from the related object, the to-many renders
+> mixed members; the in-memory provider supports it (reads the mixed collection off
+> the parent; a polymorphic to-many carries no shared filter/sort vocabulary so
+> `filter`/`sort` 400 while `page` slices), the Doctrine provider throws "unsupported"
+> for a polymorphic to-many (members span entity classes — supply a custom provider).
+> Bundle ADR 0032, core ADRs 0036–0037 (the decorator needed no transformer change).
+> Functional acceptance spans dual-provider conformance suites per slice plus a
+> dedicated polymorphic-kernel witness; the whole suite is green on every kernel
+> (PHPStan L9 + PER-CS 2.0 + 323 spec-grouped tests). **Phase 5 (v1 consolidation:
+> docs, example app, core public-API review) is next.**
 
 0. ✅ Skeleton + thinnest read (`GET /{type}`, `/{type}/{id}`) — forced core's lazy
    resolver + lifecycle-logic extraction + a PSR-7-free render seam. **Done.**
@@ -227,7 +237,11 @@ decision, then 1–3 sentences of *why*). The ADRs already written: `0001`–`00
    endpoint exposure (ADR 0027); handler override via decoration (ADR 0028); Doctrine
    constructor-less instantiation (ADR 0029); queryable/paginated related collections
    over `fetchRelatedCollection()` (ADR 0030, core ADRs 0034–0035) — extended to
-   many-to-many via a Doctrine `IN`-subquery scope branch (ADR 0031). **Done.**
+   many-to-many via a Doctrine `IN`-subquery scope branch (ADR 0031); and polymorphic
+   (`MorphTo` / `MorphToMany`) related endpoints — the to-one resolves its serializer
+   from the related object, the to-many renders members through a `PolymorphicSerializer`,
+   in-memory supported, Doctrine throws for a polymorphic to-many (ADR 0032, core ADRs
+   0036–0037). **Done.**
 5. **(next)** v1 consolidation: docs, example app, and the core public-API surface
    review with this bundle as the integration witness.
 
