@@ -150,6 +150,14 @@ final class DoctrineDataProvider implements DataProviderInterface
      * subquery rooted on the parent — the related entity stays the OUTER query
      * root, so the shared filter/sort/count/window machinery applies
      * identically to both branches. `$request` is unused (Doctrine push-down).
+     *
+     * A polymorphic to-many ({@see \haddowg\JsonApi\Resource\Field\MorphToMany},
+     * `relatedTypes()` of more than one type) is a deliberate boundary — like the
+     * many-to-many subquery scope above, this provider executes one scoped query
+     * against a single related entity class, and a polymorphic collection's members
+     * span entity classes, so there is no single query to run. It throws; a host
+     * that needs it supplies a custom {@see DataProviderInterface} that resolves the
+     * related members across types (ADR 0032).
      */
     public function fetchRelatedCollection(
         string $relatedType,
@@ -158,6 +166,14 @@ final class DoctrineDataProvider implements DataProviderInterface
         CollectionCriteria $criteria,
         JsonApiRequestInterface $request,
     ): CollectionResult {
+        if (\count($relation->relatedTypes()) > 1) {
+            throw new \LogicException(\sprintf(
+                'The %s does not support a polymorphic (morph-to-many) related collection for relationship "%s": its members span entity classes and cannot be one scoped query. Supply a custom DataProvider that resolves the related members across types.',
+                self::class,
+                $relation->name(),
+            ));
+        }
+
         $property = $relation->column() ?? $relation->name();
         $relatedClass = $this->entityClassFor($relatedType);
 

@@ -30,6 +30,8 @@ use haddowg\JsonApi\Response\ErrorResponse;
 use haddowg\JsonApi\Response\IdentifierResponse;
 use haddowg\JsonApi\Response\NoContentResponse;
 use haddowg\JsonApi\Response\RelatedResponse;
+use haddowg\JsonApi\Serializer\PolymorphicSerializer;
+use haddowg\JsonApi\Serializer\SerializerInterface;
 use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
@@ -183,8 +185,12 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * `GET /{type}/{id}/{relationship}` — the related-resource(s) document. Loads
      * the parent, resolves the named relation, and renders through the related
      * type's serializer per cardinality:
-     *  - a to-one reads the related object off the parent and renders a single
-     *    resource (`data:null` for an empty to-one);
+     *  - a to-one reads the related object off the parent and resolves the
+     *    serializer **from that object** ({@see RelationInterface::resolveSerializer()}),
+     *    so a polymorphic to-one ({@see \haddowg\JsonApi\Resource\Field\MorphTo})
+     *    renders the related object's own type; it renders a single resource
+     *    (`data:null` for an empty to-one — `resolveSerializer(null, …)` falls back
+     *    to the first registered serializer, valid for the null render);
      *  - a to-many resolves the *related* type's filter/sort/pagination vocabulary
      *    into a {@see CollectionCriteria}, asks the related provider's
      *    {@see \haddowg\JsonApiBundle\DataProvider\DataProviderInterface::fetchRelatedCollection()}
@@ -192,7 +198,12 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      *    {@see RelatedResponse::fromPage()} (else a plain
      *    {@see RelatedResponse::fromCollection()}) — mirroring the primary
      *    collection path. Per-relation pagination resolves
-     *    `relation paginator -> related resource paginator -> server default`.
+     *    `relation paginator -> related resource paginator -> server default`. A
+     *    polymorphic to-many ({@see \haddowg\JsonApi\Resource\Field\MorphToMany})
+     *    has no single related type — so no shared filter/sort vocabulary and no
+     *    related-resource paginator — and renders its mixed-type members through a
+     *    {@see PolymorphicSerializer} that resolves each member's serializer from
+     *    the member object (ADR 0032).
      *
      * `?include` on the related resource flows through the same
      * {@see RelatedResponse} render path. A relation that suppresses its related
@@ -223,16 +234,23 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return ErrorResponse::fromException(new RelationshipNotExists($relationshipName));
         }
 
-        // Polymorphic MorphTo related-resource endpoints (a single relation that
-        // yields several types) need per-item serializer resolution; deferred to a
-        // later slice. The declared related types are monomorphic here.
-        $relatedType = $relation->relatedTypes()[0] ?? $type;
-        $relatedSerializer = $server->serializerFor($relatedType);
+        // A polymorphic relation (MorphTo / MorphToMany) declares several related
+        // types, so there is no single related type to resolve a serializer or a
+        // shared filter/sort vocabulary from up front: the serializer is resolved
+        // per related object below.
+        $relatedTypes = $relation->relatedTypes();
+        $polymorphic = \count($relatedTypes) > 1;
+        $relatedType = $relatedTypes[0] ?? $type;
 
         $request = $this->jsonApiRequest($operation->context());
 
         if ($relation->isToMany()) {
-            $relatedResource = $this->types->resourceFor($server, $relatedType);
+            // A polymorphic to-many's members span types, so it carries no single
+            // related resource — no shared filter/sort vocabulary and no
+            // related-resource paginator; only the relation's own paginator (or the
+            // server default) applies, and members render through a
+            // PolymorphicSerializer that resolves each member's serializer.
+            $relatedResource = $polymorphic ? null : $this->types->resourceFor($server, $relatedType);
             $paginator = $relation->pagination()
                 ?? $relatedResource?->pagination()
                 ?? $server->defaultPaginator();
@@ -248,21 +266,45 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $result = $this->providers->forType($relatedType)
                 ->fetchRelatedCollection($relatedType, $parent, $relation, $criteria, $request);
 
+            $serializer = $polymorphic
+                ? $this->polymorphicSerializer($relation, $server)
+                : $server->serializerFor($relatedType);
+
             if ($paginator !== null && $result->total !== null) {
                 return RelatedResponse::fromPage(
                     $parent,
                     $relationshipName,
                     $paginator->paginate($request, $result->items, $result->total),
-                    $relatedSerializer,
+                    $serializer,
                 );
             }
 
-            return RelatedResponse::fromCollection($parent, $relationshipName, $result->items, $relatedSerializer);
+            return RelatedResponse::fromCollection($parent, $relationshipName, $result->items, $serializer);
         }
 
+        // Resolve the to-one serializer from the actual related object so a
+        // polymorphic to-one (MorphTo) renders the object's own type. A null
+        // related value has no object to discriminate, so resolveSerializer falls
+        // back to the first registered serializer and the response renders
+        // `data: null`.
         $related = $relation->readValue($parent, $request);
+        $serializer = $relation->resolveSerializer($related, $server) ?? $server->serializerFor($relatedType);
 
-        return RelatedResponse::fromResource($parent, $relationshipName, $related, $relatedSerializer);
+        return RelatedResponse::fromResource($parent, $relationshipName, $related, $serializer);
+    }
+
+    /**
+     * A {@see PolymorphicSerializer} that renders a polymorphic to-many's
+     * mixed-type members: for each member object it resolves the serializer among
+     * the relation's declared types ({@see RelationInterface::resolveSerializer()}),
+     * throwing when no declared type serializes a related object.
+     */
+    private function polymorphicSerializer(RelationInterface $relation, Server $server): PolymorphicSerializer
+    {
+        return new PolymorphicSerializer(
+            fn(mixed $object): SerializerInterface => $relation->resolveSerializer($object, $server)
+                ?? throw new \LogicException(\sprintf('No declared type of the "%s" relationship serializes a related object.', $relation->name())),
+        );
     }
 
     /**
