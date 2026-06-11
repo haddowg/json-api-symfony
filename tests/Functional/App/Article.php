@@ -26,6 +26,10 @@ final class Article
      *                                        relation, mirroring the Doctrine
      *                                        entity's separate `featuredComments`
      *                                        association
+     * @param array<string, mixed>|null $address the nested structured `address`
+     *                                            attribute (a {@see \haddowg\JsonApi\Resource\Field\Map}),
+     *                                            stored as a single member rather than
+     *                                            spread across columns; null when unset
      */
     public function __construct(
         public string $id = '',
@@ -38,5 +42,6 @@ final class Article
         public ?Author $author = null,
         public array $comments = [],
         public array $featuredComments = [],
+        public ?array $address = null,
     ) {}
 }

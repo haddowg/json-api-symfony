@@ -12,11 +12,14 @@ use haddowg\JsonApi\Resource\Field\BelongsTo;
 use haddowg\JsonApi\Resource\Field\DateTime;
 use haddowg\JsonApi\Resource\Field\HasMany;
 use haddowg\JsonApi\Resource\Field\Id;
+use haddowg\JsonApi\Resource\Field\Map;
 use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Filter\WhereDoesntHave;
 use haddowg\JsonApi\Resource\Filter\WhereHas;
 use haddowg\JsonApi\Resource\Filter\WhereIdIn;
+use haddowg\JsonApiBundle\Tests\Functional\App\Article;
+use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\ArticleEntity;
 use Symfony\Component\Clock\Clock;
 
 /**
@@ -40,7 +43,10 @@ use Symfony\Component\Clock\Clock;
  * exercises the date-constraint bridge under a frozen clock, `couponCode`
  * carries a `when()`-declared conditional rule that the bridge executes, and
  * `expiresAt` carries a `CompareField` cross-field rule (must be after
- * `publishedAt`) the bridge evaluates document-first.
+ * `publishedAt`) the bridge evaluates document-first, and `address` is a nested
+ * structured attribute (a `Map`) whose constrained children exercise the implicit
+ * Valid-cascade — the bridge recurses into them and maps a child violation to
+ * `/data/attributes/address/<child>`.
  */
 abstract class BaseArticleResource extends AbstractResource
 {
@@ -70,6 +76,45 @@ abstract class BaseArticleResource extends AbstractResource
             // Cross-field rule: expiresAt must be after publishedAt — exercises the
             // document-level CompareField execution path.
             DateTime::make('expiresAt')->nullable()->compareWith('publishedAt', Comparison::GreaterThan),
+            // Structured attribute (Phase 3 S6): a nested `address` object whose two
+            // children carry their own constraints. The bridge validates them by
+            // recursion (the implicit Valid-cascade), so a too-short `street` or a
+            // pattern-violating `postcode` surfaces a 422 at
+            // /data/attributes/address/<child>. The whole object round-trips through a
+            // single JSON/array `address` member via the Map-level serialize/fill
+            // hooks, so the children don't spread across separate columns.
+            Map::make('address')->fields(
+                Str::make('street')->required()->minLength(3),
+                Str::make('postcode')->required()->pattern('[0-9]{5}'),
+            )->serializeUsing(static function (mixed $model): mixed {
+                // `?? null` also tolerates an uninitialised typed property on a freshly
+                // instantiated entity (no PHP "accessed before initialization" error).
+                $address = match (true) {
+                    \is_array($model) => $model['address'] ?? null,
+                    $model instanceof Article, $model instanceof ArticleEntity => $model->address ?? null,
+                    default => null,
+                };
+
+                return $address === [] ? null : $address;
+            })->fillUsing(static function (mixed $model, mixed $value): mixed {
+                // A JSON object arrives as an array; key it by string for the
+                // string-keyed `address` storage member.
+                $address = null;
+                if (\is_array($value)) {
+                    $address = [];
+                    foreach ($value as $key => $item) {
+                        $address[(string) $key] = $item;
+                    }
+                }
+
+                if (\is_array($model)) {
+                    $model['address'] = $address;
+                } elseif ($model instanceof Article || $model instanceof ArticleEntity) {
+                    $model->address = $address;
+                }
+
+                return $model;
+            }),
             // Relationships (Phase 3 foundation): a to-one `author` and a
             // to-many `comments`. Core reads the related objects off the model
             // (`$model->author` / `$model->comments`) and emits resource-identifier

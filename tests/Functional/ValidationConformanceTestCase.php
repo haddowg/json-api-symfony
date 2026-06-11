@@ -205,6 +205,109 @@ abstract class ValidationConformanceTestCase extends JsonApiFunctionalTestCase
         self::assertSame(201, $nonPromoShort->getStatusCode());
     }
 
+    #[Test]
+    #[Group('spec:crud')]
+    public function creatingWithANestedChildViolatingItsPatternReturns422AtTheNestedPointer(): void
+    {
+        // The `address` Map's `postcode` child carries a 5-digit pattern; a value
+        // that violates it must surface a 422 at the EXACT nested pointer, proving
+        // the implicit Valid-cascade recurses into the structured attribute.
+        $response = $this->handle('/articles', 'POST', [
+            'data' => ['type' => 'articles', 'attributes' => [
+                'title' => 'A fine title', 'category' => 'news',
+                'address' => ['street' => '1 High Street', 'postcode' => 'ABCDE'],
+            ]],
+        ]);
+
+        self::assertSame(422, $response->getStatusCode());
+        self::assertSame(['/data/attributes/address/postcode'], $this->pointers($response));
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function creatingWithATooShortNestedChildReturns422AtTheNestedPointer(): void
+    {
+        // The `street` child carries a minLength(3); a too-short value fails at its
+        // nested pointer.
+        $response = $this->handle('/articles', 'POST', [
+            'data' => ['type' => 'articles', 'attributes' => [
+                'title' => 'A fine title', 'category' => 'news',
+                'address' => ['street' => 'ab', 'postcode' => '12345'],
+            ]],
+        ]);
+
+        self::assertSame(422, $response->getStatusCode());
+        self::assertSame(['/data/attributes/address/street'], $this->pointers($response));
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function creatingWithAMissingRequiredNestedChildReturns422AtTheNestedPointer(): void
+    {
+        // The `street` child is required: omitting it from the nested object fails at
+        // /data/attributes/address/street, mirroring a top-level required attribute.
+        $response = $this->handle('/articles', 'POST', [
+            'data' => ['type' => 'articles', 'attributes' => [
+                'title' => 'A fine title', 'category' => 'news',
+                'address' => ['postcode' => '12345'],
+            ]],
+        ]);
+
+        self::assertSame(422, $response->getStatusCode());
+        self::assertSame(['/data/attributes/address/street'], $this->pointers($response));
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function creatingWithAValidNestedObjectPasses(): void
+    {
+        $response = $this->handle('/articles', 'POST', [
+            'data' => ['type' => 'articles', 'attributes' => [
+                'title' => 'A fine title', 'category' => 'guide',
+                'address' => ['street' => '1 High Street', 'postcode' => '12345'],
+            ]],
+        ]);
+
+        self::assertSame(201, $response->getStatusCode());
+
+        // The nested object round-trips through its single storage member.
+        $data = $this->decode($response)['data'] ?? null;
+        self::assertIsArray($data);
+        $attributes = $data['attributes'] ?? null;
+        self::assertIsArray($attributes);
+        self::assertSame(['street' => '1 High Street', 'postcode' => '12345'], $attributes['address'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function updatingMayOmitTheNestedObjectEntirely(): void
+    {
+        // The `address` Map is optional on update (a partial update), so omitting it
+        // does not fire its required children — only a supplied nested object is
+        // validated.
+        $response = $this->handle('/articles/1', 'PATCH', [
+            'data' => ['type' => 'articles', 'id' => '1', 'attributes' => ['category' => 'opinion']],
+        ]);
+
+        self::assertSame(200, $response->getStatusCode());
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function updatingWithAnInvalidNestedChildReturns422AtTheNestedPointer(): void
+    {
+        // A supplied nested object IS validated on update: a pattern-violating
+        // postcode fails at its nested pointer even on PATCH.
+        $response = $this->handle('/articles/1', 'PATCH', [
+            'data' => ['type' => 'articles', 'id' => '1', 'attributes' => [
+                'address' => ['street' => '1 High Street', 'postcode' => 'nope'],
+            ]],
+        ]);
+
+        self::assertSame(422, $response->getStatusCode());
+        self::assertSame(['/data/attributes/address/postcode'], $this->pointers($response));
+    }
+
     /**
      * The `source.pointer` of every error in the response document.
      *
