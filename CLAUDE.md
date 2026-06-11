@@ -79,11 +79,13 @@ at `~/.claude/projects/-Users-gregory-haddow-Sites-json-api/memory/json-api-symf
 
 Record bundle architecture decisions as ADRs under `docs/adr/` — follow
 [`docs/adr/ADR-FORMAT.md`](docs/adr/ADR-FORMAT.md) (a short title stating the
-decision, then 1–3 sentences of *why*). The ADRs already written: `0001`–`0014`.
+decision, then 1–3 sentences of *why*). The ADRs already written: `0001`–`0020`.
 
 ## Phases (vertical slices, Doctrine-backed from Phase 1)
 
-> **Current status (2026-06-08): Phase 2 merged to `main`** (PRs #6–#8; Phase 1
+> **Current status (2026-06-11): Phases 0–2 merged; Phase 3 (relationships)
+> complete on `main` locally — unsigned + unpushed, pending re-sign** (Phase 2 =
+> PRs #6–#8; Phase 1
 > = #1–#4). Resource writes (`POST /{type}`, `PATCH`/`DELETE` `/{type}/{id}`) run
 > end-to-end on **both** providers over a new **`DataPersister` SPI** — the write
 > twin of `DataProvider`: per-type first-match resolution with the reference
@@ -125,9 +127,33 @@ decision, then 1–3 sentences of *why*). The ADRs already written: `0001`–`00
 > (core ADR 0022), the cross-field `CompareField` executed document-level against
 > the sibling value (core ADR 0023), and `UniqueEntity` over a reusable
 > post-hydration **entity-validation seam** (`EntityConstraintInterface`, bundle
-> ADR 0014) — so a duplicate is caught against the repository before commit. The
-> one *vocabulary gap* still open for the v1 core-surface review is a `Valid`-style
-> cascade into nested/related resources. **Phase 3 (relationships) is next.**
+> ADR 0014) — so a duplicate is caught against the repository before commit.
+>
+> **Phase 3 (relationships) then landed end-to-end on both providers (slices
+> S0–S6) — unsigned/unpushed locally pending re-sign.** Resources declare
+> relations and render linkage plus self/related `links` by convention (default
+> on, `withoutLinks()` opt-out; core ADR 0024), with a `linkageOnlyWhenLoaded()`
+> policy over a storage-aware **load-state seam** so a lazy Doctrine to-many emits
+> links-only without forcing a fetch (core ADR 0025, bundle ADR 0015). The related
+> (`GET /{type}/{id}/{rel}`) and relationship (`GET …/relationships/{rel}`) read
+> endpoints + compound `?include` run on a public related-value accessor (core ADR
+> 0026, bundle ADR 0016); an empty to-one renders `data: null` (core ADR 0027).
+> Relationship **mutation** (`PATCH`/`POST`/`DELETE …/relationships/{rel}`) closes
+> the headline core gap — `AbstractResource` now implements
+> `UpdateRelationshipHydratorInterface`, ships a `Mode` enum + a top-level
+> relationship-body parser + `cannotReplace()`/`cannotRemove()` flags, and finally
+> **throws** `FullReplacementProhibited`/`RemovalProhibited`/`RelationshipTypeInappropriate`
+> (core ADRs 0028–0029); storage-correct apply (id → managed reference / stored
+> object) rides a new **`DataPersister::mutateRelationship()`** seam, reused for
+> relationships embedded in whole-resource writes (bundle ADRs 0017–0018).
+> Relationship-existence filters `WhereHas`/`WhereDoesntHave` execute as in-memory
+> predicates (core ADR 0030) and Doctrine `EXISTS`/`NOT EXISTS` subqueries (bundle
+> ADR 0019). The last v1 *validation* gap closed **implicitly**: a structured
+> `Map` attribute's child constraints now cascade through the validator bridge to
+> `422` with nested `/data/attributes/<map>/<child>` pointers — no `Valid` marker
+> (bundle ADR 0020, reversible to an explicit marker). Core changes rode their own
+> `feat/*` branches (ff'd into core `main`) for later PRs; the bundle stayed linear
+> on `main`. **Phase 4 (the capstone generic CRUD engine) is next.**
 
 0. ✅ Skeleton + thinnest read (`GET /{type}`, `/{type}/{id}`) — forced core's lazy
    resolver + lifecycle-logic extraction + a PSR-7-free render seam. **Done.**
@@ -144,16 +170,17 @@ decision, then 1–3 sentences of *why*). The ADRs already written: `0001`–`00
    (`Sequentially`/`AtLeastOneOf`), cross-field (`CompareField`) and `UniqueEntity`
    (post-hydration entity-validation seam) added — only the `Valid`-cascade gap
    remains for v1. **Done.**
-3. **(in progress)** Relationships. S2 (read related + relationship endpoints +
-   compound `?include`) done (ADR 0016). S3 (relationship *mutation* endpoints —
-   `PATCH`/`POST`/`DELETE /{type}/{id}/relationships/{rel}`) done (ADR 0017):
-   core now implements `UpdateRelationshipHydratorInterface` on `AbstractResource`,
-   throws `FullReplacementProhibited` / `RemovalProhibited` / `RelationshipTypeInappropriate`,
-   ships a `Mode` enum + a relationship-endpoint body parser + the `cannotReplace()`/
-   `cannotRemove()` mutability flags; the bundle adds a `DataPersister::mutateRelationship()`
-   seam (core validates the request shape, the persister resolves linkage ids →
-   related objects/references and mutates the association) proven on both providers.
-4. Capstone: the generic zero-handler CRUD engine over the SPI.
+3. ✅ Relationships (S0–S6, both providers). Declared relations + linkage/links
+   rendering (`withoutLinks`, `linkageOnlyWhenLoaded` over a load-state seam);
+   related + relationship **read** endpoints + compound `?include`; relationship
+   **mutation** (`PATCH`/`POST`/`DELETE …/relationships/{rel}`) closing the
+   `UpdateRelationshipHydratorInterface` gap and finally throwing
+   `FullReplacementProhibited`/`RemovalProhibited` via `cannotReplace`/`cannotRemove`
+   over a `DataPersister::mutateRelationship()` seam; relationships in whole-resource
+   writes; `WhereHas`/`WhereDoesntHave` filters (Doctrine `EXISTS`); and the implicit
+   nested-attribute (`Map`) validation cascade. Core ADRs 0024–0030, bundle ADRs
+   0015–0020. **Done.** (`include` deferred from Phase 1 landed here.)
+4. **(next)** Capstone: the generic zero-handler CRUD engine over the SPI.
 5. v1 consolidation: docs, example app, and the core public-API surface review
    with this bundle as the integration witness.
 
