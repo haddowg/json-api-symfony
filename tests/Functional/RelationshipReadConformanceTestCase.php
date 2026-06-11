@@ -21,12 +21,22 @@ use PHPUnit\Framework\Attributes\Test;
  * {@see \haddowg\JsonApiBundle\Tests\Functional\App\ArticleFixtures} seeds, so a
  * failure on one provider localizes the bug to that provider's execution.
  *
- * Foundation only: this asserts linkage in the `relationships` member, not
- * related/relationship endpoints, `include`, links or mutations — those are
- * later slices.
+ * Foundation only: this asserts linkage in the `relationships` member and the
+ * convention `self`/`related` links each relationship carries, not
+ * related/relationship endpoints, `include` or mutations — those are later
+ * slices.
  */
 abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTestCase
 {
+    /**
+     * The base URI both functional kernels configure under `json_api.base_uri`
+     * (see {@see \haddowg\JsonApiBundle\Tests\Functional\App\JsonApiTestKernel}
+     * and {@see \haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\DoctrineJsonApiTestKernel}).
+     * The `ServerFactory` threads it to `Server::withBaseUri()`, and core builds
+     * the relationship links against it by convention.
+     */
+    private const string BASE_URI = 'https://example.test';
+
     #[Test]
     #[Group('spec:fetching-relationships')]
     public function aToOneRelationshipRendersASingleResourceIdentifier(): void
@@ -38,6 +48,43 @@ abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTest
         self::assertIsArray($author);
         self::assertArrayHasKey('data', $author);
         self::assertSame(['type' => 'authors', 'id' => 'a1'], $author['data']);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    public function aToOneRelationshipCarriesConventionSelfAndRelatedLinks(): void
+    {
+        // Core builds, by convention, links.self = {baseUri}/{type}/{id}/relationships/{name}
+        // and links.related = {baseUri}/{type}/{id}/{name} for every relationship
+        // that does not opt out, on both providers.
+        $relationships = $this->relationshipsOf($this->fetchResource('/articles/1'));
+
+        $author = $relationships['author'] ?? null;
+        self::assertIsArray($author);
+        self::assertSame(
+            [
+                'self' => self::BASE_URI . '/articles/1/relationships/author',
+                'related' => self::BASE_URI . '/articles/1/author',
+            ],
+            $author['links'] ?? null,
+        );
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    public function aToManyRelationshipCarriesConventionSelfAndRelatedLinks(): void
+    {
+        $relationships = $this->relationshipsOf($this->fetchResource('/articles/1'));
+
+        $comments = $relationships['comments'] ?? null;
+        self::assertIsArray($comments);
+        self::assertSame(
+            [
+                'self' => self::BASE_URI . '/articles/1/relationships/comments',
+                'related' => self::BASE_URI . '/articles/1/comments',
+            ],
+            $comments['links'] ?? null,
+        );
     }
 
     #[Test]
