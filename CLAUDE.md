@@ -84,10 +84,15 @@ decision, then 1–3 sentences of *why*). The ADRs already written: `0001`–`00
 ## Phases (vertical slices, Doctrine-backed from Phase 1)
 
 > **Current status (2026-06-11): Phases 0–2 merged; Phases 3 (relationships) and
-> 4 (the capstone CRUD engine) both complete locally on
-> `feat/standalone-serializer-hydrator-capability` — unsigned + unpushed, pending
-> re-sign and merge** (Phase 2 = PRs #6–#8; Phase 1
-> = #1–#4). Resource writes (`POST /{type}`, `PATCH`/`DELETE` `/{type}/{id}`) run
+> 4 (the capstone CRUD engine) — plus the two follow-ups, many-to-many related
+> collections and polymorphic (`MorphTo`/`MorphToMany`) related endpoints — all
+> complete locally on `feat/standalone-serializer-hydrator-capability` (16 commits)
+> with the consumed core changes on the sibling's `main` (6 commits ahead of
+> `origin/main`); EVERYTHING unsigned + unpushed, pending re-sign and merge** (Phase
+> 2 = PRs #6–#8; Phase 1 = #1–#4). The exact commit-to-PR merge plan for this
+> unsigned backlog is in the bundle auto-memory
+> `[[phase4-and-followups-merge-plan]]`. **Phase 5 (v1 consolidation) is next.**
+> Resource writes (`POST /{type}`, `PATCH`/`DELETE` `/{type}/{id}`) run
 > end-to-end on **both** providers over a new **`DataPersister` SPI** — the write
 > twin of `DataProvider`: per-type first-match resolution with the reference
 > Doctrine persister as the `-128` fallback and an in-memory witness sharing one
