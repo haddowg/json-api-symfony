@@ -123,6 +123,11 @@ final class DoctrineJsonApiTestKernel extends Kernel
         // the `-128` fallback provider/persister from its `#[AsJsonApiResource]`
         // entity map alone — no per-type engine code (ADR 0021).
         $services->set(DoctrineTagResource::class);
+
+        // The constructor-less instantiation witness: a `vaults` type whose entity
+        // has required constructor arguments, so create only works because the
+        // persister instantiates it without invoking the constructor (ADR 0029).
+        $services->set(DoctrineVaultResource::class);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

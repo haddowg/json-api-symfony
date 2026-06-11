@@ -48,10 +48,15 @@ class ArticleEntity
         public string $id = '',
         #[ORM\Column]
         public string $title = '',
-        #[ORM\Column]
-        public string $body = '',
-        #[ORM\Column]
-        public string $category = '',
+        // `body` and `category` are optional `articles` attributes (the resource
+        // declares neither `->required()`), so a create may omit them. The reference
+        // persister instantiates without invoking the constructor (ADR 0029), so the
+        // `= ''` parameter default no longer fills an omitted value — the columns are
+        // therefore nullable, matching the resource's optionality.
+        #[ORM\Column(nullable: true)]
+        public ?string $body = '',
+        #[ORM\Column(nullable: true)]
+        public ?string $category = '',
         #[ORM\Column(type: 'datetime_immutable', nullable: true)]
         public ?\DateTimeImmutable $publishedAt = null,
         #[ORM\Column(nullable: true)]
