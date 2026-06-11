@@ -79,7 +79,7 @@ at `~/.claude/projects/-Users-gregory-haddow-Sites-json-api/memory/json-api-symf
 
 Record bundle architecture decisions as ADRs under `docs/adr/` — follow
 [`docs/adr/ADR-FORMAT.md`](docs/adr/ADR-FORMAT.md) (a short title stating the
-decision, then 1–3 sentences of *why*). The ADRs already written: `0001`–`0030`.
+decision, then 1–3 sentences of *why*). The ADRs already written: `0001`–`0031`.
 
 ## Phases (vertical slices, Doctrine-backed from Phase 1)
 
@@ -184,10 +184,11 @@ decision, then 1–3 sentences of *why*). The ADRs already written: `0001`–`00
 > new `DataProvider::fetchRelatedCollection()` seam — the in-memory provider reads
 > the related objects off the parent and applies the shared `CriteriaApplier` +
 > array window; the Doctrine provider scopes a **push-down `QueryBuilder`** on the
-> related repo by the inverse owning FK (never loading the whole collection) with
-> per-relation default pagination resolving relation → related resource → server
-> default (bundle ADR 0030, core ADRs 0034–0035 for paginated `RelatedResponse` +
-> the per-relation paginator). Functional acceptance includes a dual-provider
+> related repo (never loading the whole collection) — by the inverse owning FK for a
+> single-valued inverse association, or an `IN`-subquery rooted on the related entity
+> for an owning-side / many-to-many relation (ADR 0031) — with per-relation default
+> pagination resolving relation → related resource → server default (bundle ADR 0030,
+> core ADRs 0034–0035 for paginated `RelatedResponse` + the per-relation paginator). Functional acceptance includes a dual-provider
 > `RelatedCollectionParamsConformanceTestCase`; the whole suite is green on both
 > kernels (PHPStan L9 + PER-CS 2.0 + 305 spec-grouped tests). **Phase 5 (v1
 > consolidation: docs, example app, core public-API review) is next.**
@@ -225,7 +226,8 @@ decision, then 1–3 sentences of *why*). The ADRs already written: `0001`–`00
    + operation-gated routing (ADR 0025); standalone relations (ADR 0026); per-relation
    endpoint exposure (ADR 0027); handler override via decoration (ADR 0028); Doctrine
    constructor-less instantiation (ADR 0029); queryable/paginated related collections
-   over `fetchRelatedCollection()` (ADR 0030, core ADRs 0034–0035). **Done.**
+   over `fetchRelatedCollection()` (ADR 0030, core ADRs 0034–0035) — extended to
+   many-to-many via a Doctrine `IN`-subquery scope branch (ADR 0031). **Done.**
 5. **(next)** v1 consolidation: docs, example app, and the core public-API surface
    review with this bundle as the integration witness.
 
