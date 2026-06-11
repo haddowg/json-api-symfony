@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle;
 
 use haddowg\JsonApi\Resource\AbstractResource;
+use haddowg\JsonApiBundle\Attribute\AsJsonApiHydrator;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
+use haddowg\JsonApiBundle\Attribute\AsJsonApiSerializer;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineExtensionInterface;
@@ -70,6 +72,22 @@ final class JsonApiBundle extends AbstractBundle
      * criteria.
      */
     public const string DOCTRINE_EXTENSION_TAG = 'haddowg.json_api.doctrine_extension';
+
+    /**
+     * Tag applied to a standalone {@see \haddowg\JsonApi\Serializer\SerializerInterface}
+     * registered for a type via {@see AsJsonApiSerializer} — a serializer without an
+     * {@see AbstractResource} (bundle ADR 0024). The tag carries the `type` it
+     * serializes; {@see \haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceLocatorPass}
+     * reads it to register the type's serializer with core.
+     */
+    public const string SERIALIZER_TAG = 'haddowg.json_api.serializer';
+
+    /**
+     * Tag applied to a standalone {@see \haddowg\JsonApi\Hydrator\HydratorInterface}
+     * registered for a type via {@see AsJsonApiHydrator} — the decoupled write half
+     * (bundle ADR 0024). The tag carries the `type` it hydrates.
+     */
+    public const string HYDRATOR_TAG = 'haddowg.json_api.hydrator';
 
     public function configure(DefinitionConfigurator $definition): void
     {
@@ -150,6 +168,23 @@ final class JsonApiBundle extends AbstractBundle
                     'serializer' => $attribute->serializer,
                     'hydrator' => $attribute->hydrator,
                 ], static fn(mixed $value): bool => $value !== null));
+            },
+        );
+
+        // Standalone serializer/hydrator capabilities: a class implementing
+        // SerializerInterface/HydratorInterface registers for a type with no
+        // AbstractResource (ADR 0024). A single class may carry both.
+        $builder->registerAttributeForAutoconfiguration(
+            AsJsonApiSerializer::class,
+            static function (Definition $definition, AsJsonApiSerializer $attribute): void {
+                $definition->addTag(self::SERIALIZER_TAG, ['type' => $attribute->type]);
+            },
+        );
+
+        $builder->registerAttributeForAutoconfiguration(
+            AsJsonApiHydrator::class,
+            static function (Definition $definition, AsJsonApiHydrator $attribute): void {
+                $definition->addTag(self::HYDRATOR_TAG, ['type' => $attribute->type]);
             },
         );
     }

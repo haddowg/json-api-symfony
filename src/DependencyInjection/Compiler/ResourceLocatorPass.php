@@ -31,6 +31,13 @@ use Symfony\Component\DependencyInjection\Reference;
  * {@see ServerFactory}, which passes each to core's
  * {@see \haddowg\JsonApi\Server\Server::register()} so the type's reads/writes run
  * through the override.
+ *
+ * Standalone serializer/hydrator capabilities (`#[AsJsonApiSerializer]` /
+ * `#[AsJsonApiHydrator]`, bundle ADR 0024) — a serializer/hydrator registered for
+ * a type with **no** resource — flow the same way: each service joins the locator
+ * (keyed by its class-string) and a `type → class` map is handed to the
+ * {@see ServerFactory}, which registers them with core's
+ * {@see \haddowg\JsonApi\Server\Server::registerSerializerHydrator()}.
  */
 final class ResourceLocatorPass implements CompilerPassInterface
 {
@@ -72,6 +79,19 @@ final class ResourceLocatorPass implements CompilerPassInterface
             }
         }
 
+        $standaloneSerializers = $this->collectStandalone(
+            $container,
+            JsonApiBundle::SERIALIZER_TAG,
+            SerializerInterface::class,
+            $references,
+        );
+        $standaloneHydrators = $this->collectStandalone(
+            $container,
+            JsonApiBundle::HYDRATOR_TAG,
+            HydratorInterface::class,
+            $references,
+        );
+
         $locator = ServiceLocatorTagPass::register($container, $references);
 
         $definition = $container->getDefinition(ResourceLocator::class);
@@ -82,7 +102,52 @@ final class ResourceLocatorPass implements CompilerPassInterface
             $factory = $container->getDefinition(ServerFactory::class);
             $factory->setArgument('$serializersByClass', $serializers);
             $factory->setArgument('$hydratorsByClass', $hydrators);
+            $factory->setArgument('$standaloneSerializers', $standaloneSerializers);
+            $factory->setArgument('$standaloneHydrators', $standaloneHydrators);
         }
+    }
+
+    /**
+     * Collects the standalone capability services tagged `$tag` into a
+     * `type → class-string` map, adding each to `$references` so core's resolver
+     * can construct it. Validates the class implements `$contract`.
+     *
+     * @param class-string             $contract
+     * @param array<string, Reference> $references
+     *
+     * @return array<string, string>
+     */
+    private function collectStandalone(ContainerBuilder $container, string $tag, string $contract, array &$references): array
+    {
+        $map = [];
+
+        foreach ($container->findTaggedServiceIds($tag) as $id => $tags) {
+            $definition = $container->findDefinition($id);
+            $class = $definition->getClass() ?? (\is_string($id) && \class_exists($id) ? $id : null);
+            if ($class === null) {
+                continue;
+            }
+
+            if (!\is_a($class, $contract, true)) {
+                throw new \LogicException(\sprintf(
+                    'The service "%s" registered for a JSON:API type must implement %s.',
+                    $id,
+                    $contract,
+                ));
+            }
+
+            foreach ($tags as $attributes) {
+                $type = $attributes['type'] ?? null;
+                if (!\is_string($type) || $type === '') {
+                    continue;
+                }
+
+                $references[$class] = new Reference($id);
+                $map[$type] = $class;
+            }
+        }
+
+        return $map;
     }
 
     /**

@@ -40,8 +40,10 @@ final class ServerFactory
     private ?Server $server = null;
 
     /**
-     * @param array<class-string, class-string<\haddowg\JsonApi\Serializer\SerializerInterface>> $serializersByClass override serializer per Resource class-string (ADR 0023)
-     * @param array<class-string, class-string<\haddowg\JsonApi\Hydrator\HydratorInterface>>      $hydratorsByClass   override hydrator per Resource class-string (ADR 0023)
+     * @param array<class-string, class-string<\haddowg\JsonApi\Serializer\SerializerInterface>> $serializersByClass    override serializer per Resource class-string (ADR 0023)
+     * @param array<class-string, class-string<\haddowg\JsonApi\Hydrator\HydratorInterface>>      $hydratorsByClass      override hydrator per Resource class-string (ADR 0023)
+     * @param array<string, class-string<\haddowg\JsonApi\Serializer\SerializerInterface>>        $standaloneSerializers standalone serializer per type, no resource (ADR 0024)
+     * @param array<string, class-string<\haddowg\JsonApi\Hydrator\HydratorInterface>>            $standaloneHydrators   standalone hydrator per type, no resource (ADR 0024)
      */
     public function __construct(
         private readonly ResourceLocator $resources,
@@ -53,6 +55,8 @@ final class ServerFactory
         private readonly ?RelationshipLoadStateInterface $relationshipLoadState = null,
         private readonly array $serializersByClass = [],
         private readonly array $hydratorsByClass = [],
+        private readonly array $standaloneSerializers = [],
+        private readonly array $standaloneHydrators = [],
     ) {}
 
     /**
@@ -82,6 +86,31 @@ final class ServerFactory
             );
         }
 
+        // Standalone serializer/hydrator capabilities (ADR 0024): a type registered
+        // with no resource. Core stores the pair; serializerFor()/hydratorFor()
+        // resolve the services through the same locator. Serialize-only by default
+        // (no routes) — a later slice's operation allow-list exposes endpoints.
+        foreach ($this->standaloneTypes() as $type) {
+            $server = $server->registerSerializerHydrator(
+                $type,
+                $this->standaloneSerializers[$type] ?? null,
+                $this->standaloneHydrators[$type] ?? null,
+            );
+        }
+
         return $this->server = $server->withHandler($this->handler);
+    }
+
+    /**
+     * The distinct types declared by a standalone serializer and/or hydrator.
+     *
+     * @return list<string>
+     */
+    private function standaloneTypes(): array
+    {
+        return \array_values(\array_unique([
+            ...\array_keys($this->standaloneSerializers),
+            ...\array_keys($this->standaloneHydrators),
+        ]));
     }
 }
