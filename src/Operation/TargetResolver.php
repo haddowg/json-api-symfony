@@ -9,8 +9,11 @@ use Symfony\Component\HttpFoundation\Request;
 
 /**
  * Builds a core {@see Target} from Symfony route defaults and path parameters:
- * the `_jsonapi_type` route default plus the optional `{id}` route attribute
- * (relationship-endpoint resolution lands in a later phase).
+ * the `_jsonapi_type` route default plus the optional `{id}` and `{relationship}`
+ * route attributes. When a `{relationship}` segment is present the target names a
+ * relationship, and the `_jsonapi_relationship_endpoint` route default
+ * distinguishes the linkage endpoint (`/relationships/{relationship}`, `true`)
+ * from the related-resource endpoint (`/{relationship}`, `false`).
  *
  * The {@see \haddowg\JsonApiBundle\EventListener\RequestListener} uses it, and it
  * is the public seam an explicit-route user calls directly — so it is a pure
@@ -21,6 +24,10 @@ final class TargetResolver
     public const string TYPE_ATTRIBUTE = '_jsonapi_type';
 
     public const string ID_ATTRIBUTE = 'id';
+
+    public const string RELATIONSHIP_ATTRIBUTE = 'relationship';
+
+    public const string RELATIONSHIP_ENDPOINT_ATTRIBUTE = '_jsonapi_relationship_endpoint';
 
     /**
      * Resolves the target from the request's route attributes, or `null` when the
@@ -35,6 +42,14 @@ final class TargetResolver
 
         $id = $request->attributes->get(self::ID_ATTRIBUTE);
 
-        return new Target($type, \is_string($id) ? $id : null);
+        $relationship = $request->attributes->get(self::RELATIONSHIP_ATTRIBUTE);
+        $relationship = \is_string($relationship) && $relationship !== '' ? $relationship : null;
+
+        return new Target(
+            $type,
+            \is_string($id) ? $id : null,
+            $relationship,
+            $relationship !== null && $request->attributes->get(self::RELATIONSHIP_ENDPOINT_ATTRIBUTE) === true,
+        );
     }
 }

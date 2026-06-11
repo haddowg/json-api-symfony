@@ -5,16 +5,22 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Operation;
 
 use haddowg\JsonApi\Exception\NoResourceRegistered;
+use haddowg\JsonApi\Exception\RelationshipNotExists;
 use haddowg\JsonApi\Exception\ResourceNotFound;
 use haddowg\JsonApi\Operation\CreateResourceOperation;
 use haddowg\JsonApi\Operation\DeleteResourceOperation;
+use haddowg\JsonApi\Operation\FetchRelatedOperation;
+use haddowg\JsonApi\Operation\FetchRelationshipOperation;
 use haddowg\JsonApi\Operation\FetchResourceOperation;
 use haddowg\JsonApi\Operation\OperationContext;
 use haddowg\JsonApi\Operation\UpdateResourceOperation;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Response\DataResponse;
 use haddowg\JsonApi\Response\ErrorResponse;
+use haddowg\JsonApi\Response\IdentifierResponse;
 use haddowg\JsonApi\Response\NoContentResponse;
+use haddowg\JsonApi\Response\RelatedResponse;
 use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
@@ -45,6 +51,20 @@ use haddowg\JsonApiBundle\Validation\ResourceValidator;
  *  - {@see DeleteResourceOperation} loads the target (a `404` when absent),
  *    deletes it, and renders `204`.
  *
+ * Relationship reads share the same provider-resolution shape: load the parent
+ * through the read provider (a `404` when absent), resolve the named relation on
+ * the parent resource via core's {@see \haddowg\JsonApi\Resource\AbstractResource::relationNamed()}
+ * (a JSON:API `404` {@see RelationshipNotExists} when the relationship is unknown),
+ * then render —
+ *  - {@see FetchRelatedOperation} reads the related domain value(s) off the parent
+ *    without serializing ({@see RelationInterface::readValue()}) and serializes
+ *    them through the *related* type's serializer, as a single resource
+ *    ({@see RelatedResponse::fromResource()}, `data:null` for an empty to-one) or a
+ *    collection ({@see RelatedResponse::fromCollection()}) per cardinality;
+ *  - {@see FetchRelationshipOperation} routes the parent through the *parent*
+ *    type's serializer with the relationship name set, emitting linkage only
+ *    ({@see IdentifierResponse::forRelationship()}).
+ *
  * Core's typed exceptions (unknown filter/sort keys, hydration failures, the
  * validator bridge's `422`) propagate to the route-scoped `kernel.exception`
  * listener, which owns all error rendering on JSON:API routes. The generic
@@ -59,10 +79,12 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         private readonly ?ResourceValidator $validator = null,
     ) {}
 
-    public function handle(\haddowg\JsonApi\Operation\JsonApiOperationInterface $operation): DataResponse|NoContentResponse|ErrorResponse
+    public function handle(\haddowg\JsonApi\Operation\JsonApiOperationInterface $operation): DataResponse|RelatedResponse|IdentifierResponse|NoContentResponse|ErrorResponse
     {
         return match (true) {
             $operation instanceof FetchResourceOperation => $this->fetch($operation),
+            $operation instanceof FetchRelatedOperation => $this->fetchRelated($operation),
+            $operation instanceof FetchRelationshipOperation => $this->fetchRelationship($operation),
             $operation instanceof CreateResourceOperation => $this->create($operation),
             $operation instanceof UpdateResourceOperation => $this->update($operation),
             $operation instanceof DeleteResourceOperation => $this->delete($operation),
@@ -113,6 +135,115 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         }
 
         return DataResponse::fromCollection($result->items, $serializer);
+    }
+
+    /**
+     * `GET /{type}/{id}/{relationship}` — the related-resource(s) document. Loads
+     * the parent, resolves the named relation, reads the related domain value(s)
+     * off the parent without serializing, and renders them through the related
+     * type's serializer: a single resource (`data:null` for an empty to-one) or a
+     * collection per the relation's cardinality. `?include` on the related
+     * resource flows through the same {@see RelatedResponse} render path.
+     */
+    private function fetchRelated(FetchRelatedOperation $operation): RelatedResponse|ErrorResponse
+    {
+        $server = $this->server($operation->context());
+        $target = $operation->target();
+        $type = $target->type;
+        $relationshipName = (string) $target->relationship;
+
+        $parent = $this->loadParent($type, $target->id);
+        if ($parent === null) {
+            return ErrorResponse::fromException(new ResourceNotFound());
+        }
+
+        $relation = $this->resolveRelation($server, $type, $relationshipName);
+        if ($relation === null) {
+            return ErrorResponse::fromException(new RelationshipNotExists($relationshipName));
+        }
+
+        // Polymorphic MorphTo related-resource endpoints (a single relation that
+        // yields several types) need per-item serializer resolution; deferred to a
+        // later slice. The declared related types are monomorphic here.
+        $relatedType = $relation->relatedTypes()[0] ?? $type;
+        $relatedSerializer = $server->serializerFor($relatedType);
+
+        $request = $this->jsonApiRequest($operation->context());
+        $related = $relation->readValue($parent, $request);
+
+        if ($relation->isToMany()) {
+            \assert(\is_iterable($related));
+
+            return RelatedResponse::fromCollection($parent, $relationshipName, $related, $relatedSerializer);
+        }
+
+        return RelatedResponse::fromResource($parent, $relationshipName, $related, $relatedSerializer);
+    }
+
+    /**
+     * `GET /{type}/{id}/relationships/{relationship}` — the relationship-linkage
+     * document (resource identifiers only). Loads the parent, validates the
+     * relationship exists, and routes the parent through the *parent* type's
+     * serializer with the relationship name set so the transformer emits linkage.
+     */
+    private function fetchRelationship(FetchRelationshipOperation $operation): IdentifierResponse|ErrorResponse
+    {
+        $server = $this->server($operation->context());
+        $target = $operation->target();
+        $type = $target->type;
+        $relationshipName = (string) $target->relationship;
+
+        $parent = $this->loadParent($type, $target->id);
+        if ($parent === null) {
+            return ErrorResponse::fromException(new ResourceNotFound());
+        }
+
+        if ($this->resolveRelation($server, $type, $relationshipName) === null) {
+            return ErrorResponse::fromException(new RelationshipNotExists($relationshipName));
+        }
+
+        return IdentifierResponse::forRelationship($parent, $server->serializerFor($type), $relationshipName);
+    }
+
+    /**
+     * Loads the parent resource of `$type` through the read provider, or `null`
+     * when the id is absent or no such resource exists.
+     */
+    private function loadParent(string $type, ?string $id): ?object
+    {
+        if ($id === null) {
+            return null;
+        }
+
+        return $this->providers->forType($type)->fetchOne($type, $id);
+    }
+
+    /**
+     * Resolves the declared, non-hidden relation named `$name` on `$type`'s
+     * resource, or `null` when the resource is bare (no field inventory) or has no
+     * such relationship — the handler maps a `null` to a JSON:API `404`.
+     */
+    private function resolveRelation(Server $server, string $type, string $name): ?RelationInterface
+    {
+        try {
+            $resource = $server->resources()->resourceFor($type);
+        } catch (NoResourceRegistered) {
+            return null;
+        }
+
+        return $resource->relationNamed($name);
+    }
+
+    /**
+     * The current JSON:API request from the operation context, for the relation's
+     * value reader (a custom `extractUsing()` extractor may consult it).
+     */
+    private function jsonApiRequest(OperationContext $context): JsonApiRequestInterface
+    {
+        $request = $context->httpRequest();
+        \assert($request instanceof JsonApiRequestInterface);
+
+        return $request;
     }
 
     private function create(CreateResourceOperation $operation): DataResponse

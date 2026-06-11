@@ -41,6 +41,58 @@ final class TargetResolverTest extends TestCase
     }
 
     #[Test]
+    public function itResolvesARelatedTargetFromTheRelationshipAttribute(): void
+    {
+        $request = new Request();
+        $request->attributes->set(TargetResolver::TYPE_ATTRIBUTE, 'articles');
+        $request->attributes->set(TargetResolver::ID_ATTRIBUTE, '1');
+        $request->attributes->set(TargetResolver::RELATIONSHIP_ATTRIBUTE, 'author');
+        $request->attributes->set(TargetResolver::RELATIONSHIP_ENDPOINT_ATTRIBUTE, false);
+
+        $target = (new TargetResolver())->resolveFromRequest($request);
+
+        self::assertNotNull($target);
+        self::assertSame('articles', $target->type);
+        self::assertSame('1', $target->id);
+        self::assertSame('author', $target->relationship);
+        self::assertTrue($target->hasRelationship());
+        self::assertFalse($target->isRelationshipEndpoint);
+    }
+
+    #[Test]
+    public function itResolvesARelationshipEndpointTargetWhenTheEndpointDefaultIsTrue(): void
+    {
+        $request = new Request();
+        $request->attributes->set(TargetResolver::TYPE_ATTRIBUTE, 'articles');
+        $request->attributes->set(TargetResolver::ID_ATTRIBUTE, '1');
+        $request->attributes->set(TargetResolver::RELATIONSHIP_ATTRIBUTE, 'comments');
+        $request->attributes->set(TargetResolver::RELATIONSHIP_ENDPOINT_ATTRIBUTE, true);
+
+        $target = (new TargetResolver())->resolveFromRequest($request);
+
+        self::assertNotNull($target);
+        self::assertSame('comments', $target->relationship);
+        self::assertTrue($target->isRelationshipEndpoint);
+    }
+
+    #[Test]
+    public function aResourceTargetIsNeverARelationshipEndpoint(): void
+    {
+        // The resource route carries no {relationship} segment, so even a stray
+        // endpoint default cannot flip a plain /{type}/{id} target.
+        $request = new Request();
+        $request->attributes->set(TargetResolver::TYPE_ATTRIBUTE, 'articles');
+        $request->attributes->set(TargetResolver::ID_ATTRIBUTE, '1');
+        $request->attributes->set(TargetResolver::RELATIONSHIP_ENDPOINT_ATTRIBUTE, true);
+
+        $target = (new TargetResolver())->resolveFromRequest($request);
+
+        self::assertNotNull($target);
+        self::assertFalse($target->hasRelationship());
+        self::assertFalse($target->isRelationshipEndpoint);
+    }
+
+    #[Test]
     public function itReturnsNullForANonJsonApiRoute(): void
     {
         self::assertNull((new TargetResolver())->resolveFromRequest(new Request()));

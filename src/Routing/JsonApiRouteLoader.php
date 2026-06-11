@@ -17,7 +17,10 @@ use Symfony\Component\Routing\RouteCollection;
  * A Symfony route loader for the custom `type: jsonapi` resource. For every
  * registered resource type it auto-registers the standard resource endpoint set:
  * `GET /{type}` (collection) and `GET`/`PATCH`/`DELETE` `/{type}/{id}` (single),
- * plus `POST /{type}` (create). Relationship endpoints arrive in a later phase.
+ * `POST /{type}` (create), plus the read relationship endpoints
+ * `GET /{type}/{id}/{relationship}` (related resources) and
+ * `GET /{type}/{id}/relationships/{relationship}` (relationship linkage).
+ * Relationship mutations arrive in a later slice.
  *
  * Concrete per-type paths are emitted (one literal path per type) rather than a
  * single parametric `/{type}` catch-all, so the router natively `404`s unknown
@@ -27,6 +30,15 @@ use Symfony\Component\Routing\RouteCollection;
  *  - `_jsonapi_server` — the server name (`default` in Phase 0);
  *  - the {@see ExceptionListener::ROUTE_MARKER} default that scopes the
  *    JSON:API exception listener to these routes only.
+ *
+ * The relationship routes additionally carry `_jsonapi_relationship_endpoint`
+ * (`true` for the `/relationships/{relationship}` linkage path, `false` for the
+ * `/{relationship}` related path) which the {@see TargetResolver} reads to build
+ * the relationship-aware {@see \haddowg\JsonApi\Operation\Target}. The four-segment
+ * linkage path and the three-segment related path differ in segment count, so they
+ * never shadow one another (nor the two-segment `/{type}/{id}` resource route); the
+ * linkage route is emitted first so the literal `relationships` segment is never
+ * captured as a `{relationship}` name.
  *
  * Types are read statically from each registered Resource class-string's
  * `static $type` (no instantiation), via the {@see ResourceLocator}.
@@ -63,6 +75,8 @@ final class JsonApiRouteLoader extends Loader
 
             $collectionPath = '/' . $resourceType;
             $resourcePath = $collectionPath . '/{id}';
+            $relationshipPath = $resourcePath . '/relationships/{relationship}';
+            $relatedPath = $resourcePath . '/{relationship}';
 
             $routes->add(
                 \sprintf('jsonapi.%s.index', $resourceType),
@@ -87,6 +101,27 @@ final class JsonApiRouteLoader extends Loader
             $routes->add(
                 \sprintf('jsonapi.%s.delete', $resourceType),
                 new Route($resourcePath, $defaults, methods: ['DELETE']),
+            );
+
+            // The four-segment linkage route is listed before the three-segment
+            // related route so the literal `relationships` segment is never
+            // captured as a `{relationship}` name.
+            $routes->add(
+                \sprintf('jsonapi.%s.relationship.show', $resourceType),
+                new Route(
+                    $relationshipPath,
+                    [...$defaults, TargetResolver::RELATIONSHIP_ENDPOINT_ATTRIBUTE => true],
+                    methods: ['GET'],
+                ),
+            );
+
+            $routes->add(
+                \sprintf('jsonapi.%s.related.show', $resourceType),
+                new Route(
+                    $relatedPath,
+                    [...$defaults, TargetResolver::RELATIONSHIP_ENDPOINT_ATTRIBUTE => false],
+                    methods: ['GET'],
+                ),
             );
         }
 
