@@ -27,6 +27,10 @@ namespace haddowg\JsonApiBundle\Attribute;
  * express the wire shape. The generic CRUD engine then drives reads/writes for
  * the type through the override instead of the resource's field inventory
  * (bundle ADR 0023).
+ *
+ * `operations` is the exposed operation allow-list: the {@see \haddowg\JsonApiBundle\Operation\Operation}
+ * cases this type serves, one route emitted per case (bundle ADR 0025). An empty
+ * array means the default — for a resource, all five operations.
  */
 #[\Attribute(\Attribute::TARGET_CLASS)]
 final readonly class AsJsonApiResource
@@ -35,6 +39,7 @@ final readonly class AsJsonApiResource
      * @param class-string|null                                                    $entity     the Doctrine entity backing this resource type
      * @param class-string<\haddowg\JsonApi\Serializer\SerializerInterface>|null    $serializer a custom serializer for this type
      * @param class-string<\haddowg\JsonApi\Hydrator\HydratorInterface>|null        $hydrator   a custom hydrator for this type
+     * @param list<\haddowg\JsonApiBundle\Operation\Operation>                      $operations the exposed operation allow-list (empty = all five)
      */
     public function __construct(
         public ?string $type = null,
@@ -42,5 +47,6 @@ final readonly class AsJsonApiResource
         public ?string $entity = null,
         public ?string $serializer = null,
         public ?string $hydrator = null,
+        public array $operations = [],
     ) {}
 }

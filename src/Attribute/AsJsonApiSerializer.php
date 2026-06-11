@@ -16,11 +16,20 @@ namespace haddowg\JsonApiBundle\Attribute;
  * relations + the fields DSL from one declaration); this is the decoupled path for
  * a type whose wire shape is fully hand-written, or that has no resource at all.
  * Pair it with {@see AsJsonApiHydrator} (and a provider/persister) to make the
- * type writable / fetchable; expose endpoints with the `operations` allow-list
- * (a later slice).
+ * type writable / fetchable.
+ *
+ * `operations` is the exposed operation allow-list: the {@see \haddowg\JsonApiBundle\Operation\Operation}
+ * cases this type serves, one route emitted per case (bundle ADR 0025). An empty
+ * array means the default — for a standalone serializer, no endpoints (serialize-only).
  */
 #[\Attribute(\Attribute::TARGET_CLASS)]
 final readonly class AsJsonApiSerializer
 {
-    public function __construct(public string $type) {}
+    /**
+     * @param list<\haddowg\JsonApiBundle\Operation\Operation> $operations the exposed operation allow-list (empty = none)
+     */
+    public function __construct(
+        public string $type,
+        public array $operations = [],
+    ) {}
 }

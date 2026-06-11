@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\DependencyInjection\Compiler;
 
 use haddowg\JsonApi\Hydrator\HydratorInterface;
+use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Serializer\SerializerInterface;
 use haddowg\JsonApiBundle\JsonApiBundle;
+use haddowg\JsonApiBundle\Operation\Operation;
+use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Server\ResourceLocator;
 use haddowg\JsonApiBundle\Server\ServerFactory;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
@@ -38,6 +41,14 @@ use Symfony\Component\DependencyInjection\Reference;
  * (keyed by its class-string) and a `type → class` map is handed to the
  * {@see ServerFactory}, which registers them with core's
  * {@see \haddowg\JsonApi\Server\Server::registerSerializerHydrator()}.
+ *
+ * The pass also builds a per-type **route descriptor** map (the exposed
+ * operation allow-list, the URI segment, and whether the type is a full resource
+ * and has a hydrator) and hands it to the {@see JsonApiRouteLoader}, which emits
+ * exactly one route per declared operation (bundle ADR 0025). Descriptors flow as
+ * plain scalar arrays — strings, bools and lists of strings — because Symfony
+ * cannot dump arbitrary value objects as a compiled service argument. A write
+ * operation (`Create`/`Update`) is compile-time-validated to have a hydrator.
  */
 final class ResourceLocatorPass implements CompilerPassInterface
 {
@@ -53,6 +64,8 @@ final class ResourceLocatorPass implements CompilerPassInterface
         $serializers = [];
         /** @var array<string, string> $hydrators */
         $hydrators = [];
+        /** @var array<string, array{uriType: string, isResource: bool, hasHydrator: bool, operations: list<string>}> $descriptors */
+        $descriptors = [];
 
         foreach ($container->findTaggedServiceIds(JsonApiBundle::RESOURCE_TAG) as $id => $tags) {
             $definition = $container->findDefinition($id);
@@ -77,13 +90,42 @@ final class ResourceLocatorPass implements CompilerPassInterface
                     $hydrators[$class] = $hydrator;
                 }
             }
+
+            // A resource carries two RESOURCE_TAG tags when it also bears the
+            // attribute (one from AbstractResource autoconfiguration, one from the
+            // #[AsJsonApiResource] callback), so the type and the operations
+            // allow-list are resolved across all of them, not per-tag — the empty
+            // autoconfig tag must not erase the attribute's operations.
+            $type = $this->resourceTypeFromTags($tags, $class);
+            if ($type === '') {
+                continue;
+            }
+
+            // The type/uriType are read statically from an AbstractResource (no
+            // instantiation); a bare #[AsJsonApiResource] on a non-resource class
+            // carries no statics, so its uriType falls back to the type. A resource
+            // exposes all five operations by default; an explicit operations string
+            // on any tag is the allow-list.
+            $uriType = \is_a($class, AbstractResource::class, true) && $class::$uriType !== ''
+                ? $class::$uriType
+                : $type;
+
+            $descriptors[$type] = [
+                'uriType' => $uriType,
+                'isResource' => true,
+                'hasHydrator' => true,
+                'operations' => $this->operationsFromTags($tags) ?? self::allOperations(),
+            ];
         }
 
+        /** @var array<string, list<string>> $standaloneSerializerOperations */
+        $standaloneSerializerOperations = [];
         $standaloneSerializers = $this->collectStandalone(
             $container,
             JsonApiBundle::SERIALIZER_TAG,
             SerializerInterface::class,
             $references,
+            $standaloneSerializerOperations,
         );
         $standaloneHydrators = $this->collectStandalone(
             $container,
@@ -91,6 +133,23 @@ final class ResourceLocatorPass implements CompilerPassInterface
             HydratorInterface::class,
             $references,
         );
+
+        // A standalone (resource-less) type is serialize-only by default: no
+        // endpoints unless its serializer's operations allow-list opens them.
+        foreach ($standaloneSerializers as $type => $class) {
+            if (isset($descriptors[$type])) {
+                continue;
+            }
+
+            $descriptors[$type] = [
+                'uriType' => $type,
+                'isResource' => false,
+                'hasHydrator' => isset($standaloneHydrators[$type]),
+                'operations' => $standaloneSerializerOperations[$type] ?? [],
+            ];
+        }
+
+        $this->validateWriteCapability($descriptors);
 
         $locator = ServiceLocatorTagPass::register($container, $references);
 
@@ -105,19 +164,124 @@ final class ResourceLocatorPass implements CompilerPassInterface
             $factory->setArgument('$standaloneSerializers', $standaloneSerializers);
             $factory->setArgument('$standaloneHydrators', $standaloneHydrators);
         }
+
+        if ($container->hasDefinition(JsonApiRouteLoader::class)) {
+            $container->getDefinition(JsonApiRouteLoader::class)->setArgument('$routeDescriptors', $descriptors);
+        }
+    }
+
+    /**
+     * The JSON:API type for a resource across its tags: the first tag's `type`
+     * override, else the `AbstractResource`'s static `$type` (a non-resource class
+     * carrying only the attribute has no static, so its type must come from a tag —
+     * else empty).
+     *
+     * @param array<array<string, mixed>> $tags
+     */
+    private function resourceTypeFromTags(array $tags, string $class): string
+    {
+        foreach ($tags as $tag) {
+            $type = $tag['type'] ?? null;
+            if (\is_string($type) && $type !== '') {
+                return $type;
+            }
+        }
+
+        return \is_a($class, AbstractResource::class, true) ? $class::$type : '';
+    }
+
+    /**
+     * The exposed operation allow-list declared across a resource's tags, or `null`
+     * when no tag carries an explicit `operations` string (meaning: use the default).
+     *
+     * @param array<array<string, mixed>> $tags
+     *
+     * @return list<string>|null
+     */
+    private function operationsFromTags(array $tags): ?array
+    {
+        foreach ($tags as $tag) {
+            if (\array_key_exists('operations', $tag)) {
+                return $this->parseOperations($tag['operations']);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function allOperations(): array
+    {
+        return \array_map(static fn(Operation $op): string => $op->value, Operation::cases());
+    }
+
+    /**
+     * Parses the comma-joined operations tag string into a list of valid
+     * {@see Operation} case values; anything unrecognised is dropped.
+     *
+     * @return list<string>
+     */
+    private function parseOperations(mixed $operations): array
+    {
+        if (!\is_string($operations) || $operations === '') {
+            return [];
+        }
+
+        $values = [];
+        foreach (\explode(',', $operations) as $value) {
+            $operation = Operation::tryFrom($value);
+            if ($operation !== null) {
+                $values[] = $operation->value;
+            }
+        }
+
+        return $values;
+    }
+
+    /**
+     * Compile-time guard: a type cannot expose a write operation (`Create` /
+     * `Update`) without a hydrator to populate the entity.
+     *
+     * @param array<string, array{uriType: string, isResource: bool, hasHydrator: bool, operations: list<string>}> $descriptors
+     */
+    private function validateWriteCapability(array $descriptors): void
+    {
+        foreach ($descriptors as $type => $descriptor) {
+            if ($descriptor['hasHydrator']) {
+                continue;
+            }
+
+            $writes = \array_intersect([Operation::Create->value, Operation::Update->value], $descriptor['operations']);
+            if ($writes === []) {
+                continue;
+            }
+
+            throw new \LogicException(\sprintf(
+                'The JSON:API type "%s" exposes a write operation (%s) but has no hydrator; '
+                . 'register #[AsJsonApiHydrator(type: "%s")] or use an AbstractResource.',
+                $type,
+                \implode(', ', $writes),
+                $type,
+            ));
+        }
     }
 
     /**
      * Collects the standalone capability services tagged `$tag` into a
      * `type → class-string` map, adding each to `$references` so core's resolver
-     * can construct it. Validates the class implements `$contract`.
+     * can construct it. Validates the class implements `$contract`. When
+     * `$operationsByType` is provided, each type's parsed operation allow-list
+     * (from the tag's operations string, else empty) is recorded into it.
      *
-     * @param class-string             $contract
-     * @param array<string, Reference> $references
+     * @param class-string                    $contract
+     * @param array<string, Reference>        $references
+     * @param array<string, list<string>>|null $operationsByType
      *
      * @return array<string, string>
      */
-    private function collectStandalone(ContainerBuilder $container, string $tag, string $contract, array &$references): array
+    private function collectStandalone(ContainerBuilder $container, string $tag, string $contract, array &$references, ?array &$operationsByType = null): array
     {
         $map = [];
 
@@ -144,6 +308,12 @@ final class ResourceLocatorPass implements CompilerPassInterface
 
                 $references[$class] = new Reference($id);
                 $map[$type] = $class;
+
+                if ($operationsByType !== null) {
+                    $operationsByType[$type] = \array_key_exists('operations', $attributes)
+                        ? $this->parseOperations($attributes['operations'])
+                        : [];
+                }
             }
         }
 

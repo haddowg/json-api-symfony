@@ -13,6 +13,7 @@ use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineExtensionInterface;
 use haddowg\JsonApiBundle\DependencyInjection\Compiler\DoctrineEntityMapPass;
 use haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceLocatorPass;
+use haddowg\JsonApiBundle\Operation\Operation;
 use Symfony\Component\Config\Definition\Configurator\DefinitionConfigurator;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
@@ -167,6 +168,9 @@ final class JsonApiBundle extends AbstractBundle
                     'entity' => $attribute->entity,
                     'serializer' => $attribute->serializer,
                     'hydrator' => $attribute->hydrator,
+                    'operations' => $attribute->operations !== []
+                        ? \implode(',', \array_map(static fn(Operation $op): string => $op->value, $attribute->operations))
+                        : null,
                 ], static fn(mixed $value): bool => $value !== null));
             },
         );
@@ -177,7 +181,12 @@ final class JsonApiBundle extends AbstractBundle
         $builder->registerAttributeForAutoconfiguration(
             AsJsonApiSerializer::class,
             static function (Definition $definition, AsJsonApiSerializer $attribute): void {
-                $definition->addTag(self::SERIALIZER_TAG, ['type' => $attribute->type]);
+                $definition->addTag(self::SERIALIZER_TAG, \array_filter([
+                    'type' => $attribute->type,
+                    'operations' => $attribute->operations !== []
+                        ? \implode(',', \array_map(static fn(Operation $op): string => $op->value, $attribute->operations))
+                        : null,
+                ], static fn(mixed $value): bool => $value !== null));
             },
         );
 
