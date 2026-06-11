@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Operation;
 
+use haddowg\JsonApi\Exception\AdditionProhibited;
 use haddowg\JsonApi\Exception\FullReplacementProhibited;
 use haddowg\JsonApi\Exception\RelationshipNotExists;
 use haddowg\JsonApi\Exception\RelationshipTypeInappropriate;
@@ -73,8 +74,10 @@ use haddowg\JsonApiBundle\Validation\ResourceValidator;
  * Relationship reads share the same provider-resolution shape: load the parent
  * through the read provider (a `404` when absent), resolve the named relation on
  * the parent resource via core's {@see \haddowg\JsonApi\Resource\AbstractResource::relationNamed()}
- * (a JSON:API `404` {@see RelationshipNotExists} when the relationship is unknown),
- * then render —
+ * (a JSON:API `404` {@see RelationshipNotExists} when the relationship is unknown
+ * or its endpoint is suppressed — relationship routes stay parametric, so the
+ * handler enforces each relation's endpoint-exposure flags, ADR 0027), then
+ * render —
  *  - {@see FetchRelatedOperation} reads the related domain value(s) off the parent
  *    without serializing ({@see RelationInterface::readValue()}) and serializes
  *    them through the *related* type's serializer, as a single resource
@@ -181,6 +184,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * type's serializer: a single resource (`data:null` for an empty to-one) or a
      * collection per the relation's cardinality. `?include` on the related
      * resource flows through the same {@see RelatedResponse} render path.
+     *
+     * A relation that suppresses its related endpoint
+     * ({@see RelationInterface::exposesRelatedEndpoint()}) is enforced here as a
+     * `404`, the route being parametric (ADR 0027).
      */
     private function fetchRelated(FetchRelatedOperation $operation): RelatedResponse|ErrorResponse
     {
@@ -196,6 +203,13 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         $relation = $this->resolveRelation($server, $type, $relationshipName);
         if ($relation === null) {
+            return ErrorResponse::fromException(new RelationshipNotExists($relationshipName));
+        }
+
+        // A relation that suppresses its related endpoint (`withoutRelatedEndpoint()`)
+        // is not reachable: the route stays parametric, so the handler enforces the
+        // exposure flag as a `404` (reusing RelationshipNotExists) — ADR 0027.
+        if (!$relation->exposesRelatedEndpoint()) {
             return ErrorResponse::fromException(new RelationshipNotExists($relationshipName));
         }
 
@@ -222,6 +236,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * document (resource identifiers only). Loads the parent, validates the
      * relationship exists, and routes the parent through the *parent* type's
      * serializer with the relationship name set so the transformer emits linkage.
+     *
+     * A relation that suppresses its relationship endpoint
+     * ({@see RelationInterface::exposesRelationshipEndpoint()}) is enforced here as
+     * a `404`, the route being parametric (ADR 0027).
      */
     private function fetchRelationship(FetchRelationshipOperation $operation): IdentifierResponse|ErrorResponse
     {
@@ -235,7 +253,15 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return ErrorResponse::fromException(new ResourceNotFound());
         }
 
-        if ($this->resolveRelation($server, $type, $relationshipName) === null) {
+        $relation = $this->resolveRelation($server, $type, $relationshipName);
+        if ($relation === null) {
+            return ErrorResponse::fromException(new RelationshipNotExists($relationshipName));
+        }
+
+        // A relation that suppresses its relationship endpoint
+        // (`withoutRelationshipEndpoint()`) is enforced handler-side as a `404`
+        // because the route is parametric — ADR 0027.
+        if (!$relation->exposesRelationshipEndpoint()) {
             return ErrorResponse::fromException(new RelationshipNotExists($relationshipName));
         }
 
@@ -307,11 +333,14 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      *  - a to-one clear (`data: null`) is a removal — gated by `allowsRemove()`;
      *    a non-null to-one `PATCH` is a replacement — gated by `allowsReplace()`;
      *  - a to-many `PATCH` is a replacement — gated by `allowsReplace()`; a to-many
+     *    `POST` add is gated by the relation's per-relation `allowsAdd()`
+     *    endpoint-exposure flag (`cannotAdd()` → `403`, ADR 0027); a to-many
      *    `DELETE` is a removal — gated by `allowsRemove()`.
      *
      * @param ToOneRelationship|ToManyRelationship $linkage
      *
      * @throws FullReplacementProhibited
+     * @throws AdditionProhibited
      * @throws RemovalProhibited
      */
     private function guardMutability(
@@ -338,6 +367,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         if ($mode === Mode::Replace && $relation->allowsReplace() === false) {
             throw new FullReplacementProhibited($relationshipName);
+        }
+
+        if ($mode === Mode::Add && $relation->allowsAdd() === false) {
+            throw new AdditionProhibited($relationshipName);
         }
 
         if ($mode === Mode::Remove && $relation->allowsRemove() === false) {
