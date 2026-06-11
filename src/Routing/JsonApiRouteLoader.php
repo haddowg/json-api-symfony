@@ -40,8 +40,10 @@ use Symfony\Component\Routing\RouteCollection;
  * linkage route is emitted first so the literal `relationships` segment is never
  * captured as a `{relationship}` name.
  *
- * Types are read statically from each registered Resource class-string's
- * `static $type` (no instantiation), via the {@see ResourceLocator}.
+ * Types and their URI path segments are read statically from each registered
+ * Resource class-string's `static $type` / `static $uriType` (no instantiation),
+ * via the {@see ResourceLocator}. The path uses the segment; route names and the
+ * `_jsonapi_type` default keep the JSON:API type.
  */
 final class JsonApiRouteLoader extends Loader
 {
@@ -66,6 +68,13 @@ final class JsonApiRouteLoader extends Loader
                 continue;
             }
 
+            // The path segment may differ from the JSON:API type (e.g. a plural):
+            // the resource declares it statically via $uriType, read here without
+            // instantiation exactly as $type is. Route names and the _jsonapi_type
+            // default stay the JSON:API type, so Target/serializer resolution and
+            // the rendered `type` member are unaffected (ADR 0022).
+            $uriType = $resourceClass::$uriType !== '' ? $resourceClass::$uriType : $resourceType;
+
             $defaults = [
                 '_controller' => JsonApiController::class,
                 TargetResolver::TYPE_ATTRIBUTE => $resourceType,
@@ -73,7 +82,7 @@ final class JsonApiRouteLoader extends Loader
                 ExceptionListener::ROUTE_MARKER => true,
             ];
 
-            $collectionPath = '/' . $resourceType;
+            $collectionPath = '/' . $uriType;
             $resourcePath = $collectionPath . '/{id}';
             $relationshipPath = $resourcePath . '/relationships/{relationship}';
             $relatedPath = $resourcePath . '/{relationship}';

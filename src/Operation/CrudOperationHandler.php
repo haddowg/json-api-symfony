@@ -406,9 +406,14 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         $entity = $persister->create($type, $entity);
 
+        // The Location uses the resource's URI segment (its uriType), so it matches
+        // the route the client will GET (ADR 0022); a bare pair has no resource, so
+        // it falls back to the type.
+        $uriType = $this->types->resourceFor($server, $type)?->uriType() ?? $type;
+
         return DataResponse::fromResource($entity, $serializer)
             ->withStatus(201)
-            ->withHeader('Location', $server->baseUri() . '/' . $type . '/' . $serializer->getId($entity));
+            ->withHeader('Location', $server->baseUri() . '/' . $uriType . '/' . $serializer->getId($entity));
     }
 
     private function update(UpdateResourceOperation $operation): DataResponse|ErrorResponse
