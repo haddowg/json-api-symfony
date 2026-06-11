@@ -14,6 +14,8 @@ use haddowg\JsonApi\Resource\Field\HasMany;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApi\Resource\Filter\Where;
+use haddowg\JsonApi\Resource\Filter\WhereDoesntHave;
+use haddowg\JsonApi\Resource\Filter\WhereHas;
 use haddowg\JsonApi\Resource\Filter\WhereIdIn;
 use Symfony\Component\Clock\Clock;
 
@@ -110,6 +112,15 @@ abstract class BaseArticleResource extends AbstractResource
             Where::make('title'),
             Where::make('titleContains', 'title', 'like'),
             WhereIdIn::make(),
+            // Relationship-existence filters (Phase 3 S5). The request value is
+            // ignored — presence on the named association decides the match. The
+            // to-many `comments` and the to-one `author` both exercise the
+            // EXISTS/NOT EXISTS translation on Doctrine and core's non-empty /
+            // non-null witness in memory.
+            WhereHas::make('hasComments', 'comments'),
+            WhereDoesntHave::make('lacksComments', 'comments'),
+            WhereHas::make('hasAuthor', 'author'),
+            WhereDoesntHave::make('lacksAuthor', 'author'),
         ];
     }
 

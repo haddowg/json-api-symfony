@@ -201,7 +201,91 @@ abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTest
         );
     }
 
+    // --- relationship-existence filters ----------------------------------------
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    #[Group('spec:fetching-relationships')]
+    public function aWhereHasFilterKeepsRowsWithANonEmptyToMany(): void
+    {
+        // Articles 1, 2, 3 own comments; 4 and 5 have none (ArticleFixtures).
+        // The request value is ignored — presence on `comments` is the predicate.
+        $document = $this->fetchDocument('/articles?filter[hasComments]=1&sort=title');
+
+        self::assertSame(['3', '1', '2'], $this->ids($document));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    #[Group('spec:fetching-relationships')]
+    public function aWhereDoesntHaveFilterKeepsRowsWithAnEmptyToMany(): void
+    {
+        // The complement of hasComments: articles 4 and 5 lack comments.
+        $document = $this->fetchDocument('/articles?filter[lacksComments]=anything&sort=title');
+
+        self::assertSame(['5', '4'], $this->ids($document));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    #[Group('spec:fetching-relationships')]
+    public function aWhereHasFilterKeepsRowsWithANonNullToOne(): void
+    {
+        // Articles 1-4 have an author; article 5 is authorless. A to-one
+        // translates the same EXISTS predicate as a to-many.
+        $document = $this->fetchDocument('/articles?filter[hasAuthor]=1&sort=title');
+
+        self::assertSame(['3', '1', '2', '4'], $this->ids($document));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    #[Group('spec:fetching-relationships')]
+    public function aWhereDoesntHaveFilterKeepsRowsWithANullToOne(): void
+    {
+        // Only article 5 lacks an author.
+        $document = $this->fetchDocument('/articles?filter[lacksAuthor]=1');
+
+        self::assertSame(['5'], $this->ids($document));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    #[Group('spec:fetching-relationships')]
+    public function aRelationshipExistenceFilterComposesConjunctivelyWithScalarFilters(): void
+    {
+        // hasComments narrows to {1,2,3}; the id set then restricts to {2,3}.
+        $document = $this->fetchDocument('/articles?filter[hasComments]=1&filter[id]=2,3,4&sort=title');
+
+        self::assertSame(['3', '2'], $this->ids($document));
+    }
+
     // --- helpers ---------------------------------------------------------------
+
+    /**
+     * The ids of the document's primary data, in document order.
+     *
+     * @param array<string, mixed> $document
+     *
+     * @return list<string>
+     */
+    private function ids(array $document): array
+    {
+        $data = $document['data'] ?? null;
+        self::assertIsArray($data);
+
+        $ids = [];
+        foreach ($data as $resource) {
+            self::assertIsArray($resource);
+            self::assertSame('articles', $resource['type'] ?? null);
+
+            $id = $resource['id'] ?? null;
+            self::assertIsString($id);
+            $ids[] = $id;
+        }
+
+        return $ids;
+    }
 
     /**
      * Fetches `$path` and returns the decoded document, asserting a 200 JSON:API
