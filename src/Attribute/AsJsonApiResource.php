@@ -19,16 +19,28 @@ namespace haddowg\JsonApiBundle\Attribute;
  * (and, in later phases, writes) — co-located here because the resource
  * declaration is the one place that already knows what it represents. It is
  * inert unless the Doctrine provider is wired (`doctrine/orm` installed).
+ *
+ * `serializer` / `hydrator` override how this type is serialized / hydrated: a
+ * resource declares a custom {@see \haddowg\JsonApi\Serializer\SerializerInterface}
+ * and/or {@see \haddowg\JsonApi\Hydrator\HydratorInterface} (each a registered
+ * service, so it may have constructor dependencies) when the field DSL cannot
+ * express the wire shape. The generic CRUD engine then drives reads/writes for
+ * the type through the override instead of the resource's field inventory
+ * (bundle ADR 0023).
  */
 #[\Attribute(\Attribute::TARGET_CLASS)]
 final readonly class AsJsonApiResource
 {
     /**
-     * @param class-string|null $entity the Doctrine entity backing this resource type
+     * @param class-string|null                                                    $entity     the Doctrine entity backing this resource type
+     * @param class-string<\haddowg\JsonApi\Serializer\SerializerInterface>|null    $serializer a custom serializer for this type
+     * @param class-string<\haddowg\JsonApi\Hydrator\HydratorInterface>|null        $hydrator   a custom hydrator for this type
      */
     public function __construct(
         public ?string $type = null,
         public ?string $server = null,
         public ?string $entity = null,
+        public ?string $serializer = null,
+        public ?string $hydrator = null,
     ) {}
 }

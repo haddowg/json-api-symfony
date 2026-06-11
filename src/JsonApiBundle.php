@@ -147,6 +147,8 @@ final class JsonApiBundle extends AbstractBundle
                     'type' => $attribute->type,
                     'server' => $attribute->server,
                     'entity' => $attribute->entity,
+                    'serializer' => $attribute->serializer,
+                    'hydrator' => $attribute->hydrator,
                 ], static fn(mixed $value): bool => $value !== null));
             },
         );

@@ -39,6 +39,10 @@ final class ServerFactory
 {
     private ?Server $server = null;
 
+    /**
+     * @param array<class-string, class-string<\haddowg\JsonApi\Serializer\SerializerInterface>> $serializersByClass override serializer per Resource class-string (ADR 0023)
+     * @param array<class-string, class-string<\haddowg\JsonApi\Hydrator\HydratorInterface>>      $hydratorsByClass   override hydrator per Resource class-string (ADR 0023)
+     */
     public function __construct(
         private readonly ResourceLocator $resources,
         private readonly ResponseFactoryInterface $responseFactory,
@@ -47,6 +51,8 @@ final class ServerFactory
         private readonly string $version,
         private readonly OperationHandlerInterface $handler,
         private readonly ?RelationshipLoadStateInterface $relationshipLoadState = null,
+        private readonly array $serializersByClass = [],
+        private readonly array $hydratorsByClass = [],
     ) {}
 
     /**
@@ -66,7 +72,14 @@ final class ServerFactory
             ->withContainer($this->resources);
 
         foreach ($this->resources->classes() as $resourceClass) {
-            $server = $server->register($resourceClass);
+            // A resource may override its serializer/hydrator (ADR 0023); core
+            // resolves the override class through the same container resolver and
+            // drives the type's reads/writes through it instead of the resource.
+            $server = $server->register(
+                $resourceClass,
+                $this->serializersByClass[$resourceClass] ?? null,
+                $this->hydratorsByClass[$resourceClass] ?? null,
+            );
         }
 
         return $this->server = $server->withHandler($this->handler);
