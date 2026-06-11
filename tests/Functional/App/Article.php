@@ -30,6 +30,9 @@ final class Article
      *                                            attribute (a {@see \haddowg\JsonApi\Resource\Field\Map}),
      *                                            stored as a single member rather than
      *                                            spread across columns; null when unset
+     * @param list<Author> $editors the related editor objects backing the
+     *                               unidirectional many-to-many `editors` relation,
+     *                               distinct from the to-one `author`
      */
     public function __construct(
         public string $id = '',
@@ -43,5 +46,6 @@ final class Article
         public array $comments = [],
         public array $featuredComments = [],
         public ?array $address = null,
+        public array $editors = [],
     ) {}
 }

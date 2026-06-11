@@ -42,6 +42,21 @@ class ArticleEntity
     #[ORM\OneToMany(targetEntity: CommentEntity::class, mappedBy: 'featuredArticle')]
     public Collection $featuredComments;
 
+    /**
+     * The owning, unidirectional ManyToMany to {@see AuthorEntity} backing the
+     * `editors` relation — no inverse field on the author, so the provider's
+     * inverseOwningField resolver returns null and the related-collection fetch
+     * takes the subquery-scoped branch. Body-initialised like `comments` (not a
+     * constructor parameter), so the constructor-less create path (ADR 0029)
+     * sees the mapped collection Doctrine initialises when the entity becomes
+     * managed.
+     *
+     * @var Collection<int, AuthorEntity>
+     */
+    #[ORM\ManyToMany(targetEntity: AuthorEntity::class)]
+    #[ORM\JoinTable(name: 'article_editors')]
+    public Collection $editors;
+
     public function __construct(
         #[ORM\Id]
         #[ORM\Column]
@@ -79,5 +94,6 @@ class ArticleEntity
     ) {
         $this->comments = new ArrayCollection();
         $this->featuredComments = new ArrayCollection();
+        $this->editors = new ArrayCollection();
     }
 }

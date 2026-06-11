@@ -58,6 +58,7 @@ final class ArticleProviderFactory
 
         $relationships = ArticleFixtures::relationships();
         $featured = ArticleFixtures::featuredComments();
+        $editors = ArticleFixtures::editors();
 
         $articles = [];
         foreach (ArticleFixtures::data() as $id => $article) {
@@ -67,6 +68,7 @@ final class ArticleProviderFactory
             $author = $links['author'] !== null ? ($authors[$links['author']] ?? null) : null;
             $articleComments = self::pick($comments, $links['comments']);
             $featuredComments = self::pick($comments, $featured[$id] ?? []);
+            $articleEditors = self::pickAuthors($authors, $editors[$id] ?? []);
 
             $articles[$id] = new Article(
                 $id,
@@ -79,6 +81,7 @@ final class ArticleProviderFactory
                 $author,
                 $articleComments,
                 $featuredComments,
+                editors: $articleEditors,
             );
         }
 
@@ -99,6 +102,27 @@ final class ArticleProviderFactory
         foreach ($ids as $commentId) {
             if (isset($comments[$commentId])) {
                 $picked[] = $comments[$commentId];
+            }
+        }
+
+        return $picked;
+    }
+
+    /**
+     * The author objects for the given ids, in order, skipping any unknown id —
+     * the in-memory backing for the many-to-many `editors` relation.
+     *
+     * @param array<string, Author> $authors
+     * @param list<string>          $ids
+     *
+     * @return list<Author>
+     */
+    private static function pickAuthors(array $authors, array $ids): array
+    {
+        $picked = [];
+        foreach ($ids as $authorId) {
+            if (isset($authors[$authorId])) {
+                $picked[] = $authors[$authorId];
             }
         }
 

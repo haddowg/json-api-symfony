@@ -127,6 +127,13 @@ abstract class BaseArticleResource extends AbstractResource
             // while plain `comments` stays unpaginated. The same related collection,
             // two pagination policies — pinning that pagination is per-relation.
             HasMany::make('pagedComments')->type('comments')->storedAs('comments')->paginate(PagePaginator::make()),
+            // A unidirectional many-to-many to `authors` (the `editors` property),
+            // exercising the Doctrine subquery-scoped related collection: the
+            // parent association is owning-side with no single-valued inverse, so
+            // the related-collection fetch scopes membership via an IN subquery.
+            // Paginated, so the endpoint witnesses page/filter/sort over the
+            // subquery.
+            HasMany::make('editors')->type('authors')->storedAs('editors')->paginate(PagePaginator::make()),
             // Load-aware relationships opting into linkageOnlyWhenLoaded() so the
             // storage-aware load-state predicate decides whether `data` is
             // emitted. They exercise the predicate on both providers without

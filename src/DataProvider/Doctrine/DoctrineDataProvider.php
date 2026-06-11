@@ -142,6 +142,15 @@ final class DoctrineDataProvider implements DataProviderInterface
         return new CollectionResult($this->items($builder), $total);
     }
 
+    /**
+     * Scopes a related to-many to its parent. A single-valued inverse
+     * association (the OneToMany case, whose related entity carries the owning
+     * foreign key) is scoped by that FK as a fast-path; any other to-many
+     * (owning-side, or many-to-many on either side) is scoped by an `IN`
+     * subquery rooted on the parent — the related entity stays the OUTER query
+     * root, so the shared filter/sort/count/window machinery applies
+     * identically to both branches. `$request` is unused (Doctrine push-down).
+     */
     public function fetchRelatedCollection(
         string $relatedType,
         object $parent,
@@ -152,25 +161,42 @@ final class DoctrineDataProvider implements DataProviderInterface
         $property = $relation->column() ?? $relation->name();
         $relatedClass = $this->entityClassFor($relatedType);
 
-        $owningField = $this->inverseOwningField($parent, $property);
-        if ($owningField === null) {
-            throw new \LogicException(\sprintf(
-                'The related-collection endpoint for relationship "%s" (related type "%s") requires a '
-                . 'single-valued inverse association (e.g. a OneToMany whose related entity carries the '
-                . 'owning foreign key); the parent\'s association is owning-side or many-to-many. '
-                . 'Supply a custom DataProvider to scope this related collection.',
-                $relation->name(),
-                $relatedType,
-            ));
-        }
-
         $builder = $this->entityManager
             ->getRepository($relatedClass)
             ->createQueryBuilder(self::ROOT_ALIAS);
 
-        $builder
-            ->andWhere(\sprintf('%s.%s = :jsonapi_parent', self::ROOT_ALIAS, $owningField))
-            ->setParameter('jsonapi_parent', $parent);
+        $owningField = $this->inverseOwningField($parent, $property);
+        $relatedMetadata = $this->entityManager->getClassMetadata($relatedClass);
+
+        // Fast-path: a single-valued inverse association (the related entity
+        // carries the owning FK). A many-to-many *inverse* side also has a
+        // non-null mappedBy, but it points to a COLLECTION — the
+        // isSingleValuedAssociation guard routes it to the subquery instead.
+        if ($owningField !== null && $relatedMetadata->isSingleValuedAssociation($owningField)) {
+            $builder
+                ->andWhere(\sprintf('%s.%s = :jsonapi_parent', self::ROOT_ALIAS, $owningField))
+                ->setParameter('jsonapi_parent', $parent);
+        } else {
+            // Subquery branch (owning-side, or many-to-many either side): scope
+            // by membership with an IN subquery that keeps the related entity as
+            // the outer query root. getClassMetadata resolves a proxy class to
+            // its real entity name.
+            $parentClass = $this->entityManager->getClassMetadata($parent::class)->getName();
+            $relatedIdField = $relatedMetadata->getSingleIdentifierFieldName();
+
+            $sub = $this->entityManager->createQueryBuilder()
+                ->select(\sprintf('related_scope.%s', $relatedIdField))
+                ->from($parentClass, 'parent_scope')
+                ->innerJoin(\sprintf('parent_scope.%s', $property), 'related_scope')
+                ->where('parent_scope = :jsonapi_parent');
+
+            $builder
+                ->andWhere($builder->expr()->in(
+                    \sprintf('%s.%s', self::ROOT_ALIAS, $relatedIdField),
+                    $sub->getDQL(),
+                ))
+                ->setParameter('jsonapi_parent', $parent); // bind on the OUTER builder, which executes
+        }
 
         foreach ($this->extensionsFor($relatedType) as $extension) {
             $builder = $extension->apply($builder, $relatedType, QueryPurpose::FetchCollection);

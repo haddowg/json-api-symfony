@@ -7,7 +7,9 @@ namespace haddowg\JsonApiBundle\Tests\Functional;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
 use haddowg\JsonApiBundle\Tests\Functional\App\ArticleFixtures;
+use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\ArticleEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\ArticleEntityFactory;
+use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\AuthorEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\AuthorEntityFactory;
 use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\CommentEntityFactory;
 
@@ -61,6 +63,26 @@ trait SeedsDoctrineRelationships
                 'featuredArticle' => $featuredArticleId !== null ? ($articles[$featuredArticleId] ?? null) : null,
             ]);
         }
+
+        // Link the unidirectional ManyToMany `editors` join rows. Foundry's
+        // ArticleEntityFactory builds the entity through its constructor (which
+        // does not take `editors`), so the membership is set by mutating each
+        // managed article's collection and flushing once — guaranteeing the
+        // `article_editors` rows are persisted before the unit of work is cleared.
+        foreach (ArticleFixtures::editors() as $id => $editorIds) {
+            $article = $articles[(string) $id] ?? null;
+            if (!$article instanceof ArticleEntity) {
+                continue;
+            }
+
+            foreach ($editorIds as $editorId) {
+                $author = $authors[$editorId] ?? null;
+                if ($author instanceof AuthorEntity) {
+                    $article->editors->add($author);
+                }
+            }
+        }
+        $entityManager->flush();
 
         $entityManager->clear();
     }
