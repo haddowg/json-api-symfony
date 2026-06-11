@@ -79,13 +79,14 @@ at `~/.claude/projects/-Users-gregory-haddow-Sites-json-api/memory/json-api-symf
 
 Record bundle architecture decisions as ADRs under `docs/adr/` — follow
 [`docs/adr/ADR-FORMAT.md`](docs/adr/ADR-FORMAT.md) (a short title stating the
-decision, then 1–3 sentences of *why*). The ADRs already written: `0001`–`0020`.
+decision, then 1–3 sentences of *why*). The ADRs already written: `0001`–`0030`.
 
 ## Phases (vertical slices, Doctrine-backed from Phase 1)
 
-> **Current status (2026-06-11): Phases 0–2 merged; Phase 3 (relationships)
-> complete on `main` locally — unsigned + unpushed, pending re-sign** (Phase 2 =
-> PRs #6–#8; Phase 1
+> **Current status (2026-06-11): Phases 0–2 merged; Phases 3 (relationships) and
+> 4 (the capstone CRUD engine) both complete locally on
+> `feat/standalone-serializer-hydrator-capability` — unsigned + unpushed, pending
+> re-sign and merge** (Phase 2 = PRs #6–#8; Phase 1
 > = #1–#4). Resource writes (`POST /{type}`, `PATCH`/`DELETE` `/{type}/{id}`) run
 > end-to-end on **both** providers over a new **`DataPersister` SPI** — the write
 > twin of `DataProvider`: per-type first-match resolution with the reference
@@ -153,7 +154,43 @@ decision, then 1–3 sentences of *why*). The ADRs already written: `0001`–`00
 > `422` with nested `/data/attributes/<map>/<child>` pointers — no `Valid` marker
 > (bundle ADR 0020, reversible to an explicit marker). Core changes rode their own
 > `feat/*` branches (ff'd into core `main`) for later PRs; the bundle stayed linear
-> on `main`. **Phase 4 (the capstone generic CRUD engine) is next.**
+> on `main`.
+>
+> **Phase 4 (the capstone) then landed end-to-end on both providers — a linear run
+> of nine commits on `feat/standalone-serializer-hydrator-capability`, unsigned +
+> unpushed.** It reframed the capstone from "build a generic engine" to "the engine
+> is already generic — consolidate it and make the type model fully
+> capability-composed." A JSON:API type is now assembled from **independent,
+> optional capabilities** — serializer, hydrator, relations, provider, persister —
+> any combination supported, **nothing coupled to `AbstractResource`** (which stays
+> pure sugar bundling serializer+hydrator+relations): if you need no read endpoints
+> you need no provider; no writes, no hydrator/persister. The wiring runs through a
+> `ResourceLocatorPass` collecting resource + serializer + hydrator + relations tags
+> and a `TypeMetadataResolver` seam that tolerates a **bare serializer/hydrator
+> pair** (no field inventory) without per-type branching (bundle ADR 0021/0024).
+> Slices: a resource customizes its **URI segment** distinct from its type
+> (`uriType`, ADR 0022); a type **overrides its serializer/hydrator** or registers
+> them **standalone** without a resource (ADRs 0023–0024); a per-type **operation
+> allow-list** gates which CRUD endpoints exist (resource default = all, standalone
+> serializer default = none) and the route loader emits only the allowed routes from
+> **plain-scalar route descriptors** (ADR 0025); **relations declared independently**
+> of a resource via `#[AsJsonApiRelations]` + a `RelationsRegistry` (ADR 0026);
+> **per-relation endpoint exposure** (`withoutRelatedEndpoint`/
+> `withoutRelationshipEndpoint`/`cannotAdd` → handler-enforced `404`/`403`, links
+> consistent, ADR 0027); the single global handler **overridable by decoration**
+> (ADR 0028); Doctrine **constructor-less instantiation** so entities with required
+> constructor args work under the generic engine (`ClassMetadata::newInstance()`,
+> ADR 0029); and finally **queryable, paginated related to-many collections** over a
+> new `DataProvider::fetchRelatedCollection()` seam — the in-memory provider reads
+> the related objects off the parent and applies the shared `CriteriaApplier` +
+> array window; the Doctrine provider scopes a **push-down `QueryBuilder`** on the
+> related repo by the inverse owning FK (never loading the whole collection) with
+> per-relation default pagination resolving relation → related resource → server
+> default (bundle ADR 0030, core ADRs 0034–0035 for paginated `RelatedResponse` +
+> the per-relation paginator). Functional acceptance includes a dual-provider
+> `RelatedCollectionParamsConformanceTestCase`; the whole suite is green on both
+> kernels (PHPStan L9 + PER-CS 2.0 + 305 spec-grouped tests). **Phase 5 (v1
+> consolidation: docs, example app, core public-API review) is next.**
 
 0. ✅ Skeleton + thinnest read (`GET /{type}`, `/{type}/{id}`) — forced core's lazy
    resolver + lifecycle-logic extraction + a PSR-7-free render seam. **Done.**
@@ -180,9 +217,17 @@ decision, then 1–3 sentences of *why*). The ADRs already written: `0001`–`00
    writes; `WhereHas`/`WhereDoesntHave` filters (Doctrine `EXISTS`); and the implicit
    nested-attribute (`Map`) validation cascade. Core ADRs 0024–0030, bundle ADRs
    0015–0020. **Done.** (`include` deferred from Phase 1 landed here.)
-4. **(next)** Capstone: the generic zero-handler CRUD engine over the SPI.
-5. v1 consolidation: docs, example app, and the core public-API surface review
-   with this bundle as the integration witness.
+4. ✅ Capstone: the generic zero-handler CRUD engine over the SPI — reframed as
+   **consolidate + fully capability-compose the type model** (serializer / hydrator
+   / relations / provider / persister as independent optional capabilities, nothing
+   coupled to `AbstractResource`). `uriType` (ADR 0022); per-type serializer/hydrator
+   override + standalone registration (ADRs 0023–0024); per-type operation allow-list
+   + operation-gated routing (ADR 0025); standalone relations (ADR 0026); per-relation
+   endpoint exposure (ADR 0027); handler override via decoration (ADR 0028); Doctrine
+   constructor-less instantiation (ADR 0029); queryable/paginated related collections
+   over `fetchRelatedCollection()` (ADR 0030, core ADRs 0034–0035). **Done.**
+5. **(next)** v1 consolidation: docs, example app, and the core public-API surface
+   review with this bundle as the integration witness.
 
 **Per-phase handover contract:** a runnable Doctrine+sqlite functional slice; the
 enumerated core changes each merged to core `main` + ADR'd *before* the bundle
