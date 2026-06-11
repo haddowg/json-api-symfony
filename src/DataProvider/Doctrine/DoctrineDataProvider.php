@@ -7,6 +7,8 @@ namespace haddowg\JsonApiBundle\DataProvider\Doctrine;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\QueryBuilder;
 use haddowg\JsonApi\Pagination\OffsetWindow;
+use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\CollectionResult;
 use haddowg\JsonApiBundle\DataProvider\CriteriaApplier;
@@ -140,6 +142,62 @@ final class DoctrineDataProvider implements DataProviderInterface
         return new CollectionResult($this->items($builder), $total);
     }
 
+    public function fetchRelatedCollection(
+        string $relatedType,
+        object $parent,
+        RelationInterface $relation,
+        CollectionCriteria $criteria,
+        JsonApiRequestInterface $request,
+    ): CollectionResult {
+        $property = $relation->column() ?? $relation->name();
+        $relatedClass = $this->entityClassFor($relatedType);
+
+        $owningField = $this->inverseOwningField($parent, $property);
+        if ($owningField === null) {
+            throw new \LogicException(\sprintf(
+                'The related-collection endpoint for relationship "%s" (related type "%s") requires a '
+                . 'single-valued inverse association (e.g. a OneToMany whose related entity carries the '
+                . 'owning foreign key); the parent\'s association is owning-side or many-to-many. '
+                . 'Supply a custom DataProvider to scope this related collection.',
+                $relation->name(),
+                $relatedType,
+            ));
+        }
+
+        $builder = $this->entityManager
+            ->getRepository($relatedClass)
+            ->createQueryBuilder(self::ROOT_ALIAS);
+
+        $builder
+            ->andWhere(\sprintf('%s.%s = :jsonapi_parent', self::ROOT_ALIAS, $owningField))
+            ->setParameter('jsonapi_parent', $parent);
+
+        foreach ($this->extensionsFor($relatedType) as $extension) {
+            $builder = $extension->apply($builder, $relatedType, QueryPurpose::FetchCollection);
+        }
+
+        $builder = $this->applier->apply($criteria, $builder, $this->filterHandler, $this->sortHandler);
+
+        $window = $criteria->window;
+        if ($window === null) {
+            return new CollectionResult($this->items($builder));
+        }
+
+        if (!$window instanceof OffsetWindow) {
+            throw new \LogicException(\sprintf(
+                'The %s can only execute a %s pagination window; got %s.',
+                self::class,
+                OffsetWindow::class,
+                \get_debug_type($window),
+            ));
+        }
+
+        $total = $this->count($builder);
+        $builder->setFirstResult($window->offset)->setMaxResults($window->limit);
+
+        return new CollectionResult($this->items($builder), $total);
+    }
+
     /**
      * @return list<object>
      */
@@ -163,6 +221,34 @@ final class DoctrineDataProvider implements DataProviderInterface
         $total = $counter->getQuery()->getSingleScalarResult();
 
         return \is_numeric($total) ? (int) $total : 0;
+    }
+
+    /**
+     * The owning-side field on the related entity for an inverse-side association
+     * on the parent (the single-valued FK an inverse OneToMany is `mappedBy`), or
+     * `null` when the parent's association is itself the owning side (or
+     * many-to-many — no single-valued inverse FK on the related entity to scope
+     * by). Mirrors the persister's resolver of the same name.
+     */
+    private function inverseOwningField(object $parent, string $property): ?string
+    {
+        $metadata = $this->entityManager->getClassMetadata($parent::class);
+        if (!$metadata->hasAssociation($property)) {
+            return null;
+        }
+
+        $mapping = $metadata->getAssociationMapping($property);
+
+        if ($mapping->isOwningSide()) {
+            return null;
+        }
+
+        // `mappedBy` lives on the inverse-side mapping; read it through the
+        // mapping's array access so the lookup is robust across the ORM 3 mapping
+        // class hierarchy.
+        $mappedBy = $mapping['mappedBy'] ?? null;
+
+        return \is_string($mappedBy) ? $mappedBy : null;
     }
 
     /**

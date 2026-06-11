@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\DataProvider;
 
 use haddowg\JsonApi\Pagination\OffsetWindow;
+use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\InMemory\ArrayFilterHandler;
 use haddowg\JsonApi\Resource\Sort\InMemory\ArraySortHandler;
 
@@ -76,10 +78,44 @@ final class InMemoryDataProvider implements DataProviderInterface
 
     public function fetchCollection(string $type, CollectionCriteria $criteria): CollectionResult
     {
+        return $this->applyAndWindow($criteria, $this->store->all());
+    }
+
+    public function fetchRelatedCollection(
+        string $relatedType,
+        object $parent,
+        RelationInterface $relation,
+        CollectionCriteria $criteria,
+        JsonApiRequestInterface $request,
+    ): CollectionResult {
+        // Read the related objects off the parent via the relation's public
+        // accessor (honours storedAs/extractUsing; the default accessor returns
+        // the stored related collection), then run the same criteria pipeline as
+        // a primary collection fetch.
+        $related = $relation->readValue($parent, $request);
+        \assert(\is_iterable($related));
+
+        $items = \is_array($related) ? \array_values($related) : \iterator_to_array($related, false);
+
+        return $this->applyAndWindow($criteria, $items);
+    }
+
+    /**
+     * Applies `$criteria` (filter + sort) to `$items` through core's reference
+     * in-memory handlers, then windows the result with an `array_slice` when the
+     * criteria carry an {@see OffsetWindow} — the shared tail of
+     * {@see fetchCollection()} and {@see fetchRelatedCollection()}.
+     *
+     * @param list<mixed> $items
+     *
+     * @return CollectionResult<object>
+     */
+    private function applyAndWindow(CollectionCriteria $criteria, array $items): CollectionResult
+    {
         /** @var list<object> $items */
         $items = $this->applier->apply(
             $criteria,
-            $this->store->all(),
+            $items,
             $this->filterHandler,
             $this->sortHandler,
         );

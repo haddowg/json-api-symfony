@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\DataProvider;
 
+use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Resource\Field\RelationInterface;
+
 /**
  * The read-half data-source SPI: the storage-agnostic contract the
  * {@see \haddowg\JsonApiBundle\Operation\CrudOperationHandler} delegates to for
@@ -56,4 +59,26 @@ interface DataProviderInterface
      * @throws \haddowg\JsonApi\Exception\SortParamUnrecognized   when a requested sort field is not declared
      */
     public function fetchCollection(string $type, CollectionCriteria $criteria): CollectionResult;
+
+    /**
+     * The related collection of `$relatedType` reachable from `$parent` through
+     * `$relation` (a to-many), scoped to the parent then filtered, sorted and
+     * windowed per `$criteria` — the related-endpoint twin of
+     * {@see fetchCollection()}. The criteria carry the **related** type's declared
+     * filter/sort vocabularies and the per-relation pagination window; a windowed
+     * fetch also carries the pre-window total.
+     *
+     * @return CollectionResult<TEntity>
+     *
+     * @throws \haddowg\JsonApi\Exception\FilterParamUnrecognized when a requested filter key is not declared
+     * @throws \haddowg\JsonApi\Exception\SortingUnsupported      when sorting is requested but no sorts are declared
+     * @throws \haddowg\JsonApi\Exception\SortParamUnrecognized   when a requested sort field is not declared
+     */
+    public function fetchRelatedCollection(
+        string $relatedType,
+        object $parent,
+        RelationInterface $relation,
+        CollectionCriteria $criteria,
+        JsonApiRequestInterface $request,
+    ): CollectionResult;
 }

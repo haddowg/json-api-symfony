@@ -78,11 +78,13 @@ use haddowg\JsonApiBundle\Validation\ResourceValidator;
  * or its endpoint is suppressed — relationship routes stay parametric, so the
  * handler enforces each relation's endpoint-exposure flags, ADR 0027), then
  * render —
- *  - {@see FetchRelatedOperation} reads the related domain value(s) off the parent
- *    without serializing ({@see RelationInterface::readValue()}) and serializes
- *    them through the *related* type's serializer, as a single resource
- *    ({@see RelatedResponse::fromResource()}, `data:null` for an empty to-one) or a
- *    collection ({@see RelatedResponse::fromCollection()}) per cardinality;
+ *  - {@see FetchRelatedOperation} renders the related domain value(s) through the
+ *    *related* type's serializer: a single resource for a to-one (read off the
+ *    parent via {@see RelationInterface::readValue()},
+ *    {@see RelatedResponse::fromResource()}, `data:null` when empty), or — for a
+ *    to-many — a queryable, paginated collection resolved over the related
+ *    provider's {@see \haddowg\JsonApiBundle\DataProvider\DataProviderInterface::fetchRelatedCollection()}
+ *    seam ({@see RelatedResponse::fromPage()}, else {@see RelatedResponse::fromCollection()});
  *  - {@see FetchRelationshipOperation} routes the parent through the *parent*
  *    type's serializer with the relationship name set, emitting linkage only
  *    ({@see IdentifierResponse::forRelationship()}).
@@ -179,15 +181,23 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
     /**
      * `GET /{type}/{id}/{relationship}` — the related-resource(s) document. Loads
-     * the parent, resolves the named relation, reads the related domain value(s)
-     * off the parent without serializing, and renders them through the related
-     * type's serializer: a single resource (`data:null` for an empty to-one) or a
-     * collection per the relation's cardinality. `?include` on the related
-     * resource flows through the same {@see RelatedResponse} render path.
+     * the parent, resolves the named relation, and renders through the related
+     * type's serializer per cardinality:
+     *  - a to-one reads the related object off the parent and renders a single
+     *    resource (`data:null` for an empty to-one);
+     *  - a to-many resolves the *related* type's filter/sort/pagination vocabulary
+     *    into a {@see CollectionCriteria}, asks the related provider's
+     *    {@see \haddowg\JsonApiBundle\DataProvider\DataProviderInterface::fetchRelatedCollection()}
+     *    to execute it (scoped to the parent), and renders a paginated
+     *    {@see RelatedResponse::fromPage()} (else a plain
+     *    {@see RelatedResponse::fromCollection()}) — mirroring the primary
+     *    collection path. Per-relation pagination resolves
+     *    `relation paginator -> related resource paginator -> server default`.
      *
-     * A relation that suppresses its related endpoint
-     * ({@see RelationInterface::exposesRelatedEndpoint()}) is enforced here as a
-     * `404`, the route being parametric (ADR 0027).
+     * `?include` on the related resource flows through the same
+     * {@see RelatedResponse} render path. A relation that suppresses its related
+     * endpoint ({@see RelationInterface::exposesRelatedEndpoint()}) is enforced
+     * here as a `404`, the route being parametric (ADR 0027).
      */
     private function fetchRelated(FetchRelatedOperation $operation): RelatedResponse|ErrorResponse
     {
@@ -220,13 +230,37 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $relatedSerializer = $server->serializerFor($relatedType);
 
         $request = $this->jsonApiRequest($operation->context());
-        $related = $relation->readValue($parent, $request);
 
         if ($relation->isToMany()) {
-            \assert(\is_iterable($related));
+            $relatedResource = $this->types->resourceFor($server, $relatedType);
+            $paginator = $relation->pagination()
+                ?? $relatedResource?->pagination()
+                ?? $server->defaultPaginator();
+            $window = $paginator?->window($request);
 
-            return RelatedResponse::fromCollection($parent, $relationshipName, $related, $relatedSerializer);
+            $criteria = new CollectionCriteria(
+                $operation->queryParameters(),
+                $relatedResource?->filters() ?? [],
+                $relatedResource?->allSorts() ?? [],
+                $window,
+            );
+
+            $result = $this->providers->forType($relatedType)
+                ->fetchRelatedCollection($relatedType, $parent, $relation, $criteria, $request);
+
+            if ($paginator !== null && $result->total !== null) {
+                return RelatedResponse::fromPage(
+                    $parent,
+                    $relationshipName,
+                    $paginator->paginate($request, $result->items, $result->total),
+                    $relatedSerializer,
+                );
+            }
+
+            return RelatedResponse::fromCollection($parent, $relationshipName, $result->items, $relatedSerializer);
         }
+
+        $related = $relation->readValue($parent, $request);
 
         return RelatedResponse::fromResource($parent, $relationshipName, $related, $relatedSerializer);
     }

@@ -121,6 +121,12 @@ abstract class BaseArticleResource extends AbstractResource
             // linkage via the serializer registered for each related type.
             BelongsTo::make('author')->type('authors'),
             HasMany::make('comments')->type('comments'),
+            // Per-relation default paginator (Phase 4 P7): reuses the `comments`
+            // property but carries its own PagePaginator, so
+            // `GET /articles/1/pagedComments` paginates by `page[number]`/`page[size]`
+            // while plain `comments` stays unpaginated. The same related collection,
+            // two pagination policies — pinning that pagination is per-relation.
+            HasMany::make('pagedComments')->type('comments')->storedAs('comments')->paginate(PagePaginator::make()),
             // Load-aware relationships opting into linkageOnlyWhenLoaded() so the
             // storage-aware load-state predicate decides whether `data` is
             // emitted. They exercise the predicate on both providers without
