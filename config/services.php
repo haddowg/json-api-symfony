@@ -64,6 +64,11 @@ return static function (ContainerConfigurator $container): void {
     $services->set(ResourceLocator::class)
         ->args(['$services' => null, '$classes' => []]);
 
+    // The relationship-load-state argument is optional: it resolves to the
+    // reference Doctrine predicate only when that service is registered
+    // (doctrine/orm installed) and survives the DoctrineEntityMapPass (at least
+    // one resource maps an entity), else null. With null, core treats every
+    // relation as loaded and emits linkage exactly as it always has.
     $services->set(ServerFactory::class)
         ->args([
             '$resources' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(ResourceLocator::class),
@@ -72,6 +77,7 @@ return static function (ContainerConfigurator $container): void {
             '$baseUri' => '%haddowg_json_api.base_uri%',
             '$version' => '%haddowg_json_api.version%',
             '$handler' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(CrudOperationHandler::class),
+            '$relationshipLoadState' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Serializer\Doctrine\DoctrineRelationshipLoadState::class)->nullOnInvalid(),
         ]);
 
     $services->set(ServerProvider::class);
@@ -163,6 +169,19 @@ return static function (ContainerConfigurator $container): void {
                 '$entityClassByType' => [],
             ])
             ->tag(JsonApiBundle::DATA_PERSISTER_TAG, ['priority' => -128]);
+
+        // The storage-aware relationship load-state predicate, threaded into the
+        // Server by the ServerFactory (above) via core's withRelationshipLoadState
+        // injector. It reads a managed entity's Doctrine metadata to answer — for
+        // a relation that opted into linkageOnlyWhenLoaded — whether a to-many
+        // association is an initialised PersistentCollection (without iterating
+        // it); to-one is always loaded (a lazy proxy carries its id). The
+        // DoctrineEntityMapPass removes it alongside the provider/persister when no
+        // resource maps an entity.
+        $services->set(\haddowg\JsonApiBundle\Serializer\Doctrine\DoctrineRelationshipLoadState::class)
+            ->args([
+                '$entityManager' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\Doctrine\ORM\EntityManagerInterface::class),
+            ]);
     }
 
     // --- Symfony Validator bridge (only when symfony/validator is installed) ---

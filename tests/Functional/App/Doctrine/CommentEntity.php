@@ -26,5 +26,14 @@ class CommentEntity
         #[ORM\ManyToOne(targetEntity: ArticleEntity::class, inversedBy: 'comments')]
         #[ORM\JoinColumn(name: 'article_id', referencedColumnName: 'id', nullable: true)]
         public ?ArticleEntity $article = null,
+        // A second, independent to-many owning side: the article whose
+        // `featuredComments` collection this comment belongs to. It exists only
+        // so the load-aware `lazyComments` relation has a to-many association no
+        // eager relation reads — so the collection stays an uninitialised
+        // PersistentCollection through a plain fetch, making the omission case a
+        // deterministic functional assertion.
+        #[ORM\ManyToOne(targetEntity: ArticleEntity::class, inversedBy: 'featuredComments')]
+        #[ORM\JoinColumn(name: 'featured_article_id', referencedColumnName: 'id', nullable: true)]
+        public ?ArticleEntity $featuredArticle = null,
     ) {}
 }
