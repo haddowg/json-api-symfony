@@ -8,7 +8,9 @@ use haddowg\JsonApi\Pagination\PagePaginator;
 use haddowg\JsonApi\Pagination\PaginatorInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Constraint\Comparison;
+use haddowg\JsonApi\Resource\Field\BelongsTo;
 use haddowg\JsonApi\Resource\Field\DateTime;
+use haddowg\JsonApi\Resource\Field\HasMany;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApi\Resource\Filter\Where;
@@ -66,6 +68,12 @@ abstract class BaseArticleResource extends AbstractResource
             // Cross-field rule: expiresAt must be after publishedAt — exercises the
             // document-level CompareField execution path.
             DateTime::make('expiresAt')->nullable()->compareWith('publishedAt', Comparison::GreaterThan),
+            // Relationships (Phase 3 foundation): a to-one `author` and a
+            // to-many `comments`. Core reads the related objects off the model
+            // (`$model->author` / `$model->comments`) and emits resource-identifier
+            // linkage via the serializer registered for each related type.
+            BelongsTo::make('author')->type('authors'),
+            HasMany::make('comments')->type('comments'),
         ];
     }
 
