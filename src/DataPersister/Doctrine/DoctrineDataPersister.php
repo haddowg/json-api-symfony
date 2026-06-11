@@ -90,6 +90,7 @@ final class DoctrineDataPersister implements DataPersisterInterface
         RelationInterface $relation,
         ToOneRelationship|ToManyRelationship $linkage,
         Mode $mode,
+        bool $flush = true,
     ): object {
         $property = $relation->column() ?? $relation->name();
         $relatedType = $relation->relatedTypes()[0] ?? '';
@@ -101,13 +102,13 @@ final class DoctrineDataPersister implements DataPersisterInterface
                 : null;
 
             $entity->{$property} = $reference;
-            $this->entityManager->flush();
-
-            return $entity;
+        } else {
+            $this->mutateToMany($entity, $property, $relatedClass, $linkage, $mode);
         }
 
-        $this->mutateToMany($entity, $property, $relatedClass, $linkage, $mode);
-        $this->entityManager->flush();
+        if ($flush) {
+            $this->entityManager->flush();
+        }
 
         return $entity;
     }

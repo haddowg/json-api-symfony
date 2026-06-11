@@ -87,8 +87,13 @@ interface DataPersisterInterface
      *    (idempotent — an already-present member is not duplicated);
      *  - {@see Mode::Remove} — remove the linkage members from the to-many set.
      *
-     * The mutated parent is committed and returned (so the handler can render the
-     * resulting linkage).
+     * The mutated parent is returned (so the handler can render the resulting
+     * linkage). `$flush` controls whether the mutation is committed immediately:
+     * the relationship endpoints commit per mutation (`$flush = true`, the default),
+     * but a whole-resource write that embeds relationships in `data.relationships`
+     * (ADR 0018) applies each relationship with `$flush = false` and lets the
+     * subsequent {@see create()}/{@see update()} own the single commit — so a
+     * not-yet-persisted create target is never flushed mid-association.
      *
      * @param ToOneRelationship|ToManyRelationship $linkage the parsed relationship-endpoint linkage
      */
@@ -98,5 +103,6 @@ interface DataPersisterInterface
         RelationInterface $relation,
         ToOneRelationship|ToManyRelationship $linkage,
         Mode $mode,
+        bool $flush = true,
     ): object;
 }

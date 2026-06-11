@@ -9,8 +9,9 @@ use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * The Phase-3 S3 acceptance suite: the relationship-mutation endpoints
- * (`PATCH`/`POST`/`DELETE /{type}/{id}/relationships/{relationship}`) on both
+ * The Phase-3 S3 + S4 acceptance suite: the relationship-mutation endpoints
+ * (`PATCH`/`POST`/`DELETE /{type}/{id}/relationships/{relationship}`) **and** the
+ * whole-resource writes that embed relationships in `data.relationships`, on both
  * providers, each mutation re-fetched to prove the change persisted through the
  * {@see \haddowg\JsonApiBundle\DataPersister\DataPersisterInterface::mutateRelationship()}
  * seam.
@@ -24,6 +25,11 @@ use Symfony\Component\HttpFoundation\Response;
  *    relation `DELETE` → `403`.
  *  - cardinality: `POST`/`DELETE` on a to-one → `400`.
  *  - unknown relationship → `404`; missing parent → `404`.
+ *  - S4: `POST /articles {…, relationships:{author, comments}}` — a whole-resource
+ *    create sets both associations through the persister seam (`201` + Location);
+ *    `PATCH /articles/{id}` replacing `author`/`comments` via `data.relationships`
+ *    (`200`); a create/update with no relationships is unchanged, and a partial
+ *    PATCH leaves the unmentioned associations untouched.
  *
  * Abstract over the kernel so the same assertions run against the in-memory
  * ({@see InMemoryRelationshipMutationTest}) and Doctrine
@@ -119,6 +125,180 @@ abstract class RelationshipMutationConformanceTestCase extends JsonApiFunctional
 
         self::assertSame(
             ['c2'],
+            $this->commentIds($this->identifiersOf('/articles/1/relationships/comments')),
+        );
+    }
+
+    #[Test]
+    #[Group('spec:creating-resources')]
+    public function creatingAResourceWithRelationshipsSetsThemThroughThePersisterSeam(): void
+    {
+        // POST a whole article carrying both a to-one `author` and a to-many
+        // `comments` in `data.relationships`: the handler hydrates the attributes
+        // via core, then sets the associations through the persister seam (so a
+        // typed entity never gets a scalar id on an association property).
+        $response = $this->handle('/articles', 'POST', [
+            'data' => [
+                'type' => 'articles',
+                'attributes' => [
+                    'title' => 'A related article',
+                    'body' => 'With an author and comments.',
+                    'category' => 'news',
+                ],
+                'relationships' => [
+                    'author' => ['data' => ['type' => 'authors', 'id' => 'a1']],
+                    'comments' => ['data' => [
+                        ['type' => 'comments', 'id' => 'c1'],
+                        ['type' => 'comments', 'id' => 'c2'],
+                    ]],
+                ],
+            ],
+        ]);
+
+        self::assertSame(201, $response->getStatusCode(), (string) $response->getContent());
+
+        $data = $this->decode($response)['data'] ?? null;
+        self::assertIsArray($data);
+        $id = $data['id'] ?? null;
+        self::assertIsString($id);
+        self::assertNotSame('', $id);
+        self::assertSame('https://example.test/articles/' . $id, $response->headers->get('Location'));
+
+        // The attributes were hydrated by core as usual.
+        $attributes = $data['attributes'] ?? null;
+        self::assertIsArray($attributes);
+        self::assertSame('A related article', $attributes['title'] ?? null);
+
+        // The associations persisted: a fresh linkage read (re-fetched through the
+        // read provider — the Doctrine subclass clears the identity map first, so
+        // the foreign keys were actually written) reflects the author + comments.
+        self::assertSame(
+            ['type' => 'authors', 'id' => 'a1'],
+            $this->linkageOf('/articles/' . $id . '/relationships/author'),
+        );
+        self::assertSame(
+            ['c1', 'c2'],
+            $this->commentIds($this->identifiersOf('/articles/' . $id . '/relationships/comments')),
+        );
+    }
+
+    #[Test]
+    #[Group('spec:creating-resources')]
+    public function creatingAResourceWithoutRelationshipsStillWorks(): void
+    {
+        // No `data.relationships`: the attributes-only create path is unchanged.
+        $response = $this->handle('/articles', 'POST', [
+            'data' => [
+                'type' => 'articles',
+                'attributes' => [
+                    'title' => 'A standalone article',
+                    'body' => 'No relationships.',
+                    'category' => 'opinion',
+                ],
+            ],
+        ]);
+
+        self::assertSame(201, $response->getStatusCode(), (string) $response->getContent());
+
+        $data = $this->decode($response)['data'] ?? null;
+        self::assertIsArray($data);
+        $id = $data['id'] ?? null;
+        self::assertIsString($id);
+
+        // It has no author and no comments.
+        self::assertNull($this->linkageOf('/articles/' . $id . '/relationships/author'));
+        self::assertSame([], $this->identifiersOf('/articles/' . $id . '/relationships/comments'));
+    }
+
+    #[Test]
+    #[Group('spec:updating-resources')]
+    public function patchingAResourceReplacesItsRelationshipsThroughThePersisterSeam(): void
+    {
+        // Article 1 is authored by a1 and owns c1, c2. A whole-resource PATCH
+        // carrying `data.relationships` replaces the author with a2 and the comment
+        // set with [c4] — applied through the same persister seam as the
+        // relationship endpoints, not core's scalar-id hydration.
+        $response = $this->handle('/articles/1', 'PATCH', [
+            'data' => [
+                'type' => 'articles',
+                'id' => '1',
+                'attributes' => ['title' => 'A retitled, re-linked article'],
+                'relationships' => [
+                    'author' => ['data' => ['type' => 'authors', 'id' => 'a2']],
+                    'comments' => ['data' => [['type' => 'comments', 'id' => 'c4']]],
+                ],
+            ],
+        ]);
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        $data = $this->decode($response)['data'] ?? null;
+        self::assertIsArray($data);
+        $attributes = $data['attributes'] ?? null;
+        self::assertIsArray($attributes);
+        self::assertSame('A retitled, re-linked article', $attributes['title'] ?? null);
+
+        // The replacements persisted (re-fetched through the read provider).
+        self::assertSame(
+            ['type' => 'authors', 'id' => 'a2'],
+            $this->linkageOf('/articles/1/relationships/author'),
+        );
+        self::assertSame(
+            ['c4'],
+            $this->commentIds($this->identifiersOf('/articles/1/relationships/comments')),
+        );
+    }
+
+    #[Test]
+    #[Group('spec:updating-resources')]
+    public function patchingAResourceWithoutRelationshipsLeavesThemUntouched(): void
+    {
+        // A PATCH that supplies no `data.relationships` must not disturb the
+        // existing associations: article 1 keeps author a1 and comments c1, c2.
+        $response = $this->handle('/articles/1', 'PATCH', [
+            'data' => [
+                'type' => 'articles',
+                'id' => '1',
+                'attributes' => ['title' => 'Only the title changes'],
+            ],
+        ]);
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        self::assertSame(
+            ['type' => 'authors', 'id' => 'a1'],
+            $this->linkageOf('/articles/1/relationships/author'),
+        );
+        self::assertSame(
+            ['c1', 'c2'],
+            $this->commentIds($this->identifiersOf('/articles/1/relationships/comments')),
+        );
+    }
+
+    #[Test]
+    #[Group('spec:updating-resources')]
+    public function patchingAResourceReplacingOnlyTheToOneLeavesTheToManyUntouched(): void
+    {
+        // A whole-resource PATCH naming only `author` replaces just that
+        // association; the unmentioned `comments` set is left as-is.
+        $response = $this->handle('/articles/1', 'PATCH', [
+            'data' => [
+                'type' => 'articles',
+                'id' => '1',
+                'relationships' => [
+                    'author' => ['data' => ['type' => 'authors', 'id' => 'a2']],
+                ],
+            ],
+        ]);
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        self::assertSame(
+            ['type' => 'authors', 'id' => 'a2'],
+            $this->linkageOf('/articles/1/relationships/author'),
+        );
+        self::assertSame(
+            ['c1', 'c2'],
             $this->commentIds($this->identifiersOf('/articles/1/relationships/comments')),
         );
     }
