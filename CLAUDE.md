@@ -144,11 +144,15 @@ decision, then 1–3 sentences of *why*). The ADRs already written: `0001`–`00
    (`Sequentially`/`AtLeastOneOf`), cross-field (`CompareField`) and `UniqueEntity`
    (post-hydration entity-validation seam) added — only the `Valid`-cascade gap
    remains for v1. **Done.**
-3. **(next)** Relationships (related + relationship endpoints + mutations; compound
-   includes). Entry notes: `AbstractResource` does not implement core's
-   `UpdateRelationshipHydratorInterface`, and `FullReplacementProhibited` /
-   `RemovalProhibited` are defined-but-never-thrown — relationship-endpoint
-   hydration is the first core gap to close.
+3. **(in progress)** Relationships. S2 (read related + relationship endpoints +
+   compound `?include`) done (ADR 0016). S3 (relationship *mutation* endpoints —
+   `PATCH`/`POST`/`DELETE /{type}/{id}/relationships/{rel}`) done (ADR 0017):
+   core now implements `UpdateRelationshipHydratorInterface` on `AbstractResource`,
+   throws `FullReplacementProhibited` / `RemovalProhibited` / `RelationshipTypeInappropriate`,
+   ships a `Mode` enum + a relationship-endpoint body parser + the `cannotReplace()`/
+   `cannotRemove()` mutability flags; the bundle adds a `DataPersister::mutateRelationship()`
+   seam (core validates the request shape, the persister resolves linkage ids →
+   related objects/references and mutates the association) proven on both providers.
 4. Capstone: the generic zero-handler CRUD engine over the SPI.
 5. v1 consolidation: docs, example app, and the core public-API surface review
    with this bundle as the integration witness.
