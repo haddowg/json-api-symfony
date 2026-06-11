@@ -17,6 +17,7 @@ use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Server\ResourceLocator;
 use haddowg\JsonApiBundle\Server\ServerFactory;
 use haddowg\JsonApiBundle\Server\ServerProvider;
+use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
 use haddowg\JsonApiBundle\Validation\ConstraintTranslator;
 use haddowg\JsonApiBundle\Validation\JsonPointerBuilder;
 use haddowg\JsonApiBundle\Validation\ResourceValidator;
@@ -81,6 +82,11 @@ return static function (ContainerConfigurator $container): void {
         ]);
 
     $services->set(ServerProvider::class);
+
+    // The resource-presence-aware metadata lookup the CRUD engine resolves a
+    // type's resource/relations through, so a bare serializer/hydrator pair (no
+    // resource) is tolerated without per-type branching (ADR 0021).
+    $services->set(TypeMetadataResolver::class);
 
     // --- Operations + data providers -----------------------------------------
 

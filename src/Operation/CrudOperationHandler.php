@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Operation;
 
 use haddowg\JsonApi\Exception\FullReplacementProhibited;
-use haddowg\JsonApi\Exception\NoResourceRegistered;
 use haddowg\JsonApi\Exception\RelationshipNotExists;
 use haddowg\JsonApi\Exception\RelationshipTypeInappropriate;
 use haddowg\JsonApi\Exception\RemovalProhibited;
@@ -35,6 +34,7 @@ use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
+use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
 use haddowg\JsonApiBundle\Validation\ResourceValidator;
 
 /**
@@ -97,15 +97,23 @@ use haddowg\JsonApiBundle\Validation\ResourceValidator;
  *
  * Core's typed exceptions (unknown filter/sort keys, hydration failures, the
  * validator bridge's `422`) propagate to the route-scoped `kernel.exception`
- * listener, which owns all error rendering on JSON:API routes. The generic
- * zero-handler CRUD engine is a later phase; this proves the lifecycle over the
- * SPIs first.
+ * listener, which owns all error rendering on JSON:API routes.
+ *
+ * This is the generic, zero-per-type-handler CRUD engine: it drives every
+ * registered type through the Provider/Persister SPIs and the per-type
+ * serializer/hydrator, resolving each type's declarative metadata through the
+ * {@see TypeMetadataResolver} seam so a type with no resource (a bare
+ * serializer/hydrator pair) is tolerated without per-type branching — the
+ * capstone (bundle ADR 0021). Per-type customization composes through the SPIs
+ * (a higher-priority provider/persister), the serializer/hydrator overrides, or
+ * decorating this handler; no per-type handler code is required.
  */
 final class CrudOperationHandler implements \haddowg\JsonApi\Operation\OperationHandlerInterface
 {
     public function __construct(
         private readonly DataProviderRegistry $providers,
         private readonly DataPersisterRegistry $persisters,
+        private readonly TypeMetadataResolver $types,
         private readonly ?ResourceValidator $validator = null,
     ) {}
 
@@ -142,13 +150,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return DataResponse::fromResource($model, $serializer);
         }
 
-        try {
-            $resource = $server->resources()->resourceFor($type);
-        } catch (NoResourceRegistered) {
-            // A bare serializer/hydrator pair declares no field inventory, so
-            // it has no filter/sort vocabulary and no resource-level paginator.
-            $resource = null;
-        }
+        // A bare serializer/hydrator pair declares no field inventory, so it has
+        // no filter/sort vocabulary and no resource-level paginator.
+        $resource = $this->types->resourceFor($server, $type);
 
         $request = $operation->context()->httpRequest();
         $request = $request instanceof JsonApiRequestInterface ? $request : null;
@@ -356,18 +360,12 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
     /**
      * Resolves the declared, non-hidden relation named `$name` on `$type`'s
-     * resource, or `null` when the resource is bare (no field inventory) or has no
-     * such relationship — the handler maps a `null` to a JSON:API `404`.
+     * resource, or `null` when the type is a bare pair (no field inventory) or has
+     * no such relationship — the handler maps a `null` to a JSON:API `404`.
      */
     private function resolveRelation(Server $server, string $type, string $name): ?RelationInterface
     {
-        try {
-            $resource = $server->resources()->resourceFor($type);
-        } catch (NoResourceRegistered) {
-            return null;
-        }
-
-        return $resource->relationNamed($name);
+        return $this->types->relationNamed($server, $type, $name);
     }
 
     /**
@@ -458,9 +456,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      */
     private function extractRelationships(Server $server, string $type, JsonApiRequestInterface $body): array
     {
-        try {
-            $resource = $server->resources()->resourceFor($type);
-        } catch (NoResourceRegistered) {
+        $resource = $this->types->resourceFor($server, $type);
+        if ($resource === null) {
             return [];
         }
 
@@ -591,9 +588,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return;
         }
 
-        try {
-            $resource = $server->resources()->resourceFor($type);
-        } catch (NoResourceRegistered) {
+        $resource = $this->types->resourceFor($server, $type);
+        if ($resource === null) {
             return;
         }
 
@@ -612,9 +608,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return;
         }
 
-        try {
-            $resource = $server->resources()->resourceFor($type);
-        } catch (NoResourceRegistered) {
+        $resource = $this->types->resourceFor($server, $type);
+        if ($resource === null) {
             return;
         }
 

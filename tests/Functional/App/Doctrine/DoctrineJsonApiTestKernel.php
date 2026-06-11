@@ -118,6 +118,11 @@ final class DoctrineJsonApiTestKernel extends Kernel
         $services->set(DoctrineArticleResource::class);
         $services->set(DoctrineAuthorResource::class);
         $services->set(DoctrineCommentResource::class);
+
+        // The genericity witness: a `tags` type served over the Doctrine path by
+        // the `-128` fallback provider/persister from its `#[AsJsonApiResource]`
+        // entity map alone — no per-type engine code (ADR 0021).
+        $services->set(DoctrineTagResource::class);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

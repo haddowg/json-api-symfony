@@ -9,6 +9,7 @@ use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\ArticleResource;
+use haddowg\JsonApiBundle\Tests\Functional\App\Resource\TagResource;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Component\Config\Loader\LoaderInterface;
@@ -89,6 +90,20 @@ final class WritableInMemoryTestKernel extends Kernel
         $services->set('test.articles_persister', InMemoryDataPersister::class)
             ->factory([WritableArticleFactory::class, 'createPersister'])
             ->args([service('test.articles_provider')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
+
+        // The genericity witness: a `tags` type added with nothing but its
+        // resource + POJO + the same in-memory provider/persister wiring shape —
+        // no per-type engine code (ADR 0021).
+        $services->set(TagResource::class);
+
+        $services->set('test.tags_provider', InMemoryDataProvider::class)
+            ->factory([WritableTagFactory::class, 'createProvider'])
+            ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+
+        $services->set('test.tags_persister', InMemoryDataPersister::class)
+            ->factory([WritableTagFactory::class, 'createPersister'])
+            ->args([service('test.tags_provider')])
             ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
     }
 
