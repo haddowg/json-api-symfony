@@ -452,23 +452,20 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
     /**
      * Collects the writable relationships present in the write body, each paired
      * with its parsed linkage, so the handler can apply them through the persister
-     * seam after core hydrates the attributes. A relationship that is unknown to
-     * the resource or read-only for this operation is skipped (core's hydrator and
-     * the validator own those rules); a bare serializer/hydrator pair declares no
-     * relations, so there is nothing to collect.
+     * seam after core hydrates the attributes. Each named relationship is resolved
+     * through the dual-source {@see TypeMetadataResolver::relationNamed()} — a
+     * resource's own relations or a resource-less type's standalone relations (ADR
+     * 0026) — so a type with no resource can still have its relationships set on a
+     * whole-resource write. A relationship that is unknown or read-only for this
+     * operation is skipped (core's hydrator and the validator own those rules).
      *
      * @return list<array{relation: RelationInterface, linkage: ToOneRelationship|ToManyRelationship}>
      */
     private function extractRelationships(Server $server, string $type, JsonApiRequestInterface $body): array
     {
-        $resource = $this->types->resourceFor($server, $type);
-        if ($resource === null) {
-            return [];
-        }
-
         $collected = [];
         foreach ($this->bodyRelationshipNames($body) as $name) {
-            $relation = $resource->relationNamed($name);
+            $relation = $this->types->relationNamed($server, $type, $name);
             if ($relation === null) {
                 continue;
             }

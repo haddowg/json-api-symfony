@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle;
 
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiHydrator;
+use haddowg\JsonApiBundle\Attribute\AsJsonApiRelations;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiSerializer;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
@@ -89,6 +90,15 @@ final class JsonApiBundle extends AbstractBundle
      * (bundle ADR 0024). The tag carries the `type` it hydrates.
      */
     public const string HYDRATOR_TAG = 'haddowg.json_api.hydrator';
+
+    /**
+     * Tag applied to a standalone {@see \haddowg\JsonApiBundle\Server\RelationsProviderInterface}
+     * registered for a type via {@see AsJsonApiRelations} — a type's relations
+     * declared with no {@see AbstractResource} (bundle ADR 0026). The tag carries the
+     * `type` it declares relations for; {@see \haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceLocatorPass}
+     * reads it to wire the type-keyed {@see \haddowg\JsonApiBundle\Server\RelationsRegistry}.
+     */
+    public const string RELATIONS_TAG = 'haddowg.json_api.relations';
 
     public function configure(DefinitionConfigurator $definition): void
     {
@@ -194,6 +204,15 @@ final class JsonApiBundle extends AbstractBundle
             AsJsonApiHydrator::class,
             static function (Definition $definition, AsJsonApiHydrator $attribute): void {
                 $definition->addTag(self::HYDRATOR_TAG, ['type' => $attribute->type]);
+            },
+        );
+
+        // Standalone relations: a class implementing RelationsProviderInterface
+        // declares a type's relations with no AbstractResource (ADR 0026).
+        $builder->registerAttributeForAutoconfiguration(
+            AsJsonApiRelations::class,
+            static function (Definition $definition, AsJsonApiRelations $attribute): void {
+                $definition->addTag(self::RELATIONS_TAG, ['type' => $attribute->type]);
             },
         );
     }

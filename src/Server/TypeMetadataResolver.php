@@ -24,11 +24,15 @@ use haddowg\JsonApi\Server\Server;
  * branching — the capstone seam the bare-pair path (bundle ADR 0021) plugs into.
  *
  * The {@see Server} is passed per call (it flows from the operation context, and
- * the architecture is multi-server-capable) rather than held, so the resolver is
- * a stateless, dependency-free service.
+ * the architecture is multi-server-capable) rather than held; relations are sourced
+ * resource-first then from the type-keyed {@see RelationsRegistry}, so a
+ * resource-less type that declared standalone relations (ADR 0026) resolves the same
+ * way as a resource.
  */
 final class TypeMetadataResolver
 {
+    public function __construct(private readonly RelationsRegistry $relations) {}
+
     /**
      * The resource registered for `$type`, or `null` when the type is a bare
      * serializer/hydrator pair (no field inventory). Never throws.
@@ -43,11 +47,24 @@ final class TypeMetadataResolver
     }
 
     /**
-     * The declared, non-hidden relation named `$name` on `$type`'s resource, or
-     * `null` when the type has no resource (a bare pair) or no such relationship.
+     * The declared, non-hidden relation named `$name` on `$type`, resolved
+     * resource-first (an {@see AbstractResource}'s own relations) then from the
+     * standalone {@see RelationsRegistry} for a resource-less type — or `null` when
+     * neither declares a relation of that name.
      */
     public function relationNamed(Server $server, string $type, string $name): ?RelationInterface
     {
-        return $this->resourceFor($server, $type)?->relationNamed($name);
+        $relation = $this->resourceFor($server, $type)?->relationNamed($name);
+        if ($relation !== null) {
+            return $relation;
+        }
+
+        foreach ($this->relations->relationsFor($type) ?? [] as $candidate) {
+            if ($candidate->name() === $name) {
+                return $candidate;
+            }
+        }
+
+        return null;
     }
 }

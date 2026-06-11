@@ -21,7 +21,9 @@ use Symfony\Component\Routing\RouteCollection;
  * `GET`/`PATCH`/`DELETE` `/{type}/{id}` (`FetchOne` / `Update` / `Delete`). A
  * resource defaults to all five operations; a standalone serializer to none —
  * so read-only, create-only and serialize-only types all fall out of the same
- * mechanism. For full resources it additionally emits the relationship endpoints
+ * mechanism. For any type that declares relations — a full resource, or a
+ * resource-less type that declared standalone relations (ADR 0026) — it
+ * additionally emits the relationship endpoints
  * `GET /{type}/{id}/{relationship}` (related resources) and
  * `GET`/`PATCH`/`POST`/`DELETE` `/{type}/{id}/relationships/{relationship}`
  * (relationship linkage read + replace/add/remove mutations).
@@ -55,7 +57,7 @@ final class JsonApiRouteLoader extends Loader
     public const string ROUTE_TYPE = 'jsonapi';
 
     /**
-     * @param array<string, array{uriType: string, isResource: bool, hasHydrator: bool, operations: list<string>}> $routeDescriptors
+     * @param array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>}> $routeDescriptors
      */
     public function __construct(private readonly array $routeDescriptors = [])
     {
@@ -132,10 +134,11 @@ final class JsonApiRouteLoader extends Loader
                 );
             }
 
-            // Relationship routes only for a full resource (a standalone
-            // serializer has no relations of its own to mutate or read). Gating
-            // these per-relation is a later slice.
-            if (!$descriptor['isResource']) {
+            // Relationship routes for any type that declares relations — a full
+            // resource (which always bundles relations) or a resource-less type that
+            // declared standalone relations via #[AsJsonApiRelations] (ADR 0026).
+            // Gating these per-relation is a later slice.
+            if (!$descriptor['hasRelations']) {
                 continue;
             }
 

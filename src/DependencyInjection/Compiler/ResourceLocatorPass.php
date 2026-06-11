@@ -10,6 +10,8 @@ use haddowg\JsonApi\Serializer\SerializerInterface;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Operation\Operation;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
+use haddowg\JsonApiBundle\Server\RelationsProviderInterface;
+use haddowg\JsonApiBundle\Server\RelationsRegistry;
 use haddowg\JsonApiBundle\Server\ResourceLocator;
 use haddowg\JsonApiBundle\Server\ServerFactory;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
@@ -42,13 +44,21 @@ use Symfony\Component\DependencyInjection\Reference;
  * {@see ServerFactory}, which registers them with core's
  * {@see \haddowg\JsonApi\Server\Server::registerSerializerHydrator()}.
  *
+ * Standalone relations (`#[AsJsonApiRelations]` on a
+ * {@see RelationsProviderInterface} class, bundle ADR 0026) declare a type's
+ * relations with **no** resource: the pass collects them into a type-keyed service
+ * locator and wires the {@see RelationsRegistry} from it (lazy, because relations
+ * are runtime objects, not scalars). A resource-less type that declares relations is
+ * recorded so its descriptor gains relationship routes.
+ *
  * The pass also builds a per-type **route descriptor** map (the exposed
- * operation allow-list, the URI segment, and whether the type is a full resource
- * and has a hydrator) and hands it to the {@see JsonApiRouteLoader}, which emits
- * exactly one route per declared operation (bundle ADR 0025). Descriptors flow as
- * plain scalar arrays — strings, bools and lists of strings — because Symfony
- * cannot dump arbitrary value objects as a compiled service argument. A write
- * operation (`Create`/`Update`) is compile-time-validated to have a hydrator.
+ * operation allow-list, the URI segment, whether the type is a full resource, has a
+ * hydrator and has relations) and hands it to the {@see JsonApiRouteLoader}, which
+ * emits exactly one route per declared operation (bundle ADR 0025) plus the
+ * relationship routes for a type that has relations. Descriptors flow as plain
+ * scalar arrays — strings, bools and lists of strings — because Symfony cannot dump
+ * arbitrary value objects as a compiled service argument. A write operation
+ * (`Create`/`Update`) is compile-time-validated to have a hydrator.
  */
 final class ResourceLocatorPass implements CompilerPassInterface
 {
@@ -64,8 +74,39 @@ final class ResourceLocatorPass implements CompilerPassInterface
         $serializers = [];
         /** @var array<string, string> $hydrators */
         $hydrators = [];
-        /** @var array<string, array{uriType: string, isResource: bool, hasHydrator: bool, operations: list<string>}> $descriptors */
+        /** @var array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>}> $descriptors */
         $descriptors = [];
+
+        // Standalone relations providers, keyed by type: the registry resolves the
+        // provider lazily, and a resource-less type that declares relations gets
+        // relationship routes.
+        $relationReferences = [];
+        $typesWithStandaloneRelations = [];
+        foreach ($container->findTaggedServiceIds(JsonApiBundle::RELATIONS_TAG) as $id => $tags) {
+            $definition = $container->findDefinition($id);
+            $class = $definition->getClass() ?? (\is_string($id) && \class_exists($id) ? $id : null);
+            if ($class === null) {
+                continue;
+            }
+
+            if (!\is_a($class, RelationsProviderInterface::class, true)) {
+                throw new \LogicException(\sprintf(
+                    'The service "%s" registered with #[AsJsonApiRelations] must implement %s.',
+                    $id,
+                    RelationsProviderInterface::class,
+                ));
+            }
+
+            foreach ($tags as $tag) {
+                $type = $tag['type'] ?? null;
+                if (!\is_string($type) || $type === '') {
+                    continue;
+                }
+
+                $relationReferences[$type] = new Reference($id);
+                $typesWithStandaloneRelations[$type] = true;
+            }
+        }
 
         foreach ($container->findTaggedServiceIds(JsonApiBundle::RESOURCE_TAG) as $id => $tags) {
             $definition = $container->findDefinition($id);
@@ -114,6 +155,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
                 'uriType' => $uriType,
                 'isResource' => true,
                 'hasHydrator' => true,
+                'hasRelations' => true,
                 'operations' => $this->operationsFromTags($tags) ?? self::allOperations(),
             ];
         }
@@ -145,6 +187,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
                 'uriType' => $type,
                 'isResource' => false,
                 'hasHydrator' => isset($standaloneHydrators[$type]),
+                'hasRelations' => isset($typesWithStandaloneRelations[$type]),
                 'operations' => $standaloneSerializerOperations[$type] ?? [],
             ];
         }
@@ -156,6 +199,13 @@ final class ResourceLocatorPass implements CompilerPassInterface
         $definition = $container->getDefinition(ResourceLocator::class);
         $definition->setArgument('$services', $locator);
         $definition->setArgument('$classes', \array_values(\array_unique($classes)));
+
+        // The relations registry is type-keyed (relations are runtime objects, not
+        // statically readable scalars), so it gets its own locator.
+        if ($container->hasDefinition(RelationsRegistry::class)) {
+            $relationsLocator = ServiceLocatorTagPass::register($container, $relationReferences);
+            $container->getDefinition(RelationsRegistry::class)->setArgument('$providers', $relationsLocator);
+        }
 
         if ($container->hasDefinition(ServerFactory::class)) {
             $factory = $container->getDefinition(ServerFactory::class);
@@ -244,7 +294,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
      * Compile-time guard: a type cannot expose a write operation (`Create` /
      * `Update`) without a hydrator to populate the entity.
      *
-     * @param array<string, array{uriType: string, isResource: bool, hasHydrator: bool, operations: list<string>}> $descriptors
+     * @param array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>}> $descriptors
      */
     private function validateWriteCapability(array $descriptors): void
     {
