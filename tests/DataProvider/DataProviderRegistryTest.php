@@ -75,6 +75,15 @@ final class DataProviderRegistryTest extends TestCase
             {
                 return [];
             }
+
+            public function countRelated(
+                string $type,
+                array $parents,
+                RelationInterface $relation,
+                JsonApiRequestInterface $request,
+            ): array {
+                return [];
+            }
         };
     }
 }

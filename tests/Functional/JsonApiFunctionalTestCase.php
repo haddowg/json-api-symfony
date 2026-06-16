@@ -67,7 +67,10 @@ abstract class JsonApiFunctionalTestCase extends KernelTestCase
         $kernel = static::$kernel;
         self::assertNotNull($kernel);
 
-        $server = ['HTTP_ACCEPT' => 'application/vnd.api+json'] + $extraServer;
+        // The default Accept is the bare JSON:API media type; an `extraServer`
+        // HTTP_ACCEPT (e.g. one carrying a negotiated `profile` media-type parameter)
+        // overrides it, so a caller can drive content negotiation.
+        $server = $extraServer + ['HTTP_ACCEPT' => 'application/vnd.api+json'];
         $content = null;
         if ($body !== null) {
             $server['CONTENT_TYPE'] = 'application/vnd.api+json';

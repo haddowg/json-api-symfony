@@ -72,7 +72,10 @@ final class TrackResource extends AbstractResource
             BelongsTo::make('album')->type('albums'),
             BelongsToMany::make('playlists')
                 ->type('playlists')
-                ->cannotReplace(),
+                ->cannotReplace()
+                // Countable (bundle ADR 0052) so the server-default-fallback related
+                // endpoint still emits a total — the existing example asserts one.
+                ->countable(),
         ];
     }
 

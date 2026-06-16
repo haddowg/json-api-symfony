@@ -100,6 +100,29 @@ final class PolymorphicRelationTest extends JsonApiFunctionalTestCase
 
     #[Test]
     #[Group('spec:fetching-relationships')]
+    public function withCountCountsAPolymorphicToManyMixedSet(): void
+    {
+        // items is a countable() polymorphic to-many; the in-memory provider counts
+        // the mixed member set (board 1: n1, i1, n2 = 3), so ?withCount=items emits
+        // meta.total on the items relationship object (bundle ADR 0052).
+        $document = $this->fetchDocument('/boards/1?withCount=items');
+
+        $data = $document['data'] ?? null;
+        self::assertIsArray($data);
+
+        $relationships = $data['relationships'] ?? null;
+        self::assertIsArray($relationships);
+
+        $items = $relationships['items'] ?? null;
+        self::assertIsArray($items);
+
+        $meta = $items['meta'] ?? null;
+        self::assertIsArray($meta);
+        self::assertSame(3, $meta['total'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
     public function aPolymorphicToManyRelationshipEndpointRendersMixedIdentifiers(): void
     {
         $document = $this->fetchDocument('/boards/1/relationships/items');

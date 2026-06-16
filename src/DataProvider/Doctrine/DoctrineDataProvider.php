@@ -283,10 +283,193 @@ final class DoctrineDataProvider implements DataProviderInterface, PreloadsInclu
             ));
         }
 
+        // A non-countable related to-many paginates count-FREE: no COUNT query runs;
+        // instead the page is over-fetched by one (limit+1) and the surplus row
+        // signals a further page, driving the count-free page's `next` link without
+        // a total (bundle ADR 0052). A countable relation counts the pre-window total
+        // as before, emitting total + `last`.
+        if (!$relation->isCountable()) {
+            return $this->countFreePage($builder, $window);
+        }
+
         $total = $this->count($builder);
         $builder->setFirstResult($window->offset)->setMaxResults($window->limit);
 
         return new CollectionResult($this->items($builder), $total);
+    }
+
+    /**
+     * The count-free page for a non-countable related collection: the window is
+     * applied with `LIMIT $limit + 1` (one row past the page), so the surplus row
+     * proves a further page exists without any `COUNT`. The surplus is dropped from
+     * the rendered items and reported through {@see CollectionResult::$hasMore}; the
+     * result carries a `null` total with {@see CollectionResult::$windowed} true so
+     * the handler builds a count-free page (bundle ADR 0052 / core ADR 0057).
+     *
+     * @return CollectionResult<object>
+     */
+    private function countFreePage(QueryBuilder $builder, OffsetWindow $window): CollectionResult
+    {
+        $builder->setFirstResult($window->offset)->setMaxResults($window->limit + 1);
+        $rows = $this->items($builder);
+
+        $hasMore = \count($rows) > $window->limit;
+        if ($hasMore) {
+            $rows = \array_slice($rows, 0, $window->limit);
+        }
+
+        return new CollectionResult($rows, total: null, windowed: true, hasMore: $hasMore);
+    }
+
+    /**
+     * The batched, pushed-down cardinality of `$relation` for a page of parents
+     * (bundle ADR 0052). ONE grouped query rooted on the PARENT entity joins the
+     * related collection and counts it per parent —
+     *
+     *     SELECT parent.<id>, COUNT(related.<relatedId>)
+     *     FROM <ParentEntity> parent
+     *     LEFT JOIN parent.<property> related
+     *     WHERE parent.<id> IN (:pageIds)
+     *     GROUP BY parent.<id>
+     *
+     * — so a collection render counts every parent's relation in a single query, no
+     * N+1. The `LEFT JOIN` keeps a parent with an empty relation in the result (a
+     * `0` count). Rooting on the parent (not the related entity, as
+     * {@see fetchRelatedCollection()} does) lets the `GROUP BY` fan the count across
+     * the whole page in one statement; the membership semantics are identical (the
+     * same backing association). The map is keyed by each parent's wire id (encoded
+     * when the parent type declares an id encoder), so the batcher resolves a count
+     * back to its parent object at render time.
+     *
+     * A polymorphic to-many is the same boundary as
+     * {@see fetchRelatedCollection()}: its members span entity classes, so there is
+     * no single related entity to count — it throws (supply a custom provider).
+     *
+     * @param list<object> $parents
+     *
+     * @return array<string, int>
+     */
+    public function countRelated(
+        string $type,
+        array $parents,
+        RelationInterface $relation,
+        JsonApiRequestInterface $request,
+    ): array {
+        if (\count($relation->relatedTypes()) > 1) {
+            throw new \LogicException(\sprintf(
+                'The %s does not support counting a polymorphic (morph-to-many) relationship "%s": its members span entity classes and cannot be one grouped COUNT. Supply a custom DataProvider that counts the related members across types.',
+                self::class,
+                $relation->name(),
+            ));
+        }
+
+        if ($parents === []) {
+            return [];
+        }
+
+        $parentClass = $this->entityClassFor($type);
+        $parentMetadata = $this->entityManager->getClassMetadata($parentClass);
+        $parentIdField = $parentMetadata->getSingleIdentifierFieldName();
+        $property = $relation->column() ?? $relation->name();
+
+        // Map each parent's storage id back to its wire id; the IN-clause binds the
+        // storage ids, the result keys by the wire id.
+        $encoder = $this->idEncoders->encoderFor($type);
+        $storageToWire = [];
+        foreach ($parents as $parent) {
+            $storageKey = $parentMetadata->getIdentifierValues($parent)[$parentIdField] ?? null;
+            if (!\is_scalar($storageKey)) {
+                continue;
+            }
+
+            $wireId = $encoder !== null ? $encoder->encode($storageKey) : (string) $storageKey;
+            $storageToWire[(string) $storageKey] = $wireId;
+        }
+
+        if ($storageToWire === []) {
+            return [];
+        }
+
+        $relatedType = $relation->relatedTypes()[0] ?? null;
+        $parentIds = \array_keys($storageToWire);
+
+        // A pivot-backed belongsToMany counts the ASSOCIATION-entity rows per parent
+        // (so duplicate membership counts each row), grouped over the association
+        // entity's parent FK — not the parent's own property, which is not a Doctrine
+        // association for a through-entity pivot. A plain to-many counts the related
+        // members via a left join on the parent property.
+        if ($relatedType !== null && $this->supportsPivot($relatedType, $relation)) {
+            $builder = $this->pivotCountQuery($relation, $parents[0], $relatedType, $parentIds);
+        } else {
+            $builder = $this->entityManager->createQueryBuilder()
+                ->select(\sprintf('parent.%s AS parent_id', $parentIdField))
+                ->addSelect('COUNT(related) AS related_count')
+                ->from($parentClass, 'parent')
+                ->leftJoin(\sprintf('parent.%s', $property), 'related')
+                ->where(\sprintf('parent.%s IN (:jsonapi_parent_ids)', $parentIdField))
+                ->setParameter('jsonapi_parent_ids', $parentIds)
+                ->groupBy(\sprintf('parent.%s', $parentIdField));
+        }
+
+        /** @var list<array<string, mixed>> $rows */
+        $rows = $builder->getQuery()->getResult();
+
+        $counts = [];
+        foreach ($rows as $row) {
+            $storageKey = $row['parent_id'] ?? null;
+            if (!\is_scalar($storageKey)) {
+                continue;
+            }
+            $wireId = $storageToWire[(string) $storageKey] ?? null;
+            if ($wireId === null) {
+                continue;
+            }
+            $count = $row['related_count'] ?? 0;
+            $counts[$wireId] = \is_numeric($count) ? (int) $count : 0;
+        }
+
+        return $counts;
+    }
+
+    /**
+     * The grouped distinct-member count query for a pivot-backed `belongsToMany` over
+     * its association entity: roots on the association entity, scopes to the page of
+     * parents by the entity's parent-side `ManyToOne` FK, and groups by that FK so each
+     * row is `parent_id => COUNT(DISTINCT far member)`.
+     *
+     * The count is over **distinct far members** (`COUNT(DISTINCT pivot.<farProperty>)`),
+     * NOT association rows — so a member joined to the parent by more than one
+     * association row (a track at two positions) contributes ONCE. This matches the
+     * related-collection endpoint, which groups one row per distinct far member
+     * ({@see countPivot()} counts `DISTINCT` too) and renders deduped linkage: the
+     * `?withCount` relationship-object total and the endpoint pagination total are the
+     * one consistent `total` semantic the contract requires (bundle ADR 0052).
+     *
+     * @param list<int|string> $parentIds the parent storage keys (the IN-clause binds them)
+     */
+    private function pivotCountQuery(RelationInterface $relation, object $parent, string $relatedType, array $parentIds): QueryBuilder
+    {
+        $relatedClass = $this->entityClassFor($relatedType);
+        $association = $this->pivotAssociation($relation, $parent, $relatedClass);
+
+        // Join the parent-side ManyToOne so the count can GROUP BY the parent's id
+        // field — DQL cannot GROUP BY an IDENTITY() expression (only a path or a
+        // result variable), and grouping by the SELECT alias is not portable.
+        $parentClass = $this->entityManager
+            ->getClassMetadata($association->entityClass)
+            ->getAssociationTargetClass($association->parentProperty);
+        $parentIdField = $this->entityManager->getClassMetadata($parentClass)->getSingleIdentifierFieldName();
+
+        return $this->entityManager->createQueryBuilder()
+            ->select(\sprintf('parent.%s AS parent_id', $parentIdField))
+            // DISTINCT far members so duplicate membership counts once, matching the
+            // endpoint's deduped total and rendered linkage (bundle ADR 0052).
+            ->addSelect(\sprintf('COUNT(DISTINCT pivot.%s) AS related_count', $association->farProperty))
+            ->from($association->entityClass, 'pivot')
+            ->innerJoin(\sprintf('pivot.%s', $association->parentProperty), 'parent')
+            ->where(\sprintf('parent.%s IN (:jsonapi_parent_ids)', $parentIdField))
+            ->setParameter('jsonapi_parent_ids', $parentIds)
+            ->groupBy(\sprintf('parent.%s', $parentIdField));
     }
 
     // --- pivot (belongsToMany association-entity) collection -------------------
@@ -354,10 +537,48 @@ final class DoctrineDataProvider implements DataProviderInterface, PreloadsInclu
             ));
         }
 
+        // A non-countable pivot relation paginates count-FREE, exactly as the plain
+        // path does: no COUNT runs; the page is over-fetched by one (limit+1) and the
+        // surplus far member signals a further page, driving the count-free page's
+        // `next` link without a total (bundle ADR 0052). A countable relation counts
+        // the pre-window total as before, emitting total + `last`.
+        if (!$relation->isCountable()) {
+            return $this->countFreePivotPage($builder, $window, $relatedType, $relation);
+        }
+
         $total = $this->countPivot($builder);
         $builder->setFirstResult($window->offset)->setMaxResults($window->limit);
 
         return $this->pivotResult($this->pivotRows($builder), $relatedType, $relation, $total);
+    }
+
+    /**
+     * The count-free page for a non-countable pivot relation — the {@see countFreePage()}
+     * analogue over the pivot query. The window is applied with `LIMIT $limit + 1` (one
+     * far member past the page), so the surplus row proves a further page exists without
+     * any `COUNT`. The pivot query already groups one row per distinct far member (see
+     * {@see pivotQuery()}), so the over-fetch and slice are over distinct members. The
+     * surplus is dropped before the pivot map is built; the result carries a `null` total
+     * with {@see PivotCollectionResult::$windowed} true so the handler builds a count-free
+     * page (bundle ADR 0052).
+     *
+     * @return PivotCollectionResult<object>
+     */
+    private function countFreePivotPage(
+        QueryBuilder $builder,
+        OffsetWindow $window,
+        string $relatedType,
+        RelationInterface $relation,
+    ): PivotCollectionResult {
+        $builder->setFirstResult($window->offset)->setMaxResults($window->limit + 1);
+        $rows = $this->pivotRows($builder);
+
+        $hasMore = \count($rows) > $window->limit;
+        if ($hasMore) {
+            $rows = \array_slice($rows, 0, $window->limit);
+        }
+
+        return $this->pivotResult($rows, $relatedType, $relation, total: null, windowed: true, hasMore: $hasMore);
     }
 
     /**
@@ -674,8 +895,14 @@ final class DoctrineDataProvider implements DataProviderInterface, PreloadsInclu
      *
      * @return PivotCollectionResult<object>
      */
-    private function pivotResult(array $rows, string $relatedType, RelationInterface $relation, ?int $total): PivotCollectionResult
-    {
+    private function pivotResult(
+        array $rows,
+        string $relatedType,
+        RelationInterface $relation,
+        ?int $total,
+        bool $windowed = false,
+        bool $hasMore = false,
+    ): PivotCollectionResult {
         $pivotFields = PivotFields::byName($relation);
         $encoder = $this->idEncoders->encoderFor($relatedType);
         $relatedMetadata = $this->entityManager->getClassMetadata($this->entityClassFor($relatedType));
@@ -714,7 +941,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PreloadsInclu
             $pivotMap[$wireId] = $values;
         }
 
-        return new PivotCollectionResult($items, $pivotMap, $total);
+        return new PivotCollectionResult($items, $pivotMap, $total, $windowed, $hasMore);
     }
 
     /**

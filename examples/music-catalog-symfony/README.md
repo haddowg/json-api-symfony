@@ -234,6 +234,127 @@ the join as an association entity. `tests/RelationScopedParamsTest.php` proves t
 witness above; see [`docs/relationships.md`](../../docs/relationships.md) for the
 full surface.
 
+## Counting a to-many relation
+
+A to-many relation marked **`countable()`** opts into exposing its cardinality as
+`meta.total` — the count is **pushed down** (never materialising the collection) and,
+across a page of parents, **batched** into one grouped query per relation (no N+1).
+Counting is **off by default**; this example marks `albums.tracks`,
+`playlists.tracks` and `tracks.playlists` countable and deliberately leaves
+`artists.albums` non-countable to witness both paths.
+
+```php
+// AlbumResource
+HasMany::make('tracks')->type('tracks')->countable();
+```
+
+A countable relation surfaces a total two ways, both keyed `total`
+(`tests/RelationCountTest.php`):
+
+- **`?withCount=rel1,rel2`** — a flat primary-request parameter naming relationships
+  (like `?include`) — activates `meta.total` on the **relationship object** when the
+  parent is rendered:
+
+  ```
+  GET /albums/1?withCount=tracks   → data.relationships.tracks.meta.total = 3
+  GET /albums?withCount=tracks     → each album's own tracks.meta.total, BATCHED
+                                     (album 1 has 3 tracks, album 2 has 1) — one
+                                     grouped count across the page, never per-parent
+  ```
+
+  The relationship-object total is gated by `countable()` **and** being named in
+  `?withCount` (a countable relation **not** named carries no total). Naming a
+  relation that is not `countable()`, a to-one, or an unknown name is a clean
+  **`400`** (`source.parameter: withCount`) — `?withCount=orderedTracks` (a
+  non-countable to-many), `?withCount=artist` (a to-one) and `?withCount=nope` all
+  reject up front.
+
+- the **related-collection endpoint** of a countable relation pays for the count:
+  `GET /albums/1/tracks` emits `meta.page.total` and a `last` pagination link (gated
+  by `countable()` **alone**, independent of `?withCount` — it is a pagination
+  feature). A **non-countable** relation's endpoint paginates **count-free**: `GET
+  /artists/1/albums` runs **no** count query, so there is **no** `meta.page.total`
+  and **no** `last` link — only `self`/`first` (and a `next` when a further page
+  exists). That count-free related page is the partial-pagination mechanism for
+  relationships.
+
+A cursor-paginated relation marked countable still honours the total where asked —
+the author opted into the cost by declaring `countable()`. See
+[`docs/relationships.md`](../../docs/relationships.md) (bundle ADR 0052, core ADR
+0057) for the full surface.
+
+## Filtering and sorting a relationship from the primary request
+
+The relation-scoped `filter`/`sort` vocabulary above is normally reachable only on
+the related-collection endpoint (`GET /albums/1/tracks`). The **Relationship
+Queries** profile lets a client reach it from the **primary** request — ordering and
+narrowing a relationship's linkage as it is rendered (included, or links-only), with
+no second round-trip. It is **opt-in**: the bundle registers and advertises the
+profile, but the `relatedQuery` / `rQ` family is parsed only when the client
+**negotiates** the profile URI in the `Accept` header's `profile` media-type
+parameter — otherwise it is ignored entirely (today's behaviour) and the profile is
+not advertised.
+
+```
+Accept: application/vnd.api+json;profile="https://haddowg.dev/profiles/relationship-queries"
+```
+
+With the profile negotiated, the client addresses a relationship **by its include
+path** and supplies a per-relationship `sort` / `filter`. Both the canonical
+`relatedQuery` family and the `rQ` shorthand are spec-compliant custom query families
+(each base carries an uppercase letter). A dotted path (`relatedQuery[albums.tracks]`)
+is legal family **grammar** — it parses without error — but the bundle windows only the
+**top-level** relations of the request's primary resource, so a dotted path addressing
+a relation of an *included* resource is rejected as an unknown path (`400`), not silently
+ignored; address such a relation at its own endpoint instead. `page` is **out** of the
+profile — an addressed relationship always renders **page 1** (the relation's default
+size), navigated via its own relationship-object pagination links. This example
+witnesses it over the album's top-level `tracks` relation
+(`tests/RelationshipQueriesProfileTest.php`):
+
+```
+# order the included tracks by -duration; the linkage data AND the included
+# resources reflect that page-1 order (Airbag 284s, Exit Music 264s — Paranoid
+# Android is explicit and hidden by the related tracks default filter)
+GET /albums/1?include=tracks&relatedQuery[tracks][sort]=-duration
+  → data.relationships.tracks.data = [tracks/1, tracks/3]
+
+# narrow the linkage by the relation's own scoped filter
+GET /albums/1?include=tracks&relatedQuery[tracks][filter][longerThan]=280
+  → [tracks/1]
+
+# a collection include windows EACH parent's relationship to its own page 1
+GET /albums?include=tracks&relatedQuery[tracks][sort]=-duration
+  → album 1 → [tracks/1, tracks/3];  album 2 → [tracks/4]
+
+# the rQ shorthand is identical; on a [path][op] conflict the canonical wins
+GET /albums/1?include=tracks&rQ[tracks][sort]=-duration
+```
+
+- The vocabulary is exactly the related-collection **endpoint's**: the related
+  `tracks` resource's own keys (`?...[sort]=title`, `?...[filter][explicit]=true`)
+  **merged** with the relation's scoped `duration`/`longerThan` (bundle ADR 0044). An
+  **unknown** key is the same `400` as the endpoint, with the **plain-form** key in
+  `source.parameter` (`filter[nope]`, not the `relatedQuery[…]` form).
+- A rendered to-many under the profile carries its pagination links — `first`/`prev`/
+  `next` (+`last` **only when the relation is `countable()`**, preserving the Slice 1
+  count-free vs countable distinction) — in its relationship object's `links`, in the
+  spec's **plain form** against the relationship-linkage endpoint
+  (`/albums/1/relationships/tracks?sort=-duration&page[number]=2`), **never** the
+  `relatedQuery[…]` form. `albums.tracks` (countable) emits a `last`; `users.playlists`
+  (non-countable) paginates count-free with no `last`.
+
+The bundle's `docs/relationships.md` (bundle ADR 0053, core ADR 0058) documents the
+full surface. On a **collection** include each parent's relationship is windowed to its
+own page 1 independently by a **portable per-parent query** on every provider — the
+Doctrine provider reuses its per-parent scoped (or many-to-many `IN`-subquery) query,
+the in-memory provider applies the criteria in PHP. A single windowed native batch
+(`ROW_NUMBER() OVER (PARTITION BY …)` where the platform supports window functions) is
+a **deferred optimization, not a correctness requirement** (bundle ADR 0053). A relation
+whose linkage is *derived* rather than a plain Doctrine association (the pivot
+`playlists.orderedTracks` here) is addressed at its own endpoint, not from a parent
+request.
+
 ## Validating filter values
 
 A value-carrying filter can **declare value constraints**, validated by the bundle
@@ -467,9 +588,15 @@ See [`docs/relationships.md`](../../docs/relationships.md) and
   a coherent object graph. The store-provided rows carry no hand-set ids — the
   database assigns them in persist order (`1, 2, 3, …`).
 - **`tests/`** — the spec-grouped conformance suites, including
-  **`tests/IdStrategyTest.php`** (the id-strategy matrix end to end) and
+  **`tests/IdStrategyTest.php`** (the id-strategy matrix end to end),
   **`tests/SelfLinkTest.php`** (the convention resource + top-level `self` links and
-  the `devices` opt-out).
+  the `devices` opt-out), **`tests/RelationCountTest.php`** (countable relations:
+  `?withCount` relationship-object totals, batched across a collection, and the
+  count-free related endpoint), and **`tests/RelationshipQueriesProfileTest.php`**
+  (the Relationship Queries profile: per-relationship `sort`/`filter` from the primary
+  request, per-parent windowing on a collection include, the `rQ` shorthand, an
+  unknown-key `400`, and the count-free vs countable relationship-object pagination
+  links — all gated on negotiating the profile).
 
 ## Running it
 

@@ -418,6 +418,19 @@ final class JsonApiBundle extends AbstractBundle
                     // Doctrine application that maps an entity, else null (core then
                     // treats every relation as loaded).
                     '$relationshipLoadState' => service(DoctrineRelationshipLoadState::class)->nullOnInvalid(),
+                    // The per-request count seam holder (bundle ADR 0052): a stable
+                    // service threaded into the memoized Server once, whose batched
+                    // backing the handler swaps per read so the render emits
+                    // meta.total for ?withCount-named countable relations. Always
+                    // present (it is provider-agnostic — the batch fill is the
+                    // provider's job), so no nullOnInvalid().
+                    '$relationshipCount' => service(\haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipCount::class),
+                    // The per-request relationship-window seam holder (bundle ADR
+                    // 0053): the page-1 windowing twin of the count holder, threaded
+                    // into the memoized Server once so the handler can swap each
+                    // profile read's windowed pages into the render. Always present
+                    // (provider-agnostic — the batch fill is the provider's job).
+                    '$relationshipPagination' => service(\haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipPagination::class),
                     // This server's name + the dispatcher the serving bridge fires
                     // the bundle ServingEvent through (bundle ADR 0042); the
                     // dispatcher is optional (the lifecycle-hook seam is off when

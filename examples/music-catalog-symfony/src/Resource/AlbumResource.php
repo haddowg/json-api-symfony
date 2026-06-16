@@ -127,6 +127,10 @@ final class AlbumResource extends AbstractResource
                 ->paginate(PagePaginator::make()->withDefaultPerPage(2))
                 ->withFilters(Where::make('longerThan', 'length_seconds', '>')->integer())
                 ->withSorts(SortByField::make('duration', 'length_seconds'))
+                // Countable (bundle ADR 0052): the related-collection endpoint emits
+                // meta.page.total + a last link, and ?withCount=tracks activates the
+                // relationship-object meta.total on an album.
+                ->countable()
                 ->linkageOnlyWhenLoaded(),
         ];
     }

@@ -98,6 +98,31 @@ final class InMemoryStore
         return $this->itemsById[$id] ?? null;
     }
 
+    /**
+     * The JSON:API id of a stored `$item`, or `null` when the store does not hold
+     * it. Used by {@see InMemoryDataProvider::countRelated()} to key a relation's
+     * batched counts by the parent's wire id without needing the (write-only)
+     * identifier closure — a read-seeded store reverse-looks-up the id from its
+     * id-keyed map, so a read-only fixture can answer a count too. When the closure
+     * IS set it is preferred (an exact, O(1) answer for a managed item).
+     */
+    public function idOf(object $item): ?string
+    {
+        try {
+            $id = ($this->identify)($item);
+            if ($id !== '') {
+                return $id;
+            }
+        } catch (\LogicException) {
+            // A read-only store has no identifier closure: fall through to the
+            // reverse lookup off the id-keyed seed map.
+        }
+
+        $found = \array_search($item, $this->itemsById, true);
+
+        return $found === false ? null : (string) $found;
+    }
+
     public function save(object $item): void
     {
         $id = ($this->identify)($item);

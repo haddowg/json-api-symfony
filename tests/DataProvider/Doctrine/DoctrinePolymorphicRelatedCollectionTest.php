@@ -57,6 +57,32 @@ final class DoctrinePolymorphicRelatedCollectionTest extends TestCase
         );
     }
 
+    #[Test]
+    public function itThrowsForCountingAPolymorphicToManyRelationship(): void
+    {
+        // The same boundary on the count seam (bundle ADR 0052): a polymorphic
+        // to-many's members span entity classes, so they cannot be one grouped
+        // COUNT — the guard fires before any EntityManager use, so a host supplies a
+        // custom provider to count across types.
+        $relation = MorphToMany::make('items')->types('notes', 'images');
+
+        $provider = new DoctrineDataProvider(
+            $this->createStub(EntityManagerInterface::class),
+            [],
+            new IdEncoderResolver(new ResourceLocator($this->emptyContainer(), [])),
+        );
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('items');
+
+        $provider->countRelated(
+            'libraries',
+            [new \stdClass()],
+            $relation,
+            $this->createStub(JsonApiRequestInterface::class),
+        );
+    }
+
     private function emptyContainer(): ContainerInterface
     {
         return new class implements ContainerInterface {

@@ -82,7 +82,7 @@ final class InMemoryDataProvider implements DataProviderInterface
 
     public function fetchCollection(string $type, CollectionCriteria $criteria): CollectionResult
     {
-        return $this->applyAndWindow($criteria, $this->store->all());
+        return $this->applyAndWindow($criteria, $this->store->all(), countable: true);
     }
 
     public function fetchRelatedCollection(
@@ -95,13 +95,67 @@ final class InMemoryDataProvider implements DataProviderInterface
         // Read the related objects off the parent via the relation's public
         // accessor (honours storedAs/extractUsing; the default accessor returns
         // the stored related collection), then run the same criteria pipeline as
-        // a primary collection fetch.
+        // a primary collection fetch. A non-countable relation paginates
+        // count-free (no total, the page driven by a limit+1 probe); a countable
+        // one counts as before (bundle ADR 0052).
         $related = $relation->readValue($parent, $request);
         \assert(\is_iterable($related));
 
         $items = \is_array($related) ? \array_values($related) : \iterator_to_array($related, false);
 
-        return $this->applyAndWindow($criteria, $items);
+        return $this->applyAndWindow($criteria, $items, $relation->isCountable());
+    }
+
+    /**
+     * The in-memory witness counts each parent's related set: it reads the related
+     * objects off every parent through the relation's public accessor and counts
+     * them, keying by the parent's wire id (bundle ADR 0052). A polymorphic to-many
+     * is supported here — the mixed members are still a single iterable off the
+     * parent, so they count like any other (the documented in-memory support, vs the
+     * Doctrine boundary). A parent the store cannot identify is skipped.
+     *
+     * @param list<object> $parents
+     *
+     * @return array<string, int>
+     */
+    public function countRelated(
+        string $type,
+        array $parents,
+        RelationInterface $relation,
+        JsonApiRequestInterface $request,
+    ): array {
+        $counts = [];
+        foreach ($parents as $parent) {
+            $id = $this->store->idOf($parent);
+            if ($id === null) {
+                continue;
+            }
+
+            $related = $relation->readValue($parent, $request);
+            $counts[$id] = \is_countable($related)
+                ? \count($related)
+                : \iterator_count($this->asIterator($related));
+        }
+
+        return $counts;
+    }
+
+    /**
+     * Normalizes a relation's read value to an iterator so a non-countable Traversable
+     * can be counted by {@see \iterator_count()}. A non-iterable value (an empty
+     * to-many that read as null/scalar) becomes an empty iterator (count 0).
+     */
+    private function asIterator(mixed $related): \Iterator
+    {
+        if ($related instanceof \Iterator) {
+            return $related;
+        }
+
+        if ($related instanceof \Traversable) {
+            return new \IteratorIterator($related);
+        }
+
+        return new \ArrayIterator([]);
     }
 
     /**
@@ -125,11 +179,18 @@ final class InMemoryDataProvider implements DataProviderInterface
      * criteria carry an {@see OffsetWindow} — the shared tail of
      * {@see fetchCollection()} and {@see fetchRelatedCollection()}.
      *
+     * When `$countable` is false (a non-countable related to-many, bundle ADR 0052)
+     * the window is built **count-free**: the result carries no total, only a
+     * `hasMore` flag derived from whether items remain past the window — so the
+     * handler renders a count-free page (no `total`/`last`). A primary collection
+     * and a countable relation pass `$countable` true and carry the pre-window
+     * total as before.
+     *
      * @param list<mixed> $items
      *
      * @return CollectionResult<object>
      */
-    private function applyAndWindow(CollectionCriteria $criteria, array $items): CollectionResult
+    private function applyAndWindow(CollectionCriteria $criteria, array $items, bool $countable): CollectionResult
     {
         /** @var list<object> $items */
         $items = $this->applier->apply(
@@ -153,9 +214,16 @@ final class InMemoryDataProvider implements DataProviderInterface
             ));
         }
 
-        return new CollectionResult(
-            \array_slice($items, $window->offset, $window->limit),
-            \count($items),
-        );
+        $page = \array_slice($items, $window->offset, $window->limit);
+
+        if (!$countable) {
+            // Count-free: a further page exists when the filtered set holds more
+            // than this window covers (the in-memory analogue of a limit+1 probe).
+            $hasMore = \count($items) > $window->offset + \count($page);
+
+            return new CollectionResult($page, total: null, windowed: true, hasMore: $hasMore);
+        }
+
+        return new CollectionResult($page, \count($items));
     }
 }

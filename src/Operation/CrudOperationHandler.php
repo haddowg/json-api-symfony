@@ -46,6 +46,8 @@ use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
 use haddowg\JsonApiBundle\DataProvider\PivotAwareProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\PivotFields;
 use haddowg\JsonApiBundle\DataProvider\PreloadsIncludesInterface;
+use haddowg\JsonApiBundle\DataProvider\RelationCountBatcher;
+use haddowg\JsonApiBundle\DataProvider\RelationshipWindowBatcher;
 use haddowg\JsonApiBundle\Event\AfterCreateEvent;
 use haddowg\JsonApiBundle\Event\AfterDeleteEvent;
 use haddowg\JsonApiBundle\Event\AfterFetchCollectionEvent;
@@ -60,6 +62,8 @@ use haddowg\JsonApiBundle\Event\BeforeSaveEvent;
 use haddowg\JsonApiBundle\Event\BeforeUpdateEvent;
 use haddowg\JsonApiBundle\Serializer\PivotMetaSerializer;
 use haddowg\JsonApiBundle\Serializer\PivotParentSerializer;
+use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipCount;
+use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipPagination;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
 use haddowg\JsonApiBundle\Validation\FilterValueValidator;
@@ -150,6 +154,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         private readonly ?ResourceValidator $validator = null,
         private readonly ?EventDispatcherInterface $dispatcher = null,
         private readonly ?FilterValueValidator $filterValues = null,
+        private readonly ?RelationCountBatcher $countBatcher = null,
+        private readonly ?RequestScopedRelationshipCount $relationshipCount = null,
+        private readonly ?RelationshipWindowBatcher $windowBatcher = null,
+        private readonly ?RequestScopedRelationshipPagination $relationshipPagination = null,
     ) {}
 
     public function handle(\haddowg\JsonApi\Operation\JsonApiOperationInterface $operation): DataResponse|RelatedResponse|IdentifierResponse|NoContentResponse|ErrorResponse
@@ -190,6 +198,16 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // provider that opts into the capability (the Doctrine reference does);
             // a single resource is preloaded as a one-element list (ADR 0035).
             $this->preloadIncludes($provider, [$model], $type, $request);
+
+            // Under the Relationship Queries profile, window each rendered to-many
+            // relation to page 1 of its profile-ordered/filtered set (the relatedQuery
+            // sort/filter) and install the relationship-object pagination links seam
+            // (bundle ADR 0053). A no-op when the profile is not negotiated.
+            $this->applyRelationshipWindows($server, $type, [$model], $request);
+
+            // Install the ?withCount batched counts for this single resource so its
+            // relationship objects render meta.total (bundle ADR 0052).
+            $this->applyRelationshipCounts($server, $type, [$model], $request);
 
             $response = DataResponse::fromResource($model, $serializer);
 
@@ -248,6 +266,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $this->preloadIncludes($provider, [$first], $type, $request);
             }
 
+            // A singular filter collapses to a single resource; window + count it too.
+            $this->applyRelationshipWindows($server, $type, $first === null ? [] : [$first], $request);
+            $this->applyRelationshipCounts($server, $type, $first === null ? [] : [$first], $request);
+
             return $this->afterFetchCollection(
                 DataResponse::fromResource($first, $serializer),
                 $type,
@@ -259,6 +281,16 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // Batch eager-load the effective ?include tree across the whole page/collection
         // so includes do not N+1 (ADR 0035).
         $this->preloadIncludes($provider, $items, $type, $request);
+
+        // Under the profile, window each parent's rendered to-many relations to page
+        // 1 of their profile-ordered/filtered set — the per-parent windowed page 1 of
+        // a collection include (bundle ADR 0053). A no-op when the profile is absent.
+        $this->applyRelationshipWindows($server, $type, $items, $request);
+
+        // Install the ?withCount batched counts across the whole page in ONE grouped
+        // count per relation (no N+1), so every parent's relationship objects render
+        // meta.total (bundle ADR 0052).
+        $this->applyRelationshipCounts($server, $type, $items, $request);
 
         $response = $paginator !== null && $request !== null && $result->total !== null
             ? DataResponse::fromPage($paginator->paginate($request, $items, $result->total), $serializer)
@@ -443,10 +475,22 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $serializer = new PivotMetaSerializer($server->serializerFor($relatedType), $pivotResult->pivotMap);
                 $items = \is_array($pivotResult->items) ? \array_values($pivotResult->items) : \iterator_to_array($pivotResult->items, false);
                 $this->preloadIncludes($relatedProvider, $items, $relatedType, $request);
+                $this->applyRelationshipCounts($server, $relatedType, $items, $request);
 
                 if ($paginator !== null && $pivotResult->total !== null) {
                     return RelatedResponse::fromPage(
                         $paginator->paginate($request, $items, $pivotResult->total),
+                        $serializer,
+                    );
+                }
+
+                // A non-countable pivot relation's windowed fetch carries no total,
+                // only `hasMore` — render a count-free page (self/first/prev/next, no
+                // total/last) so the pivot endpoint honours the universal countable()
+                // gate exactly as the plain path does (bundle ADR 0052).
+                if ($paginator !== null && $pivotResult->windowed) {
+                    return RelatedResponse::fromPage(
+                        $paginator->paginateWithoutCount($request, $items, $pivotResult->hasMore),
                         $serializer,
                     );
                 }
@@ -467,11 +511,25 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $items = \is_array($result->items) ? \array_values($result->items) : \iterator_to_array($result->items, false);
             if (!$polymorphic) {
                 $this->preloadIncludes($relatedProvider, $items, $relatedType, $request);
+                // ?withCount on a related collection counts the RELATED type's own
+                // countable relations across the related page (bundle ADR 0052); a
+                // polymorphic page spans types, so it carries no single related type.
+                $this->applyRelationshipCounts($server, $relatedType, $items, $request);
             }
 
             if ($paginator !== null && $result->total !== null) {
                 return RelatedResponse::fromPage(
                     $paginator->paginate($request, $items, $result->total),
+                    $serializer,
+                );
+            }
+
+            // A count-free page: a non-countable relation's windowed fetch carries no
+            // total, only `hasMore` — render a count-free page (self/first/prev/next,
+            // no total/last) via the paginator's "do not count" mode (bundle ADR 0052).
+            if ($paginator !== null && $result->windowed) {
+                return RelatedResponse::fromPage(
+                    $paginator->paginateWithoutCount($request, $items, $result->hasMore),
                     $serializer,
                 );
             }
@@ -789,6 +847,60 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         }
 
         $provider->preloadIncludes($entities, $type, $request);
+    }
+
+    /**
+     * Installs the per-render count seam for a read of `$type` over its fetched
+     * `$items`: the {@see RelationCountBatcher} runs ONE grouped count per
+     * `?withCount`-named countable relation across the whole page (no N+1), and the
+     * batched map is swapped into the request-scoped holder the memoized Server
+     * renders through, so core emits `meta.total` on each relationship object the
+     * request named (bundle ADR 0052).
+     *
+     * Called on every read (single resource, collection, related collection) so it
+     * also CLEARS the holder (installs `null`) when the request named no
+     * `?withCount` — a prior request's counts never leak into this render. A no-op
+     * when the seam is not wired (the batcher/holder are optional) or there is no
+     * request to read `?withCount` from.
+     *
+     * @param list<object> $items the fetched page whose relationship counts to batch
+     */
+    private function applyRelationshipCounts(Server $server, string $type, array $items, ?JsonApiRequestInterface $request): void
+    {
+        if ($this->countBatcher === null || $this->relationshipCount === null) {
+            return;
+        }
+
+        $this->relationshipCount->set(
+            $request === null ? null : $this->countBatcher->batch($server, $type, $items, $request),
+        );
+    }
+
+    /**
+     * Installs the per-render relationship-window seam for a read of `$type` over
+     * its fetched `$items` under the Relationship Queries profile (bundle ADR 0053):
+     * the {@see RelationshipWindowBatcher} windows each rendered to-many relation to
+     * page 1 of its `relatedQuery`-ordered/filtered set (writing that page back onto
+     * each parent so the linkage `data` IS page 1), and the windowed map is swapped
+     * into the request-scoped holder the memoized Server renders through, so core
+     * emits the relationship object's pagination links in plain form.
+     *
+     * Called on every read so it also CLEARS the holder (installs `null`) when the
+     * request did not negotiate the profile — a prior profile request's pages never
+     * leak into this render. A no-op when the seam is not wired (the batcher/holder
+     * are optional) or there is no request to read the profile/relatedQuery from.
+     *
+     * @param list<object> $items the fetched page whose rendered to-many relations to window
+     */
+    private function applyRelationshipWindows(Server $server, string $type, array $items, ?JsonApiRequestInterface $request): void
+    {
+        if ($this->windowBatcher === null || $this->relationshipPagination === null) {
+            return;
+        }
+
+        $this->relationshipPagination->set(
+            $request === null ? null : $this->windowBatcher->batch($server, $type, $items, $request),
+        );
     }
 
     /**

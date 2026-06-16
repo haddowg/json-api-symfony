@@ -138,8 +138,43 @@ final class PivotTest extends MusicCatalogKernelTestCase
 
         self::assertSame(['3'], $this->ids($document));
 
+        // `orderedTracks` is NON-countable, so the endpoint paginates count-free: no
+        // meta.page.total and no `last`/`next` (the single match is the only page).
         $page = $this->pageMeta($document);
-        self::assertSame(1, $page['total'] ?? null);
+        self::assertArrayNotHasKey('total', $page, 'a non-countable pivot endpoint runs no COUNT');
+
+        $links = $document['links'] ?? null;
+        self::assertIsArray($links);
+        self::assertArrayNotHasKey('last', $links, 'a count-free page has no `last` link');
+        self::assertArrayNotHasKey('next', $links, 'the single match is the only page');
+    }
+
+    #[Test]
+    #[Group('spec:fetching-pagination')]
+    public function aNonCountablePivotEndpointPaginatesCountFree(): void
+    {
+        // `orderedTracks` is non-countable: a windowed page runs no COUNT (bundle ADR
+        // 0052). Morning Mix shows two members (Exit Music 3 @ 1, Airbag 1 @ 2; the
+        // explicit Paranoid Android is hidden). page[size]=1 yields page one with a
+        // `next` (a further page follows), NO meta.page.total and NO `last` — the gate
+        // reaches the pivot path exactly as the plain path.
+        $document = $this->fetch(
+            '/playlists/' . self::PLAYLIST_ID . '/orderedTracks?sort=position&page[size]=1&page[number]=1',
+        );
+
+        self::assertSame(['3'], $this->ids($document));
+
+        $page = $this->pageMeta($document);
+        self::assertArrayNotHasKey('total', $page, 'a non-countable pivot endpoint omits the total');
+
+        $links = $document['links'] ?? null;
+        self::assertIsArray($links);
+        self::assertArrayHasKey('next', $links, 'a further page is signalled by `next`');
+        self::assertArrayNotHasKey('last', $links, 'a count-free page omits the `last` link');
+
+        // The member still carries its pivot meta on the count-free page.
+        $byId = $this->byId($document);
+        self::assertSame(1, $this->pivotField($byId['3'] ?? [], 'position'));
     }
 
     #[Test]

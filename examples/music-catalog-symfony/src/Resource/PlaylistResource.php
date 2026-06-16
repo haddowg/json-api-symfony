@@ -111,7 +111,11 @@ final class PlaylistResource extends AbstractResource implements ResourceLifecyc
             BelongsTo::make('owner')->type('users'),
             BelongsToMany::make('tracks')
                 ->type('tracks')
-                ->paginate(PagePaginator::make()->withDefaultPerPage(2)),
+                ->paginate(PagePaginator::make()->withDefaultPerPage(2))
+                // Countable (bundle ADR 0052): the related-collection endpoint emits
+                // a total over the many-to-many scope, and ?withCount=tracks activates
+                // the relationship-object meta.total on a playlist.
+                ->countable(),
 
             // The pivot witness (bundle ADRs 0045/0046). `orderedTracks` is the same
             // far `tracks` type, but backed by the PlaylistEntry association entity
@@ -161,6 +165,11 @@ final class PlaylistResource extends AbstractResource implements ResourceLifecyc
 
                     return $tracks;
                 })
+                // Deliberately NOT countable() — `orderedTracks` is the example's
+                // non-countable pivot witness: its related endpoint paginates
+                // count-free (no meta.page.total, no `last`) and ?withCount=orderedTracks
+                // is a 400 (RelationCountTest). The countable pivot witness is
+                // `playlists.tracks` (the plain belongsToMany).
                 ->paginate(PagePaginator::make()->withDefaultPerPage(2)),
         ];
     }

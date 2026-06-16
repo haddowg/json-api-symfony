@@ -49,6 +49,88 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
 
     #[Test]
     #[Group('spec:fetching-relationships')]
+    public function withCountOnAPivotRelationCountsDistinctMembers(): void
+    {
+        // The pivot relation is countable(): ?withCount=tracks emits meta.total on
+        // the tracks relationship object, counting DISTINCT far members. Playlist 1
+        // has three distinct tracks (Intro@1, Outro@2, Bridge@3), so the total is 3.
+        $document = $this->fetchDocument('/playlists/1?withCount=tracks');
+
+        self::assertSame(3, $this->relationshipTotal($document, 'tracks'));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    public function withCountOnAPivotRelationMatchesTheEndpointTotalUnderDuplicateMembership(): void
+    {
+        // Playlist 3 carries duplicate membership (Intro at two positions + Outro):
+        // three association rows over TWO distinct tracks. The ?withCount total counts
+        // DISTINCT far members (2), so it agrees with the related-collection endpoint's
+        // page total (also 2, see aPivotRelatedCollectionDedupesDuplicateMembership)
+        // and the deduped rendered linkage — one consistent `total` semantic (ADR 0052).
+        $document = $this->fetchDocument('/playlists/3?withCount=tracks');
+
+        self::assertSame(2, $this->relationshipTotal($document, 'tracks'));
+
+        // The endpoint reports the SAME total for the same relation/parent.
+        $endpoint = $this->fetchDocument('/playlists/3/tracks?sort=position');
+        $meta = $endpoint['meta'] ?? null;
+        self::assertIsArray($meta);
+        $page = $meta['page'] ?? null;
+        self::assertIsArray($page);
+        self::assertSame(2, $page['total'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    public function theRequestScopedCountHolderIsAResettableSharedService(): void
+    {
+        // The request-scoped count holder is a singleton, so a ?withCount read's counts
+        // would otherwise survive into a later write/linkage render in a long-lived
+        // container (a worker reusing the kernel). It is wired as a SHARED service that
+        // implements ResetInterface, so framework autoconfiguration tags it kernel.reset
+        // and the container clears it between messages. This asserts the wiring (a single
+        // shared instance, resettable); the set/reset contract itself is covered by
+        // RequestScopedRelationshipCountTest.
+        $container = static::getContainer();
+
+        $holder = $container->get(\haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipCount::class);
+        self::assertInstanceOf(\Symfony\Contracts\Service\ResetInterface::class, $holder);
+
+        // The same shared instance is handed back each time — a per-request reset of the
+        // one holder is what clears a prior request's counts (a non-shared holder would
+        // never see the leak in the first place, but the count seam needs the one Server
+        // to render through it).
+        self::assertSame($holder, $container->get(\haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipCount::class));
+    }
+
+    /**
+     * The `meta.total` of the primary resource's named relationship object.
+     *
+     * @param array<string, mixed> $document
+     */
+    private function relationshipTotal(array $document, string $name): int
+    {
+        $data = $document['data'] ?? null;
+        self::assertIsArray($data);
+
+        $relationships = $data['relationships'] ?? null;
+        self::assertIsArray($relationships);
+
+        $relationship = $relationships[$name] ?? null;
+        self::assertIsArray($relationship);
+
+        $meta = $relationship['meta'] ?? null;
+        self::assertIsArray($meta);
+
+        $total = $meta['total'] ?? null;
+        self::assertIsInt($total);
+
+        return $total;
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
     public function aPivotRelationshipEndpointRendersPerMemberLinkageMeta(): void
     {
         $document = $this->fetchDocument('/playlists/1/relationships/tracks');
@@ -167,6 +249,37 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
         $page = $meta['page'] ?? null;
         self::assertIsArray($page);
         self::assertSame(2, $page['total'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    public function aNonCountablePivotRelatedEndpointPaginatesCountFree(): void
+    {
+        // `orderedTracks` is the SAME association entity as `tracks` but left
+        // NON-countable, so its related endpoint paginates count-free (bundle ADR
+        // 0052): page one of two over playlist 1's three distinct members holds two
+        // items, signals a further page through `next`, and emits NO total and NO
+        // `last` — the universal countable() gate reaches the pivot path.
+        $document = $this->fetchDocument('/playlists/1/orderedTracks?sort=position&page[size]=2&page[number]=1');
+
+        self::assertSame(['1', '2'], $this->ids($document));
+
+        $meta = $document['meta'] ?? null;
+        self::assertIsArray($meta);
+        $page = $meta['page'] ?? null;
+        self::assertIsArray($page);
+        self::assertArrayNotHasKey('total', $page, 'a non-countable pivot endpoint must not COUNT');
+
+        $links = $document['links'] ?? null;
+        self::assertIsArray($links);
+        self::assertArrayHasKey('next', $links, 'a further page is signalled by `next`');
+        self::assertArrayNotHasKey('last', $links, 'a count-free page has no `last` link');
+
+        // Each member still carries its pivot meta — the count-free path renders the
+        // same pivot values, only without the page total.
+        $byId = $this->byId($document);
+        self::assertSame(1, $this->pivotField($byId['1'] ?? [], 'position'));
+        self::assertSame(2, $this->pivotField($byId['2'] ?? [], 'position'));
     }
 
     #[Test]
