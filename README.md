@@ -56,7 +56,7 @@ Beyond convention CRUD it ships the capabilities a real JSON:API service needs:
 
 Doctrine, the validator, the opis linter and strict email are **opt-in** (`suggest`
 dependencies) — install one to enable that capability, leave it out and the path is
-simply absent. See the [optional-dependency matrix](docs/configuration.md).
+simply absent. See the [optional-dependency matrix](https://haddowg.github.io/json-api-symfony/configuration/).
 
 ## Installation
 
@@ -80,7 +80,7 @@ composer install
 CI resolves `dev-main` straight from GitHub (a VCS repository) with no extra
 checkout. Once core is published to Packagist this becomes a normal `composer
 require haddowg/json-api-symfony` with a `^1.0` core pin. The full recipe — and
-registering the bundle — is in [docs/install.md](docs/install.md).
+registering the bundle — is in [docs/install.md](https://haddowg.github.io/json-api-symfony/install/).
 
 ## Quickstart
 
@@ -130,7 +130,7 @@ That is the whole integration. You now have `GET /albums`, `GET /albums/{id}`,
 JSON:API 1.1 document over your entity — collections, sparse fieldsets, sorting,
 filtering, pagination, relationships, and validated writes — with no controller and
 no handler. The step-by-step build is in
-[docs/getting-started.md](docs/getting-started.md).
+[docs/getting-started.md](https://haddowg.github.io/json-api-symfony/getting-started/).
 
 ## Run the example live
 
@@ -149,24 +149,24 @@ It then serves on **http://localhost:8080**.
 
 ## Documentation
 
-The full guide lives in [`docs/`](docs/index.md). Start at
-[docs/index.md](docs/index.md), then:
+The full documentation is published at **[haddowg.github.io/json-api-symfony](https://haddowg.github.io/json-api-symfony/)**.
+Start at the [documentation index](https://haddowg.github.io/json-api-symfony/), then:
 
-- [install](docs/install.md) — the `dev-main` install recipe and bundle registration.
-- [getting-started](docs/getting-started.md) — build your first endpoint end to end.
-- [resources](docs/resources.md) — discovery, `#[AsJsonApiResource]`, and id strategies.
-- [routing](docs/routing.md) and [lifecycle](docs/lifecycle.md) — the request flow.
-- [doctrine](docs/doctrine.md) — the reference data layer (filters, sorts, related
-  collections), with [custom-data-providers](docs/custom-data-providers.md) and
-  [pagination](docs/pagination.md).
-- [relationships](docs/relationships.md) — relations, `?include`, `?withCount`,
+- [install](https://haddowg.github.io/json-api-symfony/install/) — the `dev-main` install recipe and bundle registration.
+- [getting-started](https://haddowg.github.io/json-api-symfony/getting-started/) — build your first endpoint end to end.
+- [resources](https://haddowg.github.io/json-api-symfony/resources/) — discovery, `#[AsJsonApiResource]`, and id strategies.
+- [routing](https://haddowg.github.io/json-api-symfony/routing/) and [lifecycle](https://haddowg.github.io/json-api-symfony/lifecycle/) — the request flow.
+- [doctrine](https://haddowg.github.io/json-api-symfony/doctrine/) — the reference data layer (filters, sorts, related
+  collections), with [custom-data-providers](https://haddowg.github.io/json-api-symfony/custom-data-providers/) and
+  [pagination](https://haddowg.github.io/json-api-symfony/pagination/).
+- [relationships](https://haddowg.github.io/json-api-symfony/relationships/) — relations, `?include`, `?withCount`,
   pivot data, and the relationship-queries profile.
-- [validation](docs/validation.md) — the Symfony Validator bridge.
-- [lifecycle-hooks](docs/lifecycle-hooks.md) and
-  [authorization](docs/authorization.md) — author seams and per-resource `security:`.
-- [multi-server and testing](docs/multi-server-and-testing.md),
-  [configuration](docs/configuration.md), [errors](docs/errors.md), and
-  [security](docs/security.md).
+- [validation](https://haddowg.github.io/json-api-symfony/validation/) — the Symfony Validator bridge.
+- [lifecycle-hooks](https://haddowg.github.io/json-api-symfony/lifecycle-hooks/) and
+  [authorization](https://haddowg.github.io/json-api-symfony/authorization/) — author seams and per-resource `security:`.
+- [multi-server and testing](https://haddowg.github.io/json-api-symfony/multi-server-and-testing/),
+  [configuration](https://haddowg.github.io/json-api-symfony/configuration/), [errors](https://haddowg.github.io/json-api-symfony/errors/), and
+  [security](https://haddowg.github.io/json-api-symfony/security/).
 
 The bundle builds on the core library's docs — when a page touches a core concept
 (`fields()`, the constraint vocabulary, the response value objects) it links the
