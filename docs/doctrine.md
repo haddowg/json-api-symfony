@@ -394,7 +394,7 @@ asserts exactly that composition.
 
 Source: [`DoctrineFilterHandler`](../src/DataProvider/Doctrine/DoctrineFilterHandler.php).
 
-### Relationship-existence filtering (`WhereHas` / `WhereThrough` / `WhereHasMatching`)
+### Relationship-existence filtering: `WhereHas`, `WhereThrough`, `WhereHasMatching`
 
 Three filters keep a row by what its *relationships* contain, never by a column on
 the row itself. All three execute as the single correlated `EXISTS` subquery

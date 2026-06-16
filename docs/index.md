@@ -158,7 +158,7 @@ JSON:API service needs. Each links the page that covers it in full:
 - **Constrained-existence filtering** — `WhereThrough` dotted-path traversal
   (`filter[author.name]=Smith`) as a correlated `EXISTS`, plus the `WhereHas`/
   `WhereDoesntHave` existence filters. See
-  [doctrine](doctrine.md#relationship-existence-filtering-wherehas--wherethrough--wherehasmatching).
+  [doctrine](doctrine.md#relationship-existence-filtering-wherehas-wherethrough-wherehasmatching).
 - **Lifecycle hooks** — per-operation author seams (`beforeCreate`, `afterSave`, …)
   as overridable resource methods *or* plain event subscribers. See
   [lifecycle-hooks](lifecycle-hooks.md).

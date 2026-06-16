@@ -1,0 +1,105 @@
+site_name: haddowg/json-api-symfony
+site_description: Symfony bundle for haddowg/json-api — idiomatic routing, validation, and a Doctrine data layer for JSON:API 1.1.
+site_url: https://haddowg.github.io/json-api-symfony/
+repo_url: https://github.com/haddowg/json-api-symfony
+repo_name: haddowg/json-api-symfony
+edit_uri: edit/main/docs/
+copyright: Released under the MIT Licence.
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - navigation.indexes
+    - content.code.copy
+    - content.code.annotate
+    - search.highlight
+    - search.suggest
+    - toc.follow
+  icon:
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.tabbed:
+      alternate_style: true
+
+plugins:
+  - search
+
+hooks:
+  - mkdocs_hooks.py
+
+validation:
+  nav:
+    # The ADRs are built (docs link to them by file) but deliberately not in the nav.
+    omitted_files: ignore
+  links:
+    anchors: warn
+
+# Working/analysis docs kept in the repo but not part of the published site.
+exclude_docs: |
+  IA-PLAN.md
+  api-platform-gap-analysis.md
+  laravel-gap-analysis.md
+  laravel-gap-build-plan.md
+  query-building-consolidation-review.md
+  step6-batched-related-fetch-design.md
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - install.md
+      - getting-started.md
+      - configuration.md
+  - Resources & capabilities:
+      - resources.md
+      - capability-composition.md
+      - custom-serializers-hydrators.md
+  - The Doctrine data layer:
+      - data-layer.md
+      - doctrine.md
+      - custom-data-providers.md
+  - Querying & relationships:
+      - relationships.md
+      - pagination.md
+  - Writing, validation & security:
+      - validation.md
+      - security.md
+      - authorization.md
+      - lifecycle.md
+      - lifecycle-hooks.md
+  - Routing, errors & operations:
+      - routing.md
+      - errors.md
+      - multi-server-and-testing.md
