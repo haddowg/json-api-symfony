@@ -5,8 +5,9 @@ JSON:API type work — discovery, routing, the data layer, validation — is wir
 **service tags and autoconfiguration**, not configuration keys (see
 [capability composition](capability-composition.md) and [the data layer](data-layer.md)).
 What `json_api:` configures is the small set of values that can't fall out of
-discovery: the API's `base_uri` and `version`, an optional structural linter
-toggle, and — for the multi-API case — additional named servers.
+discovery: the API's `base_uri` and `version`, the server default paginator's
+page-size cap, the `?include` nesting-depth cap, an optional structural linter toggle,
+and — for the multi-API case — additional named servers.
 
 There is **no `Configuration.php` and no `Extension` class**. The tree is declared
 inline in the bundle's `configure()` (an `AbstractBundle`), and the extension alias
@@ -15,13 +16,16 @@ inline in the bundle's `configure()` (an `AbstractBundle`), and the extension al
 
 ## The config tree
 
-Four keys, all optional:
+Six keys, all optional:
 
 ```yaml
 # config/packages/json_api.yaml
 json_api:
     base_uri: 'https://music.example'
     version: '1.1'
+    max_include_depth: 3
+    pagination:
+        max_per_page: 50
     servers:
         admin:
             base_uri: 'https://admin.music.example'
@@ -35,6 +39,8 @@ witness).
 | --- | --- | --- | --- |
 | `base_uri` | scalar | `''` | The absolute base URI the implicit `default` server prepends to every generated link. |
 | `version` | scalar | `'1.1'` | The JSON:API version the implicit `default` server advertises. |
+| `max_include_depth` | int | `3` | The cap on `?include` nesting depth (relationship hops from the primary resource). `0` is unlimited. A resource's own `maxIncludeDepth()` overrides it. |
+| `pagination.max_per_page` | int | `100` | The page-size cap the built-in server default paginator clamps `page[size]`/`page[limit]` to. `0` installs no built-in default (those collections render unpaginated). |
 | `schema_validation` | bool | `false` | Registers the optional opis structural linter. Enabling it without `opis/json-schema` **fails the build**. |
 | `servers` | map | `[]` | Additional **named** servers, keyed by name (ADR 0034). |
 
@@ -51,11 +57,121 @@ Two of the keys surface as container parameters you can read elsewhere:
 | --- | --- | --- |
 | `haddowg_json_api.base_uri` | `base_uri` | the configured (or empty) base URI |
 | `haddowg_json_api.version` | `version` | the configured (or `'1.1'`) version |
+| `haddowg_json_api.max_include_depth` | `max_include_depth` | the resolved include-depth cap (default `3`, `0` = unlimited) |
+| `haddowg_json_api.pagination.max_per_page` | `pagination.max_per_page` | the resolved page-size cap (default `100`, `0` = no built-in default) |
 | `haddowg_json_api.servers` | derived | the list of all server names, e.g. `['default', 'admin']` |
 
 `haddowg_json_api.servers` is the resolved name list — always including the implicit
 `default` — that the compiler pass reads to validate resource-to-server assignments
 and bucket each type onto the right server.
+
+### `pagination.max_per_page`
+
+The bundle gives every server a **default paginator** — by default a
+page-number/page-size strategy
+([core `PagePaginator`](https://github.com/haddowg/json-api/blob/main/docs/pagination.md#the-four-strategies)) —
+and `pagination.max_per_page` is the **cap** it clamps a client's `page[size]` to.
+A client controls the page size, so without a ceiling `?page[size]=1000000` would
+force your store to fetch a million rows — a page-size denial-of-service vector.
+The cap closes it by clamping the resolved size down to the maximum (the same
+clamp-don't-`400` stance core takes for every garbage `page[…]` value), so an
+over-large request returns the capped number of items with a `200` and
+`meta.page.perPage` reports the cap.
+
+```yaml
+json_api:
+    pagination:
+        max_per_page: 50   # ?page[size]=1000 → 50 items; default 100
+```
+
+The cap is **on by default at `100`** — every collection resolving to the server
+default is protected without any configuration. Set `0` to install **no** built-in
+default paginator: collections that resolve to the server default then render
+unpaginated (the whole list, no `page` links). A resource (or relation) that
+declares its own
+[`pagination()`](https://github.com/haddowg/json-api/blob/main/docs/pagination.md#declaring-a-paginator)
+paginator overrides the server default entirely and sets its own cap with
+[`withMaxPerPage()`](https://github.com/haddowg/json-api/blob/main/docs/pagination.md#capping-the-page-size).
+The cap concept, the wither and the disable-with-`0` semantics are all owned by
+**core** — see core
+[pagination.md → Capping the page size](https://github.com/haddowg/json-api/blob/main/docs/pagination.md#capping-the-page-size).
+
+### `max_include_depth`
+
+A compound document can grow without bound in two ways: a deeply nested
+`?include=a.b.c.d.e` walks the relationship graph as far as the client asks, and a
+**default-included** relation pointing back at its own type (or a mutual pair — `A`
+default-includes `B`, `B` default-includes `A`) recurses the renderer forever. Both are
+denial-of-service vectors, and the second is a latent infinite loop. `max_include_depth`
+closes both: it caps the **nesting depth** of an `?include`, where depth is the number
+of relationship hops from the primary resource — `?include=a` is depth 1,
+`?include=a.b.c` is depth 3.
+
+```yaml
+json_api:
+    max_include_depth: 3   # a.b.c ok; a.b.c.d → 400
+```
+
+The cap is **on by default at `3`** — a request for a path deeper than the cap is a
+`400` (`INCLUSION_DEPTH_EXCEEDED`), and a default-include cascade silently stops at the
+cap (so a mutual default-include cycle terminates rather than looping). Set `0` for
+**unlimited** (core's unopinionated default). A resource overrides the server default
+for requests where it is the primary/root type by implementing core's
+`IncludeControlsInterface::maxIncludeDepth()`:
+
+```php
+final class CommentResource extends AbstractResource
+{
+    public function maxIncludeDepth(): ?int
+    {
+        return 1; // this type only ever compounds one hop deep
+    }
+}
+```
+
+The depth cap is one of three composing **include safeguards** (bundle ADR 0037). The
+other two are author-declared, not config: a per-relation `cannotBeIncluded()` opt-out
+and a root-scoped allowed-include-paths whitelist
+(`IncludeControlsInterface::getAllowedIncludePaths()`). See
+[relationships → controlling what can be included](relationships.md#controlling-what-can-be-included)
+for all three. The depth-cap concept and the `IncludeControlsInterface` seam are owned by
+**core**; the bundle supplies only the opinionated default of `3` and threads it to each
+server.
+
+### Customising the server default paginator
+
+The built-in default is `PagePaginator`. To make a server default to a different
+strategy — a [`CursorPaginator`](https://github.com/haddowg/json-api/blob/main/docs/pagination.md#the-four-strategies),
+an `OffsetPaginator`, or your own — register a `PaginatorInterface` service under a
+**conventional id**. The `ServerFactory` reads it via `nullOnInvalid()`, so
+registering the service is the entire wiring (no tag, no compiler pass). Two ids,
+resolved **by-server-first then generic**:
+
+| Service id | Applies to |
+| --- | --- |
+| `haddowg.json_api.default_paginator` | every server (the generic default) |
+| `haddowg.json_api.default_paginator.<name>` | one server only (overrides the generic for that server) |
+
+```yaml
+# config/services.yaml
+services:
+    # Cursor pagination for every server's default…
+    haddowg.json_api.default_paginator:
+        class: haddowg\JsonApi\Pagination\CursorPaginator
+
+    # …but keep the page-number default on the `admin` server only.
+    haddowg.json_api.default_paginator.admin:
+        class: haddowg\JsonApi\Pagination\PagePaginator
+        factory: [haddowg\JsonApi\Pagination\PagePaginator, make]
+```
+
+A custom paginator owns its own page-size ceiling, so `pagination.max_per_page`
+applies only to the built-in `PagePaginator` fallback — set a cap on your own
+paginator with its own `withMaxPerPage()` where the strategy supports one. The full
+resolution order a server walks is: this-server service → generic service →
+built-in capped `PagePaginator` (when `max_per_page > 0`) → none (`max_per_page: 0`).
+As always, a resource/relation `pagination()` still wins over whatever the server
+resolves.
 
 ### `schema_validation`
 

@@ -121,6 +121,26 @@ final class ReadQueryTest extends MusicCatalogKernelTestCase
 
     #[Test]
     #[Group('spec:fetching-sorting')]
+    public function aDefaultSortAppliesWhenNoSortIsRequested(): void
+    {
+        // AlbumResource declares defaultSort() = releasedAt descending. With no
+        // ?sort the visible albums (1 OK Computer 1997, 2 Dummy 1994; album 3 is
+        // hidden by the published scope) order newest-first over the Doctrine
+        // provider — an ORDER BY releasedAt DESC, not storage order.
+        self::assertSame(['1', '2'], $this->albumIds($this->fetch('/albums')));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-sorting')]
+    public function anExplicitSortOverridesTheDefaultEntirely(): void
+    {
+        // ?sort=title overrides the releasedAt-descending default: ascending title
+        // is Dummy (2) before OK Computer (1), the reverse of the default order.
+        self::assertSame(['2', '1'], $this->albumIds($this->fetch('/albums?sort=title')));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-sorting')]
     #[Group('spec:errors')]
     public function anUnknownSortFieldRendersA400ErrorDocument(): void
     {
@@ -204,6 +224,37 @@ final class ReadQueryTest extends MusicCatalogKernelTestCase
         self::assertArrayHasKey('artists:2', $index);
     }
 
+    // --- page-size cap -------------------------------------------------------
+
+    #[Test]
+    #[Group('spec:fetching-pagination')]
+    public function anOverLargePageSizeIsCappedNotHonoured(): void
+    {
+        // The example sets json_api.pagination.max_per_page: 50 (config/packages/
+        // json_api.yaml), so the server default paginator clamps an abusive
+        // page[size] to 50 — the page-size DoS vector is closed by the clamp, not a
+        // 400. The whole request runs through the Doctrine provider as real DQL.
+        $document = $this->fetch('/tracks?page[size]=1000000');
+
+        // 200 with at most the cap's worth of items (here bounded by the 3 available).
+        self::assertLessThanOrEqual(50, \count($this->trackIds($document)));
+
+        $page = $this->pageMeta($document);
+        self::assertSame(50, $page['perPage'] ?? null, 'meta.page.perPage reflects the cap, not 1000000');
+    }
+
+    #[Test]
+    #[Group('spec:fetching-pagination')]
+    public function anInRangePageSizeIsUnaffectedByTheCap(): void
+    {
+        // A size at or below the cap is honoured verbatim — the cap only clamps down.
+        $document = $this->fetch('/tracks?page[size]=2&sort=trackNumber');
+
+        self::assertCount(2, $this->trackIds($document));
+        $page = $this->pageMeta($document);
+        self::assertSame(2, $page['perPage'] ?? null);
+    }
+
     // --- helpers -------------------------------------------------------------
 
     /**
@@ -217,6 +268,23 @@ final class ReadQueryTest extends MusicCatalogKernelTestCase
         self::assertSame('application/vnd.api+json', $response->headers->get('Content-Type'));
 
         return $this->decode($response);
+    }
+
+    /**
+     * @param array<string, mixed> $document
+     *
+     * @return array<string, mixed>
+     */
+    private function pageMeta(array $document): array
+    {
+        $meta = $document['meta'] ?? null;
+        self::assertIsArray($meta);
+
+        $page = $meta['page'] ?? null;
+        self::assertIsArray($page);
+
+        /** @var array<string, mixed> $page */
+        return $page;
     }
 
     /**

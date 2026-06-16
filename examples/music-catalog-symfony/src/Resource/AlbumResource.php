@@ -17,6 +17,8 @@ use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Map;
 use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApi\Resource\Filter\WhereHas;
+use haddowg\JsonApi\Resource\Sort\SortByField;
+use haddowg\JsonApi\Resource\Sort\SortDirective;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Album;
 
@@ -104,6 +106,22 @@ final class AlbumResource extends AbstractResource
         // reference renders this as an EXISTS subquery over the same relation.
         return [
             WhereHas::make('tracks'),
+        ];
+    }
+
+    /**
+     * Newest first by default: with no `?sort` the albums collection is ordered by
+     * `releasedAt` descending through the Doctrine sort handler (so OK Computer
+     * (1997) precedes Dummy (1994)), keeping the unsorted collection — and its
+     * pagination — deterministic. An explicit `?sort=…` overrides this entirely
+     * (core ADR 0044).
+     *
+     * @return list<SortDirective>
+     */
+    public function defaultSort(): array
+    {
+        return [
+            new SortDirective(SortByField::make('releasedAt'), descending: true),
         ];
     }
 

@@ -17,8 +17,9 @@ use PHPUnit\Framework\Attributes\Test;
  *  - a relation carrying a per-relation paginator (`pagedComments`) windows by
  *    `page[number]`/`page[size]` and emits page `meta`/`links` scoped to the
  *    related-collection URL;
- *  - a plain relation (`comments`) stays unpaginated (the regression baseline so
- *    the rework doesn't accidentally paginate every related collection).
+ *  - a plain relation (`comments`) with no paginator of its own falls back to the
+ *    server's default paginator (relation → related resource → server default),
+ *    which carries the page-size cap (`json_api.pagination.max_per_page`).
  *
  * Abstract over the kernel so the **same assertions** run against the in-memory
  * provider ({@see InMemoryRelatedCollectionParamsTest}) and the Doctrine provider
@@ -97,19 +98,38 @@ abstract class RelatedCollectionParamsConformanceTestCase extends JsonApiFunctio
     #[Test]
     #[Group('spec:fetching-relationships')]
     #[Group('spec:fetching-pagination')]
-    public function aPlainRelatedToManyCollectionIsUnpaginated(): void
+    public function aPlainRelatedToManyCollectionFallsBackToTheCappedServerDefault(): void
     {
-        // The plain `comments` relation declares no paginator, so the related
-        // collection renders all members with NO page meta — the unpaginated
-        // baseline the rework must preserve.
+        // The plain `comments` relation declares no paginator of its own, so the
+        // related collection falls back to the server's default paginator (relation
+        // → related resource → server default) — which carries the page-size cap.
+        // All members render, now with page meta from that default.
         $document = $this->fetchDocument('/articles/1/comments');
 
         self::assertSame(['c1', 'c2'], $this->ids($document));
 
         $meta = $document['meta'] ?? null;
-        if (\is_array($meta)) {
-            self::assertArrayNotHasKey('page', $meta);
-        }
+        self::assertIsArray($meta);
+        self::assertArrayHasKey('page', $meta);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    #[Group('spec:fetching-pagination')]
+    public function anOverLargePageSizeOnARelatedCollectionIsCappedNotHonoured(): void
+    {
+        // The server default paginator caps page[size] at json_api.pagination
+        // .max_per_page (100 by default). An abusive page[size] is clamped, not
+        // honoured: meta.page.perPage reflects the cap and the response is 200.
+        $document = $this->fetchDocument('/articles/1/comments?page[size]=1000000');
+
+        self::assertSame(['c1', 'c2'], $this->ids($document));
+
+        $meta = $document['meta'] ?? null;
+        self::assertIsArray($meta);
+        $page = $meta['page'] ?? null;
+        self::assertIsArray($page);
+        self::assertSame(100, $page['perPage'] ?? null, 'page[size] is clamped to the cap, not 1000000');
     }
 
     // --- helpers ---------------------------------------------------------------

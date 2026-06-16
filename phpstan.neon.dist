@@ -7,3 +7,9 @@ parameters:
         - examples/music-catalog-symfony/tests
     tmpDir: .phpstan.cache
     treatPhpDocTypesAsCertain: false
+    stubFiles:
+        # Corrects shipmonk/doctrine-entity-preloader's EntityPreloader::preload()
+        # over-strict `literal-string` $sourcePropertyName to `string`: the bundle
+        # passes a runtime association name (from a relation's declared column/name),
+        # which is a legitimately dynamic string, not a compile-time literal.
+        - phpstan-stubs/EntityPreloader.stub

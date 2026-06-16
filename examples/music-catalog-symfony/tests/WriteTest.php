@@ -65,6 +65,30 @@ final class WriteTest extends MusicCatalogKernelTestCase
 
     #[Test]
     #[Group('spec:updating-resources')]
+    public function aMutationResponseHonoursInclude(): void
+    {
+        // Per the spec, a write that returns the resource honours ?include: the
+        // create/update arms render the same DataResponse as a fetch (and the
+        // Doctrine provider batch-preloads it, ADR 0035). PATCH track 1 — whose
+        // to-one `album` is on the same server — asking for ?include=album.
+        $response = $this->handle('/tracks/1?include=album', 'PATCH', [
+            'data' => [
+                'type' => 'tracks',
+                'id' => '1',
+                'attributes' => ['title' => 'Airbag (Remaster)'],
+            ],
+        ]);
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        $document = $this->decode($response);
+        $included = $document['included'] ?? [];
+        self::assertIsArray($included);
+        self::assertContains('albums', \array_column($included, 'type'), 'the related album is compound-included on the PATCH response');
+    }
+
+    #[Test]
+    #[Group('spec:updating-resources')]
     public function updatingAResourceReturns200AndAppliesOnlyTheSuppliedAttributes(): void
     {
         // Track 1 is "Airbag", trackNumber 1. A PATCH of the title only must leave

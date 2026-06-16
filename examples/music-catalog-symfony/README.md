@@ -24,11 +24,11 @@ store-backed serialize-only type with no entity and no resource.
 
 | Type | Backing | Highlights |
 | --- | --- | --- |
-| `artists` | `Artist` entity | singular `filter[slug]`, computed `trackCount`, `hasMany albums` |
+| `artists` | `Artist` entity | singular `filter[slug]`, computed `trackCount`, `hasMany albums` (`cannotBeIncluded` — include safeguard A) |
 | `albums` | `Album` entity | multi-server (default + `admin`), directional `CompareField`, `Map releaseInfo` (JSON column), default-include `artist`, `WhereHas tracks` |
 | `tracks` | `Track` entity | **serializer override** (`TrackSerializer`), `storedAs` rename, `ArrayList genres`, `like` filter, `belongsToMany playlists` (`cannotReplace`) |
 | `playlists` | `Playlist` entity | **hydrator override** (`PlaylistHydrator`), client-generated UUID id, derived `slug` |
-| `users` | `User` entity | **admin-server-only**, `UniqueEntity` on `email`, write-only `password`, validation-composition trio |
+| `users` | `User` entity | **admin-server-only**, `UniqueEntity` on `email`, write-only `password`, validation-composition trio, `getAllowedIncludePaths` whitelist (include safeguard C) |
 | `favorites` | `Favorite` entity | **polymorphic to-one** `MorphTo favoritable` (Track\|Album\|Artist) |
 | `libraries` | `Library` entity | **polymorphic to-many** `MorphToMany items` (custom provider) |
 | `charts` | store-backed | standalone serializer, read-only (no entity, no resource) |

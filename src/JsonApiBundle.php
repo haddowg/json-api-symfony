@@ -108,6 +108,16 @@ final class JsonApiBundle extends AbstractBundle
      */
     public const string RELATIONS_TAG = 'haddowg.json_api.relations';
 
+    /**
+     * The bundle's opinionated default `json_api.max_include_depth`: a `?include`
+     * may nest at most this many relationship hops from the primary resource
+     * unless a resource overrides it with its own `maxIncludeDepth()`. Core itself
+     * is unopinionated (null = unlimited); the bundle supplies this cap so a
+     * mutual default-include cycle always terminates and a deep `?include` is
+     * bounded without per-resource configuration.
+     */
+    public const int DEFAULT_MAX_INCLUDE_DEPTH = 3;
+
     public function configure(DefinitionConfigurator $definition): void
     {
         $definition->rootNode()
@@ -117,6 +127,22 @@ final class JsonApiBundle extends AbstractBundle
                 ->booleanNode('schema_validation')
                     ->info('Validate write bodies against the JSON:API JSON Schema (requires opis/json-schema). A dev/CI structural linter, separate from the always-on Symfony Validator bridge.')
                     ->defaultFalse()
+                ->end()
+                ->integerNode('max_include_depth')
+                    ->info('Cap the nesting depth of a `?include` request (number of relationship hops from the primary resource): a cap of 3 allows `?include=a.b.c` and rejects `a.b.c.d` (400). The default is 3; set 0 for unlimited. A resource\'s own maxIncludeDepth() overrides this server default.')
+                    ->defaultValue(self::DEFAULT_MAX_INCLUDE_DEPTH)
+                    ->min(0)
+                ->end()
+                ->arrayNode('pagination')
+                    ->info('Tuning for the server\'s default page-based paginator. See core docs/pagination.md.')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->integerNode('max_per_page')
+                            ->info('Cap the client-controlled page[size]/page[limit] of the server default paginator (closes a page-size DoS vector). The default is core\'s PagePaginator::DEFAULT_MAX_PER_PAGE (100); set 0 to disable the cap (unlimited). A resource with its own pagination() sets its own cap via withMaxPerPage().')
+                            ->defaultValue(\haddowg\JsonApi\Pagination\PagePaginator::DEFAULT_MAX_PER_PAGE)
+                            ->min(0)
+                        ->end()
+                    ->end()
                 ->end()
                 ->arrayNode('servers')
                     ->info('Additional named servers; the top-level base_uri/version define the implicit `default` server. Each named server inherits the top-level value when its own is omitted (ADR 0034).')
@@ -138,9 +164,13 @@ final class JsonApiBundle extends AbstractBundle
     {
         $baseUri = $this->stringConfig($config, 'base_uri', '');
         $version = $this->stringConfig($config, 'version', '1.1');
+        $maxPerPage = $this->maxPerPageConfig($config);
+        $maxIncludeDepth = $this->maxIncludeDepthConfig($config);
 
         $builder->setParameter('haddowg_json_api.base_uri', $baseUri);
         $builder->setParameter('haddowg_json_api.version', $version);
+        $builder->setParameter('haddowg_json_api.pagination.max_per_page', $maxPerPage);
+        $builder->setParameter('haddowg_json_api.max_include_depth', $maxIncludeDepth);
 
         // The full server map (ADR 0034): the implicit `default` server carries the
         // top-level base_uri/version, and each named server from `json_api.servers`
@@ -155,7 +185,7 @@ final class JsonApiBundle extends AbstractBundle
         // One ServerFactory per declared server, plus the ServerProvider that
         // resolves them by name through a service locator. The per-server resource
         // class-strings and serializer/hydrator maps are filled by the pass.
-        $this->registerServers($container, $servers);
+        $this->registerServers($container, $servers, $maxPerPage, $maxIncludeDepth);
 
         // The optional opis structural linter: registered (so the RequestListener
         // picks it up) only when explicitly enabled. opis/json-schema is a
@@ -314,7 +344,7 @@ final class JsonApiBundle extends AbstractBundle
      *
      * @param array<string, array{base_uri: string, version: string}> $servers
      */
-    private function registerServers(ContainerConfigurator $container, array $servers): void
+    private function registerServers(ContainerConfigurator $container, array $servers, int $maxPerPage, int $maxIncludeDepth): void
     {
         $services = $container->services();
 
@@ -330,6 +360,20 @@ final class JsonApiBundle extends AbstractBundle
                     '$baseUri' => $settings['base_uri'],
                     '$version' => $settings['version'],
                     '$handler' => service(CrudOperationHandler::class),
+                    // The page-size cap (json_api.pagination.max_per_page) the built-in
+                    // default paginator clamps page[size]/page[limit] to; 0 disables it
+                    // (no server default paginator unless a custom one is registered).
+                    '$maxPerPage' => $maxPerPage,
+                    // The server default `?include` nesting cap
+                    // (json_api.max_include_depth, default 3); 0 disables it (unlimited).
+                    // A resource's own maxIncludeDepth() overrides it per type.
+                    '$maxIncludeDepth' => $maxIncludeDepth,
+                    // Optional custom server-default paginators (e.g. a CursorPaginator),
+                    // resolved by-server-first then generic: an app may register a
+                    // PaginatorInterface service for THIS server, or one for all servers
+                    // (or neither, falling back to the built-in capped PagePaginator).
+                    '$serverDefaultPaginator' => service(self::defaultPaginatorId($name))->nullOnInvalid(),
+                    '$defaultPaginator' => service(self::defaultPaginatorId())->nullOnInvalid(),
                     // Optional: the reference Doctrine predicate, present only on a
                     // Doctrine application that maps an entity, else null (core then
                     // treats every relation as loaded).
@@ -349,6 +393,19 @@ final class JsonApiBundle extends AbstractBundle
     public static function serverFactoryId(string $server): string
     {
         return 'haddowg.json_api.server_factory.' . $server;
+    }
+
+    /**
+     * The container service id an application registers a custom server-default
+     * {@see \haddowg\JsonApi\Pagination\PaginatorInterface} under: the per-server
+     * id `haddowg.json_api.default_paginator.<name>` (resolved first) when `$server`
+     * is given, or the generic `haddowg.json_api.default_paginator` (the fallback
+     * for all servers) when it is null. Both are optional — absent either, the
+     * server uses the built-in capped {@see \haddowg\JsonApi\Pagination\PagePaginator}.
+     */
+    public static function defaultPaginatorId(?string $server = null): string
+    {
+        return 'haddowg.json_api.default_paginator' . ($server !== null ? '.' . $server : '');
     }
 
     /**
@@ -375,5 +432,40 @@ final class JsonApiBundle extends AbstractBundle
         $value = $config[$key] ?? $default;
 
         return \is_string($value) ? $value : $default;
+    }
+
+    /**
+     * The resolved `json_api.pagination.max_per_page` — the page-size cap the
+     * server's default paginator clamps `page[size]`/`page[limit]` to (`0`
+     * disables it). Defaults to core's
+     * {@see \haddowg\JsonApi\Pagination\PagePaginator::DEFAULT_MAX_PER_PAGE} when
+     * the key is absent.
+     *
+     * @param array<string, mixed> $config
+     */
+    private function maxPerPageConfig(array $config): int
+    {
+        $pagination = $config['pagination'] ?? [];
+        $value = \is_array($pagination) ? ($pagination['max_per_page'] ?? null) : null;
+
+        return \is_int($value)
+            ? \max(0, $value)
+            : \haddowg\JsonApi\Pagination\PagePaginator::DEFAULT_MAX_PER_PAGE;
+    }
+
+    /**
+     * The resolved `json_api.max_include_depth` — the server default cap on
+     * `?include` nesting depth (relationship hops from the primary resource);
+     * `0` disables it (unlimited). Defaults to {@see self::DEFAULT_MAX_INCLUDE_DEPTH}
+     * (3) when the key is absent. A resource's own `maxIncludeDepth()` override
+     * still wins per type.
+     *
+     * @param array<string, mixed> $config
+     */
+    private function maxIncludeDepthConfig(array $config): int
+    {
+        $value = $config['max_include_depth'] ?? null;
+
+        return \is_int($value) ? \max(0, $value) : self::DEFAULT_MAX_INCLUDE_DEPTH;
     }
 }

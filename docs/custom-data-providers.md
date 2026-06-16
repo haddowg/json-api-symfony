@@ -236,6 +236,29 @@ Two practical contracts when you write `apply()`:
   via `$builder->getRootAliases()[0]`) and, for `QueryPurpose::FetchOne`, the
   identifier constraint is already bound.
 
+## Eager-loading `?include` is automatic (no extension needed)
+
+You do **not** need a `DoctrineExtensionInterface` eager-load join to avoid N+1ing
+the `?include` tree. Install the optional
+[`shipmonk/doctrine-entity-preloader`](https://github.com/shipmonk-rnd/doctrine-entity-preloader)
+library and the Doctrine provider batch-preloads a read's effective include tree
+automatically — one query per relation per level, reusing core's include decision so
+it preloads exactly what is rendered (requested `?include` **or** a resource's
+`getDefaultIncludedRelationships()` fallback when none is sent). It is alias-aware
+and degrades to a lazy load for any relation it cannot batch (polymorphic, computed,
+composite-key). See [Eager-loading includes](doctrine.md#eager-loading-includes-no-n1)
+on the Doctrine page and [ADR 0035](adr/0035-doctrine-include-batch-preloading.md).
+
+Reach for an extension's eager-load join only for a relation you always want loaded
+**regardless of `?include`** (a join the serializer or your own code needs on every
+read), or to optimise a specific access shape the per-level batch does not cover.
+
+A custom provider can opt into the same automatic preloading by implementing
+[`PreloadsIncludesInterface`](../src/DataProvider/PreloadsIncludesInterface.php) — the
+handler calls `preloadIncludes()` on the resolved provider (when it implements the
+capability) with the materialised result before rendering. A provider that does not
+implement it simply renders includes lazily.
+
 ## The in-memory provider as a worked example
 
 [`InMemoryDataProvider`](../src/DataProvider/InMemoryDataProvider.php),

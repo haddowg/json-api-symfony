@@ -1,0 +1,26 @@
+<?php
+
+namespace ShipMonk\DoctrineEntityPreloader;
+
+class EntityPreloader
+{
+    /**
+     * The bundle batch-preloads a *runtime* association name (resolved from a
+     * relation's declared column / name), which is a legitimately dynamic
+     * `string` — not the compile-time `literal-string` the published signature
+     * over-constrains it to. This stub relaxes that one parameter to `string`
+     * (the documented PHPStan mechanism for correcting a third-party type), leaving
+     * every other type as published.
+     *
+     * @param list<object> $sourceEntities
+     * @param positive-int|null $batchSize
+     * @param non-negative-int|null $maxFetchJoinSameFieldCount
+     * @return list<object>
+     */
+    public function preload(
+        array $sourceEntities,
+        string $sourcePropertyName,
+        ?int $batchSize = null,
+        ?int $maxFetchJoinSameFieldCount = null,
+    ): array;
+}

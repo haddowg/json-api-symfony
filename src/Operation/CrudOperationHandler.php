@@ -39,7 +39,9 @@ use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
+use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
+use haddowg\JsonApiBundle\DataProvider\PreloadsIncludesInterface;
 use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
 use haddowg\JsonApiBundle\Validation\ResourceValidator;
 
@@ -150,6 +152,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $provider = $this->providers->forType($type);
         $serializer = $server->serializerFor($type);
 
+        $request = $operation->context()->httpRequest();
+        $request = $request instanceof JsonApiRequestInterface ? $request : null;
+
         $id = $operation->target()->id;
         if ($id !== null) {
             $model = $provider->fetchOne($type, $id);
@@ -157,15 +162,18 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 return ErrorResponse::fromException(new ResourceNotFound());
             }
 
+            // Batch eager-load the effective ?include tree (explicit or the
+            // resource's default-include fallback) so includes do not N+1 against a
+            // provider that opts into the capability (the Doctrine reference does);
+            // a single resource is preloaded as a one-element list (ADR 0035).
+            $this->preloadIncludes($provider, [$model], $type, $request);
+
             return DataResponse::fromResource($model, $serializer);
         }
 
         // A bare serializer/hydrator pair declares no field inventory, so it has
         // no filter/sort vocabulary and no resource-level paginator.
         $resource = $this->types->resourceFor($server, $type);
-
-        $request = $operation->context()->httpRequest();
-        $request = $request instanceof JsonApiRequestInterface ? $request : null;
 
         $filters = $resource?->filters() ?? [];
 
@@ -182,22 +190,33 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $filters,
             $resource?->allSorts() ?? [],
             $window,
+            // Applied only when the request carries no `sort` (core ADR 0044); a
+            // bare serializer/hydrator pair has no resource and so no default.
+            $resource?->defaultSort() ?? [],
         ));
 
+        // Materialize once so the items can be both preloaded and rendered (and a
+        // singular filter can peek the first without consuming a one-shot iterator).
+        $items = \is_array($result->items) ? \array_values($result->items) : \iterator_to_array($result->items, false);
+
         if ($singular) {
-            $first = null;
-            foreach ($result->items as $first) {
-                break;
+            $first = $items[0] ?? null;
+            if ($first !== null) {
+                $this->preloadIncludes($provider, [$first], $type, $request);
             }
 
             return DataResponse::fromResource($first, $serializer);
         }
 
+        // Batch eager-load the effective ?include tree across the whole page/collection
+        // so includes do not N+1 (ADR 0035).
+        $this->preloadIncludes($provider, $items, $type, $request);
+
         if ($paginator !== null && $request !== null && $result->total !== null) {
-            return DataResponse::fromPage($paginator->paginate($request, $result->items, $result->total), $serializer);
+            return DataResponse::fromPage($paginator->paginate($request, $items, $result->total), $serializer);
         }
 
-        return DataResponse::fromCollection($result->items, $serializer);
+        return DataResponse::fromCollection($items, $serializer);
     }
 
     /**
@@ -300,23 +319,36 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $relatedResource?->filters() ?? [],
                 $relatedResource?->allSorts() ?? [],
                 $window,
+                // The related resource's default order applies to its related
+                // sub-collection too when the request sends no `sort` (core ADR
+                // 0044); a polymorphic to-many has no single related resource.
+                $relatedResource?->defaultSort() ?? [],
             );
 
-            $result = $this->providers->forType($relatedType)
+            $relatedProvider = $this->providers->forType($relatedType);
+            $result = $relatedProvider
                 ->fetchRelatedCollection($relatedType, $parent, $relation, $criteria, $request);
 
             $serializer = $polymorphic
                 ? $this->polymorphicSerializer($relation, $server)
                 : $server->serializerFor($relatedType);
 
+            // Materialize once so the related members can be both preloaded and
+            // rendered. A polymorphic to-many spans types (no single related type),
+            // so its includes are not batch-preloaded — it renders lazily.
+            $items = \is_array($result->items) ? \array_values($result->items) : \iterator_to_array($result->items, false);
+            if (!$polymorphic) {
+                $this->preloadIncludes($relatedProvider, $items, $relatedType, $request);
+            }
+
             if ($paginator !== null && $result->total !== null) {
                 return RelatedResponse::fromPage(
-                    $paginator->paginate($request, $result->items, $result->total),
+                    $paginator->paginate($request, $items, $result->total),
                     $serializer,
                 );
             }
 
-            return RelatedResponse::fromCollection($result->items, $serializer);
+            return RelatedResponse::fromCollection($items, $serializer);
         }
 
         // Resolve the to-one serializer from the actual related object so a
@@ -326,6 +358,15 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // `data: null`.
         $related = $relation->readValue($parent, $request);
         $serializer = $relation->resolveSerializer($related, $server) ?? $server->serializerFor($relatedType);
+
+        // Batch eager-load the related resource's own ?include tree (a single
+        // related object is preloaded as a one-element list) so a nested include on
+        // a to-one related endpoint does not N+1 (ADR 0035). A to-one related value
+        // is read off the parent, so the related type may have no provider of its
+        // own (it is only ever resolved through the parent) — guard the resolution.
+        if (\is_object($related) && !$polymorphic && $this->providers->supportsType($relatedType)) {
+            $this->preloadIncludes($this->providers->forType($relatedType), [$related], $relatedType, $request);
+        }
 
         return RelatedResponse::fromResource($related, $serializer);
     }
@@ -492,6 +533,26 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
     }
 
     /**
+     * Batch eager-loads the effective `?include` tree for `$entities` of `$type`
+     * through the provider's optional {@see PreloadsIncludesInterface} capability,
+     * before rendering — so an included relationship does not N+1 against a provider
+     * that opts in (the Doctrine reference does, when the preloader library is
+     * installed). A no-op when the provider does not implement the capability, or
+     * when there is no request to read the include tree from (ADR 0035).
+     *
+     * @param DataProviderInterface<object> $provider
+     * @param list<object>                  $entities
+     */
+    private function preloadIncludes(DataProviderInterface $provider, array $entities, string $type, ?JsonApiRequestInterface $request): void
+    {
+        if ($request === null || $entities === [] || !$provider instanceof PreloadsIncludesInterface) {
+            return;
+        }
+
+        $provider->preloadIncludes($entities, $type, $request);
+    }
+
+    /**
      * Loads the parent resource of `$type` through the read provider, or `null`
      * when the id is absent or no such resource exists.
      */
@@ -552,6 +613,17 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         $entity = $persister->create($type, $entity);
 
+        // A write response honours ?include too — it renders the same DataResponse
+        // as a fetch — so batch-preload the created resource's effective include
+        // tree, keeping a nested include off the N+1 path (ADR 0035).
+        $request = $operation->context()->httpRequest();
+        $this->preloadIncludes(
+            $this->providers->forType($type),
+            [$entity],
+            $type,
+            $request instanceof JsonApiRequestInterface ? $request : null,
+        );
+
         // The Location uses the resource's URI segment (its uriType), so it matches
         // the route the client will GET (ADR 0022); a bare pair has no resource, so
         // it falls back to the type.
@@ -569,7 +641,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $id = $operation->target()->id;
         $body = $operation->body();
 
-        $entity = $id !== null ? $this->providers->forType($type)->fetchOne($type, $id) : null;
+        $provider = $this->providers->forType($type);
+        $entity = $id !== null ? $provider->fetchOne($type, $id) : null;
         if ($entity === null) {
             return ErrorResponse::fromException(new ResourceNotFound());
         }
@@ -591,6 +664,16 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $this->validateEntity($server, $type, $entity, creating: false);
 
         $entity = $persister->update($type, $entity);
+
+        // A PATCH response honours ?include as a fetch does — preload the updated
+        // resource's effective include tree (ADR 0035).
+        $request = $operation->context()->httpRequest();
+        $this->preloadIncludes(
+            $provider,
+            [$entity],
+            $type,
+            $request instanceof JsonApiRequestInterface ? $request : null,
+        );
 
         return DataResponse::fromResource($entity, $serializer);
     }

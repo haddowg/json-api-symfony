@@ -67,4 +67,33 @@ final class TypeMetadataResolver
 
         return null;
     }
+
+    /**
+     * Every declared, non-hidden relation on `$type`, resolved resource-first (an
+     * {@see AbstractResource}'s own field-inventory relations) then from the
+     * standalone {@see RelationsRegistry} for a resource-less type — an empty list
+     * when the type is a bare serializer/hydrator pair that declares neither.
+     *
+     * The single enumeration the include-preloader walks to decide what to
+     * batch-load; it stays in this seam so the bare-pair path (no resource, no
+     * field inventory) is tolerated without per-call-site branching.
+     *
+     * @return list<RelationInterface>
+     */
+    public function relationsFor(Server $server, string $type): array
+    {
+        $resource = $this->resourceFor($server, $type);
+        if ($resource !== null) {
+            $relations = [];
+            foreach ($resource->fields() as $field) {
+                if ($field instanceof RelationInterface && !$field->isHidden()) {
+                    $relations[] = $field;
+                }
+            }
+
+            return $relations;
+        }
+
+        return $this->relations->relationsFor($type) ?? [];
+    }
 }
