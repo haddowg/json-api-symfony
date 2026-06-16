@@ -7,10 +7,13 @@ namespace haddowg\JsonApiBundle\Server;
 use haddowg\JsonApi\Operation\OperationHandlerInterface;
 use haddowg\JsonApi\Pagination\PagePaginator;
 use haddowg\JsonApi\Pagination\PaginatorInterface;
+use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Serializer\RelationshipLoadStateInterface;
 use haddowg\JsonApi\Server\Server;
+use haddowg\JsonApiBundle\Event\ServingEvent;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
+use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
  * Builds the immutable core {@see Server} for one declared server (bundle ADR
@@ -87,6 +90,8 @@ final class ServerFactory
         private readonly array $hydratorsByClass = [],
         private readonly array $standaloneSerializers = [],
         private readonly array $standaloneHydrators = [],
+        private readonly string $serverName = 'default',
+        private readonly ?EventDispatcherInterface $dispatcher = null,
     ) {}
 
     /**
@@ -132,6 +137,23 @@ final class ServerFactory
                 $type,
                 $this->standaloneSerializers[$type] ?? null,
                 $this->standaloneHydrators[$type] ?? null,
+            );
+        }
+
+        // The serving bridge (bundle ADR 0042): one core `serving` handler that
+        // turns core's server-level seam (fired once per request inside
+        // `Server::dispatch()`, core ADR 0050) into a bundle `ServingEvent`. A
+        // ServingEvent subscriber that throws a JsonApiException aborts — the throw
+        // propagates out of the closure → out of `dispatch()` → the route-scoped
+        // ExceptionListener. Registered only when a dispatcher is wired (the events
+        // are an opt-in seam).
+        if ($this->dispatcher !== null) {
+            $dispatcher = $this->dispatcher;
+            $serverName = $this->serverName;
+            $server = $server->withServing(
+                static function (JsonApiRequestInterface $request) use ($dispatcher, $serverName): void {
+                    $dispatcher->dispatch(new ServingEvent($request, $serverName));
+                },
             );
         }
 

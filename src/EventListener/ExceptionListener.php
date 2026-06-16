@@ -27,6 +27,12 @@ use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
  *    `getErrors()` / `getStatusCode()` via {@see ErrorResponse::fromException()};
  *  - a Symfony {@see HttpExceptionInterface} (firewall `401`/`403`, routing
  *    `404`, …) maps to a status-keyed JSON:API error;
+ *  - a Symfony Security {@see \Symfony\Component\Security\Core\Exception\AccessDeniedException}
+ *    (thrown by the declarative-authorization layer, bundle ADR 0043) maps to `403`
+ *    and an {@see \Symfony\Component\Security\Core\Exception\AuthenticationException}
+ *    (an unauthenticated request the firewall surfaces) maps to `401` — neither is an
+ *    `HttpExceptionInterface`, so both are mapped explicitly (guarded by
+ *    `\class_exists` so the listener compiles without `symfony/security-core`);
  *  - anything else becomes a `500`, with `{exception, file, line, trace}` in the
  *    error object's `meta` gated on `kernel.debug` and the throwable logged.
  *
@@ -44,6 +50,13 @@ final class ExceptionListener
         private readonly HttpFoundationFactory $httpFoundationFactory,
         private readonly bool $debug = false,
         private readonly ?LoggerInterface $logger = null,
+        // Optional Symfony Security collaborators, present only when
+        // symfony/security-core is installed: they let an AccessDeniedException from
+        // the declarative-authorization layer (bundle ADR 0043) map to 401 for an
+        // unauthenticated request (where the firewall would otherwise prompt to
+        // authenticate) and 403 for an authenticated-but-denied one.
+        private readonly ?\Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInterface $tokenStorage = null,
+        private readonly ?\Symfony\Component\Security\Core\Authentication\AuthenticationTrustResolverInterface $trustResolver = null,
     ) {}
 
     public function onKernelException(ExceptionEvent $event): void
@@ -78,7 +91,26 @@ final class ExceptionListener
         }
 
         if ($throwable instanceof HttpExceptionInterface) {
-            return ErrorResponse::fromErrors($this->httpError($throwable));
+            return ErrorResponse::fromErrors($this->statusError($throwable->getStatusCode(), $throwable));
+        }
+
+        // The declarative-authorization layer (bundle ADR 0043) throws a Symfony
+        // Security AccessDeniedException; an unauthenticated request the firewall
+        // surfaces is an AuthenticationException. Neither is an HttpExceptionInterface,
+        // so both are mapped here (guarded so the listener compiles without
+        // symfony/security-core). An AccessDeniedException maps to 401 when the
+        // request is unauthenticated (authentication would unlock it) and 403
+        // otherwise, mirroring Symfony's own access-denied handling.
+        if (\class_exists(\Symfony\Component\Security\Core\Exception\AccessDeniedException::class)
+            && $throwable instanceof \Symfony\Component\Security\Core\Exception\AccessDeniedException
+        ) {
+            return ErrorResponse::fromErrors($this->statusError($this->isAuthenticated() ? 403 : 401, $throwable));
+        }
+
+        if (\class_exists(\Symfony\Component\Security\Core\Exception\AuthenticationException::class)
+            && $throwable instanceof \Symfony\Component\Security\Core\Exception\AuthenticationException
+        ) {
+            return ErrorResponse::fromErrors($this->statusError(401, $throwable));
         }
 
         $this->logger?->error($throwable->getMessage(), ['exception' => $throwable]);
@@ -86,15 +118,30 @@ final class ExceptionListener
         return ErrorResponse::fromErrors(InternalServerError::for($throwable, $this->debug));
     }
 
-    private function httpError(HttpExceptionInterface $throwable): Error
+    private function statusError(int $status, \Throwable $throwable): Error
     {
-        $status = $throwable->getStatusCode();
-
         return new Error(
             status: (string) $status,
             title: $this->reasonPhrase($status),
             detail: $this->debug ? $throwable->getMessage() : '',
         );
+    }
+
+    /**
+     * Whether the request carries a real (non-anonymous) authenticated token, used
+     * to decide 401 vs 403 for an access-denial. Falls back to `false` (→ 401) when
+     * the Security collaborators are absent — but this path is only reached for a
+     * Security exception, which cannot arise without them.
+     */
+    private function isAuthenticated(): bool
+    {
+        if ($this->tokenStorage === null || $this->trustResolver === null) {
+            return false;
+        }
+
+        $token = $this->tokenStorage->getToken();
+
+        return $token !== null && $this->trustResolver->isAuthenticated($token);
     }
 
     private function reasonPhrase(int $status): string

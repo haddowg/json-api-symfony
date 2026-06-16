@@ -283,6 +283,10 @@ stages above:
 
 ## Next / see also
 
+- [lifecycle-hooks](lifecycle-hooks.md) — the author seams *into* this flow:
+  per-operation before/after hooks (and the server-level `serving` gate) as Symfony
+  events or overridable resource methods, for authz, delete-guards, audit, and
+  custom-action shaping.
 - [errors](errors.md) — the `kernel.exception` listener, the exception→status
   mapping, and debug gating.
 - [routing](routing.md) — how a discovered type becomes the routes (and the route

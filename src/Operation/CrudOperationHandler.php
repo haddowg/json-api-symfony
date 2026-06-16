@@ -42,8 +42,22 @@ use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
 use haddowg\JsonApiBundle\DataProvider\PreloadsIncludesInterface;
+use haddowg\JsonApiBundle\Event\AfterCreateEvent;
+use haddowg\JsonApiBundle\Event\AfterDeleteEvent;
+use haddowg\JsonApiBundle\Event\AfterFetchCollectionEvent;
+use haddowg\JsonApiBundle\Event\AfterFetchOneEvent;
+use haddowg\JsonApiBundle\Event\AfterRelationshipMutateEvent;
+use haddowg\JsonApiBundle\Event\AfterSaveEvent;
+use haddowg\JsonApiBundle\Event\AfterUpdateEvent;
+use haddowg\JsonApiBundle\Event\BeforeCreateEvent;
+use haddowg\JsonApiBundle\Event\BeforeDeleteEvent;
+use haddowg\JsonApiBundle\Event\BeforeRelationshipMutateEvent;
+use haddowg\JsonApiBundle\Event\BeforeSaveEvent;
+use haddowg\JsonApiBundle\Event\BeforeUpdateEvent;
+use haddowg\JsonApiBundle\Server\ServerProvider;
 use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
 use haddowg\JsonApiBundle\Validation\ResourceValidator;
+use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
  * The generic CRUD handler the {@see \haddowg\JsonApiBundle\Server\ServerFactory}
@@ -127,6 +141,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         private readonly DataPersisterRegistry $persisters,
         private readonly TypeMetadataResolver $types,
         private readonly ?ResourceValidator $validator = null,
+        private readonly ?EventDispatcherInterface $dispatcher = null,
     ) {}
 
     public function handle(\haddowg\JsonApi\Operation\JsonApiOperationInterface $operation): DataResponse|RelatedResponse|IdentifierResponse|NoContentResponse|ErrorResponse
@@ -168,7 +183,18 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // a single resource is preloaded as a one-element list (ADR 0035).
             $this->preloadIncludes($provider, [$model], $type, $request);
 
-            return DataResponse::fromResource($model, $serializer);
+            $response = DataResponse::fromResource($model, $serializer);
+
+            // The after-fetch-one hook (post-fetch) may replace the response — a
+            // custom-action shaping of the read. Skipped for a programmatic dispatch
+            // with no request to build the event from.
+            if ($request !== null) {
+                $event = new AfterFetchOneEvent($type, $request, $model, $this->serverName($request));
+                $this->dispatch($event);
+                $response = $event->response() ?? $response;
+            }
+
+            return $response;
         }
 
         // A bare serializer/hydrator pair declares no field inventory, so it has
@@ -205,18 +231,42 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $this->preloadIncludes($provider, [$first], $type, $request);
             }
 
-            return DataResponse::fromResource($first, $serializer);
+            return $this->afterFetchCollection(
+                DataResponse::fromResource($first, $serializer),
+                $type,
+                $request,
+                $items,
+            );
         }
 
         // Batch eager-load the effective ?include tree across the whole page/collection
         // so includes do not N+1 (ADR 0035).
         $this->preloadIncludes($provider, $items, $type, $request);
 
-        if ($paginator !== null && $request !== null && $result->total !== null) {
-            return DataResponse::fromPage($paginator->paginate($request, $items, $result->total), $serializer);
+        $response = $paginator !== null && $request !== null && $result->total !== null
+            ? DataResponse::fromPage($paginator->paginate($request, $items, $result->total), $serializer)
+            : DataResponse::fromCollection($items, $serializer);
+
+        return $this->afterFetchCollection($response, $type, $request, $items);
+    }
+
+    /**
+     * Fires the after-fetch-collection hook (post-fetch), letting a subscriber/hook
+     * replace the response. Skipped — the handler's response returned unchanged —
+     * for a programmatic dispatch with no request to build the event from.
+     *
+     * @param list<object> $items the materialized collection
+     */
+    private function afterFetchCollection(DataResponse $response, string $type, ?JsonApiRequestInterface $request, array $items): DataResponse
+    {
+        if ($request === null) {
+            return $response;
         }
 
-        return DataResponse::fromCollection($items, $serializer);
+        $event = new AfterFetchCollectionEvent($type, $request, $items, $this->serverName($request));
+        $this->dispatch($event);
+
+        return $event->response() ?? $response;
     }
 
     /**
@@ -482,9 +532,21 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // before the persister apply, not after).
         $this->validateLinkage($relation, $linkage);
 
+        $request = $this->jsonApiRequest($operation->context());
+
+        // The before-relationship-mutate gate (a throw aborts before the persister
+        // applies the change), then the storage-correct apply, then the after hook
+        // which may replace the linkage response (post-commit).
+        $this->dispatch(new BeforeRelationshipMutateEvent($type, $request, $parent, $relation, $linkage, $mode, $this->serverName($request)));
+
         $parent = $this->persisters->forType($type)->mutateRelationship($type, $parent, $relation, $linkage, $mode);
 
-        return IdentifierResponse::forRelationship($parent, $server->serializerFor($type), $relationshipName);
+        $response = IdentifierResponse::forRelationship($parent, $server->serializerFor($type), $relationshipName);
+
+        $afterMutate = new AfterRelationshipMutateEvent($type, $request, $parent, $relation, $linkage, $mode, $this->serverName($request));
+        $this->dispatch($afterMutate);
+
+        return $afterMutate->response() ?? $response;
     }
 
     /**
@@ -598,6 +660,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $server = $this->server($operation->context());
         $type = $operation->target()->type;
         $body = $operation->body();
+        $request = $this->jsonApiRequest($operation->context());
 
         $this->validate($server, $type, $body, creating: true);
 
@@ -617,27 +680,39 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         $this->validateEntity($server, $type, $entity, creating: true);
 
+        // Before-save then before-create gates: a subscriber/hook may mutate the
+        // entity (persisted by the flush below) or throw to abort (the throw
+        // propagates to the ExceptionListener, so the persister never runs and
+        // nothing commits).
+        $this->dispatch(new BeforeSaveEvent($type, $request, $entity, true, $this->serverName($request)));
+        $this->dispatch(new BeforeCreateEvent($type, $request, $entity, $this->serverName($request)));
+
         $entity = $persister->create($type, $entity);
 
         // A write response honours ?include too — it renders the same DataResponse
         // as a fetch — so batch-preload the created resource's effective include
         // tree, keeping a nested include off the N+1 path (ADR 0035).
-        $request = $operation->context()->httpRequest();
-        $this->preloadIncludes(
-            $this->providers->forType($type),
-            [$entity],
-            $type,
-            $request instanceof JsonApiRequestInterface ? $request : null,
-        );
+        $this->preloadIncludes($this->providers->forType($type), [$entity], $type, $request);
 
         // The Location uses the resource's URI segment (its uriType), so it matches
         // the route the client will GET (ADR 0022); a bare pair has no resource, so
         // it falls back to the type.
         $uriType = $this->types->resourceFor($server, $type)?->uriType() ?? $type;
 
-        return DataResponse::fromResource($entity, $serializer)
+        $response = DataResponse::fromResource($entity, $serializer)
             ->withStatus(201)
             ->withHeader('Location', $server->baseUri() . '/' . $uriType . '/' . $serializer->getId($entity));
+
+        // After-create then after-save hooks (post-commit) may replace the 201;
+        // after-save fires last, so it has the final word.
+        $afterCreate = new AfterCreateEvent($type, $request, $entity, $this->serverName($request));
+        $this->dispatch($afterCreate);
+        $response = $afterCreate->response() ?? $response;
+
+        $afterSave = new AfterSaveEvent($type, $request, $entity, true, $this->serverName($request));
+        $this->dispatch($afterSave);
+
+        return $afterSave->response() ?? $response;
     }
 
     private function update(UpdateResourceOperation $operation): DataResponse|ErrorResponse
@@ -646,12 +721,17 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $type = $operation->target()->type;
         $id = $operation->target()->id;
         $body = $operation->body();
+        $request = $this->jsonApiRequest($operation->context());
 
         $provider = $this->providers->forType($type);
         $entity = $id !== null ? $provider->fetchOne($type, $id) : null;
         if ($entity === null) {
             return ErrorResponse::fromException(new ResourceNotFound());
         }
+
+        // A shallow clone of the loaded target taken before hydration, so a
+        // before-update hook can diff the incoming change against the prior state.
+        $original = clone $entity;
 
         $this->validate($server, $type, $body, creating: false);
 
@@ -669,19 +749,29 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         $this->validateEntity($server, $type, $entity, creating: false);
 
+        // Before-save then before-update gates (the entity is mutable, `$original`
+        // is the pre-change snapshot): a throw aborts before the persister commits.
+        $this->dispatch(new BeforeSaveEvent($type, $request, $entity, false, $this->serverName($request)));
+        $this->dispatch(new BeforeUpdateEvent($type, $request, $entity, $original, $this->serverName($request)));
+
         $entity = $persister->update($type, $entity);
 
         // A PATCH response honours ?include as a fetch does — preload the updated
         // resource's effective include tree (ADR 0035).
-        $request = $operation->context()->httpRequest();
-        $this->preloadIncludes(
-            $provider,
-            [$entity],
-            $type,
-            $request instanceof JsonApiRequestInterface ? $request : null,
-        );
+        $this->preloadIncludes($provider, [$entity], $type, $request);
 
-        return DataResponse::fromResource($entity, $serializer);
+        $response = DataResponse::fromResource($entity, $serializer);
+
+        // After-update then after-save hooks (post-commit) may replace the 200;
+        // after-save fires last, so it has the final word.
+        $afterUpdate = new AfterUpdateEvent($type, $request, $entity, $this->serverName($request));
+        $this->dispatch($afterUpdate);
+        $response = $afterUpdate->response() ?? $response;
+
+        $afterSave = new AfterSaveEvent($type, $request, $entity, false, $this->serverName($request));
+        $this->dispatch($afterSave);
+
+        return $afterSave->response() ?? $response;
     }
 
     /**
@@ -807,19 +897,31 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         return $stripped;
     }
 
-    private function delete(DeleteResourceOperation $operation): NoContentResponse|ErrorResponse
+    private function delete(DeleteResourceOperation $operation): DataResponse|NoContentResponse|ErrorResponse
     {
         $type = $operation->target()->type;
         $id = $operation->target()->id;
+        $request = $this->jsonApiRequest($operation->context());
 
         $entity = $id !== null ? $this->providers->forType($type)->fetchOne($type, $id) : null;
         if ($entity === null) {
             return ErrorResponse::fromException(new ResourceNotFound());
         }
 
+        // The before-delete gate (a throw aborts before the persister deletes — a
+        // delete guard's natural seam, e.g. a 409 when the resource is referenced).
+        $this->dispatch(new BeforeDeleteEvent($type, $request, $entity, $this->serverName($request)));
+
         $this->persisters->forType($type)->delete($type, $entity);
 
-        return NoContentResponse::create();
+        $response = NoContentResponse::create();
+
+        // The after-delete hook (post-commit) may replace the 204 — e.g. a
+        // soft-delete that renders the now-flagged resource instead.
+        $afterDelete = new AfterDeleteEvent($type, $request, $entity, $this->serverName($request));
+        $this->dispatch($afterDelete);
+
+        return $afterDelete->response() ?? $response;
     }
 
     /**
@@ -880,5 +982,32 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         \assert($server instanceof Server);
 
         return $server;
+    }
+
+    /**
+     * Dispatches a lifecycle event through the injected Symfony dispatcher — a
+     * no-op when no dispatcher is wired (the events are an opt-in seam, off when
+     * symfony/event-dispatcher is absent). A before-event subscriber that throws a
+     * {@see \haddowg\JsonApi\Exception\JsonApiExceptionInterface} propagates out of
+     * here to the route-scoped exception listener; an after-event subscriber's
+     * replaced response is read back off the event by the caller.
+     */
+    private function dispatch(object $event): void
+    {
+        $this->dispatcher?->dispatch($event);
+    }
+
+    /**
+     * The name of the server the request dispatched on, read from the
+     * `_jsonapi_server` request attribute the {@see \haddowg\JsonApiBundle\EventListener\RequestListener}
+     * carries through (the route default Symfony's PsrHttpFactory copies onto the
+     * PSR request), defaulting to the implicit `default` server. It is passed on
+     * each event so a subscriber can resolve the right server in a multi-server app.
+     */
+    private function serverName(JsonApiRequestInterface $request): string
+    {
+        $name = $request->getAttribute('_jsonapi_server');
+
+        return \is_string($name) && $name !== '' ? $name : ServerProvider::DEFAULT_SERVER;
     }
 }

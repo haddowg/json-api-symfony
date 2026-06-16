@@ -29,6 +29,13 @@ services:
         arguments:
             $slugSeparator: '-'
 
+    # The in-memory audit trail the cross-cutting AuditLogSubscriber appends to on
+    # every committed write (bundle ADR 0042). Public so the lifecycle-hooks test can
+    # read the recorded entries back; a production app would inject a real logger or
+    # message bus and never expose the store.
+    haddowg\JsonApiBundle\Examples\MusicCatalog\Hook\AuditLog:
+        public: true
+
     # The query-counting PSR-3 logger + the DBAL logging middleware that feeds it —
     # a test affordance so IncludePreloadTest can assert a request issues a bounded
     # number of queries (no N+1). Public so the test can read the counter; a
