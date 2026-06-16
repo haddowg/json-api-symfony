@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApi\Resource;
 
+use haddowg\JsonApi\Exception\AdditionProhibited;
 use haddowg\JsonApi\Exception\ClientGeneratedIdNotSupported;
 use haddowg\JsonApi\Exception\DataMemberMissing;
 use haddowg\JsonApi\Exception\FullReplacementProhibited;
@@ -23,8 +24,8 @@ use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\Relation;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Schema\Link\ResourceLinks;
-use haddowg\JsonApi\Schema\Relationship\AbstractRelationship;
 use haddowg\JsonApi\Serializer\SerializerInterface;
+use haddowg\JsonApi\Serializer\UriTypeAwareInterface;
 
 /**
  * The recommended public surface: a single declaration of a JSON:API resource
@@ -43,12 +44,22 @@ use haddowg\JsonApi\Serializer\SerializerInterface;
  * the transformer reading {@see Field::isSparseField()} and the request, so the
  * resource emits every non-hidden field and lets the engine narrow.
  */
-abstract class AbstractResource implements SerializerInterface, HydratorInterface, UpdateRelationshipHydratorInterface
+abstract class AbstractResource implements SerializerInterface, HydratorInterface, UpdateRelationshipHydratorInterface, UriTypeAwareInterface, SerializerResolverAwareInterface
 {
+    use RendersRelationsTrait;
+
     /**
      * The JSON:API resource type. Subclasses set this.
      */
     public static string $type = '';
+
+    /**
+     * The URI path segment for this resource type, used in generated links (and,
+     * by hosts, routes) — e.g. `books` for the type `book`. Empty means "use
+     * {@see $type}". Subclasses override to decouple the URL segment from the
+     * JSON:API type (a plural, or a kebab-cased name).
+     */
+    public static string $uriType = '';
 
     protected ?\haddowg\JsonApi\Resource\SerializerResolverInterface $serializerResolver = null;
 
@@ -139,6 +150,11 @@ abstract class AbstractResource implements SerializerInterface, HydratorInterfac
         return static::$type;
     }
 
+    public function uriType(): string
+    {
+        return static::$uriType !== '' ? static::$uriType : static::$type;
+    }
+
     public function getId(mixed $object): string
     {
         $idField = $this->idField();
@@ -184,13 +200,7 @@ abstract class AbstractResource implements SerializerInterface, HydratorInterfac
             return [];
         }
 
-        $relationships = [];
-        foreach ($this->relationFields() as $relation) {
-            $relationships[$relation->name()] = static fn(mixed $model, JsonApiRequestInterface $request, string $name): AbstractRelationship
-                => $relation->buildRelationship($model, $request, $resolver);
-        }
-
-        return $relationships;
+        return self::relationshipCallables($this->relationFields(), $resolver);
     }
 
     public function hydrate(JsonApiRequestInterface $request, mixed $domainObject): mixed
@@ -222,6 +232,7 @@ abstract class AbstractResource implements SerializerInterface, HydratorInterfac
      * @throws RelationshipNotExists when this resource has no such relationship (404)
      * @throws RelationshipTypeInappropriate when add/remove targets a to-one relationship (400)
      * @throws FullReplacementProhibited when a replace targets a relation that {@see RelationInterface::allowsReplace()} === false (403)
+     * @throws AdditionProhibited when an add targets a relation that {@see RelationInterface::allowsAdd()} === false (403)
      * @throws RemovalProhibited when a removal (or a to-one clear) targets a relation that {@see RelationInterface::allowsRemove()} === false (403)
      */
     public function hydrateRelationship(
@@ -286,13 +297,15 @@ abstract class AbstractResource implements SerializerInterface, HydratorInterfac
 
     /**
      * Applies a to-many relationship-endpoint mutation under `$mode`: `PATCH`
-     * replaces (gated by {@see RelationInterface::allowsReplace()}), `POST` adds,
-     * `DELETE` removes (gated by {@see RelationInterface::allowsRemove()}).
+     * replaces (gated by {@see RelationInterface::allowsReplace()}), `POST` adds
+     * (gated by {@see RelationInterface::allowsAdd()}), `DELETE` removes (gated by
+     * {@see RelationInterface::allowsRemove()}).
      *
      * @param mixed $domainObject
      * @return mixed
      *
      * @throws FullReplacementProhibited
+     * @throws AdditionProhibited
      * @throws RemovalProhibited
      */
     protected function mutateToMany(
@@ -304,6 +317,10 @@ abstract class AbstractResource implements SerializerInterface, HydratorInterfac
     ): mixed {
         if ($mode === Mode::Replace && $relation->allowsReplace() === false) {
             throw new FullReplacementProhibited($relationship);
+        }
+
+        if ($mode === Mode::Add && $relation->allowsAdd() === false) {
+            throw new AdditionProhibited($relationship);
         }
 
         if ($mode === Mode::Remove && $relation->allowsRemove() === false) {

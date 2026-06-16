@@ -13,6 +13,7 @@ use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\HasMany;
 use haddowg\JsonApi\Resource\Field\HasOne;
 use haddowg\JsonApi\Resource\Field\MorphTo;
+use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Schema\Relationship\ToManyRelationship as OutputToMany;
 use haddowg\JsonApi\Schema\Relationship\ToOneRelationship as OutputToOne;
 use haddowg\JsonApi\Schema\ResourceIdentifier;
@@ -34,6 +35,7 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(HasMany::class)]
 #[CoversClass(BelongsToMany::class)]
 #[CoversClass(MorphTo::class)]
+#[CoversClass(MorphToMany::class)]
 final class RelationTest extends TestCase
 {
     #[Test]
@@ -224,6 +226,87 @@ final class RelationTest extends TestCase
     }
 
     #[Test]
+    public function endpointExposureFlagsDefaultToExposedAndOptOut(): void
+    {
+        $relation = HasMany::make('tags')->type('tags');
+        self::assertTrue($relation->exposesRelatedEndpoint());
+        self::assertTrue($relation->exposesRelationshipEndpoint());
+        self::assertTrue($relation->allowsAdd());
+
+        $restricted = HasMany::make('tags')->type('tags')
+            ->withoutRelatedEndpoint()
+            ->withoutRelationshipEndpoint()
+            ->cannotAdd();
+        self::assertFalse($restricted->exposesRelatedEndpoint());
+        self::assertFalse($restricted->exposesRelationshipEndpoint());
+        self::assertFalse($restricted->allowsAdd());
+    }
+
+    #[Test]
+    #[Group('spec:document-resource-object-relationships')]
+    public function buildRelationshipOmitsSelfLinkWhenRelationshipEndpointSuppressed(): void
+    {
+        $relation = BelongsTo::make('author')->type('users')->withoutRelationshipEndpoint();
+        $model = ['author' => ['id' => '7', 'type' => 'users']];
+
+        $links = $this->buildLinks($relation, $model);
+
+        self::assertSame(
+            ['related' => 'https://api.example.com/articles/42/author'],
+            $links,
+        );
+    }
+
+    #[Test]
+    #[Group('spec:document-resource-object-relationships')]
+    public function buildRelationshipOmitsRelatedLinkWhenRelatedEndpointSuppressed(): void
+    {
+        $relation = HasMany::make('comments')->type('comments')->withoutRelatedEndpoint();
+        $model = ['comments' => [['id' => '1', 'type' => 'comments']]];
+
+        $links = $this->buildLinks($relation, $model);
+
+        self::assertSame(
+            ['self' => 'https://api.example.com/articles/42/relationships/comments'],
+            $links,
+        );
+    }
+
+    /**
+     * Builds the relation's relationship object and returns its `links` member
+     * (an empty array when none are emitted).
+     *
+     * @param array<string, mixed> $model
+     *
+     * @return array<string, mixed>
+     */
+    private function buildLinks(\haddowg\JsonApi\Resource\Field\AbstractRelation $relation, array $model): array
+    {
+        $built = $relation->buildRelationship($model, $this->request(), $this->resolver());
+
+        $relationshipObject = (array) $built->transform(
+            new ResourceTransformation(
+                new StubResource('articles', '42'),
+                $model,
+                'articles',
+                new StubJsonApiRequest(),
+                '',
+                '',
+                '',
+                'https://api.example.com',
+            ),
+            new ResourceTransformer(),
+            new DummyData(),
+            [],
+        );
+
+        /** @var array<string, mixed> $links */
+        $links = $relationshipObject['links'] ?? [];
+
+        return $links;
+    }
+
+    #[Test]
     public function applyToManyReplaceSetsTheWholeColumn(): void
     {
         $relation = HasMany::make('tags')->type('tags')->storedAs('tag_ids');
@@ -351,6 +434,113 @@ final class RelationTest extends TestCase
 
         $built = $relation->buildRelationship($model, $this->request(), $this->resolver());
         self::assertInstanceOf(OutputToOne::class, $built);
+    }
+
+    #[Test]
+    public function resolveSerializerReturnsTheSingleRegisteredSerializerForAMonomorphicRelation(): void
+    {
+        $relation = BelongsTo::make('author')->type('users');
+        $resolver = $this->resolver();
+
+        $serializer = $relation->resolveSerializer(['id' => '7'], $resolver);
+
+        self::assertSame($resolver->serializerFor('users'), $serializer);
+    }
+
+    #[Test]
+    public function resolveSerializerSelectsTheMatchingSerializerForAPolymorphicRelation(): void
+    {
+        $relation = MorphTo::make('commentable')->types('posts', 'videos');
+        $resolver = $this->resolver();
+        $related = ['kind' => 'videos', 'id' => '9'];
+
+        $serializer = $relation->resolveSerializer($related, $resolver);
+
+        self::assertNotNull($serializer);
+        self::assertSame($resolver->serializerFor('videos'), $serializer);
+        self::assertNotSame($resolver->serializerFor('posts'), $serializer);
+        self::assertSame('videos', $serializer->getType($related));
+    }
+
+    #[Test]
+    public function resolveSerializerReturnsTheFirstDeclaredSerializerForANullRelatedValue(): void
+    {
+        $relation = MorphTo::make('commentable')->types('posts', 'videos');
+        $resolver = $this->resolver();
+
+        $serializer = $relation->resolveSerializer(null, $resolver);
+
+        self::assertSame($resolver->serializerFor('posts'), $serializer);
+    }
+
+    #[Test]
+    public function resolveSerializerReturnsNullWhenNoDeclaredTypeMatchesThePolymorphicObject(): void
+    {
+        $relation = MorphTo::make('commentable')->types('posts', 'videos');
+
+        $serializer = $relation->resolveSerializer(['kind' => 'tags'], $this->resolver());
+
+        self::assertNull($serializer);
+    }
+
+    #[Test]
+    public function morphToManyIsToManyAndDeclaresMultipleTypes(): void
+    {
+        $relation = MorphToMany::make('items')->types('posts', 'videos');
+
+        self::assertTrue($relation->isToMany());
+        self::assertSame(['posts', 'videos'], $relation->relatedTypes());
+    }
+
+    #[Test]
+    public function morphToManyBuildsToManyRelationshipWithPerMemberTypes(): void
+    {
+        $relation = MorphToMany::make('items')->types('posts', 'videos');
+        $model = ['items' => [['kind' => 'posts', 'id' => '1'], ['kind' => 'videos', 'id' => '2']]];
+
+        $built = $relation->buildRelationship($model, $this->request(), $this->resolver());
+        self::assertInstanceOf(OutputToMany::class, $built);
+
+        $relationshipObject = (array) $built->transform(
+            new ResourceTransformation(
+                new StubResource('articles', '42'),
+                $model,
+                'articles',
+                $this->request(),
+                '',
+                '',
+                'items',
+                'https://api.example.com',
+            ),
+            new ResourceTransformer(),
+            new DummyData(),
+            [],
+        );
+
+        // Each member's `type` came from its own object — proof that the bound
+        // PolymorphicSerializer resolved a serializer per member.
+        self::assertSame(
+            [
+                ['type' => 'posts', 'id' => '1'],
+                ['type' => 'videos', 'id' => '2'],
+            ],
+            $relationshipObject['data'] ?? null,
+        );
+    }
+
+    #[Test]
+    #[Group('spec:pagination')]
+    public function paginationDefaultsToNullAndPaginateSetsIt(): void
+    {
+        $relation = HasMany::make('comments')->type('comments');
+        self::assertNull($relation->pagination());
+
+        $paginator = \haddowg\JsonApi\Pagination\PagePaginator::make();
+        $returned = $relation->paginate($paginator);
+
+        // paginate() mutates and returns the same builder (not a clone).
+        self::assertSame($relation, $returned);
+        self::assertSame($paginator, $relation->pagination());
     }
 
     #[Test]

@@ -8,6 +8,7 @@ use haddowg\JsonApi\Schema\Data\DataInterface;
 use haddowg\JsonApi\Schema\Link\Link;
 use haddowg\JsonApi\Schema\Link\RelationshipLinks;
 use haddowg\JsonApi\Serializer\SerializerInterface;
+use haddowg\JsonApi\Serializer\UriTypeAwareInterface;
 use haddowg\JsonApi\Transformer\ResourceTransformation;
 use haddowg\JsonApi\Transformer\ResourceTransformer;
 
@@ -49,6 +50,22 @@ abstract class AbstractRelationship
      * that knows the parent resource's type + id and the configured base URI.
      */
     protected ?string $conventionLinksUriFieldName = null;
+
+    /**
+     * Whether the conventional `self` link (the relationship-linkage endpoint) is
+     * emitted when {@see withConventionLinks()} is in effect. Suppressed when the
+     * owning relation's relationship endpoint is not exposed, so a rendered link
+     * never points at a host 404.
+     */
+    protected bool $conventionLinksSelf = true;
+
+    /**
+     * Whether the conventional `related` link (the related endpoint) is emitted
+     * when {@see withConventionLinks()} is in effect. Suppressed when the owning
+     * relation's related endpoint is not exposed, so a rendered link never points
+     * at a host 404.
+     */
+    protected bool $conventionLinksRelated = true;
 
     /**
      * @internal
@@ -158,13 +175,19 @@ abstract class AbstractRelationship
      * are built in {@see transform()} from the owning resource's type + id and
      * the server base URI; an explicit {@see setLinks()} takes precedence.
      *
+     * `$exposeSelf` / `$exposeRelated` gate the individual links: pass `false`
+     * for either to omit the link to a suppressed endpoint, so a rendered link
+     * never points at a host 404.
+     *
      * @internal
      *
      * @return $this
      */
-    public function withConventionLinks(string $uriFieldName): static
+    public function withConventionLinks(string $uriFieldName, bool $exposeSelf = true, bool $exposeRelated = true): static
     {
         $this->conventionLinksUriFieldName = $uriFieldName;
+        $this->conventionLinksSelf = $exposeSelf;
+        $this->conventionLinksRelated = $exposeRelated;
 
         return $this;
     }
@@ -289,7 +312,12 @@ abstract class AbstractRelationship
             return null;
         }
 
-        $parentType = $parent->getType($transformation->object);
+        // The path segment is the parent's URI type (so a resource whose JSON:API
+        // type differs from its URL segment links correctly); a serializer that is
+        // not URI-type-aware falls back to its JSON:API type, as before.
+        $parentType = $parent instanceof UriTypeAwareInterface
+            ? $parent->uriType()
+            : $parent->getType($transformation->object);
         if ($parentType === '') {
             $parentType = $transformation->resourceType;
         }
@@ -303,8 +331,8 @@ abstract class AbstractRelationship
 
         return new RelationshipLinks(
             $transformation->baseUri,
-            new Link($base . '/relationships/' . $uriFieldName),
-            new Link($base . '/' . $uriFieldName),
+            $this->conventionLinksSelf ? new Link($base . '/relationships/' . $uriFieldName) : null,
+            $this->conventionLinksRelated ? new Link($base . '/' . $uriFieldName) : null,
         );
     }
 

@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace haddowg\JsonApi\Resource\Field;
 
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Resource\SerializerResolverInterface;
 use haddowg\JsonApi\Schema\Relationship\AbstractRelationship;
+use haddowg\JsonApi\Serializer\SerializerInterface;
 
 /**
  * A relationship member of a resource's field inventory. Distinct from an
@@ -80,6 +82,17 @@ interface RelationInterface extends \haddowg\JsonApi\Resource\Field\FieldInterfa
     ): AbstractRelationship;
 
     /**
+     * Resolves the serializer that renders the given related object as a FULL resource,
+     * among this relation's declared types: the single declared type for a monomorphic
+     * relation, or — for a polymorphic ({@see MorphTo}) relation — the declared type
+     * whose serializer reports the object's own type ({@see SerializerInterface::getType()}).
+     * For a null related value there is no object to discriminate, so the first declared,
+     * registered serializer is returned (the caller renders `data: null`). Null when the
+     * relation declares no registered type, or (polymorphic) none matches the object.
+     */
+    public function resolveSerializer(mixed $related, SerializerResolverInterface $resolver): ?SerializerInterface;
+
+    /**
      * Hydrates the relationship from the request's parsed linkage into `$model`,
      * returning the (possibly replaced) domain object. Replaces the relationship
      * wholesale (the {@see Mode::Replace} baseline) — the path used when this
@@ -105,6 +118,42 @@ interface RelationInterface extends \haddowg\JsonApi\Resource\Field\FieldInterfa
      * a {@see \haddowg\JsonApi\Exception\RemovalProhibited} (403).
      */
     public function allowsRemove(): bool;
+
+    /**
+     * Whether this relation's related HTTP endpoint (`GET /{type}/{id}/{rel}`) is
+     * exposed. On by default; suppressed by
+     * {@see AbstractRelation::withoutRelatedEndpoint()}. A suppressed endpoint is
+     * enforced by the host as a 404, and its conventional `related` link is omitted
+     * so a rendered link never points at that 404.
+     */
+    public function exposesRelatedEndpoint(): bool;
+
+    /**
+     * Whether this relation's relationship-linkage HTTP endpoint
+     * (`GET|PATCH|POST|DELETE /{type}/{id}/relationships/{rel}`) is exposed. On by
+     * default; suppressed by {@see AbstractRelation::withoutRelationshipEndpoint()}.
+     * A suppressed endpoint is enforced by the host as a 404, and its conventional
+     * `self` link is omitted so a rendered link never points at that 404.
+     */
+    public function exposesRelationshipEndpoint(): bool;
+
+    /**
+     * Whether additions to this (to-many) relationship are permitted — a `POST` to
+     * its relationship endpoint. On by default; opt out via
+     * {@see AbstractRelation::cannotAdd()}. A prohibited addition is an
+     * {@see \haddowg\JsonApi\Exception\AdditionProhibited} (403).
+     */
+    public function allowsAdd(): bool;
+
+    /**
+     * This relation's declared default paginator for its related-collection
+     * endpoint (`GET /{type}/{id}/{rel}`), or `null` for none. Set via
+     * {@see AbstractRelation::paginate()}. It is the to-many related-endpoint
+     * paginator — a to-one relation has no collection and ignores it; the host
+     * resolves the effective strategy as relation → related-resource → server
+     * default.
+     */
+    public function pagination(): ?\haddowg\JsonApi\Pagination\PaginatorInterface;
 
     /**
      * Applies parsed to-many linkage to `$model` under `$mode`: {@see Mode::Replace}

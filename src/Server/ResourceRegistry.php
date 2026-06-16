@@ -6,7 +6,9 @@ namespace haddowg\JsonApi\Server;
 
 use haddowg\JsonApi\Exception\NoResourceRegistered;
 use haddowg\JsonApi\Hydrator\HydratorInterface;
+use haddowg\JsonApi\Hydrator\HydratorResolverInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
+use haddowg\JsonApi\Resource\SerializerResolverAwareInterface;
 use haddowg\JsonApi\Resource\SerializerResolverInterface;
 use haddowg\JsonApi\Serializer\SerializerInterface;
 
@@ -27,7 +29,7 @@ use haddowg\JsonApi\Serializer\SerializerInterface;
  * registry falls back to plain `new $class()`. Registering two resources with the
  * same type is a configuration error.
  */
-final class ResourceRegistry implements SerializerResolverInterface
+final class ResourceRegistry implements SerializerResolverInterface, HydratorResolverInterface
 {
     /**
      * @var array<string, Entry>
@@ -168,10 +170,7 @@ final class ResourceRegistry implements SerializerResolverInterface
             throw new NoResourceRegistered($type);
         }
 
-        $resource = $this->resourceInstances[$type] ??= $this->makeResource($entry->resource);
-        $resource->setSerializerResolver($this);
-
-        return $resource;
+        return $this->resourceInstances[$type] ??= $this->makeResource($entry->resource);
     }
 
     /**
@@ -218,6 +217,13 @@ final class ResourceRegistry implements SerializerResolverInterface
         return $this->resourceFor($type);
     }
 
+    public function hasHydratorFor(string $type): bool
+    {
+        $entry = $this->entries[$type] ?? null;
+
+        return $entry !== null && ($entry->resource !== null || $entry->hydrator !== null);
+    }
+
     /**
      * The registered resource types.
      *
@@ -250,6 +256,27 @@ final class ResourceRegistry implements SerializerResolverInterface
     }
 
     /**
+     * Injects this registry (it is the {@see SerializerResolverInterface}) into a
+     * resolved instance that opts in via {@see SerializerResolverAwareInterface},
+     * so it can render relationships. An instance that does not implement the
+     * interface is left untouched.
+     *
+     * @template T of object
+     *
+     * @param T $instance
+     *
+     * @return T
+     */
+    private function injectResolver(object $instance): object
+    {
+        if ($instance instanceof SerializerResolverAwareInterface) {
+            $instance->setSerializerResolver($this);
+        }
+
+        return $instance;
+    }
+
+    /**
      * @param class-string<AbstractResource> $class
      */
     private function makeResource(string $class): AbstractResource
@@ -265,7 +292,7 @@ final class ResourceRegistry implements SerializerResolverInterface
             ));
         }
 
-        return $instance;
+        return $this->injectResolver($instance);
     }
 
     /**
@@ -284,7 +311,7 @@ final class ResourceRegistry implements SerializerResolverInterface
             ));
         }
 
-        return $instance;
+        return $this->injectResolver($instance);
     }
 
     /**
