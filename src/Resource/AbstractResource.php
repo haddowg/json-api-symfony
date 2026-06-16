@@ -46,7 +46,7 @@ use haddowg\JsonApi\Serializer\UriTypeAwareInterface;
  * the transformer reading {@see \haddowg\JsonApi\Resource\Field\FieldInterface::isSparseField()} and the request, so the
  * resource emits every non-hidden field and lets the engine narrow.
  */
-abstract class AbstractResource implements SerializerInterface, HydratorInterface, UpdateRelationshipHydratorInterface, UriTypeAwareInterface, SerializerResolverAwareInterface, IncludeControlsInterface, SelfLinkAwareInterface
+abstract class AbstractResource implements SerializerInterface, HydratorInterface, UpdateRelationshipHydratorInterface, UriTypeAwareInterface, SerializerResolverAwareInterface, IncludeControlsInterface, \haddowg\JsonApi\Serializer\CountableControlsInterface, SelfLinkAwareInterface
 {
     use RendersRelationsTrait;
 
@@ -218,6 +218,13 @@ abstract class AbstractResource implements SerializerInterface, HydratorInterfac
     {
         $attributes = [];
         foreach ($this->attributeFields() as $field) {
+            // A write-only field is accepted on write but never rendered: skip it
+            // here, alongside the sparse-fieldset filtering, so it appears on no
+            // read and a fields[type] parameter naming it cannot resurrect it.
+            if ($field->isWriteOnly()) {
+                continue;
+            }
+
             $attributes[$field->name()] = static fn(mixed $model, JsonApiRequestInterface $request, string $fieldName): mixed
                 => $field->serialize($model, $request, $fieldName);
         }
@@ -242,6 +249,26 @@ abstract class AbstractResource implements SerializerInterface, HydratorInterfac
         $names = [];
         foreach ($this->relationFields() as $relation) {
             if ($relation->isIncludable() === false) {
+                $names[] = $relation->name();
+            }
+        }
+
+        return $names;
+    }
+
+    /**
+     * The relationship names this resource declares countable, derived from
+     * {@see relationFields()} where the relation is to-many and declared
+     * {@see \haddowg\JsonApi\Resource\Field\AbstractRelation::countable()}. A
+     * `?withCount` naming any other relationship is rejected (400).
+     *
+     * @return list<string>
+     */
+    public function getCountableRelationships(mixed $object): array
+    {
+        $names = [];
+        foreach ($this->relationFields() as $relation) {
+            if ($relation->isToMany() && $relation->isCountable()) {
                 $names[] = $relation->name();
             }
         }

@@ -64,6 +64,27 @@ final class Server implements ResolvingServerInterface, RequestHandlerInterface
 
     private ?int $maxIncludeDepth = null;
 
+    /**
+     * Whether to reject an unrecognized query-parameter family with a `400`
+     * up front (before the operation handler runs). Default on: a client typo —
+     * `?foo`, a misspelled `?pag[number]`, a wrong-cased custom param — that the
+     * server does not recognize surfaces as a clean error instead of being
+     * silently dropped (a wrong-but-`200` result). Relax it
+     * ({@see withStrictQueryParameters()} false) to restore the
+     * tolerant-by-default behaviour (silent ignore).
+     */
+    private bool $strictQueryParameters = true;
+
+    /**
+     * The implementation-specific query-parameter family base names this server
+     * recognizes in addition to the reserved JSON:API families and `withCount`,
+     * registered by the host ({@see withCustomQueryParameter()}). A negotiated
+     * profile's keywords are added per request from the profile registry, not here.
+     *
+     * @var list<string>
+     */
+    private array $customQueryParameters = [];
+
     private ?ResponseFactoryInterface $responseFactory = null;
 
     private ?StreamFactoryInterface $streamFactory = null;
@@ -92,6 +113,23 @@ final class Server implements ResolvingServerInterface, RequestHandlerInterface
      * actually consult — the same way the lazy instantiation factory is.
      */
     private ?\haddowg\JsonApi\Serializer\RelationshipLoadStateInterface $relationshipLoadState = null;
+
+    /**
+     * The storage-aware resolver that supplies a countable relation's cardinality
+     * (the `meta.total` rendered on a `?withCount`-named relationship), or null for
+     * the standalone default (no count available, so no `meta.total`). Pushed into
+     * the {@see ResourceRegistry} the same way the load-state predicate is.
+     */
+    private ?\haddowg\JsonApi\Serializer\RelationshipCountInterface $relationshipCount = null;
+
+    /**
+     * The storage-aware resolver that supplies a to-many relation's page-1
+     * pagination state (the relationship-object pagination links) under the
+     * Relationship Queries profile, or null for the standalone default (no such
+     * links emitted). Pushed into the {@see ResourceRegistry} the same way the
+     * count resolver is.
+     */
+    private ?\haddowg\JsonApi\Serializer\RelationshipPaginationInterface $relationshipPagination = null;
 
     /**
      * The lazy instantiation factory threaded into the {@see ResourceRegistry}, or
@@ -171,6 +209,45 @@ final class Server implements ResolvingServerInterface, RequestHandlerInterface
         return $self;
     }
 
+    /**
+     * Toggles strict query-parameter validation (default `true`). When on, a
+     * query parameter whose **family base name** the server does not recognize is
+     * rejected with a `400` {@see \haddowg\JsonApi\Exception\QueryParamUnrecognized}
+     * up front, before the operation handler runs — so a client typo surfaces as a
+     * clean error rather than a silently-dropped, wrong-but-`200` result. Passing
+     * `false` restores the tolerant behaviour: an unrecognized family is ignored.
+     *
+     * The recognized set is the reserved JSON:API families, `withCount`, every
+     * {@see withCustomQueryParameter()} the host registered, and the reserved
+     * keywords of every registered profile the request negotiated.
+     */
+    public function withStrictQueryParameters(bool $strict = true): self
+    {
+        $self = clone $this;
+        $self->strictQueryParameters = $strict;
+
+        return $self;
+    }
+
+    /**
+     * Registers one or more implementation-specific query-parameter family base
+     * names this server recognizes (e.g. a host's own `withTrashed`), so strict
+     * validation does not reject them. Each name should carry a non-`a-z`
+     * character to satisfy the spec's custom-parameter naming rule, though the
+     * recognition itself is name-exact and does not enforce that.
+     *
+     * Appends to the existing set; `withCount` and the reserved JSON:API families
+     * are always recognized and need not be registered. A negotiated profile's
+     * keywords are recognized automatically and likewise need no registration.
+     */
+    public function withCustomQueryParameter(string ...$names): self
+    {
+        $self = clone $this;
+        $self->customQueryParameters = [...$this->customQueryParameters, ...\array_values($names)];
+
+        return $self;
+    }
+
     public function withPsr17(ResponseFactoryInterface $responseFactory, StreamFactoryInterface $streamFactory): self
     {
         $self = clone $this;
@@ -217,6 +294,8 @@ final class Server implements ResolvingServerInterface, RequestHandlerInterface
         $self->resources = clone $this->resources;
         $self->resources->setResolver($self->resolver);
         $self->resources->setRelationshipLoadState($self->relationshipLoadState);
+        $self->resources->setRelationshipCount($self->relationshipCount);
+        $self->resources->setRelationshipPagination($self->relationshipPagination);
         $self->resources->register($resource, $serializer, $hydrator);
 
         return $self;
@@ -237,6 +316,8 @@ final class Server implements ResolvingServerInterface, RequestHandlerInterface
         $self->resources = clone $this->resources;
         $self->resources->setResolver($self->resolver);
         $self->resources->setRelationshipLoadState($self->relationshipLoadState);
+        $self->resources->setRelationshipCount($self->relationshipCount);
+        $self->resources->setRelationshipPagination($self->relationshipPagination);
         $self->resources->registerSerializerHydrator($type, $serializer, $hydrator);
 
         return $self;
@@ -261,6 +342,8 @@ final class Server implements ResolvingServerInterface, RequestHandlerInterface
         $self->resources = clone $this->resources;
         $self->resources->setResolver($self->resolver);
         $self->resources->setRelationshipLoadState($self->relationshipLoadState);
+        $self->resources->setRelationshipCount($self->relationshipCount);
+        $self->resources->setRelationshipPagination($self->relationshipPagination);
 
         return $self;
     }
@@ -279,6 +362,52 @@ final class Server implements ResolvingServerInterface, RequestHandlerInterface
         $self->resources = clone $this->resources;
         $self->resources->setResolver($self->resolver);
         $self->resources->setRelationshipLoadState($self->relationshipLoadState);
+        $self->resources->setRelationshipCount($self->relationshipCount);
+        $self->resources->setRelationshipPagination($self->relationshipPagination);
+
+        return $self;
+    }
+
+    /**
+     * Injects the storage-aware resolver a countable relation consults — when it
+     * is {@see \haddowg\JsonApi\Resource\Field\RelationInterface::isCountable()}
+     * and named in the request's `?withCount` — for the `meta.total` rendered on
+     * its relationship object. Passing `null` (the default) restores the standalone
+     * behaviour: no count is available, so no `meta.total` is emitted even for a
+     * countable, `?withCount`-named relation. The data-layer adapter batches the
+     * counts across the fetched page (avoiding an N+1) and supplies them here.
+     */
+    public function withRelationshipCount(?\haddowg\JsonApi\Serializer\RelationshipCountInterface $relationshipCount): self
+    {
+        $self = clone $this;
+        $self->relationshipCount = $relationshipCount;
+        $self->resources = clone $this->resources;
+        $self->resources->setResolver($self->resolver);
+        $self->resources->setRelationshipLoadState($self->relationshipLoadState);
+        $self->resources->setRelationshipCount($self->relationshipCount);
+        $self->resources->setRelationshipPagination($self->relationshipPagination);
+
+        return $self;
+    }
+
+    /**
+     * Injects the storage-aware resolver a to-many relation consults — when the
+     * Relationship Queries profile is negotiated — for the page-1 pagination state
+     * rendered as the relationship-object `first` / `prev` / `next` (+ `last`)
+     * links. Passing `null` (the default) restores the standalone behaviour: no
+     * relationship-object pagination links are emitted. The data-layer adapter
+     * windows each relation to page 1 (ordered/filtered by the per-relationship
+     * sort/filter) and supplies the page here.
+     */
+    public function withRelationshipPagination(?\haddowg\JsonApi\Serializer\RelationshipPaginationInterface $relationshipPagination): self
+    {
+        $self = clone $this;
+        $self->relationshipPagination = $relationshipPagination;
+        $self->resources = clone $this->resources;
+        $self->resources->setResolver($self->resolver);
+        $self->resources->setRelationshipLoadState($self->relationshipLoadState);
+        $self->resources->setRelationshipCount($self->relationshipCount);
+        $self->resources->setRelationshipPagination($self->relationshipPagination);
 
         return $self;
     }
@@ -399,6 +528,25 @@ final class Server implements ResolvingServerInterface, RequestHandlerInterface
     }
 
     /**
+     * Whether strict query-parameter validation is on (default `true`).
+     */
+    public function strictQueryParameters(): bool
+    {
+        return $this->strictQueryParameters;
+    }
+
+    /**
+     * The host-registered custom query-parameter family base names, in
+     * registration order — exposed primarily for inspection and tests.
+     *
+     * @return list<string>
+     */
+    public function customQueryParameters(): array
+    {
+        return $this->customQueryParameters;
+    }
+
+    /**
      * The registered server-level `serving` handlers, in registration order —
      * exposed primarily for inspection and tests.
      *
@@ -422,6 +570,16 @@ final class Server implements ResolvingServerInterface, RequestHandlerInterface
     public function relationshipLoadState(): ?\haddowg\JsonApi\Serializer\RelationshipLoadStateInterface
     {
         return $this->relationshipLoadState;
+    }
+
+    public function relationshipCount(): ?\haddowg\JsonApi\Serializer\RelationshipCountInterface
+    {
+        return $this->relationshipCount;
+    }
+
+    public function relationshipPagination(): ?\haddowg\JsonApi\Serializer\RelationshipPaginationInterface
+    {
+        return $this->relationshipPagination;
     }
 
     public function hydratorFor(string $type): HydratorInterface
@@ -459,9 +617,77 @@ final class Server implements ResolvingServerInterface, RequestHandlerInterface
             throw new \LogicException('Server::dispatch() requires an OperationHandler; call withHandler().');
         }
 
+        $this->validateStrictQueryParameters($operation);
         $this->fireServing($operation);
 
         return $handler->handle($operation);
+    }
+
+    /**
+     * Runs strict query-parameter validation for the dispatched operation, when
+     * enabled and the operation is backed by an HTTP request. A programmatic
+     * dispatch with no HTTP message has no query string to validate and is skipped.
+     *
+     * @throws \haddowg\JsonApi\Exception\QueryParamUnrecognized
+     */
+    private function validateStrictQueryParameters(
+        \haddowg\JsonApi\Operation\JsonApiOperationInterface $operation,
+    ): void {
+        $request = $operation->context()->httpRequest();
+        if ($request instanceof \haddowg\JsonApi\Request\JsonApiRequestInterface) {
+            $this->validateStrictQueryParametersOf($request);
+        }
+    }
+
+    /**
+     * Validates a JSON:API request's query parameters against this server's
+     * recognized set, when strict mode is on. The recognized set is assembled per
+     * the resolved primary resource's vocabulary: the reserved JSON:API families,
+     * `withCount`, the host-registered custom params, and the reserved keywords of
+     * every registered profile this request negotiated. An unrecognized family
+     * base name throws {@see \haddowg\JsonApi\Exception\QueryParamUnrecognized}
+     * (`400`). Shared by the programmatic {@see dispatch()} path and the PSR-15
+     * {@see handle()} path (via the adapter hook).
+     *
+     * @throws \haddowg\JsonApi\Exception\QueryParamUnrecognized
+     */
+    private function validateStrictQueryParametersOf(
+        \haddowg\JsonApi\Request\JsonApiRequestInterface $request,
+    ): void {
+        if ($this->strictQueryParameters === false) {
+            return;
+        }
+
+        $validator = new \haddowg\JsonApi\Negotiation\StrictQueryParameterValidator(
+            $this->recognizedCustomQueryParameters($request),
+        );
+        $validator->validate($request);
+    }
+
+    /**
+     * Assembles the implementation-specific query-parameter family base names this
+     * server recognizes for the given request: the always-on `withCount`, the
+     * host-registered {@see withCustomQueryParameter()} names, and the reserved
+     * keywords of every registered profile the client negotiated (so a profile's
+     * families are recognized only when its URI is requested — mirroring the gate
+     * the profile's own parsers use).
+     *
+     * @return list<string>
+     */
+    private function recognizedCustomQueryParameters(
+        \haddowg\JsonApi\Request\JsonApiRequestInterface $request,
+    ): array {
+        $families = ['withCount', ...$this->customQueryParameters];
+
+        foreach ($this->profiles->all() as $profile) {
+            if ($request->isProfileRequested($profile->uri())) {
+                foreach ($profile->keywords() as $keyword) {
+                    $families[] = $keyword;
+                }
+            }
+        }
+
+        return $families;
     }
 
     /**
@@ -526,7 +752,11 @@ final class Server implements ResolvingServerInterface, RequestHandlerInterface
         }
 
         if ($handler instanceof \haddowg\JsonApi\Operation\OperationHandlerInterface) {
-            return new Psr7ToOperationHandlerAdapter($handler, $this);
+            return new Psr7ToOperationHandlerAdapter(
+                $handler,
+                $this,
+                strictQueryParameters: $this->validateStrictQueryParametersOf(...),
+            );
         }
 
         return $handler;
