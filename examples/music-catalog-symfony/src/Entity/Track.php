@@ -30,9 +30,12 @@ class Track
     public ?int $id = null;
 
     /**
-     * The owning side of the tracks↔playlists ManyToMany. The pivot's
-     * `position`/`addedAt` fields are declare-only metadata in 1.0, so the
-     * association alone backs the relation.
+     * The owning side of the tracks↔playlists ManyToMany. A plain join table holds
+     * only the two foreign keys, so this relation carries no pivot data — the
+     * ordered-with-position variant is the {@see Playlist}'s separate
+     * `orderedTracks` pivot relation, backed by the
+     * {@see \haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\PlaylistEntry}
+     * association entity.
      *
      * @var Collection<int, Playlist>
      */

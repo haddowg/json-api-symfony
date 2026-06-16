@@ -6,13 +6,22 @@ namespace haddowg\JsonApiBundle\DataProvider\Doctrine;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\QueryBuilder;
+use haddowg\JsonApi\Exception\SortingUnsupported;
+use haddowg\JsonApi\Exception\SortParamUnrecognized;
+use haddowg\JsonApi\Operation\QueryParameters;
 use haddowg\JsonApi\Pagination\OffsetWindow;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Resource\Field\FieldInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\Sort\SortDirective;
+use haddowg\JsonApi\Resource\Sort\SortInterface;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\CollectionResult;
 use haddowg\JsonApiBundle\DataProvider\CriteriaApplier;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
+use haddowg\JsonApiBundle\DataProvider\PivotAwareProviderInterface;
+use haddowg\JsonApiBundle\DataProvider\PivotCollectionResult;
+use haddowg\JsonApiBundle\DataProvider\PivotFields;
 use haddowg\JsonApiBundle\DataProvider\PreloadsIncludesInterface;
 use haddowg\JsonApiBundle\Server\IdEncoderResolver;
 
@@ -58,8 +67,9 @@ use haddowg\JsonApiBundle\Server\IdEncoderResolver;
  * is a no-op — the includes render lazily.
  *
  * @implements DataProviderInterface<object>
+ * @implements PivotAwareProviderInterface<object>
  */
-final class DoctrineDataProvider implements DataProviderInterface, PreloadsIncludesInterface
+final class DoctrineDataProvider implements DataProviderInterface, PreloadsIncludesInterface, PivotAwareProviderInterface
 {
     /**
      * The root alias every generated QueryBuilder uses; handlers re-read it
@@ -83,6 +93,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PreloadsInclu
      * @param IdEncoderResolver                    $idEncoders        resolves a type's id encoder (route `{id}` decode)
      * @param iterable<DoctrineExtensionInterface> $extensions        in descending tag-priority order
      * @param ?IncludePreloader                    $preloader         the optional include batch-preloader (null when `shipmonk/doctrine-entity-preloader` is absent)
+     * @param ?PivotAssociationResolver            $pivotAssociations resolves a `belongsToMany` pivot relation's association entity (always wired under Doctrine)
      */
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
@@ -93,6 +104,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PreloadsInclu
         // toggled off at runtime (the conformance suite disables it to prove the
         // rendered document is identical with and without preloading).
         private ?IncludePreloader $preloader = null,
+        private readonly ?PivotAssociationResolver $pivotAssociations = null,
     ) {
         $this->extensions = \is_array($extensions) ? \array_values($extensions) : \iterator_to_array($extensions, false);
         $this->applier = new CriteriaApplier();
@@ -275,6 +287,442 @@ final class DoctrineDataProvider implements DataProviderInterface, PreloadsInclu
         $builder->setFirstResult($window->offset)->setMaxResults($window->limit);
 
         return new CollectionResult($this->items($builder), $total);
+    }
+
+    // --- pivot (belongsToMany association-entity) collection -------------------
+
+    public function supportsPivot(string $relatedType, RelationInterface $relation): bool
+    {
+        return $this->pivotAssociations !== null
+            && $this->pivotAssociations->isPivotRelation($relation)
+            && isset($this->entityClassByType[$relatedType]);
+    }
+
+    /**
+     * The related collection over the pivot's association entity, in ONE DQL
+     * statement. The far (related) entity is the OUTER query root, the association
+     * entity is joined as `pivot` correlated on its far-side `ManyToOne` and scoped
+     * to the parent by its parent-side `ManyToOne`, and each declared pivot field is
+     * selected as a scalar alias:
+     *
+     *     SELECT resource, pivot.<field1> AS pivot_<field1>, …
+     *     FROM <FarEntity> resource
+     *     INNER JOIN <AssocEntity> pivot WITH pivot.<farProp> = resource
+     *     WHERE pivot.<parentProp> = :jsonapi_parent
+     *       [AND <related-entity filters on resource>]   -- root alias, shared handler
+     *       [AND <pivot filters on pivot.<field>>]        -- pivot alias, this query
+     *     ORDER BY [<pivot/related sorts>]
+     *     LIMIT/OFFSET
+     *
+     * Rooting on the far entity lets the shared {@see CriteriaApplier} +
+     * {@see DoctrineFilterHandler}/{@see DoctrineSortHandler} apply the related
+     * vocabulary on the root exactly as the plain related collection does; pivot
+     * keys are split out and applied on the `pivot` alias here. The scalar pivot
+     * fields ride each hydrated row (a "mixed" result: `[0 => farEntity,
+     * 'pivot_<field>' => value]`), so the per-member map comes from the same pass —
+     * no separate read, no page-shortening, and the window applies per far-entity
+     * row so pagination is correct.
+     *
+     * @return PivotCollectionResult<object>
+     */
+    public function fetchRelatedPivotCollection(
+        string $relatedType,
+        object $parent,
+        RelationInterface $relation,
+        CollectionCriteria $criteria,
+        JsonApiRequestInterface $request,
+    ): PivotCollectionResult {
+        $builder = $this->pivotQuery($relatedType, $parent, $relation);
+
+        foreach ($this->extensionsFor($relatedType) as $extension) {
+            $builder = $extension->apply($builder, $relatedType, QueryPurpose::FetchCollection);
+        }
+
+        $this->applyPivotCriteria($criteria, $builder, $relation);
+
+        $window = $criteria->window;
+        if ($window === null) {
+            return $this->pivotResult($this->pivotRows($builder), $relatedType, $relation, null);
+        }
+
+        if (!$window instanceof OffsetWindow) {
+            throw new \LogicException(\sprintf(
+                'The %s can only execute a %s pagination window; got %s.',
+                self::class,
+                OffsetWindow::class,
+                \get_debug_type($window),
+            ));
+        }
+
+        $total = $this->countPivot($builder);
+        $builder->setFirstResult($window->offset)->setMaxResults($window->limit);
+
+        return $this->pivotResult($this->pivotRows($builder), $relatedType, $relation, $total);
+    }
+
+    /**
+     * The pivot map for EVERY member of the parent's pivot relation (no filter, no
+     * window) — for the relationship-linkage endpoint, which renders all linkage off
+     * the parent.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    public function fetchRelatedPivotMap(
+        string $relatedType,
+        object $parent,
+        RelationInterface $relation,
+    ): array {
+        $builder = $this->pivotQuery($relatedType, $parent, $relation);
+
+        return $this->pivotResult($this->pivotRows($builder), $relatedType, $relation, null)->pivotMap;
+    }
+
+    /**
+     * The base pivot query: the far entity rooted at {@see ROOT_ALIAS}, the
+     * association entity inner-joined as `pivot` (correlated on its far-side
+     * `ManyToOne`, scoped to the parent on its parent-side `ManyToOne`), and each
+     * declared pivot field selected as a `pivot_<field>` scalar alias so the values
+     * ride each hydrated row.
+     *
+     * The query `GROUP BY`s the far entity id so it returns exactly ONE row per
+     * distinct far member. This keeps pagination correct and the pivot map sound
+     * under **duplicate membership** — the same far entity joined to the parent by
+     * more than one association-entity row (a track added to a playlist at two
+     * positions). Without the grouping the inner join fans that member out one row
+     * per pivot row, so a windowed `LIMIT`/`OFFSET` would split a member across pages
+     * and the pivot map (keyed by member id) would last-row-win; grouped, the window
+     * is over distinct members and each member yields a single representative pivot
+     * row. The pivot relation therefore renders **one** membership's values per
+     * member: where a member appears more than once the rendered pivot meta reflects
+     * a representative row (the contract — pivot meta is a single per-member value
+     * set, not a list; ADR 0045).
+     */
+    private function pivotQuery(string $relatedType, object $parent, RelationInterface $relation): QueryBuilder
+    {
+        $relatedClass = $this->entityClassFor($relatedType);
+        $association = $this->pivotAssociation($relation, $parent, $relatedClass);
+        $idField = $this->entityManager->getClassMetadata($relatedClass)->getSingleIdentifierFieldName();
+
+        $builder = $this->entityManager
+            ->getRepository($relatedClass)
+            ->createQueryBuilder(self::ROOT_ALIAS)
+            ->innerJoin(
+                $association->entityClass,
+                'pivot',
+                'WITH',
+                \sprintf('pivot.%s = %s', $association->farProperty, self::ROOT_ALIAS),
+            )
+            ->andWhere(\sprintf('pivot.%s = :jsonapi_parent', $association->parentProperty))
+            ->setParameter('jsonapi_parent', $parent)
+            // One row per distinct far member — see the docblock (duplicate membership).
+            ->groupBy(\sprintf('%s.%s', self::ROOT_ALIAS, $idField));
+
+        foreach (PivotFields::declaredFor($relation) as $field) {
+            // Select the backing column under a `pivot_<name>` alias keyed by the
+            // wire name (column defaults to the name, but may differ via storedAs()).
+            $builder->addSelect(\sprintf('pivot.%s AS pivot_%s', $field->column() ?? $field->name(), $field->name()));
+        }
+
+        return $builder;
+    }
+
+    /**
+     * Applies the requested filters and sorts to the pivot query, routing each to
+     * the right alias: a key declared as a pivot field hits `pivot.<field>`, every
+     * other key hits the related-entity root via the shared {@see CriteriaApplier}.
+     * Filters compose commutatively, so the related ones go through the shared
+     * applier and the pivot ones are appended separately; sorts do NOT compose
+     * commutatively, so the whole `ORDER BY` is built in ONE request-ordered pass
+     * across both aliases (see {@see applyPivotSorts}) rather than letting the
+     * shared applier append all related sorts first.
+     */
+    private function applyPivotCriteria(CollectionCriteria $criteria, QueryBuilder $builder, RelationInterface $relation): void
+    {
+        $pivotFields = PivotFields::byName($relation);
+
+        // Filters: a pivot field routes to pivot.<field>; the rest run through the
+        // shared applier against the related vocabulary on the root. Splitting the
+        // declared vocabulary the same way keeps the unrecognised-key 400 intact —
+        // a key in neither set is matched by neither sub-applier.
+        $relatedFilters = \array_values(\array_filter(
+            $criteria->filters,
+            static fn($filter): bool => !isset($pivotFields[$filter->key()]),
+        ));
+
+        // Related-entity filters on the ROOT alias, via the shared handler. The
+        // requested query parameters are projected to the RELATED filter keys only
+        // (pivot keys stripped so the shared applier never tries to match them
+        // against the pivot-free related vocabulary and 400) — and to an EMPTY sort,
+        // because the ORDER BY is built request-ordered across both aliases below,
+        // not by the shared applier (which would append all related sorts first and
+        // demote a pivot-first sort; the bug a `?sort=<pivot>,<related>` exposed).
+        $relatedParameters = new QueryParameters(
+            $criteria->queryParameters->fields,
+            $criteria->queryParameters->includes,
+            [],
+            \array_filter(
+                $criteria->queryParameters->filter,
+                static fn($key): bool => !isset($pivotFields[$key]),
+                \ARRAY_FILTER_USE_KEY,
+            ),
+            $criteria->queryParameters->pagination,
+        );
+
+        $relatedCriteria = new CollectionCriteria(
+            $relatedParameters,
+            $relatedFilters,
+            // No sorts on the shared applier — the request sort is applied below in
+            // request order. An empty default carried for the same reason.
+            [],
+            null,
+            [],
+        );
+        $this->applier->apply($relatedCriteria, $builder, $this->filterHandler, $this->sortHandler);
+
+        $this->applyPivotFilters($criteria, $builder, $pivotFields);
+
+        // The full ORDER BY, request-ordered across the pivot and root aliases. The
+        // related sort vocabulary is the criteria's declared sorts minus the pivot
+        // keys, and the default sort applies only when no `?sort` was requested.
+        $relatedSorts = \array_values(\array_filter(
+            $criteria->sorts,
+            static fn($sort): bool => !isset($pivotFields[$sort->key()]),
+        ));
+        $defaultSort = \array_values(\array_filter(
+            $criteria->defaultSort,
+            static fn(SortDirective $directive): bool => !isset($pivotFields[$directive->sort->key()]),
+        ));
+        $this->applyPivotSorts($criteria, $builder, $pivotFields, $relatedSorts, $defaultSort);
+    }
+
+    /**
+     * Applies the requested pivot-field filters on the `pivot` alias. A pivot filter
+     * is an equality match on the field's backing column, rebuilt here on the
+     * `pivot` alias because the shared handler only ever targets the query root; the
+     * value is coerced through the field's own cast.
+     *
+     * @param array<string, FieldInterface> $pivotFields the declared pivot fields keyed by wire name
+     */
+    private function applyPivotFilters(CollectionCriteria $criteria, QueryBuilder $builder, array $pivotFields): void
+    {
+        foreach ($criteria->queryParameters->filter as $key => $value) {
+            $key = (string) $key;
+            $field = $pivotFields[$key] ?? null;
+            if ($field === null) {
+                continue;
+            }
+
+            $placeholder = 'jsonapi_pivot_filter_' . \count($builder->getParameters());
+            $builder
+                ->andWhere(\sprintf('pivot.%s = :%s', $field->column() ?? $field->name(), $placeholder))
+                ->setParameter($placeholder, PivotFields::cast($value, $field));
+        }
+    }
+
+    /**
+     * Builds the whole `ORDER BY` in ONE pass, in the request's exact `sort`
+     * directive order, routing each field to the correct alias so the precedence
+     * matches the client's list: a pivot field appends `pivot.<field>`, every other
+     * field resolves its column from the related sort vocabulary and appends
+     * `resource.<column>` on the root. So `?sort=position,title` orders by
+     * `pivot.position` then `resource.title`, and `?sort=title,position` flips that —
+     * the request-first directive is always the most significant key (the bug a
+     * pivot-first sort exposed when related sorts were appended first).
+     *
+     * Sorting semantics match the shared {@see CriteriaApplier}: with no `?sort` the
+     * related default order applies (pivot fields declare no default direction and
+     * have no related column, so a pivot default does not belong); a requested field
+     * in neither the pivot set nor the related vocabulary is a 400
+     * ({@see SortParamUnrecognized}), and requesting any sort when neither vocabulary
+     * exists is a 400 ({@see SortingUnsupported}).
+     *
+     * @param array<string, FieldInterface> $pivotFields  the declared pivot fields keyed by wire name
+     * @param list<SortInterface>            $relatedSorts the related sort vocabulary (criteria sorts minus pivot keys)
+     * @param list<SortDirective>            $defaultSort  the related default order, applied only when no `?sort` is requested
+     */
+    private function applyPivotSorts(
+        CollectionCriteria $criteria,
+        QueryBuilder $builder,
+        array $pivotFields,
+        array $relatedSorts,
+        array $defaultSort,
+    ): void {
+        $requested = $criteria->queryParameters->sort;
+
+        if ($requested === []) {
+            // No `?sort`: fall back to the related default order through the shared
+            // handler (validated against the related vocabulary exactly as a
+            // requested related sort is).
+            if ($defaultSort !== []) {
+                $this->sortHandler->apply($this->validateDefaults($defaultSort, $relatedSorts), $builder);
+            }
+
+            return;
+        }
+
+        if ($pivotFields === [] && $relatedSorts === []) {
+            throw new SortingUnsupported();
+        }
+
+        foreach ($requested as $field) {
+            $descending = \str_starts_with($field, '-');
+            $key = $descending ? \substr($field, 1) : $field;
+
+            $pivotField = $pivotFields[$key] ?? null;
+            if ($pivotField !== null) {
+                $builder->addOrderBy(\sprintf('pivot.%s', $pivotField->column() ?? $pivotField->name()), $descending ? 'DESC' : 'ASC');
+
+                continue;
+            }
+
+            // A related sort field: resolve its declared column and order on the
+            // root through the shared handler (one directive at a time preserves the
+            // request order across both aliases). A field in neither vocabulary is
+            // unrecognised — the 400 the shared applier would have raised.
+            $sort = $this->relatedSortFor($relatedSorts, $key) ?? throw new SortParamUnrecognized($key);
+            $this->sortHandler->apply([new SortDirective($sort, $descending)], $builder);
+        }
+    }
+
+    /**
+     * Validates each default directive names a declared related sort (a server-config
+     * error otherwise, exactly as the shared {@see CriteriaApplier} validates a
+     * default), returning them unchanged for the handler.
+     *
+     * @param list<SortDirective> $defaultSort
+     * @param list<SortInterface> $relatedSorts
+     *
+     * @return list<SortDirective>
+     *
+     * @throws SortParamUnrecognized when a default names an undeclared related sort
+     */
+    private function validateDefaults(array $defaultSort, array $relatedSorts): array
+    {
+        foreach ($defaultSort as $directive) {
+            if ($this->relatedSortFor($relatedSorts, $directive->sort->key()) === null) {
+                throw new SortParamUnrecognized($directive->sort->key());
+            }
+        }
+
+        return $defaultSort;
+    }
+
+    /**
+     * The declared related sort whose key matches `$key`, or null when none does.
+     *
+     * @param list<SortInterface> $relatedSorts
+     */
+    private function relatedSortFor(array $relatedSorts, string $key): ?SortInterface
+    {
+        foreach ($relatedSorts as $sort) {
+            if ($sort->key() === $key) {
+                return $sort;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Runs the pivot query and returns the "mixed" result rows — each a
+     * `[0 => farEntity, 'pivot_<field>' => value, …]` map (the far entity hydrated at
+     * index 0, the scalar pivot fields under their `pivot_<field>` aliases).
+     *
+     * @return list<array<int|string, mixed>>
+     */
+    private function pivotRows(QueryBuilder $builder): array
+    {
+        /** @var list<array<int|string, mixed>> $rows */
+        $rows = $builder->getQuery()->getResult();
+
+        return $rows;
+    }
+
+    /**
+     * Builds the {@see PivotCollectionResult} from the query rows: the far entities
+     * (row index 0) are the items, and the pivot map is `wireId => [field => typed
+     * value]` read from each row's `pivot_<field>` scalar aliases and cast per the
+     * relation's declared field types.
+     *
+     * @param list<array<int|string, mixed>> $rows
+     *
+     * @return PivotCollectionResult<object>
+     */
+    private function pivotResult(array $rows, string $relatedType, RelationInterface $relation, ?int $total): PivotCollectionResult
+    {
+        $pivotFields = PivotFields::byName($relation);
+        $encoder = $this->idEncoders->encoderFor($relatedType);
+        $relatedMetadata = $this->entityManager->getClassMetadata($this->entityClassFor($relatedType));
+        $idField = $relatedMetadata->getSingleIdentifierFieldName();
+
+        $items = [];
+        $pivotMap = [];
+        foreach ($rows as $row) {
+            $far = $row[0] ?? null;
+            if (!\is_object($far)) {
+                continue;
+            }
+            $items[] = $far;
+
+            $identifierValues = $this->entityManager->getClassMetadata($far::class)->getIdentifierValues($far);
+            $storageKey = $identifierValues[$idField] ?? null;
+            if ($storageKey === null) {
+                continue;
+            }
+
+            if ($encoder !== null) {
+                $wireId = $encoder->encode($storageKey);
+            } elseif (\is_scalar($storageKey)) {
+                $wireId = (string) $storageKey;
+            } else {
+                continue;
+            }
+
+            $values = [];
+            foreach ($pivotFields as $name => $field) {
+                // The scalar was selected under the `pivot_<name>` alias (keyed by
+                // wire name) in pivotQuery(); cast it through the field's own type.
+                $values[$name] = PivotFields::cast($row['pivot_' . $name] ?? null, $field);
+            }
+
+            $pivotMap[$wireId] = $values;
+        }
+
+        return new PivotCollectionResult($items, $pivotMap, $total);
+    }
+
+    /**
+     * The pre-window total of the pivot query: the same builder re-selected as a
+     * `COUNT(DISTINCT …)` of the far-entity root, ordering and grouping dropped, no
+     * window. `DISTINCT` so the total counts distinct far members rather than joined
+     * pivot rows — the page is grouped to one row per member (see {@see pivotQuery}),
+     * so the total must match it under duplicate membership (a member joined by more
+     * than one association-entity row). The scalar pivot selects and the `GROUP BY`
+     * must be cleared too — a `COUNT` query carries a single ungrouped select.
+     */
+    private function countPivot(QueryBuilder $builder): int
+    {
+        $counter = clone $builder;
+        $counter->resetDQLPart('orderBy');
+        $counter->resetDQLPart('groupBy');
+        $counter->select(\sprintf('COUNT(DISTINCT %s)', self::ROOT_ALIAS));
+
+        $total = $counter->getQuery()->getSingleScalarResult();
+
+        return \is_numeric($total) ? (int) $total : 0;
+    }
+
+    /**
+     * Resolves the relation's association entity, asserting the resolver is wired
+     * (it always is under Doctrine — `supportsPivot()` already gated on it).
+     *
+     * @param class-string $relatedClass
+     */
+    private function pivotAssociation(RelationInterface $relation, object $parent, string $relatedClass): PivotAssociation
+    {
+        \assert($this->pivotAssociations !== null);
+
+        return $this->pivotAssociations->resolve($relation, $parent, $relatedClass);
     }
 
     /**

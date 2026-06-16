@@ -193,6 +193,29 @@ segment while keeping route *names* keyed on the JSON:API type; that route-emiss
 consequence, and the worked `book → /books` case, are owned by
 [custom serializers & hydrators](custom-serializers-hydrators.md).
 
+## Self links by convention
+
+Two spec-recommended `self` links render by convention with no configuration:
+
+- **Resource self** — every resource object (primary data *and* every `?include`'d
+  resource) carries `data.links.self = {base_uri}/{uriType}/{id}`. It uses the URI
+  segment, so a `book` type with `$uriType = 'books'` links to `/books/{id}` while
+  the `type` member stays `book`. It is skipped when the id is empty (a
+  not-yet-persisted echo) or when a hand-written `getLinks()` already supplies a
+  `self` (which wins). Opt a resource out by overriding `emitsSelfLink(): bool` to
+  return `false` — that resource then has no `data.links.self`, while the top-level
+  document self is unaffected.
+- **Top-level document self** — every data/resource document (single, collection,
+  related, relationship, meta — but **not** error documents) carries
+  `links.self` = the request URI. On a paginated collection the page's own self
+  (carrying the resolved page params) wins, with `first`/`prev`/`next`/`last`
+  preserved alongside.
+
+Both links are storage-agnostic — they derive from the configured `base_uri`, the
+`uriType`/type, the id and the request URI — so they are identical on every
+provider. The behaviour lives in core (core ADR 0054); the bundle witnesses it
+across the dual-provider conformance suites (bundle ADR 0047).
+
 ## Sourcing the resource id
 
 Where a new resource's `id` comes from is governed by two orthogonal axes on the

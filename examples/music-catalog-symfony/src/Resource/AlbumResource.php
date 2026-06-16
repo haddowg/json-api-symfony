@@ -16,6 +16,7 @@ use haddowg\JsonApi\Resource\Field\HasMany;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Map;
 use haddowg\JsonApi\Resource\Field\Str;
+use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Filter\WhereHas;
 use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApi\Resource\Sort\SortDirective;
@@ -93,9 +94,32 @@ final class AlbumResource extends AbstractResource
             // Default relation reader: `artist` reads the ManyToOne and `tracks` the
             // OneToMany straight off the entity associations.
             BelongsTo::make('artist')->type('artists'),
+            // Relation-scoped filters/sorts (bundle ADR 0044): `withFilters`/
+            // `withSorts` augment the related-collection endpoint
+            // `GET /albums/{id}/tracks` ONLY — they are merged on top of the related
+            // `tracks` resource's own vocabulary there, but are absent from the
+            // primary `/tracks` collection (its own `like`/`explicit`/`genres`
+            // filters and `title`/`trackNumber` sorts are all `/tracks` knows).
+            //
+            //  - `filter[longerThan]` narrows the album's tracks to those whose
+            //    `length_seconds` exceeds the value — a contextual filter that only
+            //    makes sense when listing one album's tracks, so it lives on the
+            //    relation, not the `tracks` type.
+            //  - `sort=duration` orders them by `length_seconds`. Neither `longerThan`
+            //    nor `duration` is a `/tracks` key, so `GET /tracks?filter[longerThan]`
+            //    or `?sort=duration` is a 400 — proving the scope.
+            //
+            // Both name an entity column on the RELATED `Track` (the common case), so
+            // they apply out of the box through the same criteria the providers
+            // already honour. A PIVOT/join-table column (e.g. a many-to-many
+            // `position` on `tracks.playlists`) is NOT auto-wired — that needs a
+            // custom FilterHandler/SortHandler supplied through the provider seam; the
+            // relation's `withFilters`/`withSorts` only names the key.
             HasMany::make('tracks')
                 ->type('tracks')
                 ->paginate(PagePaginator::make()->withDefaultPerPage(2))
+                ->withFilters(Where::make('longerThan', 'length_seconds', '>'))
+                ->withSorts(SortByField::make('duration', 'length_seconds'))
                 ->linkageOnlyWhenLoaded(),
         ];
     }

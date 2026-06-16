@@ -15,6 +15,8 @@ use haddowg\JsonApiBundle\DataProvider\CollectionResult;
 use haddowg\JsonApiBundle\DataProvider\CriteriaApplier;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineDataProvider;
+use haddowg\JsonApiBundle\DataProvider\PivotAwareProviderInterface;
+use haddowg\JsonApiBundle\DataProvider\PivotCollectionResult;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Album;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Artist;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Library;
@@ -46,9 +48,17 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Track;
  * shared vocabulary exists; a polymorphic to-many carries no shared filter/sort
  * vocabulary, so the criteria here only ever window.
  *
+ * Because it supports `tracks`, it also shadows the Doctrine provider for the
+ * `playlists.orderedTracks` **pivot** relation (whose related type is `tracks`).
+ * Pivot fetching is a Doctrine-association-entity concern, so it implements
+ * {@see PivotAwareProviderInterface} by **delegating** every pivot method to the
+ * wrapped {@see DoctrineDataProvider} — exactly as it delegates a single-typed
+ * `fetchRelatedCollection()` — keeping the pivot path intact under the shared kernel.
+ *
  * @implements DataProviderInterface<object>
+ * @implements PivotAwareProviderInterface<object>
  */
-final class LibraryItemsProvider implements DataProviderInterface
+final class LibraryItemsProvider implements DataProviderInterface, PivotAwareProviderInterface
 {
     /**
      * The mixed-member map per library id: the JSON:API type and id of each
@@ -162,6 +172,32 @@ final class LibraryItemsProvider implements DataProviderInterface
             \array_slice($members, $window->offset, $window->limit),
             \count($members),
         );
+    }
+
+    public function supportsPivot(string $relatedType, RelationInterface $relation): bool
+    {
+        return $this->doctrine->supportsPivot($relatedType, $relation);
+    }
+
+    public function fetchRelatedPivotCollection(
+        string $relatedType,
+        object $parent,
+        RelationInterface $relation,
+        CollectionCriteria $criteria,
+        JsonApiRequestInterface $request,
+    ): PivotCollectionResult {
+        return $this->doctrine->fetchRelatedPivotCollection($relatedType, $parent, $relation, $criteria, $request);
+    }
+
+    /**
+     * @return array<string, array<string, mixed>>
+     */
+    public function fetchRelatedPivotMap(
+        string $relatedType,
+        object $parent,
+        RelationInterface $relation,
+    ): array {
+        return $this->doctrine->fetchRelatedPivotMap($relatedType, $parent, $relation);
     }
 
     /**

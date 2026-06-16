@@ -110,4 +110,26 @@ final class EndpointExposureTest extends JsonApiFunctionalTestCase
         self::assertArrayHasKey('self', $authorLinks);
         self::assertArrayHasKey('related', $authorLinks);
     }
+
+    #[Test]
+    #[Group('spec:document-resource-objects')]
+    public function aResourceOptedOutOfTheSelfLinkOmitsItsResourceSelfButKeepsTheDocumentSelf(): void
+    {
+        // GizmoResource::emitsSelfLink() returns false (core ADR 0054), so the
+        // resource object carries no convention `data.links.self`. The opt-out is
+        // resource-scoped: the top-level document `self` (the request URI) is
+        // unaffected and still present.
+        $document = $this->decode($this->handle('/gizmos/g1'));
+
+        $data = $document['data'] ?? null;
+        self::assertIsArray($data);
+        $dataLinks = $data['links'] ?? null;
+        if (\is_array($dataLinks)) {
+            self::assertArrayNotHasKey('self', $dataLinks);
+        }
+
+        $links = $document['links'] ?? null;
+        self::assertIsArray($links);
+        self::assertSame('https://example.test/gizmos/g1', $links['self'] ?? null);
+    }
 }

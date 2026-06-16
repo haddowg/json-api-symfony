@@ -32,7 +32,7 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Serializer\TrackSerializer;
  * {@see https://github.com/haddowg/json-api/blob/main/examples/music-catalog/src/Resource/TrackResource.php TrackResource}:
  * an `ArrayList` with per-item rules; a `storedAs()` column rename
  * (`durationSeconds` ← `length_seconds`); a computed read-only `displayTitle`; a
- * `like` text filter on `title`; a `belongsTo` to-one (`album`) and a pivot-backed
+ * `like` text filter on `title`; a `belongsTo` to-one (`album`) and a plain
  * `belongsToMany` to-many (`playlists`) that prohibits full replacement.
  */
 #[AsJsonApiResource(entity: Track::class, serializer: TrackSerializer::class)]
@@ -66,11 +66,12 @@ final class TrackResource extends AbstractResource
                     : ''),
 
             // Default relation reader: `album` reads the ManyToOne and `playlists`
-            // the ManyToMany straight off the entity associations.
+            // the ManyToMany straight off the entity associations. `playlists` is a
+            // PLAIN join table — it carries no pivot data; the pivot-bearing variant
+            // is the playlists resource's `orderedTracks` relation.
             BelongsTo::make('album')->type('albums'),
             BelongsToMany::make('playlists')
                 ->type('playlists')
-                ->fields(['position' => 'integer', 'addedAt' => 'datetime'])
                 ->cannotReplace(),
         ];
     }

@@ -10,9 +10,15 @@ use Doctrine\ORM\EntityManagerInterface;
 use haddowg\JsonApi\Exception\ResourceNotFound;
 use haddowg\JsonApi\Hydrator\Relationship\ToManyRelationship;
 use haddowg\JsonApi\Hydrator\Relationship\ToOneRelationship;
+use haddowg\JsonApi\Resource\Field\AbstractField;
+use haddowg\JsonApi\Resource\Field\BelongsToMany;
+use haddowg\JsonApi\Resource\Field\FieldInterface;
 use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Schema\ResourceIdentifier;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
+use haddowg\JsonApiBundle\DataProvider\Doctrine\PivotAssociation;
+use haddowg\JsonApiBundle\DataProvider\Doctrine\PivotAssociationResolver;
 use haddowg\JsonApiBundle\Server\IdEncoderResolver;
 
 /**
@@ -55,13 +61,15 @@ use haddowg\JsonApiBundle\Server\IdEncoderResolver;
 final class DoctrineDataPersister implements DataPersisterInterface
 {
     /**
-     * @param array<string, class-string> $entityClassByType a `type → entity FQCN` map
-     * @param IdEncoderResolver            $idEncoders        resolves a related type's id encoder (linkage decode)
+     * @param array<string, class-string>    $entityClassByType a `type → entity FQCN` map
+     * @param IdEncoderResolver               $idEncoders        resolves a related type's id encoder (linkage decode)
+     * @param ?PivotAssociationResolver       $pivotAssociations resolves a belongsToMany pivot relation's association entity (always wired under Doctrine), for the writable-pivot association-entity diff
      */
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
         private readonly array $entityClassByType,
         private readonly IdEncoderResolver $idEncoders,
+        private readonly ?PivotAssociationResolver $pivotAssociations = null,
     ) {}
 
     public function supports(string $type): bool
@@ -118,6 +126,23 @@ final class DoctrineDataPersister implements DataPersisterInterface
         $relatedType = $relation->relatedTypes()[0] ?? '';
         $relatedClass = $this->entityClassFor($relatedType);
 
+        // A belongsToMany pivot relation is mutated as an association-entity DIFF, not
+        // a plain collection write: the incoming linkage members carry pivot `meta`,
+        // and the join row holding it is the auto-detected association entity (bundle
+        // ADR 0045). Upsert each member's row (creating or reordering it in place from
+        // the writable pivot fields), and on Replace drop the rows no longer present.
+        if ($linkage instanceof ToManyRelationship
+            && $this->pivotAssociations !== null
+            && $this->pivotAssociations->isPivotRelation($relation)) {
+            $this->mutatePivot($entity, $relation, $relatedType, $relatedClass, $linkage, $mode);
+
+            if ($flush) {
+                $this->entityManager->flush();
+            }
+
+            return $entity;
+        }
+
         if ($linkage instanceof ToOneRelationship) {
             $reference = $linkage->resourceIdentifier?->id !== null
                 ? $this->entityManager->getReference($relatedClass, $this->decodeLinkageId($relatedType, $linkage->resourceIdentifier->id))
@@ -159,11 +184,11 @@ final class DoctrineDataPersister implements DataPersisterInterface
         ));
 
         if ($mode === Mode::Replace) {
-            // Detach the existing members (clear the owning-side FK on each) then
-            // rebuild the collection from the incoming references.
+            // Detach the existing members (clear the owning-side FK / drop the join
+            // row on each) then rebuild the collection from the incoming references.
             foreach ($collection->toArray() as $member) {
                 if (\is_object($member)) {
-                    $this->setOwningSide($member, $owningField, null);
+                    $this->detachOwner($member, $owningField, $entity);
                 }
             }
             $collection->clear();
@@ -182,15 +207,339 @@ final class DoctrineDataPersister implements DataPersisterInterface
             return;
         }
 
-        // Mode::Remove — drop the incoming members and clear their owning-side FK.
+        // Mode::Remove — drop the incoming members and clear their owning side
+        // (the owning-side FK for a single-valued inverse, or the join row for a
+        // many-to-many inverse).
         foreach ($incomingIds as $id) {
             $reference = $this->entityManager->getReference($relatedClass, $this->decodeLinkageId($relatedType, $id));
             if ($reference === null) {
                 continue;
             }
             $collection->removeElement($reference);
-            $this->setOwningSide($reference, $owningField, null);
+            $this->detachOwner($reference, $owningField, $entity);
         }
+    }
+
+    /**
+     * The association-entity DIFF — the reorder engine for a writable-pivot
+     * `belongsToMany`. Resolves the auto-detected association entity (bundle ADR 0045)
+     * and, against the parent's existing join rows keyed by far member:
+     *  - {@see Mode::Replace} — UPSERT every incoming member (update an existing row's
+     *    writable pivot fields from `meta` IN PLACE — the reorder — or create a new
+     *    row), then REMOVE the rows whose member is not in the incoming set (full sync);
+     *  - {@see Mode::Add} — upsert the incoming members, leave the rest;
+     *  - {@see Mode::Remove} — remove the incoming members' rows (a remove carries no
+     *    pivot meta).
+     *
+     * A readOnly pivot field is NEVER written from `meta`; on a freshly-created row it
+     * takes its server-owned value (the association entity's own default / a
+     * `PrePersist` callback). The association entities are managed (persisted /
+     * removed here), so the flush the caller controls is storage-correct.
+     *
+     * @param class-string $relatedClass the far (related) entity class
+     */
+    private function mutatePivot(
+        object $parent,
+        RelationInterface $relation,
+        string $relatedType,
+        string $relatedClass,
+        ToManyRelationship $linkage,
+        Mode $mode,
+    ): void {
+        \assert($relation instanceof BelongsToMany);
+        \assert($this->pivotAssociations !== null);
+
+        $association = $this->pivotAssociations->resolve($relation, $parent, $relatedClass);
+        $existing = $this->existingPivotRows($parent, $association, $relatedClass);
+
+        $incomingMembers = $this->incomingPivotMembers($linkage, $relatedType, $relatedClass);
+
+        if ($mode === Mode::Remove) {
+            foreach ($incomingMembers as [$storageKey]) {
+                $row = $existing[$this->mapKey($storageKey)] ?? null;
+                if ($row !== null) {
+                    $this->removePivotRow($parent, $association, $row);
+                }
+            }
+
+            return;
+        }
+
+        $keptKeys = [];
+        foreach ($incomingMembers as [$storageKey, $reference, $meta]) {
+            $mapKey = $this->mapKey($storageKey);
+            $keptKeys[$mapKey] = true;
+
+            $row = $existing[$mapKey] ?? null;
+            if ($row !== null) {
+                // Reorder / update an existing row's writable pivot fields IN PLACE
+                // (update context — the row exists).
+                $this->writePivotFields($row, $relation->writablePivotFields(false), $meta);
+
+                continue;
+            }
+
+            // A new association row: parent + far reference + the writable pivot
+            // fields (create context); readOnly fields take their server default.
+            $row = $this->newPivotRow($association, $parent, $reference);
+            $this->writePivotFields($row, $relation->writablePivotFields(true), $meta);
+            $this->attachPivotRow($parent, $association, $row);
+            $this->entityManager->persist($row);
+        }
+
+        if ($mode === Mode::Replace) {
+            foreach ($existing as $mapKey => $row) {
+                if (!isset($keptKeys[$mapKey])) {
+                    $this->removePivotRow($parent, $association, $row);
+                }
+            }
+        }
+    }
+
+    /**
+     * The parent's existing association rows keyed by their far member's storage key
+     * (its scalar identifier), read off the parent's inverse `OneToMany` collection
+     * when mapped, else queried from the association repository by the parent. Where
+     * the same far member appears more than once (duplicate membership) the last row
+     * wins the key — pivot meta is a single per-member value set (ADR 0045).
+     *
+     * @param class-string $relatedClass
+     *
+     * @return array<string, object>
+     */
+    private function existingPivotRows(object $parent, PivotAssociation $association, string $relatedClass): array
+    {
+        $rows = $this->parentInverseCollection($parent, $association);
+        if ($rows === null) {
+            // No mapped inverse collection (or the parent is unflushed with none): query
+            // the association rows by parent — a managed parent finds its committed rows.
+            $rows = $this->entityManager
+                ->getRepository($association->entityClass)
+                ->findBy([$association->parentProperty => $parent]);
+        }
+
+        $farIdField = $this->entityManager->getClassMetadata($relatedClass)->getSingleIdentifierFieldName();
+
+        $byFar = [];
+        foreach ($rows as $row) {
+            if (!\is_object($row)) {
+                continue;
+            }
+            $far = $row->{$association->farProperty} ?? null;
+            if (!\is_object($far)) {
+                continue;
+            }
+            $storageKey = $this->entityManager->getClassMetadata($far::class)->getIdentifierValues($far)[$farIdField] ?? null;
+            if ($storageKey !== null) {
+                $byFar[$this->mapKey($storageKey)] = $row;
+            }
+        }
+
+        return $byFar;
+    }
+
+    /**
+     * The parent's inverse `OneToMany` collection of the association entity (the
+     * collection `mappedBy` the association's parent-side `ManyToOne`), as a list — or
+     * `null` when the parent maps no such inverse collection (then the rows are queried).
+     *
+     * @return list<object>|null
+     */
+    private function parentInverseCollection(object $parent, PivotAssociation $association): ?array
+    {
+        $metadata = $this->entityManager->getClassMetadata($parent::class);
+
+        foreach ($metadata->getAssociationMappings() as $field => $mapping) {
+            $field = (string) $field;
+            if (!$metadata->isCollectionValuedAssociation($field)) {
+                continue;
+            }
+            if ($this->entityManager->getClassMetadata($mapping->targetEntity)->getName() !== $this->entityManager->getClassMetadata($association->entityClass)->getName()) {
+                continue;
+            }
+            if (($mapping['mappedBy'] ?? null) !== $association->parentProperty) {
+                continue;
+            }
+
+            $value = (new \ReflectionProperty($parent, $field))->isInitialized($parent) ? ($parent->{$field} ?? null) : null;
+
+            return \is_iterable($value)
+                ? \array_values(\array_filter([...$value], '\is_object'))
+                : [];
+        }
+
+        return null;
+    }
+
+    /**
+     * Builds the parsed incoming members: each a `[farStorageKey, managedFarReference,
+     * meta]` triple. A linkage id with no resolvable storage key (an undecodable wire
+     * id) raises {@see ResourceNotFound}, exactly as the plain mutation path does.
+     *
+     * @param class-string $relatedClass
+     *
+     * @return list<array{0: mixed, 1: object, 2: array<string, mixed>}>
+     */
+    private function incomingPivotMembers(ToManyRelationship $linkage, string $relatedType, string $relatedClass): array
+    {
+        $members = [];
+        foreach ($linkage->resourceIdentifiers as $identifier) {
+            \assert($identifier instanceof ResourceIdentifier);
+            if ($identifier->id === null) {
+                continue;
+            }
+            $storageKey = $this->decodeLinkageId($relatedType, $identifier->id);
+            $reference = $this->entityManager->getReference($relatedClass, $storageKey);
+            if ($reference === null) {
+                continue;
+            }
+            $members[] = [$storageKey, $reference, $identifier->meta];
+        }
+
+        return $members;
+    }
+
+    /**
+     * Sets each writable pivot field's column on the association row from the linkage
+     * `meta`, coercing the wire value through the field's own cast. A field absent
+     * from `meta` is left untouched (its current value on an update; its server
+     * default on a create). A readOnly field is never in `$fields`, so it is never
+     * written from `meta`.
+     *
+     * @param list<FieldInterface> $fields the writable pivot fields for the context
+     * @param array<string, mixed> $meta   the linkage member's pivot meta
+     */
+    private function writePivotFields(object $row, array $fields, array $meta): void
+    {
+        foreach ($fields as $field) {
+            if (!\array_key_exists($field->name(), $meta)) {
+                continue;
+            }
+
+            $column = $field->column() ?? $field->name();
+            $row->{$column} = $this->coercePivotValue($field, $meta[$field->name()]);
+        }
+    }
+
+    /**
+     * Coerces a wire pivot value to its domain representation via the field's OWN
+     * value cast (an `Integer` → int, a `DateTime` → `\DateTimeImmutable`), so the
+     * association entity's typed column receives the right type. A pivot field is a
+     * plain field definition (no `deserializeUsing`/`fillUsing` hook), whose cast is
+     * the field's protected `deserializeValue`; it is request-independent, so a
+     * closure bound to the {@see AbstractField} base invokes it without building a
+     * request. A field not built on that base passes the value through unchanged.
+     */
+    private function coercePivotValue(FieldInterface $field, mixed $value): mixed
+    {
+        if (!$field instanceof AbstractField) {
+            return $value;
+        }
+
+        /** @var \Closure(mixed): mixed $cast */
+        $cast = \Closure::bind(
+            fn(mixed $raw): mixed => $this->deserializeValue($raw),
+            $field,
+            AbstractField::class,
+        );
+
+        return $cast($value);
+    }
+
+    /**
+     * A new, unpopulated association-entity instance via Doctrine's constructor-less
+     * instantiation (ADR 0029), with its parent and far references set. The pivot
+     * fields are written separately; readOnly fields take their server default (the
+     * entity's own column default or a `PrePersist` callback).
+     */
+    private function newPivotRow(PivotAssociation $association, object $parent, object $reference): object
+    {
+        $row = $this->entityManager->getClassMetadata($association->entityClass)->newInstance();
+        $row->{$association->parentProperty} = $parent;
+        $row->{$association->farProperty} = $reference;
+
+        return $row;
+    }
+
+    /**
+     * Adds a new association row to the parent's inverse collection when one is mapped
+     * and initialised, so the in-memory object graph reflects the new membership
+     * immediately (the owning `ManyToOne` to the parent, already set, carries the FK on
+     * flush regardless).
+     */
+    private function attachPivotRow(object $parent, PivotAssociation $association, object $row): void
+    {
+        $field = $this->parentInverseField($parent, $association);
+        if ($field === null) {
+            return;
+        }
+
+        $reflection = new \ReflectionProperty($parent, $field);
+        if (!$reflection->isInitialized($parent)) {
+            $parent->{$field} = new ArrayCollection();
+        }
+
+        $collection = $parent->{$field} ?? null;
+        if ($collection instanceof Collection && !$collection->contains($row)) {
+            $collection->add($row);
+        }
+    }
+
+    /**
+     * Removes an association row: drops it from the parent's inverse collection (when
+     * mapped) and removes the entity, so the join row is deleted on flush.
+     */
+    private function removePivotRow(object $parent, PivotAssociation $association, object $row): void
+    {
+        $field = $this->parentInverseField($parent, $association);
+        if ($field !== null && (new \ReflectionProperty($parent, $field))->isInitialized($parent)) {
+            $collection = $parent->{$field} ?? null;
+            if ($collection instanceof Collection) {
+                $collection->removeElement($row);
+            }
+        }
+
+        $this->entityManager->remove($row);
+    }
+
+    /**
+     * The parent's inverse `OneToMany` field name for the association entity (the
+     * collection `mappedBy` the association's parent-side `ManyToOne`), or `null` when
+     * the parent maps no such inverse collection.
+     */
+    private function parentInverseField(object $parent, PivotAssociation $association): ?string
+    {
+        $metadata = $this->entityManager->getClassMetadata($parent::class);
+        $entityName = $this->entityManager->getClassMetadata($association->entityClass)->getName();
+
+        foreach ($metadata->getAssociationMappings() as $field => $mapping) {
+            $field = (string) $field;
+            if (!$metadata->isCollectionValuedAssociation($field)) {
+                continue;
+            }
+            if ($this->entityManager->getClassMetadata($mapping->targetEntity)->getName() !== $entityName) {
+                continue;
+            }
+            if (($mapping['mappedBy'] ?? null) === $association->parentProperty) {
+                return $field;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The stable string map key for a far member's storage key (scalar id → its string
+     * form; a non-scalar id → its object hash), so existing rows and incoming members
+     * pair on the same far member.
+     */
+    private function mapKey(mixed $storageKey): string
+    {
+        if (\is_scalar($storageKey)) {
+            return (string) $storageKey;
+        }
+
+        return \is_object($storageKey) ? \spl_object_hash($storageKey) : \serialize($storageKey);
     }
 
     /**
@@ -217,7 +566,7 @@ final class DoctrineDataPersister implements DataPersisterInterface
         if (!$collection->contains($reference)) {
             $collection->add($reference);
         }
-        $this->setOwningSide($reference, $owningField, $owner);
+        $this->attachOwner($reference, $owningField, $owner);
     }
 
     /**
@@ -247,16 +596,65 @@ final class DoctrineDataPersister implements DataPersisterInterface
     }
 
     /**
-     * Sets the owning-side association on a related entity (no-op when the parent
-     * side already owns the foreign key).
+     * Attaches `$owner` to the related `$member`'s owning side, so the association
+     * persists from the side Doctrine tracks. A no-op when the parent side already
+     * owns the foreign key (`$owningField === null`). When the owning side is a
+     * single-valued inverse (a `OneToMany`'s `ManyToOne` owner) it sets the
+     * reference; when it is a many-valued inverse (a `ManyToMany`'s owning
+     * collection) it adds `$owner` to that collection (idempotently) — the latter
+     * is what makes mutating the inverse side of a many-to-many persist the join
+     * row instead of assigning a single object to a `Collection` property (a 500).
      */
-    private function setOwningSide(object $member, ?string $owningField, ?object $owner): void
+    private function attachOwner(object $member, ?string $owningField, object $owner): void
     {
         if ($owningField === null) {
             return;
         }
 
+        if ($this->isOwningSideCollection($member, $owningField)) {
+            $collection = $this->toManyCollection($member, $owningField);
+            if ($collection !== null && !$collection->contains($owner)) {
+                $collection->add($owner);
+            }
+
+            return;
+        }
+
         $member->{$owningField} = $owner;
+    }
+
+    /**
+     * Detaches `$owner` from the related `$member`'s owning side: clears the
+     * single-valued owning reference (a `OneToMany` inverse), or removes `$owner`
+     * from the owning collection (a `ManyToMany` inverse, dropping the join row).
+     * A no-op when the parent side owns the foreign key (`$owningField === null`).
+     */
+    private function detachOwner(object $member, ?string $owningField, object $owner): void
+    {
+        if ($owningField === null) {
+            return;
+        }
+
+        if ($this->isOwningSideCollection($member, $owningField)) {
+            $this->toManyCollection($member, $owningField)?->removeElement($owner);
+
+            return;
+        }
+
+        $member->{$owningField} = null;
+    }
+
+    /**
+     * Whether the related entity's owning-side association `$owningField` is
+     * many-valued (a `ManyToMany` owning collection) rather than single-valued (a
+     * `ManyToOne`), so the owning side is written by collection mutation, not assignment.
+     */
+    private function isOwningSideCollection(object $member, string $owningField): bool
+    {
+        $metadata = $this->entityManager->getClassMetadata($member::class);
+
+        return $metadata->hasAssociation($owningField)
+            && $metadata->isCollectionValuedAssociation($owningField);
     }
 
     /**

@@ -23,12 +23,25 @@ use haddowg\JsonApi\Resource\Field\Str;
  *    is a `404`, its related endpoint stays;
  *  - `lockedComments` forbids additions (`cannotAdd()`) — a `POST` add is a `403`.
  *
+ * It also opts out of the convention resource `self` link
+ * ({@see emitsSelfLink()}) — the witness that a resource can suppress its own
+ * `data.links.self` while the top-level document `self` is unaffected (core
+ * ADR 0054).
+ *
  * Storage-orthogonal (every assertion fires before any write), so witnessed on the
  * in-memory kernel only.
  */
 final class GizmoResource extends AbstractResource
 {
     public static string $type = 'gizmos';
+
+    /**
+     * Opts this resource out of the convention `data.links.self` link.
+     */
+    public function emitsSelfLink(): bool
+    {
+        return false;
+    }
 
     public function fields(): array
     {

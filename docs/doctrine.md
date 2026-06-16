@@ -399,6 +399,83 @@ by resolving each member through its per-type repository. See
 [relations](https://github.com/haddowg/json-api/blob/main/docs/relations.md) for
 `MorphToMany` itself.
 
+## `belongsToMany` pivot data
+
+When a `belongsToMany` relation declares pivot fields — as real field definitions,
+`->fields(Integer::make('position'), DateTime::make('addedAt')->readOnly(), …)` — the
+Doctrine provider reads those join-table values and exposes them: rendered as
+per-member `meta.pivot`, recognised as a `?filter`/`?sort` vocabulary on the related
+endpoint (ADR 0045), and — writable by default — **settable from the linkage `meta`**
+(ADR 0046).
+
+**Pivot data only exists over an association entity.** A plain `#[ORM\ManyToMany]`
+join table holds only the two foreign keys; Doctrine cannot map a `position` column
+on it. So a pivot relation must be backed by an **association entity** — `Playlist
+-> OneToMany -> PlaylistTrack(position, addedAt) -> ManyToOne -> Track`. The provider
+**auto-detects** that entity from your metadata (`PivotAssociationResolver`: the one
+to-many on the parent whose target also has a `ManyToOne` to the far type), or
+honours an explicit `->through(PlaylistTrack::class)` when auto-detection is
+ambiguous (two candidate entities) or finds none — in which case it throws a
+`\LogicException` naming the relation.
+
+The fetch is **one** DQL statement over the association entity, with the far entity
+as the query root so the shared filter/sort/count/window machinery applies to the
+related vocabulary unchanged, the pivot filters/sorts applied on the joined `pivot`
+alias, and each declared field selected as a scalar that rides every row:
+
+```sql
+SELECT resource, pivot.position AS pivot_position, pivot.addedAt AS pivot_addedAt
+FROM Track resource
+INNER JOIN PlaylistTrack pivot WITH pivot.track = resource
+WHERE pivot.playlist = :parent
+  -- [AND related-entity filters on resource] [AND pivot filters on pivot.<field>]
+ORDER BY -- [pivot.<field> | resource.<field>]
+-- LIMIT/OFFSET
+```
+
+So the rendered pivot values come from the same query that scopes, filters, sorts and
+paginates the page — no two-stage query and no page-shortening, so pagination is
+correct.
+
+A `?sort` mixing a pivot and a related field is applied in the **request's directive
+order** across both aliases, so `?sort=position,title` orders by the pivot key first
+and `?sort=title,position` by the related key first. Under **duplicate membership**
+(the same far entity joined to the parent by more than one association row — a track
+at two positions), the query `GROUP BY`s the far id: the page returns one row per
+distinct member, the total is `COUNT(DISTINCT)`, and the rendered `meta.pivot` is a
+single representative membership row (pivot meta is one value set per member, not a
+list).
+
+### Writing pivot fields (the association-entity diff)
+
+A pivot field is writable unless `->readOnly()`. The Doctrine persister applies a
+linkage's per-member `meta` as an **association-entity diff** over the same
+auto-detected entity (the `PivotAssociationResolver`), on both the relationship
+endpoints and a whole-resource write:
+
+- **upsert** each incoming member — find the existing association row for
+  `(parent, member)`; if present, update its writable pivot fields from `meta` **in
+  place** (the reorder); if absent, create a new row (parent + member + the writable
+  `meta` values; read-only fields take their server default, e.g. a `#[ORM\PrePersist]`
+  timestamp);
+- on `PATCH` (`Mode::Replace`) **remove** the rows whose member is no longer present
+  (full sync); on `POST` (`Mode::Add`) leave the rest; on `DELETE` (`Mode::Remove`)
+  remove the incoming members' rows (no `meta`);
+- a **read-only** pivot field supplied in `meta` is never written; the values are
+  coerced through each field's own cast, and the managed association entities are
+  persisted/removed so the flush is storage-correct.
+
+The `meta` is validated against the writable pivot fields' constraints (in the
+operation's create/update context) before the diff runs — a violation is a `422`
+pointed at the linkage meta, with no write.
+
+**Boundaries.** Pivot is **Doctrine-only** — the in-memory provider has no association
+entity, so a pivot key `400`s there, no pivot meta renders, and a pivot-meta **write
+is ignored** (the relation is a plain to-many in-memory). A `belongsToMany` without
+`fields()` keeps the plain related-collection scoping above. See
+[relationships.md](relationships.md#pivot-belongstomany-data) for the resource
+declaration, the rendered shape and the write convention.
+
 ## The load-state seam
 
 `DoctrineRelationshipLoadState` powers a relation's `linkageOnlyWhenLoaded()`

@@ -50,6 +50,13 @@ abstract class WriteConformanceTestCase extends JsonApiFunctionalTestCase
 
         self::assertSame('https://example.test/articles/' . $id, $response->headers->get('Location'));
 
+        // The created resource carries its convention self link: the persister has
+        // assigned the id by render time, so the resource self is present and equal
+        // to the Location (core ADR 0054).
+        $links = $data['links'] ?? null;
+        self::assertIsArray($links);
+        self::assertSame('https://example.test/articles/' . $id, $links['self'] ?? null);
+
         $attributes = $data['attributes'] ?? null;
         self::assertIsArray($attributes);
         self::assertSame('A brand new article', $attributes['title'] ?? null);
