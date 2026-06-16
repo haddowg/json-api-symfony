@@ -30,6 +30,13 @@ endpoints exist falls out of which capabilities you wire — see
 
 ### `DataProviderInterface` — the read SPI
 
+The interface has **eight** methods. The first five answer the read endpoints; the
+last three are batch/match/pivot seams a custom provider must also satisfy (each has
+a documented no-op default — an empty batch / `[]` / `false` — so a provider that
+cannot serve one degrades gracefully). The signatures are elided here for
+readability; the [full interface](../src/DataProvider/DataProviderInterface.php) is
+the authority:
+
 ```php
 interface DataProviderInterface
 {
@@ -39,21 +46,22 @@ interface DataProviderInterface
 
     public function fetchCollection(string $type, CollectionCriteria $criteria): CollectionResult;
 
-    public function fetchRelatedCollection(
-        string $relatedType,
-        object $parent,
-        RelationInterface $relation,
-        CollectionCriteria $criteria,
-        JsonApiRequestInterface $request,
-    ): CollectionResult;
+    public function fetchRelatedCollection(/* relatedType, parent, relation, criteria, request */): CollectionResult;
 
     /** @return array<int|string, int> parentWireId => count */
-    public function countRelated(
-        string $type,
-        array $parents,
-        RelationInterface $relation,
-        JsonApiRequestInterface $request,
-    ): array;
+    public function countRelated(/* type, parents, relation, criteria, request */): array;
+
+    // --- batch / to-one-match / pivot seams (no-op defaults documented below) ---
+
+    public function fetchRelatedCollectionBatch(/* parentType, parents, relation, criteria, request */): RelatedBatch;
+
+    public function relatedToOneMatches(/* relatedType, related, relation, criteria, request */): bool;
+
+    /** @return array<string, bool> parentWireId => target-matches */
+    public function relatedToOneMatchesBatch(/* parentType, parents, relation, criteria, request */): array;
+
+    /** @return array<string, array<string, mixed>> relatedId => [pivotField => wire value] */
+    public function fetchRelationshipPivot(string $type, object $parent, RelationInterface $relation): array;
 }
 ```
 
@@ -75,6 +83,28 @@ interface DataProviderInterface
   counts its association rows; a polymorphic to-many is counted in memory but
   throws on the Doctrine reference ([relationships](relationships.md) covers
   `countable()`/`?withCount`).
+- `fetchRelatedCollectionBatch()` is the page-at-a-time twin of
+  `fetchRelatedCollection()`: it answers a whole page of `$parents` for one relation
+  in a single store round-trip, returning a `RelatedBatch` keyed by parent wire id.
+  It is what the include batcher (`?include`, no N+1) and the windowed-include batch
+  drive — so it serves the same automatic include batching the Doctrine layer does
+  ([doctrine → eager-loading includes](doctrine.md#eager-loading-includes-no-n1)). A
+  relation a provider cannot batch returns an **empty `RelatedBatch`**, and the
+  caller renders that relation's includes lazily.
+- `relatedToOneMatches()` / `relatedToOneMatchesBatch()` answer "does this to-one's
+  target survive the relation's `?filter`?" for the single-resource (`relatedToOneMatches`)
+  and the batched include/primary (`relatedToOneMatchesBatch`) paths. When the answer
+  is `false` the handler nulls the to-one — `data: null` on
+  `GET /{type}/{id}/{toOneRel}?filter[…]`, null linkage on
+  `…/relationships/{toOneRel}?filter[…]`, dropped from `included` on
+  `relatedQuery[<toOneRel>][filter]` (bundle ADR 0068, covered on
+  [relationships](relationships.md)). A `[filter]` is the only `relatedQuery` member a
+  to-one accepts — a `[sort]`/`[page]` on a to-one path is a `400`. A provider with no
+  to-one filter support returns `false`/an empty map (nulling nothing extra).
+- `fetchRelationshipPivot()` returns the stored pivot meta for a pivot relation's
+  current members (`relatedId => [pivotField => wire value]`), so the validator folds
+  a stored row under an incoming partial pivot update (ADR 0050). A non-pivot relation,
+  or any provider that cannot store pivot data (the in-memory witness), returns `[]`.
 
 The interface is `@template-covariant TEntity of object`. A single-type provider
 is `DataProviderInterface<Album>`; a multi-type provider (like the Doctrine one)
@@ -232,6 +262,7 @@ final readonly class CollectionCriteria
         public array $sorts = [],       // list<SortInterface>   — the DECLARED vocabulary
         public ?WindowInterface $window = null,
         public array $defaultSort = [], // list<SortDirective>   — applied only with no ?sort
+        public array $aliasOf = [],     // array<string,string>  — bundle-only pivot-alias routing hint
     ) {}
 }
 ```
@@ -245,7 +276,12 @@ directives, applied by the `CriteriaApplier` **only when the request carries no
 against `$sorts` exactly as a requested sort is, so it executes through the same
 sort handler. `$window` is the pagination fetch window to push down to the store,
 or `null` for an unpaginated fetch; it is the polymorphic `WindowInterface`, and a
-count-based provider narrows to the `OffsetWindow` it can execute.
+count-based provider narrows to the `OffsetWindow` it can execute. `$aliasOf` is a
+**bundle-only** routing hint (no core change) mapping a filter/sort key to a
+non-root query alias the `CriteriaApplier` applies it on — populated **only** on the
+Doctrine pivot related-collection path (pivot keys → the `pivot` join alias) and
+empty (so provably inert) on every other Doctrine path and **every** in-memory path,
+where each key resolves to the query root (bundle ADR 0059).
 
 ### `CriteriaApplier` — spec semantics, decided once
 
@@ -287,6 +323,17 @@ attributable conformance witness for Doctrine (both run the identical applier;
 only the window execution differs). A custom provider **should** reuse
 `CriteriaApplier` to stay spec-conformant — see
 [custom providers](custom-data-providers.md).
+
+While the *slice* is the provider's, the **decision** of what to fetch and how to
+shape the `CollectionResult` — no window vs offset window, countable vs count-free,
+the `limit + 1` probe that powers a count-free `hasMore` — is centralised in core's
+[`WindowExecutor::run()`](https://github.com/haddowg/json-api/blob/main/src/Collection/WindowExecutor.php).
+Both bundle providers route their window/count tail through it, supplying only
+store-specific closures (`all`/`count`/`page`/`probe` — `QueryBuilder`-backed for
+Doctrine, `array_slice`/`count` for in-memory). A custom provider can do the same
+rather than re-deriving the countable-vs-count-free branch logic; the cursor (keyset)
+window has its own `runCursor()` entry point on the same executor (see
+[pagination → cursor](pagination.md#cursor-keyset-pagination)).
 
 ### Validating filter values
 
@@ -384,25 +431,40 @@ and core's filter docs for the full decision.
 
 ### `CollectionResult`
 
-A provider answers with a
-[`CollectionResult`](../src/DataProvider/CollectionResult.php) — the materialized
-`->items` plus an optional `->total`:
+A provider answers with a core
+[`CollectionResult`](https://github.com/haddowg/json-api/blob/main/src/Collection/CollectionResult.php)
+(`haddowg\JsonApi\Collection\CollectionResult`) — the materialized `->items` plus
+the three fields that describe how it was windowed:
 
 ```php
-final readonly class CollectionResult
+class CollectionResult
 {
     public function __construct(
-        public iterable $items,
-        public ?int $total = null,
+        public readonly iterable $items,
+        public readonly ?int $total = null,
+        public readonly bool $windowed = false,
+        public readonly bool $hasMore = false,
     ) {}
 }
 ```
 
-`$total` is non-null **exactly when the fetch was windowed**, and it is the count
-of the whole filtered collection *before* windowing — never `count($items)`. The
-handler needs it to build the page (`links`/`meta.page` derive from it). An
-unpaginated fetch leaves it `null` and the handler renders a plain collection
-document.
+- `$total` is non-null **exactly when the fetch was windowed and counted**, and it
+  is the count of the whole filtered collection *before* windowing — never
+  `count($items)`. The handler needs it to build a count-based page
+  (`links.last`/`meta.page.total` derive from it).
+- `$windowed` distinguishes a **count-free** windowed page (a non-countable related
+  to-many, core ADR 0057) from a plain unpaginated fetch — both carry a `null`
+  total, but a count-free page was sliced to a page and must render
+  `meta.page`/`links` *without* `total`/`last`. The handler reads it only when
+  `$total` is `null`.
+- `$hasMore` drives the count-free page's `next` link without a `COUNT` (the data
+  layer typically fetches one item past the window to set it).
+
+An unpaginated fetch leaves all three at their defaults (`null`/`false`/`false`) and
+the handler renders a plain collection document. The class moved to core (it is the
+data layer's answer on both providers); the count-free `windowed`/`hasMore` fields
+power non-countable related-collection pagination — see
+[relationships → counting relations](relationships.md#counting-relations-countable-and-withcount).
 
 ## The `CrudOperationHandler`
 

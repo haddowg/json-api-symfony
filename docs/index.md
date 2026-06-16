@@ -138,6 +138,55 @@ and that path is simply absent:
 The full matrix, with the degradation behaviour when each is missing, is on
 [configuration](configuration.md).
 
+## Feature highlights
+
+Beyond the convention CRUD endpoints, the bundle ships the capabilities a real
+JSON:API service needs. Each links the page that covers it in full:
+
+- **Relationships** — declared relations with linkage and `self`/`related` `links`,
+  the related (`GET /{type}/{id}/{rel}`) and relationship (`…/relationships/{rel}`)
+  read **and** mutation endpoints, compound `?include`, and `?withCount` for
+  countable relations. See [relationships](relationships.md).
+- **Pivot fields & filters** — a `belongsToMany` over an association entity renders
+  join columns as `meta.pivot`, writes them through linkage `meta`, and exposes
+  author-declared pivot `?filter`/`?sort` keys. See
+  [relationships](relationships.md#pivot-belongstomany-data).
+- **The Relationship Queries profile** — order and narrow a relationship's linkage
+  from the *primary* request (`relatedQuery[rel][sort]`/`[filter]`), opt-in by
+  negotiating the profile. See
+  [relationships](relationships.md#filtering-and-sorting-a-relationship-from-the-primary-request-the-relationship-queries-profile).
+- **Constrained-existence filtering** — `WhereThrough` dotted-path traversal
+  (`filter[author.name]=Smith`) as a correlated `EXISTS`, plus the `WhereHas`/
+  `WhereDoesntHave` existence filters. See
+  [doctrine](doctrine.md#relationship-existence-filtering-wherehas--wherethrough--wherehasmatching).
+- **Lifecycle hooks** — per-operation author seams (`beforeCreate`, `afterSave`, …)
+  as overridable resource methods *or* plain event subscribers. See
+  [lifecycle-hooks](lifecycle-hooks.md).
+- **Declarative authorization** — per-resource Symfony Security `security:`
+  expressions evaluated at the right hook, denying with a JSON:API `403`/`401`
+  before any persistence. See [authorization](authorization.md).
+- **Custom & encoded resource ids** — client-supplied natural keys, app-minted
+  UUID/ULID, or an opaque encoded id over a store-assigned integer, with wire-format
+  validation. See [resources](resources.md#sourcing-the-resource-id).
+- **Write-only attributes** — a field accepted (and validated) on write but never
+  rendered, for a credential a client sets but never reads back (core's `writeOnly()`
+  field flag). See core
+  [fields](https://github.com/haddowg/json-api/blob/main/docs/fields.md).
+- **Cursor (keyset) pagination** — an opaque-cursor strategy for large, deep, or live
+  collections, alongside the count-based paginators. See [pagination](pagination.md).
+- **Strict query parameters** — an unrecognized query-parameter family is a `400`
+  (on by default), so a client typo surfaces instead of a wrong-but-`200`. See
+  [configuration](configuration.md#strict_query_parameters).
+- **Declarative cache & deprecation headers** — `Cache-Control`/`Vary` and RFC 8594
+  `Deprecation`/`Sunset` headers declared as attribute metadata. See
+  [configuration](configuration.md) and [resources](resources.md).
+- **Multi-server** — expose several JSON:API servers (versions/audiences) from one
+  app, each with its own route prefix and resource set. See
+  [multi-server and testing](multi-server-and-testing.md).
+- **A testing utility** — `JsonApiBrowser` with JSON:API-aware assertions
+  (`assertFetchedOne`, `assertCreated`, `actingAs`, …) for functional tests. See
+  [multi-server and testing](multi-server-and-testing.md#functional-testing).
+
 ## Where to go next
 
 These docs read in six arcs:

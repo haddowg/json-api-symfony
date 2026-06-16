@@ -57,6 +57,23 @@ final class ReadQueryTest extends MusicCatalogKernelTestCase
 
     #[Test]
     #[Group('spec:fetching-filtering')]
+    #[Group('spec:fetching-relationships')]
+    public function aWhereThroughFilterTraversesTheArtistRelationByName(): void
+    {
+        // `WhereThrough('artist.name')` is a dotted-traversal EXISTS-ANY semi-join
+        // (bundle ADR 0069): `filter[artist.name]=…` keeps albums whose artist's name
+        // matches. The Doctrine reference renders it as a correlated EXISTS subquery
+        // rooted on the related `Artist` (never a fetch-join). Album 1 (OK Computer)
+        // belongs to Radiohead, album 2 (Dummy) to Portishead; album 3 is unpublished
+        // and hidden by the published scope.
+        self::assertSame(['1'], $this->albumIds($this->fetch('/albums?filter[artist.name]=Radiohead')));
+        self::assertSame(['2'], $this->albumIds($this->fetch('/albums?filter[artist.name]=Portishead')));
+        // A name no artist carries excludes every album — an empty primary collection.
+        self::assertSame([], $this->albumIds($this->fetch('/albums?filter[artist.name]=Nobody')));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
     #[Group('spec:errors')]
     public function anUnknownFilterKeyRendersA400ErrorDocument(): void
     {

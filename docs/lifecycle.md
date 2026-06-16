@@ -22,19 +22,23 @@ HttpKernel insists every route resolve to one.
 
 | Listener | Event | Priority | What it does |
 | --- | --- | --- | --- |
-| [`RequestListener`](../src/EventListener/RequestListener.php) | `kernel.request` | **16** | Resolves the target + server, negotiates, validates, dispatches, stashes the response VO |
+| [`RequestListener`](../src/EventListener/RequestListener.php) | `kernel.request` | **4** | Resolves the target + server, negotiates, validates, dispatches, stashes the response VO |
 | [`JsonApiController`](../src/Controller/JsonApiController.php) | (controller) | — | Returns the stashed response VO |
 | [`ViewListener`](../src/EventListener/ViewListener.php) | `kernel.view` | default | Renders the VO to an HttpFoundation response |
 | [`ExceptionListener`](../src/EventListener/ExceptionListener.php) | `kernel.exception` | **128** | Renders any failure as a JSON:API error document (→ [errors](errors.md)) |
 
-The priorities matter. `RequestListener` runs at **16**, *after* Symfony's
+The priorities matter. `RequestListener` runs at **4**, *after* Symfony's
 `RouterListener` (priority 32) — so by the time it runs, the route is matched and
 the route defaults (`_jsonapi_type`, `_jsonapi_server`, …) are populated on the
-request. `ExceptionListener` runs at **128**, high enough to win over Symfony's
-own error handling on a JSON:API route. The error listener is the subject of its
-own page; the rest of this one is the happy path.
+request — *and after the Security Firewall* (priority 8), so an authenticated token
+is already in the token storage when the listener dispatches the operation. That
+ordering is load-bearing: the declarative-authorization layer (ADR 0043) evaluates
+`is_granted()` at the lifecycle hooks the dispatch fires, so the firewall must have
+authenticated first. `ExceptionListener` runs at **128**, high enough to win over
+Symfony's own error handling on a JSON:API route. The error listener is the subject
+of its own page; the rest of this one is the happy path.
 
-## `RequestListener` — `kernel.request`, priority 16
+## `RequestListener` — `kernel.request`, priority 4
 
 This is the front of the lifecycle. It only acts on a JSON:API route — one whose
 matched route carries `_jsonapi_type` — and is otherwise inert, so it never

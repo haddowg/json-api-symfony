@@ -18,6 +18,7 @@ use haddowg\JsonApi\Resource\Field\Map;
 use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Filter\WhereHas;
+use haddowg\JsonApi\Resource\Filter\WhereThrough;
 use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApi\Resource\Sort\SortDirective;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
@@ -93,7 +94,18 @@ final class AlbumResource extends AbstractResource
 
             // Default relation reader: `artist` reads the ManyToOne and `tracks` the
             // OneToMany straight off the entity associations.
-            BelongsTo::make('artist')->type('artists'),
+            //
+            // A relation-scoped `withFilters()` on the TO-ONE `artist` is the witness
+            // for null-a-to-one-when-a-relation-filter-excludes-its-target (bundle ADR
+            // 0068): `filter[name]` (the related `artists.name` column) is reachable on
+            // the three to-one read surfaces — `GET /albums/{id}/artist?filter[name]=…`,
+            // `…/relationships/artist?filter[name]=…`, and `relatedQuery[artist][filter]
+            // [name]=…` on a primary request. When the filter EXCLUDES the album's
+            // artist the to-one renders `data: null` (and drops from `included[]`); a
+            // `[sort]`/`[page]` on a to-one path stays a 400. Dual-provider.
+            BelongsTo::make('artist')
+                ->type('artists')
+                ->withFilters(Where::make('name', 'name')),
             // Relation-scoped filters/sorts (bundle ADR 0044): `withFilters`/
             // `withSorts` augment the related-collection endpoint
             // `GET /albums/{id}/tracks` ONLY — they are merged on top of the related
@@ -137,10 +149,19 @@ final class AlbumResource extends AbstractResource
 
     public function filters(): array
     {
-        // WhereHas('tracks'): albums with at least one related track — the Doctrine
-        // reference renders this as an EXISTS subquery over the same relation.
         return [
+            // WhereHas('tracks'): albums with at least one related track — the Doctrine
+            // reference renders this as an EXISTS subquery over the same relation.
             WhereHas::make('tracks'),
+            // WhereThrough('artist.name'): the constrained-existence DOTTED-TRAVERSAL
+            // filter (core ADR 0063, bundle ADR 0069). `filter[artist.name]=Radiohead`
+            // keeps albums whose `artist` relation's `name` matches — a portable
+            // EXISTS-ANY semi-join that works on BOTH providers (the in-memory provider
+            // traverses the object graph; the Doctrine reference renders it as a
+            // correlated EXISTS subquery rooted on the related `Artist`, never a
+            // fetch-join, so it neither hydrates the relation nor multiplies rows). The
+            // wire key carries the dots; the operator defaults to `=`.
+            WhereThrough::make('artist.name'),
         ];
     }
 

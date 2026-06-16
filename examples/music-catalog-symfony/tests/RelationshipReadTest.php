@@ -149,6 +149,39 @@ final class RelationshipReadTest extends MusicCatalogKernelTestCase
     }
 
     #[Test]
+    #[Group('spec:fetching-filtering')]
+    public function aRelatedToOneFilterThatExcludesTheTargetRendersDataNull(): void
+    {
+        // null-a-to-one-when-a-relation-filter-excludes-its-target (bundle ADR 0068):
+        // the album's `artist` to-one declares a relation-scoped `filter[name]` (the
+        // related `artists.name` column). On the related endpoint the filter resolves
+        // against the single target — a matching name renders the artist; a mismatch
+        // renders `data: null` (not a 404). Album 1 belongs to Radiohead.
+        $matched = $this->fetchDocument('/albums/1/artist?filter[name]=Radiohead')['data'] ?? null;
+        self::assertIsArray($matched);
+        self::assertSame('artists', $matched['type'] ?? null);
+        self::assertSame('1', $matched['id'] ?? null);
+
+        $excluded = $this->fetchDocument('/albums/1/artist?filter[name]=Portishead');
+        self::assertArrayHasKey('data', $excluded);
+        self::assertNull($excluded['data'], 'the filter excludes the album\'s artist, so the to-one is null');
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    public function aRelationshipToOneFilterThatExcludesTheTargetRendersNullLinkage(): void
+    {
+        // The same exclusion on the relationship (linkage) endpoint: a matching
+        // `filter[name]` carries the identifier, a mismatch nulls the linkage.
+        $matched = $this->fetchDocument('/albums/1/relationships/artist?filter[name]=Radiohead');
+        self::assertSame(['type' => 'artists', 'id' => '1'], $matched['data'] ?? null);
+
+        $excluded = $this->fetchDocument('/albums/1/relationships/artist?filter[name]=Portishead');
+        self::assertArrayHasKey('data', $excluded);
+        self::assertNull($excluded['data']);
+    }
+
+    #[Test]
     #[Group('spec:fetching-relationships')]
     public function aPolymorphicToOneResolvesItsSerializerFromTheRelatedObject(): void
     {

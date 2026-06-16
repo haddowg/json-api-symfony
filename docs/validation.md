@@ -116,6 +116,26 @@ becomes a `Count(min: 1)`:
 // POST /tracks with genres: []    → 422 at /data/attributes/genres
 ```
 
+### Merge-before-validate on update
+
+A `PATCH` is partial — the client may send only the attributes it is changing. But a
+cross-field rule (`compareWith`) or a conditional rule (`when`) needs to see the
+*whole* attribute state to evaluate correctly, not just the handful of members in the
+patch. So on update the validator **folds the stored resource's wire-form attributes
+under the incoming partial** before validating: it reads the current attribute map
+off the loaded entity, `array_merge`es the incoming attributes on top, and validates
+the **merged** map (ADR 0049). Two consequences:
+
+- a cross-field or conditional rule evaluates against the full merged state — e.g.
+  `availableUntil > availableFrom` still fires when the patch sends only
+  `availableUntil` and `availableFrom` comes from the stored row;
+- an incoming explicit `null` still wins (the partial is merged last), and a stored
+  `null` is dropped before the merge so an unset stored value doesn't spuriously
+  satisfy a presence check.
+
+On create there is no stored object, so the incoming document is validated as-is. The
+work is `ResourceValidator::validate(…, ?object $existingObject, array $existingPivots)`.
+
 ## The 422 response
 
 Each Symfony violation becomes a core `Error` (status `422`, code
@@ -162,7 +182,7 @@ before any [encoder decode](resources.md#encoded-resource-ids) — in two direct
 | a client-supplied `data.id` | the **owning** resource's id format | `/data/id` |
 | a relationship linkage id (`{ "type": T, "id": X }`) in a whole-resource write | the **related** type `T`'s id format | `/data/relationships/<rel>/data[/<n>]/id` |
 | a linkage id at a relationship-mutation endpoint (`PATCH`/`POST`/`DELETE …/relationships/{rel}`) | the **related** type `T`'s id format | `/data/id` or `/data/<n>/id` |
-| a `belongsToMany` linkage member's pivot `meta` field | the relation's **writable** pivot fields' constraints (new-row/create context — an add/replace may create a new row) | `/data/relationships/<rel>/data[/<n>]/meta/<field>` or `/data[/<n>]/meta/<field>` |
+| a `belongsToMany` linkage member's pivot `meta` field | the relation's **writable** pivot fields' constraints (create context for a genuinely-new member, update context for one already in the relationship — see below) | `/data/relationships/<rel>/data[/<n>]/meta/<field>` or `/data[/<n>]/meta/<field>` |
 
 For a polymorphic relation the format is resolved from each linkage's own `type`
 member. The bridge resolves a type → its resource → `Id` field → declared format
@@ -182,17 +202,24 @@ id `422`s on either surface. The work lives in `ResourceValidator::ownIdError()`
 A **pivot `belongsToMany`** validates each linkage member's pivot `meta` against the
 relation's *writable* pivot fields' constraints, reusing the same `Required` /
 `Nullable` / `Collection` machinery as attributes — a violation points at the linkage
-meta. Because an add/replace (a relationship-endpoint `POST`/`PATCH`, or a
-whole-resource `POST`/`PATCH` whose relationship apply runs in replace) may **create a
-new association row** for any incoming member, the `meta` is validated in the
-**new-row (create) context**, matching the persister (which writes a new row in create
-context); a reorder of an existing row supplies the value, so this never wrongly
-rejects it. A **read-only** pivot field supplied in `meta` is ignored (it is not in
-the writable set, and the meta Collection allows extra fields, so it never raises) —
-exactly how a read-only attribute is handled; a **required** writable pivot field
-absent when a new association row is created is a `422` (before persist — never a
-database NOT-NULL `500`). See [relationships.md](relationships.md#writing-pivot-data)
-for the write convention and
+meta. The validation **context is resolved per member** (ADR 0050): a member already
+in the relationship merges its stored pivot row under the incoming `meta` and
+validates in **update** context, while a genuinely-new member validates the incoming
+`meta` in **create** context. A member is "existing" when its related id is in the
+relation's existing pivot map, which the validator reads through the provider's
+`fetchRelationshipPivot()` seam. The practical payoff: a *required* writable pivot
+field need not be re-sent on a reorder of an existing member — the merged stored row
+carries it, so a partial pivot update doesn't false-`422` — while a genuinely-new
+association row that omits a required field *does* `422` (before persist — never a
+database NOT-NULL `500`). A **read-only** pivot field supplied in `meta` is ignored
+(it is not in the writable set, and the meta Collection allows extra fields, so it
+never raises) — exactly how a read-only attribute is handled. The example app's
+[`PlaylistResource::orderedTracks`](../examples/music-catalog-symfony/src/Resource/PlaylistResource.php)
+is the live witness: `Integer::make('position')->required()->min(1)` (a new member
+must carry it; an existing member need not re-send it) and
+`Integer::make('weight')->compareWith('position', …)` (compared against the *merged*
+pivot, so `weight` may be set without re-sending `position`). See
+[relationships.md](relationships.md#writing-pivot-data) for the write convention and
 [ADR 0046](adr/0046-writable-belongs-to-many-pivot-fields.md).
 
 ## The constraint-translation map

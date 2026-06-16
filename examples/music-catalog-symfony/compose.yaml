@@ -1,0 +1,10 @@
+# Run the worked example live:
+#   docker compose up        # then open http://localhost:8080/albums
+services:
+  music-catalog-symfony:
+    build:
+      # Build context is the bundle repository root so the library is available.
+      context: ../..
+      dockerfile: examples/music-catalog-symfony/Dockerfile
+    ports:
+      - "8080:80"

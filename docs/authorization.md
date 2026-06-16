@@ -88,6 +88,16 @@ Register the Voter as a service (autoconfiguration tags it
 album's owner update it — everyone else gets a `403`, an unauthenticated client a
 `401`.
 
+> **See it in the example app.** The
+> [`PlaylistResource`](../examples/music-catalog-symfony/src/Resource/PlaylistResource.php)
+> declares `securityUpdate: "is_granted('EDIT', object)"` (owner-only) and
+> `securityDelete: "is_granted('ROLE_ADMIN')"` (admin-only); the
+> [`PlaylistOwnerVoter`](../examples/music-catalog-symfony/src/Security/PlaylistOwnerVoter.php)
+> backs the `EDIT` gate. The full surface — owner-updates,
+> non-owner-`403`/unauthenticated-`401`, the relationship-mutation gate against the
+> parent, and admin-delete — is exercised by
+> [`AuthorizationTest`](../examples/music-catalog-symfony/tests/AuthorizationTest.php).
+
 ## How a denial renders
 
 A denied expression throws `AccessDeniedException`; the route-scoped

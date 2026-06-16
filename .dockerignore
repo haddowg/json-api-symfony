@@ -1,0 +1,5 @@
+.git
+.workflows
+vendor
+examples/*/vendor
+**/var/cache

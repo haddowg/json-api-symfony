@@ -55,10 +55,12 @@ attribute-mapped class — nothing about it is JSON:API-aware:
 #[ORM\Table(name: 'album')]
 class Album
 {
+    #[ORM\Id]
+    #[ORM\GeneratedValue(strategy: 'AUTO')]
+    #[ORM\Column]
+    public ?int $id = null;
+
     public function __construct(
-        #[ORM\Id]
-        #[ORM\Column]
-        public string $id = '',
         #[ORM\Column]
         public string $title = '',
         #[ORM\Column(type: 'datetime_immutable', nullable: true)]
@@ -70,7 +72,11 @@ class Album
 }
 ```
 
-The entity stays a storage concern. The JSON:API shape lives entirely in the
+The id is a **database-assigned auto-increment integer** — the bundle's
+*store-provided* default id strategy (a create sets nothing, the database assigns
+the id, the `201` reads it back). Other strategies — a client-supplied id, an
+app-minted UUID/ULID, an opaque encoded id — are selected on the `Id` field; see
+[resources](resources.md#sourcing-the-resource-id). The entity stays a storage concern. The JSON:API shape lives entirely in the
 resource, next.
 
 ## Step 2 — the resource
@@ -206,6 +212,17 @@ $ curl -H 'Accept: application/vnd.api+json' https://music.example/albums
 {"jsonapi":{"version":"1.1"},"data":[{"type":"albums","id":"…","attributes":{"title":"…"}}]}
 ```
 
+> **Run the example live.** The
+> [`examples/music-catalog-symfony`](../examples/music-catalog-symfony) app ships a
+> [FrankenPHP](https://frankenphp.dev/) container — `docker compose up` from
+> `examples/music-catalog-symfony/` boots the whole catalogue (seeded SQLite) on
+> **http://localhost:8080**, so you can `curl` these endpoints for real:
+>
+> ```bash
+> docker compose up   # from examples/music-catalog-symfony/
+> curl -H 'Accept: application/vnd.api+json' http://localhost:8080/albums
+> ```
+
 The outcomes below express that same behaviour as CI assertions. The `handle()` and
 `decode()` calls are not Symfony built-ins — they are helpers on the bundle's
 functional-test harness (`handle()` issues a request through the booted kernel with
@@ -307,10 +324,16 @@ You have a working type. To go deeper, in rough reading order:
 - [lifecycle](lifecycle.md) — the three-listener flow and content negotiation.
 - [doctrine](doctrine.md) — the reference data layer: filters, sorts, related
   collections, the load-state seam.
+- [relationships](relationships.md) — declare relations, render linkage and `links`,
+  read/mutate relationship endpoints, `?include`, `?withCount`, pivot data, and the
+  relationship-queries profile.
 - [validation](validation.md) — wire `symfony/validator` so your declared constraints
   are actually enforced (writes run **unvalidated** until you do).
 - [configuration](configuration.md) — the config reference and the optional-dependency
-  matrix.
+  matrix. Note one default a first request can trip on: **strict query parameters** is
+  on by default, so an *unrecognized* query family (`?filtr=…`, a typo) is a `400`
+  rather than a silent `200` — see
+  [`strict_query_parameters`](configuration.md#strict_query_parameters).
 
 For contrast with the framework-free path, core's
 [getting-started](https://github.com/haddowg/json-api/blob/main/docs/getting-started.md)
