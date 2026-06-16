@@ -115,6 +115,12 @@ final readonly class AsJsonApiResource
 | `hydrator` | `?class-string` | A per-type hydrator override — a registered service implementing core's `HydratorInterface`. |
 | `operations` | `list<Operation>` | The exposed operation allow-list (empty = all five). |
 
+> The constructor also carries the declarative-authorization arguments (`security`,
+> `securityCreate`, …) documented in [authorization](authorization.md), and the
+> declarative response-header arguments (`cacheHeaders`, `deprecation`, `sunset`,
+> `sunsetLink`) documented in [configuration](configuration.md#response-headers-caching-and-deprecation) —
+> both omitted from the snippet above for brevity.
+
 A second job: the attribute **also tags a class that is *not* an `AbstractResource`
 subclass** as a resource. So if you build a type from capabilities rather than the
 `AbstractResource` sugar, the attribute is how you still mark the class — discovery

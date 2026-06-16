@@ -33,8 +33,8 @@ reference-data type sourced from `symfony/intl`.
 | `users` | `User` entity | **admin-server-only**, `UniqueEntity` on `email`, write-only `password`, validation-composition trio, `getAllowedIncludePaths` whitelist (include safeguard C) |
 | `favorites` | `Favorite` entity | **polymorphic to-one** `MorphTo favoritable` (Track\|Album\|Artist) |
 | `libraries` | `Library` entity | **polymorphic to-many** `MorphToMany items` (custom provider) |
-| `genres` | `Genre` entity | **client-supplied natural-key id** (`requireClientId()->pattern(slug)`) |
-| `devices` | `Device` entity | **app-generated ULID id** (`ulid()->generated()`), **self-link opt-out** (`emitsSelfLink()` false) |
+| `genres` | `Genre` entity | **client-supplied natural-key id** (`requireClientId()->pattern(slug)`), **declarative HTTP cache headers** (`cacheHeaders` + `collection` override) |
+| `devices` | `Device` entity | **app-generated ULID id** (`ulid()->generated()`), **self-link opt-out** (`emitsSelfLink()` false), **RFC 8594 deprecation** (`deprecation` + `sunset` + `sunsetLink`) |
 | `products` | `Product` entity | **encoded store-provided id** (`encodeUsing` over a DB-assigned int), self-referential `parent` |
 | `charts` | store-backed | standalone serializer, read-only (no entity, no resource) |
 | `countries` | `symfony/intl` | reference-data provider, read-only (ISO alpha-2 id) |
@@ -197,6 +197,72 @@ document `links.self` is **unaffected** — the opt-out is resource-scoped, not
 document-scoped. (A hand-written `getLinks()` self still wins over the convention.)
 `tests/SelfLinkTest.php` proves both links and the opt-out end to end.
 
+## Cache and deprecation response headers
+
+Two cross-cutting HTTP-response concerns are declared **purely as attribute
+metadata** — no `getLinks()`, no after-hook. The bundle's route-scoped
+`ResponseHeadersListener` reads the config off the matched type and writes the
+headers (bundle ADR 0054).
+
+**Declarative HTTP cache headers (`genres`).** A genre is reference/lookup data that
+changes rarely, so its reads are long-cacheable. `GenreResource` declares
+`cacheHeaders` — a one-hour client lifetime (`max_age`), a one-day CDN lifetime
+(`s_maxage`), `public`, and `Vary: Accept` — plus a nested `operations.collection`
+override that shortens just the **list**'s `max_age` (the collection churns more than
+a single genre), layered over the resource-level directives:
+
+```php
+#[AsJsonApiResource(
+    entity: Genre::class,
+    cacheHeaders: [
+        'max_age' => 3600, 's_maxage' => 86400, 'public' => true, 'vary' => ['Accept'],
+        'operations' => ['collection' => ['max_age' => 300]],
+    ],
+)]
+```
+
+The directives compose onto `Cache-Control` (via `Response::setCache()`) and `Vary`,
+and apply to a **successful `GET` only**:
+
+```
+GET /genres          → Cache-Control: max-age=300, public, s-maxage=86400   (collection override)
+                       Vary: Accept
+GET /genres/trip-hop → Cache-Control: max-age=3600, public, s-maxage=86400  (resource-level)
+                       Vary: Accept
+POST /genres         → no Cache-Control                                     (a write is never cached)
+```
+
+An undeclared type (`artists`) carries no `Cache-Control` at all — the layer is
+opt-in per type, and a global `json_api.defaults.cache_headers` (unset in this
+example) would supply a fleet-wide default a resource merges over.
+
+**RFC 8594 deprecation + sunset (`devices`).** `devices` is a legacy endpoint slated
+for removal, so `DeviceResource` declares a deprecation signal:
+
+```php
+#[AsJsonApiResource(
+    entity: Device::class,
+    deprecation: true,
+    sunset: 'Sat, 31 Dec 2050 23:59:59 GMT',
+    sunsetLink: 'https://music.example/deprecations/devices',
+)]
+```
+
+Unlike caching, these ride **every** response for the type — a read *and* a write —
+because a deprecated endpoint is deprecated regardless of method:
+
+```
+GET /devices/{id}  → Deprecation: true
+                     Sunset: Sat, 31 Dec 2050 23:59:59 GMT
+                     Link: <https://music.example/deprecations/devices>; rel="sunset"
+POST /devices      → Deprecation + Sunset + Link  (a deprecated write is still deprecated)
+                     …but still no Cache-Control
+```
+
+`tests/ResponseHeadersTest.php` witnesses both features end to end: the cache headers
+on the genre collection vs a single genre, their absence on a write and on an
+undeclared type, and the deprecation/sunset/link on a deprecated read and write.
+
 ## Relation-scoped filters and sorts
 
 A relation may declare **its own** `filter`/`sort` keys that augment **only** its
@@ -355,6 +421,55 @@ whose linkage is *derived* rather than a plain Doctrine association (the pivot
 `playlists.orderedTracks` here) is addressed at its own endpoint, not from a parent
 request.
 
+## Strict query parameters
+
+An **unrecognized** top-level query-parameter family is **rejected with a `400`**
+rather than silently dropped — so a client typo (`?pag[number]=2` for `page[number]`,
+a misspelled custom param) surfaces as an error instead of a wrong-but-`200` result.
+This is **on by default** (`json_api.strict_query_parameters`, bundle ADR 0055, core
+ADR 0059); the shipped app's `config/packages/json_api.yaml` omits the key, so it is
+already strict here (`tests/StrictQueryParametersTest.php`):
+
+```
+GET /albums?bogus=1          → 400  QUERY_PARAM_UNRECOGNIZED  source.parameter: bogus
+GET /albums?pag[number]=2    → 400  QUERY_PARAM_UNRECOGNIZED  source.parameter: pag
+GET /albums?myParam=1        → 400  QUERY_PARAM_UNRECOGNIZED  source.parameter: myParam
+```
+
+A family is **recognized** (no `400`) when its base name is a reserved JSON:API family
+used well-formed (`include`/`fields`/`filter`/`sort`/`page`), a key the primary resource
+**declares**, or a **known custom param** — the always-on `?withCount`, and the
+Relationship Queries profile's `relatedQuery`/`rQ` family **when the profile is
+negotiated**:
+
+```
+GET /albums?include=tracks&fields[albums]=title&filter[tracks]=1&sort=title&page[number]=1
+                             → 200  (every reserved family, used well-formed)
+GET /albums/1?withCount=tracks
+                             → 200  (the always-on withCount)
+GET /albums/1?include=tracks&relatedQuery[tracks][sort]=-duration
+  Accept: …;profile="…/relationship-queries"
+                             → 200  (relatedQuery, profile negotiated)
+GET /albums/1?include=tracks&relatedQuery[tracks][sort]=-duration
+                             → 400  (relatedQuery, profile NOT negotiated)
+```
+
+An undeclared key *inside* a recognized family is unaffected by this check; it still
+flows to the family's own key validation (`filter[nope]` → `400 FILTERING_UNRECOGNIZED`,
+the "Counting"/profile sections above).
+
+Two layers reject an unrecognized family, both before dispatch: core's **always-on**
+spec baseline (the spec mandates a `400` for an all-`a-z` custom param) owns `bogus` and
+`pag`, while the **strict** superset adds a *well-named* unsupported param (one carrying
+a non-`a-z` char, such as `myParam`). Setting `strict_query_parameters: false` stands
+down **only the superset**, so `?myParam=1` (and an un-negotiated `?relatedQuery[…]`)
+flips back to a silent ignore — but the misspelled-family `?bogus=1`/`?pag[number]=2`
+stay a `400`, since the baseline never relaxes. The relaxed path is exercised by
+`tests/RelaxedQueryParametersTest.php` against a kernel variant with the toggle off
+(`tests/RelaxedQueryParametersKernel.php`). See
+[`docs/configuration.md`](../../docs/configuration.md#strict_query_parameters) and
+[`docs/errors.md`](../../docs/errors.md).
+
 ## Validating filter values
 
 A value-carrying filter can **declare value constraints**, validated by the bundle
@@ -434,6 +549,44 @@ likewise need not be re-sent: the merge folds the stored value in, so a partial
 `PATCH` that omits it stays a `200` rather than a false `422`. The same merge
 semantics apply **per relationship member** to pivot meta — see the next section. See
 [`docs/validation.md`](../../docs/validation.md) (bundle ADRs 0049/0050).
+
+## Write-only attributes (a credential a client sets but never reads back)
+
+`readOnly()` renders a field but never hydrates it. `writeOnly()` is the **exact
+inverse**: a field **accepted on write** (create *and* update, still validated) but
+**never rendered** — exactly what a write-once secret needs. `UserResource` declares
+
+```php
+Str::make('password')->writeOnly()->minLength(8)->requiredOnCreate()
+```
+
+so a client may set `password` on a `POST`/`PATCH` (where it is validated like any
+other attribute), but it appears on **no** read (`tests/WriteOnlyAttributeTest.php`):
+
+```jsonc
+POST /admin/users                                    // 201 — password accepted + stored
+{ "data": { "type": "users", "attributes": {
+    "email": "grace@example.com", "displayName": "Grace",
+    "preferences": {}, "password": "longpassword1" } } }
+// → the 201 body carries email/displayName/preferences — but NO password
+
+POST /admin/users  { …no password… }                 // 422 source.pointer /data/attributes/password
+POST /admin/users  { …"password": "tiny"… }          // 422 (minLength 8)
+
+GET  /admin/users/1                                   // single read — no password
+GET  /admin/users                                     // collection — no password on any row
+GET  /admin/users/1?include=playlists                // compound doc — no password anywhere
+GET  /admin/users/1?fields[users]=password           // sparse fieldset naming it → empty attributes
+```
+
+The skip lives in the serializer's attribute render — the one path that produces
+**every** resource object, primary or `included` — and runs **before** sparse-fieldset
+filtering, so a `fields[users]=password` cannot resurrect it. The value is genuinely
+stored (the test asserts it against the persisted `User` entity, not just the
+response). `passwordConfirm` is `computed()` **and** `writeOnly()` — validated against
+`password` but never persisted and never echoed. Declaring a field both `writeOnly()`
+and `readOnly()` is a `\LogicException` at declaration (it could be neither read nor
+written). Core ADR 0060.
 
 ## Pivot data on an association entity
 
@@ -590,13 +743,22 @@ See [`docs/relationships.md`](../../docs/relationships.md) and
 - **`tests/`** — the spec-grouped conformance suites, including
   **`tests/IdStrategyTest.php`** (the id-strategy matrix end to end),
   **`tests/SelfLinkTest.php`** (the convention resource + top-level `self` links and
-  the `devices` opt-out), **`tests/RelationCountTest.php`** (countable relations:
+  the `devices` opt-out), **`tests/ResponseHeadersTest.php`** (the declarative
+  `genres` cache headers + the `devices` RFC 8594 deprecation/sunset signal),
+  **`tests/RelationCountTest.php`** (countable relations:
   `?withCount` relationship-object totals, batched across a collection, and the
   count-free related endpoint), and **`tests/RelationshipQueriesProfileTest.php`**
   (the Relationship Queries profile: per-relationship `sort`/`filter` from the primary
   request, per-parent windowing on a collection include, the `rQ` shorthand, an
   unknown-key `400`, and the count-free vs countable relationship-object pagination
-  links — all gated on negotiating the profile).
+  links — all gated on negotiating the profile), and
+  **`tests/StrictQueryParametersTest.php`** + **`tests/RelaxedQueryParametersTest.php`**
+  (strict query-parameter validation: an unrecognized family is a `400` by default, the
+  recognized set stays `200`, and the relax toggle flips a well-named param back to a
+  silent ignore over `tests/RelaxedQueryParametersKernel.php`), and
+  **`tests/WriteOnlyAttributeTest.php`** (the write-only `users.password`: accepted +
+  stored on create/update, still validated, and absent from every read — single,
+  collection, compound `?include`, and a sparse fieldset naming it).
 
 ## Running it
 

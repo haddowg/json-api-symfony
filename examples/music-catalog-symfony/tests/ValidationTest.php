@@ -241,10 +241,12 @@ final class ValidationTest extends MusicCatalogKernelTestCase
     public function creatingWithADuplicateUniqueEmailReturns422AtThatPointer(): void
     {
         // `ada@example.com` is seeded; the UniqueEntity rule queries the repository
-        // post-hydration and rejects the duplicate before commit.
+        // post-hydration and rejects the duplicate before commit. A valid write-only
+        // `password` is supplied so the create reaches the entity-level rule rather
+        // than failing the `requiredOnCreate` presence check first.
         $response = $this->handle('/admin/users', 'POST', [
             'data' => ['type' => 'users', 'attributes' => [
-                'email' => 'ada@example.com', 'displayName' => 'Ada Two',
+                'email' => 'ada@example.com', 'displayName' => 'Ada Two', 'password' => 'longpassword1',
             ]],
         ]);
 

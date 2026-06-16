@@ -25,6 +25,14 @@ json_api:
     # withMaxPerPage().
     pagination:
         max_per_page: 50
+    # Reject an unrecognized top-level query-parameter family with a 400 (bundle ADR
+    # 0055) rather than silently dropping it — so a client typo (?bogus, a misspelled
+    # ?pag[number]) surfaces as an error instead of a wrong-but-200 result. This is the
+    # DEFAULT (true), so the key is omitted here and strict validation is already on;
+    # set it to false to restore the pre-strict silent-ignore behaviour. withCount and a
+    # negotiated relatedQuery/rQ family stay recognized automatically. See
+    # tests/StrictQueryParametersTest.php and tests/RelaxedQueryParametersTest.php.
+    # strict_query_parameters: true
     servers:
         admin:
             base_uri: 'https://admin.music.example'

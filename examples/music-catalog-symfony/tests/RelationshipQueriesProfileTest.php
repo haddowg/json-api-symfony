@@ -254,24 +254,20 @@ final class RelationshipQueriesProfileTest extends MusicCatalogKernelTestCase
     }
 
     #[Test]
-    public function theParamsAreIgnoredWhenTheProfileIsNotNegotiated(): void
+    public function theRelatedQueryFamilyIsRejectedWhenTheProfileIsNotNegotiated(): void
     {
-        // Without the profile negotiated the relatedQuery family is ignored entirely:
-        // the tracks linkage keeps its natural order (the explicit track 2 is no longer
-        // hidden either — no relationship-scoped filter ran), no relationship-object
-        // pagination links are emitted, and the response does not advertise the profile.
+        // The relatedQuery/rQ family is a profile keyword recognized only when the
+        // client negotiated the profile. Without negotiation it is an unrecognized
+        // top-level query-parameter family, so strict query-parameter validation
+        // (json_api.strict_query_parameters, default on) rejects it with a 400 keyed
+        // on the family base name — rather than the old silent-ignore.
         $response = $this->handle('/albums/1?include=tracks&relatedQuery[tracks][sort]=-duration');
-        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
 
-        $document = $this->decode($response);
-        self::assertSame(['1', '2', '3'], $this->linkageIds($document, 'tracks'), 'natural order, the relatedQuery sort ignored');
-
-        $links = $this->relationshipLinks($document['data'] ?? null, 'tracks');
-        self::assertArrayNotHasKey('first', $links, 'no relationship-object pagination links without the profile');
-
-        $documentLinks = $document['links'] ?? null;
-        self::assertIsArray($documentLinks);
-        self::assertArrayNotHasKey('profile', $documentLinks, 'the profile is not advertised when not negotiated');
+        $error = $this->firstError($response);
+        self::assertSame('400', $error['status'] ?? null);
+        self::assertSame('QUERY_PARAM_UNRECOGNIZED', $error['code'] ?? null);
+        self::assertSame(['parameter' => 'relatedQuery'], $error['source'] ?? null);
     }
 
     // --- request helpers -------------------------------------------------------
