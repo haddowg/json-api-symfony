@@ -8,7 +8,6 @@ use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Constraint\AtLeastOneOf;
 use haddowg\JsonApi\Resource\Constraint\CompareField;
 use haddowg\JsonApi\Resource\Constraint\Comparison;
-use haddowg\JsonApi\Resource\Constraint\Constraint;
 use haddowg\JsonApi\Resource\Constraint\Context;
 use haddowg\JsonApi\Resource\Constraint\In;
 use haddowg\JsonApi\Resource\Constraint\NotIn;
@@ -18,7 +17,7 @@ use haddowg\JsonApi\Resource\Constraint\Sequentially;
 use haddowg\JsonApi\Resource\Constraint\When;
 
 /**
- * Convenience base implementing the common {@see Field} fluent surface:
+ * Convenience base implementing the common {@see FieldInterface} fluent surface:
  * read-only state, hidden/sparse flags, the serialize/hydrate hook closures
  * (`serializeUsing`/`extractUsing`/`deserializeUsing`/`fillUsing`), the
  * constraint-list machinery and the `onCreate()` / `onUpdate()` context
@@ -456,7 +455,7 @@ abstract class AbstractField implements \haddowg\JsonApi\Resource\Field\FieldInt
         return $this->serializeValue($raw);
     }
 
-    public function hydrate(mixed $model, mixed $value, array $data, JsonApiRequestInterface $request): mixed
+    public function hydrate(mixed $model, mixed $value, array $data, JsonApiRequestInterface $request, bool $creating): mixed
     {
         if ($this->fillUsing !== null) {
             $result = ($this->fillUsing)($model, $value, $data, $this->name);
