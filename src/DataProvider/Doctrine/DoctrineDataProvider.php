@@ -13,6 +13,7 @@ use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\CollectionResult;
 use haddowg\JsonApiBundle\DataProvider\CriteriaApplier;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
+use haddowg\JsonApiBundle\DataProvider\PreloadsIncludesInterface;
 
 /**
  * The reference Doctrine ORM read provider, wired only when `doctrine/orm` is
@@ -40,9 +41,16 @@ use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
  * One instance serves every entity-mapped type — a different entity class per
  * type — so `TEntity` cannot narrow past `object`.
  *
+ * It also implements {@see PreloadsIncludesInterface}: when the optional
+ * `shipmonk/doctrine-entity-preloader` library is installed (and so an
+ * {@see IncludePreloader} is injected), the handler asks it to batch eager-load a
+ * read's effective `?include` tree before rendering, so includes do not N+1
+ * (ADR 0035). Without the library the injected preloader is null and the capability
+ * is a no-op — the includes render lazily.
+ *
  * @implements DataProviderInterface<object>
  */
-final class DoctrineDataProvider implements DataProviderInterface
+final class DoctrineDataProvider implements DataProviderInterface, PreloadsIncludesInterface
 {
     /**
      * The root alias every generated QueryBuilder uses; handlers re-read it
@@ -64,11 +72,16 @@ final class DoctrineDataProvider implements DataProviderInterface
     /**
      * @param array<string, class-string>          $entityClassByType a `type → entity FQCN` map
      * @param iterable<DoctrineExtensionInterface> $extensions        in descending tag-priority order
+     * @param ?IncludePreloader                    $preloader         the optional include batch-preloader (null when `shipmonk/doctrine-entity-preloader` is absent)
      */
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
         private readonly array $entityClassByType,
         iterable $extensions = [],
+        // Not readonly: the include preloader is a pure optimization that can be
+        // toggled off at runtime (the conformance suite disables it to prove the
+        // rendered document is identical with and without preloading).
+        private ?IncludePreloader $preloader = null,
     ) {
         $this->extensions = \is_array($extensions) ? \array_values($extensions) : \iterator_to_array($extensions, false);
         $this->applier = new CriteriaApplier();
@@ -238,6 +251,35 @@ final class DoctrineDataProvider implements DataProviderInterface
         $builder->setFirstResult($window->offset)->setMaxResults($window->limit);
 
         return new CollectionResult($this->items($builder), $total);
+    }
+
+    /**
+     * Batch eager-loads the read's effective `?include` tree (explicit includes or
+     * a resource's default-include fallback) so the included relationships do not
+     * N+1, delegating to the injected {@see IncludePreloader}. A no-op when the
+     * `shipmonk/doctrine-entity-preloader` library is absent (the preloader is then
+     * null) — the includes render lazily (ADR 0035).
+     */
+    public function preloadIncludes(iterable $entities, string $type, JsonApiRequestInterface $request): void
+    {
+        $this->preloader?->preload($entities, $type, $request);
+    }
+
+    /**
+     * Disables include preloading on this provider, returning the previously
+     * installed {@see IncludePreloader} (or `null`) so a caller can restore it.
+     * Preloading is a pure optimization, so turning it off only changes how the
+     * includes are loaded (lazily), never what is rendered — the property the
+     * conformance suite asserts by comparing the document with and without it.
+     *
+     * @internal a test/diagnostic seam, not part of the provider contract
+     */
+    public function disableIncludePreloading(): ?IncludePreloader
+    {
+        $previous = $this->preloader;
+        $this->preloader = null;
+
+        return $previous;
     }
 
     /**

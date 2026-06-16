@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Server;
 
 use haddowg\JsonApi\Operation\OperationHandlerInterface;
+use haddowg\JsonApi\Pagination\PagePaginator;
+use haddowg\JsonApi\Pagination\PaginatorInterface;
 use haddowg\JsonApi\Serializer\RelationshipLoadStateInterface;
 use haddowg\JsonApi\Server\Server;
 use Psr\Http\Message\ResponseFactoryInterface;
@@ -19,7 +21,17 @@ use Psr\Http\Message\StreamFactoryInterface;
  *    which stays the global resolver/container — so a Resource can have real
  *    constructor dependencies;
  *  - this server's base URI and JSON:API version;
- *  - the PSR-17 response / stream factories.
+ *  - the PSR-17 response / stream factories;
+ *  - the server-wide default paginator, resolved in order: (1) a
+ *    {@see PaginatorInterface} service registered for *this* server
+ *    (`haddowg.json_api.default_paginator.<name>`); else (2) a generic one
+ *    registered for all servers (`haddowg.json_api.default_paginator`); else (3)
+ *    the built-in {@see PagePaginator} whose client-controlled `page[size]` is
+ *    capped at `json_api.pagination.max_per_page` (default 100), so every
+ *    collection is protected from a page-size DoS without per-resource
+ *    configuration; else (4) `null` (cap set to 0) — no server default, so a
+ *    collection that resolves to it renders unpaginated. A resource's own
+ *    `pagination()` overrides whichever is resolved.
  *
  * One factory is built per declared server in
  * {@see \haddowg\JsonApiBundle\JsonApiBundle::loadExtension()}; the implicit
@@ -32,6 +44,12 @@ use Psr\Http\Message\StreamFactoryInterface;
  * one).
  *
  * The built Server is an immutable value, so it is memoized and shared.
+ *
+ * It also threads the server default `?include` depth cap
+ * (`json_api.max_include_depth`, default 3) into the Server through
+ * {@see Server::withMaxIncludeDepth()} — a non-positive configured value resolving
+ * to `null` (unlimited), which a resource's own `maxIncludeDepth()` may still
+ * override per type (bundle ADR 0037).
  *
  * When a {@see RelationshipLoadStateInterface} is wired (the reference Doctrine
  * predicate, present only on a Doctrine application), it is threaded into the
@@ -59,6 +77,10 @@ final class ServerFactory
         private readonly string $baseUri,
         private readonly string $version,
         private readonly OperationHandlerInterface $handler,
+        private readonly int $maxPerPage = PagePaginator::DEFAULT_MAX_PER_PAGE,
+        private readonly int $maxIncludeDepth = 0,
+        private readonly ?PaginatorInterface $serverDefaultPaginator = null,
+        private readonly ?PaginatorInterface $defaultPaginator = null,
         private readonly ?RelationshipLoadStateInterface $relationshipLoadState = null,
         private readonly array $resourceClasses = [],
         private readonly array $serializersByClass = [],
@@ -81,6 +103,13 @@ final class ServerFactory
             ->withVersion($this->version)
             ->withPsr17($this->responseFactory, $this->streamFactory)
             ->withRelationshipLoadState($this->relationshipLoadState)
+            // The server-wide default paginator (the tail of core's `relation →
+            // related resource → server default` fallback), resolved per server.
+            ->withDefaultPaginator($this->resolveDefaultPaginator())
+            // The server default `?include` depth cap (json_api.max_include_depth);
+            // a non-positive value means unlimited (null), which a resource's own
+            // maxIncludeDepth() may still override.
+            ->withMaxIncludeDepth($this->maxIncludeDepth > 0 ? $this->maxIncludeDepth : null)
             ->withContainer($this->resources);
 
         foreach ($this->resourceClasses as $resourceClass) {
@@ -107,6 +136,28 @@ final class ServerFactory
         }
 
         return $this->server = $server->withHandler($this->handler);
+    }
+
+    /**
+     * The server-wide default paginator, resolved in precedence order:
+     *  1. a {@see PaginatorInterface} service registered for *this* server
+     *     (`haddowg.json_api.default_paginator.<name>`) — lets an app install a
+     *     cursor/offset strategy on one server;
+     *  2. else a generic one registered for all servers
+     *     (`haddowg.json_api.default_paginator`);
+     *  3. else the built-in {@see PagePaginator} capped at the configured
+     *     `json_api.pagination.max_per_page` (a page-size DoS bound, default 100);
+     *  4. else `null` (cap set to 0) — no server default, so a collection
+     *     resolving to it renders unpaginated.
+     *
+     * A custom paginator owns its own page-size ceiling, so the `max_per_page`
+     * cap applies only to the built-in fallback (3).
+     */
+    private function resolveDefaultPaginator(): ?PaginatorInterface
+    {
+        return $this->serverDefaultPaginator
+            ?? $this->defaultPaginator
+            ?? ($this->maxPerPage > 0 ? PagePaginator::make()->withMaxPerPage($this->maxPerPage) : null);
     }
 
     /**

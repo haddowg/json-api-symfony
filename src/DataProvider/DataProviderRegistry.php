@@ -53,4 +53,22 @@ final class DataProviderRegistry
 
         throw new \LogicException(\sprintf('No JSON:API data provider is registered for type "%s".', $type));
     }
+
+    /**
+     * Whether any registered provider {@see DataProviderInterface::supports()} the
+     * type — so a caller can resolve a provider without risking the wiring-error
+     * {@see \LogicException} of {@see forType()}. Used by the include-preloader path,
+     * where a related type read off the parent (a to-one related endpoint) may have
+     * no provider of its own (it is only ever resolved through the parent).
+     */
+    public function supportsType(string $type): bool
+    {
+        foreach ($this->providers as $provider) {
+            if ($provider->supports($type)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

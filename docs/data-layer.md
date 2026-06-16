@@ -207,19 +207,24 @@ final readonly class CollectionCriteria
 {
     public function __construct(
         public QueryParameters $queryParameters,
-        public array $filters = [],   // list<FilterInterface> — the DECLARED vocabulary
-        public array $sorts = [],     // list<SortInterface>   — the DECLARED vocabulary
+        public array $filters = [],     // list<FilterInterface> — the DECLARED vocabulary
+        public array $sorts = [],       // list<SortInterface>   — the DECLARED vocabulary
         public ?WindowInterface $window = null,
+        public array $defaultSort = [], // list<SortDirective>   — applied only with no ?sort
     ) {}
 }
 ```
 
 `$filters`/`$sorts` are the **declared** vocabularies (the resource's `filters()`
 / `allSorts()`) — what the requested `filter[…]`/`sort` keys are matched against,
-not the request itself. `$window` is the pagination fetch window to push down to
-the store, or `null` for an unpaginated fetch; it is the polymorphic
-`WindowInterface`, and a count-based provider narrows to the `OffsetWindow` it can
-execute.
+not the request itself. `$defaultSort` is the resource's
+[`defaultSort()`](https://github.com/haddowg/json-api/blob/main/docs/sorts.md#defaultsort-the-order-with-no-sort)
+directives, applied by the `CriteriaApplier` **only when the request carries no
+`sort`** (an explicit `?sort=` overrides it entirely); each default is matched
+against `$sorts` exactly as a requested sort is, so it executes through the same
+sort handler. `$window` is the pagination fetch window to push down to the store,
+or `null` for an unpaginated fetch; it is the polymorphic `WindowInterface`, and a
+count-based provider narrows to the `OffsetWindow` it can execute.
 
 ### `CriteriaApplier` — spec semantics, decided once
 
@@ -248,6 +253,9 @@ one place and a provider only ever differs in *execution*:
 - an unknown filter key → `400` (`FilterParamUnrecognized`);
 - sorting against an empty sort vocabulary → `400` (`SortingUnsupported`);
 - an unknown sort field → `400` (`SortParamUnrecognized`);
+- with no `sort` requested, the resource's `defaultSort()` directives apply (an
+  explicit `?sort=` overrides them); each default is validated against the declared
+  sort vocabulary just like a requested sort;
 - the `-` prefix → descending; sorts passed as one composite call (they do not
   compose commutatively, so the handler owns the combination).
 
@@ -320,6 +328,17 @@ for the validator and the silent-absence caveat.
   `pagination()` into a `CollectionCriteria`, calls `fetchCollection()`, and
   renders `DataResponse::fromPage()` when paginated (else
   `DataResponse::fromCollection()`).
+
+The effective paginator follows core's `resource → server default` chain. The
+bundle gives every server a **default paginator** whose client-controlled
+`page[size]` is capped at
+[`json_api.pagination.max_per_page`](configuration.md#paginationmax_per_page)
+(default `100`), so a collection with no per-resource `pagination()` is paginated
+**and protected from a page-size DoS** out of the box; set the cap to `0` to
+install no built-in default (those collections render unpaginated), or
+[register a custom paginator](configuration.md#customising-the-server-default-paginator)
+(e.g. cursor) per server or for all. The cap concept is owned by core — see
+[pagination.md → Capping the page size](https://github.com/haddowg/json-api/blob/main/docs/pagination.md#capping-the-page-size).
 
 The **singular-filter collapse**: if the client applied a filter the resource
 declares [singular](https://github.com/haddowg/json-api/blob/main/docs/filters.md)

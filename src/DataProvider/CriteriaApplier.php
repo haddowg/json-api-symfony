@@ -105,8 +105,17 @@ final class CriteriaApplier
     private function applySorts(CollectionCriteria $criteria, mixed $query, SortHandlerInterface $handler): mixed
     {
         $requested = $criteria->queryParameters->sort;
+
+        // No `?sort`: fall back to the resource's default order (if any). An
+        // explicit `?sort=` overrides the default entirely — the default is never
+        // appended to a requested sort (core ADR 0044). The defaults are still
+        // matched against the declared sort vocabulary (same as a requested sort),
+        // so a default naming an undeclared sort is a server-config error rather
+        // than a silently dropped directive.
         if ($requested === []) {
-            return $query;
+            $directives = $this->defaultDirectives($criteria);
+
+            return $directives === [] ? $query : $handler->apply($directives, $query);
         }
 
         if ($criteria->sorts === []) {
@@ -128,6 +137,33 @@ final class CriteriaApplier
         // compose commutatively, so the handler owns the combination (core
         // ADR 0016).
         return $handler->apply($directives, $query);
+    }
+
+    /**
+     * The resource's `defaultSort()` directives, validated against the declared
+     * sort vocabulary exactly as a requested sort is: each default must name a
+     * declared sort (else {@see SortParamUnrecognized}, a server-config error).
+     * Returns the directives unchanged when valid — they already carry their
+     * direction — so the same handler executes them as a requested sort.
+     *
+     * @return list<SortDirective>
+     *
+     * @throws SortParamUnrecognized when a default sort names an undeclared sort
+     */
+    private function defaultDirectives(CollectionCriteria $criteria): array
+    {
+        if ($criteria->defaultSort === []) {
+            return [];
+        }
+
+        foreach ($criteria->defaultSort as $directive) {
+            $key = $directive->sort->key();
+            if ($this->sortFor($criteria->sorts, $key) === null) {
+                throw new SortParamUnrecognized($key);
+            }
+        }
+
+        return $criteria->defaultSort;
     }
 
     /**

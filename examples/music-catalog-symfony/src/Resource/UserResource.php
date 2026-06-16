@@ -84,4 +84,24 @@ final class UserResource extends AbstractResource
             HasOne::make('library')->type('libraries'),
         ];
     }
+
+    /**
+     * Include safeguard C (bundle ADR 0037): the full dotted include paths a client
+     * may request when `users` is the request's root. A user may compound their
+     * playlists, each playlist's owner, and their library — but NOT a playlist's
+     * tracks, even though `tracks` is freely includable when `playlists` is the
+     * request's own root (`GET /playlists/{id}?include=tracks`). This is the
+     * headline a per-relation `cannotBeIncluded()` cannot express: a path forbidden
+     * only when reached as a NESTED path from this parent. The whitelist is
+     * evaluated once against this root resource and governs the whole nested tree,
+     * so `GET /admin/users/1?include=playlists.tracks` is a 400 while
+     * `?include=playlists` and `?include=playlists.owner` are allowed. `null` (the
+     * default) would leave every includable path open.
+     *
+     * @return list<string>
+     */
+    public function getAllowedIncludePaths(): array
+    {
+        return ['playlists', 'playlists.owner', 'library'];
+    }
 }

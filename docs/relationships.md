@@ -176,6 +176,64 @@ mismatch (a `POST`/`DELETE` against a to-one) is a separate `400`
 `RELATIONSHIP_TYPE_INAPPROPRIATE`; an unknown relation or missing parent is a
 `404`.
 
+## Controlling what can be included
+
+`?include` is a compound-document amplifier — a deeply nested path or a
+default-include cascade can walk the relationship graph without bound, and a
+default-include pointing back at its own type (or a mutual pair) loops the renderer
+forever. Three composing **include safeguards** (bundle ADR 0037) bound it. All three
+live in **core** (an opt-in `IncludeControlsInterface` the transformer reads via
+`instanceof`, plus a relation-level wither); the bundle supplies the opinionated depth
+default and makes the Doctrine batch-preloader respect them.
+
+| Safeguard | Where declared | Effect |
+|-----------|----------------|--------|
+| **A — per-relation opt-out** | `cannotBeIncluded()` on the relation | A `?include` naming it is a `400` `INCLUSION_NOT_ALLOWED` at any path, and it is excluded from the default-include cascade. |
+| **B — max include depth** | `json_api.max_include_depth` (default `3`), overridable per resource via `IncludeControlsInterface::maxIncludeDepth()` | A `?include` deeper than the effective cap is a `400` `INCLUSION_DEPTH_EXCEEDED`; a default cascade stops at the cap (so a mutual default-include cycle terminates). |
+| **C — allowed include paths** | `IncludeControlsInterface::getAllowedIncludePaths()` on the root resource | A list of the full dotted paths a client may request when **this** resource is the request's root (a listed deep path implies its ancestors); any requested path neither listed nor an ancestor of one is a `400` `INCLUSION_NOT_ALLOWED`. `null` is unrestricted; `[]` permits no includes. |
+
+They **compose**: a requested path is permitted only if every hop's relation is
+includable (A), it is within the effective max depth (B), and — when the root sets a
+whitelist — it is a member of that list (C).
+
+A relation marks itself non-includable like any other flag:
+
+```php
+// A back-reference whose only purpose is reverse navigation, not compounding:
+BelongsTo::make('parent')->type('categories')->cannotBeIncluded();
+```
+
+Capability A is **all-or-nothing for a relation at its own level** — it cannot say
+"`comments` is includable on `posts` directly (`GET /posts?include=comments`) but NOT
+when reached from a parent (`GET /users?include=posts.comments`)". Capability C closes
+exactly that gap: it is evaluated **once against the request's root resource** and
+governs the whole nested tree, so it can forbid a nested path even where the relation is
+includable from its own root:
+
+```php
+final class UserResource extends AbstractResource
+{
+    // Reading a user may compound their posts and each post's author, but never a
+    // post's comments — even though `comments` is freely includable on `posts`.
+    public function getAllowedIncludePaths(): ?array
+    {
+        return ['posts.author'];
+    }
+}
+```
+
+A listed deep path **implies its ancestors**, so `['posts.author']` permits both
+`posts` and `posts.author` without enumerating every prefix; only the unlisted
+sibling `posts.comments` is rejected.
+
+`max_include_depth` is the one config-driven safeguard — see
+[configuration → `max_include_depth`](configuration.md#max_include_depth) for the cap,
+the per-resource override, and how it terminates a default-include cycle. The reference
+Doctrine batch-preloader honours all three: it never batch-loads a non-includable
+relation, bounds its own recursion by the same effective depth, and skips a path the
+root's whitelist excludes (so a mutual default-include cycle terminates the preloader
+too, not only the renderer).
+
 ## Polymorphic relationships
 
 A `MorphTo` to-one and a `MorphToMany` to-many point across several related

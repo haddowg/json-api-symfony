@@ -54,7 +54,15 @@ final class ArtistResource extends AbstractResource
             // links-only without forcing a fetch). The IA-PLAN entity table maps the
             // artist with a single OneToMany `albums`, so — unlike core's in-memory
             // domain — there is no separate `featuredAlbum` to-one here.
-            HasMany::make('albums')->type('albums')->linkageOnlyWhenLoaded(),
+            //
+            // Include safeguard A (bundle ADR 0037): `albums` is the back-reference of
+            // `albums.artist`, so leaving it includable would let a client loop
+            // artist → albums → artist → … through `?include`. cannotBeIncluded() opts
+            // the relation out — its linkage and endpoints still render, but a
+            // `?include=albums` naming it is a 400, and it is never auto-compounded by
+            // a default-include cascade. The forward `albums?include=artist` is a
+            // different relation and is unaffected.
+            HasMany::make('albums')->type('albums')->linkageOnlyWhenLoaded()->cannotBeIncluded(),
         ];
     }
 

@@ -99,6 +99,57 @@ execute a cursor window). The page-based paginators core ships all resolve to an
 
 Source: [`DoctrineDataProvider`](../src/DataProvider/Doctrine/DoctrineDataProvider.php).
 
+## Eager-loading includes (no N+1)
+
+When the optional [`shipmonk/doctrine-entity-preloader`](https://github.com/shipmonk-rnd/doctrine-entity-preloader)
+library is installed, eager-loading of a read's `?include` tree is **automatic** —
+you install the library and includes stop N+1ing, with no per-type code. The
+provider batch-loads the included relationships Laravel-style: **one query per
+relation per level**, no fetch-joins. Each level loads a relation for *every* source
+entity in a single `WHERE id IN (…)`-style query, and the loaded targets seed the
+next level.
+
+Over the example, `GET /albums?include=tracks` across 16 albums issues 2
+include-load queries (the albums, then one batched tracks load) — not the `1 + N` a
+lazy render issues:
+
+```http
+GET /albums?include=tracks&page[size]=100
+```
+
+The preloader reuses **core's** include decision, so it preloads exactly what is
+rendered. This includes **default includes**: a resource's
+`getDefaultIncludedRelationships()` is applied by core as a *fallback* — when the
+request sends no `?include`, the listed relationships are included (and now
+preloaded); an explicit `?include` (even an empty `?include=`) overrides the default.
+
+```php
+final class AlbumResource extends AbstractResource
+{
+    // GET /albums with no ?include yields each album's artist in `included`
+    // (rendered AND batch-preloaded); ?include=… or ?include= overrides it.
+    public function getDefaultIncludedRelationships(mixed $object): array
+    {
+        return ['artist'];
+    }
+}
+```
+
+— from [`AlbumResource`](../examples/music-catalog-symfony/src/Resource/AlbumResource.php).
+
+Preloading is a **pure optimization**: the rendered document is identical with or
+without it. So a relation the preloader cannot batch silently falls back to a lazy
+load — a polymorphic relation (more than one related type), a computed /
+`extractUsing` / aliased non-association column, or a composite-key target. The
+relation's storage column drives the batch (`column() ?? name()`), so a `storedAs()`
+rename is honoured.
+
+The capability is **opt-in**: it is wired only when the library is present (a
+`suggest` dependency); without it the provider degrades to lazy includes. See
+[ADR 0035](adr/0035-doctrine-include-batch-preloading.md) and
+[`IncludePreloader`](../src/DataProvider/Doctrine/IncludePreloader.php); the witness
+is [`IncludePreloadTest`](../examples/music-catalog-symfony/tests/IncludePreloadTest.php).
+
 ## The write pipeline
 
 `DoctrineDataPersister` is the write twin of the provider, committing through the

@@ -10,6 +10,21 @@
 json_api:
     base_uri: 'https://music.example'
     version: '1.1'
+    # Include safeguard B (bundle ADR 0037): cap the nesting depth of a `?include`
+    # (relationship hops from the primary resource). The bundle default is 3; set
+    # to 2 here so the cap is witnessable — `?include=tracks.album` (depth 2) is
+    # allowed, but a depth-3 path is a 400. `0` would be unlimited. A resource's own
+    # maxIncludeDepth() overrides this server default per type. With safeguard A
+    # (the `albums` back-reference opted out on the artist) and safeguard C (the
+    # user allow-list below), this also guarantees `?include` always terminates.
+    max_include_depth: 2
+    # The server default paginator caps a client's page[size]/page[limit] at this
+    # value, closing a page-size DoS (see core docs/pagination.md). Set explicitly
+    # to 50 here to witness the clamp; omit the key for core's default of 100, or
+    # set 0 to disable the cap. A resource's own pagination() sets its own cap via
+    # withMaxPerPage().
+    pagination:
+        max_per_page: 50
     servers:
         admin:
             base_uri: 'https://admin.music.example'

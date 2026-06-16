@@ -28,3 +28,17 @@ services:
     haddowg\JsonApiBundle\Examples\MusicCatalog\Hydrator\PlaylistHydrator:
         arguments:
             $slugSeparator: '-'
+
+    # The query-counting PSR-3 logger + the DBAL logging middleware that feeds it —
+    # a test affordance so IncludePreloadTest can assert a request issues a bounded
+    # number of queries (no N+1). Public so the test can read the counter; a
+    # production app would not register these. Registered explicitly (not via the
+    # src/ autodiscovery) so the logger is never aliased as the app's general logger.
+    haddowg\JsonApiBundle\Examples\MusicCatalog\Query\QueryCountingLogger:
+        public: true
+
+    Doctrine\DBAL\Logging\Middleware:
+        arguments:
+            - '@haddowg\JsonApiBundle\Examples\MusicCatalog\Query\QueryCountingLogger'
+        tags:
+            - { name: 'doctrine.middleware' }

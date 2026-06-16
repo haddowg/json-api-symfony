@@ -148,6 +148,24 @@ return static function (ContainerConfigurator $container): void {
     // maps an entity, so non-Doctrine applications never reference the (absent)
     // EntityManagerInterface service.
     if (\interface_exists(\Doctrine\ORM\EntityManagerInterface::class)) {
+        // The include batch-preloader — wired only when the optional
+        // shipmonk/doctrine-entity-preloader library is installed. The
+        // DoctrineDataProvider injects it with ->nullOnInvalid() below, so without
+        // the library the provider's preload capability is a no-op and includes
+        // render lazily (ADR 0035).
+        if (\class_exists(\ShipMonk\DoctrineEntityPreloader\EntityPreloader::class)) {
+            $services->set(\ShipMonk\DoctrineEntityPreloader\EntityPreloader::class)
+                ->args([
+                    \Symfony\Component\DependencyInjection\Loader\Configurator\service(\Doctrine\ORM\EntityManagerInterface::class),
+                ]);
+
+            $services->set(\haddowg\JsonApiBundle\DataProvider\Doctrine\IncludePreloader::class)
+                ->args([
+                    '$entityManager' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\Doctrine\ORM\EntityManagerInterface::class),
+                    '$preloader' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\ShipMonk\DoctrineEntityPreloader\EntityPreloader::class),
+                ]);
+        }
+
         // priority -128: the reference provider is always the *fallback* — it
         // supports every entity-mapped type, so an application provider at the
         // default priority (0) shadows it for the types it supports without any
@@ -157,6 +175,8 @@ return static function (ContainerConfigurator $container): void {
                 '$entityManager' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\Doctrine\ORM\EntityManagerInterface::class),
                 '$entityClassByType' => [],
                 '$extensions' => \Symfony\Component\DependencyInjection\Loader\Configurator\tagged_iterator(JsonApiBundle::DOCTRINE_EXTENSION_TAG),
+                // null when shipmonk/doctrine-entity-preloader is absent → lazy includes.
+                '$preloader' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataProvider\Doctrine\IncludePreloader::class)->nullOnInvalid(),
             ])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG, ['priority' => -128]);
 

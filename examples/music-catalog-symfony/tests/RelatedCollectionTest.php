@@ -20,7 +20,9 @@ use PHPUnit\Framework\Attributes\Test;
  *  - `?filter`/`?sort` scope against the **related** (`tracks`) vocabulary — the
  *    `tracks` resource's `explicit` default filter even hides the explicit member
  *    of a related collection.
- *  - a relation without a paginator (`tracks.playlists`) renders unpaginated.
+ *  - a relation without its own paginator (`tracks.playlists`) falls back to the
+ *    server's default paginator (capped at `json_api.pagination.max_per_page`),
+ *    per the documented relation → related resource → server-default chain.
  */
 #[Group('spec:fetching-relationships')]
 final class RelatedCollectionTest extends MusicCatalogKernelTestCase
@@ -135,22 +137,22 @@ final class RelatedCollectionTest extends MusicCatalogKernelTestCase
         self::assertSame(1, $page['total'] ?? null);
     }
 
-    // --- unpaginated baseline ------------------------------------------------
+    // --- server-default fallback ---------------------------------------------
 
     #[Test]
     #[Group('spec:fetching-pagination')]
-    public function aRelationWithoutAPaginatorRendersUnpaginated(): void
+    public function aRelationWithoutItsOwnPaginatorFallsBackToTheServerDefault(): void
     {
-        // `tracks.playlists` declares no paginator, so its related collection renders
-        // with no page meta — the baseline the paginated branches must not regress.
+        // `tracks.playlists` declares no per-relation paginator, so its related
+        // collection falls back to the server's default paginator (relation →
+        // related resource → server default). The default carries the page-size cap
+        // (json_api.pagination.max_per_page), so the collection is paginated.
         $document = $this->fetch('/tracks/1/playlists');
 
         self::assertSame([self::PLAYLIST_ID], $this->ids($document));
 
-        $meta = $document['meta'] ?? null;
-        if (\is_array($meta)) {
-            self::assertArrayNotHasKey('page', $meta);
-        }
+        $page = $this->pageMeta($document);
+        self::assertSame(1, $page['total'] ?? null);
     }
 
     // --- helpers -------------------------------------------------------------
