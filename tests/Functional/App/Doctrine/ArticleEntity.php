@@ -42,16 +42,36 @@ class ArticleEntity
     #[ORM\OneToMany(targetEntity: CommentEntity::class, mappedBy: 'featuredArticle')]
     public Collection $featuredComments;
 
+    /**
+     * The owning, unidirectional ManyToMany to {@see AuthorEntity} backing the
+     * `editors` relation — no inverse field on the author, so the provider's
+     * inverseOwningField resolver returns null and the related-collection fetch
+     * takes the subquery-scoped branch. Body-initialised like `comments` (not a
+     * constructor parameter), so the constructor-less create path (ADR 0029)
+     * sees the mapped collection Doctrine initialises when the entity becomes
+     * managed.
+     *
+     * @var Collection<int, AuthorEntity>
+     */
+    #[ORM\ManyToMany(targetEntity: AuthorEntity::class)]
+    #[ORM\JoinTable(name: 'article_editors')]
+    public Collection $editors;
+
     public function __construct(
         #[ORM\Id]
         #[ORM\Column]
         public string $id = '',
         #[ORM\Column]
         public string $title = '',
-        #[ORM\Column]
-        public string $body = '',
-        #[ORM\Column]
-        public string $category = '',
+        // `body` and `category` are optional `articles` attributes (the resource
+        // declares neither `->required()`), so a create may omit them. The reference
+        // persister instantiates without invoking the constructor (ADR 0029), so the
+        // `= ''` parameter default no longer fills an omitted value — the columns are
+        // therefore nullable, matching the resource's optionality.
+        #[ORM\Column(nullable: true)]
+        public ?string $body = '',
+        #[ORM\Column(nullable: true)]
+        public ?string $category = '',
         #[ORM\Column(type: 'datetime_immutable', nullable: true)]
         public ?\DateTimeImmutable $publishedAt = null,
         #[ORM\Column(nullable: true)]
@@ -74,5 +94,6 @@ class ArticleEntity
     ) {
         $this->comments = new ArrayCollection();
         $this->featuredComments = new ArrayCollection();
+        $this->editors = new ArrayCollection();
     }
 }

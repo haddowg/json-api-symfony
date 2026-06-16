@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\DataProvider;
 
+use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\CollectionResult;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
@@ -56,6 +58,16 @@ final class DataProviderRegistryTest extends TestCase
 
             public function fetchCollection(string $type, CollectionCriteria $criteria): CollectionResult
             {
+                return new CollectionResult([]);
+            }
+
+            public function fetchRelatedCollection(
+                string $relatedType,
+                object $parent,
+                RelationInterface $relation,
+                CollectionCriteria $criteria,
+                JsonApiRequestInterface $request,
+            ): CollectionResult {
                 return new CollectionResult([]);
             }
         };

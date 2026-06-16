@@ -14,9 +14,11 @@ use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Operation\CrudOperationHandler;
 use haddowg\JsonApiBundle\Operation\TargetResolver;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
+use haddowg\JsonApiBundle\Server\RelationsRegistry;
 use haddowg\JsonApiBundle\Server\ResourceLocator;
 use haddowg\JsonApiBundle\Server\ServerFactory;
 use haddowg\JsonApiBundle\Server\ServerProvider;
+use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
 use haddowg\JsonApiBundle\Validation\ConstraintTranslator;
 use haddowg\JsonApiBundle\Validation\JsonPointerBuilder;
 use haddowg\JsonApiBundle\Validation\ResourceValidator;
@@ -81,6 +83,19 @@ return static function (ContainerConfigurator $container): void {
         ]);
 
     $services->set(ServerProvider::class);
+
+    // The type-keyed registry of standalone relations providers; the
+    // ResourceLocatorPass fills its locator argument from the tagged providers
+    // (mirroring the ResourceLocator's $services), so a resource-less type can
+    // still declare relations (ADR 0026).
+    $services->set(RelationsRegistry::class)
+        ->args(['$providers' => null]);
+
+    // The resource-presence-aware metadata lookup the CRUD engine resolves a
+    // type's resource/relations through, so a bare serializer/hydrator pair (no
+    // resource) is tolerated without per-type branching (ADR 0021). It sources
+    // relations resource-first then from the RelationsRegistry (autowired).
+    $services->set(TypeMetadataResolver::class);
 
     // --- Operations + data providers -----------------------------------------
 

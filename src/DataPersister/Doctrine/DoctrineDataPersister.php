@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\DataPersister\Doctrine;
 
+use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\EntityManagerInterface;
 use haddowg\JsonApi\Hydrator\Relationship\ToManyRelationship;
@@ -54,11 +55,18 @@ final class DoctrineDataPersister implements DataPersisterInterface
         return isset($this->entityClassByType[$type]);
     }
 
+    /**
+     * Builds a new entity via Doctrine's constructor-less instantiation
+     * ({@see \Doctrine\ORM\Mapping\ClassMetadata::newInstance()}) — the same
+     * mechanism the ORM uses to hydrate entities on read, so the constructor is
+     * **not** invoked. Entities with required constructor arguments therefore work
+     * under the generic engine; constructor invariants/defaults do not run on
+     * create (consistent with read-hydration). An application that needs them
+     * overrides {@see instantiate()} via a custom {@see DataPersisterInterface}.
+     */
     public function instantiate(string $type): object
     {
-        $entityClass = $this->entityClassFor($type);
-
-        return new $entityClass();
+        return $this->entityManager->getClassMetadata($this->entityClassFor($type))->newInstance();
     }
 
     public function create(string $type, object $entity): object
@@ -123,7 +131,7 @@ final class DoctrineDataPersister implements DataPersisterInterface
         ToManyRelationship $linkage,
         Mode $mode,
     ): void {
-        $collection = $entity->{$property};
+        $collection = $this->toManyCollection($entity, $property);
         if (!$collection instanceof Collection) {
             return;
         }
@@ -233,6 +241,36 @@ final class DoctrineDataPersister implements DataPersisterInterface
         }
 
         $member->{$owningField} = $owner;
+    }
+
+    /**
+     * The entity's to-many association collection, initialising an uninitialised
+     * typed property to an empty {@see ArrayCollection} first.
+     *
+     * On create the persister instantiates the entity without invoking its
+     * constructor (ADR 0029), so an association collection a constructor would have
+     * initialised is left uninitialised — reading it directly would
+     * {@see \Error} ("accessed before initialization"). Initialising it here
+     * mirrors how Doctrine populates association collections on read-hydration, so
+     * relationships in a whole-resource create write apply against a real
+     * collection. Returns `null` when the property is not a collection at all.
+     *
+     * @return Collection<int, object>|null
+     */
+    private function toManyCollection(object $entity, string $property): ?Collection
+    {
+        $reflection = new \ReflectionProperty($entity, $property);
+
+        if (!$reflection->isInitialized($entity)) {
+            $collection = new ArrayCollection();
+            $entity->{$property} = $collection;
+
+            return $collection;
+        }
+
+        $value = $entity->{$property};
+
+        return $value instanceof Collection ? $value : null;
     }
 
     /**

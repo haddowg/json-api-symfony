@@ -7,6 +7,8 @@ namespace haddowg\JsonApiBundle\DataProvider\Doctrine;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\QueryBuilder;
 use haddowg\JsonApi\Pagination\OffsetWindow;
+use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\CollectionResult;
 use haddowg\JsonApiBundle\DataProvider\CriteriaApplier;
@@ -141,6 +143,104 @@ final class DoctrineDataProvider implements DataProviderInterface
     }
 
     /**
+     * Scopes a related to-many to its parent. A single-valued inverse
+     * association (the OneToMany case, whose related entity carries the owning
+     * foreign key) is scoped by that FK as a fast-path; any other to-many
+     * (owning-side, or many-to-many on either side) is scoped by an `IN`
+     * subquery rooted on the parent — the related entity stays the OUTER query
+     * root, so the shared filter/sort/count/window machinery applies
+     * identically to both branches. `$request` is unused (Doctrine push-down).
+     *
+     * A polymorphic to-many ({@see \haddowg\JsonApi\Resource\Field\MorphToMany},
+     * `relatedTypes()` of more than one type) is a deliberate boundary — like the
+     * many-to-many subquery scope above, this provider executes one scoped query
+     * against a single related entity class, and a polymorphic collection's members
+     * span entity classes, so there is no single query to run. It throws; a host
+     * that needs it supplies a custom {@see DataProviderInterface} that resolves the
+     * related members across types (ADR 0032).
+     */
+    public function fetchRelatedCollection(
+        string $relatedType,
+        object $parent,
+        RelationInterface $relation,
+        CollectionCriteria $criteria,
+        JsonApiRequestInterface $request,
+    ): CollectionResult {
+        if (\count($relation->relatedTypes()) > 1) {
+            throw new \LogicException(\sprintf(
+                'The %s does not support a polymorphic (morph-to-many) related collection for relationship "%s": its members span entity classes and cannot be one scoped query. Supply a custom DataProvider that resolves the related members across types.',
+                self::class,
+                $relation->name(),
+            ));
+        }
+
+        $property = $relation->column() ?? $relation->name();
+        $relatedClass = $this->entityClassFor($relatedType);
+
+        $builder = $this->entityManager
+            ->getRepository($relatedClass)
+            ->createQueryBuilder(self::ROOT_ALIAS);
+
+        $owningField = $this->inverseOwningField($parent, $property);
+        $relatedMetadata = $this->entityManager->getClassMetadata($relatedClass);
+
+        // Fast-path: a single-valued inverse association (the related entity
+        // carries the owning FK). A many-to-many *inverse* side also has a
+        // non-null mappedBy, but it points to a COLLECTION — the
+        // isSingleValuedAssociation guard routes it to the subquery instead.
+        if ($owningField !== null && $relatedMetadata->isSingleValuedAssociation($owningField)) {
+            $builder
+                ->andWhere(\sprintf('%s.%s = :jsonapi_parent', self::ROOT_ALIAS, $owningField))
+                ->setParameter('jsonapi_parent', $parent);
+        } else {
+            // Subquery branch (owning-side, or many-to-many either side): scope
+            // by membership with an IN subquery that keeps the related entity as
+            // the outer query root. getClassMetadata resolves a proxy class to
+            // its real entity name.
+            $parentClass = $this->entityManager->getClassMetadata($parent::class)->getName();
+            $relatedIdField = $relatedMetadata->getSingleIdentifierFieldName();
+
+            $sub = $this->entityManager->createQueryBuilder()
+                ->select(\sprintf('related_scope.%s', $relatedIdField))
+                ->from($parentClass, 'parent_scope')
+                ->innerJoin(\sprintf('parent_scope.%s', $property), 'related_scope')
+                ->where('parent_scope = :jsonapi_parent');
+
+            $builder
+                ->andWhere($builder->expr()->in(
+                    \sprintf('%s.%s', self::ROOT_ALIAS, $relatedIdField),
+                    $sub->getDQL(),
+                ))
+                ->setParameter('jsonapi_parent', $parent); // bind on the OUTER builder, which executes
+        }
+
+        foreach ($this->extensionsFor($relatedType) as $extension) {
+            $builder = $extension->apply($builder, $relatedType, QueryPurpose::FetchCollection);
+        }
+
+        $builder = $this->applier->apply($criteria, $builder, $this->filterHandler, $this->sortHandler);
+
+        $window = $criteria->window;
+        if ($window === null) {
+            return new CollectionResult($this->items($builder));
+        }
+
+        if (!$window instanceof OffsetWindow) {
+            throw new \LogicException(\sprintf(
+                'The %s can only execute a %s pagination window; got %s.',
+                self::class,
+                OffsetWindow::class,
+                \get_debug_type($window),
+            ));
+        }
+
+        $total = $this->count($builder);
+        $builder->setFirstResult($window->offset)->setMaxResults($window->limit);
+
+        return new CollectionResult($this->items($builder), $total);
+    }
+
+    /**
      * @return list<object>
      */
     private function items(QueryBuilder $builder): array
@@ -163,6 +263,34 @@ final class DoctrineDataProvider implements DataProviderInterface
         $total = $counter->getQuery()->getSingleScalarResult();
 
         return \is_numeric($total) ? (int) $total : 0;
+    }
+
+    /**
+     * The owning-side field on the related entity for an inverse-side association
+     * on the parent (the single-valued FK an inverse OneToMany is `mappedBy`), or
+     * `null` when the parent's association is itself the owning side (or
+     * many-to-many — no single-valued inverse FK on the related entity to scope
+     * by). Mirrors the persister's resolver of the same name.
+     */
+    private function inverseOwningField(object $parent, string $property): ?string
+    {
+        $metadata = $this->entityManager->getClassMetadata($parent::class);
+        if (!$metadata->hasAssociation($property)) {
+            return null;
+        }
+
+        $mapping = $metadata->getAssociationMapping($property);
+
+        if ($mapping->isOwningSide()) {
+            return null;
+        }
+
+        // `mappedBy` lives on the inverse-side mapping; read it through the
+        // mapping's array access so the lookup is robust across the ORM 3 mapping
+        // class hierarchy.
+        $mappedBy = $mapping['mappedBy'] ?? null;
+
+        return \is_string($mappedBy) ? $mappedBy : null;
     }
 
     /**
