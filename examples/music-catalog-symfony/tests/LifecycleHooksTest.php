@@ -7,9 +7,6 @@ namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Tests;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Hook\AuditLog;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
-use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\HttpKernel\HttpKernelInterface;
 
 /**
  * The lifecycle-hooks acceptance suite (backs `lifecycle-hooks.md`): the
@@ -24,15 +21,18 @@ use Symfony\Component\HttpKernel\HttpKernelInterface;
  *    an audit record appended on every committed write, and a `serving` gate that
  *    freezes writes when a header is set.
  *
- * The audit store is read back through the public {@see AuditLog} service.
+ * The audit store is read back through the public {@see AuditLog} service. Delete is
+ * admin-gated by `securityDelete`, so the delete witnesses authenticate as `admin`
+ * through the shipped {@see \haddowg\JsonApiBundle\Testing\JsonApiBrowser::actingAs()}
+ * stateless Bearer token — the same auth path a consumer would use.
  */
 #[Group('spec:crud')]
 final class LifecycleHooksTest extends MusicCatalogKernelTestCase
 {
     private const string SEEDED_PLAYLIST_ID = '00000000-0000-4000-8000-000000000001';
 
-    /** HTTP-Basic credentials for the admin user the security firewall grants delete. */
-    private const array ADMIN = ['PHP_AUTH_USER' => 'admin', 'PHP_AUTH_PW' => 'pass'];
+    /** The admin user the security firewall grants delete. */
+    private const string ADMIN = 'admin';
 
     protected function afterBoot(): void
     {
@@ -45,31 +45,25 @@ final class LifecycleHooksTest extends MusicCatalogKernelTestCase
     public function aBeforeCreateHookMutationIsPersisted(): void
     {
         // PlaylistResource::beforeCreate stamps externalId when the create omits it.
-        $response = $this->handle('/playlists', 'POST', [
+        $browser = $this->browser();
+        $browser->post('/playlists', [
             'data' => [
                 'type' => 'playlists',
                 'attributes' => ['title' => 'Focus', 'public' => false],
             ],
-        ]);
+        ])->assertCreated();
 
-        self::assertSame(201, $response->getStatusCode(), (string) $response->getContent());
-
-        $data = $this->decode($response)['data'] ?? null;
+        $data = $this->decode($browser->getResponse())['data'] ?? null;
         self::assertIsArray($data);
         $id = $data['id'] ?? null;
         self::assertIsString($id);
 
-        $attributes = $data['attributes'] ?? null;
-        self::assertIsArray($attributes);
-        // The before-create mutation is on the rendered 201 and persisted: the stamp
-        // derives from the minted id, so a follow-up read returns it.
-        self::assertSame('ext-' . $id, $attributes['externalId'] ?? null);
+        // The before-create mutation is on the rendered 201: the stamp derives from
+        // the minted id.
+        $browser->getDocument()->assertHasAttribute('externalId', 'ext-' . $id);
 
-        $fetched = $this->decode($this->handle('/playlists/' . $id))['data'] ?? null;
-        self::assertIsArray($fetched);
-        $fetchedAttributes = $fetched['attributes'] ?? null;
-        self::assertIsArray($fetchedAttributes);
-        self::assertSame('ext-' . $id, $fetchedAttributes['externalId'] ?? null);
+        // …and it persisted: a follow-up read returns the same stamp.
+        $this->browser()->get('/playlists/' . $id)->assertFetchedOne()->assertHasAttribute('externalId', 'ext-' . $id);
     }
 
     #[Test]
@@ -79,13 +73,14 @@ final class LifecycleHooksTest extends MusicCatalogKernelTestCase
         // refuses with a 409 — and the audit subscriber never records a deletion.
         // (Delete is admin-gated by securityDelete, so authenticate as admin to reach
         // the hook — the authorization layer is exercised in AuthorizationTest.)
-        $response = $this->handle('/playlists/' . self::SEEDED_PLAYLIST_ID, 'DELETE', null, self::ADMIN);
-
-        self::assertSame(409, $response->getStatusCode(), (string) $response->getContent());
-        self::assertSame('CONFLICT', $this->firstErrorCode($response));
+        $errors = $this->browser()
+            ->actingAs(self::ADMIN)
+            ->delete('/playlists/' . self::SEEDED_PLAYLIST_ID)
+            ->getErrors();
+        $errors->assertStatus(409)->assertHasError(code: 'CONFLICT');
 
         // The guard aborted before the delete: the playlist is still there.
-        self::assertSame(200, $this->handle('/playlists/' . self::SEEDED_PLAYLIST_ID)->getStatusCode());
+        $this->browser()->get('/playlists/' . self::SEEDED_PLAYLIST_ID)->assertFetchedOne();
         self::assertSame([], $this->audit()->entries());
     }
 
@@ -94,19 +89,21 @@ final class LifecycleHooksTest extends MusicCatalogKernelTestCase
     {
         // A freshly created playlist references no tracks, so the same guard lets the
         // delete through — proving the guard is conditional, not a blanket block.
-        $created = $this->decode($this->handle('/playlists', 'POST', [
+        $this->browser()->post('/playlists', [
             'data' => [
                 'type' => 'playlists',
                 'attributes' => ['title' => 'Disposable', 'public' => true],
             ],
-        ]))['data'] ?? null;
+        ])->assertCreated();
+
+        $created = $this->decode($this->browser()->getResponse())['data'] ?? null;
         self::assertIsArray($created);
         $id = $created['id'] ?? null;
         self::assertIsString($id);
 
         // Delete is admin-gated, so authenticate as admin to reach the guard.
-        self::assertSame(204, $this->handle('/playlists/' . $id, 'DELETE', null, self::ADMIN)->getStatusCode());
-        self::assertSame(404, $this->handle('/playlists/' . $id)->getStatusCode());
+        $this->browser()->actingAs(self::ADMIN)->delete('/playlists/' . $id)->assertNoContent();
+        $this->browser()->get('/playlists/' . $id)->getDocument()->assertStatus(404);
     }
 
     #[Test]
@@ -115,21 +112,23 @@ final class LifecycleHooksTest extends MusicCatalogKernelTestCase
         // The AfterSave event fires for both create and update; the AfterDelete event
         // for a delete. Each appends one audit line — proving a cross-cutting concern
         // spans the whole API from a single subscriber.
-        $created = $this->decode($this->handle('/playlists', 'POST', [
+        $this->browser()->post('/playlists', [
             'data' => [
                 'type' => 'playlists',
                 'attributes' => ['title' => 'Audited', 'public' => true],
             ],
-        ]))['data'] ?? null;
+        ])->assertCreated();
+
+        $created = $this->decode($this->browser()->getResponse())['data'] ?? null;
         self::assertIsArray($created);
         $id = $created['id'] ?? null;
         self::assertIsString($id);
 
-        $this->handle('/tracks/1', 'PATCH', [
+        $this->browser()->patch('/tracks/1', [
             'data' => ['type' => 'tracks', 'id' => '1', 'attributes' => ['title' => 'Airbag (Remaster)']],
-        ]);
+        ])->assertFetchedOne();
 
-        $this->handle('/tracks/4', 'DELETE');
+        $this->browser()->delete('/tracks/4')->assertNoContent();
 
         self::assertSame(
             [
@@ -146,61 +145,23 @@ final class LifecycleHooksTest extends MusicCatalogKernelTestCase
     {
         // The serving subscriber fires once per request before the operation: with the
         // read-only header set a write aborts with a 403 and never commits (no audit).
-        $response = $this->readOnlyRequest(
-            '/playlists',
-            'POST',
-            ['data' => ['type' => 'playlists', 'attributes' => ['title' => 'Blocked', 'public' => true]]],
-        );
-
-        self::assertSame(403, $response->getStatusCode(), (string) $response->getContent());
-        self::assertSame('FORBIDDEN', $this->firstErrorCode($response));
+        $this->browser()
+            ->post(
+                '/playlists',
+                ['data' => ['type' => 'playlists', 'attributes' => ['title' => 'Blocked', 'public' => true]]],
+                self::READ_ONLY_HEADER,
+            )
+            ->getErrors()
+            ->assertStatus(403)
+            ->assertHasError(code: 'FORBIDDEN');
         self::assertSame([], $this->audit()->entries());
 
         // A read is unaffected by the gate (it only blocks mutating methods).
-        self::assertSame(200, $this->readOnlyRequest('/playlists/' . self::SEEDED_PLAYLIST_ID, 'GET')->getStatusCode());
+        $this->browser()->get('/playlists/' . self::SEEDED_PLAYLIST_ID, self::READ_ONLY_HEADER)->assertFetchedOne();
     }
 
-    /**
-     * Issues a request carrying the `X-Read-Only` header the serving gate watches —
-     * the one affordance the base `handle()` does not cover (it sends no custom
-     * headers). Mirrors the base flow: production catch + handler-stack restore.
-     *
-     * @param array<string, mixed>|null $body
-     */
-    private function readOnlyRequest(string $path, string $method, ?array $body = null): Response
-    {
-        $kernel = static::$kernel;
-        self::assertNotNull($kernel);
-
-        $server = ['HTTP_ACCEPT' => 'application/vnd.api+json', 'HTTP_X_READ_ONLY' => 'on'];
-        $content = null;
-        if ($body !== null) {
-            $server['CONTENT_TYPE'] = 'application/vnd.api+json';
-            $content = \json_encode($body, \JSON_THROW_ON_ERROR);
-        }
-
-        $request = Request::create($path, $method, server: $server, content: $content);
-
-        return $kernel->handle($request, HttpKernelInterface::MAIN_REQUEST, true);
-    }
-
-    /**
-     * The `code` of the first error in an error document — the marker a hook abort
-     * carries ({@see \haddowg\JsonApiBundle\Examples\MusicCatalog\Hook\HookAbortException}).
-     */
-    private function firstErrorCode(Response $response): string
-    {
-        $errors = $this->decode($response)['errors'] ?? null;
-        self::assertIsArray($errors);
-
-        $first = $errors[0] ?? null;
-        self::assertIsArray($first);
-
-        $code = $first['code'] ?? null;
-        self::assertIsString($code);
-
-        return $code;
-    }
+    /** The `X-Read-Only` header the serving gate watches, as a `$_SERVER` entry. */
+    private const array READ_ONLY_HEADER = ['HTTP_X_READ_ONLY' => 'on'];
 
     private function audit(): AuditLog
     {

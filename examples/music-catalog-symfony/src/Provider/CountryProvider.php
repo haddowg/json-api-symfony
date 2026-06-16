@@ -106,6 +106,12 @@ final class CountryProvider implements DataProviderInterface
         return new CollectionResult([]);
     }
 
+    public function fetchRelationshipPivot(string $type, object $parent, RelationInterface $relation): array
+    {
+        // Countries are reference data with no pivot relationships.
+        return [];
+    }
+
     /**
      * Every country as a {@see Country}, ordered by ISO code for a deterministic
      * base ordering before any requested sort.

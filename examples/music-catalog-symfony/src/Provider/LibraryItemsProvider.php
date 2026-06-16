@@ -174,6 +174,13 @@ final class LibraryItemsProvider implements DataProviderInterface, PivotAwarePro
         );
     }
 
+    public function fetchRelationshipPivot(string $type, object $parent, RelationInterface $relation): array
+    {
+        // The polymorphic items relation carries no pivot; any real pivot relation
+        // resolves through the Doctrine push-down (which returns [] for a non-pivot).
+        return $this->doctrine->fetchRelationshipPivot($type, $parent, $relation);
+    }
+
     public function supportsPivot(string $relatedType, RelationInterface $relation): bool
     {
         return $this->doctrine->supportsPivot($relatedType, $relation);

@@ -18,8 +18,9 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
 /**
  * The declarative-authorization witness kernel (bundle ADR 0043): the Doctrine
- * provider/persister behind a real Symfony firewall (in-memory user provider +
- * HTTP-Basic authenticator + a password hasher) so the
+ * provider/persister behind a real Symfony firewall (in-memory user provider + a
+ * stateless Bearer `access_token` authenticator — the only scheme, no `http_basic`
+ * fallback) so the
  * {@see \haddowg\JsonApiBundle\Security\ResourceSecuritySubscriber} evaluates each
  * type's `#[AsJsonApiResource(security: …)]` expression against a real token.
  *
@@ -101,11 +102,12 @@ final class SecurityTestKernel extends Kernel
             'orm' => $orm,
         ]);
 
-        // An in-memory user provider over plaintext passwords + an HTTP-Basic
-        // firewall. Stateless: the test authenticates per request via the
-        // Authorization header (Request::create's PHP_AUTH_USER/PW). The firewall is
-        // optional (no access_control forces auth), so an unauthenticated request
-        // still reaches the controller and the security subscriber gates it.
+        // An in-memory user provider over plaintext passwords + a stateless
+        // firewall. The firewall authenticates a Bearer access_token (resolved by
+        // AccessTokenHandler — the token IS the user identifier) per request via the
+        // Authorization header; it is the only scheme (no http_basic fallback). The
+        // firewall is optional (no access_control forces auth), so an unauthenticated
+        // request still reaches the controller and the security subscriber gates it.
         $container->extension('security', [
             'password_hashers' => [
                 \Symfony\Component\Security\Core\User\InMemoryUser::class => ['algorithm' => 'plaintext'],
@@ -127,7 +129,9 @@ final class SecurityTestKernel extends Kernel
                     'pattern' => '^/',
                     'stateless' => true,
                     'provider' => 'in_memory',
-                    'http_basic' => true,
+                    'access_token' => [
+                        'token_handler' => AccessTokenHandler::class,
+                    ],
                 ],
             ],
         ]);
@@ -137,6 +141,7 @@ final class SecurityTestKernel extends Kernel
             ->autowire()
             ->autoconfigure();
 
+        $services->set(AccessTokenHandler::class);
         $services->set(SecuredWidgetResource::class);
         $services->set(OwnedWidgetResource::class);
         $services->set(OpenWidgetResource::class);

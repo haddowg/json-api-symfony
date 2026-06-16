@@ -401,10 +401,25 @@ silently ignore is rejected when the linter is on:
 Keep the two distinct: a `400` is structural ("not a JSON:API document"), a `422`
 is semantic ("a value broke a rule").
 
+## Filter values reuse this bridge (for a `400`)
+
+The same `ConstraintTranslator` gives **filter** value constraints teeth. A filter
+can declare value constraints (`Where::make('year')->integer()`,
+`WhereIdIn::make()->uuid()`, …); the bundle translates them through this bridge and
+checks a client-supplied `filter[<key>]` value **before** the filter reaches the
+data layer, rejecting a mistyped value with a `400`
+(`source.parameter`) — *not* a `422`, because a filter is a query *parameter*, not a
+document. It is optional in the same way (inert without `symfony/validator`). This
+turns the provider's unhelpful default for a type-mismatched value (a silent
+non-match, or a Doctrine PDO `500` on a strict driver) into a deliberate client
+error with `source.parameter`. See
+[data-layer → Validating filter values](data-layer.md#validating-filter-values).
+
 ## Next / see also
 
 - [data-layer](data-layer.md) — where the two validation passes sit in the
-  `CrudOperationHandler` write flow.
+  `CrudOperationHandler` write flow, and where declared **filter value
+  constraints** are validated (a `400`) before a filter reaches the provider.
 - [errors](errors.md) — how `ValidationFailed` (`422`) and the linter's `400` reach
   the wire through the route-scoped exception listener.
 - [relationships](relationships.md) — relationship-body validation (cardinality and

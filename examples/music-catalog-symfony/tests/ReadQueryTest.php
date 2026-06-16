@@ -162,6 +162,19 @@ final class ReadQueryTest extends MusicCatalogKernelTestCase
         self::assertSame('SORTING_UNRECOGNIZED', $this->firstError($response)['code'] ?? null);
     }
 
+    #[Test]
+    #[Group('spec:fetching-sorting')]
+    public function aSortReadThroughTheBrowserCarriesExactlyTheOrderedIds(): void
+    {
+        // The dogfood `?sort` witness through the shipped browser: an ascending title
+        // sort over `/tracks` carries exactly [Airbag (1), Exit Music (3), Mysterons
+        // (4)] IN THAT ORDER (the explicit track 2 is hidden by the default filter) —
+        // a single fluent assertion over status, content type and ordered membership.
+        $this->browser()
+            ->get('/tracks?sort=title')
+            ->assertFetchedManyInOrder(['1', '3', '4'], 'tracks');
+    }
+
     // --- sparse fieldsets ----------------------------------------------------
 
     #[Test]
@@ -176,6 +189,51 @@ final class ReadQueryTest extends MusicCatalogKernelTestCase
         self::assertArrayHasKey('title', $attributes);
         self::assertArrayNotHasKey('durationSeconds', $attributes);
         self::assertArrayNotHasKey('genres', $attributes);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-resources')]
+    public function aSingleReadIsWholeMemberExactWithNoLeak(): void
+    {
+        // The dogfood no-leak witness: a single `/tracks/1` read is compared
+        // WHOLE-MEMBER against the exact resource object the seed produces (every
+        // attribute, the computed `displayTitle`, the per-member meta, both
+        // relationships' linkage and links). A leaked or extra member — a hidden
+        // column surfacing, a stray relationship — would fail this, far stronger than
+        // spot-checking one attribute.
+        $this->browser()
+            ->get('/tracks/1')
+            ->assertFetchedOneExact([
+                'type' => 'tracks',
+                'id' => '1',
+                'meta' => ['served_by' => 'music-catalog'],
+                'links' => ['self' => 'https://music.example/tracks/1'],
+                'attributes' => [
+                    'title' => 'Airbag',
+                    'trackNumber' => 1,
+                    'durationSeconds' => 284,
+                    'explicit' => false,
+                    'genres' => ['rock', 'alternative'],
+                    'previewOffset' => '00:00:30',
+                    'displayTitle' => '1. Airbag',
+                ],
+                'relationships' => [
+                    'album' => [
+                        'links' => [
+                            'self' => 'https://music.example/tracks/1/relationships/album',
+                            'related' => 'https://music.example/tracks/1/album',
+                        ],
+                        'data' => ['type' => 'albums', 'id' => '1'],
+                    ],
+                    'playlists' => [
+                        'links' => [
+                            'self' => 'https://music.example/tracks/1/relationships/playlists',
+                            'related' => 'https://music.example/tracks/1/playlists',
+                        ],
+                        'data' => [['type' => 'playlists', 'id' => '00000000-0000-4000-8000-000000000001']],
+                    ],
+                ],
+            ]);
     }
 
     // --- includes ------------------------------------------------------------

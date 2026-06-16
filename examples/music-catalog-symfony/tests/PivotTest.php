@@ -25,15 +25,24 @@ use PHPUnit\Framework\Attributes\Test;
  * filter hides the explicit member from the related collection, leaving the
  * visible order [3, 1] by ascending position.
  *
- * The `position` field is declared WRITABLE (a plain `Integer::make('position')`,
- * no `->readOnly()`) so it can be set / reordered through the linkage `meta`, while
- * `addedAt` is `readOnly()` (server-owned, stamped by the entity's `#[ORM\PrePersist]`).
- * The write witnesses below add a member with a position, PATCH-reorder the whole
- * playlist and read the new positions back, reject an out-of-range position with a
- * `422`, and prove the server-owned `addedAt` is set on a freshly-created row even
- * though the wire `meta` cannot write it. Mutating the playlist's relationship goes
- * through the owner gate (`securityUpdate: is_granted('EDIT', object)`), so the
- * writes authenticate as the seeded owner.
+ * The `position` field is declared WRITABLE and REQUIRED-on-create (so a
+ * genuinely-new member must carry it), `weight` is a second writable field
+ * constrained `weight >= position`, and `addedAt` is `readOnly()` (server-owned,
+ * stamped by the entity's `#[ORM\PrePersist]`). The write witnesses below add a
+ * member with a position, PATCH-reorder the whole playlist and read the new
+ * positions back, reject an out-of-range position with a `422`, and prove the
+ * server-owned `addedAt` is set on a freshly-created row even though the wire `meta`
+ * cannot write it. Mutating the playlist's relationship goes through the owner gate
+ * (`securityUpdate: is_granted('EDIT', object)`), so the writes authenticate as the
+ * seeded owner.
+ *
+ * The merge-before-validate witnesses (bundle ADR 0050) then prove a partial pivot
+ * update of an EXISTING member validates the MERGED pivot row (stored values
+ * overlaid by the incoming meta): an existing member re-asserted with no `position`
+ * keeps its stored position and 200s (the required field need not be re-sent), the
+ * cross-pivot `weight >= position` rule compares an incoming `weight` against the
+ * merged stored `position`, and a genuinely-NEW member still 422s for the missing
+ * required `position` (the new-row context is not regressed).
  *
  * Boundaries proved here (and documented in the README): pivot is **Doctrine-only**,
  * scoped to this one related endpoint — a pivot key 400s on the primary `/tracks`
@@ -48,7 +57,7 @@ final class PivotTest extends MusicCatalogKernelTestCase
     private const string PLAYLIST_ID = '00000000-0000-4000-8000-000000000001';
 
     /** The seeded owner of Morning Mix — the EDIT-gate subject for a pivot write. */
-    private const array OWNER = ['PHP_AUTH_USER' => 'ada@example.com', 'PHP_AUTH_PW' => 'pass'];
+    private const string OWNER = 'ada@example.com';
 
     #[Test]
     public function aPivotRelatedEndpointRendersPerMemberPivotMeta(): void
@@ -139,8 +148,8 @@ final class PivotTest extends MusicCatalogKernelTestCase
     {
         // `position` is a pivot key scoped to the related endpoint only; on the
         // primary /tracks collection it is undeclared → 400 (Doctrine-only, scoped).
-        self::assertSame(400, $this->handle('/tracks?filter[position]=1')->getStatusCode());
-        self::assertSame(400, $this->handle('/tracks?sort=position')->getStatusCode());
+        $this->browser()->get('/tracks?filter[position]=1')->getErrors()->assertStatus(400);
+        $this->browser()->get('/tracks?sort=position')->getErrors()->assertStatus(400);
     }
 
     #[Test]
@@ -150,7 +159,7 @@ final class PivotTest extends MusicCatalogKernelTestCase
         // The plain `tracks` join relation carries no pivot data, so a pivot key 400s
         // there too — pivot is scoped to the `orderedTracks` association-entity
         // relation alone.
-        self::assertSame(400, $this->handle('/playlists/' . self::PLAYLIST_ID . '/tracks?sort=position')->getStatusCode());
+        $this->browser()->get('/playlists/' . self::PLAYLIST_ID . '/tracks?sort=position')->getErrors()->assertStatus(400);
     }
 
     #[Test]
@@ -175,11 +184,10 @@ final class PivotTest extends MusicCatalogKernelTestCase
         // in its linkage meta. Mysterons (track 4) is on no playlist yet — adding it
         // at position 4 creates a PlaylistEntry row with that pivot value. The write
         // goes through the owner gate.
-        $response = $this->handle(
+        $response = $this->writeAsOwner(
             '/playlists/' . self::PLAYLIST_ID . '/relationships/orderedTracks',
             'POST',
             ['data' => [['type' => 'tracks', 'id' => '4', 'meta' => ['position' => 4]]]],
-            self::OWNER,
         );
 
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
@@ -199,14 +207,13 @@ final class PivotTest extends MusicCatalogKernelTestCase
         // → position 2 (swapping their seeded 2/1), and DROP Paranoid Android (2). The
         // existing rows are updated IN PLACE (their server addedAt survives), the
         // dropped member's row is removed.
-        $response = $this->handle(
+        $response = $this->writeAsOwner(
             '/playlists/' . self::PLAYLIST_ID . '/relationships/orderedTracks',
             'PATCH',
             ['data' => [
                 ['type' => 'tracks', 'id' => '1', 'meta' => ['position' => 1]],
                 ['type' => 'tracks', 'id' => '3', 'meta' => ['position' => 2]],
             ]],
-            self::OWNER,
         );
 
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
@@ -230,11 +237,10 @@ final class PivotTest extends MusicCatalogKernelTestCase
     {
         // position 0 violates the writable field's min(1): a 422 pointed at the linkage
         // meta, and NO write (the membership and positions are unchanged afterwards).
-        $response = $this->handle(
+        $response = $this->writeAsOwner(
             '/playlists/' . self::PLAYLIST_ID . '/relationships/orderedTracks',
             'PATCH',
             ['data' => [['type' => 'tracks', 'id' => '1', 'meta' => ['position' => 0]]]],
-            self::OWNER,
         );
 
         self::assertSame(422, $response->getStatusCode(), (string) $response->getContent());
@@ -253,7 +259,7 @@ final class PivotTest extends MusicCatalogKernelTestCase
         // addedAt is a readOnly pivot field: a value supplied in meta is never written.
         // Add Mysterons (4) supplying both position (applied) and addedAt (ignored) —
         // the new row takes the server PrePersist default, not the supplied date.
-        $response = $this->handle(
+        $response = $this->writeAsOwner(
             '/playlists/' . self::PLAYLIST_ID . '/relationships/orderedTracks',
             'POST',
             ['data' => [[
@@ -261,7 +267,6 @@ final class PivotTest extends MusicCatalogKernelTestCase
                 'id' => '4',
                 'meta' => ['position' => 4, 'addedAt' => '1999-12-31T00:00:00+00:00'],
             ]]],
-            self::OWNER,
         );
 
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
@@ -280,7 +285,7 @@ final class PivotTest extends MusicCatalogKernelTestCase
         // The SAME linkage meta inline in a whole-resource PATCH of the playlist:
         // reorder orderedTracks to Airbag (1) @ 1, Exit Music (3) @ 2, dropping
         // Paranoid Android. Goes through the same owner gate and persister seam.
-        $response = $this->handle(
+        $response = $this->writeAsOwner(
             '/playlists/' . self::PLAYLIST_ID,
             'PATCH',
             ['data' => [
@@ -293,7 +298,6 @@ final class PivotTest extends MusicCatalogKernelTestCase
                     ]],
                 ],
             ]],
-            self::OWNER,
         );
 
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
@@ -306,19 +310,125 @@ final class PivotTest extends MusicCatalogKernelTestCase
         self::assertSame(2, $this->pivotField($byId['3'] ?? [], 'position'));
     }
 
+    // --- merge-before-validate on a partial pivot update ---------------------
+
+    #[Test]
+    #[Group('spec:updating-relationships')]
+    public function anExistingMemberPivotUpdateOmittingTheRequiredPositionKeepsItAnd200s(): void
+    {
+        // Merge-before-validate (bundle ADR 0050): `position` is REQUIRED-on-create,
+        // but Airbag (track 1) is ALREADY a member at stored position 2. A
+        // relationship POST (Mode::Add) re-asserting it with NO meta is a partial
+        // pivot update of an EXISTING row — the required `position` is taken from the
+        // MERGED pivot (the stored value folded in), so this is a 200, NOT the
+        // always-create band-aid's 422. The stored position is preserved (an absent
+        // writable field is left untouched).
+        $response = $this->writeAsOwner(
+            '/playlists/' . self::PLAYLIST_ID . '/relationships/orderedTracks',
+            'POST',
+            ['data' => [['type' => 'tracks', 'id' => '1']]],
+        );
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        // Airbag keeps its stored position 2 — the merge folded it in, the persister
+        // preserved it.
+        $byId = $this->byId($this->fetch('/playlists/' . self::PLAYLIST_ID . '/orderedTracks?sort=position'));
+        self::assertSame(2, $this->pivotField($byId['1'] ?? [], 'position'));
+    }
+
+    #[Test]
+    #[Group('spec:updating-relationships')]
+    public function aCrossPivotRuleEvaluatesAgainstTheMergedPivot(): void
+    {
+        // `weight >= position` is a cross-pivot-field rule. Airbag (track 1) is stored
+        // at position 2 (weight 100). A partial pivot update sends weight 1 and OMITS
+        // position: the rule compares the incoming weight against the MERGED (stored)
+        // position — 1 >= 2 is false → a 422 at the linkage meta. (Were the stored
+        // position not folded in, the comparison would have no sibling and wrongly
+        // pass.)
+        $violation = $this->writeAsOwner(
+            '/playlists/' . self::PLAYLIST_ID . '/relationships/orderedTracks',
+            'POST',
+            ['data' => [['type' => 'tracks', 'id' => '1', 'meta' => ['weight' => 1]]]],
+        );
+
+        self::assertSame(422, $violation->getStatusCode(), (string) $violation->getContent());
+        self::assertSame('/data/0/meta/weight', $this->firstErrorPointer($violation));
+
+        // The store is unchanged — no write on a 422.
+        $byId = $this->byId($this->fetch('/playlists/' . self::PLAYLIST_ID . '/orderedTracks?sort=position'));
+        self::assertSame(2, $this->pivotField($byId['1'] ?? [], 'position'));
+
+        // A weight at/above the merged stored position passes (5 >= 2) and writes —
+        // and the omitted position is preserved (still 2).
+        $ok = $this->writeAsOwner(
+            '/playlists/' . self::PLAYLIST_ID . '/relationships/orderedTracks',
+            'POST',
+            ['data' => [['type' => 'tracks', 'id' => '1', 'meta' => ['weight' => 5]]]],
+        );
+
+        self::assertSame(200, $ok->getStatusCode(), (string) $ok->getContent());
+        $byId = $this->byId($this->fetch('/playlists/' . self::PLAYLIST_ID . '/orderedTracks?sort=position'));
+        self::assertSame(5, $this->pivotField($byId['1'] ?? [], 'weight'));
+        self::assertSame(2, $this->pivotField($byId['1'] ?? [], 'position'));
+    }
+
+    #[Test]
+    #[Group('spec:updating-relationships')]
+    public function aGenuinelyNewMemberMissingTheRequiredPositionIs422(): void
+    {
+        // The band-aid's VALID purpose is NOT regressed: Mysterons (track 4) is on no
+        // playlist, so adding it with NO meta is a genuinely-NEW row — the required
+        // `position` has no stored value to merge in, so it stays a 422 (never a DB
+        // NOT-NULL 500), pointed at the linkage meta.
+        $response = $this->writeAsOwner(
+            '/playlists/' . self::PLAYLIST_ID . '/relationships/orderedTracks',
+            'POST',
+            ['data' => [['type' => 'tracks', 'id' => '4']]],
+        );
+
+        self::assertSame(422, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame('/data/0/meta/position', $this->firstErrorPointer($response));
+    }
+
     // --- helpers -------------------------------------------------------------
 
     /**
+     * A pivot write authenticated as the playlist owner — the EDIT gate
+     * (`securityUpdate: is_granted('EDIT', object)`) admits her. Routed through the
+     * shipped {@see \haddowg\JsonApiBundle\Testing\JsonApiBrowser::actingAs()} stateless
+     * Bearer token, so the suite dogfoods the real auth path.
+     *
+     * @param array<string, mixed> $body
+     */
+    private function writeAsOwner(string $path, string $method, array $body): \Symfony\Component\HttpFoundation\Response
+    {
+        $browser = $this->browser()->actingAs(self::OWNER);
+        match ($method) {
+            'POST' => $browser->post($path, $body),
+            'PATCH' => $browser->patch($path, $body),
+            'DELETE' => $browser->delete($path, $body),
+            default => throw new \InvalidArgumentException("Unsupported write method '{$method}'."),
+        };
+
+        return $browser->getResponse();
+    }
+
+    /**
+     * A `200` JSON:API read through the shipped browser — decoded for the pivot-meta
+     * assertions. Keeping the whole suite on the one browser (rather than mixing the
+     * base `handle()`) keeps a single error/exception-handler baseline across an
+     * error-rendering request.
+     *
      * @return array<string, mixed>
      */
     private function fetch(string $path): array
     {
-        $response = $this->handle($path);
+        $browser = $this->browser();
+        $browser->get($path)->assertStatus(200)->assertContentType();
 
-        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
-        self::assertSame('application/vnd.api+json', $response->headers->get('Content-Type'));
-
-        return $this->decode($response);
+        return $this->decode($browser->getResponse());
     }
 
     /**

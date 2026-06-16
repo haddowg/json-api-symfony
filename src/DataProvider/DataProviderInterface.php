@@ -81,4 +81,25 @@ interface DataProviderInterface
         CollectionCriteria $criteria,
         JsonApiRequestInterface $request,
     ): CollectionResult;
+
+    /**
+     * The EXISTING pivot meta for the members currently in `$parent`'s pivot
+     * `$relation` — `relatedId => [pivotField => wire value]` — read straight from
+     * storage with no filter or window. The validator folds a stored pivot row under
+     * an incoming linkage member's meta so an existing-member partial pivot update
+     * validates in the **update** (preserved-value) context while a genuinely-new
+     * member still validates in the create (new-row) context (the merge-before-validate
+     * pivot half, ADR 0050).
+     *
+     * A non-pivot relation, a pivot relation with no pivot fields, or a provider that
+     * cannot store pivot data (the in-memory witness, a custom store) returns `[]` —
+     * every incoming member is then treated as new (create context), the documented
+     * boundary. The reference Doctrine provider reads the same association-entity rows
+     * the pivot-read feature already projects, keyed by the related id.
+     *
+     * @param object $parent the already-loaded parent (the handler holds it); avoids a re-fetch
+     *
+     * @return array<string, array<string, mixed>> `relatedId => [pivotField => wire value]`
+     */
+    public function fetchRelationshipPivot(string $type, object $parent, RelationInterface $relation): array;
 }

@@ -27,9 +27,9 @@ reference-data type sourced from `symfony/intl`.
 | Type | Backing | Highlights |
 | --- | --- | --- |
 | `artists` | `Artist` entity | singular `filter[slug]`, computed `trackCount`, `hasMany albums` (`cannotBeIncluded` — include safeguard A) |
-| `albums` | `Album` entity | multi-server (default + `admin`), directional `CompareField`, `Map releaseInfo` (JSON column), default-include `artist`, `WhereHas tracks`, **relation-scoped `filter`/`sort`** on `tracks` |
+| `albums` | `Album` entity | multi-server (default + `admin`), directional `CompareField` (**merge-before-validate** witness on update), `Map releaseInfo` (JSON column), default-include `artist`, `WhereHas tracks`, **relation-scoped `filter`/`sort`** on `tracks` |
 | `tracks` | `Track` entity | **serializer override** (`TrackSerializer`), `storedAs` rename, `ArrayList genres`, `like` filter, plain `belongsToMany playlists` (`cannotReplace`) |
-| `playlists` | `Playlist` entity | **hydrator override** (`PlaylistHydrator`), **UUID id** (`uuid()->generated()`), derived `slug`, **lifecycle hooks** (`beforeCreate` stamp + `beforeDelete` 409 guard), **authorization** (`securityDelete` admin-only + `securityUpdate` owner Voter), **pivot** `belongsToMany orderedTracks` (`PlaylistEntry` association entity: writable `position` + server-owned `addedAt` as `meta.pivot`, set/reordered via linkage `meta`, `?filter`/`?sort`) |
+| `playlists` | `Playlist` entity | **hydrator override** (`PlaylistHydrator`), **UUID id** (`uuid()->generated()`), derived `slug`, **lifecycle hooks** (`beforeCreate` stamp + `beforeDelete` 409 guard), **authorization** (`securityDelete` admin-only + `securityUpdate` owner Voter), **pivot** `belongsToMany orderedTracks` (`PlaylistEntry` association entity: required writable `position` + cross-pivot `weight >= position` + server-owned `addedAt` as `meta.pivot`, set/reordered via linkage `meta`, `?filter`/`?sort`, **merge-before-validate** per member) |
 | `users` | `User` entity | **admin-server-only**, `UniqueEntity` on `email`, write-only `password`, validation-composition trio, `getAllowedIncludePaths` whitelist (include safeguard C) |
 | `favorites` | `Favorite` entity | **polymorphic to-one** `MorphTo favoritable` (Track\|Album\|Artist) |
 | `libraries` | `Library` entity | **polymorphic to-many** `MorphToMany items` (custom provider) |
@@ -136,11 +136,15 @@ A type that declares no `security` — every other type here — is never affect
 The layer needs a firewall: `config/packages/security.yaml` wires the smallest
 witness — an in-memory user provider (`admin`; `ada@example.com`, the seeded
 playlist's owner; and `mallory@example.com`, a non-owner) behind a stateless
-HTTP-Basic firewall. The firewall is optional (no `access_control`), so an
+**Bearer `access_token`** firewall (the most common API auth scenario, and the
+scheme the shipped `JsonApiBrowser::actingAs()` uses; a tiny `AccessTokenHandler`
+resolves the token to the seeded user, and a permissive `BearerTokenExtractor` lets
+an email identifier through). The firewall is optional (no `access_control`), so an
 unauthenticated request still reaches the controller and the security expressions are
 what gate it. `tests/AuthorizationTest.php` proves the owner may update / a non-owner
 is `403` / unauthenticated is `401` / an admin may delete / a `ROLE_USER` is `403` /
-the abort happens before any write / an unsecured type is ungated. See
+the abort happens before any write / an unsecured type is ungated — every request
+authenticated with `actingAs($user)` over a Bearer token. See
 [`docs/authorization.md`](../../docs/authorization.md) for the full surface.
 
 ## Self links by convention
@@ -230,6 +234,86 @@ the join as an association entity. `tests/RelationScopedParamsTest.php` proves t
 witness above; see [`docs/relationships.md`](../../docs/relationships.md) for the
 full surface.
 
+## Validating filter values
+
+A value-carrying filter can **declare value constraints**, validated by the bundle
+**before** the filter reaches the provider — so a mistyped value is a clean `400`
+instead of the provider's unhelpful default. Before this, a filter's value was
+metadata-only: `filter[longerThan]=banana` on the integer `length_seconds` column
+flowed straight to Doctrine, where a strict driver such as Postgres surfaces a
+**`500`** (a PDO type-mismatch error) while a loosely-typed database (the sqlite
+this example runs on) and the in-memory provider just silently match nothing.
+
+Constraints are declared with the same fluent shortcuts the `Id` field already uses,
+reusing core's constraint vocabulary — `->integer()`, `->numeric()`,
+`->uuid(?int $version)`, `->boolean()`, `->pattern(string $regex)`, or `->constrain(…)`
+for any constraint VO. Two witnesses in this example, **both over the reference
+Doctrine provider**:
+
+```php
+// primary collection — TrackResource (a boolean filter)
+Where::make('explicit')->asBoolean()->default(false)->boolean(),
+
+// related collection — AlbumResource's relation-scoped tracks filter (an int column)
+HasMany::make('tracks')->type('tracks')
+    ->withFilters(Where::make('longerThan', 'length_seconds', '>')->integer()),
+```
+
+So (`tests/FilterValueConstraintTest.php`):
+
+- `GET /tracks?filter[explicit]=banana` is a clean **`400`**, not a silent coercion
+  to `false`; `GET /albums/1/tracks?filter[longerThan]=banana` is a clean **`400`**
+  too — the bad value never reaches the query, so on a strict driver (Postgres)
+  there is no `500` (the sqlite kernel here would otherwise silently non-match). The
+  error document is `status "400"`, `code "FILTER_VALUE_INVALID"`,
+  `title "Filter value is invalid"`, `detail` = the violation message,
+  `source: { "parameter": "filter[<key>]" }` — one error per violation. It is a
+  **`400`** (a bad query *parameter*), deliberately not a `422` (a document semantic
+  error);
+- a **valid** value still filters exactly as before — `filter[explicit]=true` surfaces
+  the explicit track, `filter[longerThan]=270` narrows the related collection;
+- a filter with **no declared constraints** is unaffected (`filter[title]=air` takes
+  any value), and an **author-set `default()`** is trusted — only client-supplied
+  values are validated, never the default (`explicit` defaults to `false` against its
+  own `->boolean()` and the bare collection is a `200`).
+
+The validation reuses the [validator bridge](../../docs/validation.md)
+(`symfony/validator`), so a constrained filter with no validator installed is inert —
+the same optionality the attribute-constraint bridge has. No new config keys. See
+[`docs/data-layer.md`](../../docs/data-layer.md) (bundle ADR 0048, core ADR 0055).
+
+## Validating the merged resource on update
+
+A `PATCH` carries a **partial** document — only the fields the client means to
+change. A cross-field or conditional rule that depends on a sibling the client did
+**not** re-send must still see that sibling, so on an update the bundle validates the
+**merged** resource: the stored attribute values overlaid by the incoming partial
+(an incoming key overrides; an absent key keeps its stored value). The existing
+record is already loaded in the handler, so no extra read is needed.
+
+`AlbumResource` declares the directional `availableUntil > availableFrom`
+`CompareField`. Album `1` is stored with `availableFrom` `1997-05-21`, so
+(`tests/ValidationTest.php`):
+
+```jsonc
+// the body carries ONLY availableUntil — availableFrom is never re-sent
+PATCH /albums/1
+{ "data": { "type": "albums", "id": "1",
+            "attributes": { "availableUntil": "2040-01-01" } } }   // 200 — 2040 > stored 1997
+
+PATCH /albums/1
+{ "data": { "type": "albums", "id": "1",
+            "attributes": { "availableUntil": "1990-01-01" } } }   // 422 — 1990 < stored 1997
+```
+
+The comparison runs against the **merged** state — the stored `availableFrom` is
+folded under the body — so the rule holds (or fails) correctly even though the
+sibling is absent from the wire. A required attribute already valid in stored state
+likewise need not be re-sent: the merge folds the stored value in, so a partial
+`PATCH` that omits it stays a `200` rather than a false `422`. The same merge
+semantics apply **per relationship member** to pivot meta — see the next section. See
+[`docs/validation.md`](../../docs/validation.md) (bundle ADRs 0049/0050).
+
 ## Pivot data on an association entity
 
 A `belongsToMany` may carry **pivot data** — values that live on the *join* between
@@ -255,8 +339,9 @@ bare `playlist_track` join table, **no** pivot columns), it declares a second
 ```php
 BelongsToMany::make('orderedTracks')->type('tracks')
     ->fields(
-        Integer::make('position')->min(1),   // writable from the linkage meta
-        DateTime::make('addedAt')->readOnly(), // server-owned
+        Integer::make('position')->required()->min(1),               // writable, required-on-create
+        Integer::make('weight')->compareWith('position', Comparison::GreaterThanOrEqual), // cross-pivot rule
+        DateTime::make('addedAt')->readOnly(),                        // server-owned
     )
     ->extractUsing(/* map the parent's entries to their far tracks */)
     ->paginate(PagePaginator::make()->withDefaultPerPage(2)),
@@ -315,8 +400,16 @@ PATCH /playlists/{id}
 - a pivot value violating a field constraint (`position` `0` vs `min(1)`) is a
   **`422`** pointed at `…/meta/position` (the relationship endpoint) or
   `/data/relationships/orderedTracks/data/{n}/meta/position` (a whole-resource
-  write), with **no write** — the store is unchanged; a *required* writable pivot
-  field absent on a new row is likewise a `422`;
+  write), with **no write** — the store is unchanged;
+- **merge-before-validate, per member** (bundle ADR 0050): an update validates each
+  member against its **merged** pivot row (the stored values overlaid by the incoming
+  `meta`). So a *genuinely-new* member missing the required `position` is a `422`
+  (the new-row context — never a DB NOT-NULL `500`), but re-asserting an *existing*
+  member with no `position` is a **`200`**: the required field is taken from the
+  merged stored row and **preserved** (it need not be re-sent). The cross-pivot
+  `weight >= position` rule likewise compares an incoming `weight` against the merged
+  stored `position` — set `weight` alone and the omitted `position` is still its
+  operand. (See the merge-before-validate witnesses in `tests/PivotTest.php`.)
 - a **`readOnly` field supplied in `meta` is ignored** — `addedAt` is server-owned,
   so a supplied value is never written (the row keeps its server default);
 - `DELETE` carries no pivot — it removes the incoming members' rows;
@@ -343,7 +436,7 @@ See [`docs/relationships.md`](../../docs/relationships.md) and
 
 - **`src/Entity/`** — the Doctrine entities (the entity-backed types above), plus the
   `PlaylistEntry` **association entity** backing the `orderedTracks` pivot relation
-  (a non-resource entity — it carries the `position`/`addedAt` join columns). Their id
+  (a non-resource entity — it carries the `position`/`weight`/`addedAt` join columns). Their id
   mappings vary by strategy: store-provided types use a `#[ORM\GeneratedValue]`
   auto-increment integer PK; the app/client-keyed types (`playlists`, `genres`,
   `devices`) use a plain string PK with no DB generator.

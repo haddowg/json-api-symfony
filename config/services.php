@@ -20,6 +20,7 @@ use haddowg\JsonApiBundle\Server\ResourceLocator;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
 use haddowg\JsonApiBundle\Validation\ConstraintTranslator;
+use haddowg\JsonApiBundle\Validation\FilterValueValidator;
 use haddowg\JsonApiBundle\Validation\JsonPointerBuilder;
 use haddowg\JsonApiBundle\Validation\ResourceValidator;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
@@ -99,7 +100,11 @@ return static function (ContainerConfigurator $container): void {
     // is absent.
     $services->set(CrudOperationHandler::class)
         ->arg('$validator', \Symfony\Component\DependencyInjection\Loader\Configurator\service(ResourceValidator::class)->nullOnInvalid())
-        ->arg('$dispatcher', \Symfony\Component\DependencyInjection\Loader\Configurator\service('event_dispatcher')->nullOnInvalid());
+        ->arg('$dispatcher', \Symfony\Component\DependencyInjection\Loader\Configurator\service('event_dispatcher')->nullOnInvalid())
+        // Optional too: resolves to the FilterValueValidator only when the Symfony
+        // Validator bridge is wired (below), else null — a constrained filter is
+        // then inert, matching how the resource validator degrades (ADR 0048).
+        ->arg('$filterValues', \Symfony\Component\DependencyInjection\Loader\Configurator\service(FilterValueValidator::class)->nullOnInvalid());
 
     // The built-in subscriber that routes each lifecycle event to the resource's
     // overridable hook method (ResourceLifecycleHooksInterface), making the
@@ -265,5 +270,12 @@ return static function (ContainerConfigurator $container): void {
             ->arg('$extensionTranslators', \Symfony\Component\DependencyInjection\Loader\Configurator\tagged_iterator(JsonApiBundle::CONSTRAINT_TRANSLATOR_TAG));
 
         $services->set(ResourceValidator::class);
+
+        // The filter-value twin of the ResourceValidator: validates client-supplied
+        // filter[<key>] values against the value constraints a filter declares,
+        // turning a mistyped value into a clean 400 before it reaches the provider
+        // (ADR 0048). Reuses the same ConstraintTranslator bridge, so the filter
+        // shortcuts need no new translator cases.
+        $services->set(FilterValueValidator::class);
     }
 };

@@ -168,26 +168,32 @@ final class Seed
         // --- Playlist entries (the PIVOT relation `playlists.orderedTracks`) -------
         // Real pivot values on the PlaylistEntry association entity: `position`
         // orders the tracklist (Exit Music@1, Airbag@2, Paranoid Android@3 — inserted
-        // out of position order so an order assertion cannot pass on insertion order)
-        // and `addedAt` records when each was added. Track 2 (Paranoid Android) is
+        // out of position order so an order assertion cannot pass on insertion order),
+        // `weight` is a second writable field stored well above each position (so the
+        // `weight >= position` cross-pivot rule holds for the seeded rows and a partial
+        // update can compare a new weight against the merged stored position), and
+        // `addedAt` records when each was added. Track 2 (Paranoid Android) is
         // explicit, so the `tracks` resource's default filter hides it from the
         // related collection — leaving Exit Music(3)@1 then Airbag(1)@2.
         $entryAirbag = new PlaylistEntry(
             playlist: $morningMix,
             track: $airbag,
             position: 2,
+            weight: 100,
             addedAt: new \DateTimeImmutable('2024-04-02T09:00:00+00:00'),
         );
         $entryExitMusic = new PlaylistEntry(
             playlist: $morningMix,
             track: $exitMusic,
             position: 1,
+            weight: 100,
             addedAt: new \DateTimeImmutable('2024-04-01T09:00:00+00:00'),
         );
         $entryParanoidAndroid = new PlaylistEntry(
             playlist: $morningMix,
             track: $paranoidAndroid,
             position: 3,
+            weight: 100,
             addedAt: new \DateTimeImmutable('2024-04-03T09:00:00+00:00'),
         );
 

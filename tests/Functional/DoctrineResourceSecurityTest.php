@@ -11,7 +11,6 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\Security\OwnedWidgetEnti
 use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\Security\SecuredWidgetEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\Security\SecurityTestKernel;
 use PHPUnit\Framework\Attributes\Test;
-use Symfony\Component\HttpFoundation\Response;
 
 /**
  * The declarative-authorization suite over the Doctrine path (bundle ADR 0043): a
@@ -26,6 +25,10 @@ use Symfony\Component\HttpFoundation\Response;
  * unauthenticated request is `401`; a single read is gated; a resource with no
  * security is ungated; the abort happens before persistence (the store is unchanged);
  * and the error renders as a proper JSON:API document.
+ *
+ * Authentication runs through the shipped {@see \haddowg\JsonApiBundle\Testing\JsonApiBrowser::actingAs()}
+ * — a stateless Bearer access token the firewall resolves to the seeded user — so the
+ * suite dogfoods the same auth path a consumer would use.
  */
 final class DoctrineResourceSecurityTest extends JsonApiFunctionalTestCase
 {
@@ -57,19 +60,18 @@ final class DoctrineResourceSecurityTest extends JsonApiFunctionalTestCase
     #[Test]
     public function read_is_granted_for_an_authenticated_user(): void
     {
-        $response = $this->request('/securedWidgets/1', auth: 'user');
-
-        self::assertSame(200, $response->getStatusCode());
-        self::assertStringStartsWith('application/vnd.api+json', (string) $response->headers->get('Content-Type'));
+        $this->browser()->actingAs('user')->get('/securedWidgets/1')->assertFetchedOne();
     }
 
     #[Test]
     public function read_is_unauthorized_without_authentication(): void
     {
-        $response = $this->request('/securedWidgets/1');
-
-        self::assertSame(401, $response->getStatusCode());
-        $this->assertJsonApiError($response, '401', 'Unauthorized');
+        $this->browser()
+            ->get('/securedWidgets/1')
+            ->getErrors()
+            ->assertStatus(401)
+            ->assertContentType()
+            ->assertHasError(status: '401');
     }
 
     // --- per-operation overrides gate independently of the default ------------
@@ -77,26 +79,31 @@ final class DoctrineResourceSecurityTest extends JsonApiFunctionalTestCase
     #[Test]
     public function create_requires_admin_and_a_role_user_is_forbidden(): void
     {
-        $response = $this->request('/securedWidgets', 'POST', [
-            'data' => ['type' => 'securedWidgets', 'attributes' => ['name' => 'fresh']],
-        ], auth: 'user');
-
-        self::assertSame(403, $response->getStatusCode());
-        $this->assertJsonApiError($response, '403', 'Forbidden');
+        $this->browser()
+            ->actingAs('user')
+            ->post('/securedWidgets', [
+                'data' => ['type' => 'securedWidgets', 'attributes' => ['name' => 'fresh']],
+            ])
+            ->getErrors()
+            ->assertStatus(403)
+            ->assertContentType()
+            ->assertHasError(status: '403');
 
         // The abort happened before persistence: only the seeded row remains.
-        self::assertCount(1, $this->collection('/securedWidgets', 'admin'));
+        $this->browser()->actingAs('admin')->get('/securedWidgets')->assertFetchedMany()->assertCollectionCount(1);
     }
 
     #[Test]
     public function create_succeeds_for_an_admin(): void
     {
-        $response = $this->request('/securedWidgets', 'POST', [
-            'data' => ['type' => 'securedWidgets', 'attributes' => ['name' => 'fresh']],
-        ], auth: 'admin');
+        $this->browser()
+            ->actingAs('admin')
+            ->post('/securedWidgets', [
+                'data' => ['type' => 'securedWidgets', 'attributes' => ['name' => 'fresh']],
+            ])
+            ->assertCreated();
 
-        self::assertSame(201, $response->getStatusCode());
-        self::assertCount(2, $this->collection('/securedWidgets', 'admin'));
+        $this->browser()->actingAs('admin')->get('/securedWidgets')->assertFetchedMany()->assertCollectionCount(2);
     }
 
     #[Test]
@@ -104,31 +111,34 @@ final class DoctrineResourceSecurityTest extends JsonApiFunctionalTestCase
     {
         // securityUpdate is unset, so update falls back to the ROLE_USER default — a
         // plain user (forbidden to create) may still update.
-        $response = $this->request('/securedWidgets/1', 'PATCH', [
-            'data' => ['type' => 'securedWidgets', 'id' => '1', 'attributes' => ['name' => 'renamed']],
-        ], auth: 'user');
-
-        self::assertSame(200, $response->getStatusCode());
+        $this->browser()
+            ->actingAs('user')
+            ->patch('/securedWidgets/1', [
+                'data' => ['type' => 'securedWidgets', 'id' => '1', 'attributes' => ['name' => 'renamed']],
+            ])
+            ->assertFetchedOne();
     }
 
     #[Test]
     public function delete_requires_admin_and_a_role_user_is_forbidden(): void
     {
-        $response = $this->request('/securedWidgets/1', 'DELETE', auth: 'user');
-
-        self::assertSame(403, $response->getStatusCode());
+        $this->browser()
+            ->actingAs('user')
+            ->delete('/securedWidgets/1')
+            ->getErrors()
+            ->assertStatus(403)
+            ->assertHasError(status: '403');
 
         // The row survives: the delete never ran (abort before side-effect).
-        self::assertSame(200, $this->request('/securedWidgets/1', auth: 'user')->getStatusCode());
+        $this->browser()->actingAs('user')->get('/securedWidgets/1')->assertFetchedOne();
     }
 
     #[Test]
     public function delete_succeeds_for_an_admin(): void
     {
-        $response = $this->request('/securedWidgets/1', 'DELETE', auth: 'admin');
+        $this->browser()->actingAs('admin')->delete('/securedWidgets/1')->assertNoContent();
 
-        self::assertSame(204, $response->getStatusCode());
-        self::assertSame(404, $this->request('/securedWidgets/1', auth: 'admin')->getStatusCode());
+        $this->browser()->actingAs('admin')->get('/securedWidgets/1')->getDocument()->assertStatus(404);
     }
 
     // --- ownership Voter gate: is_granted('EDIT', object) ---------------------
@@ -136,37 +146,59 @@ final class DoctrineResourceSecurityTest extends JsonApiFunctionalTestCase
     #[Test]
     public function owner_may_update_their_widget(): void
     {
-        $response = $this->request('/ownedWidgets/1', 'PATCH', [
-            'data' => ['type' => 'ownedWidgets', 'id' => '1', 'attributes' => ['name' => 'edited']],
-        ], auth: 'ada');
-
-        self::assertSame(200, $response->getStatusCode());
+        $this->browser()
+            ->actingAs('ada')
+            ->patch('/ownedWidgets/1', [
+                'data' => ['type' => 'ownedWidgets', 'id' => '1', 'attributes' => ['name' => 'edited']],
+            ])
+            ->assertFetchedOne()
+            ->assertHasAttribute('name', 'edited');
     }
 
     #[Test]
     public function a_non_owner_is_forbidden_to_update(): void
     {
-        $response = $this->request('/ownedWidgets/1', 'PATCH', [
-            'data' => ['type' => 'ownedWidgets', 'id' => '1', 'attributes' => ['name' => 'edited']],
-        ], auth: 'grace');
+        $this->browser()
+            ->actingAs('grace')
+            ->patch('/ownedWidgets/1', [
+                'data' => ['type' => 'ownedWidgets', 'id' => '1', 'attributes' => ['name' => 'edited']],
+            ])
+            ->getErrors()
+            ->assertStatus(403)
+            ->assertHasError(status: '403');
 
-        self::assertSame(403, $response->getStatusCode());
-
-        // No write happened: the name is unchanged on a fresh read by the owner.
-        $document = $this->decode($this->request('/ownedWidgets/1', auth: 'ada'));
-        $data = $document['data'] ?? null;
-        self::assertIsArray($data);
-        $attributes = $data['attributes'] ?? null;
-        self::assertIsArray($attributes);
-        self::assertSame('ada-widget', $attributes['name'] ?? null);
+        // No write happened: a fresh read by the owner is whole-member EXACT (a leaked
+        // or mutated attribute would fail) — the seeded widget, name intact, parent
+        // still empty.
+        $this->browser()
+            ->actingAs('ada')
+            ->get('/ownedWidgets/1')
+            ->assertFetchedOneExact([
+                'type' => 'ownedWidgets',
+                'id' => '1',
+                'attributes' => ['name' => 'ada-widget', 'owner' => 'ada'],
+                'relationships' => [
+                    'parent' => [
+                        'data' => null,
+                        'links' => [
+                            'related' => '/ownedWidgets/1/parent',
+                            'self' => '/ownedWidgets/1/relationships/parent',
+                        ],
+                    ],
+                ],
+                'links' => ['self' => '/ownedWidgets/1'],
+            ]);
     }
 
     #[Test]
     public function a_non_owner_is_forbidden_to_read_the_single_resource(): void
     {
-        $response = $this->request('/ownedWidgets/1', auth: 'grace');
-
-        self::assertSame(403, $response->getStatusCode());
+        $this->browser()
+            ->actingAs('grace')
+            ->get('/ownedWidgets/1')
+            ->getErrors()
+            ->assertStatus(403)
+            ->assertHasError(status: '403');
     }
 
     // --- relationship mutation: gated by the update expression (the parent) ----
@@ -177,15 +209,22 @@ final class DoctrineResourceSecurityTest extends JsonApiFunctionalTestCase
         // securityUpdate is unset, so relationship mutation falls back to the
         // ownership default `is_granted('EDIT', object)` evaluated against the
         // parent (`ownedWidgets/1`). ada owns it, so the PATCH is granted.
-        $response = $this->request('/ownedWidgets/1/relationships/parent', 'PATCH', [
-            'data' => ['type' => 'ownedWidgets', 'id' => '2'],
-        ], auth: 'ada');
-
-        self::assertSame(200, $response->getStatusCode());
+        $this->browser()
+            ->actingAs('ada')
+            ->patch('/ownedWidgets/1/relationships/parent', [
+                'data' => ['type' => 'ownedWidgets', 'id' => '2'],
+            ])
+            ->getDocument()
+            ->assertStatus(200);
 
         // The mutation persisted: a fresh linkage read reflects the new parent.
-        $document = $this->decode($this->request('/ownedWidgets/1/relationships/parent', auth: 'ada'));
-        self::assertSame(['type' => 'ownedWidgets', 'id' => '2'], $document['data'] ?? null);
+        $this->browser()
+            ->actingAs('ada')
+            ->get('/ownedWidgets/1/relationships/parent')
+            ->getDocument()
+            ->assertStatus(200)
+            ->assertHasType('ownedWidgets')
+            ->assertHasId('2');
     }
 
     #[Test]
@@ -193,17 +232,24 @@ final class DoctrineResourceSecurityTest extends JsonApiFunctionalTestCase
     {
         // grace does not own ownedWidgets/1, so the relationship gate denies the
         // mutation (subject = the parent) before the persister applies it.
-        $response = $this->request('/ownedWidgets/1/relationships/parent', 'PATCH', [
-            'data' => ['type' => 'ownedWidgets', 'id' => '2'],
-        ], auth: 'grace');
-
-        self::assertSame(403, $response->getStatusCode());
-        $this->assertJsonApiError($response, '403', 'Forbidden');
+        $this->browser()
+            ->actingAs('grace')
+            ->patch('/ownedWidgets/1/relationships/parent', [
+                'data' => ['type' => 'ownedWidgets', 'id' => '2'],
+            ])
+            ->getErrors()
+            ->assertStatus(403)
+            ->assertContentType()
+            ->assertHasError(status: '403');
 
         // The abort happened before the persister: the parent linkage is unchanged
         // (still empty) on a fresh read by the owner.
-        $document = $this->decode($this->request('/ownedWidgets/1/relationships/parent', auth: 'ada'));
-        self::assertNull($document['data'] ?? null);
+        $this->browser()
+            ->actingAs('ada')
+            ->get('/ownedWidgets/1/relationships/parent')
+            ->getDocument()
+            ->assertStatus(200)
+            ->assertNoData();
     }
 
     // --- no security declared → ungated ---------------------------------------
@@ -211,53 +257,12 @@ final class DoctrineResourceSecurityTest extends JsonApiFunctionalTestCase
     #[Test]
     public function an_unsecured_resource_is_ungated_even_unauthenticated(): void
     {
-        self::assertSame(200, $this->request('/openWidgets/1')->getStatusCode());
+        $this->browser()->get('/openWidgets/1')->assertFetchedOne();
 
-        $created = $this->request('/openWidgets', 'POST', [
-            'data' => ['type' => 'openWidgets', 'attributes' => ['name' => 'anon']],
-        ]);
-        self::assertSame(201, $created->getStatusCode());
-    }
-
-    // --- helpers --------------------------------------------------------------
-
-    /**
-     * @param array<string, mixed>|null $body
-     */
-    private function request(string $path, string $method = 'GET', ?array $body = null, ?string $auth = null): Response
-    {
-        $extraServer = $auth !== null
-            ? ['PHP_AUTH_USER' => $auth, 'PHP_AUTH_PW' => 'pass']
-            : [];
-
-        return $this->handle($path, $method, $body, $extraServer);
-    }
-
-    /**
-     * The primary `data` array of a collection read as the given user.
-     *
-     * @return list<mixed>
-     */
-    private function collection(string $path, string $auth): array
-    {
-        $document = $this->decode($this->request($path, auth: $auth));
-        $data = $document['data'] ?? null;
-        self::assertIsArray($data);
-
-        /** @var list<mixed> $data */
-        return $data;
-    }
-
-    private function assertJsonApiError(Response $response, string $status, string $title): void
-    {
-        self::assertStringStartsWith('application/vnd.api+json', (string) $response->headers->get('Content-Type'));
-        $document = $this->decode($response);
-        $errors = $document['errors'] ?? null;
-        self::assertIsArray($errors);
-        self::assertNotEmpty($errors);
-        $first = $errors[0] ?? null;
-        self::assertIsArray($first);
-        self::assertSame($status, $first['status'] ?? null);
-        self::assertSame($title, $first['title'] ?? null);
+        $this->browser()
+            ->post('/openWidgets', [
+                'data' => ['type' => 'openWidgets', 'attributes' => ['name' => 'anon']],
+            ])
+            ->assertCreated();
     }
 }

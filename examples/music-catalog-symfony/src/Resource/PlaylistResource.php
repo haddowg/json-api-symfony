@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Resource;
 
 use haddowg\JsonApi\Pagination\PagePaginator;
 use haddowg\JsonApi\Resource\AbstractResource;
+use haddowg\JsonApi\Resource\Constraint\Comparison;
 use haddowg\JsonApi\Resource\Field\BelongsTo;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\Boolean;
@@ -127,7 +128,18 @@ final class PlaylistResource extends AbstractResource implements ResourceLifecyc
             BelongsToMany::make('orderedTracks')
                 ->type('tracks')
                 ->fields(
-                    Integer::make('position')->min(1),
+                    // `position` is REQUIRED-on-create: a genuinely-new member must
+                    // carry it (an absent position on a new row is a 422, never a DB
+                    // NOT-NULL 500). On an existing-member partial update the omitted
+                    // position is preserved from the MERGED stored row (bundle ADR
+                    // 0050) — no false 422 — so a required field need not be re-sent to
+                    // re-assert a member.
+                    Integer::make('position')->required()->min(1),
+                    // A second WRITABLE pivot field constrained `weight >= position` —
+                    // a cross-pivot-field rule. On a partial update it evaluates over
+                    // the MERGED pivot (an incoming `weight` compared against the stored
+                    // `position`), so `weight` may be set without re-sending `position`.
+                    Integer::make('weight')->compareWith('position', Comparison::GreaterThanOrEqual),
                     DateTime::make('addedAt')->readOnly(),
                 )
                 ->extractUsing(static function (mixed $playlist): array {

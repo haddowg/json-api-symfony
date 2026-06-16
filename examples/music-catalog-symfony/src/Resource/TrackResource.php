@@ -81,9 +81,16 @@ final class TrackResource extends AbstractResource
         // `like`: a case-insensitive substring match on title (the operator is the
         // third make() argument). `explicit` coerces to a real bool, defaulting to
         // false when absent. `genres` matches a membership set.
+        //
+        // `explicit` also declares a `->boolean()` value constraint (core ADR 0055,
+        // bundle ADR 0048): a client-supplied `filter[explicit]` must be a boolean
+        // wire form (`true`/`false`/`1`/`0`), so `filter[explicit]=banana` is a clean
+        // `400` (`FILTER_VALUE_INVALID`, `source.parameter`) on the primary
+        // collection rather than silently coercing to `false` and mis-matching. The
+        // author-set `default(false)` is trusted and never validated.
         return [
             Where::make('title', 'title', 'like'),
-            Where::make('explicit')->asBoolean()->default(false),
+            Where::make('explicit')->asBoolean()->default(false)->boolean(),
             WhereIn::make('genres'),
         ];
     }

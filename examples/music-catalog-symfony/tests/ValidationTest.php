@@ -140,6 +140,38 @@ final class ValidationTest extends MusicCatalogKernelTestCase
 
     #[Test]
     #[Group('spec:updating-resources')]
+    public function aPartialUpdateComparesAgainstAStoredSiblingNotInTheBody(): void
+    {
+        // Merge-before-validate (bundle ADR 0049/0050): album 1 is stored with
+        // `availableFrom` 1997-05-21. A partial PATCH that sends ONLY `availableUntil`
+        // — and never re-sends the stored `availableFrom` — must still evaluate the
+        // directional `availableUntil > availableFrom` rule against the MERGED
+        // resource (the stored sibling folded under the body). An "until" AFTER the
+        // stored "from" passes...
+        $valid = $this->handle('/albums/1', 'PATCH', [
+            'data' => ['type' => 'albums', 'id' => '1', 'attributes' => [
+                'availableUntil' => '2040-01-01',
+            ]],
+        ]);
+
+        self::assertSame(200, $valid->getStatusCode(), (string) $valid->getContent());
+
+        // ...while an "until" BEFORE the stored "from" violates the merged result —
+        // a 422 at the owner pointer, even though `availableFrom` is absent from the
+        // body. Were the stored sibling not merged in, the comparison would have no
+        // sibling to compare against and wrongly pass.
+        $invalid = $this->handle('/albums/1', 'PATCH', [
+            'data' => ['type' => 'albums', 'id' => '1', 'attributes' => [
+                'availableUntil' => '1990-01-01',
+            ]],
+        ]);
+
+        self::assertSame(422, $invalid->getStatusCode());
+        self::assertSame(['/data/attributes/availableUntil'], $this->pointers($invalid));
+    }
+
+    #[Test]
+    #[Group('spec:updating-resources')]
     public function anEqualityCompareFieldComparesTwoSiblingValues(): void
     {
         // `passwordConfirm` must equal `password` (non-directional EqualTo): a

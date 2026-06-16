@@ -378,6 +378,32 @@ final class DoctrineDataProvider implements DataProviderInterface, PreloadsInclu
     }
 
     /**
+     * The EXISTING pivot meta for the parent's pivot relation — the validation
+     * read-seam (ADR 0050). It reuses the same association-entity projection the
+     * relationship-linkage endpoint reads ({@see fetchRelatedPivotMap()}): one DQL
+     * statement over the association entity, each row's writable/readOnly pivot column
+     * cast to its wire value, keyed by the related (far) member's id. The validator
+     * folds an existing member's row under the incoming linkage meta so a partial
+     * pivot update on an existing member validates in the update (preserved-value)
+     * context while a genuinely-new member validates in create context.
+     *
+     * Returns `[]` when the relation is not a pivot-backed `belongsToMany` this
+     * provider can resolve over an association entity — there is then no stored pivot,
+     * so every incoming member validates as new (create context).
+     *
+     * @return array<string, array<string, mixed>> `relatedId => [pivotField => wire value]`
+     */
+    public function fetchRelationshipPivot(string $type, object $parent, RelationInterface $relation): array
+    {
+        $relatedType = $relation->relatedTypes()[0] ?? null;
+        if ($relatedType === null || !$this->supportsPivot($relatedType, $relation)) {
+            return [];
+        }
+
+        return $this->fetchRelatedPivotMap($relatedType, $parent, $relation);
+    }
+
+    /**
      * The base pivot query: the far entity rooted at {@see ROOT_ALIAS}, the
      * association entity inner-joined as `pivot` (correlated on its far-side
      * `ManyToOne`, scoped to the parent on its parent-side `ManyToOne`), and each

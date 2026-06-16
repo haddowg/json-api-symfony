@@ -105,6 +105,21 @@ final class InMemoryDataProvider implements DataProviderInterface
     }
 
     /**
+     * The in-memory store holds no pivot data — a pivot column needs an association
+     * entity the in-memory provider cannot model (the documented in-memory pivot
+     * boundary, mirrored on the write side by {@see \haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister}).
+     * So it returns no existing pivot meta: the validator then treats every incoming
+     * member as new (create context), exactly as before the pivot merge-before-validate
+     * (ADR 0050).
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    public function fetchRelationshipPivot(string $type, object $parent, RelationInterface $relation): array
+    {
+        return [];
+    }
+
+    /**
      * Applies `$criteria` (filter + sort) to `$items` through core's reference
      * in-memory handlers, then windows the result with an `array_slice` when the
      * criteria carry an {@see OffsetWindow} — the shared tail of

@@ -70,6 +70,11 @@ final class DataProviderRegistryTest extends TestCase
             ): CollectionResult {
                 return new CollectionResult([]);
             }
+
+            public function fetchRelationshipPivot(string $type, object $parent, RelationInterface $relation): array
+            {
+                return [];
+            }
         };
     }
 }

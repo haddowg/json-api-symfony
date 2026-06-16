@@ -245,6 +245,7 @@ handlers). The methods you use:
 | `afterBoot(): void` | hook for data-layer setup once the container is booted (Doctrine schema + seed) |
 | `handle(string $path, string $method = 'GET', ?array $body = null): Response` | sets the `application/vnd.api+json` Accept (and Content-Type for a body), issues the request with `catch: true`, returns the HttpFoundation `Response` |
 | `decode(Response $response): array` | the response body JSON-decoded to an array |
+| `browser(): JsonApiBrowser` | a lazily-built fluent client over the booted kernel — the successor to `handle()`/`decode()` (see [`JsonApiBrowser`](#jsonapibrowser--the-fluent-client) below) |
 
 Two details matter for fidelity to production:
 
@@ -257,6 +258,141 @@ Two details matter for fidelity to production:
 
 A body is passed as a PHP array and JSON-encoded for you; `null` sends no body
 (GET/DELETE).
+
+### `JsonApiBrowser` — the fluent client
+
+`handle()`/`decode()` give you a `Response` + an array; you then hand-assert the
+status, the `Location` header, and `$data['type']`. The bundle ships a fluent
+alternative that asserts those **as a unit**: `JsonApiBrowser`
+(`haddowg\JsonApiBundle\Testing\JsonApiBrowser`) — a public, supported test utility
+that extends Symfony's `KernelBrowser`, knows the JSON:API media type, and bridges
+the HttpFoundation response to core's fluent assertion families. Unlike the test
+case it **is** on the shipped `src/` autoload, so an integrating app imports it
+directly.
+
+`JsonApiFunctionalTestCase` exposes it lazily via `browser(): JsonApiBrowser`
+(built once per test, kernel reuse intact). Construct one standalone with `new
+JsonApiBrowser($kernel)`.
+
+```php
+// A GET fluent chain: status + content type + body asserted together.
+$this->browser()
+    ->get('/articles/1')
+    ->assertFetchedOne()              // 200 + application/vnd.api+json
+    ->assertHasType('articles')
+    ->assertHasId('1')
+    ->assertHasAttribute('title', 'JSON:API in PHP');
+
+// The ?sort order witness — order matters, and is now first-class.
+$this->browser()
+    ->get('/articles?sort=title')
+    ->assertFetchedManyInOrder(['5', '3', '1', '2', '4'], 'articles');
+
+// A POST: the body is JSON-encoded with the write Content-Type for you.
+$this->browser()
+    ->post('/articles', [
+        'data' => ['type' => 'articles', 'attributes' => ['title' => 'New', 'category' => 'news']],
+    ])
+    ->assertCreated();                // 201 + Location + content type
+
+// Exact-match catches a leaked/extra field; the expected object is derived
+// from the entity's own serializer, so you never hand-write the shape.
+$article = $repository->find(1);
+$this->browser()
+    ->get('/articles/1')
+    ->assertFetchedOneExact($this->browser()->expectResource($article));
+
+// Stateless Bearer auth (the firewall under test) over chained requests.
+$this->browser()
+    ->actingAs('admin')               // Authorization: Bearer admin
+    ->delete('/articles/1')
+    ->assertNoContent();              // 204 + empty body
+```
+
+`actingAs(UserInterface|string $user)` authenticates **statelessly** as a seeded
+user — the most common API auth scenario. It resolves the user identifier (from a
+`UserInterface` or the raw string) and sets `Authorization: Bearer <token>` on every
+subsequent request; the firewall's `access_token` authenticator resolves that token
+back to the user (in the test apps the token *is* the identifier via a tiny
+`AccessTokenHandler`; a real app maps an opaque token to a user). There is no session
+and no `loginUser()`. A consumer whose stateless scheme differs overrides **one**
+protected seam — `authenticateAs(string $identifier)` (the header) or
+`tokenFor(string $identifier)` (the token).
+
+Three browser behaviours mirror `handle()`'s fidelity guarantees, and one is the
+headline trap:
+
+- **`disableReboot()` is called in the constructor.** A vanilla `KernelBrowser`
+  reboots the kernel between requests, which would wipe an in-memory SQLite seed
+  bound to the kernel's connection. The browser keeps the one booted kernel across
+  requests — so a **write-then-read in a single test sees the write**, exactly as the
+  old `handle()` reusing `static::$kernel` did.
+- **The `kernel.exception` path is preserved.** Requests route through
+  `kernel->handle(catch: true)`, so a `400`/`404`/`422` comes back as a rendered
+  JSON:API **error document**, asserted via `getErrors()`:
+
+  ```php
+  $this->browser()->get('/articles/999')->getErrors()
+      ->assertStatus(404)
+      ->assertContentType()
+      ->assertHasError(status: '404');
+  ```
+
+- **The PHPUnit strict handler stack stays balanced** — the browser snapshots and
+  restores Symfony's error/exception handlers around each request.
+
+`getDocument(): JsonApiDocument` / `getErrors(): JsonApiErrors` expose the underlying
+core wrappers (status + headers carried as a `ResponseMeta`), so the full core
+assertion vocabulary — `assertFetchedManyExact`, `assertIncludedExactly`,
+`assertExactMeta`, `assertNoData`/`assertNoLink`, `assertErrorsExact`, … — is
+available beyond the browser-level shorthands.
+
+#### Extending the browser
+
+The class is **non-`final`** and exposes its behaviour as protected, overridable
+seams, so a consumer subclasses and customises without copy-paste:
+
+| Seam | Default | Override to … |
+| --- | --- | --- |
+| `authenticateAs(string $identifier)` | sets `Authorization: Bearer <token>` | authenticate over a different stateless scheme (a custom header, `X-Api-Key`) |
+| `tokenFor(string $identifier)` | returns the identifier (the token *is* the user) | mint the opaque token your app's token handler expects |
+| `defaultRequestServer(bool $hasBody)` | the `Accept` (+ `Content-Type` on a body) negotiation | negotiate a different media-type profile or add standing headers |
+| `documentFor(Response)` / `errorsFor(Response)` | decode `$response->getContent()` + a `ResponseMeta` | wrap a response that needs decoding before the assertions |
+
+#### Using it from a `WebTestCase`
+
+A standard Symfony `WebTestCase` gets a `JsonApiBrowser` from the normal
+client-creation flow via the shipped `InteractsWithJsonApi` trait
+(`haddowg\JsonApiBundle\Testing\InteractsWithJsonApi`) — `static::createClient()` (or
+the `jsonApiClient()` accessor) returns a `JsonApiBrowser`:
+
+```php
+use haddowg\JsonApiBundle\Testing\InteractsWithJsonApi;
+use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+
+final class PlaylistTest extends WebTestCase
+{
+    use InteractsWithJsonApi;
+
+    public function test_owner_reads_their_playlists(): void
+    {
+        $client = static::createClient();          // a JsonApiBrowser
+        $client->actingAs('ada@example.com')       // Authorization: Bearer …
+            ->get('/playlists')
+            ->assertFetchedMany();
+    }
+}
+```
+
+The idiomatic swap would be to redefine the `test.client` service's *class* to
+`JsonApiBrowser` (its constructor mirrors `KernelBrowser`'s, so it is a drop-in). The
+trait instead **overrides `createClient()`** to build the browser straight from the
+booted kernel — the bundle's harness boots imperative `MicroKernelTrait` test kernels
+with no shared `config/packages/test/` to carry a service override, which makes a
+per-kernel service edit fragile. The standard `static::createClient()` ergonomics are
+preserved; the trait also snapshots/restores the error/exception handlers (PHPUnit
+strict) and boots `debug => false` (production-fidelity error meta, no stdout debug
+logs).
 
 ### The example app's base case
 
