@@ -515,7 +515,7 @@ Use it for a join column you want to query by but not expose.
 > filter spans operators, sets and null checks the author must choose). See
 > [ADR 0067](adr/0067-author-declared-pivot-filters-via-a-pivot-column-prefix.md).
 
-> **Migration (breaking, `0.x` minor).** Declaring a pivot field no longer
+> **Migration (breaking change).** Declaring a pivot field no longer
 > auto-exposes a zero-config `filter[<field>]` equality. An app that relied on it must
 > add the explicit declaration: `->withFilters(Where::make('position',
 > 'pivot.position'))`. Pivot **sorts** are unaffected (still zero-config).

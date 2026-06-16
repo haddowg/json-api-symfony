@@ -5,14 +5,12 @@ and the one step that surprises everyone: **routes are not auto-mounted**. The
 rest of the docs assume the steps here are done.
 
 > [!IMPORTANT]
-> This is **not yet a normal `composer require`**. The core library
+> The bundle depends on the core library
 > [`haddowg/json-api`](https://github.com/haddowg/json-api/blob/main/docs/index.md)
-> is not on Packagist yet, so it is required as `dev-main` and you must add a
-> Composer repository that resolves it. This caveat — and only this caveat — lives
-> here and in [index](index.md); every other page assumes the bundle is installed.
-> At core v1 the whole dance below collapses to a plain
-> `composer require haddowg/json-api-symfony` with a `^1.0` core pin and no
-> repository stanza.
+> on `dev-main`, resolved through a Composer **path** or **VCS** repository. Add
+> one of the repositories below, then require the bundle on `dev-main`. This setup
+> lives here and in [index](index.md); every other page assumes the bundle is
+> installed.
 
 ## Requirements
 
@@ -61,10 +59,10 @@ composer config -g repositories.haddowg-json-api \
 
 ### Then require the bundle
 
-With a repository in place, require the bundle as usual:
+With a repository in place, require the bundle on `dev-main`:
 
 ```bash
-composer require haddowg/json-api-symfony
+composer require haddowg/json-api-symfony:dev-main
 ```
 
 ## Register the bundle
@@ -174,6 +172,4 @@ bundle behaves without it) is on
 
 You are installed and the bundle is registered. Continue with
 [getting-started](getting-started.md) to build your first music-catalog endpoint
-end to end, or jump to [routing](routing.md) for the route import in full. For why
-the install looks like this, see core's
-[not-on-Packagist note](https://github.com/haddowg/json-api/blob/main/docs/index.md).
+end to end, or jump to [routing](routing.md) for the route import in full.
