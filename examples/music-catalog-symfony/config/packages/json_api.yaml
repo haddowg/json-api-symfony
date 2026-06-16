@@ -1,0 +1,15 @@
+# The bundle configuration tree (declared inline in AbstractBundle::configure();
+# there is no Configuration.php). The top-level base_uri/version define the
+# implicit `default` server, so a single-API app needs no `servers:` block.
+#
+# This example declares a second, named `admin` server (ADR 0034) — the minimal
+# multi-server witness. It carries its own base_uri and inherits the top-level
+# version (omitted here). Types join a server via the resource attribute's
+# `server:` argument (AlbumResource on both; UserResource admin-only), and each
+# server's routes mount via a per-server import in routes/json_api.yaml.
+json_api:
+    base_uri: 'https://music.example'
+    version: '1.1'
+    servers:
+        admin:
+            base_uri: 'https://admin.music.example'

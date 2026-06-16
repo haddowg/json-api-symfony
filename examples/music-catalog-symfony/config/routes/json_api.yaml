@@ -1,0 +1,17 @@
+# The route imports that mount the JSON:API endpoints. The bundle's custom route
+# loader (`type: jsonapi`) emits one literal route per type/operation from the
+# compiled resource descriptors — the `resource:` argument names the SERVER, not a
+# path/glob (ADR 0034).
+#
+# The bare `.` import emits the `default` server's routes (unprefixed names
+# `jsonapi.{type}.{action}`). The `admin` import emits the named `admin` server's
+# routes (namespaced names `jsonapi.admin.{type}.{action}`) under the `/admin`
+# prefix — exactly where a Symfony user expects prefix/host to live.
+json_api_default:
+    resource: '.'
+    type: jsonapi
+
+json_api_admin:
+    resource: admin
+    type: jsonapi
+    prefix: /admin

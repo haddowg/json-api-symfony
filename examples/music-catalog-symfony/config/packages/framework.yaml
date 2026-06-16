@@ -1,0 +1,14 @@
+# Minimal FrameworkBundle configuration for the example app. `test: true` enables
+# the test container so the functional KernelTestCase can pull services; the rest
+# are the conservative defaults a JSON:API-over-the-kernel app wants (no HTTP
+# method override, all throwables routed through kernel.exception so the bundle's
+# ExceptionListener renders them, errors logged).
+framework:
+    test: true
+    secret: 'music-catalog-example'
+    http_method_override: false
+    handle_all_throwables: true
+    php_errors:
+        log: true
+    router:
+        utf8: true

@@ -16,11 +16,13 @@
     <testsuites>
         <testsuite name="haddowg/json-api-symfony test suite">
             <directory>tests</directory>
+            <directory>examples/music-catalog-symfony/tests</directory>
         </testsuite>
     </testsuites>
     <source>
         <include>
             <directory>src</directory>
+            <directory>examples/music-catalog-symfony/src</directory>
         </include>
     </source>
 </phpunit>

@@ -1,0 +1,47 @@
+{
+    "name": "haddowg/json-api-symfony-example-music-catalog",
+    "description": "A worked Symfony + Doctrine JSON:API 1.1 service built on haddowg/json-api-symfony — the bundle's example app and documentation source of truth. Not published; it documents what a real integrating app requires.",
+    "type": "project",
+    "license": "MIT",
+    "require": {
+        "php": "^8.3",
+        "haddowg/json-api": "dev-main",
+        "haddowg/json-api-symfony": "@dev",
+        "doctrine/doctrine-bundle": "^2.12",
+        "doctrine/orm": "^3.0",
+        "symfony/console": "^6.4 || ^7.0",
+        "symfony/doctrine-bridge": "^6.4 || ^7.0",
+        "symfony/dotenv": "^6.4 || ^7.0",
+        "symfony/framework-bundle": "^6.4 || ^7.0",
+        "symfony/intl": "^6.4 || ^7.0",
+        "symfony/runtime": "^6.4 || ^7.0",
+        "symfony/validator": "^6.4 || ^7.0",
+        "symfony/yaml": "^6.4 || ^7.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^12.0",
+        "symfony/clock": "^6.4 || ^7.0"
+    },
+    "suggest": {
+        "egulias/email-validator": "Enables strict (RFC 5322) email validation (the users.email field uses ->strict()).",
+        "opis/json-schema": "Enables the optional structural document linter (json_api.schema_validation)."
+    },
+    "autoload": {
+        "psr-4": {
+            "haddowg\\JsonApiBundle\\Examples\\MusicCatalog\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "haddowg\\JsonApiBundle\\Examples\\MusicCatalog\\Tests\\": "tests/"
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "symfony/runtime": true
+        }
+    }
+}
