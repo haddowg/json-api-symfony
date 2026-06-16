@@ -38,17 +38,16 @@ the related endpoint. The relation DSL drives all of this — see
 (`?include`).
 
 The bundle's job is the wiring. [`TrackResource`](../examples/music-catalog-symfony/src/Resource/TrackResource.php)
-declares a to-one `album` and a to-many `playlists`:
+declares a to-one `album` and a **plain** to-many `playlists` (the pivot-bearing
+variant lives on the playlists resource's `orderedTracks` — see
+[Pivot (`belongsToMany`) data](#pivot-belongstomany-data)):
 
 ```php
 BelongsTo::make('album')->type('albums'),
 BelongsToMany::make('playlists')
     ->type('playlists')
-    ->fields(
-        Integer::make('position')->min(1),
-        DateTime::make('addedAt')->readOnly(),
-    )
-    ->cannotReplace(),
+    ->cannotReplace()
+    ->countable(),
 ```
 
 and `GET /tracks/1` renders each relationship with linkage plus the two
@@ -111,6 +110,61 @@ GET /tracks/1/playlists               → unpaginated (the relation declares no 
 
 A relation that declares no paginator renders its related collection without page
 meta — that is the unpaginated baseline.
+
+### Filtering a to-one relationship
+
+A to-one is not a collection, so it does not paginate or sort — but it can carry a
+relation-scoped `?filter` that decides whether its target is **rendered at all**. Give
+a to-one relation a `withFilters(...)` over a column on its related type, and the
+filter applies as a predicate on the target: when it **excludes** the target, the
+to-one renders `data: null` instead of the resource (bundle ADR 0068). A `200` with
+`data: null`, never a `404` — the relationship exists, the filter just matched nothing.
+
+[`AlbumResource`](../examples/music-catalog-symfony/src/Resource/AlbumResource.php)
+scopes `filter[name]` (the related `artists.name` column) onto its `artist` to-one:
+
+```php
+BelongsTo::make('artist')
+    ->type('artists')
+    ->withFilters(Where::make('name', 'name')),
+```
+
+The filter reaches the to-one on all three read surfaces, each nulling the target when
+it doesn't match (album 1 belongs to Radiohead):
+
+```
+# related endpoint — full resource, or data: null
+GET /albums/1/artist?filter[name]=Radiohead   → data: { type: artists, id: 1, … }
+GET /albums/1/artist?filter[name]=Portishead  → { "data": null }   (200, not 404)
+
+# relationship (linkage) endpoint — identifier, or data: null
+GET /albums/1/relationships/artist?filter[name]=Radiohead   → data: { type: artists, id: 1 }
+GET /albums/1/relationships/artist?filter[name]=Portishead  → { "data": null }
+```
+
+The third surface is the **Relationship Queries profile** on a primary request: a
+`relatedQuery[<toOneRel>][filter]` that excludes the target renders the linkage `null`
+**and drops the target from `included`**:
+
+```
+GET /albums/1?include=artist&relatedQuery[artist][filter][name]=Radiohead
+  → data.relationships.artist.data = { type: artists, id: 1 }, included = [artist 1]
+GET /albums/1?include=artist&relatedQuery[artist][filter][name]=Portishead
+  → data.relationships.artist.data = null, included = []
+```
+
+`relatedQuery` on a to-one is **`[filter]` only** — a `[sort]` or `[page]` on a to-one
+path is a `400` (a to-one is not a list); see the profile section's
+[to-one bullet](#filtering-and-sorting-a-relationship-from-the-primary-request-the-relationship-queries-profile).
+The custom-provider seams behind this are `relatedToOneMatches()` /
+`relatedToOneMatchesBatch()` on
+[`DataProviderInterface`](../src/DataProvider/DataProviderInterface.php) (returning
+`false` nulls the target; the batched twin answers a whole page of parents at once so
+an include does not N+1); the feature is monomorphic — a `MorphTo` to-one is out of
+scope (ADR 0068). The
+[`RelationshipReadTest`](../examples/music-catalog-symfony/tests/RelationshipReadTest.php)
+and [`RelationshipQueriesProfileTest`](../examples/music-catalog-symfony/tests/RelationshipQueriesProfileTest.php)
+witness all three surfaces on Doctrine.
 
 ### Counting relations (`countable()` and `?withCount`)
 
@@ -247,9 +301,11 @@ GET /albums/1?include=tracks&rQ[tracks][sort]=duration
   it parses without error — but the bundle windows only top-level relations, so a
   dotted path addressing a relation of an *included* resource resolves to no relation
   and is a `400` (address that relation at its own endpoint instead). An **unknown
-  relationship path** and a **to-one path** used for a list op are likewise the
-  related-collection endpoint's same `400`, with `source.parameter` the canonical
-  `relatedQuery[<path>]`.
+  relationship path** is likewise the related-collection endpoint's same `400`, with
+  `source.parameter` the canonical `relatedQuery[<path>]`. A **to-one path** accepts
+  **`[filter]` only** — a `[filter]` passes through and may null the linkage (see
+  [Filtering a to-one relationship](#filtering-a-to-one-relationship)), while a
+  `[sort]` or `[page]` on a to-one is the same `400` (a to-one is not a list).
 - **`sort`** orders the relationship's linkage `data` (and so SELECTS which members
   land on the included page — see below). **`filter`** narrows the set against the
   **related-collection endpoint's vocabulary** (the related resource's filters/sorts
@@ -279,6 +335,108 @@ Includes are **batch-loaded built in** — no extra dependency. The effective in
 tree is loaded one query per relation per level (no `1 + N`) on both providers,
 driven by the same batched related-fetch seam these windowed includes use; see
 [doctrine → eager-loading includes](doctrine.md#eager-loading-includes-no-n1).
+
+## Filtering a collection by a relationship
+
+The sections above filter a relationship's **own** related collection. This one is
+the inverse: filtering a **primary** collection by a condition on a relationship —
+"albums whose artist is named Radiohead", "albums that have at least one track". The
+core relation-existence filters (`WhereHas`/`WhereDoesntHave`) and the dotted
+traversal filter (`WhereThrough`) declare on the resource's `filters()` like any
+other filter and apply to its primary `GET /{type}` collection.
+
+All three translate to a single correlated `EXISTS` (or `NOT EXISTS`) **semi-join**:
+set-membership, never a fetch-join, so the primary rows are neither duplicated nor in
+need of `DISTINCT`, the relation is never hydrated, and linkage / `?include` / the
+relationship-queries profile all compose for free. A to-one and a to-many translate
+identically — "there exists a related row that …".
+
+### `WhereThrough` — dotted-path traversal (portable)
+
+`WhereThrough::make('artist.name')` keeps a row whose **`artist` relation's `name`**
+matches — an **EXISTS-ANY** semi-join across the dotted path. Every intermediate
+segment is a relationship (to-one or to-many, both identical); the final segment is
+the compared attribute. The path chains: `WhereThrough::make('author.company.name')`
+hops two relations to a leaf column.
+
+```php
+use haddowg\JsonApi\Resource\Filter\WhereThrough;
+use haddowg\JsonApi\Resource\Filter\WhereHas;
+
+public function filters(): array
+{
+    return [
+        WhereHas::make('tracks'),       // albums that have at least one track
+        WhereThrough::make('artist.name'), // filter[artist.name]=Radiohead
+    ];
+}
+```
+
+The wire key carries the dots by default — `make('artist.name')` responds to
+`filter[artist.name]` — or pass an explicit key (`make('topArtist', 'artist.name')`
+→ `filter[topArtist]`). Because both positional slots are taken, the comparison
+operator is the fluent `->operator(...)` setter (default `=`, same vocabulary as
+`Where`: `=`, `!=`, `<>`, `>`, `>=`, `<`, `<=`, `like`), and `WhereThrough` carries
+value constraints (`->integer()`, etc.) like any value filter — so a mistyped
+`filter[…]` is a clean `400` (`FILTER_VALUE_INVALID`) before the provider runs.
+
+It is **portable** — it works on both providers. The in-memory provider traverses
+the object graph (core's `ArrayFilterHandler`); the Doctrine reference renders it as
+a correlated `EXISTS` subquery rooted on the related entity. [`AlbumResource`](../examples/music-catalog-symfony/src/Resource/AlbumResource.php)
+declares it, and [`ReadQueryTest::aWhereThroughFilterTraversesTheArtistRelationByName`](../examples/music-catalog-symfony/tests/ReadQueryTest.php)
+witnesses it:
+
+```
+GET /albums?filter[artist.name]=Radiohead   → albums by Radiohead
+GET /albums?filter[artist.name]=Portishead  → albums by Portishead
+GET /albums?filter[artist.name]=Nobody      → data: []
+```
+
+### `WhereHasMatching` — the Doctrine escape hatch (not portable)
+
+When the inner predicate is more than a single column comparison — a multi-column /
+OR / NOT condition, or raw DQL — reach for the bundle-only
+[`WhereHasMatching`](../src/DataProvider/Doctrine/Filter/WhereHasMatching.php)
+(`haddowg\JsonApiBundle\DataProvider\Doctrine\Filter\`). It is a single relationship
+hop whose related root you narrow yourself, with two surfaces:
+
+```php
+use haddowg\JsonApiBundle\DataProvider\Doctrine\Filter\WhereHasMatching;
+use Doctrine\Common\Collections\Criteria;
+
+public function filters(): array
+{
+    return [
+        // structured: apply a Criteria (AND/OR/NOT over the related entity) on the
+        // related root, responding to filter[hitTracks]
+        WhereHasMatching::criteria(
+            'hitTracks',
+            'tracks',
+            Criteria::create()->where(Criteria::expr()->gt('plays', 100)),
+        ),
+        // raw hatch: a closure given the related-rooted subquery, the related
+        // alias, and the request value — you add predicates and bind parameters
+        WhereHasMatching::using('namedLike', 'tracks', static function ($sub, $alias, $value): void {
+            $sub->andWhere("$alias.title LIKE :q")->setParameter('q', "%$value%");
+        }),
+    ];
+}
+```
+
+Two boundaries set it apart from `WhereThrough`:
+
+- **Doctrine-only.** It lives in the Doctrine namespace and is recognised only by the
+  Doctrine handler. On the in-memory provider the same `filter[<key>]` key is
+  undeclared, so the request is a clean `400` (the unrecognised-filter boundary) —
+  never a silent non-match.
+- **Not value-validated.** The author owns the request value (the closure consumes it,
+  no declared operator compares it), so `constraints()` returns `[]` — there is
+  nothing for the validator bridge to check.
+
+Both `WhereThrough` and `WhereHasMatching` share the one `EXISTS` builder in
+[`DoctrineFilterHandler`](../src/DataProvider/Doctrine/DoctrineFilterHandler.php); see
+[ADR 0069](adr/0069-generalise-the-exists-builder-and-add-wherehasmatching.md) and
+[doctrine.md](doctrine.md) for the DQL detail.
 
 ## Pivot (`belongsToMany`) data
 

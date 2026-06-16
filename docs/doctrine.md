@@ -337,6 +337,8 @@ so the same spec test passes on both providers.
 | `WhereNotIn` / `WhereIdNotIn` | `col NOT IN (:list)` |
 | `WhereNull` / `WhereNotNull` | `col IS NULL` / `col IS NOT NULL` (request value ignored) |
 | `WhereHas` / `WhereDoesntHave` | correlated `EXISTS` / `NOT EXISTS` subquery |
+| `WhereThrough` | dotted-traversal correlated `EXISTS` (the related entity narrowed by the leaf comparison) |
+| `WhereHasMatching` | correlated `EXISTS` whose related entity is narrowed by an author-supplied `Criteria`/closure (Doctrine-only) |
 | anything else | core `UnsupportedFilter` |
 
 A few translations carry nuance:
@@ -350,21 +352,35 @@ A few translations carry nuance:
 - **Empty-list semantics.** `WhereIn`/`WhereIdIn` with an empty list match nothing
   (`IN ()` is not valid SQL, so the handler emits `1 = 0`); the negated variants
   then match everything (a no-op).
-- **`WhereHas`/`WhereDoesntHave` are relationship-existence filters** (ADR 0019).
-  They ignore the request value and match rows whose named association has (or
-  lacks) at least one related row, pushed down as a **correlated `EXISTS`
-  subquery** that re-roots on the same entity, joins the association, and
-  correlates back to the outer root. This is set-membership, not a join, so primary
-  rows are neither duplicated nor in need of `DISTINCT`, and a to-one and a to-many
-  translate identically.
+- **`WhereHas`/`WhereThrough`/`WhereHasMatching` share one `EXISTS` builder.** All
+  three relationship filters push down through one correlated `EXISTS` (`NOT EXISTS`
+  for `WhereDoesntHave`) subquery rooted on the **related** entity (the first hop's
+  target) and correlated back to the outer owner by a membership `IN`-subquery on the
+  owning association (uniform for to-one and to-many, owning-side and many-to-many).
+  This is set-membership, not a join into the primary `SELECT`, so primary rows are
+  neither duplicated nor in need of `DISTINCT`, it never hydrates the relation
+  (linkage / `?include` / the relationQuery profile compose for free), and a to-one
+  and a to-many translate identically. The three front-ends differ only in what they
+  ask of that builder: `WhereHas`/`WhereDoesntHave` are the degenerate
+  pure-existence path (no leaf predicate); `WhereThrough` chains the path's
+  intermediate segments as joins off the related root and compares the final segment
+  as the leaf; `WhereHasMatching` narrows the related root with an author-supplied
+  predicate. See the [relationship-existence filtering](#relationship-existence-filtering-wherehas-wherethrough-wherehasmatching)
+  subsection below.
 
-The example `AlbumResource` declares an existence filter:
+The example `AlbumResource` declares two of them:
 
 ```php
+use haddowg\JsonApi\Resource\Filter\WhereHas;
+use haddowg\JsonApi\Resource\Filter\WhereThrough;
+
 public function filters(): array
 {
     return [
+        // filter[tracks]=1 — albums with at least one related track.
         WhereHas::make('tracks'),
+        // filter[artist.name]=Radiohead — EXISTS-ANY over the album's artist.
+        WhereThrough::make('artist.name'),
     ];
 }
 ```
@@ -377,6 +393,78 @@ the [`DoctrineExtensionTest`](../examples/music-catalog-symfony/tests/DoctrineEx
 asserts exactly that composition.
 
 Source: [`DoctrineFilterHandler`](../src/DataProvider/Doctrine/DoctrineFilterHandler.php).
+
+### Relationship-existence filtering (`WhereHas` / `WhereThrough` / `WhereHasMatching`)
+
+Three filters keep a row by what its *relationships* contain, never by a column on
+the row itself. All three execute as the single correlated `EXISTS` subquery
+described above (ADR 0069 generalised the one builder), so they share its
+properties: no fetch-join, no row multiplication, and free composition with linkage
+/ `?include` / the relationQuery profile.
+
+- **`WhereHas` / `WhereDoesntHave`** — pure existence. They ignore the request value
+  and match rows whose named association has (`WhereHas`) or lacks
+  (`WhereDoesntHave`) at least one related row.
+
+- **`WhereThrough`** — **dotted-path traversal**, the constrained-existence filter
+  (core ADR 0063, bundle ADR 0069). `WhereThrough::make('artist.name')` responds to
+  `filter[artist.name]` and keeps a row whose `artist`'s `name` matches — an
+  **EXISTS-ANY** semi-join. Every intermediate segment is a relationship (to-one or
+  to-many, both translate identically as "there exists a … whose …") and the final
+  segment is the compared attribute, so the path chains:
+  `filter[author.company.name]`. The wire key carries the dots by default; supply an
+  explicit key with the two-argument form
+  (`WhereThrough::make('topArtist', 'artist.name')` → `filter[topArtist]`). The leaf
+  comparison shares `Where`'s operator vocabulary (`=`, `!=`, `>`, `like`, …) via the
+  fluent `operator()` setter (default `=`), and it is **value-validated** (the
+  `numeric()`/`integer()`/`pattern()`/`constrain()` shortcuts, see
+  [data-layer → validating filter values](data-layer.md#validating-filter-values))
+  and **portable**: core ships the metadata + an in-memory traversal, so the same
+  `filter[artist.name]` runs on **both** providers (the in-memory provider walks the
+  object graph; the Doctrine reference renders the correlated `EXISTS` rooted on the
+  related `Artist`). The example's `AlbumResource` declares it — `GET
+  /albums?filter[artist.name]=Radiohead` keeps Radiohead's albums.
+
+- **`WhereHasMatching`** — the **Doctrine-only escape hatch** for what `WhereThrough`'s
+  single dotted comparison cannot express: a multi-column / OR / NOT predicate, or raw
+  DQL. It lives in the bundle's
+  [`haddowg\JsonApiBundle\DataProvider\Doctrine\Filter`](../src/DataProvider/Doctrine/Filter/WhereHasMatching.php)
+  namespace (not core), with two construction surfaces:
+
+  ```php
+  use Doctrine\Common\Collections\Criteria;
+  use haddowg\JsonApiBundle\DataProvider\Doctrine\Filter\WhereHasMatching;
+
+  public function filters(): array
+  {
+      return [
+          // A Doctrine Criteria applied (AND/OR/NOT) on the related root — structured and safe.
+          WhereHasMatching::criteria('hot', 'tracks', Criteria::create()->where(
+              Criteria::expr()->gt('playCount', 1000),
+          )),
+          // A raw-subquery closure parameterised by the request value — the deep hatch.
+          WhereHasMatching::using('named', 'tracks', static function (
+              QueryBuilder $sub,
+              string $relatedAlias,
+              mixed $value,
+          ): void {
+              $sub->andWhere(\sprintf('%s.title LIKE :q', $relatedAlias))
+                  ->setParameter('q', '%' . $value . '%');
+          }),
+      ];
+  }
+  ```
+
+  Two boundaries follow from it being Doctrine-only: it is **not portable** — the same
+  `filter[hot]` key is undeclared on the in-memory provider, so a request there is a
+  clean `400` (the unrecognised-filter boundary, exactly like a pivot key), never a
+  silent non-match — and it is **not value-validated** (the author owns the value: it
+  is consumed by the closure, not compared by a declared operator, so `constraints()`
+  returns `[]`). Reach for it only when `WhereThrough` cannot express the predicate.
+
+See [ADR 0069](adr/0069-generalise-the-exists-builder-and-add-wherehasmatching.md) for
+the full decision and [relationships.md](relationships.md) for relationship-endpoint
+context.
 
 ## Sort translation to DQL
 
@@ -454,9 +542,32 @@ by resolving each member through its per-type repository. See
 When a `belongsToMany` relation declares pivot fields — as real field definitions,
 `->fields(Integer::make('position'), DateTime::make('addedAt')->readOnly(), …)` — the
 Doctrine provider reads those join-table values and exposes them: rendered as
-per-member `meta.pivot`, recognised as a `?filter`/`?sort` vocabulary on the related
-endpoint (ADR 0045), and — writable by default — **settable from the linkage `meta`**
-(ADR 0046).
+per-member `meta.pivot`, **sortable** as a zero-config `?sort` vocabulary on the
+related endpoint (`?sort=position` auto-derives from the field), and — writable by
+default — **settable from the linkage `meta`** (ADR 0046).
+
+A pivot **filter**, by contrast, is **author-declared**, not auto-derived (a
+behaviour change from ADR 0045 — bundle ADR 0067, a minor bump). To filter on a pivot
+column, add a `Where` (or any value filter) to the relation's `withFilters()` whose
+target column is **`pivot.`-prefixed**:
+
+```php
+BelongsToMany::make('orderedTracks')
+    ->type('tracks')
+    ->fields(Integer::make('position'), Integer::make('weight'))
+    ->withFilters(
+        Where::make('position', 'pivot.position'),   // filter[position] on the join column
+        Where::make('weight', 'pivot.weight'),
+    ),
+```
+
+— from the example's
+[`PlaylistResource::orderedTracks`](../examples/music-catalog-symfony/src/Resource/PlaylistResource.php).
+The `pivot.` column prefix routes the filter to the join alias (the cast is
+auto-resolved from the backing pivot field); the wire `filter[<key>]` key is whatever
+you name, independent of the column. The relation's `withFilters()`/`withSorts()` and
+the `pivot.` convention are covered on
+[relationships → pivot data](relationships.md#pivot-belongstomany-data).
 
 **Pivot data only exists over an association entity.** A plain `#[ORM\ManyToMany]`
 join table holds only the two foreign keys; Doctrine cannot map a `position` column

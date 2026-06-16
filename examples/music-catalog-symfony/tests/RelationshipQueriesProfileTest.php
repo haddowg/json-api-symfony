@@ -199,6 +199,29 @@ final class RelationshipQueriesProfileTest extends MusicCatalogKernelTestCase
     }
 
     #[Test]
+    #[Group('spec:fetching-filtering')]
+    public function aRelatedQueryFilterOnAToOneNullsTheLinkageWhenItExcludesTheTarget(): void
+    {
+        // null-a-to-one-when-a-relation-filter-excludes-its-target (bundle ADR 0068):
+        // on a PRIMARY request, `relatedQuery[artist][filter][name]` resolves the
+        // album's `artist` relation-scoped `filter[name]` against the single target.
+        // A `[filter]` op is the ONE relaxation for a to-one (a `[sort]`/`[page]` is a
+        // 400, asserted above): a match keeps the linkage and the `included` artist; a
+        // mismatch nulls the linkage AND drops the target from `included[]`.
+        $matched = $this->profileDocument(
+            '/albums/1?include=artist&relatedQuery[artist][filter][name]=Radiohead',
+        );
+        self::assertSame(['type' => 'artists', 'id' => '1'], $this->toOneLinkage($matched, 'artist'));
+        self::assertSame(['1'], $this->includedIds($matched, 'artists'));
+
+        $excluded = $this->profileDocument(
+            '/albums/1?include=artist&relatedQuery[artist][filter][name]=Portishead',
+        );
+        self::assertNull($this->toOneLinkage($excluded, 'artist'), 'the excluded to-one linkage is null');
+        self::assertSame([], $this->includedIds($excluded, 'artists'), 'the excluded target drops from included[]');
+    }
+
+    #[Test]
     #[Group('spec:fetching-pagination')]
     public function aCountableRelationshipObjectEmitsPlainFormPaginationLinksWithLast(): void
     {
@@ -342,6 +365,34 @@ final class RelationshipQueriesProfileTest extends MusicCatalogKernelTestCase
         }
 
         return $ids;
+    }
+
+    /**
+     * The linkage of a TO-ONE relationship — the single `{type,id}` identifier, or
+     * `null` when the to-one is empty/excluded. Accepts a whole document or a resource.
+     *
+     * @param array<string, mixed> $resourceOrDocument
+     *
+     * @return array<string, mixed>|null
+     */
+    private function toOneLinkage(array $resourceOrDocument, string $relationship): ?array
+    {
+        $resource = $resourceOrDocument['data'] ?? $resourceOrDocument;
+        $relationships = $this->relationships($resource);
+
+        $relationshipObject = $relationships[$relationship] ?? null;
+        self::assertIsArray($relationshipObject, \sprintf('relationship "%s" is present', $relationship));
+        self::assertArrayHasKey('data', $relationshipObject, \sprintf('relationship "%s" carries linkage', $relationship));
+
+        $data = $relationshipObject['data'];
+        if ($data === null) {
+            return null;
+        }
+
+        self::assertIsArray($data);
+
+        /** @var array<string, mixed> $data */
+        return $data;
     }
 
     /**

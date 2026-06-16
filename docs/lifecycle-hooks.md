@@ -51,6 +51,29 @@ wraps **both** create and update (a `creating` flag distinguishes them), so a
 concern that applies to every write lives in one place; the more specific
 `BeforeCreate`/`BeforeUpdate` (and their `After` twins) fire inside that wrap.
 
+### `beforeUpdate` carries the pre-change snapshot
+
+The update *before* hook is the one with an extra argument: its signature is
+`beforeUpdate(object $entity, object $original, HookContext $context)`. `$entity` is
+the already-hydrated, mutable target the patch has been applied to; `$original` is a
+**pre-change snapshot** taken *before* hydration, so a hook can diff old against new
+— e.g. record exactly which fields changed, or reject a change to an immutable field:
+
+```php
+public function beforeUpdate(object $entity, object $original, HookContext $context): void
+{
+    \assert($entity instanceof Album && $original instanceof Album);
+    if ($entity->isrc !== $original->isrc) {
+        throw /* a 422/409 — the ISRC is immutable once set */;
+    }
+}
+```
+
+The same snapshot rides the event: `BeforeUpdateEvent` exposes `$original` alongside
+`$entity` (the other before events carry only the entity, since there is nothing yet
+to diff against). All other hook methods take just `(object $entity, HookContext
+$context)`.
+
 ## Two semantics: *before* aborts, *after* replaces
 
 - A **before** hook (`serving`, `BeforeSave`, `BeforeCreate`, `BeforeUpdate`,
@@ -116,8 +139,9 @@ final class AuditSubscriber implements EventSubscriberInterface
 Each event carries the context for its point: the resource `type`, the live
 `JsonApiRequestInterface` `request`, the `entity` (or `parent` + `relation` +
 `linkage` + `mode` for the relationship pair, or `items` for the collection read),
-the `serverName`, and `creating` on the save pair. The after events expose
-`setResponse(...)` / `response()`.
+the `serverName`, and `creating` on the save pair. `BeforeUpdateEvent` additionally
+carries the pre-change `$original` snapshot (above) for diffing. The after events
+expose `setResponse(...)` / `response()`.
 
 ## Mechanism 2 — resource hook methods (per-type)
 
@@ -171,10 +195,21 @@ The built-in [`ResourceHookSubscriber`](../src/EventListener/ResourceHookSubscri
 listens to every lifecycle event, resolves the resource for the event's type, and
 — when it implements the interface — calls the matching method, passing the entity
 and a [`HookContext`](../src/Hook/HookContext.php) (the request, server name, type,
-and the relation/linkage/mode for the relationship hooks). A before method throws
-to abort; an after method returns a response to replace it. A resource that does
-not implement the interface (or a bare serializer/hydrator pair with no resource)
-is untouched.
+and the relation/linkage/mode for the relationship hooks). The one exception to the
+`(object $entity, HookContext $context)` shape is `beforeUpdate`, which also receives
+the pre-change `$original` snapshot (above). A before method throws to abort; an
+after method returns a response to replace it. A resource that does not implement the
+interface (or a bare serializer/hydrator pair with no resource) is untouched.
+
+> **See it in the example app.** The
+> [`PlaylistResource`](../examples/music-catalog-symfony/src/Resource/PlaylistResource.php)
+> implements `ResourceLifecycleHooksInterface` with a `beforeCreate` (stamps a
+> server-owned field, persisted by the ensuing flush) and a `beforeDelete` guard
+> (a `409` when the playlist is non-empty); the cross-cutting
+> [`AuditLogSubscriber`](../examples/music-catalog-symfony/src/EventListener/AuditLogSubscriber.php)
+> subscribes to `ServingEvent`/`AfterSaveEvent`/`BeforeDeleteEvent`/`AfterDeleteEvent`.
+> Both are exercised end to end by
+> [`LifecycleHooksTest`](../examples/music-catalog-symfony/tests/LifecycleHooksTest.php).
 
 ## Hooks vs. the other seams
 

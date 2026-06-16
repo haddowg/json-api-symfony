@@ -148,9 +148,11 @@ json_api:
 
 Source:
 [`config/packages/json_api.yaml`](../examples/music-catalog-symfony/config/packages/json_api.yaml).
-The full four-key tree (`base_uri`, `version`, `schema_validation`, and the
-`servers:` map) and the container parameters it surfaces are documented on
-[configuration](configuration.md); what `base_uri`/`version` configure on each core
+The full config tree (`base_uri`, `version`, `max_include_depth`,
+`strict_query_parameters`, `pagination`, `doctrine`, `schema_validation`,
+`defaults`, and the `servers:` map) and the container parameters it surfaces are
+documented on [configuration](configuration.md); what `base_uri`/`version`
+configure on each core
 [`Server`](https://github.com/haddowg/json-api/blob/main/docs/server.md) is core's.
 
 ## Optional dependencies

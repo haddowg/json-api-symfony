@@ -16,7 +16,7 @@ inline in the bundle's `configure()` (an `AbstractBundle`), and the extension al
 
 ## The config tree
 
-Eight keys, all optional:
+Nine keys, all optional:
 
 ```yaml
 # config/packages/json_api.yaml
@@ -378,6 +378,8 @@ are silent, so read this table before assuming a capability is active.
 | --- | --- | --- |
 | `doctrine/orm` | The reference Doctrine provider/persister ([doctrine](doctrine.md)) | No Doctrine path; `#[AsJsonApiResource(entity:)]` mappings are inert. Provide your own [data provider](custom-data-providers.md). |
 | `symfony/validator` | The constraint bridge ([validation](validation.md)) | **Writes run unvalidated, silently** — declared constraints are not enforced. |
+| `symfony/event-dispatcher` | The lifecycle-hook seam ([lifecycle hooks](lifecycle-hooks.md)) | The per-operation events and resource hook methods are inert — the dispatcher is injected `->nullOnInvalid()` and the seam is simply off. |
+| `symfony/security-core` + `symfony/expression-language` | Declarative resource authorization ([authorization](authorization.md)) | The `security:`/`securityCreate:`/… expressions on `#[AsJsonApiResource]` are inert — both packages must be present for the security subscriber to register. (Enforcement also needs a configured firewall; absent one the subscriber is a no-op.) |
 | `symfony/doctrine-bridge` | The `UniqueEntity` entity-level rule | `UniqueEntity` cannot be translated. Usually present transitively via `doctrine/doctrine-bundle`. |
 | `egulias/email-validator` | Strict (RFC 5322) email validation (`EmailFormat(strict)`) | **Strict silently degrades** to Symfony's HTML5 email mode. |
 | `opis/json-schema` | The structural document linter (`schema_validation`) | Enabling `schema_validation: true` without it **fails the build**. |

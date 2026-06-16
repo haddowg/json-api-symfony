@@ -88,7 +88,8 @@ model, lives in [capability-composition](capability-composition.md).
 The attribute is **optional** — discovery already works without it. You add it to
 carry metadata Symfony needs that the class itself cannot express: which Doctrine
 entity backs the type, which named server(s) expose it, a per-type serializer or
-hydrator override, or an operation allow-list. Its full signature lives in
+hydrator override, or an operation allow-list. Its signature (abridged here — the
+authz and response-header args are documented separately, below) lives in
 [`AsJsonApiResource`](../src/Attribute/AsJsonApiResource.php):
 
 ```php
