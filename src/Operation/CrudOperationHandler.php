@@ -476,6 +476,12 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         $this->guardMutability($relation, $relationshipName, $linkage, $mode);
 
+        // A linkage id at a relationship-mutation endpoint is format-validated against
+        // the related type's id format exactly as the identical linkage inside a
+        // whole-resource write is — so the two surfaces agree (a malformed id 422s
+        // before the persister apply, not after).
+        $this->validateLinkage($relation, $linkage);
+
         $parent = $this->persisters->forType($type)->mutateRelationship($type, $parent, $relation, $linkage, $mode);
 
         return IdentifierResponse::forRelationship($parent, $server->serializerFor($type), $relationshipName);
@@ -834,6 +840,18 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         }
 
         $this->validator->validate($resource, $body, $creating);
+    }
+
+    /**
+     * Format-validates a relationship-mutation endpoint's parsed linkage against the
+     * related type's id format through the validator bridge, when one is wired (it is
+     * optional). A no-op without the validator.
+     *
+     * @param ToOneRelationship|ToManyRelationship $linkage
+     */
+    private function validateLinkage(RelationInterface $relation, ToOneRelationship|ToManyRelationship $linkage): void
+    {
+        $this->validator?->validateRelationshipLinkage($relation, $linkage);
     }
 
     /**

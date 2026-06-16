@@ -34,6 +34,10 @@ final class FavoriteResource extends AbstractResource
     public function fields(): array
     {
         return [
+            // Store-provided id (the example's default): the {@see Favorite} entity is
+            // keyed by a database-assigned auto-increment integer, so a plain
+            // `Id::make()` sets nothing on create and the DB assigns the id — read back
+            // on the `201`.
             Id::make(),
             DateTime::make('favoritedAt')->readOnlyOnUpdate(),
 

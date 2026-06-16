@@ -42,16 +42,20 @@ final class InMemoryDataProvider implements DataProviderInterface
     private readonly ArraySortHandler $sortHandler;
 
     /**
-     * @param iterable<int|string, object>    $items    objects keyed by id
-     * @param (\Closure(object): string)|null $identify reads an item's id; required only if a
-     *                                                  persister writes through {@see store()}
+     * @param iterable<int|string, object>         $items    objects keyed by id
+     * @param (\Closure(object): string)|null      $identify reads an item's id; required only if a
+     *                                                       persister writes through {@see store()}
+     * @param (\Closure(object, string): void)|null $assignId writes a minted id onto an item; pass it to
+     *                                                       make the shared store assign store-provided
+     *                                                       (auto-increment) ids on an id-less create
      */
     public function __construct(
         private readonly string $type,
         iterable $items,
         ?\Closure $identify = null,
+        ?\Closure $assignId = null,
     ) {
-        $this->store = new InMemoryStore($items, $identify);
+        $this->store = new InMemoryStore($items, $identify, $assignId);
         $this->applier = new CriteriaApplier();
         $this->filterHandler = new ArrayFilterHandler();
         $this->sortHandler = new ArraySortHandler();

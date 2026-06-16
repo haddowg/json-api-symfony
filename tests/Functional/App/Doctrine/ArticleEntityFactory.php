@@ -22,8 +22,9 @@ final class ArticleEntityFactory extends PersistentObjectFactory
 
     protected function defaults(): array
     {
+        // No `id`: the store-provided `AUTO` column assigns it on insert, so seeded
+        // rows get sequential ints by insertion order.
         return [
-            'id' => self::faker()->unique()->uuid(),
             'title' => self::faker()->unique()->sentence(3),
             'body' => self::faker()->paragraph(),
             'category' => self::faker()->word(),

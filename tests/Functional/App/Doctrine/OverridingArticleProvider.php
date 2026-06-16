@@ -33,7 +33,7 @@ final class OverridingArticleProvider implements DataProviderInterface
     public function __construct()
     {
         $this->inner = new InMemoryDataProvider('articles', [
-            '1' => new Article('1', self::TITLE, 'Not a database row.'),
+            '1' => new Article(1, self::TITLE, 'Not a database row.'),
         ]);
     }
 

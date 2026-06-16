@@ -33,13 +33,13 @@ abstract class ManyToManyRelatedCollectionConformanceTestCase extends JsonApiFun
     #[Group('spec:fetching-relationships')]
     public function aManyToManyRelatedCollectionScopesToItsParent(): void
     {
-        // Article 1 has editors a1, a2; article 2 has only a1. a1 is shared by
+        // Article 1 has editors 1, 2; article 2 has only 1. Author 1 is shared by
         // both, so per-parent scoping must return it for each without bleed.
         $document = $this->fetchDocument('/articles/1/editors?sort=name');
-        self::assertSame(['a1', 'a2'], $this->ids($document));
+        self::assertSame(['1', '2'], $this->ids($document));
 
         $document = $this->fetchDocument('/articles/2/editors?sort=name');
-        self::assertSame(['a1'], $this->ids($document));
+        self::assertSame(['1'], $this->ids($document));
     }
 
     #[Test]
@@ -48,10 +48,10 @@ abstract class ManyToManyRelatedCollectionConformanceTestCase extends JsonApiFun
     public function aManyToManyRelatedCollectionSortsByTheRelatedVocabulary(): void
     {
         // sort=-name is byte-desc on the author name: "Grace Hopper" > "Ada
-        // Lovelace", so a2 precedes a1 — sorting against the authors vocabulary.
+        // Lovelace", so author 2 precedes author 1 — sorting against the authors vocabulary.
         $document = $this->fetchDocument('/articles/1/editors?sort=-name');
 
-        self::assertSame(['a2', 'a1'], $this->ids($document));
+        self::assertSame(['2', '1'], $this->ids($document));
     }
 
     #[Test]
@@ -62,7 +62,7 @@ abstract class ManyToManyRelatedCollectionConformanceTestCase extends JsonApiFun
         // filter[name] is the authors filter declared on BaseAuthorResource.
         $document = $this->fetchDocument('/articles/1/editors?filter[name]=Ada Lovelace&sort=name');
 
-        self::assertSame(['a1'], $this->ids($document));
+        self::assertSame(['1'], $this->ids($document));
     }
 
     #[Test]
@@ -71,11 +71,11 @@ abstract class ManyToManyRelatedCollectionConformanceTestCase extends JsonApiFun
     public function aManyToManyRelatedCollectionPaginatesOverTheSubquery(): void
     {
         // editors carries a per-relation PagePaginator: page 1 of size 1 over the
-        // name-sorted membership is exactly a1, with page meta and a link scoped
+        // name-sorted membership is exactly author 1, with page meta and a link scoped
         // to the request path.
         $document = $this->fetchDocument('/articles/1/editors?sort=name&page[size]=1&page[number]=1');
 
-        self::assertSame(['a1'], $this->ids($document));
+        self::assertSame(['1'], $this->ids($document));
 
         $meta = $document['meta'] ?? null;
         self::assertIsArray($meta);

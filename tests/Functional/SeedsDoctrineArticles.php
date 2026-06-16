@@ -24,13 +24,10 @@ trait SeedsDoctrineArticles
         $schemaTool = new SchemaTool($entityManager);
         $schemaTool->createSchema($entityManager->getMetadataFactory()->getAllMetadata());
 
-        ArticleEntityFactory::createSequence(
-            \array_map(
-                static fn(int|string $id, array $article): array => ['id' => (string) $id, ...$article],
-                \array_keys(ArticleFixtures::data()),
-                \array_values(ArticleFixtures::data()),
-            ),
-        );
+        // No explicit id: the store-provided `AUTO` column assigns sequential ints
+        // in insertion order, so the fixtures' canonical id order (1..N) holds
+        // against the freshly recreated schema.
+        ArticleEntityFactory::createSequence(\array_values(ArticleFixtures::data()));
 
         $entityManager->clear();
     }

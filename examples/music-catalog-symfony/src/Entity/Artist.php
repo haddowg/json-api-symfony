@@ -16,13 +16,20 @@ use Doctrine\ORM\Mapping as ORM;
  * match these property names exactly, so the default relation reader returns the
  * mapped associations straight off the entity with no extractor.
  *
- * The id is application-assigned (no generator), matching the string ids the seed
- * uses. Not `final` so Doctrine may proxy it.
+ * The id is a **database-assigned auto-increment integer** — the store-provided id
+ * default (the example's norm): a create sets nothing on the id and the DB assigns
+ * it on flush, read back on the `201`. The JSON:API `id` is the integer as a string.
+ * Not `final` so Doctrine may proxy it.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'artist')]
 class Artist
 {
+    #[ORM\Id]
+    #[ORM\GeneratedValue(strategy: 'AUTO')]
+    #[ORM\Column]
+    public ?int $id = null;
+
     /**
      * The inverse side of the album→artist association: an artist's albums,
      * mapped by {@see Album}'s owning `artist` reference.
@@ -33,9 +40,6 @@ class Artist
     public Collection $albums;
 
     public function __construct(
-        #[ORM\Id]
-        #[ORM\Column]
-        public string $id = '',
         #[ORM\Column]
         public string $name = '',
         #[ORM\Column]

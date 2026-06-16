@@ -55,22 +55,25 @@ final class DoctrineRelationshipLoadStateTest extends JsonApiFunctionalTestCase
         $schemaTool = new SchemaTool($entityManager);
         $schemaTool->createSchema($entityManager->getMetadataFactory()->getAllMetadata());
 
-        $authors = [];
-        foreach (ArticleFixtures::authors() as $id => $author) {
-            $authors[(string) $id] = AuthorEntityFactory::createOne(['id' => (string) $id, 'name' => $author['name']]);
+        // Store-provided ids: no explicit `id` is passed; the `AUTO` columns assign
+        // sequential ints by insertion order against the freshly recreated schema,
+        // so the first author is id 1, the article is id 1, and the comments are
+        // ids 1, 2 — the canonical fixture ids.
+        $firstAuthor = null;
+        foreach (ArticleFixtures::authors() as $author) {
+            $created = AuthorEntityFactory::createOne(['name' => $author['name']]);
+            $firstAuthor ??= $created;
         }
 
         $article = ArticleEntityFactory::createOne([
-            'id' => '1',
             ...ArticleFixtures::data()['1'],
-            'author' => $authors['a1'],
+            'author' => $firstAuthor,
         ]);
 
-        // Article 1 features c1, c2 in the separate `featuredComments` association
-        // backing the load-aware `lazyComments` relation.
-        foreach (['c1', 'c2'] as $commentId) {
+        // Article 1 features comments 1, 2 in the separate `featuredComments`
+        // association backing the load-aware `lazyComments` relation.
+        foreach (['1', '2'] as $commentId) {
             CommentEntityFactory::createOne([
-                'id' => $commentId,
                 'body' => ArticleFixtures::comments()[$commentId]['body'],
                 'featuredArticle' => $article,
             ]);

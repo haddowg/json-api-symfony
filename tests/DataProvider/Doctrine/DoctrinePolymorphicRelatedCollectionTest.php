@@ -10,8 +10,11 @@ use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineDataProvider;
+use haddowg\JsonApiBundle\Server\IdEncoderResolver;
+use haddowg\JsonApiBundle\Server\ResourceLocator;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Psr\Container\ContainerInterface;
 
 /**
  * The Doctrine provider's polymorphic-to-many boundary: a `MorphToMany`'s members
@@ -31,10 +34,13 @@ final class DoctrinePolymorphicRelatedCollectionTest extends TestCase
 
         // Stubs, not mocks: the guard throws before touching either collaborator,
         // so there is nothing to configure or verify (and a mock without
-        // expectations is what PHPUnit advises a stub for).
+        // expectations is what PHPUnit advises a stub for). The id-encoder resolver
+        // is a real instance over an empty resource locator — it is never consulted
+        // because the guard fires first.
         $provider = new DoctrineDataProvider(
             $this->createStub(EntityManagerInterface::class),
             [],
+            new IdEncoderResolver(new ResourceLocator($this->emptyContainer(), [])),
         );
 
         $criteria = new CollectionCriteria(new QueryParameters([], [], [], [], []));
@@ -49,5 +55,20 @@ final class DoctrinePolymorphicRelatedCollectionTest extends TestCase
             $criteria,
             $this->createStub(JsonApiRequestInterface::class),
         );
+    }
+
+    private function emptyContainer(): ContainerInterface
+    {
+        return new class implements ContainerInterface {
+            public function get(string $id): mixed
+            {
+                throw new \LogicException(\sprintf('No service "%s" registered.', $id));
+            }
+
+            public function has(string $id): bool
+            {
+                return false;
+            }
+        };
     }
 }

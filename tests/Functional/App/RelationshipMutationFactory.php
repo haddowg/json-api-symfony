@@ -108,7 +108,7 @@ final class RelationshipMutationFactory
             \assert($author === null || $author instanceof Author);
 
             $articles[$id] = new Article(
-                $id,
+                (int) $id,
                 $article['title'],
                 $article['body'],
                 $article['category'],
@@ -121,39 +121,66 @@ final class RelationshipMutationFactory
             );
         }
 
-        return new InMemoryDataProvider('articles', $articles, static function (object $item): string {
-            \assert($item instanceof Article);
+        return new InMemoryDataProvider(
+            'articles',
+            $articles,
+            static function (object $item): string {
+                \assert($item instanceof Article);
 
-            return $item->id;
-        });
+                return $item->id === null ? '' : (string) $item->id;
+            },
+            static function (object $item, string $id): void {
+                \assert($item instanceof Article);
+
+                $item->id = (int) $id;
+            },
+        );
     }
 
     private static function buildAuthors(): InMemoryDataProvider
     {
         $authors = [];
         foreach (ArticleFixtures::authors() as $id => $author) {
-            $authors[(string) $id] = new Author((string) $id, $author['name']);
+            $authors[(string) $id] = new Author((int) $id, $author['name']);
         }
 
-        return new InMemoryDataProvider('authors', $authors, static function (object $item): string {
-            \assert($item instanceof Author);
+        return new InMemoryDataProvider(
+            'authors',
+            $authors,
+            static function (object $item): string {
+                \assert($item instanceof Author);
 
-            return $item->id;
-        });
+                return $item->id === null ? '' : (string) $item->id;
+            },
+            static function (object $item, string $id): void {
+                \assert($item instanceof Author);
+
+                $item->id = (int) $id;
+            },
+        );
     }
 
     private static function buildComments(): InMemoryDataProvider
     {
         $comments = [];
         foreach (ArticleFixtures::comments() as $id => $comment) {
-            $comments[(string) $id] = new Comment((string) $id, $comment['body']);
+            $comments[(string) $id] = new Comment((int) $id, $comment['body']);
         }
 
-        return new InMemoryDataProvider('comments', $comments, static function (object $item): string {
-            \assert($item instanceof Comment);
+        return new InMemoryDataProvider(
+            'comments',
+            $comments,
+            static function (object $item): string {
+                \assert($item instanceof Comment);
 
-            return $item->id;
-        });
+                return $item->id === null ? '' : (string) $item->id;
+            },
+            static function (object $item, string $id): void {
+                \assert($item instanceof Comment);
+
+                $item->id = (int) $id;
+            },
+        );
     }
 
     /**

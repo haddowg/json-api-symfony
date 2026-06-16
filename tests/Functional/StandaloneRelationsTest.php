@@ -42,14 +42,14 @@ final class StandaloneRelationsTest extends JsonApiFunctionalTestCase
 
         $author = $relationships['author'] ?? null;
         self::assertIsArray($author);
-        self::assertSame(['type' => 'authors', 'id' => 'a1'], $author['data'] ?? null);
+        self::assertSame(['type' => 'authors', 'id' => '1'], $author['data'] ?? null);
 
         $comments = $relationships['comments'] ?? null;
         self::assertIsArray($comments);
         $commentData = $comments['data'] ?? null;
         self::assertIsArray($commentData);
-        self::assertContains(['type' => 'comments', 'id' => 'c1'], $commentData);
-        self::assertContains(['type' => 'comments', 'id' => 'c2'], $commentData);
+        self::assertContains(['type' => 'comments', 'id' => '1'], $commentData);
+        self::assertContains(['type' => 'comments', 'id' => '2'], $commentData);
     }
 
     #[Test]
@@ -62,7 +62,7 @@ final class StandaloneRelationsTest extends JsonApiFunctionalTestCase
         $data = $this->decode($response)['data'] ?? null;
         self::assertIsArray($data);
         self::assertSame('authors', $data['type'] ?? null);
-        self::assertSame('a1', $data['id'] ?? null);
+        self::assertSame('1', $data['id'] ?? null);
 
         $attributes = $data['attributes'] ?? null;
         self::assertIsArray($attributes);
@@ -77,7 +77,7 @@ final class StandaloneRelationsTest extends JsonApiFunctionalTestCase
         self::assertSame(200, $response->getStatusCode());
 
         $data = $this->decode($response)['data'] ?? null;
-        self::assertSame(['type' => 'authors', 'id' => 'a1'], $data);
+        self::assertSame(['type' => 'authors', 'id' => '1'], $data);
     }
 
     #[Test]

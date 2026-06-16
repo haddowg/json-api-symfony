@@ -13,7 +13,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App;
 final class Author
 {
     public function __construct(
-        public string $id = '',
+        public ?int $id = null,
         public string $name = '',
     ) {}
 }

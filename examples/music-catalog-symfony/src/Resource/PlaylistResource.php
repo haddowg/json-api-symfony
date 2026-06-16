@@ -25,12 +25,17 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Hydrator\PlaylistHydrator;
  * bound constructor arg, proving DI resolution) while this resource still
  * serializes reads.
  *
+ * It is also the **UUID id-strategy** demonstrator (bundle ADR 0039):
+ * `Id::make()->uuid()->generated()` keys the {@see Playlist} on a string UUID the
+ * *app* mints when a create omits the id, while the custom hydrator additionally
+ * accepts a well-formed client `id` (the `uuid()` format both pins the route `{id}`
+ * shape and validates a client-supplied id on the wire).
+ *
  * Field/relation declarations are re-themed verbatim from core's in-memory
  * {@see https://github.com/haddowg/json-api/blob/main/examples/music-catalog/src/Resource/PlaylistResource.php PlaylistResource}:
- * a client-generated UUID id (paired with {@see acceptsClientGeneratedId()}); a
- * read-only `slug` derived from `title` by the custom hydrator; a `belongsTo`
- * owner; and a pivot-backed `belongsToMany` `tracks` whose related collection
- * paginates two-per-page.
+ * a UUID id; a read-only `slug` derived from `title` by the custom hydrator; a
+ * `belongsTo` owner; and a pivot-backed `belongsToMany` `tracks` whose related
+ * collection paginates two-per-page.
  */
 #[AsJsonApiResource(entity: Playlist::class, hydrator: PlaylistHydrator::class)]
 final class PlaylistResource extends AbstractResource
@@ -40,9 +45,10 @@ final class PlaylistResource extends AbstractResource
     public function fields(): array
     {
         return [
-            // A client-generated UUID id: the resource opts in below so a POST may
-            // carry its own `id`.
-            Id::make()->uuid(),
+            // A UUID id: the app mints a v4 UUID via generated() when a create omits
+            // the id, and the custom hydrator also accepts a well-formed client UUID
+            // (uuid() pins the route shape and validates a wire id).
+            Id::make()->uuid()->generated(),
             Str::make('title')->required(),
             // Derived from title by the custom hydrator, so read-only on the wire.
             Slug::make('slug')->readOnly(),
@@ -57,14 +63,5 @@ final class PlaylistResource extends AbstractResource
                 ->fields(['position' => 'integer', 'addedAt' => 'datetime'])
                 ->paginate(PagePaginator::make()->withDefaultPerPage(2)),
         ];
-    }
-
-    /**
-     * Accept a client-supplied UUID id on create (the default is to reject one
-     * with {@see \haddowg\JsonApi\Exception\ClientGeneratedIdNotSupported}).
-     */
-    protected function acceptsClientGeneratedId(): bool
-    {
-        return true;
     }
 }

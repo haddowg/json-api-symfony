@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Validation;
 
+use haddowg\JsonApi\Hydrator\Relationship\ToManyRelationship;
+use haddowg\JsonApi\Hydrator\Relationship\ToOneRelationship;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Constraint\CompareField;
@@ -16,6 +18,7 @@ use haddowg\JsonApi\Resource\Field\Map;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Schema\Error\Error;
 use haddowg\JsonApi\Schema\Error\ErrorSource;
+use haddowg\JsonApiBundle\Server\IdEncoderResolver;
 use Symfony\Component\Validator\Constraints\Collection;
 use Symfony\Component\Validator\Constraints\NotBlank;
 use Symfony\Component\Validator\Constraints\NotNull;
@@ -42,8 +45,19 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
  *    the field is present;
  *  - unknown attributes are ignored (the hydrator ignores them too).
  *
- * The `Id` field and relationships are not attributes, so they are skipped
- * (relationship validation arrives with the relationship phase).
+ * The id format helper ({@see \haddowg\JsonApi\Resource\Field\Id::uuid()} / `ulid()`
+ * / `numeric()` / `pattern()`) is validated in **both directions**:
+ *  - a client-supplied `data.id` is checked against the *owning* resource's id format
+ *    (422 at `/data/id`), the create-direction; and
+ *  - each relationship **linkage** id is checked against the *related* type's id
+ *    format — a `{ "type": T, "id": X }` reference must match type `T`'s id field
+ *    constraints, so a malformed linkage id 422s with a pointer at the linkage
+ *    (`/data/relationships/<rel>/data[/<n>]/id`). For a polymorphic relation the
+ *    format is resolved from the linkage's own `type` member.
+ * Both run on the **wire** id, before any decode. Core only declares the format
+ * constraints (on each type's id field); this bridge resolves the relevant type →
+ * its resource → id field → constraints through the {@see IdEncoderResolver} and
+ * executes them.
  *
  * {@see \haddowg\JsonApi\Resource\Constraint\CompareField} (a cross-field rule) is
  * the exception to per-field validation: it is evaluated at the **document** level,
@@ -67,6 +81,7 @@ final class ResourceValidator
         private readonly ValidatorInterface $validator,
         private readonly ConstraintTranslator $translator,
         private readonly JsonPointerBuilder $pointers,
+        private readonly IdEncoderResolver $idFormats,
     ) {}
 
     /**
@@ -100,23 +115,78 @@ final class ResourceValidator
             }
         }
 
-        if ($fields === []) {
+        $errors = [];
+
+        if ($fields !== []) {
+            $violations = $this->validator->validate($attributes, new Collection(fields: $fields, allowExtraFields: true));
+            foreach ($violations as $violation) {
+                $errors[] = $this->error((string) $violation->getMessage(), (string) $violation->getPropertyPath());
+            }
+
+            // Cross-field rules are validated at the document level, where the sibling
+            // value is in scope (the per-field Collection sees each value in isolation).
+            foreach ($compares as [$owner, $compare]) {
+                $error = $this->compareError($owner, $compare, $attributes);
+                if ($error !== null) {
+                    $errors[] = $error;
+                }
+            }
+        }
+
+        // A client-supplied `data.id` is validated against the owning resource's id
+        // format (the same constraints `uuid()`/`ulid()`/`numeric()`/`pattern()`
+        // declare) — the create-direction of the format helper, before core decodes
+        // or stores it.
+        $ownIdError = $this->ownIdError($resource, $data);
+        if ($ownIdError !== null) {
+            $errors[] = $ownIdError;
+        }
+
+        // Relationship linkage ids carry the *related* type's id format (not the
+        // owning resource's), so each is validated against that type's id field
+        // constraints — before any decode — and a malformed one points at the linkage.
+        foreach ($this->linkageErrors($resource, $data) as $error) {
+            $errors[] = $error;
+        }
+
+        if ($errors === []) {
             return;
         }
 
+        throw new ValidationFailed($errors);
+    }
+
+    /**
+     * Validates the linkage of a **relationship-mutation endpoint**
+     * (`PATCH`/`POST`/`DELETE …/relationships/<rel>`) against the related type's id
+     * format — the same wire-id format check a linkage inside a whole-resource write
+     * gets ({@see linkageErrors()}), so the two surfaces agree. The body root *is* the
+     * relationship here, so a violation points at `/data/id` (to-one) or
+     * `/data/<n>/id` (to-many). A polymorphic linkage resolves its format from each
+     * member's own `type`; an empty (clearing) linkage has no id to check.
+     *
+     * @throws ValidationFailed when a linkage id violates the related type's id format
+     */
+    public function validateRelationshipLinkage(
+        RelationInterface $relation,
+        ToOneRelationship|ToManyRelationship $linkage,
+    ): void {
         $errors = [];
 
-        $violations = $this->validator->validate($attributes, new Collection(fields: $fields, allowExtraFields: true));
-        foreach ($violations as $violation) {
-            $errors[] = $this->error((string) $violation->getMessage(), (string) $violation->getPropertyPath());
-        }
-
-        // Cross-field rules are validated at the document level, where the sibling
-        // value is in scope (the per-field Collection sees each value in isolation).
-        foreach ($compares as [$owner, $compare]) {
-            $error = $this->compareError($owner, $compare, $attributes);
-            if ($error !== null) {
-                $errors[] = $error;
+        if ($linkage instanceof ToOneRelationship) {
+            $identifier = $linkage->resourceIdentifier;
+            if ($identifier !== null) {
+                $error = $this->endpointLinkageError($relation, $identifier->type, $identifier->id, null);
+                if ($error !== null) {
+                    $errors[] = $error;
+                }
+            }
+        } else {
+            foreach ($linkage->resourceIdentifiers as $index => $identifier) {
+                $error = $this->endpointLinkageError($relation, $identifier->type, $identifier->id, $index);
+                if ($error !== null) {
+                    $errors[] = $error;
+                }
             }
         }
 
@@ -125,6 +195,214 @@ final class ResourceValidator
         }
 
         throw new ValidationFailed($errors);
+    }
+
+    /**
+     * Validates one parsed relationship-endpoint linkage id against the related type's
+     * id format, returning the first violation as an {@see Error} pointed at the
+     * endpoint body (`/data/id` or `/data/<index>/id`), or `null` when it passes / has
+     * no validatable id. The related type is the linkage's own `type` (so a
+     * polymorphic relation resolves the right type), falling back to the relation's
+     * single declared related type.
+     */
+    private function endpointLinkageError(RelationInterface $relation, string $linkageType, ?string $id, ?int $index): ?Error
+    {
+        if (!\is_string($id) || $id === '') {
+            return null; // presence/shape is core's concern, not the format bridge's
+        }
+
+        $relatedType = $linkageType !== '' ? $linkageType : ($relation->relatedTypes()[0] ?? null);
+        if ($relatedType === null) {
+            return null;
+        }
+
+        $constraints = $this->formatConstraints($relatedType);
+        if ($constraints === []) {
+            return null; // the related type's id is unconstrained — any id passes
+        }
+
+        $violations = $this->validator->validate($id, $constraints);
+        if (\count($violations) === 0) {
+            return null;
+        }
+
+        return new Error(
+            status: '422',
+            code: 'VALIDATION_FAILED',
+            title: 'Unprocessable Entity',
+            detail: (string) $violations->get(0)->getMessage(),
+            source: ErrorSource::fromPointer($this->pointers->forRelationshipEndpointLinkageId($index)),
+        );
+    }
+
+    /**
+     * Validates a client-supplied `data.id` against the owning resource's id format —
+     * the create-direction twin of the linkage validation. An absent or non-string id
+     * is left to core (a generated/store-provided id never reaches here as a wire
+     * string); a well-formed-but-format-violating client id 422s with a `/data/id`
+     * pointer. A resource whose id declares no format passes any client id.
+     *
+     * Only validated when the type **accepts** a client id ({@see Id::allowsClientId()}):
+     * a forbidden type rejects *any* supplied id outright as core's `403`
+     * `ClientGeneratedIdNotSupported`, so format-checking it here would pre-empt that
+     * `403` with a `422` for malformed ids only — two statuses for the same forbidden
+     * type, depending on a format it ignores. For a forbidden type the format is
+     * irrelevant; the `403` is returned uniformly.
+     *
+     * @param array<string, mixed> $data the write body's `data` member
+     */
+    private function ownIdError(AbstractResource $resource, array $data): ?Error
+    {
+        $id = $data['id'] ?? null;
+        if (!\is_string($id) || $id === '') {
+            return null;
+        }
+
+        if (!$this->idFormats->allowsClientIdFor($resource::$type)) {
+            return null; // a forbidden type 403s on any supplied id — format is moot
+        }
+
+        $constraints = $this->formatConstraints($resource::$type);
+        if ($constraints === []) {
+            return null;
+        }
+
+        $violations = $this->validator->validate($id, $constraints);
+        if (\count($violations) === 0) {
+            return null;
+        }
+
+        return new Error(
+            status: '422',
+            code: 'VALIDATION_FAILED',
+            title: 'Unprocessable Entity',
+            detail: (string) $violations->get(0)->getMessage(),
+            source: ErrorSource::fromPointer('/data/id'),
+        );
+    }
+
+    /**
+     * Validates each relationship linkage id in the write body against the related
+     * type's id format. A monomorphic relation resolves the format from its single
+     * declared related type; a polymorphic ({@see \haddowg\JsonApi\Resource\Field\MorphTo})
+     * one resolves it from each linkage's own `type` member. A linkage whose `id` is
+     * absent or not a string is left to core (presence/shape is the hydrator's
+     * concern); a well-formed id that violates the related type's format 422s with a
+     * pointer at the linkage. A related type with no declared id format passes any id.
+     *
+     * @param array<string, mixed> $data the write body's `data` member
+     *
+     * @return list<Error>
+     */
+    private function linkageErrors(AbstractResource $resource, array $data): array
+    {
+        $relationships = $data['relationships'] ?? null;
+        if (!\is_array($relationships) || $relationships === []) {
+            return [];
+        }
+
+        $errors = [];
+        foreach ($resource->fields() as $field) {
+            if (!$field instanceof RelationInterface) {
+                continue;
+            }
+
+            $name = $field->name();
+            $relationship = $relationships[$name] ?? null;
+            if (!\is_array($relationship) || !\array_key_exists('data', $relationship)) {
+                continue;
+            }
+
+            $linkage = $relationship['data'];
+            if ($field->isToMany()) {
+                if (!\is_array($linkage)) {
+                    continue;
+                }
+                foreach (\array_values($linkage) as $index => $member) {
+                    $error = $this->linkageError($field, $member, $name, $index);
+                    if ($error !== null) {
+                        $errors[] = $error;
+                    }
+                }
+
+                continue;
+            }
+
+            // A null to-one linkage clears the relationship — there is no id to check.
+            if ($linkage === null) {
+                continue;
+            }
+            $error = $this->linkageError($field, $linkage, $name, null);
+            if ($error !== null) {
+                $errors[] = $error;
+            }
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Validates one linkage `{type, id}` reference's id against the related type's id
+     * format, returning the first violation as an {@see Error} pointed at the linkage
+     * (or `null` when it passes / has no validatable id). The related type is the
+     * linkage's own `type` member when present (so a polymorphic relation resolves
+     * the right type), else the relation's single declared related type.
+     */
+    private function linkageError(RelationInterface $field, mixed $linkage, string $relation, ?int $index): ?Error
+    {
+        if (!\is_array($linkage)) {
+            return null;
+        }
+
+        $id = $linkage['id'] ?? null;
+        if (!\is_string($id) || $id === '') {
+            return null; // presence/shape is core's concern, not the format bridge's
+        }
+
+        $relatedType = \is_string($linkage['type'] ?? null) && $linkage['type'] !== ''
+            ? $linkage['type']
+            : ($field->relatedTypes()[0] ?? null);
+        if ($relatedType === null) {
+            return null;
+        }
+
+        $constraints = $this->formatConstraints($relatedType);
+        if ($constraints === []) {
+            return null; // the related type's id is unconstrained — any id passes
+        }
+
+        $violations = $this->validator->validate($id, $constraints);
+        if (\count($violations) === 0) {
+            return null;
+        }
+
+        return new Error(
+            status: '422',
+            code: 'VALIDATION_FAILED',
+            title: 'Unprocessable Entity',
+            detail: (string) $violations->get(0)->getMessage(),
+            source: ErrorSource::fromPointer($this->pointers->forLinkageId($relation, $index)),
+        );
+    }
+
+    /**
+     * The translated Symfony constraints enforcing a type's id format, from the id
+     * field's declared format VOs ({@see ConstraintInterface}s the `uuid()` / `ulid()`
+     * / `numeric()` / `pattern()` shortcuts append). Empty when the type's id is
+     * unconstrained.
+     *
+     * @return list<\Symfony\Component\Validator\Constraint>
+     */
+    private function formatConstraints(string $type): array
+    {
+        $constraints = [];
+        foreach ($this->idFormats->formatConstraintsFor($type) as $constraint) {
+            foreach ($this->translator->translate($constraint) as $symfonyConstraint) {
+                $constraints[] = $symfonyConstraint;
+            }
+        }
+
+        return $constraints;
     }
 
     /**

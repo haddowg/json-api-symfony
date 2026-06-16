@@ -23,8 +23,8 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Artist;
  * {@see https://github.com/haddowg/json-api-symfony OverridingArticleProvider}.
  * Because the example app is one shared kernel over a seeded database, the
  * override is a thin **overlay** rather than a wholesale replacement: it answers a
- * single sentinel id (`override`, a name no seeded row carries — so a read of it
- * is attributable to the override alone, which {@see \haddowg\JsonApiBundle\Examples\MusicCatalog\Tests\CustomProviderTest}
+ * single sentinel id (`999999`, an id far above any seeded auto-increment row — so a
+ * read of it is attributable to the override alone, which {@see \haddowg\JsonApiBundle\Examples\MusicCatalog\Tests\CustomProviderTest}
  * asserts) and delegates every other `artists` read to the injected Doctrine
  * provider, so the real `/artists` endpoint stays intact for the rest of the app.
  * Both the override and the Doctrine fallback are wired (the resource maps an
@@ -34,7 +34,7 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Artist;
  */
 final class OverridingArtistProvider implements DataProviderInterface
 {
-    public const string SENTINEL_ID = 'override';
+    public const string SENTINEL_ID = '999999';
 
     public const string NAME = 'From the override provider';
 
@@ -48,7 +48,12 @@ final class OverridingArtistProvider implements DataProviderInterface
     public function fetchOne(string $type, string $id): ?object
     {
         if ($id === self::SENTINEL_ID) {
-            return new Artist(id: self::SENTINEL_ID, name: self::NAME, slug: self::SENTINEL_ID, trackCount: 0);
+            // A synthetic artist the database never holds: the int PK is set directly
+            // (it is never persisted), so the resource renders the sentinel wire id.
+            $artist = new Artist(name: self::NAME, slug: 'override', trackCount: 0);
+            $artist->id = (int) self::SENTINEL_ID;
+
+            return $artist;
         }
 
         return $this->doctrine->fetchOne($type, $id);

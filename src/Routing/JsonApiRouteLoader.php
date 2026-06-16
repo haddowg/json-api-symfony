@@ -8,6 +8,7 @@ use haddowg\JsonApiBundle\Controller\JsonApiController;
 use haddowg\JsonApiBundle\EventListener\ExceptionListener;
 use haddowg\JsonApiBundle\Operation\Operation;
 use haddowg\JsonApiBundle\Operation\TargetResolver;
+use haddowg\JsonApiBundle\Server\IdEncoderResolver;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use Symfony\Component\Config\Loader\Loader;
 use Symfony\Component\Routing\Route;
@@ -31,7 +32,13 @@ use Symfony\Component\Routing\RouteCollection;
  * Concrete per-type paths are emitted (one literal path per type) rather than a
  * single parametric `/{type}` catch-all, so the router natively `404`s unknown
  * types — matching the bundle's "router-native, no catch-all path parsing"
- * stance. Each route carries:
+ * stance. When a type's resource Id field declares a route pattern (via
+ * {@see \haddowg\JsonApi\Resource\Field\Id::matchAs()} or the
+ * `uuid()`/`ulid()`/`numeric()`/`pattern()` shortcuts, ADR 0038), every route that
+ * carries `{id}` constrains that segment with it — resolved through the injected
+ * {@see IdEncoderResolver} — so a malformed id `404`s at routing before any handler
+ * runs. No pattern means the `{id}` stays unconstrained (today's behaviour). Each
+ * route carries:
  *  - `_jsonapi_type` — the resource type the {@see TargetResolver} reads;
  *  - `_jsonapi_server` — the server name (`default` for the unnamed import);
  *  - the {@see ExceptionListener::ROUTE_MARKER} default that scopes the
@@ -69,9 +76,12 @@ final class JsonApiRouteLoader extends Loader
 
     /**
      * @param array<string, array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>}>> $routeDescriptorsByServer keyed by server name, then by JSON:API type
+     * @param ?IdEncoderResolver                                                                                                                          $idEncoders               resolves each type's route `{id}` pattern (null in a bare scalar-only test wiring)
      */
-    public function __construct(private readonly array $routeDescriptorsByServer = [])
-    {
+    public function __construct(
+        private readonly array $routeDescriptorsByServer = [],
+        private readonly ?IdEncoderResolver $idEncoders = null,
+    ) {
         parent::__construct();
     }
 
@@ -116,6 +126,13 @@ final class JsonApiRouteLoader extends Loader
             $relationshipPath = $resourcePath . '/relationships/{relationship}';
             $relatedPath = $resourcePath . '/{relationship}';
 
+            // A resource whose Id field declares a route pattern (matchAs / the
+            // uuid()/ulid()/numeric()/pattern() shortcuts, ADR 0038) constrains the
+            // {id} segment on every route that carries it, so a malformed id 404s at
+            // routing before any handler runs. No pattern => unconstrained (today).
+            $idRequirement = $this->idEncoders?->routePatternFor($resourceType);
+            $idRequirements = $idRequirement !== null ? ['id' => $idRequirement] : [];
+
             // One route per declared operation: a type that omits an operation
             // never gets its route, so unexposed verbs are unrouted (the router
             // 404s/405s natively) rather than reaching a handler that refuses.
@@ -136,21 +153,21 @@ final class JsonApiRouteLoader extends Loader
             if (\in_array(Operation::FetchOne->value, $operations, true)) {
                 $routes->add(
                     \sprintf('%s%s.show', $namePrefix, $resourceType),
-                    new Route($resourcePath, $defaults, methods: ['GET']),
+                    new Route($resourcePath, $defaults, $idRequirements, methods: ['GET']),
                 );
             }
 
             if (\in_array(Operation::Update->value, $operations, true)) {
                 $routes->add(
                     \sprintf('%s%s.update', $namePrefix, $resourceType),
-                    new Route($resourcePath, $defaults, methods: ['PATCH']),
+                    new Route($resourcePath, $defaults, $idRequirements, methods: ['PATCH']),
                 );
             }
 
             if (\in_array(Operation::Delete->value, $operations, true)) {
                 $routes->add(
                     \sprintf('%s%s.delete', $namePrefix, $resourceType),
-                    new Route($resourcePath, $defaults, methods: ['DELETE']),
+                    new Route($resourcePath, $defaults, $idRequirements, methods: ['DELETE']),
                 );
             }
 
@@ -170,22 +187,22 @@ final class JsonApiRouteLoader extends Loader
 
             $routes->add(
                 \sprintf('%s%s.relationship.show', $namePrefix, $resourceType),
-                new Route($relationshipPath, $relationshipDefaults, methods: ['GET']),
+                new Route($relationshipPath, $relationshipDefaults, $idRequirements, methods: ['GET']),
             );
 
             $routes->add(
                 \sprintf('%s%s.relationship.update', $namePrefix, $resourceType),
-                new Route($relationshipPath, $relationshipDefaults, methods: ['PATCH']),
+                new Route($relationshipPath, $relationshipDefaults, $idRequirements, methods: ['PATCH']),
             );
 
             $routes->add(
                 \sprintf('%s%s.relationship.add', $namePrefix, $resourceType),
-                new Route($relationshipPath, $relationshipDefaults, methods: ['POST']),
+                new Route($relationshipPath, $relationshipDefaults, $idRequirements, methods: ['POST']),
             );
 
             $routes->add(
                 \sprintf('%s%s.relationship.remove', $namePrefix, $resourceType),
-                new Route($relationshipPath, $relationshipDefaults, methods: ['DELETE']),
+                new Route($relationshipPath, $relationshipDefaults, $idRequirements, methods: ['DELETE']),
             );
 
             $routes->add(
@@ -193,6 +210,7 @@ final class JsonApiRouteLoader extends Loader
                 new Route(
                     $relatedPath,
                     [...$defaults, TargetResolver::RELATIONSHIP_ENDPOINT_ATTRIBUTE => false],
+                    $idRequirements,
                     methods: ['GET'],
                 ),
             );

@@ -19,8 +19,8 @@ use Symfony\Component\HttpFoundation\Response;
  * unlinked to-one renders `data: null` on both providers with no seeded linkage.
  *
  * Each subclass differs only in the kernel it names (and the Doctrine one's schema
- * + seed in `afterBoot()`). The two seed tags are `t1` (name "PHP") and `t2` (name
- * "Testing"), both with no linked article.
+ * + seed in `afterBoot()`). The two seed tags are id `1` (name "PHP") and id `2`
+ * (name "Testing"), both with no linked article.
  */
 abstract class GenericityWitnessConformanceTestCase extends JsonApiFunctionalTestCase
 {
@@ -41,7 +41,7 @@ abstract class GenericityWitnessConformanceTestCase extends JsonApiFunctionalTes
     #[Group('spec:crud')]
     public function fetchingASingleTagReturnsIt(): void
     {
-        $response = $this->handle('/tags/t1');
+        $response = $this->handle('/tags/1');
         self::assertSame(200, $response->getStatusCode());
         self::assertSame('PHP', $this->attributesOf($response)['name'] ?? null);
     }
@@ -62,9 +62,10 @@ abstract class GenericityWitnessConformanceTestCase extends JsonApiFunctionalTes
         $data = $this->dataOf($response);
         self::assertSame('tags', $data['type'] ?? null);
 
+        // Store-provided id: the create omits `data.id` and the store assigns the next
+        // sequential id past the two seeded tags — a predictable 3 on both providers.
         $id = $data['id'] ?? null;
-        self::assertIsString($id);
-        self::assertNotSame('', $id);
+        self::assertSame('3', $id);
 
         self::assertSame('https://example.test/tags/' . $id, $response->headers->get('Location'));
 
@@ -77,10 +78,10 @@ abstract class GenericityWitnessConformanceTestCase extends JsonApiFunctionalTes
     #[Group('spec:crud')]
     public function updatingATagReturns200AndPersists(): void
     {
-        $response = $this->handle('/tags/t1', 'PATCH', [
+        $response = $this->handle('/tags/1', 'PATCH', [
             'data' => [
                 'type' => 'tags',
-                'id' => 't1',
+                'id' => '1',
                 'attributes' => ['name' => 'PHP 8'],
             ],
         ]);
@@ -88,7 +89,7 @@ abstract class GenericityWitnessConformanceTestCase extends JsonApiFunctionalTes
         self::assertSame(200, $response->getStatusCode());
         self::assertSame('PHP 8', $this->attributesOf($response)['name'] ?? null);
 
-        $fetched = $this->attributesOf($this->handle('/tags/t1'));
+        $fetched = $this->attributesOf($this->handle('/tags/1'));
         self::assertSame('PHP 8', $fetched['name'] ?? null);
     }
 
@@ -96,15 +97,15 @@ abstract class GenericityWitnessConformanceTestCase extends JsonApiFunctionalTes
     #[Group('spec:crud')]
     public function deletingATagReturns204AndThenItIsGone(): void
     {
-        self::assertSame(204, $this->handle('/tags/t1', 'DELETE')->getStatusCode());
-        self::assertSame(404, $this->handle('/tags/t1')->getStatusCode());
+        self::assertSame(204, $this->handle('/tags/1', 'DELETE')->getStatusCode());
+        self::assertSame(404, $this->handle('/tags/1')->getStatusCode());
     }
 
     #[Test]
     #[Group('spec:fetching-relationships')]
     public function theRelatedEndpointRendersNullForAnUnlinkedToOne(): void
     {
-        $response = $this->handle('/tags/t2/article');
+        $response = $this->handle('/tags/2/article');
 
         self::assertSame(200, $response->getStatusCode());
         $document = $this->decode($response);
@@ -116,7 +117,7 @@ abstract class GenericityWitnessConformanceTestCase extends JsonApiFunctionalTes
     #[Group('spec:fetching-relationships')]
     public function theRelationshipLinkageEndpointRendersNullForAnUnlinkedToOne(): void
     {
-        $response = $this->handle('/tags/t2/relationships/article');
+        $response = $this->handle('/tags/2/relationships/article');
 
         self::assertSame(200, $response->getStatusCode());
         $document = $this->decode($response);

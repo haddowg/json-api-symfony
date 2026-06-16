@@ -97,7 +97,7 @@ final class LibraryItemsProvider implements DataProviderInterface
         // On the way out of a library fetch, fill its non-mapped items list so the
         // linkage endpoint and ?include render the mixed members off the parent.
         if ($entity instanceof Library) {
-            $entity->items = $this->resolveItems($entity->id);
+            $entity->items = $this->resolveItems((string) $entity->id);
         }
 
         return $entity;
@@ -110,7 +110,7 @@ final class LibraryItemsProvider implements DataProviderInterface
         if ($type === self::PARENT_TYPE) {
             foreach ($result->items as $library) {
                 if ($library instanceof Library) {
-                    $library->items = $this->resolveItems($library->id);
+                    $library->items = $this->resolveItems((string) $library->id);
                 }
             }
         }
@@ -136,7 +136,7 @@ final class LibraryItemsProvider implements DataProviderInterface
         $members = $relation->readValue($parent, $request);
         $members = \is_iterable($members)
             ? (\is_array($members) ? \array_values($members) : \iterator_to_array($members, false))
-            : $this->resolveItems($parent->id);
+            : $this->resolveItems((string) $parent->id);
 
         // No shared filter/sort vocabulary across mixed member types, so the criteria
         // only ever carry a window: apply (a no-op for filters/sorts) then page with

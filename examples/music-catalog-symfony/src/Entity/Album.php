@@ -21,12 +21,18 @@ use Doctrine\ORM\Mapping as ORM;
  * sub-object. The `availableFrom`/`availableUntil` pair backs the directional
  * `CompareField` (availableUntil GreaterThan availableFrom).
  *
- * The id is application-assigned. Not `final` so Doctrine may proxy it.
+ * The id is a database-assigned auto-increment integer (the store-provided default).
+ * Not `final` so Doctrine may proxy it.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'album')]
 class Album
 {
+    #[ORM\Id]
+    #[ORM\GeneratedValue(strategy: 'AUTO')]
+    #[ORM\Column]
+    public ?int $id = null;
+
     /**
      * The inverse side of the track→album association: an album's tracks, mapped
      * by {@see Track}'s owning `album` reference.
@@ -40,9 +46,6 @@ class Album
      * @param array<string, mixed>|null $releaseInfo
      */
     public function __construct(
-        #[ORM\Id]
-        #[ORM\Column]
-        public string $id = '',
         #[ORM\Column]
         public string $title = '',
         #[ORM\Column(type: 'float', nullable: true)]

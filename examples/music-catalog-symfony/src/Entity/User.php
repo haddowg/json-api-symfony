@@ -17,12 +17,18 @@ use Doctrine\ORM\Mapping as ORM;
  * column behind an `ArrayHash`; `password`/`passwordConfirm` are write-only on the
  * resource. The `library` OneToOne is the owning side carrying the FK.
  *
- * The id is application-assigned. Not `final` so Doctrine may proxy it.
+ * The id is a database-assigned auto-increment integer (the store-provided default).
+ * Not `final` so Doctrine may proxy it.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'app_user')]
 class User
 {
+    #[ORM\Id]
+    #[ORM\GeneratedValue(strategy: 'AUTO')]
+    #[ORM\Column]
+    public ?int $id = null;
+
     /**
      * The inverse side of the playlist→owner association: a user's playlists,
      * mapped by {@see Playlist}'s owning `owner` reference.
@@ -36,9 +42,6 @@ class User
      * @param array<string, mixed> $preferences
      */
     public function __construct(
-        #[ORM\Id]
-        #[ORM\Column]
-        public string $id = '',
         #[ORM\Column(unique: true)]
         public string $email = '',
         #[ORM\Column(name: 'display_name')]

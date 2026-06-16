@@ -12,7 +12,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App;
 final class Comment
 {
     public function __construct(
-        public string $id = '',
+        public ?int $id = null,
         public string $body = '',
     ) {}
 }

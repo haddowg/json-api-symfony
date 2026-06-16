@@ -244,9 +244,10 @@ final class IncludePreloadTest extends MusicCatalogKernelTestCase
         \assert($entityManager instanceof EntityManagerInterface);
 
         for ($a = 0; $a < self::EXTRA_ARTISTS; ++$a) {
-            $artistId = \sprintf('extra-artist-%d', $a);
+            // Store-provided ids: the DB assigns each row's auto-increment integer on
+            // flush — the suite only references the base-seed ids (album/track 1), so
+            // the extra rows need no fixed ids.
             $artist = new Artist(
-                id: $artistId,
                 name: \sprintf('Extra Artist %d', $a),
                 slug: \sprintf('extra-artist-%d', $a),
                 trackCount: 4,
@@ -256,7 +257,6 @@ final class IncludePreloadTest extends MusicCatalogKernelTestCase
 
             for ($b = 0; $b < 2; ++$b) {
                 $album = new Album(
-                    id: \sprintf('extra-album-%d-%d', $a, $b),
                     title: \sprintf('Extra Album %d-%d', $a, $b),
                     published: true,
                     artist: $artist,
@@ -265,7 +265,6 @@ final class IncludePreloadTest extends MusicCatalogKernelTestCase
 
                 for ($t = 0; $t < 2; ++$t) {
                     $track = new Track(
-                        id: \sprintf('extra-track-%d-%d-%d', $a, $b, $t),
                         title: \sprintf('Extra Track %d-%d-%d', $a, $b, $t),
                         trackNumber: $t + 1,
                         length_seconds: 200,

@@ -19,15 +19,24 @@ final class WritableTagFactory
     public static function createProvider(): InMemoryDataProvider
     {
         $tags = [
-            't1' => new Tag('t1', 'PHP'),
-            't2' => new Tag('t2', 'Testing'),
+            '1' => new Tag(1, 'PHP'),
+            '2' => new Tag(2, 'Testing'),
         ];
 
-        return new InMemoryDataProvider('tags', $tags, static function (object $item): string {
-            \assert($item instanceof Tag);
+        return new InMemoryDataProvider(
+            'tags',
+            $tags,
+            static function (object $item): string {
+                \assert($item instanceof Tag);
 
-            return $item->id;
-        });
+                return $item->id === null ? '' : (string) $item->id;
+            },
+            static function (object $item, string $id): void {
+                \assert($item instanceof Tag);
+
+                $item->id = (int) $id;
+            },
+        );
     }
 
     public static function createPersister(InMemoryDataProvider $provider): InMemoryDataPersister

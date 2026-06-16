@@ -20,8 +20,8 @@ final class GizmoFactory
             'g1' => new Gizmo(
                 'g1',
                 'Widget',
-                new Author('a1', 'Ada'),
-                [new Comment('c1', 'First'), new Comment('c2', 'Nice')],
+                new Author(1, 'Ada'),
+                [new Comment(1, 'First'), new Comment(2, 'Nice')],
             ),
         ];
 

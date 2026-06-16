@@ -72,7 +72,9 @@ final class PlaylistHydrator extends AbstractHydrator
     }
 
     /**
-     * The resource opts in to client-generated ids, so a client UUID is accepted.
+     * This custom hydrator accepts a client-supplied UUID (the resource also declares
+     * `uuid()` so the wire format is validated before this runs); when a create omits
+     * the id, {@see generateId()} mints one.
      */
     protected function validateClientGeneratedId(string $clientGeneratedId, JsonApiRequestInterface $request): void
     {

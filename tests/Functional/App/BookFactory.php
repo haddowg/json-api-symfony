@@ -16,13 +16,22 @@ final class BookFactory
 {
     public static function createProvider(): InMemoryDataProvider
     {
-        $books = ['b1' => new Book('b1', 'JSON:API at Work')];
+        $books = ['1' => new Book(1, 'JSON:API at Work')];
 
-        return new InMemoryDataProvider('book', $books, static function (object $item): string {
-            \assert($item instanceof Book);
+        return new InMemoryDataProvider(
+            'book',
+            $books,
+            static function (object $item): string {
+                \assert($item instanceof Book);
 
-            return $item->id;
-        });
+                return $item->id === null ? '' : (string) $item->id;
+            },
+            static function (object $item, string $id): void {
+                \assert($item instanceof Book);
+
+                $item->id = (int) $id;
+            },
+        );
     }
 
     public static function createPersister(InMemoryDataProvider $provider): InMemoryDataPersister

@@ -273,7 +273,8 @@ final class RelationshipMutationTest extends MusicCatalogKernelTestCase
         $favorite = $entityManager->find(Favorite::class, $favoriteId);
         self::assertInstanceOf(Favorite::class, $favorite);
 
-        return $favorite->user?->id;
+        // The user id is a store-provided integer; compare it as the wire string.
+        return $favorite->user?->id === null ? null : (string) $favorite->user->id;
     }
 
     private function entityManager(): EntityManagerInterface

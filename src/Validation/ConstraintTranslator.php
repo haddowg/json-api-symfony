@@ -29,10 +29,12 @@ use haddowg\JsonApi\Resource\Constraint\NotIn;
 use haddowg\JsonApi\Resource\Constraint\Pattern;
 use haddowg\JsonApi\Resource\Constraint\Sequentially;
 use haddowg\JsonApi\Resource\Constraint\SlugFormat;
+use haddowg\JsonApi\Resource\Constraint\UlidFormat;
 use haddowg\JsonApi\Resource\Constraint\UniqueItems;
 use haddowg\JsonApi\Resource\Constraint\UrlFormat;
 use haddowg\JsonApi\Resource\Constraint\UuidFormat;
 use haddowg\JsonApi\Resource\Constraint\When;
+use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApiBundle\Validation\Constraint\UniqueEntity;
 use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity as DoctrineUniqueEntity;
 use Symfony\Component\Validator\Constraint;
@@ -51,6 +53,7 @@ use Symfony\Component\Validator\Constraints\LessThan;
 use Symfony\Component\Validator\Constraints\LessThanOrEqual;
 use Symfony\Component\Validator\Constraints\Regex;
 use Symfony\Component\Validator\Constraints\Sequentially as SymfonySequentially;
+use Symfony\Component\Validator\Constraints\Ulid as SymfonyUlid;
 use Symfony\Component\Validator\Constraints\Unique;
 use Symfony\Component\Validator\Constraints\Url;
 use Symfony\Component\Validator\Constraints\Uuid;
@@ -125,6 +128,7 @@ final class ConstraintTranslator
             $constraint instanceof EmailFormat => [$this->email($constraint)],
             $constraint instanceof UrlFormat => [$this->url($constraint)],
             $constraint instanceof UuidFormat => [$this->uuid($constraint)],
+            $constraint instanceof UlidFormat => [$this->ulid()],
             $constraint instanceof IpFormat => [new Ip(version: match ($constraint->version) {
                 4 => Ip::V4,
                 6 => Ip::V6,
@@ -366,6 +370,21 @@ final class ConstraintTranslator
         }
 
         return new Uuid(versions: [$version]);
+    }
+
+    /**
+     * Translates {@see UlidFormat}. symfony/validator ships a dedicated `Ulid`
+     * constraint (since 5.4); where it is present it is used, otherwise the
+     * Crockford-base32 pattern is enforced with a {@see Regex} so the constraint
+     * still has teeth on a validator build that predates it.
+     */
+    private function ulid(): Constraint
+    {
+        if (\class_exists(SymfonyUlid::class)) {
+            return new SymfonyUlid();
+        }
+
+        return new Regex(pattern: $this->delimit('^' . Id::ULID_FORMAT_PATTERN . '$'));
     }
 
     /**

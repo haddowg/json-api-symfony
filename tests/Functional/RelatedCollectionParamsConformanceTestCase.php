@@ -38,10 +38,10 @@ abstract class RelatedCollectionParamsConformanceTestCase extends JsonApiFunctio
     public function aRelatedToManyCollectionSortsByTheRelatedVocabulary(): void
     {
         // sort=-body is byte-desc on the comment body: "Nice write-up." > "First!"
-        // so c2 precedes c1 — sorting against the comments vocabulary, not articles.
+        // so comment 2 precedes comment 1 — sorting against the comments vocabulary, not articles.
         $document = $this->fetchDocument('/articles/1/comments?sort=-body');
 
-        self::assertSame(['c2', 'c1'], $this->ids($document));
+        self::assertSame(['2', '1'], $this->ids($document));
     }
 
     #[Test]
@@ -52,7 +52,7 @@ abstract class RelatedCollectionParamsConformanceTestCase extends JsonApiFunctio
         // filter[body] is the comments filter declared on BaseCommentResource.
         $document = $this->fetchDocument('/articles/1/comments?filter[body]=First!');
 
-        self::assertSame(['c1'], $this->ids($document));
+        self::assertSame(['1'], $this->ids($document));
     }
 
     #[Test]
@@ -61,10 +61,10 @@ abstract class RelatedCollectionParamsConformanceTestCase extends JsonApiFunctio
     public function aPerRelationPaginatedRelatedCollectionWindowsAndCarriesPageMeta(): void
     {
         // pagedComments carries a per-relation PagePaginator: page 1 of size 1 is
-        // exactly c1, with page meta and navigation links scoped to the request path.
+        // exactly comment 1, with page meta and navigation links scoped to the request path.
         $document = $this->fetchDocument('/articles/1/pagedComments?page[size]=1&page[number]=1');
 
-        self::assertSame(['c1'], $this->ids($document));
+        self::assertSame(['1'], $this->ids($document));
 
         $meta = $document['meta'] ?? null;
         self::assertIsArray($meta);
@@ -89,10 +89,10 @@ abstract class RelatedCollectionParamsConformanceTestCase extends JsonApiFunctio
     #[Group('spec:fetching-pagination')]
     public function aPerRelationPaginatedRelatedCollectionComposesSortThenPage(): void
     {
-        // Sort desc first (c2, c1), then take the first page of size 1 → c2.
+        // Sort desc first (comment 2, comment 1), then take the first page of size 1 → comment 2.
         $document = $this->fetchDocument('/articles/1/pagedComments?sort=-body&page[size]=1');
 
-        self::assertSame(['c2'], $this->ids($document));
+        self::assertSame(['2'], $this->ids($document));
     }
 
     #[Test]
@@ -106,7 +106,7 @@ abstract class RelatedCollectionParamsConformanceTestCase extends JsonApiFunctio
         // All members render, now with page meta from that default.
         $document = $this->fetchDocument('/articles/1/comments');
 
-        self::assertSame(['c1', 'c2'], $this->ids($document));
+        self::assertSame(['1', '2'], $this->ids($document));
 
         $meta = $document['meta'] ?? null;
         self::assertIsArray($meta);
@@ -123,7 +123,7 @@ abstract class RelatedCollectionParamsConformanceTestCase extends JsonApiFunctio
         // honoured: meta.page.perPage reflects the cap and the response is 200.
         $document = $this->fetchDocument('/articles/1/comments?page[size]=1000000');
 
-        self::assertSame(['c1', 'c2'], $this->ids($document));
+        self::assertSame(['1', '2'], $this->ids($document));
 
         $meta = $document['meta'] ?? null;
         self::assertIsArray($meta);

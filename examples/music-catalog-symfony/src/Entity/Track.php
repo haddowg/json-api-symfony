@@ -17,12 +17,18 @@ use Doctrine\ORM\Mapping as ORM;
  * `ArrayList`. `playlists` is the owning side of the tracks↔playlists pivot
  * (the inverse `tracks` lives on {@see Playlist}).
  *
- * The id is application-assigned. Not `final` so Doctrine may proxy it.
+ * The id is a database-assigned auto-increment integer (the store-provided default).
+ * Not `final` so Doctrine may proxy it.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'track')]
 class Track
 {
+    #[ORM\Id]
+    #[ORM\GeneratedValue(strategy: 'AUTO')]
+    #[ORM\Column]
+    public ?int $id = null;
+
     /**
      * The owning side of the tracks↔playlists ManyToMany. The pivot's
      * `position`/`addedAt` fields are declare-only metadata in 1.0, so the
@@ -38,9 +44,6 @@ class Track
      * @param list<string> $genres
      */
     public function __construct(
-        #[ORM\Id]
-        #[ORM\Column]
-        public string $id = '',
         #[ORM\Column]
         public string $title = '',
         #[ORM\Column(type: 'integer')]

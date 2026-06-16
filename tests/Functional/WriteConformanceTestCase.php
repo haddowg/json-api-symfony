@@ -41,9 +41,12 @@ abstract class WriteConformanceTestCase extends JsonApiFunctionalTestCase
         $data = $this->dataOf($response);
         self::assertSame('articles', $data['type'] ?? null);
 
+        // The id is store-provided: the create omits `data.id` and the store assigns
+        // the next sequential id past the five seeded rows. It is predictable (6) on
+        // BOTH providers — the in-memory sequence and the Doctrine auto-increment both
+        // continue past the seed — and round-trips through the response and a re-fetch.
         $id = $data['id'] ?? null;
-        self::assertIsString($id);
-        self::assertNotSame('', $id);
+        self::assertSame('6', $id);
 
         self::assertSame('https://example.test/articles/' . $id, $response->headers->get('Location'));
 

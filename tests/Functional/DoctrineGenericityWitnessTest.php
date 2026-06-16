@@ -26,8 +26,10 @@ final class DoctrineGenericityWitnessTest extends GenericityWitnessConformanceTe
         $schemaTool = new SchemaTool($entityManager);
         $schemaTool->createSchema($entityManager->getMetadataFactory()->getAllMetadata());
 
-        TagEntityFactory::createOne(['id' => 't1', 'name' => 'PHP']);
-        TagEntityFactory::createOne(['id' => 't2', 'name' => 'Testing']);
+        // No explicit id: the store-provided `AUTO` column assigns 1 then 2 in
+        // insertion order against the freshly recreated schema.
+        TagEntityFactory::createOne(['name' => 'PHP']);
+        TagEntityFactory::createOne(['name' => 'Testing']);
 
         $entityManager->clear();
     }

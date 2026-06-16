@@ -48,12 +48,12 @@ final class ArticleProviderFactory
     {
         $authors = [];
         foreach (ArticleFixtures::authors() as $id => $author) {
-            $authors[(string) $id] = new Author((string) $id, $author['name']);
+            $authors[(string) $id] = new Author((int) $id, $author['name']);
         }
 
         $comments = [];
         foreach (ArticleFixtures::comments() as $id => $comment) {
-            $comments[(string) $id] = new Comment((string) $id, $comment['body']);
+            $comments[(string) $id] = new Comment((int) $id, $comment['body']);
         }
 
         $relationships = ArticleFixtures::relationships();
@@ -71,7 +71,7 @@ final class ArticleProviderFactory
             $articleEditors = self::pickAuthors($authors, $editors[$id] ?? []);
 
             $articles[$id] = new Article(
-                $id,
+                (int) $id,
                 $article['title'],
                 $article['body'],
                 $article['category'],

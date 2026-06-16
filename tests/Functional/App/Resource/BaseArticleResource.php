@@ -55,6 +55,10 @@ abstract class BaseArticleResource extends AbstractResource
     public function fields(): array
     {
         return [
+            // Store-provided id: the `articles` entity keys on a database
+            // auto-increment, so a create omits `data.id` and the store assigns the
+            // next sequential int (rendered as a string on the wire) — the realistic,
+            // common pattern. `Id::make()` sets nothing on create (core ADR 0048).
             Id::make(),
             Str::make('title')->sortable()->required()->minLength(3)->maxLength(50),
             Str::make('body'),

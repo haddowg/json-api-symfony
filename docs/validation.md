@@ -75,9 +75,10 @@ The first pass runs **before hydration**, against the request's
 to `/data/attributes/<name>` without first reshaping the entity. The work lives in
 [`ResourceValidator::validate()`](../src/Validation/ResourceValidator.php).
 
-For each attribute field (the `Id` field and relationships are skipped; read-only
-fields are skipped per create/update context), the bridge builds one Symfony
-`Collection` field entry, then validates the attributes array against a
+For each attribute field (the `Id` field and relationships are not attributes, so
+they are validated separately — see [id format, below](#id-format-both-directions);
+read-only fields are skipped per create/update context), the bridge builds one
+Symfony `Collection` field entry, then validates the attributes array against a
 `Collection(fields: …, allowExtraFields: true)` — unknown attributes are ignored,
 matching the hydrator.
 
@@ -149,6 +150,33 @@ Content-Type: application/vnd.api+json
     "source": { "pointer": "/data/attributes/trackNumber" } }
 ] }
 ```
+
+## Id format (both directions)
+
+The `Id` field's format shortcuts (`uuid()`/`ulid()`/`numeric()`/`pattern()`)
+declare a format constraint the bridge enforces on a write — on the **wire** id,
+before any [encoder decode](resources.md#encoded-resource-ids) — in two directions:
+
+| What | Validated against | Pointer |
+|---|---|---|
+| a client-supplied `data.id` | the **owning** resource's id format | `/data/id` |
+| a relationship linkage id (`{ "type": T, "id": X }`) in a whole-resource write | the **related** type `T`'s id format | `/data/relationships/<rel>/data[/<n>]/id` |
+| a linkage id at a relationship-mutation endpoint (`PATCH`/`POST`/`DELETE …/relationships/{rel}`) | the **related** type `T`'s id format | `/data/id` or `/data/<n>/id` |
+
+For a polymorphic relation the format is resolved from each linkage's own `type`
+member. The bridge resolves a type → its resource → `Id` field → declared format
+constraints through the shared `IdEncoderResolver`, then runs them through the same
+`ConstraintTranslator`. A type whose id declares no format passes any id; a
+generated or store-provided id never reaches this pass (only a client wire id does).
+
+The owning-`data.id` check only runs when the type **accepts** a client id
+(`allowClientId()` / `requireClientId()`). A type that forbids client ids (the
+default) rejects *any* supplied id with a `403` `ClientGeneratedIdNotSupported`
+regardless of its format — so the bridge does not pre-empt that uniform `403` with a
+`422` for malformed ids only. The linkage checks run on both whole-resource writes
+and the dedicated relationship-mutation endpoints, so an identical malformed linkage
+id `422`s on either surface. The work lives in `ResourceValidator::ownIdError()` /
+`linkageErrors()` / `validateRelationshipLinkage()`.
 
 ## The constraint-translation map
 

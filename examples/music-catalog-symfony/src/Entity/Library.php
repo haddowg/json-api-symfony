@@ -17,12 +17,18 @@ use Doctrine\ORM\Mapping as ORM;
  * non-mapped {@see $items} property; `$owner` is the inverse side of the
  * user↔library OneToOne (the FK lives on {@see User}).
  *
- * The id is application-assigned. Not `final` so Doctrine may proxy it.
+ * The id is a database-assigned auto-increment integer (the store-provided default).
+ * Not `final` so Doctrine may proxy it.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'library')]
 class Library
 {
+    #[ORM\Id]
+    #[ORM\GeneratedValue(strategy: 'AUTO')]
+    #[ORM\Column]
+    public ?int $id = null;
+
     /**
      * The inverse side of the user↔library OneToOne; the owning FK is on
      * {@see User::$library}.
@@ -40,10 +46,4 @@ class Library
      * @var list<object>
      */
     public array $items = [];
-
-    public function __construct(
-        #[ORM\Id]
-        #[ORM\Column]
-        public string $id = '',
-    ) {}
 }

@@ -48,7 +48,7 @@ final class EndpointExposureTest extends JsonApiFunctionalTestCase
     public function aPostAddToACannotAddToManyIsForbidden(): void
     {
         $response = $this->handle('/gizmos/g1/relationships/lockedComments', 'POST', [
-            'data' => [['type' => 'comments', 'id' => 'c1']],
+            'data' => [['type' => 'comments', 'id' => '1']],
         ]);
 
         self::assertSame(403, $response->getStatusCode());
