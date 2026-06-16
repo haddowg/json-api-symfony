@@ -49,7 +49,9 @@
         "symfony/framework-bundle": "^6.4 || ^7.0",
         "symfony/intl": "^6.4 || ^7.0",
         "symfony/security-bundle": "^6.4 || ^7.0",
+        "symfony/security-core": "^6.4 || ^7.0",
         "symfony/validator": "^6.4 || ^7.0",
+        "symfony/var-exporter": "^6.4 || ^7.0",
         "symfony/yaml": "^6.4 || ^7.0",
         "zenstruck/foundry": "^2.10"
     },
