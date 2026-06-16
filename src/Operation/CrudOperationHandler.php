@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Operation;
 
+use haddowg\JsonApi\Collection\CursorCollectionResult;
 use haddowg\JsonApi\Exception\AdditionProhibited;
 use haddowg\JsonApi\Exception\FullReplacementProhibited;
 use haddowg\JsonApi\Exception\RelationshipNotExists;
@@ -23,13 +24,14 @@ use haddowg\JsonApi\Operation\QueryParameters;
 use haddowg\JsonApi\Operation\RemoveFromRelationshipOperation;
 use haddowg\JsonApi\Operation\UpdateRelationshipOperation;
 use haddowg\JsonApi\Operation\UpdateResourceOperation;
+use haddowg\JsonApi\Pagination\CursorPaginator;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Resource\Field\Accessor;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\SupportsSingular;
-use haddowg\JsonApi\Resource\Sort\SortInterface;
 use haddowg\JsonApi\Response\DataResponse;
 use haddowg\JsonApi\Response\ErrorResponse;
 use haddowg\JsonApi\Response\IdentifierResponse;
@@ -44,9 +46,9 @@ use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
 use haddowg\JsonApiBundle\DataProvider\PivotAwareProviderInterface;
-use haddowg\JsonApiBundle\DataProvider\PivotFields;
-use haddowg\JsonApiBundle\DataProvider\PreloadsIncludesInterface;
+use haddowg\JsonApiBundle\DataProvider\RelatedIncludeBatcher;
 use haddowg\JsonApiBundle\DataProvider\RelationCountBatcher;
+use haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory;
 use haddowg\JsonApiBundle\DataProvider\RelationshipWindowBatcher;
 use haddowg\JsonApiBundle\Event\AfterCreateEvent;
 use haddowg\JsonApiBundle\Event\AfterDeleteEvent;
@@ -151,6 +153,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         private readonly DataProviderRegistry $providers,
         private readonly DataPersisterRegistry $persisters,
         private readonly TypeMetadataResolver $types,
+        private readonly RelationCriteriaFactory $relationCriteria,
         private readonly ?ResourceValidator $validator = null,
         private readonly ?EventDispatcherInterface $dispatcher = null,
         private readonly ?FilterValueValidator $filterValues = null,
@@ -158,6 +161,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         private readonly ?RequestScopedRelationshipCount $relationshipCount = null,
         private readonly ?RelationshipWindowBatcher $windowBatcher = null,
         private readonly ?RequestScopedRelationshipPagination $relationshipPagination = null,
+        private readonly ?RelatedIncludeBatcher $includeBatcher = null,
     ) {}
 
     public function handle(\haddowg\JsonApi\Operation\JsonApiOperationInterface $operation): DataResponse|RelatedResponse|IdentifierResponse|NoContentResponse|ErrorResponse
@@ -236,7 +240,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // without the optional validator, or for a filter with no declared
         // constraints; only the raw requested values are checked, never an
         // author-set default (ADR 0048).
-        $this->validateFilterValues($operation->queryParameters(), $filters);
+        $this->validateFilterValues($operation->queryParameters()->filter, $filters);
 
         // A singular filter the client applied collapses the collection to a
         // zero-to-one response — a single resource (the first match) or null,
@@ -291,6 +295,34 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // count per relation (no N+1), so every parent's relationship objects render
         // meta.total (bundle ADR 0052).
         $this->applyRelationshipCounts($server, $type, $items, $request);
+
+        // A cursor (keyset) page: the provider minted the boundary tokens (it owns
+        // the row → boundary-value reader), so render through the paginator's cursor
+        // path (CursorPaginator::fromBoundaries) carrying the pre-minted prev/next
+        // tokens + the has-flags. `from`/`to` are the wire ids of the first/last
+        // rendered rows (meta.page.from/to). This is the only total-null primary
+        // path (a primary collection is otherwise always countable), so the offset
+        // and fromCollection branches below stay byte-identical (bundle ADR 0063).
+        if ($result instanceof CursorCollectionResult && $paginator instanceof CursorPaginator && $request !== null) {
+            $from = $items === [] ? null : $serializer->getId($items[0]);
+            $to = $items === [] ? null : $serializer->getId($items[\array_key_last($items)]);
+
+            $response = DataResponse::fromPage(
+                $paginator->fromBoundaries(
+                    $request,
+                    $items,
+                    $result->cursorBefore ?? '',
+                    $result->cursorAfter ?? '',
+                    $result->hasMore,
+                    $result->hasPrevious,
+                    from: $from,
+                    to: $to,
+                ),
+                $serializer,
+            );
+
+            return $this->afterFetchCollection($response, $type, $request, $items);
+        }
 
         $response = $paginator !== null && $request !== null && $result->total !== null
             ? DataResponse::fromPage($paginator->paginate($request, $items, $result->total), $serializer)
@@ -412,9 +444,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // server default) applies, and members render through a
             // PolymorphicSerializer that resolves each member's serializer.
             $relatedResource = $polymorphic ? null : $this->types->resourceFor($server, $relatedType);
-            $paginator = $relation->pagination()
-                ?? $relatedResource?->pagination()
-                ?? $server->defaultPaginator();
+            $paginator = $this->relationCriteria->paginatorFor($relation, $relatedResource, $server);
             $window = $paginator?->window($request);
 
             $relatedProvider = $this->providers->forType($relatedType);
@@ -431,18 +461,23 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 && $relatedProvider->supportsPivot($relatedType, $relation);
 
             // The related-collection endpoint resolves `?filter`/`?sort` against the
-            // related resource's vocabulary *merged* with the relation's own
-            // scoped filters()/sorts() — extra filters/sorts a relation declares for
-            // this ONE relationship endpoint (core ADR 0051), never reachable on the
-            // primary /{relatedType} collection — plus, for a pivot relation, the
-            // pivot field keys. The merge happens here (not in the provider) so the
-            // scoping is a pure host concern, and on a key clash the relation's
-            // declaration wins (the more specific scope). The merged vocabulary rides
-            // the CollectionCriteria, so both providers' existing handlers apply it
-            // unchanged (ADR 0044).
-            $mergedFilters = $this->mergeFilters(
-                $this->mergeFilters($relatedResource?->filters() ?? [], $relation->filters()),
-                $pivot ? PivotFields::filtersFor($relation) : [],
+            // related resource's vocabulary *merged* with the relation's own scoped
+            // filters()/sorts() — extra filters/sorts a relation declares for this ONE
+            // relationship endpoint (core ADR 0051), never reachable on the primary
+            // /{relatedType} collection — plus, for a pivot relation, the pivot field
+            // keys. The merge + criteria assembly + the 3-tier paginator chain are
+            // owned by the RelationCriteriaFactory, shared verbatim with the
+            // include/linkage windowing path (bundle ADR 0057). The merged vocabulary
+            // rides the CollectionCriteria, so both providers' existing handlers apply
+            // it unchanged (ADR 0044), and the related resource's default order applies
+            // to its sub-collection when the request sends no `sort` (a polymorphic
+            // to-many has no single related resource, so no default).
+            $criteria = $this->relationCriteria->criteriaFor(
+                $operation->queryParameters(),
+                $relatedResource,
+                $relation,
+                $window,
+                includePivotFields: $pivot,
             );
 
             // The related endpoint validates a client-supplied filter value against
@@ -451,21 +486,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // scoped filters, and any pivot filters), so a relation-scoped or
             // related-resource constrained filter rejects a mistyped value with the
             // same 400 (ADR 0048).
-            $this->validateFilterValues($operation->queryParameters(), $mergedFilters);
-
-            $criteria = new CollectionCriteria(
-                $operation->queryParameters(),
-                $mergedFilters,
-                $this->mergeSorts(
-                    $this->mergeSorts($relatedResource?->allSorts() ?? [], $relation->sorts()),
-                    $pivot ? PivotFields::sortsFor($relation) : [],
-                ),
-                $window,
-                // The related resource's default order applies to its related
-                // sub-collection too when the request sends no `sort` (core ADR
-                // 0044); a polymorphic to-many has no single related resource.
-                $relatedResource?->defaultSort() ?? [],
-            );
+            $this->validateFilterValues($operation->queryParameters()->filter, $criteria->filters);
 
             if ($pivot) {
                 \assert($relatedProvider instanceof PivotAwareProviderInterface);
@@ -543,6 +564,53 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // back to the first registered serializer and the response renders
         // `data: null`.
         $related = $relation->readValue($parent, $request);
+
+        // A polymorphic to-one (MorphTo) has no single related resource and so no shared
+        // filter vocabulary — ANY requested filter key is unrecognised, exactly as the
+        // polymorphic to-many path 400s through CriteriaApplier. There is no criteria to
+        // run, so the offending key is surfaced directly as the same `400`
+        // {@see \haddowg\JsonApi\Exception\FilterParamUnrecognized} (source.parameter
+        // `filter[<key>]`). Gated on the merged requested filter being present (not on
+        // `\is_object($related)`), so a filter on an empty polymorphic to-one still 400s
+        // (bundle ADR 0068 follow-up #1).
+        if ($polymorphic) {
+            $filter = $this->toOneRequestedFilter($operation->queryParameters(), $relation, $request);
+            if ($filter !== []) {
+                throw new \haddowg\JsonApi\Exception\FilterParamUnrecognized(\array_key_first($filter));
+            }
+        }
+
+        // A relation filter that excludes the single related object nulls the to-one,
+        // so it renders `data: null` and contributes nothing — the to-one twin of the
+        // to-many endpoint's filtered collection (bundle ADR 0068). The filter is the
+        // operation's own `?filter` (a direct GET /{type}/{id}/{toOneRel}?filter[…])
+        // merged with any relatedQuery[<rel>][filter] for this path, resolved against the
+        // SAME merged vocabulary the to-many endpoint uses, validated the same (unknown
+        // key / mistyped value → the endpoint's 400). Monomorphic only: a polymorphic
+        // to-one has no single related resource and so no shared filter vocabulary.
+        if (\is_object($related) && !$polymorphic) {
+            $filter = $this->toOneRequestedFilter($operation->queryParameters(), $relation, $request);
+            if ($filter !== []) {
+                $relatedResource = $this->types->resourceFor($server, $relatedType);
+                $criteria = $this->relationCriteria->criteriaFor(
+                    new QueryParameters(fields: [], includes: [], sort: [], filter: $filter, pagination: $request->getPagination()),
+                    $relatedResource,
+                    $relation,
+                    null,
+                    includePivotFields: false,
+                );
+                // Validate the MERGED requested filter map (the operation's own `?filter`
+                // ⊕ the relatedQuery `[filter]` already driven into the criteria), so a
+                // mistyped relatedQuery filter value is the endpoint's same 400, not just
+                // a mistyped `?filter` value (bundle ADR 0068 follow-up #2).
+                $this->validateFilterValues($filter, $criteria->filters);
+
+                if (!$this->providers->forType($relatedType)->relatedToOneMatches($relatedType, $related, $relation, $criteria, $request)) {
+                    $related = null;
+                }
+            }
+        }
+
         $serializer = $relation->resolveSerializer($related, $server) ?? $server->serializerFor($relatedType);
 
         // Batch eager-load the related resource's own ?include tree (a single
@@ -558,49 +626,18 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
     }
 
     /**
-     * Merges the related resource's filter vocabulary with the relation's own
-     * scoped {@see RelationInterface::filters()} for the related-collection endpoint,
-     * keyed by {@see FilterInterface::key()} so a clash resolves to the relation's
-     * declaration (the more specific scope wins, core ADR 0051). The relation's
-     * filters are appended last, so they override a same-keyed related-resource
-     * filter; returned as a list for the {@see CollectionCriteria}.
+     * The requested `filter[…]` for a to-one related/relationship endpoint: the
+     * operation's own `?filter` (a direct `GET /{type}/{id}/{toOneRel}?filter[…]`)
+     * merged with any `relatedQuery[<rel>][filter]` addressed to this relation's path
+     * under the negotiated Relationship Queries profile, the relatedQuery taking
+     * precedence on a key clash (the profile param is the more specific address). Empty
+     * when neither is present, so the to-one renders unconditionally (the common case).
      *
-     * @param list<FilterInterface> $resourceFilters
-     * @param list<FilterInterface> $relationFilters
-     *
-     * @return list<FilterInterface>
+     * @return array<string, mixed>
      */
-    private function mergeFilters(array $resourceFilters, array $relationFilters): array
+    private function toOneRequestedFilter(QueryParameters $queryParameters, RelationInterface $relation, JsonApiRequestInterface $request): array
     {
-        $merged = [];
-        foreach ([...$resourceFilters, ...$relationFilters] as $filter) {
-            $merged[$filter->key()] = $filter;
-        }
-
-        return \array_values($merged);
-    }
-
-    /**
-     * Merges the related resource's sort vocabulary with the relation's own scoped
-     * {@see RelationInterface::sorts()} for the related-collection endpoint, keyed by
-     * {@see SortInterface::key()} so a clash resolves to the relation's declaration
-     * (the more specific scope wins, core ADR 0051). The relation's sorts are
-     * appended last, so they override a same-keyed related-resource sort; returned
-     * as a list for the {@see CollectionCriteria}.
-     *
-     * @param list<SortInterface> $resourceSorts
-     * @param list<SortInterface> $relationSorts
-     *
-     * @return list<SortInterface>
-     */
-    private function mergeSorts(array $resourceSorts, array $relationSorts): array
-    {
-        $merged = [];
-        foreach ([...$resourceSorts, ...$relationSorts] as $sort) {
-            $merged[$sort->key()] = $sort;
-        }
-
-        return \array_values($merged);
+        return [...$queryParameters->filter, ...$request->getRelatedQuery($relation->name())->filter];
     }
 
     /**
@@ -615,11 +652,19 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * `default()` — the default folding happens later in the provider's
      * {@see \haddowg\JsonApiBundle\DataProvider\CriteriaApplier} (ADR 0048).
      *
+     * The `$requested` map is the raw requested `filter[<key>]` to validate. On a
+     * to-one related/relationship endpoint this is the MERGED map (the operation's
+     * own `?filter` ⊕ the relatedQuery `[filter]`, the same map driven into the
+     * criteria), so a mistyped relatedQuery filter value is rejected the same as a
+     * mistyped `?filter` value (bundle ADR 0068 follow-up #2). All values are raw
+     * client input, so an author default is still never validated.
+     *
+     * @param array<string, mixed>  $requested the raw requested `filter[<key>]` map
      * @param list<FilterInterface> $filters
      */
-    private function validateFilterValues(QueryParameters $queryParameters, array $filters): void
+    private function validateFilterValues(array $requested, array $filters): void
     {
-        $this->filterValues?->validate($queryParameters->filter, $filters);
+        $this->filterValues?->validate($requested, $filters);
     }
 
     /**
@@ -668,6 +713,50 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // because the route is parametric — ADR 0027.
         if (!$relation->exposesRelationshipEndpoint()) {
             return ErrorResponse::fromException(new RelationshipNotExists($relationshipName));
+        }
+
+        // A relation filter that excludes a to-one's single related object nulls the
+        // linkage: resolve the merged filter vocabulary, match the one related object,
+        // and on a no-match write `null` onto the parent's to-one property BEFORE the
+        // serializer reads linkage off it — so core emits null linkage (bundle ADR 0068).
+        // A GET read, so nothing flushes. Monomorphic only (a polymorphic to-one carries
+        // no shared filter vocabulary).
+        if (!$relation->isToMany() && \count($relation->relatedTypes()) === 1) {
+            $request = $this->jsonApiRequest($operation->context());
+            $filter = $this->toOneRequestedFilter($operation->queryParameters(), $relation, $request);
+            if ($filter !== []) {
+                $relatedType = $relation->relatedTypes()[0];
+                $related = $relation->readValue($parent, $request);
+                if (\is_object($related)) {
+                    $relatedResource = $this->types->resourceFor($server, $relatedType);
+                    $criteria = $this->relationCriteria->criteriaFor(
+                        new QueryParameters(fields: [], includes: [], sort: [], filter: $filter, pagination: $request->getPagination()),
+                        $relatedResource,
+                        $relation,
+                        null,
+                        includePivotFields: false,
+                    );
+                    // Validate the MERGED requested filter map (the operation's own
+                    // `?filter` ⊕ the relatedQuery `[filter]`), so a mistyped relatedQuery
+                    // filter value is the endpoint's same 400 (bundle ADR 0068 follow-up #2).
+                    $this->validateFilterValues($filter, $criteria->filters);
+
+                    if (!$this->providers->forType($relatedType)->relatedToOneMatches($relatedType, $related, $relation, $criteria, $request)) {
+                        Accessor::set($parent, $relation->column() ?? $relation->name(), null);
+                    }
+                }
+            }
+        } elseif (!$relation->isToMany() && \count($relation->relatedTypes()) > 1) {
+            // A polymorphic to-one (MorphTo) carries no shared filter vocabulary, so ANY
+            // requested filter key is unrecognised — the same `400` the polymorphic
+            // to-many surfaces. Gated on the merged requested filter being present (not on
+            // a target existing), so a filter on an empty polymorphic to-one still 400s
+            // (bundle ADR 0068 follow-up #1).
+            $request = $this->jsonApiRequest($operation->context());
+            $filter = $this->toOneRequestedFilter($operation->queryParameters(), $relation, $request);
+            if ($filter !== []) {
+                throw new \haddowg\JsonApi\Exception\FilterParamUnrecognized(\array_key_first($filter));
+            }
         }
 
         // A pivot-backed belongsToMany renders its per-member pivot values as
@@ -831,22 +920,27 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
     /**
      * Batch eager-loads the effective `?include` tree for `$entities` of `$type`
-     * through the provider's optional {@see PreloadsIncludesInterface} capability,
-     * before rendering — so an included relationship does not N+1 against a provider
-     * that opts in (the Doctrine reference does, when the preloader library is
-     * installed). A no-op when the provider does not implement the capability, or
-     * when there is no request to read the include tree from (ADR 0035).
+     * through the provider-agnostic {@see RelatedIncludeBatcher} before rendering — so
+     * an included relationship does not N+1 against any batching provider (the Doctrine
+     * reference AND the in-memory witness), one batched query per level. The batch IS
+     * the include-loading mechanism (bundle ADR 0062): a relation/provider that cannot
+     * batch falls back to a lazy load and the document is identical. A no-op when the
+     * batcher is not wired (it is always wired in the bundle), there are no entities, or
+     * there is no request to read the include tree from (ADR 0035).
+     *
+     * The `$provider` argument is retained for the call sites but unused: the
+     * orchestrator resolves the right provider per level itself.
      *
      * @param DataProviderInterface<object> $provider
      * @param list<object>                  $entities
      */
     private function preloadIncludes(DataProviderInterface $provider, array $entities, string $type, ?JsonApiRequestInterface $request): void
     {
-        if ($request === null || $entities === [] || !$provider instanceof PreloadsIncludesInterface) {
+        if ($request === null || $entities === [] || $this->includeBatcher === null) {
             return;
         }
 
-        $provider->preloadIncludes($entities, $type, $request);
+        $this->includeBatcher->preload($entities, $type, $request);
     }
 
     /**

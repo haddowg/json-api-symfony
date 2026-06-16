@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Provider;
 
 use Doctrine\ORM\EntityManagerInterface;
+use haddowg\JsonApi\Collection\CollectionResult;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
-use haddowg\JsonApiBundle\DataProvider\CollectionResult;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineDataProvider;
+use haddowg\JsonApiBundle\DataProvider\RelatedBatch;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Album;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Artist;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Favorite;
@@ -87,6 +88,16 @@ final class FavoriteProvider implements DataProviderInterface
         return $this->doctrine->fetchRelatedCollection($relatedType, $parent, $relation, $criteria, $request);
     }
 
+    public function fetchRelatedCollectionBatch(
+        string $parentType,
+        array $parents,
+        RelationInterface $relation,
+        CollectionCriteria $criteria,
+        JsonApiRequestInterface $request,
+    ): RelatedBatch {
+        return $this->doctrine->fetchRelatedCollectionBatch($parentType, $parents, $relation, $criteria, $request);
+    }
+
     public function fetchRelationshipPivot(string $type, object $parent, RelationInterface $relation): array
     {
         return $this->doctrine->fetchRelationshipPivot($type, $parent, $relation);
@@ -96,9 +107,30 @@ final class FavoriteProvider implements DataProviderInterface
         string $type,
         array $parents,
         RelationInterface $relation,
+        CollectionCriteria $criteria,
         JsonApiRequestInterface $request,
     ): array {
-        return $this->doctrine->countRelated($type, $parents, $relation, $request);
+        return $this->doctrine->countRelated($type, $parents, $relation, $criteria, $request);
+    }
+
+    public function relatedToOneMatches(
+        string $relatedType,
+        object $related,
+        RelationInterface $relation,
+        CollectionCriteria $criteria,
+        JsonApiRequestInterface $request,
+    ): bool {
+        return $this->doctrine->relatedToOneMatches($relatedType, $related, $relation, $criteria, $request);
+    }
+
+    public function relatedToOneMatchesBatch(
+        string $parentType,
+        array $parents,
+        RelationInterface $relation,
+        CollectionCriteria $criteria,
+        JsonApiRequestInterface $request,
+    ): array {
+        return $this->doctrine->relatedToOneMatchesBatch($parentType, $parents, $relation, $criteria, $request);
     }
 
     /**

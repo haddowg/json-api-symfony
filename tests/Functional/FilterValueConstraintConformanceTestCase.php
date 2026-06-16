@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
@@ -182,6 +183,130 @@ abstract class FilterValueConstraintConformanceTestCase extends JsonApiFunctiona
         }
 
         self::assertSame(['1'], $ids);
+    }
+
+    // --- uniform relatedQuery filter-value validation (bundle ADR 0068 follow-up #2) ---
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    #[Group('spec:fetching-filtering')]
+    #[Group('spec:errors')]
+    public function aToOneRelatedEndpointValidatesAConstrainedRelationFilter(): void
+    {
+        // authorId is a relation-scoped Where->integer() on the to-one `author` relation:
+        // a mistyped value on the related endpoint is the same clean 400 the to-many
+        // endpoint surfaces (follow-up #2 surface 1).
+        $response = $this->handle('/articles/1/author?filter[authorId]=banana');
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+
+        $error = $this->firstError($this->decode($response));
+        self::assertSame('FILTER_VALUE_INVALID', $error['code'] ?? null);
+        self::assertSame(['parameter' => 'filter[authorId]'], $error['source'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:profiles')]
+    #[Group('spec:fetching-relationships')]
+    #[Group('spec:fetching-filtering')]
+    #[Group('spec:errors')]
+    public function aToOneRelatedEndpointValidatesAMergedRelatedQueryFilterValue(): void
+    {
+        // The endpoint MERGES relatedQuery[author][filter] into the filter map: a mistyped
+        // relatedQuery value must 400 too, not just a mistyped `?filter` value — the gap
+        // surface 1/2 closed (the validate call now receives the merged map). Profile
+        // negotiated so the relatedQuery family is parsed.
+        $response = $this->profileRequest('/articles/1/author?relatedQuery[author][filter][authorId]=banana');
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+
+        $error = $this->firstError($this->decode($response));
+        self::assertSame('FILTER_VALUE_INVALID', $error['code'] ?? null);
+        self::assertSame(['parameter' => 'filter[authorId]'], $error['source'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:profiles')]
+    #[Group('spec:fetching-relationships')]
+    #[Group('spec:fetching-filtering')]
+    #[Group('spec:errors')]
+    public function aToOneRelationshipEndpointValidatesAMergedRelatedQueryFilterValue(): void
+    {
+        // The relationship-linkage endpoint mirrors the related endpoint: a mistyped
+        // merged relatedQuery filter value is the same 400 (follow-up #2 surface 2).
+        $response = $this->profileRequest('/articles/1/relationships/author?relatedQuery[author][filter][authorId]=banana');
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+
+        $error = $this->firstError($this->decode($response));
+        self::assertSame('FILTER_VALUE_INVALID', $error['code'] ?? null);
+        self::assertSame(['parameter' => 'filter[authorId]'], $error['source'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:profiles')]
+    #[Group('spec:fetching-includes')]
+    #[Group('spec:fetching-filtering')]
+    #[Group('spec:errors')]
+    public function theIncludePathValidatesAMistypedRelatedQueryFilterValueOnAToOne(): void
+    {
+        // The profile/include path (the to-one nulling batcher) validates a relatedQuery
+        // filter value too: a mistyped authorId on `GET /articles?include=author` with
+        // relatedQuery[author][filter] is the endpoint's same 400, not an unvalidated
+        // silent non-match (follow-up #2 surface 3, to-one nulling path).
+        $response = $this->profileRequest('/articles?include=author&relatedQuery[author][filter][authorId]=banana');
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+
+        $error = $this->firstError($this->decode($response));
+        self::assertSame('FILTER_VALUE_INVALID', $error['code'] ?? null);
+        self::assertSame(['parameter' => 'filter[authorId]'], $error['source'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:profiles')]
+    #[Group('spec:fetching-includes')]
+    #[Group('spec:fetching-filtering')]
+    #[Group('spec:errors')]
+    public function theIncludePathValidatesAMistypedRelatedQueryFilterValueOnAToMany(): void
+    {
+        // The pre-existing to-many windowing path applied relatedQuery filters with NO
+        // value-validation: a mistyped commentId on `GET /articles?include=comments` with
+        // relatedQuery[comments][filter] must now 400 too (follow-up #2 surface 3, to-many
+        // windowing path).
+        $response = $this->profileRequest('/articles?include=comments&relatedQuery[comments][filter][commentId]=banana');
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+
+        $error = $this->firstError($this->decode($response));
+        self::assertSame('FILTER_VALUE_INVALID', $error['code'] ?? null);
+        self::assertSame(['parameter' => 'filter[commentId]'], $error['source'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:profiles')]
+    #[Group('spec:fetching-includes')]
+    #[Group('spec:fetching-filtering')]
+    public function theIncludePathAcceptsAValidRelatedQueryFilterValue(): void
+    {
+        // A VALID relatedQuery filter value is not falsely rejected: an integer authorId
+        // passes validation and the include path runs as before — the validator is a no-op
+        // for a well-typed value (follow-up #2).
+        $response = $this->profileRequest('/articles?include=author&relatedQuery[author][filter][authorId]=1');
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+    }
+
+    /**
+     * Issues a request under the negotiated Relationship Queries profile (its URI in
+     * the `Accept` media-type `profile` parameter), so the `relatedQuery` family is
+     * parsed and the include/linkage windowing path engages.
+     */
+    private function profileRequest(string $path): \Symfony\Component\HttpFoundation\Response
+    {
+        return $this->handle($path, extraServer: [
+            'HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . RelationshipQueriesProfile::URI . '"',
+        ]);
     }
 
     /**

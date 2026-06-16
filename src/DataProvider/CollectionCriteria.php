@@ -32,13 +32,24 @@ use haddowg\JsonApi\Resource\Sort\SortInterface;
  *   {@see WindowInterface}; a provider narrows to the concrete window types it
  *   can execute (count-based providers handle
  *   {@see \haddowg\JsonApi\Pagination\OffsetWindow}).
+ * - {@see $aliasOf} — a **bundle-only** routing hint (no core change), mapping a
+ *   filter/sort directive KEY to a non-root query alias the {@see CriteriaApplier}
+ *   applies it on, so a single criteria can carry vocabulary spanning more than one
+ *   alias of the same query. A key absent from the map resolves to the query's root
+ *   alias, so the default `[]` keeps every directive on the root — exactly the
+ *   single-alias behaviour every path had before. It is populated ONLY on the
+ *   Doctrine pivot related-collection path (the pivot keys → the `pivot` join
+ *   alias, see {@see RelationCriteriaFactory}); it is empty on every other Doctrine
+ *   path and on EVERY in-memory path, so the alias-aware branches are provably inert
+ *   off the pivot path (bundle ADR 0059).
  */
 final readonly class CollectionCriteria
 {
     /**
-     * @param list<FilterInterface> $filters     the filter vocabulary declared for the type
-     * @param list<SortInterface>   $sorts       the sort vocabulary declared for the type
-     * @param list<SortDirective>   $defaultSort the resource's default sort order, applied when no `sort` is requested
+     * @param list<FilterInterface>     $filters     the filter vocabulary declared for the type
+     * @param list<SortInterface>       $sorts       the sort vocabulary declared for the type
+     * @param list<SortDirective>       $defaultSort the resource's default sort order, applied when no `sort` is requested
+     * @param array<string, string>     $aliasOf     directive KEY → target query alias; an absent key resolves to the root alias (bundle-only, empty off the Doctrine pivot path)
      */
     public function __construct(
         public QueryParameters $queryParameters,
@@ -46,5 +57,6 @@ final readonly class CollectionCriteria
         public array $sorts = [],
         public ?WindowInterface $window = null,
         public array $defaultSort = [],
+        public array $aliasOf = [],
     ) {}
 }

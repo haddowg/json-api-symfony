@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\Doctrine;
 
 use Doctrine\ORM\QueryBuilder;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineExtensionInterface;
+use haddowg\JsonApiBundle\DataProvider\Doctrine\ExtensionContext;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\QueryPurpose;
 
 /**
@@ -28,9 +29,9 @@ final class GuideOnlyArticlesExtension implements DoctrineExtensionInterface
         return $type === 'articles';
     }
 
-    public function apply(QueryBuilder $builder, string $type, QueryPurpose $purpose): QueryBuilder
+    public function apply(QueryBuilder $builder, ExtensionContext $context): QueryBuilder
     {
-        $this->applied[] = $purpose;
+        $this->applied[] = $context->purpose;
 
         $alias = $builder->getRootAliases()[0]
             ?? throw new \LogicException('The builder arrived without a root alias.');

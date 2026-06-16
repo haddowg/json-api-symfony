@@ -8,6 +8,7 @@ use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\BelongsTo;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Str;
+use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 
 /**
@@ -42,6 +43,20 @@ final class CogResource extends AbstractResource
                 ->matchAs('cog-[0-9a-f]+'),
             Str::make('name')->required(),
             BelongsTo::make('parent')->type('cogs')->nullable(),
+        ];
+    }
+
+    /**
+     * A `name` filter so the self-referential `parent` to-one is filter-excludable:
+     * the to-one nulling path (bundle ADR 0068) is then exercised on an ENCODED-ID
+     * parent type — the parent's wire id is a `cog-…` token, so this proves the
+     * batch's `parentWireId()` keys agree with the serializer's `getId()` (follow-up
+     * #4). A non-matching `filter[name]` nulls the related cog `data: null`.
+     */
+    public function filters(): array
+    {
+        return [
+            Where::make('name'),
         ];
     }
 }

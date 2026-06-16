@@ -152,6 +152,25 @@ Counting is exposed two ways, both on the `total` meta key:
 > whose endpoint should keep one must now be `countable()`. Leaving a relation
 > non-countable is the way to get count-free related pagination.
 
+**`?withCount` counts the relation's filtered set.** The count reflects the SAME
+filters the related-collection endpoint applies (bundle ADR 0060): a relation's own
+`filters()`, the related resource's filter **defaults**, and any
+`relatedQuery[<rel>][filter]` the request carries through the Relationship Queries
+profile. So `?withCount=tracks` of a relation whose related resource defaults
+`explicit=false` reports the default-scoped total, and
+`?withCount=tracks&relatedQuery[tracks][filter][explicit]=true` counts only the
+matching members — exactly the totals `GET /albums/{id}/tracks` (with the same filter)
+pages. A parent with no matching member reports `0`. The common case — a relation with
+no filter and no filter defaults, with no relatedQuery filter — is raw membership,
+unchanged.
+
+> **Behaviour change.** `?withCount` used to count raw membership and ignore any
+> active relation filter. It now counts the **filtered** set, so a relationship
+> object's `meta.total` can be smaller than in prior releases — it now equals the
+> related endpoint's filtered total. This includes filter **defaults**: a related
+> resource with a default filter narrows the count even without an explicit
+> relatedQuery filter.
+
 A pivot (`belongsToMany`) relation counts **distinct far members** — so duplicate
 membership (the same member joined to the parent by more than one association row, a
 track at two positions) counts **once**, matching the related-collection endpoint
@@ -256,6 +275,11 @@ to a distinct association, so this is unambiguous; if two relations alias one st
 column with different pagination, the rendered linkage is last-writer-wins on that
 column (bundle ADR 0053).
 
+Includes are **batch-loaded built in** — no extra dependency. The effective include
+tree is loaded one query per relation per level (no `1 + N`) on both providers,
+driven by the same batched related-fetch seam these windowed includes use; see
+[doctrine → eager-loading includes](doctrine.md#eager-loading-includes-no-n1).
+
 ## Pivot (`belongsToMany`) data
 
 A `belongsToMany` relation can expose **pivot (join-table) data**: per-member values
@@ -273,11 +297,11 @@ BelongsToMany::make('tracks')->type('tracks')
     );
 ```
 
-One declaration drives every pivot concern — render, filter / sort, and **write /
-validate**. This renders each member's pivot values as `meta.pivot` on both the
-related endpoint (`GET /playlists/1/tracks`) and the relationship-linkage endpoint
-(`GET /playlists/1/relationships/tracks`), and makes `?filter[position]` /
-`?sort=position` recognised on that related endpoint (routed to the pivot column):
+The `fields()` declaration drives pivot **render**, **write / validate** and **sort**.
+It renders each member's pivot values as `meta.pivot` on both the related endpoint
+(`GET /playlists/1/tracks`) and the relationship-linkage endpoint (`GET
+/playlists/1/relationships/tracks`), and makes `?sort=position` recognised on that
+related endpoint (routed to the pivot column) — sorting is zero-config:
 
 ```jsonc
 "data": [
@@ -288,6 +312,55 @@ related endpoint (`GET /playlists/1/tracks`) and the relationship-linkage endpoi
   }
 ]
 ```
+
+### Filtering by a pivot column
+
+Pivot **filters are author-declared** — distinct from sorts, which auto-derive. To
+expose a `?filter[…]` over a pivot column, declare it on the relation's
+`withFilters()` as a **normal core filter whose `column` is `pivot.`-prefixed**. The
+`pivot.` prefix marks the filter as targeting the join: the bundle strips the prefix
+to the real pivot column (`position`) and routes the filter to the pivot alias. The
+filter **key is independent of the column**, so a pivot filter can be named anything:
+
+```php
+BelongsToMany::make('tracks')->type('tracks')
+    ->fields(
+        Integer::make('position')->required()->min(1),
+        DateTime::make('addedAt')->readOnly(),
+    )
+    ->withFilters(
+        Where::make('position', 'pivot.position'),           // filter[position]=2
+        Where::make('positionGte', 'pivot.position', '>='),  // an operator
+        WhereIn::make('positionIn', 'pivot.position'),        // filter[positionIn]=1,3
+        Where::make('addedAfter', 'pivot.addedAt', '>'),     // a typed-date column
+    );
+```
+
+Any core scalar-column filter works on a pivot column: `Where` and its operators,
+`WhereIn`/`WhereNotIn`, `WhereNull`/`WhereNotNull`. (`WhereHas`/`WhereDoesntHave` are
+relationship-existence filters, not a scalar pivot column, so they are not
+pivot-applicable.) The value **cast** auto-resolves from the declared pivot field
+backing the stripped column — `Integer` coerces to `int`, `DateTime` to an ISO-8601
+comparison — so a typed pivot column filters correctly with no extra wiring; an
+explicit `->deserializeUsing()` on the filter still wins. A filter with **no** `pivot.`
+prefix targets the related entity, exactly like any relation-scoped filter.
+
+A pivot field declared `hidden()` is **filterable and sortable but never rendered**:
+`hidden()` gates rendering only, never query. The field stays out of each member's
+`meta.pivot`, yet a `pivot.`-prefixed filter (and `?sort=`) over its column still
+works — the filter reads the column on the join directly, not the rendered scalar.
+Use it for a join column you want to query by but not expose.
+
+> **Filter / sort asymmetry.** A pivot **sort** auto-derives from `fields()` —
+> `?sort=position` works with no further declaration. A pivot **filter** must be
+> declared explicitly via `withFilters()` (a sort is a single well-defined ordering; a
+> filter spans operators, sets and null checks the author must choose). See
+> [ADR 0067](adr/0067-author-declared-pivot-filters-via-a-pivot-column-prefix.md).
+
+> **Migration (breaking, `0.x` minor).** Declaring a pivot field no longer
+> auto-exposes a zero-config `filter[<field>]` equality. An app that relied on it must
+> add the explicit declaration: `->withFilters(Where::make('position',
+> 'pivot.position'))`. Pivot **sorts** are unaffected (still zero-config).
 
 **The Doctrine fact this rests on.** A plain `#[ORM\ManyToMany]` join table holds
 only the two foreign keys — Doctrine cannot map a `position`/`addedAt` column on it.
@@ -467,7 +540,7 @@ default-include pointing back at its own type (or a mutual pair) loops the rende
 forever. Three composing **include safeguards** (bundle ADR 0037) bound it. All three
 live in **core** (an opt-in `IncludeControlsInterface` the transformer reads via
 `instanceof`, plus a relation-level wither); the bundle supplies the opinionated depth
-default and makes the Doctrine batch-preloader respect them.
+default and makes the built-in include batcher respect them.
 
 | Safeguard | Where declared | Effect |
 |-----------|----------------|--------|
@@ -511,11 +584,12 @@ sibling `posts.comments` is rejected.
 
 `max_include_depth` is the one config-driven safeguard — see
 [configuration → `max_include_depth`](configuration.md#max_include_depth) for the cap,
-the per-resource override, and how it terminates a default-include cycle. The reference
-Doctrine batch-preloader honours all three: it never batch-loads a non-includable
-relation, bounds its own recursion by the same effective depth, and skips a path the
-root's whitelist excludes (so a mutual default-include cycle terminates the preloader
-too, not only the renderer).
+the per-resource override, and how it terminates a default-include cycle. The built-in
+include batcher (no extra dependency; see
+[doctrine → eager-loading includes](doctrine.md#eager-loading-includes-no-n1)) honours
+all three: it never batch-loads a non-includable relation, bounds its own recursion by
+the same effective depth, and skips a path the root's whitelist excludes (so a mutual
+default-include cycle terminates the batcher too, not only the renderer).
 
 ## Polymorphic relationships
 

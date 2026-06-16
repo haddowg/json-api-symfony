@@ -18,9 +18,17 @@ use haddowg\JsonApi\Resource\Sort\UnsupportedSort;
  * raises {@see UnsupportedSort} — a resource declaring one supplies its own
  * handler/provider instead.
  *
+ * The handler is also the bundle's {@see AliasAwareSortHandler}: the shared
+ * {@see \haddowg\JsonApiBundle\DataProvider\CriteriaApplier} can append a directive
+ * on a NON-root alias of the query so the pivot related-collection path builds its
+ * whole `ORDER BY` in the request's directive order across two aliases (a pivot key
+ * on the `pivot` join, a related key on the root — bundle ADR 0059). `apply()` is
+ * `applyOn()` on the query root, so every non-pivot path stays byte-identical.
+ *
  * @implements SortHandlerInterface<QueryBuilder>
+ * @implements AliasAwareSortHandler<QueryBuilder>
  */
-final class DoctrineSortHandler implements SortHandlerInterface
+final class DoctrineSortHandler implements SortHandlerInterface, AliasAwareSortHandler
 {
     public function apply(array $sorts, mixed $query): mixed
     {
@@ -33,31 +41,49 @@ final class DoctrineSortHandler implements SortHandlerInterface
             ));
         }
 
-        foreach ($sorts as $directive) {
+        return $this->applyOn($sorts, $query, $this->rootAlias($query));
+    }
+
+    public function applyOn(array $directives, mixed $query, string $alias): mixed
+    {
+        if (!$query instanceof QueryBuilder) {
+            throw new \LogicException(\sprintf(
+                'The %s expects a %s query; got %s.',
+                self::class,
+                QueryBuilder::class,
+                \get_debug_type($query),
+            ));
+        }
+
+        foreach ($directives as $directive) {
             $sort = $directive->sort;
             if (!$sort instanceof SortByField) {
                 throw new UnsupportedSort($sort);
             }
 
-            $query->addOrderBy($this->path($query, $sort->column), $directive->descending ? 'DESC' : 'ASC');
+            $query->addOrderBy($this->path($sort->column, $alias), $directive->descending ? 'DESC' : 'ASC');
         }
 
         return $query;
     }
 
     /**
-     * The DQL path for a declared sort column on the root entity, validated as
-     * an identifier path (dots allowed for embedded fields).
+     * The DQL path for a declared sort column on `$alias` (the query root by
+     * default, the join alias on the pivot path), validated as an identifier path
+     * (dots allowed for embedded fields).
      */
-    private function path(QueryBuilder $query, string $column): string
+    private function path(string $column, string $alias): string
     {
         if (\preg_match('/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/', $column) !== 1) {
             throw new \LogicException(\sprintf('"%s" is not a valid Doctrine field path.', $column));
         }
 
-        $alias = $query->getRootAliases()[0]
-            ?? throw new \LogicException('The QueryBuilder has no root alias to sort on.');
-
         return $alias . '.' . $column;
+    }
+
+    private function rootAlias(QueryBuilder $query): string
+    {
+        return $query->getRootAliases()[0]
+            ?? throw new \LogicException('The QueryBuilder has no root alias to sort on.');
     }
 }

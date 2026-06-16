@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App\Resource;
 
+use haddowg\JsonApi\Resource\Field\BelongsTo;
 use haddowg\JsonApi\Resource\Field\HasMany;
 use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Filter\WhereIdIn;
+use haddowg\JsonApi\Resource\Filter\WhereThrough;
 
 /**
  * The shared `articles` declaration for the filter-value-constraint conformance
@@ -48,6 +50,17 @@ class ConstrainedFilterArticleResource extends BaseArticleResource
                     ->withFilters(Where::make('commentId', 'id')->integer());
             }
 
+            // Re-declare the `author` to-one with a relation-scoped, integer-constrained
+            // `authorId` filter, so the to-one related/relationship endpoints AND the
+            // include/linkage path have a constrained to-one filter to validate — the
+            // to-one twin of the `comments` constrained filter (bundle ADR 0068 follow-up
+            // #2). A mistyped value (via `?filter[authorId]`, `relatedQuery[author][filter]`,
+            // or the include path) is the endpoint's same 400.
+            if ($field instanceof BelongsTo && $field->name() === 'author') {
+                $field = BelongsTo::make('author')->type('authors')
+                    ->withFilters(Where::make('authorId', 'id')->integer());
+            }
+
             $fields[] = $field;
         }
 
@@ -75,6 +88,39 @@ class ConstrainedFilterArticleResource extends BaseArticleResource
             Where::make('numericId', 'id')->integer(),
             // A non-numeric constraint: the value must be one of the known categories.
             Where::make('byCategory', 'category')->pattern('^(?:guide|news|opinion)$'),
+
+            // --- WhereThrough traversal filters (G8, core ADR 0063) ---
+            // A correlated EXISTS-ANY semi-join over a dotted relationship path,
+            // executed identically on both providers (in-memory walk via Accessor /
+            // Doctrine EXISTS subquery). The same declaration drives the dual-provider
+            // WhereThroughConformanceTestCase.
+            //
+            // Single-hop to-one → attribute: `filter[author.name]` keeps an article
+            // whose author's name matches (path-as-key default).
+            WhereThrough::make('author.name'),
+            // Single-hop to-many EXISTS-ANY with the fluent `like` operator: keep an
+            // article that has SOME comment whose body contains the value.
+            WhereThrough::make('comments.body')->operator('like'),
+            // Named-key override, path distinct from the key: `filter[topAuthor]`
+            // traverses `author.name` (witnessing make(key, path)).
+            WhereThrough::make('topAuthor', 'author.name'),
+            // Multi-hop chain (to-many → to-one → attribute): keep an article that has
+            // SOME comment whose owning article's title matches — the self-referential
+            // traversal exercising chained joins inside one EXISTS subquery.
+            WhereThrough::make('commentArticleTitle', 'comments.article.title'),
+            // Many-to-many → attribute (the owning-side `editors`): keep an article one
+            // of whose editors' names matches — a second to-many arity over a
+            // many-to-many hop.
+            WhereThrough::make('editorName', 'editors.name'),
+            // A non-eq operator on a numeric leaf: keep an article whose author's id is
+            // >= the value (witnessing the fluent operator over a comparison).
+            WhereThrough::make('authorIdAtLeast', 'author.id')->operator('>='),
+            // A VALUE-CONSTRAINED traversal filter: the leaf value must be an integer,
+            // so a mistyped `filter[authorNum]=banana` is a clean 400 (FILTER_VALUE_INVALID,
+            // source.parameter) BEFORE the EXISTS subquery runs — the WhereThrough twin of
+            // the constrained `numericId` (the single-scalar value path; WhereThrough has
+            // no delimiter).
+            WhereThrough::make('authorNum', 'author.id')->integer(),
             // A CONSTRAINED filter whose author-set default would itself VIOLATE the
             // constraint: a `like` contains-match on `title`, constrained to a
             // non-empty value, defaulting to `''`. The default `title LIKE '%%'`

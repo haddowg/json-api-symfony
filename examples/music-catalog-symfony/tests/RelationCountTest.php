@@ -41,24 +41,29 @@ final class RelationCountTest extends MusicCatalogKernelTestCase
     {
         // ?withCount=tracks activates meta.total on the album's tracks relationship
         // object — the count is pushed down (never materialising the collection).
+        // Album 1 holds three tracks, but the `tracks` resource's explicit=false
+        // default filter hides the explicit one (Paranoid Android), so the count is
+        // 2 — the SAME filtered set the related endpoint pages, not raw membership
+        // (bundle ADR 0060). It matches GET /albums/1/tracks (see RelatedCollectionTest).
         $document = $this->fetch('/albums/1?withCount=tracks');
 
-        self::assertSame(3, $this->relationshipTotal($document['data'] ?? null, 'tracks'));
+        self::assertSame(2, $this->relationshipTotal($document['data'] ?? null, 'tracks'));
     }
 
     #[Test]
     public function withCountBatchesTheRelationshipObjectTotalAcrossTheAlbumsCollection(): void
     {
         // The whole /albums collection with ?withCount=tracks: each album's OWN
-        // tracks total, counted in ONE grouped query across the page (album 1 has
-        // three tracks, album 2 has one) — proving the batch is per-parent, not a
-        // single repeated value.
+        // tracks total, counted in ONE grouped query across the page — proving the
+        // batch is per-parent, not a single repeated value. The count honours the
+        // `tracks` explicit=false default filter, so album 1 reports 2 (its explicit
+        // track is hidden, as on the endpoint) and album 2 reports 1 (bundle ADR 0060).
         $document = $this->fetch('/albums?withCount=tracks');
 
         $data = $document['data'] ?? null;
         self::assertIsArray($data);
 
-        $expected = ['1' => 3, '2' => 1];
+        $expected = ['1' => 2, '2' => 1];
         $seen = [];
         foreach ($data as $resource) {
             self::assertIsArray($resource);

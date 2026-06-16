@@ -57,10 +57,14 @@ final class PolymorphicBoardFactory
 
         $board1 = new Board('1', 'Mixed', $n1, [$n1, $i1, $n2]);
         $board2 = new Board('2', 'Image-pinned', $i1, []);
+        // Board 3 pins nothing — the empty-polymorphic-to-one witness: a filter on it
+        // still 400s (the unrecognised-key error is gated on the filter being present,
+        // not on a target existing — bundle ADR 0068 follow-up #1).
+        $board3 = new Board('3', 'Empty', null, []);
 
         /** @var array<string, Board> $boards */
         $boards = [];
-        foreach ([$board1, $board2] as $board) {
+        foreach ([$board1, $board2, $board3] as $board) {
             $boards[$board->id] = $board;
         }
 

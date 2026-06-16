@@ -32,4 +32,19 @@ enum QueryPurpose
      * is absent, so the handler renders a JSON:API `404`.
      */
     case FetchOne;
+
+    /**
+     * A related-collection load: the `GET /{type}/{id}/{rel}` related endpoint,
+     * a relationship-linkage scope, a `?include` batch (the to-one id-IN load,
+     * the to-many batch, the pivot collection), a to-one filter probe, or a
+     * `?withCount` member load — every query the provider builds *for a related
+     * type while serving another type's request*.
+     *
+     * It is distinct from {@see FetchCollection} so a request-aware scope can
+     * tell a primary `GET /{type}` collection from a related load of the same
+     * type (the two reported the same purpose before this case existed). The
+     * related call sites also carry the request on {@see ExtensionContext}, so
+     * an extension can read it here; a primary fetch carries `null`.
+     */
+    case FetchRelatedCollection;
 }

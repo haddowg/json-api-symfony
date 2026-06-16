@@ -163,13 +163,13 @@ dependency is added to the bundle). See [ADR 0038](adr/0038-doctrine-layer-decod
 
 ## Eager-loading includes (no N+1)
 
-When the optional [`shipmonk/doctrine-entity-preloader`](https://github.com/shipmonk-rnd/doctrine-entity-preloader)
-library is installed, eager-loading of a read's `?include` tree is **automatic** —
-you install the library and includes stop N+1ing, with no per-type code. The
-provider batch-loads the included relationships Laravel-style: **one query per
-relation per level**, no fetch-joins. Each level loads a relation for *every* source
-entity in a single `WHERE id IN (…)`-style query, and the loaded targets seed the
-next level.
+Eager-loading of a read's `?include` tree is **automatic and built in** — there is
+**no extra dependency to install** (it used to require an external preloader
+library; that is gone, and the batching now lives in the bundle). Includes stop
+N+1ing with no per-type code. The bundle batch-loads the included relationships
+Laravel-style: **one query per relation per level**, no fetch-joins. Each level
+loads a relation for *every* source entity in a single `WHERE id IN (…)`-style
+query, and the loaded targets seed the next level.
 
 Over the example, `GET /albums?include=tracks` across 16 albums issues 2
 include-load queries (the albums, then one batched tracks load) — not the `1 + N` a
@@ -179,17 +179,17 @@ lazy render issues:
 GET /albums?include=tracks&page[size]=100
 ```
 
-The preloader reuses **core's** include decision, so it preloads exactly what is
+The batcher reuses **core's** include decision, so it loads exactly what is
 rendered. This includes **default includes**: a resource's
 `getDefaultIncludedRelationships()` is applied by core as a *fallback* — when the
 request sends no `?include`, the listed relationships are included (and now
-preloaded); an explicit `?include` (even an empty `?include=`) overrides the default.
+batch-loaded); an explicit `?include` (even an empty `?include=`) overrides the default.
 
 ```php
 final class AlbumResource extends AbstractResource
 {
     // GET /albums with no ?include yields each album's artist in `included`
-    // (rendered AND batch-preloaded); ?include=… or ?include= overrides it.
+    // (rendered AND batch-loaded); ?include=… or ?include= overrides it.
     public function getDefaultIncludedRelationships(mixed $object): array
     {
         return ['artist'];
@@ -199,18 +199,68 @@ final class AlbumResource extends AbstractResource
 
 — from [`AlbumResource`](../examples/music-catalog-symfony/src/Resource/AlbumResource.php).
 
-Preloading is a **pure optimization**: the rendered document is identical with or
-without it. So a relation the preloader cannot batch silently falls back to a lazy
+Batch-loading is a **pure optimization**: the rendered document is identical with or
+without it. So a relation the batcher cannot batch silently falls back to a lazy
 load — a polymorphic relation (more than one related type), a computed /
 `extractUsing` / aliased non-association column, or a composite-key target. The
 relation's storage column drives the batch (`column() ?? name()`), so a `storedAs()`
 rename is honoured.
 
-The capability is **opt-in**: it is wired only when the library is present (a
-`suggest` dependency); without it the provider degrades to lazy includes. See
-[ADR 0035](adr/0035-doctrine-include-batch-preloading.md) and
-[`IncludePreloader`](../src/DataProvider/Doctrine/IncludePreloader.php); the witness
-is [`IncludePreloadTest`](../examples/music-catalog-symfony/tests/IncludePreloadTest.php).
+The batching runs through the same provider-agnostic
+[`fetchRelatedCollectionBatch()`](../src/DataProvider/DataProviderInterface.php) seam
+that windowed related collections use, so it works on the in-memory provider too (an idempotent
+re-assignment that changes no rendered bytes). See
+[ADR 0062](adr/0062-load-plain-includes-through-the-batched-related-fetch.md) (which
+folded plain-include loading onto the batched related-fetch and removed the external
+preloader) and ADRs [0035](adr/0035-doctrine-include-batch-preloading.md) /
+[0061](adr/0061-batch-windowed-related-collections-in-one-query-per-relation.md); the
+witness is [`IncludePreloadTest`](../examples/music-catalog-symfony/tests/IncludePreloadTest.php).
+
+### Windowed includes (`window_functions`)
+
+A *plain* include loads the whole related set (the fast-path above). Under the
+[Relationship Queries profile](relationships.md) a request can instead **window** each
+parent's included to-many relation to page 1 (e.g. the 5 newest comments per post). The
+provider runs that as ONE bounded native `ROW_NUMBER() OVER (PARTITION BY parent
+ORDER BY …)` query per relation — fetching only ~one page **per parent** plus the
+**real** per-parent total (`COUNT(*) OVER`), never the parent's whole set (bundle ADR
+0065). The result is bounded even though the engine scans the partition, and the total
+is the true cardinality — so the relationship-pagination total (and any `?withCount`
+overlap) is correct, not the page size.
+
+> [!IMPORTANT]
+> `json_api.doctrine.window_functions` defaults to `true` and needs SQL window
+> functions: **MySQL ≥ 8, MariaDB ≥ 10.2, SQLite ≥ 3.25, or any PostgreSQL**. On an
+> older engine the first windowed include throws a `500` (logged, naming these floors).
+> Set it `false` to use the per-parent bounded fallback — one real `LIMIT`/`OFFSET`
+> query per parent (no window function), rendering byte-identical documents:
+>
+> ```yaml
+> # config/packages/json_api.yaml
+> json_api:
+>     doctrine:
+>         window_functions: false
+> ```
+>
+> There is no auto-detection (no probe/cache/fallback-on-error); the switch is explicit.
+
+Two native shapes mirror the [related-collection scoping](#related-collection-scoping):
+an **inverse-FK** `OneToMany` partitions by the related table's parent FK and hydrates
+the entity inline (one statement); an **owning-side / many-to-many** relation joins the
+join table, partitions by its parent column, and id-loads the distinct related entities
+(two statements — the ORM object hydrator would otherwise dedup a member shared across
+parents). The ORDER BY appends a PK tiebreak (matched in the in-memory witness) so ties
+resolve identically on both providers.
+
+A **filtered** windowed include (`relatedQuery[<rel>][filter][…]`) runs as ONE bounded
+native query too: the inner scoped query carries the relatedQuery filter through the same
+DQL filter executor the related-collection endpoint runs, then is wrapped with the window
+functions — so a filtered windowed include is also one bounded query on `on`, with the
+**filtered** per-parent total (bundle ADR 0066). Only a related type with a **query
+extension** (or `window_functions: false`) takes the per-parent bounded fallback. See
+[pagination → windowed includes](pagination.md#windowed-includes-are-bounded-window_functions),
+[ADR 0065](adr/0065-bound-windowed-includes-with-a-row-number-batch-query.md), and
+[ADR 0066](adr/0066-fold-filtered-windowed-includes-onto-the-native-batch.md).
 
 ## The write pipeline
 
@@ -520,7 +570,9 @@ The `linkageOnlyWhenLoaded()` rendering convention is core's — link
   handler.
 - [Custom providers, query extensions & the in-memory provider](custom-data-providers.md)
   — `DoctrineExtensionInterface` (the base-scope seam `PublishedAlbumsExtension`
-  uses), overriding Doctrine per type, and the polymorphic escape hatch.
+  uses, whose `apply()` receives an `ExtensionContext` carrying the type, the
+  `QueryPurpose` and the request-aware nullable `JsonApiRequestInterface`),
+  overriding Doctrine per type, and the polymorphic escape hatch.
 - [Relationship endpoints](relationships.md) — how the related/relationship
   endpoints and polymorphic rendering build on this layer.
 - Core: [filters](https://github.com/haddowg/json-api/blob/main/docs/filters.md),

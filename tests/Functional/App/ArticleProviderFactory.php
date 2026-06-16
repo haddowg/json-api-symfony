@@ -70,7 +70,7 @@ final class ArticleProviderFactory
             $featuredComments = self::pick($comments, $featured[$id] ?? []);
             $articleEditors = self::pickAuthors($authors, $editors[$id] ?? []);
 
-            $articles[$id] = new Article(
+            $articleModel = new Article(
                 (int) $id,
                 $article['title'],
                 $article['body'],
@@ -83,6 +83,16 @@ final class ArticleProviderFactory
                 $featuredComments,
                 editors: $articleEditors,
             );
+
+            // Wire each owned comment's `article` back-reference to its owning
+            // article — the in-memory twin of the Doctrine CommentEntity's
+            // owning-side ManyToOne — so the multi-hop traversal filter
+            // `comments.article.title` chains the same way on both providers.
+            foreach ($articleComments as $comment) {
+                $comment->article = $articleModel;
+            }
+
+            $articles[$id] = $articleModel;
         }
 
         return ['articles' => $articles, 'authors' => $authors, 'comments' => $comments];

@@ -44,6 +44,18 @@ class ArticleEntity
     public Collection $featuredComments;
 
     /**
+     * A third, independent to-many of comments (mapped by the comment's
+     * `pinnedArticle` owning side), backing the `pinnedComments` relation — a UNIQUE
+     * column no other relation shares, so the windowed-include batch (bundle ADR 0065)
+     * asserts per-parent order + the real total on the inverse-FK shape without the
+     * shared-column last-writer-wins boundary.
+     *
+     * @var Collection<int, CommentEntity>
+     */
+    #[ORM\OneToMany(targetEntity: CommentEntity::class, mappedBy: 'pinnedArticle')]
+    public Collection $pinnedComments;
+
+    /**
      * The owning, unidirectional ManyToMany to {@see AuthorEntity} backing the
      * `editors` relation — no inverse field on the author, so the provider's
      * inverseOwningField resolver returns null and the related-collection fetch
@@ -96,6 +108,7 @@ class ArticleEntity
     ) {
         $this->comments = new ArrayCollection();
         $this->featuredComments = new ArrayCollection();
+        $this->pinnedComments = new ArrayCollection();
         $this->editors = new ArrayCollection();
     }
 }

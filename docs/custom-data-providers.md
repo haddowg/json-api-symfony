@@ -168,7 +168,7 @@ interface DoctrineExtensionInterface
 {
     public function supports(string $type): bool;
 
-    public function apply(QueryBuilder $builder, string $type, QueryPurpose $purpose): QueryBuilder;
+    public function apply(QueryBuilder $builder, ExtensionContext $context): QueryBuilder;
 }
 ```
 
@@ -195,7 +195,7 @@ final class PublishedAlbumsExtension implements DoctrineExtensionInterface
         return $type === 'albums';
     }
 
-    public function apply(QueryBuilder $builder, string $type, QueryPurpose $purpose): QueryBuilder
+    public function apply(QueryBuilder $builder, ExtensionContext $context): QueryBuilder
     {
         $alias = $builder->getRootAliases()[0]
             ?? throw new \LogicException('The builder arrived without a root alias.');
@@ -213,13 +213,41 @@ appears in `/albums`, that `filter[tracks]=1` ANDs onto the scope rather than
 re-widening it, and that `GET /albums/3` is a `404` *while the row still exists in
 the database* — proof the same extension pipeline runs for the single fetch.
 
+### The `ExtensionContext`
+
+`apply()` receives an
+[`ExtensionContext`](../src/DataProvider/Doctrine/ExtensionContext.php) carrying
+everything the bundle knows about the query being built:
+
+```php
+final readonly class ExtensionContext
+{
+    public function __construct(
+        public string $type,                     // the resource type being scoped
+        public QueryPurpose $purpose,            // why the query is built
+        public ?JsonApiRequestInterface $request = null, // the parsed request, or null
+    ) {}
+}
+```
+
+`$request` is the seam for **request-aware** scoping — read a query parameter or
+header off the JSON:API request and branch on it. It is populated on the
+related/include/batch loads (each of which carries the request on its SPI
+signature) and is `null` on the primary `FetchOne`/`FetchCollection` loads (whose
+SPI carries no request). Branch on it only to *add* a constraint, falling through to
+your unconditional base scope when it is absent, so the primary fetch stays scoped.
+
 ### The `QueryPurpose` fail-closed contract
 
-[`QueryPurpose`](../src/DataProvider/Doctrine/QueryPurpose.php) tells you *why* the
-query is being built (`FetchCollection`, `FetchOne`). It is **non-exhaustive by
-design**: the write phase fetches an update's or delete's target through the same
-extension pipeline, so a scoping rule holds for writes without re-declaration — but
-that means new purposes can appear.
+`$context->purpose` ([`QueryPurpose`](../src/DataProvider/Doctrine/QueryPurpose.php))
+tells you *why* the query is being built — `FetchCollection` (the primary
+`GET /{type}` collection), `FetchOne` (`GET /{type}/{id}`), or
+`FetchRelatedCollection` (any related/include/batch load of the type while serving
+another type's request, so a request-aware scope can tell a primary collection from a
+related load of the same type). It is **non-exhaustive by design**: the write phase
+fetches an update's or delete's target through the same extension pipeline, so a
+scoping rule holds for writes without re-declaration — but that means new purposes can
+appear.
 
 So **apply your constraint unconditionally** and branch on a purpose only to *exempt*
 one you have a specific reason to treat differently. An exhaustive `match` over the
@@ -236,28 +264,30 @@ Two practical contracts when you write `apply()`:
   via `$builder->getRootAliases()[0]`) and, for `QueryPurpose::FetchOne`, the
   identifier constraint is already bound.
 
-## Eager-loading `?include` is automatic (no extension needed)
+## Eager-loading `?include` is automatic (no extension, no extra dependency)
 
 You do **not** need a `DoctrineExtensionInterface` eager-load join to avoid N+1ing
-the `?include` tree. Install the optional
-[`shipmonk/doctrine-entity-preloader`](https://github.com/shipmonk-rnd/doctrine-entity-preloader)
-library and the Doctrine provider batch-preloads a read's effective include tree
-automatically — one query per relation per level, reusing core's include decision so
-it preloads exactly what is rendered (requested `?include` **or** a resource's
-`getDefaultIncludedRelationships()` fallback when none is sent). It is alias-aware
-and degrades to a lazy load for any relation it cannot batch (polymorphic, computed,
-composite-key). See [Eager-loading includes](doctrine.md#eager-loading-includes-no-n1)
-on the Doctrine page and [ADR 0035](adr/0035-doctrine-include-batch-preloading.md).
+the `?include` tree, and there is **no library to install** — include batching is
+built into the bundle (it used to require an external preloader; that dependency is
+gone). The bundle batch-loads a read's effective include tree automatically — one
+query per relation per level, reusing core's include decision so it loads exactly
+what is rendered (requested `?include` **or** a resource's
+`getDefaultIncludedRelationships()` fallback when none is sent). It degrades to a
+lazy load for any relation it cannot batch (polymorphic, computed, composite-key).
+See [Eager-loading includes](doctrine.md#eager-loading-includes-no-n1) on the
+Doctrine page and
+[ADR 0062](adr/0062-load-plain-includes-through-the-batched-related-fetch.md).
 
 Reach for an extension's eager-load join only for a relation you always want loaded
 **regardless of `?include`** (a join the serializer or your own code needs on every
 read), or to optimise a specific access shape the per-level batch does not cover.
 
-A custom provider can opt into the same automatic preloading by implementing
-[`PreloadsIncludesInterface`](../src/DataProvider/PreloadsIncludesInterface.php) — the
-handler calls `preloadIncludes()` on the resolved provider (when it implements the
-capability) with the materialised result before rendering. A provider that does not
-implement it simply renders includes lazily.
+A custom provider participates in the same automatic batching by implementing
+[`fetchRelatedCollectionBatch()`](../src/DataProvider/DataProviderInterface.php) — the provider-agnostic
+`RelatedIncludeBatcher` orchestrates the include tree level by level and calls that
+seam per included relation over the level's parents. A provider whose
+`fetchRelatedCollectionBatch()` returns an empty batch for a relation (or that
+cannot batch a given relation) simply renders that relation's includes lazily.
 
 ## The in-memory provider as a worked example
 

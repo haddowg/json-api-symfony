@@ -150,6 +150,16 @@ final class JsonApiBundle extends AbstractBundle
                         ->end()
                     ->end()
                 ->end()
+                ->arrayNode('doctrine')
+                    ->info('Tuning for the reference Doctrine data provider.')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->booleanNode('window_functions')
+                            ->info('Use SQL window functions (ROW_NUMBER/COUNT OVER) for the bounded windowed-include batch — ONE native query per relation fetches only ~limit rows per parent and the REAL per-parent total, instead of materialising every parent\'s whole related set. Default true. Requires MySQL>=8, MariaDB>=10.2, SQLite>=3.25, or any PostgreSQL. On an older engine this throws a 500 at the first windowed include — set false to use the per-parent bounded fallback instead (M bounded LIMIT queries per relation, no window functions).')
+                            ->defaultTrue()
+                        ->end()
+                    ->end()
+                ->end()
                 ->arrayNode('defaults')
                     ->info('Global default response headers applied to a resource that declares none (bundle ADR 0054). A resource-level cacheHeaders / deprecation overrides (and merges with) these.')
                     ->addDefaultsIfNotSet()
@@ -203,11 +213,13 @@ final class JsonApiBundle extends AbstractBundle
         $maxPerPage = $this->maxPerPageConfig($config);
         $maxIncludeDepth = $this->maxIncludeDepthConfig($config);
         $strictQueryParameters = $this->strictQueryParametersConfig($config);
+        $windowFunctions = $this->windowFunctionsConfig($config);
 
         $builder->setParameter('haddowg_json_api.base_uri', $baseUri);
         $builder->setParameter('haddowg_json_api.version', $version);
         $builder->setParameter('haddowg_json_api.pagination.max_per_page', $maxPerPage);
         $builder->setParameter('haddowg_json_api.max_include_depth', $maxIncludeDepth);
+        $builder->setParameter('haddowg_json_api.doctrine.window_functions', $windowFunctions);
 
         // The full server map (ADR 0034): the implicit `default` server carries the
         // top-level base_uri/version, and each named server from `json_api.servers`
@@ -630,6 +642,23 @@ final class JsonApiBundle extends AbstractBundle
     private function strictQueryParametersConfig(array $config): bool
     {
         $value = $config['strict_query_parameters'] ?? null;
+
+        return \is_bool($value) ? $value : true;
+    }
+
+    /**
+     * The resolved `json_api.doctrine.window_functions` — whether the reference
+     * Doctrine provider runs the bounded ROW_NUMBER/COUNT OVER native batch for a
+     * windowed include (true) or the per-parent bounded fallback (false). Defaults
+     * to `true` when the key is absent; set `false` on a database without window
+     * functions (older MySQL/MariaDB/SQLite).
+     *
+     * @param array<string, mixed> $config
+     */
+    private function windowFunctionsConfig(array $config): bool
+    {
+        $doctrine = $config['doctrine'] ?? [];
+        $value = \is_array($doctrine) ? ($doctrine['window_functions'] ?? null) : null;
 
         return \is_bool($value) ? $value : true;
     }

@@ -8,17 +8,23 @@ use haddowg\JsonApi\Resource\Field\AbstractField;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\FieldInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
-use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Sort\SortByField;
 
 /**
  * Reads a {@see BelongsToMany} relation's declared pivot fields
  * ({@see BelongsToMany::pivotFields()} — real {@see FieldInterface} definitions) and
- * derives the host's interpretation of them: the recognised `filter[…]`/`sort=`
- * vocabulary keys (one {@see Where} and one {@see SortByField} per field, keyed by
- * the field name and columned by its declared {@see FieldInterface::column()}) and
- * the per-field value cast applied to the raw pivot column read off the association
- * entity before it renders as relationship meta.
+ * derives the host's interpretation of them: the recognised `sort=` vocabulary keys
+ * (one {@see SortByField} per field, keyed by the field name and columned by its
+ * declared {@see FieldInterface::column()}) and the per-field value cast applied to
+ * the raw pivot column read off the association entity before it renders as
+ * relationship meta.
+ *
+ * Pivot FILTERS are author-declared, not auto-derived: an app declares each pivot
+ * filter explicitly in the relation's {@see RelationInterface::filters()} as a normal
+ * core filter whose column is `pivot.`-prefixed (bundle ADR 0067). Sorts still
+ * auto-derive (`?sort=position` works zero-config) — a deliberate filter/sort
+ * asymmetry. The cast threads onto an author-declared pivot filter by the stripped
+ * pivot column via {@see fieldForColumn()}.
  *
  * The cast is the field's OWN serialization (`Integer` → int, `DateTime` →
  * ISO-8601 string, …): the field knows its type, so the bundle no longer carries an
@@ -57,21 +63,22 @@ final class PivotFields
     }
 
     /**
-     * The filter vocabulary derived from `$relation`'s pivot fields: one equality
-     * {@see Where} per field, keyed by the field name and columned by its declared
-     * column (defaulting to the name), so `?filter[position]=3` routes to the pivot
-     * entity's backing column. Empty for a non-pivot relation.
-     *
-     * @return list<Where>
+     * The declared pivot field whose column (its {@see FieldInterface::column()},
+     * defaulting to its {@see FieldInterface::name()}) equals `$column`, or null when
+     * none matches. The join is the STRIPPED pivot column (`position`, not
+     * `pivot.position` and not the filter key, which may differ from the column), so an
+     * author-declared `pivot.`-prefixed filter resolves its value cast against the field
+     * backing the same association-entity column ({@see \haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory}).
      */
-    public static function filtersFor(RelationInterface $relation): array
+    public static function fieldForColumn(RelationInterface $relation, string $column): ?FieldInterface
     {
-        $filters = [];
         foreach (self::declaredFor($relation) as $field) {
-            $filters[] = Where::make($field->name(), $field->column() ?? $field->name());
+            if (($field->column() ?? $field->name()) === $column) {
+                return $field;
+            }
         }
 
-        return $filters;
+        return null;
     }
 
     /**

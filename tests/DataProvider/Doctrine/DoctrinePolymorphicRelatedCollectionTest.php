@@ -79,6 +79,7 @@ final class DoctrinePolymorphicRelatedCollectionTest extends TestCase
             'libraries',
             [new \stdClass()],
             $relation,
+            new CollectionCriteria(new QueryParameters([], [], [], [], [])),
             $this->createStub(JsonApiRequestInterface::class),
         );
     }

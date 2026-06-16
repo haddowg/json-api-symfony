@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App\Doctrine;
 
+use haddowg\JsonApi\Collection\CollectionResult;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
-use haddowg\JsonApiBundle\DataProvider\CollectionResult;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
+use haddowg\JsonApiBundle\DataProvider\RelatedBatch;
 use haddowg\JsonApiBundle\Tests\Functional\App\Article;
 
 /**
@@ -62,6 +63,16 @@ final class OverridingArticleProvider implements DataProviderInterface
         return $this->inner->fetchRelatedCollection($relatedType, $parent, $relation, $criteria, $request);
     }
 
+    public function fetchRelatedCollectionBatch(
+        string $parentType,
+        array $parents,
+        RelationInterface $relation,
+        CollectionCriteria $criteria,
+        JsonApiRequestInterface $request,
+    ): RelatedBatch {
+        return $this->inner->fetchRelatedCollectionBatch($parentType, $parents, $relation, $criteria, $request);
+    }
+
     public function fetchRelationshipPivot(string $type, object $parent, RelationInterface $relation): array
     {
         return $this->inner->fetchRelationshipPivot($type, $parent, $relation);
@@ -71,8 +82,29 @@ final class OverridingArticleProvider implements DataProviderInterface
         string $type,
         array $parents,
         RelationInterface $relation,
+        CollectionCriteria $criteria,
         JsonApiRequestInterface $request,
     ): array {
-        return $this->inner->countRelated($type, $parents, $relation, $request);
+        return $this->inner->countRelated($type, $parents, $relation, $criteria, $request);
+    }
+
+    public function relatedToOneMatches(
+        string $relatedType,
+        object $related,
+        RelationInterface $relation,
+        CollectionCriteria $criteria,
+        JsonApiRequestInterface $request,
+    ): bool {
+        return $this->inner->relatedToOneMatches($relatedType, $related, $relation, $criteria, $request);
+    }
+
+    public function relatedToOneMatchesBatch(
+        string $parentType,
+        array $parents,
+        RelationInterface $relation,
+        CollectionCriteria $criteria,
+        JsonApiRequestInterface $request,
+    ): array {
+        return $this->inner->relatedToOneMatchesBatch($parentType, $parents, $relation, $criteria, $request);
     }
 }

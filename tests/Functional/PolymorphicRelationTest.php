@@ -195,6 +195,75 @@ final class PolymorphicRelationTest extends JsonApiFunctionalTestCase
         self::assertIsArray($meta['page']);
     }
 
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    #[Group('spec:fetching-filtering')]
+    #[Group('spec:errors')]
+    public function aFilterOnAPolymorphicToOneRelatedEndpointIs400(): void
+    {
+        // A polymorphic to-one (`pinned`, a MorphTo) has no single related resource and
+        // so no shared filter vocabulary — ANY filter key is unrecognised, mirroring the
+        // polymorphic to-many's 400 (bundle ADR 0068 follow-up #1). Today it was silently
+        // swallowed (200).
+        $response = $this->handle(self::BASE_URI . '/boards/1/pinned?filter[name]=x');
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['parameter' => 'filter[name]'], $this->firstError($response)['source'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    #[Group('spec:fetching-filtering')]
+    #[Group('spec:errors')]
+    public function aFilterOnAPolymorphicToOneRelationshipEndpointIs400(): void
+    {
+        // The relationship-linkage endpoint mirrors the related endpoint: a filter on a
+        // polymorphic to-one is the same unrecognised-key 400 (follow-up #1).
+        $response = $this->handle(self::BASE_URI . '/boards/1/relationships/pinned?filter[name]=x');
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['parameter' => 'filter[name]'], $this->firstError($response)['source'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    #[Group('spec:fetching-filtering')]
+    #[Group('spec:errors')]
+    public function aFilterOnAPolymorphicToOneRelatedEndpointWithNoPinnedTargetIs400(): void
+    {
+        // The 400 is gated on the requested filter being present, NOT on a target
+        // existing: a filter on an empty polymorphic to-one still 400s (follow-up #1).
+        // Board 3 pins nothing.
+        $response = $this->handle(self::BASE_URI . '/boards/3/pinned?filter[name]=x');
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['parameter' => 'filter[name]'], $this->firstError($response)['source'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:profiles')]
+    #[Group('spec:fetching-relationships')]
+    #[Group('spec:fetching-filtering')]
+    #[Group('spec:errors')]
+    public function aRelatedQueryFilterOnAPolymorphicToOnePrimaryRequestIs400(): void
+    {
+        // Addressing a polymorphic to-one with a relatedQuery filter from a primary
+        // request under the profile is a 400 too: a polymorphic to-one is not a
+        // windowable nor a (monomorphic) filterable to-one path, so the batcher's
+        // path validation rejects it as an unrecognised relatedQuery path — never a
+        // silent swallow (follow-up #1).
+        $response = $this->handle(
+            self::BASE_URI . '/boards/1?relatedQuery[pinned][filter][name]=x',
+            extraServer: ['HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . \haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile::URI . '"'],
+        );
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(
+            ['parameter' => 'relatedQuery[pinned]'],
+            $this->firstError($response)['source'] ?? null,
+        );
+    }
+
     // --- helpers ---------------------------------------------------------------
 
     /**
@@ -211,6 +280,24 @@ final class PolymorphicRelationTest extends JsonApiFunctionalTestCase
         self::assertSame('application/vnd.api+json', $response->headers->get('Content-Type'));
 
         return $this->decode($response);
+    }
+
+    /**
+     * The first error object of the decoded error document `$response` carries.
+     *
+     * @return array<string, mixed>
+     */
+    private function firstError(\Symfony\Component\HttpFoundation\Response $response): array
+    {
+        $errors = $this->decode($response)['errors'] ?? null;
+        self::assertIsArray($errors);
+        self::assertNotEmpty($errors);
+
+        $first = $errors[0] ?? null;
+        self::assertIsArray($first);
+
+        /** @var array<string, mixed> $first */
+        return $first;
     }
 
     /**

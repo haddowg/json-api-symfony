@@ -42,7 +42,6 @@
         "opis/json-schema": "^2.6",
         "phpstan/phpstan": "^2.0",
         "phpunit/phpunit": "^12.0",
-        "shipmonk/doctrine-entity-preloader": "^1.4",
         "symfony/browser-kit": "^6.4 || ^7.0",
         "symfony/clock": "^6.4 || ^7.0",
         "symfony/doctrine-bridge": "^6.4 || ^7.0",
@@ -63,7 +62,6 @@
         "egulias/email-validator": "Enables strict (RFC 5322) translation of the email.strict constraint; without it the Email rule falls back to Symfony's HTML5 mode (^4.0).",
         "opis/json-schema": "Enables the optional dev/CI structural document linter (json_api.schema_validation) that validates write bodies against the JSON:API JSON Schema (^2.6).",
         "symfony/intl": "Enables sourcing a reference-data resource (e.g. a countries list) from the ICU dataset; used by the music-catalog example app (^6.4 || ^7.0).",
-        "shipmonk/doctrine-entity-preloader": "Enables automatic batch eager-loading of the Doctrine provider's effective ?include tree (Laravel-style, one query per level), so includes do not N+1; without it includes render lazily (^1.4).",
         "symfony/framework-bundle": "Enables the JsonApiBrowser test utility (it extends Symfony's KernelBrowser); only needed in test/dev (^6.4 || ^7.0).",
         "symfony/browser-kit": "Enables the JsonApiBrowser test utility (KernelBrowser's BrowserKit base); only needed in test/dev (^6.4 || ^7.0)."
     },
