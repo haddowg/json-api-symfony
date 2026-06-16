@@ -22,8 +22,8 @@ final class AuthorEntityFactory extends PersistentObjectFactory
 
     protected function defaults(): array
     {
+        // No `id`: the store-provided `AUTO` column assigns it by insertion order.
         return [
-            'id' => self::faker()->unique()->uuid(),
             'name' => self::faker()->name(),
         ];
     }

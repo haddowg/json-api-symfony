@@ -41,13 +41,13 @@ abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTest
     #[Group('spec:fetching-relationships')]
     public function aToOneRelationshipRendersASingleResourceIdentifier(): void
     {
-        // Article 1 is authored by a1 (see ArticleFixtures::relationships()).
+        // Article 1 is authored by author 1 (see ArticleFixtures::relationships()).
         $relationships = $this->relationshipsOf($this->fetchResource('/articles/1'));
 
         $author = $relationships['author'] ?? null;
         self::assertIsArray($author);
         self::assertArrayHasKey('data', $author);
-        self::assertSame(['type' => 'authors', 'id' => 'a1'], $author['data']);
+        self::assertSame(['type' => 'authors', 'id' => '1'], $author['data']);
     }
 
     #[Test]
@@ -91,7 +91,7 @@ abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTest
     #[Group('spec:fetching-relationships')]
     public function aToManyRelationshipRendersAListOfResourceIdentifiers(): void
     {
-        // Article 1 owns comments c1 and c2 in declaration order.
+        // Article 1 owns comments 1 and 2 in declaration order.
         $relationships = $this->relationshipsOf($this->fetchResource('/articles/1'));
 
         $comments = $relationships['comments'] ?? null;
@@ -100,8 +100,8 @@ abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTest
 
         self::assertSame(
             [
-                ['type' => 'comments', 'id' => 'c1'],
-                ['type' => 'comments', 'id' => 'c2'],
+                ['type' => 'comments', 'id' => '1'],
+                ['type' => 'comments', 'id' => '2'],
             ],
             $this->normaliseIdentifiers($comments['data']),
         );
@@ -111,12 +111,12 @@ abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTest
     #[Group('spec:fetching-relationships')]
     public function anEmptyToManyRelationshipRendersAnEmptyList(): void
     {
-        // Article 4 has an author (a2) but no comments.
+        // Article 4 has an author (author 2) but no comments.
         $relationships = $this->relationshipsOf($this->fetchResource('/articles/4'));
 
         $author = $relationships['author'] ?? null;
         self::assertIsArray($author);
-        self::assertSame(['type' => 'authors', 'id' => 'a2'], $author['data']);
+        self::assertSame(['type' => 'authors', 'id' => '2'], $author['data']);
 
         $comments = $relationships['comments'] ?? null;
         self::assertIsArray($comments);
@@ -140,8 +140,8 @@ abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTest
         self::assertArrayHasKey('data', $comments);
         self::assertSame(
             [
-                ['type' => 'comments', 'id' => 'c1'],
-                ['type' => 'comments', 'id' => 'c2'],
+                ['type' => 'comments', 'id' => '1'],
+                ['type' => 'comments', 'id' => '2'],
             ],
             $this->normaliseIdentifiers($comments['data']),
         );
@@ -162,7 +162,7 @@ abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTest
         $lazyAuthor = $relationships['lazyAuthor'] ?? null;
         self::assertIsArray($lazyAuthor);
         self::assertArrayHasKey('data', $lazyAuthor);
-        self::assertSame(['type' => 'authors', 'id' => 'a1'], $lazyAuthor['data']);
+        self::assertSame(['type' => 'authors', 'id' => '1'], $lazyAuthor['data']);
     }
 
     #[Test]
@@ -185,17 +185,17 @@ abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTest
         $relationships = $resource['relationships'] ?? null;
         self::assertIsArray($relationships);
 
-        // Article 3 is authored by a1 and owns comments c4 and c5.
+        // Article 3 is authored by author 1 and owns comments 4 and 5.
         $author = $relationships['author'] ?? null;
         self::assertIsArray($author);
-        self::assertSame(['type' => 'authors', 'id' => 'a1'], $author['data']);
+        self::assertSame(['type' => 'authors', 'id' => '1'], $author['data']);
 
         $comments = $relationships['comments'] ?? null;
         self::assertIsArray($comments);
         self::assertSame(
             [
-                ['type' => 'comments', 'id' => 'c4'],
-                ['type' => 'comments', 'id' => 'c5'],
+                ['type' => 'comments', 'id' => '4'],
+                ['type' => 'comments', 'id' => '5'],
             ],
             $this->normaliseIdentifiers($comments['data']),
         );

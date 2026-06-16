@@ -14,7 +14,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App;
 final class Tag
 {
     public function __construct(
-        public string $id = '',
+        public ?int $id = null,
         public string $name = '',
         public ?Article $article = null,
     ) {}

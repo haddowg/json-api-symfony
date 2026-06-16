@@ -21,14 +21,23 @@ final class WritableArticleFactory
     {
         $articles = [];
         foreach (ArticleFixtures::data() as $id => $article) {
-            $articles[(string) $id] = new Article((string) $id, $article['title'], $article['body'], $article['category']);
+            $articles[(string) $id] = new Article((int) $id, $article['title'], $article['body'], $article['category']);
         }
 
-        return new InMemoryDataProvider('articles', $articles, static function (object $item): string {
-            \assert($item instanceof Article);
+        return new InMemoryDataProvider(
+            'articles',
+            $articles,
+            static function (object $item): string {
+                \assert($item instanceof Article);
 
-            return $item->id;
-        });
+                return $item->id === null ? '' : (string) $item->id;
+            },
+            static function (object $item, string $id): void {
+                \assert($item instanceof Article);
+
+                $item->id = (int) $id;
+            },
+        );
     }
 
     public static function createPersister(InMemoryDataProvider $provider): InMemoryDataPersister

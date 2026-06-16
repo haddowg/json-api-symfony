@@ -28,18 +28,24 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\User;
  * the directional CompareField. Album "3" is unpublished so the
  * `PublishedAlbumsExtension` scope (built next phase) has a row to hide.
  *
+ * The entity-backed rows use **store-provided ids** (the example's norm): the
+ * auto-increment integer PKs are assigned by the database on flush, in persist
+ * order — so the rows persisted first take ids `1, 2, 3, …` per table, exactly the
+ * ids the tests assert (and the same values core's hand-set seed used). Playlist
+ * alone keeps a hand-set UUID (its app-generated string PK).
+ *
  * The graph is built in passes: construct every row, wire the references, then
  * persist + flush once. The polymorphic targets are stored as
- * `targetType`/`targetId` pairs ({@see Favorite}) and the library's items are left
- * to the custom provider to resolve — so only the pointers are persisted here.
+ * `targetType`/`targetId` pairs ({@see Favorite}) — the `targetId` is the favoritable
+ * member's *wire* id (the stringified auto-increment integer) — and the library's
+ * items are left to the custom provider to resolve, so only the pointers persist here.
  */
 final class Seed
 {
     public static function into(EntityManagerInterface $entityManager): void
     {
-        // --- Artists ----------------------------------------------------------
+        // --- Artists (ids 1, 2 assigned by the DB in persist order) -----------
         $radiohead = new Artist(
-            id: '1',
             name: 'Radiohead',
             slug: 'radiohead',
             website: 'https://radiohead.com',
@@ -48,7 +54,6 @@ final class Seed
             createdAt: new \DateTimeImmutable('2001-05-01T09:00:00+00:00'),
         );
         $portishead = new Artist(
-            id: '2',
             name: 'Portishead',
             slug: 'portishead',
             website: null,
@@ -57,9 +62,8 @@ final class Seed
             createdAt: new \DateTimeImmutable('2002-08-15T12:30:00+00:00'),
         );
 
-        // --- Albums (album "3" is unpublished — the extension scope hides it) --
+        // --- Albums (ids 1, 2, 3; album "3" is unpublished — the scope hides it) --
         $okComputer = new Album(
-            id: '1',
             title: 'OK Computer',
             averageRating: 9.8,
             releasedAt: new \DateTimeImmutable('1997-05-21T00:00:00+00:00'),
@@ -71,7 +75,6 @@ final class Seed
             artist: $radiohead,
         );
         $dummy = new Album(
-            id: '2',
             title: 'Dummy',
             averageRating: 9.1,
             releasedAt: new \DateTimeImmutable('1994-08-22T00:00:00+00:00'),
@@ -83,7 +86,6 @@ final class Seed
             artist: $portishead,
         );
         $unreleased = new Album(
-            id: '3',
             title: 'Unreleased Sessions',
             averageRating: null,
             releasedAt: null,
@@ -95,9 +97,8 @@ final class Seed
             artist: $radiohead,
         );
 
-        // --- Tracks -----------------------------------------------------------
+        // --- Tracks (ids 1, 2, 3, 4 in persist order) -------------------------
         $airbag = new Track(
-            id: '1',
             title: 'Airbag',
             trackNumber: 1,
             length_seconds: 284,
@@ -107,7 +108,6 @@ final class Seed
             album: $okComputer,
         );
         $paranoidAndroid = new Track(
-            id: '2',
             title: 'Paranoid Android',
             trackNumber: 2,
             length_seconds: 383,
@@ -117,7 +117,6 @@ final class Seed
             album: $okComputer,
         );
         $exitMusic = new Track(
-            id: '3',
             title: 'Exit Music (For a Film)',
             trackNumber: 3,
             length_seconds: 264,
@@ -127,7 +126,6 @@ final class Seed
             album: $okComputer,
         );
         $mysterons = new Track(
-            id: '4',
             title: 'Mysterons',
             trackNumber: 1,
             length_seconds: 305,
@@ -137,11 +135,10 @@ final class Seed
             album: $dummy,
         );
 
-        // --- Library + User (the OneToOne owning FK is on the user) -----------
-        $library = new Library(id: '1');
+        // --- Library + User (ids 1, 1; the OneToOne owning FK is on the user) --
+        $library = new Library();
 
         $ada = new User(
-            id: '1',
             email: 'ada@example.com',
             displayName: 'Ada',
             birthDate: new \DateTimeImmutable('1990-12-10'),
@@ -151,7 +148,7 @@ final class Seed
             library: $library,
         );
 
-        // --- Playlist (client-generated UUID id) ------------------------------
+        // --- Playlist (app-keyed UUID id, hand-set in the fixture) ------------
         $morningMix = new Playlist(
             id: '00000000-0000-4000-8000-000000000001',
             title: 'Morning Mix',
@@ -164,23 +161,21 @@ final class Seed
         $airbag->playlists->add($morningMix);
         $paranoidAndroid->playlists->add($morningMix);
 
-        // --- Favorites (MorphTo: stored as a targetType/targetId pair) ---------
+        // --- Favorites (ids 1, 2, 3; MorphTo stored as a targetType/targetId pair;
+        //     the targetId is the favoritable member's wire id) -----------------
         $favTrack = new Favorite(
-            id: '1',
             favoritedAt: new \DateTimeImmutable('2024-01-15T10:00:00+00:00'),
             targetType: 'tracks',
             targetId: '2',
             user: $ada,
         );
         $favAlbum = new Favorite(
-            id: '2',
             favoritedAt: new \DateTimeImmutable('2024-02-20T14:30:00+00:00'),
             targetType: 'albums',
             targetId: '1',
             user: $ada,
         );
         $favArtist = new Favorite(
-            id: '3',
             favoritedAt: new \DateTimeImmutable('2024-03-05T08:15:00+00:00'),
             targetType: 'artists',
             targetId: '2',

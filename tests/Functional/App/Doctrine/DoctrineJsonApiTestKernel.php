@@ -128,6 +128,11 @@ final class DoctrineJsonApiTestKernel extends Kernel
         // has required constructor arguments, so create only works because the
         // persister instantiates it without invoking the constructor (ADR 0029).
         $services->set(DoctrineVaultResource::class);
+
+        // The encoded-id witness: a `cogs` type whose integer storage key is encoded
+        // to an opaque wire token, so the Doctrine provider/persister decode the route
+        // {id} and linkage ids before find/getReference (ADR 0038).
+        $services->set(CogResource::class);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

@@ -10,8 +10,8 @@ use Doctrine\ORM\Mapping as ORM;
  * The Doctrine-mapped comment: one member of an {@see ArticleEntity}'s to-many
  * `comments` association, the same shape as the in-memory
  * {@see \haddowg\JsonApiBundle\Tests\Functional\App\Comment}. It owns the
- * foreign key (`ManyToOne` to the article); the id is application-assigned.
- * Not `final` so Doctrine may proxy it.
+ * foreign key (`ManyToOne` to the article); the id is store-provided — an `AUTO`
+ * integer the database assigns on insert. Not `final` so Doctrine may proxy it.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'comment')]
@@ -19,8 +19,9 @@ class CommentEntity
 {
     public function __construct(
         #[ORM\Id]
+        #[ORM\GeneratedValue(strategy: 'AUTO')]
         #[ORM\Column]
-        public string $id = '',
+        public ?int $id = null,
         #[ORM\Column]
         public string $body = '',
         #[ORM\ManyToOne(targetEntity: ArticleEntity::class, inversedBy: 'comments')]

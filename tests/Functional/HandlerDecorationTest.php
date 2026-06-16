@@ -33,7 +33,7 @@ final class HandlerDecorationTest extends JsonApiFunctionalTestCase
     #[Group('spec:fetching')]
     public function theInterceptedSingleResourceFetchCarriesTheDecoratorMarker(): void
     {
-        $response = $this->handle('/books/b1');
+        $response = $this->handle('/books/1');
         self::assertSame(200, $response->getStatusCode());
 
         $document = $this->decode($response);
@@ -42,7 +42,7 @@ final class HandlerDecorationTest extends JsonApiFunctionalTestCase
         $data = $document['data'] ?? null;
         self::assertIsArray($data);
         self::assertSame('book', $data['type'] ?? null);
-        self::assertSame('b1', $data['id'] ?? null);
+        self::assertSame('1', $data['id'] ?? null);
 
         // ...then enriched it with the distinguishing marker.
         $meta = $document['meta'] ?? null;
@@ -66,7 +66,7 @@ final class HandlerDecorationTest extends JsonApiFunctionalTestCase
         $first = $data[0] ?? null;
         self::assertIsArray($first);
         self::assertSame('book', $first['type'] ?? null);
-        self::assertSame('b1', $first['id'] ?? null);
+        self::assertSame('1', $first['id'] ?? null);
 
         // The collection fetch is delegated unchanged, so it carries no marker.
         $meta = $document['meta'] ?? null;

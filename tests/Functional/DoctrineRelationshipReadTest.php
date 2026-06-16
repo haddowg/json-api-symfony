@@ -63,8 +63,8 @@ final class DoctrineRelationshipReadTest extends RelationshipReadConformanceTest
         self::assertArrayHasKey('data', $lazyComments);
         self::assertSame(
             [
-                ['type' => 'comments', 'id' => 'c1'],
-                ['type' => 'comments', 'id' => 'c2'],
+                ['type' => 'comments', 'id' => '1'],
+                ['type' => 'comments', 'id' => '2'],
             ],
             $this->identifiers($lazyComments['data']),
         );

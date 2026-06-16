@@ -12,13 +12,15 @@ use Doctrine\ORM\Mapping as ORM;
  * A playlist — the Doctrine-mapped twin of core's in-memory
  * {@see https://github.com/haddowg/json-api/blob/main/examples/music-catalog/src/Domain/Playlist.php Playlist}.
  *
- * Its `id` is a client-generated UUID (the resource opts in via
- * `acceptsClientGeneratedId()`, and the custom
- * {@see \haddowg\JsonApiBundle\Examples\MusicCatalog\Hydrator\PlaylistHydrator}
- * accepts it); `slug` is derived from `title` by that hydrator.
+ * Its `id` is a **UUID** — the id-strategy demonstrator for a string PK the app (not
+ * the database) keys. The {@see \haddowg\JsonApiBundle\Examples\MusicCatalog\Resource\PlaylistResource}
+ * declares `Id::make()->uuid()->generated()`, so the app mints a v4 UUID when a
+ * create omits one; the custom
+ * {@see \haddowg\JsonApiBundle\Examples\MusicCatalog\Hydrator\PlaylistHydrator} also
+ * accepts a well-formed client `id` and derives `slug` from `title`.
  *
- * The id is application-assigned (no generator) since the client supplies it.
- * Not `final` so Doctrine may proxy it.
+ * The id is a non-generated string column (no `GeneratedValue`): the value comes
+ * from the app/client, not the store. Not `final` so Doctrine may proxy it.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'playlist')]

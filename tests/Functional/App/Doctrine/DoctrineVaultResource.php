@@ -24,6 +24,8 @@ final class DoctrineVaultResource extends AbstractResource
     public function fields(): array
     {
         return [
+            // Store-provided id: the {@see VaultEntity} keys on a database
+            // auto-increment the persister reads back after flush (core ADR 0048).
             Id::make(),
             Str::make('secret'),
         ];

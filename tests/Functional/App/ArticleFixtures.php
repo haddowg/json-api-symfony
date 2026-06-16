@@ -37,31 +37,37 @@ final class ArticleFixtures
     }
 
     /**
-     * The `authors` seed, keyed by author id.
+     * The `authors` seed, keyed by author id. The ids are per-type sequential
+     * ints (`1`, `2`) matching the order the Doctrine factory inserts them, since
+     * a store-provided `AUTO` column ignores a pre-set id and assigns by insertion
+     * order. PHP coerces the numeric-string keys to `int`.
      *
-     * @return array<string, array{name: string}>
+     * @return array<int|string, array{name: string}>
      */
     public static function authors(): array
     {
         return [
-            'a1' => ['name' => 'Ada Lovelace'],
-            'a2' => ['name' => 'Grace Hopper'],
+            '1' => ['name' => 'Ada Lovelace'],
+            '2' => ['name' => 'Grace Hopper'],
         ];
     }
 
     /**
-     * The `comments` seed, keyed by comment id.
+     * The `comments` seed, keyed by comment id. The ids are per-type sequential
+     * ints (`1`-`5`) matching the order the Doctrine factory inserts them; JSON:API
+     * ids are per-type, so comment `1` and article `1` coexist. PHP coerces the
+     * numeric-string keys to `int`.
      *
-     * @return array<string, array{body: string}>
+     * @return array<int|string, array{body: string}>
      */
     public static function comments(): array
     {
         return [
-            'c1' => ['body' => 'First!'],
-            'c2' => ['body' => 'Nice write-up.'],
-            'c3' => ['body' => 'Could use more detail.'],
-            'c4' => ['body' => 'Bookmarked.'],
-            'c5' => ['body' => 'Thanks for sharing.'],
+            '1' => ['body' => 'First!'],
+            '2' => ['body' => 'Nice write-up.'],
+            '3' => ['body' => 'Could use more detail.'],
+            '4' => ['body' => 'Bookmarked.'],
+            '5' => ['body' => 'Thanks for sharing.'],
         ];
     }
 
@@ -79,10 +85,10 @@ final class ArticleFixtures
     public static function relationships(): array
     {
         return [
-            '1' => ['author' => 'a1', 'comments' => ['c1', 'c2']],
-            '2' => ['author' => 'a2', 'comments' => ['c3']],
-            '3' => ['author' => 'a1', 'comments' => ['c4', 'c5']],
-            '4' => ['author' => 'a2', 'comments' => []],
+            '1' => ['author' => '1', 'comments' => ['1', '2']],
+            '2' => ['author' => '2', 'comments' => ['3']],
+            '3' => ['author' => '1', 'comments' => ['4', '5']],
+            '4' => ['author' => '2', 'comments' => []],
             '5' => ['author' => null, 'comments' => []],
         ];
     }
@@ -92,7 +98,7 @@ final class ArticleFixtures
      * each article has, distinct from the to-one `author` of
      * {@see relationships()}. This backs the unidirectional ManyToMany `editors`
      * relation (article → authors), so it reuses the `authors` type without a new
-     * one. Author `a1` is an editor of articles 1 and 2 — a shared,
+     * one. Author `1` is an editor of articles 1 and 2 — a shared,
      * cross-parent membership the Doctrine subquery scope must return for each
      * parent without bleed.
      *
@@ -101,9 +107,9 @@ final class ArticleFixtures
     public static function editors(): array
     {
         return [
-            '1' => ['a1', 'a2'],
-            '2' => ['a1'],
-            '3' => ['a2'],
+            '1' => ['1', '2'],
+            '2' => ['1'],
+            '3' => ['2'],
             '4' => [],
             '5' => [],
         ];
@@ -122,7 +128,7 @@ final class ArticleFixtures
     public static function featuredComments(): array
     {
         return [
-            '1' => ['c1', 'c2'],
+            '1' => ['1', '2'],
             '2' => [],
             '3' => [],
             '4' => [],

@@ -35,7 +35,7 @@ final class Article
      *                               distinct from the to-one `author`
      */
     public function __construct(
-        public string $id = '',
+        public ?int $id = null,
         public string $title = '',
         public string $body = '',
         public string $category = '',

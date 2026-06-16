@@ -18,12 +18,20 @@ use Doctrine\ORM\Mapping as ORM;
  * of a polymorphic to-one; built in the next phase), and the resource's `MorphTo`
  * relation reads it off the entity. `$user` is an ordinary ManyToOne.
  *
- * The id is application-assigned. Not `final` so Doctrine may proxy it.
+ * The id is a database-assigned auto-increment integer (the store-provided default).
+ * The polymorphic `targetType`/`targetId` pair stays a plain string pair (it points
+ * at the *wire* id of the favoritable member, whatever that type's id strategy is).
+ * Not `final` so Doctrine may proxy it.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'favorite')]
 class Favorite
 {
+    #[ORM\Id]
+    #[ORM\GeneratedValue(strategy: 'AUTO')]
+    #[ORM\Column]
+    public ?int $id = null;
+
     /**
      * The resolved `favoritable` related object (Track|Album|Artist), NOT a mapped
      * column: it is populated from the {@see $targetType}/{@see $targetId} pair by
@@ -33,9 +41,6 @@ class Favorite
     public ?object $favoritable = null;
 
     public function __construct(
-        #[ORM\Id]
-        #[ORM\Column]
-        public string $id = '',
         #[ORM\Column(name: 'favorited_at', type: 'datetime_immutable', nullable: true)]
         public ?\DateTimeImmutable $favoritedAt = null,
         // The polymorphic pointer: the JSON:API type and id of the favoritable

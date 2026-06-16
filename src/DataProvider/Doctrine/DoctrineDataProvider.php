@@ -14,6 +14,7 @@ use haddowg\JsonApiBundle\DataProvider\CollectionResult;
 use haddowg\JsonApiBundle\DataProvider\CriteriaApplier;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\PreloadsIncludesInterface;
+use haddowg\JsonApiBundle\Server\IdEncoderResolver;
 
 /**
  * The reference Doctrine ORM read provider, wired only when `doctrine/orm` is
@@ -40,6 +41,14 @@ use haddowg\JsonApiBundle\DataProvider\PreloadsIncludesInterface;
  *
  * One instance serves every entity-mapped type — a different entity class per
  * type — so `TEntity` cannot narrow past `object`.
+ *
+ * When a type's resource attaches an id encoder ({@see \haddowg\JsonApi\Resource\Field\Id::encodeUsing()})
+ * the JSON:API `id` is the wire form of a distinct storage key, so this provider
+ * **decodes** the route `{id}` to its storage key (via the injected
+ * {@see IdEncoderResolver}) before every lookup — the wire-id SPI never changes,
+ * only the Doctrine impl decodes (ADR 0038). An undecodable id short-circuits to a
+ * `404` (no query runs). A type with no encoder decodes to itself, so the path is
+ * identical to today.
  *
  * It also implements {@see PreloadsIncludesInterface}: when the optional
  * `shipmonk/doctrine-entity-preloader` library is installed (and so an
@@ -71,12 +80,14 @@ final class DoctrineDataProvider implements DataProviderInterface, PreloadsInclu
 
     /**
      * @param array<string, class-string>          $entityClassByType a `type → entity FQCN` map
+     * @param IdEncoderResolver                    $idEncoders        resolves a type's id encoder (route `{id}` decode)
      * @param iterable<DoctrineExtensionInterface> $extensions        in descending tag-priority order
      * @param ?IncludePreloader                    $preloader         the optional include batch-preloader (null when `shipmonk/doctrine-entity-preloader` is absent)
      */
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
         private readonly array $entityClassByType,
+        private readonly IdEncoderResolver $idEncoders,
         iterable $extensions = [],
         // Not readonly: the include preloader is a pure optimization that can be
         // toggled off at runtime (the conformance suite disables it to prove the
@@ -98,9 +109,22 @@ final class DoctrineDataProvider implements DataProviderInterface, PreloadsInclu
     {
         $entityClass = $this->entityClassFor($type);
 
+        // Decode the wire id to its storage key when the type declares an encoder.
+        // An undecodable id is a 404: no entity holds that key, so short-circuit
+        // without querying (the SPI stays wire-id — only this impl decodes; ADR 0038).
+        $encoder = $this->idEncoders->encoderFor($type);
+        if ($encoder !== null) {
+            $storageKey = $encoder->decode($id);
+            if ($storageKey === null) {
+                return null;
+            }
+        } else {
+            $storageKey = $id;
+        }
+
         $extensions = $this->extensionsFor($type);
         if ($extensions === []) {
-            return $this->entityManager->find($entityClass, $id);
+            return $this->entityManager->find($entityClass, $storageKey);
         }
 
         $builder = $this->entityManager
@@ -112,7 +136,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PreloadsInclu
         $idField = $this->entityManager->getClassMetadata($entityClass)->getSingleIdentifierFieldName();
         $builder
             ->andWhere(\sprintf('%s.%s = :jsonapi_id', self::ROOT_ALIAS, $idField))
-            ->setParameter('jsonapi_id', $id);
+            ->setParameter('jsonapi_id', $storageKey);
 
         foreach ($extensions as $extension) {
             $builder = $extension->apply($builder, $type, QueryPurpose::FetchOne);

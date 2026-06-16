@@ -30,6 +30,7 @@ abstract class BaseTagResource extends AbstractResource
     public function fields(): array
     {
         return [
+            // Store-provided id: a database auto-increment assigns it (core ADR 0048).
             Id::make(),
             Str::make('name')->required(),
             BelongsTo::make('article')->type('articles'),

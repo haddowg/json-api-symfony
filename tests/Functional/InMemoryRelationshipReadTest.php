@@ -42,7 +42,7 @@ final class InMemoryRelationshipReadTest extends RelationshipReadConformanceTest
         // the author identifier — but it declared ->withoutLinks(), so no links.
         $editor = $relationships['editor'] ?? null;
         self::assertIsArray($editor);
-        self::assertSame(['type' => 'authors', 'id' => 'a1'], $editor['data'] ?? null);
+        self::assertSame(['type' => 'authors', 'id' => '1'], $editor['data'] ?? null);
         self::assertArrayNotHasKey('links', $editor);
     }
 
@@ -62,8 +62,8 @@ final class InMemoryRelationshipReadTest extends RelationshipReadConformanceTest
         self::assertArrayHasKey('data', $lazyComments);
         self::assertSame(
             [
-                ['type' => 'comments', 'id' => 'c1'],
-                ['type' => 'comments', 'id' => 'c2'],
+                ['type' => 'comments', 'id' => '1'],
+                ['type' => 'comments', 'id' => '2'],
             ],
             $this->normaliseIdentifiers($lazyComments['data']),
         );

@@ -14,6 +14,7 @@ use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Operation\CrudOperationHandler;
 use haddowg\JsonApiBundle\Operation\TargetResolver;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
+use haddowg\JsonApiBundle\Server\IdEncoderResolver;
 use haddowg\JsonApiBundle\Server\RelationsRegistry;
 use haddowg\JsonApiBundle\Server\ResourceLocator;
 use haddowg\JsonApiBundle\Server\ServerProvider;
@@ -82,6 +83,13 @@ return static function (ContainerConfigurator $container): void {
     // relations resource-first then from the RelationsRegistry (autowired).
     $services->set(TypeMetadataResolver::class);
 
+    // Resolves a type's id encoder + route {id} pattern from its resource's Id
+    // field (ADR 0038). The Doctrine provider/persister decode wire ids through it
+    // (the SPI stays wire-id; the in-memory provider has no encoder so wire ==
+    // storage and is untouched); the route loader reads the route pattern. It
+    // resolves through the global ResourceLocator (autowired).
+    $services->set(IdEncoderResolver::class);
+
     // --- Operations + data providers -----------------------------------------
 
     // The validator argument is optional: it resolves to the ResourceValidator
@@ -108,6 +116,7 @@ return static function (ContainerConfigurator $container): void {
     // --- Routing + controller -------------------------------------------------
 
     $services->set(JsonApiRouteLoader::class)
+        ->arg('$idEncoders', \Symfony\Component\DependencyInjection\Loader\Configurator\service(IdEncoderResolver::class))
         ->tag('routing.loader');
 
     // The pass-through controller every generated route resolves to; the
@@ -174,6 +183,7 @@ return static function (ContainerConfigurator $container): void {
             ->args([
                 '$entityManager' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\Doctrine\ORM\EntityManagerInterface::class),
                 '$entityClassByType' => [],
+                '$idEncoders' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(IdEncoderResolver::class),
                 '$extensions' => \Symfony\Component\DependencyInjection\Loader\Configurator\tagged_iterator(JsonApiBundle::DOCTRINE_EXTENSION_TAG),
                 // null when shipmonk/doctrine-entity-preloader is absent → lazy includes.
                 '$preloader' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataProvider\Doctrine\IncludePreloader::class)->nullOnInvalid(),
@@ -187,6 +197,7 @@ return static function (ContainerConfigurator $container): void {
             ->args([
                 '$entityManager' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\Doctrine\ORM\EntityManagerInterface::class),
                 '$entityClassByType' => [],
+                '$idEncoders' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(IdEncoderResolver::class),
             ])
             ->tag(JsonApiBundle::DATA_PERSISTER_TAG, ['priority' => -128]);
 

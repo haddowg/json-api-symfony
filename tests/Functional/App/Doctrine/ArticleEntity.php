@@ -11,8 +11,9 @@ use Doctrine\ORM\Mapping as ORM;
 /**
  * The Doctrine-mapped article: the same shape as the in-memory
  * {@see \haddowg\JsonApiBundle\Tests\Functional\App\Article}, persisted to the
- * test SQLite database. The id is application-assigned (no generator), matching
- * the string ids the fixtures use. Not `final` so Doctrine may proxy it.
+ * test SQLite database. The id is store-provided — an `AUTO` integer the database
+ * assigns on insert, the realistic common pattern; the JSON:API id is that int
+ * rendered as a string. Not `final` so Doctrine may proxy it.
  *
  * Relationships (Phase 3 foundation): a to-one `author`
  * ({@see ORM\ManyToOne} to {@see AuthorEntity}) and a to-many `comments`
@@ -59,8 +60,9 @@ class ArticleEntity
 
     public function __construct(
         #[ORM\Id]
+        #[ORM\GeneratedValue(strategy: 'AUTO')]
         #[ORM\Column]
-        public string $id = '',
+        public ?int $id = null,
         #[ORM\Column]
         public string $title = '',
         // `body` and `category` are optional `articles` attributes (the resource

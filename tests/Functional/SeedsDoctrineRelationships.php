@@ -31,9 +31,15 @@ trait SeedsDoctrineRelationships
         $schemaTool = new SchemaTool($entityManager);
         $schemaTool->createSchema($entityManager->getMetadataFactory()->getAllMetadata());
 
+        // No explicit ids anywhere: each entity's store-provided `AUTO` column
+        // assigns a sequential int in insertion order. Authors, articles and
+        // comments are each iterated in their canonical fixture order, so the
+        // database assigns the per-type ids the fixtures document (1..N). The
+        // relationship wiring references the *created objects* (which carry the
+        // assigned id), never a pre-set literal, so it stays correct.
         $authors = [];
         foreach (ArticleFixtures::authors() as $id => $author) {
-            $authors[(string) $id] = AuthorEntityFactory::createOne(['id' => (string) $id, 'name' => $author['name']]);
+            $authors[(string) $id] = AuthorEntityFactory::createOne(['name' => $author['name']]);
         }
 
         $relationships = ArticleFixtures::relationships();
@@ -44,7 +50,6 @@ trait SeedsDoctrineRelationships
             $authorId = $relationships[$id]['author'] ?? null;
 
             $articles[$id] = ArticleEntityFactory::createOne([
-                'id' => $id,
                 ...$article,
                 'author' => $authorId !== null ? ($authors[$authorId] ?? null) : null,
             ]);
@@ -57,7 +62,6 @@ trait SeedsDoctrineRelationships
             $featuredArticleId = self::articleFeaturingComment($featured, (string) $id);
 
             CommentEntityFactory::createOne([
-                'id' => (string) $id,
                 'body' => $comment['body'],
                 'article' => $articleId !== null ? ($articles[$articleId] ?? null) : null,
                 'featuredArticle' => $featuredArticleId !== null ? ($articles[$featuredArticleId] ?? null) : null,

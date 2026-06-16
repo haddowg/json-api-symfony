@@ -19,8 +19,9 @@ class VaultEntity
 {
     public function __construct(
         #[ORM\Id]
+        #[ORM\GeneratedValue(strategy: 'AUTO')]
         #[ORM\Column]
-        public string $id,
+        public ?int $id,
         #[ORM\Column]
         public string $secret,
     ) {}

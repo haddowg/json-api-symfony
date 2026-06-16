@@ -26,6 +26,8 @@ final class BookResource extends AbstractResource
     public function fields(): array
     {
         return [
+            // Store-provided id: the in-memory store assigns the next sequential int
+            // on an id-less create, mirroring a database auto-increment (core ADR 0048).
             Id::make(),
             Str::make('title')->required(),
             BelongsTo::make('related')->type('book'),

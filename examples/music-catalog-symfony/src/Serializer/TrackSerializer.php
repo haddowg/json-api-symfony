@@ -56,7 +56,9 @@ final class TrackSerializer extends AbstractSerializer implements SerializerReso
     {
         \assert($object instanceof Track);
 
-        return $object->id;
+        // The store-provided id is a database-assigned integer; the JSON:API id is its
+        // string form.
+        return (string) $object->id;
     }
 
     public function getMeta(mixed $object, JsonApiRequestInterface $request): array
@@ -95,7 +97,7 @@ final class TrackSerializer extends AbstractSerializer implements SerializerReso
         // user. The attribute *set* is request-dependent — anonymous responses omit it.
         if ($request->getAttribute('user') !== null) {
             $attributes['nowPlaying'] = static fn(mixed $track, JsonApiRequestInterface $request, string $field): bool
-                => $track instanceof Track && $request->getAttribute('nowPlayingTrackId') === $track->id;
+                => $track instanceof Track && $request->getAttribute('nowPlayingTrackId') === (string) $track->id;
         }
 
         return $attributes;

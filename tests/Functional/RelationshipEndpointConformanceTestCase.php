@@ -35,14 +35,14 @@ abstract class RelationshipEndpointConformanceTestCase extends JsonApiFunctional
     #[Group('spec:fetching-relationships')]
     public function aRelatedToOneEndpointRendersASingleFullResource(): void
     {
-        // Article 1 is authored by a1 (Ada Lovelace) — the related endpoint emits
+        // Article 1 is authored by author 1 (Ada Lovelace) — the related endpoint emits
         // the full authors resource, not just linkage.
         $document = $this->fetchDocument('/articles/1/author');
 
         $data = $document['data'] ?? null;
         self::assertIsArray($data);
         self::assertSame('authors', $data['type'] ?? null);
-        self::assertSame('a1', $data['id'] ?? null);
+        self::assertSame('1', $data['id'] ?? null);
 
         $attributes = $data['attributes'] ?? null;
         self::assertIsArray($attributes);
@@ -53,7 +53,7 @@ abstract class RelationshipEndpointConformanceTestCase extends JsonApiFunctional
     #[Group('spec:fetching-relationships')]
     public function aRelatedToManyEndpointRendersAListOfFullResources(): void
     {
-        // Article 1 owns comments c1, c2 in declaration order.
+        // Article 1 owns comments 1, 2 in declaration order.
         $document = $this->fetchDocument('/articles/1/comments');
 
         $data = $document['data'] ?? null;
@@ -62,8 +62,8 @@ abstract class RelationshipEndpointConformanceTestCase extends JsonApiFunctional
 
         self::assertSame(
             [
-                ['type' => 'comments', 'id' => 'c1', 'body' => 'First!'],
-                ['type' => 'comments', 'id' => 'c2', 'body' => 'Nice write-up.'],
+                ['type' => 'comments', 'id' => '1', 'body' => 'First!'],
+                ['type' => 'comments', 'id' => '2', 'body' => 'Nice write-up.'],
             ],
             $this->fullComments($data),
         );
@@ -97,7 +97,7 @@ abstract class RelationshipEndpointConformanceTestCase extends JsonApiFunctional
     {
         $document = $this->fetchDocument('/articles/1/relationships/author');
 
-        self::assertSame(['type' => 'authors', 'id' => 'a1'], $document['data'] ?? null);
+        self::assertSame(['type' => 'authors', 'id' => '1'], $document['data'] ?? null);
     }
 
     #[Test]
@@ -108,8 +108,8 @@ abstract class RelationshipEndpointConformanceTestCase extends JsonApiFunctional
 
         self::assertSame(
             [
-                ['type' => 'comments', 'id' => 'c1'],
-                ['type' => 'comments', 'id' => 'c2'],
+                ['type' => 'comments', 'id' => '1'],
+                ['type' => 'comments', 'id' => '2'],
             ],
             $this->identifiers($document['data'] ?? null),
         );
@@ -168,12 +168,12 @@ abstract class RelationshipEndpointConformanceTestCase extends JsonApiFunctional
 
         $index = $this->includedIndex($included);
 
-        self::assertArrayHasKey('authors:a1', $index);
-        self::assertSame('Ada Lovelace', $this->attribute($index, 'authors:a1', 'name'));
+        self::assertArrayHasKey('authors:1', $index);
+        self::assertSame('Ada Lovelace', $this->attribute($index, 'authors:1', 'name'));
 
-        self::assertArrayHasKey('comments:c1', $index);
-        self::assertArrayHasKey('comments:c2', $index);
-        self::assertSame('First!', $this->attribute($index, 'comments:c1', 'body'));
+        self::assertArrayHasKey('comments:1', $index);
+        self::assertArrayHasKey('comments:2', $index);
+        self::assertSame('First!', $this->attribute($index, 'comments:1', 'body'));
     }
 
     #[Test]
@@ -181,7 +181,7 @@ abstract class RelationshipEndpointConformanceTestCase extends JsonApiFunctional
     public function aCollectionFetchWithIncludeRendersACompoundDocument(): void
     {
         // ?include=author on the collection must surface the distinct authors
-        // (a1, a2) once each in the top-level included member.
+        // (1, 2) once each in the top-level included member.
         $document = $this->fetchDocument('/articles?include=author');
 
         $included = $document['included'] ?? null;
@@ -189,10 +189,10 @@ abstract class RelationshipEndpointConformanceTestCase extends JsonApiFunctional
 
         $index = $this->includedIndex($included);
 
-        self::assertArrayHasKey('authors:a1', $index);
-        self::assertArrayHasKey('authors:a2', $index);
-        self::assertSame('Ada Lovelace', $this->attribute($index, 'authors:a1', 'name'));
-        self::assertSame('Grace Hopper', $this->attribute($index, 'authors:a2', 'name'));
+        self::assertArrayHasKey('authors:1', $index);
+        self::assertArrayHasKey('authors:2', $index);
+        self::assertSame('Ada Lovelace', $this->attribute($index, 'authors:1', 'name'));
+        self::assertSame('Grace Hopper', $this->attribute($index, 'authors:2', 'name'));
     }
 
     #[Test]
@@ -208,7 +208,7 @@ abstract class RelationshipEndpointConformanceTestCase extends JsonApiFunctional
         $data = $document['data'] ?? null;
         self::assertIsArray($data);
         self::assertSame('authors', $data['type'] ?? null);
-        self::assertSame('a1', $data['id'] ?? null);
+        self::assertSame('1', $data['id'] ?? null);
     }
 
     // --- helpers ---------------------------------------------------------------

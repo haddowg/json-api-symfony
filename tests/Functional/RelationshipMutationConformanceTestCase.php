@@ -42,17 +42,17 @@ abstract class RelationshipMutationConformanceTestCase extends JsonApiFunctional
     #[Group('spec:updating-relationships')]
     public function patchingAToOneReplacesItAndPersists(): void
     {
-        // Article 1 is authored by a1; replace with a2.
+        // Article 1 is authored by author 1; replace with author 2.
         $response = $this->handle('/articles/1/relationships/author', 'PATCH', [
-            'data' => ['type' => 'authors', 'id' => 'a2'],
+            'data' => ['type' => 'authors', 'id' => '2'],
         ]);
 
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
-        self::assertSame(['type' => 'authors', 'id' => 'a2'], $this->linkage($response));
+        self::assertSame(['type' => 'authors', 'id' => '2'], $this->linkage($response));
 
         // The replacement persisted: a fresh linkage read reflects it.
         self::assertSame(
-            ['type' => 'authors', 'id' => 'a2'],
+            ['type' => 'authors', 'id' => '2'],
             $this->linkageOf('/articles/1/relationships/author'),
         );
     }
@@ -75,16 +75,16 @@ abstract class RelationshipMutationConformanceTestCase extends JsonApiFunctional
     #[Group('spec:updating-relationships')]
     public function patchingAToManyReplacesTheWholeSetAndPersists(): void
     {
-        // Article 1 owns c1, c2; replace its comment set with [c4].
+        // Article 1 owns comments 1, 2; replace its comment set with [comment 4].
         $response = $this->handle('/articles/1/relationships/comments', 'PATCH', [
-            'data' => [['type' => 'comments', 'id' => 'c4']],
+            'data' => [['type' => 'comments', 'id' => '4']],
         ]);
 
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
-        self::assertSame([['type' => 'comments', 'id' => 'c4']], $this->identifiers($response));
+        self::assertSame([['type' => 'comments', 'id' => '4']], $this->identifiers($response));
 
         self::assertSame(
-            [['type' => 'comments', 'id' => 'c4']],
+            [['type' => 'comments', 'id' => '4']],
             $this->identifiersOf('/articles/1/relationships/comments'),
         );
     }
@@ -93,20 +93,20 @@ abstract class RelationshipMutationConformanceTestCase extends JsonApiFunctional
     #[Group('spec:updating-relationships')]
     public function postingToAToManyAddsMembersIdempotentlyAndPersists(): void
     {
-        // Article 1 owns c1, c2. Add c4 and c1 (already present): the result is
-        // c1, c2, c4 — c1 not duplicated (set semantics).
+        // Article 1 owns comments 1, 2. Add comments 4 and 1 (already present): the result is
+        // comments 1, 2, 4 — comment 1 not duplicated (set semantics).
         $response = $this->handle('/articles/1/relationships/comments', 'POST', [
             'data' => [
-                ['type' => 'comments', 'id' => 'c4'],
-                ['type' => 'comments', 'id' => 'c1'],
+                ['type' => 'comments', 'id' => '4'],
+                ['type' => 'comments', 'id' => '1'],
             ],
         ]);
 
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
-        self::assertSame(['c1', 'c2', 'c4'], $this->commentIds($this->identifiers($response)));
+        self::assertSame(['1', '2', '4'], $this->commentIds($this->identifiers($response)));
 
         self::assertSame(
-            ['c1', 'c2', 'c4'],
+            ['1', '2', '4'],
             $this->commentIds($this->identifiersOf('/articles/1/relationships/comments')),
         );
     }
@@ -115,16 +115,16 @@ abstract class RelationshipMutationConformanceTestCase extends JsonApiFunctional
     #[Group('spec:updating-relationships')]
     public function deletingFromAToManyRemovesMembersAndPersists(): void
     {
-        // Article 1 owns c1, c2. Remove c1: the result is c2.
+        // Article 1 owns comments 1, 2. Remove comment 1: the result is comment 2.
         $response = $this->handle('/articles/1/relationships/comments', 'DELETE', [
-            'data' => [['type' => 'comments', 'id' => 'c1']],
+            'data' => [['type' => 'comments', 'id' => '1']],
         ]);
 
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
-        self::assertSame(['c2'], $this->commentIds($this->identifiers($response)));
+        self::assertSame(['2'], $this->commentIds($this->identifiers($response)));
 
         self::assertSame(
-            ['c2'],
+            ['2'],
             $this->commentIds($this->identifiersOf('/articles/1/relationships/comments')),
         );
     }
@@ -146,10 +146,10 @@ abstract class RelationshipMutationConformanceTestCase extends JsonApiFunctional
                     'category' => 'news',
                 ],
                 'relationships' => [
-                    'author' => ['data' => ['type' => 'authors', 'id' => 'a1']],
+                    'author' => ['data' => ['type' => 'authors', 'id' => '1']],
                     'comments' => ['data' => [
-                        ['type' => 'comments', 'id' => 'c1'],
-                        ['type' => 'comments', 'id' => 'c2'],
+                        ['type' => 'comments', 'id' => '1'],
+                        ['type' => 'comments', 'id' => '2'],
                     ]],
                 ],
             ],
@@ -173,11 +173,11 @@ abstract class RelationshipMutationConformanceTestCase extends JsonApiFunctional
         // read provider — the Doctrine subclass clears the identity map first, so
         // the foreign keys were actually written) reflects the author + comments.
         self::assertSame(
-            ['type' => 'authors', 'id' => 'a1'],
+            ['type' => 'authors', 'id' => '1'],
             $this->linkageOf('/articles/' . $id . '/relationships/author'),
         );
         self::assertSame(
-            ['c1', 'c2'],
+            ['1', '2'],
             $this->commentIds($this->identifiersOf('/articles/' . $id . '/relationships/comments')),
         );
     }
@@ -195,7 +195,7 @@ abstract class RelationshipMutationConformanceTestCase extends JsonApiFunctional
                 'type' => 'articles',
                 'attributes' => ['title' => 'No author via read-only', 'body' => 'x', 'category' => 'news'],
                 'relationships' => [
-                    'readOnlyAuthor' => ['data' => ['type' => 'authors', 'id' => 'a1']],
+                    'readOnlyAuthor' => ['data' => ['type' => 'authors', 'id' => '1']],
                 ],
             ],
         ]);
@@ -214,14 +214,14 @@ abstract class RelationshipMutationConformanceTestCase extends JsonApiFunctional
     #[Group('spec:updating-resources')]
     public function aReadOnlyRelationshipIsNotOverwrittenByAWholeResourceUpdate(): void
     {
-        // Article 1 is seeded with author a1; a PATCH naming readOnlyAuthor=a2 must be
+        // Article 1 is seeded with author 1; a PATCH naming readOnlyAuthor=2 must be
         // skipped, leaving the author unchanged — the over-posting guard.
         $response = $this->handle('/articles/1', 'PATCH', [
             'data' => [
                 'type' => 'articles',
                 'id' => '1',
                 'relationships' => [
-                    'readOnlyAuthor' => ['data' => ['type' => 'authors', 'id' => 'a2']],
+                    'readOnlyAuthor' => ['data' => ['type' => 'authors', 'id' => '2']],
                 ],
             ],
         ]);
@@ -229,7 +229,7 @@ abstract class RelationshipMutationConformanceTestCase extends JsonApiFunctional
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
 
         self::assertSame(
-            ['type' => 'authors', 'id' => 'a1'],
+            ['type' => 'authors', 'id' => '1'],
             $this->linkageOf('/articles/1/relationships/author'),
         );
     }
@@ -266,9 +266,9 @@ abstract class RelationshipMutationConformanceTestCase extends JsonApiFunctional
     #[Group('spec:updating-resources')]
     public function patchingAResourceReplacesItsRelationshipsThroughThePersisterSeam(): void
     {
-        // Article 1 is authored by a1 and owns c1, c2. A whole-resource PATCH
-        // carrying `data.relationships` replaces the author with a2 and the comment
-        // set with [c4] — applied through the same persister seam as the
+        // Article 1 is authored by author 1 and owns comments 1, 2. A whole-resource PATCH
+        // carrying `data.relationships` replaces the author with author 2 and the comment
+        // set with [comment 4] — applied through the same persister seam as the
         // relationship endpoints, not core's scalar-id hydration.
         $response = $this->handle('/articles/1', 'PATCH', [
             'data' => [
@@ -276,8 +276,8 @@ abstract class RelationshipMutationConformanceTestCase extends JsonApiFunctional
                 'id' => '1',
                 'attributes' => ['title' => 'A retitled, re-linked article'],
                 'relationships' => [
-                    'author' => ['data' => ['type' => 'authors', 'id' => 'a2']],
-                    'comments' => ['data' => [['type' => 'comments', 'id' => 'c4']]],
+                    'author' => ['data' => ['type' => 'authors', 'id' => '2']],
+                    'comments' => ['data' => [['type' => 'comments', 'id' => '4']]],
                 ],
             ],
         ]);
@@ -292,11 +292,11 @@ abstract class RelationshipMutationConformanceTestCase extends JsonApiFunctional
 
         // The replacements persisted (re-fetched through the read provider).
         self::assertSame(
-            ['type' => 'authors', 'id' => 'a2'],
+            ['type' => 'authors', 'id' => '2'],
             $this->linkageOf('/articles/1/relationships/author'),
         );
         self::assertSame(
-            ['c4'],
+            ['4'],
             $this->commentIds($this->identifiersOf('/articles/1/relationships/comments')),
         );
     }
@@ -306,7 +306,7 @@ abstract class RelationshipMutationConformanceTestCase extends JsonApiFunctional
     public function patchingAResourceWithoutRelationshipsLeavesThemUntouched(): void
     {
         // A PATCH that supplies no `data.relationships` must not disturb the
-        // existing associations: article 1 keeps author a1 and comments c1, c2.
+        // existing associations: article 1 keeps author 1 and comments 1, 2.
         $response = $this->handle('/articles/1', 'PATCH', [
             'data' => [
                 'type' => 'articles',
@@ -318,11 +318,11 @@ abstract class RelationshipMutationConformanceTestCase extends JsonApiFunctional
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
 
         self::assertSame(
-            ['type' => 'authors', 'id' => 'a1'],
+            ['type' => 'authors', 'id' => '1'],
             $this->linkageOf('/articles/1/relationships/author'),
         );
         self::assertSame(
-            ['c1', 'c2'],
+            ['1', '2'],
             $this->commentIds($this->identifiersOf('/articles/1/relationships/comments')),
         );
     }
@@ -338,7 +338,7 @@ abstract class RelationshipMutationConformanceTestCase extends JsonApiFunctional
                 'type' => 'articles',
                 'id' => '1',
                 'relationships' => [
-                    'author' => ['data' => ['type' => 'authors', 'id' => 'a2']],
+                    'author' => ['data' => ['type' => 'authors', 'id' => '2']],
                 ],
             ],
         ]);
@@ -346,11 +346,11 @@ abstract class RelationshipMutationConformanceTestCase extends JsonApiFunctional
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
 
         self::assertSame(
-            ['type' => 'authors', 'id' => 'a2'],
+            ['type' => 'authors', 'id' => '2'],
             $this->linkageOf('/articles/1/relationships/author'),
         );
         self::assertSame(
-            ['c1', 'c2'],
+            ['1', '2'],
             $this->commentIds($this->identifiersOf('/articles/1/relationships/comments')),
         );
     }
@@ -361,14 +361,14 @@ abstract class RelationshipMutationConformanceTestCase extends JsonApiFunctional
     {
         // lockedAuthor reads the `author` property but forbids replacement.
         $response = $this->handle('/articles/1/relationships/lockedAuthor', 'PATCH', [
-            'data' => ['type' => 'authors', 'id' => 'a2'],
+            'data' => ['type' => 'authors', 'id' => '2'],
         ]);
 
         $this->assertError($response, 403);
 
-        // The forbidden mutation did not persist: article 1 still has author a1.
+        // The forbidden mutation did not persist: article 1 still has author 1.
         self::assertSame(
-            ['type' => 'authors', 'id' => 'a1'],
+            ['type' => 'authors', 'id' => '1'],
             $this->linkageOf('/articles/1/relationships/author'),
         );
     }
@@ -379,14 +379,14 @@ abstract class RelationshipMutationConformanceTestCase extends JsonApiFunctional
     {
         // lockedComments reads the `comments` property but forbids removal.
         $response = $this->handle('/articles/1/relationships/lockedComments', 'DELETE', [
-            'data' => [['type' => 'comments', 'id' => 'c1']],
+            'data' => [['type' => 'comments', 'id' => '1']],
         ]);
 
         $this->assertError($response, 403);
 
-        // The forbidden removal did not persist: article 1 still owns c1, c2.
+        // The forbidden removal did not persist: article 1 still owns comments 1, 2.
         self::assertSame(
-            ['c1', 'c2'],
+            ['1', '2'],
             $this->commentIds($this->identifiersOf('/articles/1/relationships/comments')),
         );
     }
@@ -396,7 +396,7 @@ abstract class RelationshipMutationConformanceTestCase extends JsonApiFunctional
     public function postingToAToOneIsACardinalityError(): void
     {
         $response = $this->handle('/articles/1/relationships/author', 'POST', [
-            'data' => [['type' => 'authors', 'id' => 'a2']],
+            'data' => [['type' => 'authors', 'id' => '2']],
         ]);
 
         $this->assertError($response, 400);
@@ -407,7 +407,7 @@ abstract class RelationshipMutationConformanceTestCase extends JsonApiFunctional
     public function deletingFromAToOneIsACardinalityError(): void
     {
         $response = $this->handle('/articles/1/relationships/author', 'DELETE', [
-            'data' => [['type' => 'authors', 'id' => 'a2']],
+            'data' => [['type' => 'authors', 'id' => '2']],
         ]);
 
         $this->assertError($response, 400);
@@ -418,7 +418,7 @@ abstract class RelationshipMutationConformanceTestCase extends JsonApiFunctional
     public function mutatingAnUnknownRelationshipIs404(): void
     {
         $response = $this->handle('/articles/1/relationships/bogusrel', 'PATCH', [
-            'data' => ['type' => 'authors', 'id' => 'a2'],
+            'data' => ['type' => 'authors', 'id' => '2'],
         ]);
 
         $this->assertError($response, 404);
@@ -429,7 +429,7 @@ abstract class RelationshipMutationConformanceTestCase extends JsonApiFunctional
     public function mutatingARelationshipOnAMissingParentIs404(): void
     {
         $response = $this->handle('/articles/999/relationships/author', 'PATCH', [
-            'data' => ['type' => 'authors', 'id' => 'a2'],
+            'data' => ['type' => 'authors', 'id' => '2'],
         ]);
 
         $this->assertError($response, 404);

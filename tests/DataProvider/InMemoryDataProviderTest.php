@@ -140,9 +140,9 @@ final class InMemoryDataProviderTest extends TestCase
     private function articles(): InMemoryDataProvider
     {
         return new InMemoryDataProvider('articles', [
-            '1' => new Article('1', 'Charlie', 'c'),
-            '2' => new Article('2', 'Bravo', 'b'),
-            '3' => new Article('3', 'Alpha', 'a'),
+            '1' => new Article(1, 'Charlie', 'c'),
+            '2' => new Article(2, 'Bravo', 'b'),
+            '3' => new Article(3, 'Alpha', 'a'),
         ]);
     }
 
@@ -165,7 +165,7 @@ final class InMemoryDataProviderTest extends TestCase
         $ids = [];
         foreach ($items as $item) {
             self::assertInstanceOf(Article::class, $item);
-            $ids[] = $item->id;
+            $ids[] = (string) $item->id;
         }
 
         return $ids;

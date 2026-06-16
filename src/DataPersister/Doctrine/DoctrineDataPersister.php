@@ -7,11 +7,13 @@ namespace haddowg\JsonApiBundle\DataPersister\Doctrine;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\EntityManagerInterface;
+use haddowg\JsonApi\Exception\ResourceNotFound;
 use haddowg\JsonApi\Hydrator\Relationship\ToManyRelationship;
 use haddowg\JsonApi\Hydrator\Relationship\ToOneRelationship;
 use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
+use haddowg\JsonApiBundle\Server\IdEncoderResolver;
 
 /**
  * The reference Doctrine ORM write persister — the write twin of the
@@ -39,15 +41,27 @@ use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
  * the association is the inverse side of the mapping it also sets the owning side on
  * each related entity, so the foreign key the to-many is backed by is actually
  * written.
+ *
+ * When the *related* type attaches an id encoder
+ * ({@see \haddowg\JsonApi\Resource\Field\Id::encodeUsing()}) the linkage `id`s are
+ * wire ids, so each is **decoded** to its storage key (via the injected
+ * {@see IdEncoderResolver}, keyed by the related type) before `getReference` — the
+ * wire-id SPI never changes, only this impl decodes (bundle ADR 0038). A related type
+ * with no encoder decodes to itself, so the path is identical to today; a well-formed
+ * but undecodable linkage id is a bad target — it raises {@see ResourceNotFound}
+ * (`404`), rather than passing the raw wire string to `getReference` (which would
+ * build a proxy that errors on initialization, surfacing as a `500`).
  */
 final class DoctrineDataPersister implements DataPersisterInterface
 {
     /**
      * @param array<string, class-string> $entityClassByType a `type → entity FQCN` map
+     * @param IdEncoderResolver            $idEncoders        resolves a related type's id encoder (linkage decode)
      */
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
         private readonly array $entityClassByType,
+        private readonly IdEncoderResolver $idEncoders,
     ) {}
 
     public function supports(string $type): bool
@@ -106,12 +120,12 @@ final class DoctrineDataPersister implements DataPersisterInterface
 
         if ($linkage instanceof ToOneRelationship) {
             $reference = $linkage->resourceIdentifier?->id !== null
-                ? $this->entityManager->getReference($relatedClass, $linkage->resourceIdentifier->id)
+                ? $this->entityManager->getReference($relatedClass, $this->decodeLinkageId($relatedType, $linkage->resourceIdentifier->id))
                 : null;
 
             $entity->{$property} = $reference;
         } else {
-            $this->mutateToMany($entity, $property, $relatedClass, $linkage, $mode);
+            $this->mutateToMany($entity, $property, $relatedType, $relatedClass, $linkage, $mode);
         }
 
         if ($flush) {
@@ -127,6 +141,7 @@ final class DoctrineDataPersister implements DataPersisterInterface
     private function mutateToMany(
         object $entity,
         string $property,
+        string $relatedType,
         string $relatedClass,
         ToManyRelationship $linkage,
         Mode $mode,
@@ -153,7 +168,7 @@ final class DoctrineDataPersister implements DataPersisterInterface
             }
             $collection->clear();
             foreach ($incomingIds as $id) {
-                $this->addMember($collection, $relatedClass, $id, $entity, $owningField);
+                $this->addMember($collection, $relatedType, $relatedClass, $id, $entity, $owningField);
             }
 
             return;
@@ -161,7 +176,7 @@ final class DoctrineDataPersister implements DataPersisterInterface
 
         if ($mode === Mode::Add) {
             foreach ($incomingIds as $id) {
-                $this->addMember($collection, $relatedClass, $id, $entity, $owningField);
+                $this->addMember($collection, $relatedType, $relatedClass, $id, $entity, $owningField);
             }
 
             return;
@@ -169,7 +184,7 @@ final class DoctrineDataPersister implements DataPersisterInterface
 
         // Mode::Remove — drop the incoming members and clear their owning-side FK.
         foreach ($incomingIds as $id) {
-            $reference = $this->entityManager->getReference($relatedClass, $id);
+            $reference = $this->entityManager->getReference($relatedClass, $this->decodeLinkageId($relatedType, $id));
             if ($reference === null) {
                 continue;
             }
@@ -188,12 +203,13 @@ final class DoctrineDataPersister implements DataPersisterInterface
      */
     private function addMember(
         Collection $collection,
+        string $relatedType,
         string $relatedClass,
         string $id,
         object $owner,
         ?string $owningField,
     ): void {
-        $reference = $this->entityManager->getReference($relatedClass, $id);
+        $reference = $this->entityManager->getReference($relatedClass, $this->decodeLinkageId($relatedType, $id));
         if ($reference === null) {
             return;
         }
@@ -271,6 +287,26 @@ final class DoctrineDataPersister implements DataPersisterInterface
         $value = $entity->{$property};
 
         return $value instanceof Collection ? $value : null;
+    }
+
+    /**
+     * Decodes a linkage wire id to the related type's storage key when that type
+     * declares an id encoder; otherwise (no encoder, wire == storage) returns it
+     * unchanged. A well-formed but undecodable wire id has no storage key — no entity
+     * holds it — so it is a bad linkage target: it raises {@see ResourceNotFound}
+     * (`404`), the controlled error a genuinely-missing reference produces, rather
+     * than passing the raw wire string to `getReference` (which would build a proxy
+     * that errors on initialization — e.g. a `TypeError` assigning a non-integer key
+     * to an int-PK entity — surfacing as a `500`; ADR 0038).
+     */
+    private function decodeLinkageId(string $relatedType, string $id): mixed
+    {
+        $encoder = $this->idEncoders->encoderFor($relatedType);
+        if ($encoder === null) {
+            return $id;
+        }
+
+        return $encoder->decode($id) ?? throw new ResourceNotFound();
     }
 
     /**

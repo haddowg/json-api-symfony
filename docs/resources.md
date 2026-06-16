@@ -193,6 +193,76 @@ segment while keeping route *names* keyed on the JSON:API type; that route-emiss
 consequence, and the worked `book → /books` case, are owned by
 [custom serializers & hydrators](custom-serializers-hydrators.md).
 
+## Sourcing the resource id
+
+Where a new resource's `id` comes from is governed by two orthogonal axes on the
+`Id` field. **By default** a `POST` carrying a client `data.id` is rejected with a
+`403`, and a `POST` *without* one is **store-provided** — the bundle sets nothing on
+the entity and the store/DB assigns the id (a Doctrine `#[ORM\GeneratedValue]`
+column, a database default). This replaces the old "stamp a UUID on every create"
+behaviour: a plain `Id::make()` over an auto-increment entity just works, and the
+`201` response (and `Location`) carry the id the database assigned.
+
+**Axis 1 — client-id acceptance** (default: forbidden):
+
+| Call | Effect |
+| --- | --- |
+| *(default)* | a client `data.id` is rejected — `403 ClientGeneratedIdNotSupported` |
+| `allowClientId()` | a client `data.id` is *optional* — used (and format-validated) when supplied, generated otherwise |
+| `requireClientId()` | a client `data.id` is *mandatory* — a create without one is `403 ClientGeneratedIdRequired` |
+
+**Axis 2 — the fallback when the client supplies no id** (default: store-provided):
+
+| Call | Effect |
+| --- | --- |
+| *(default)* | store-provided — the bundle sets nothing; the store/DB assigns the id |
+| `generated()` | the bundle mints one from the declared format — `uuid()` → a v4 UUID, `ulid()` → a Crockford-base32 ULID (`generated()` on a non-self-generating format is a build-time `\LogicException`) |
+| `generateUsing(fn(): string)` | a closure returns the storage key directly (full control; the result is set as-is, never decoded) |
+
+```php
+Id::make()                                          // store-provided (DB assigns)
+Id::make()->uuid()->generated()                     // the app mints a v4 UUID
+Id::make()->ulid()->generated()                     // the app mints a ULID
+Id::make()->generateUsing(fn() => Id::generateUuid()) // a UUID, no route/format pin
+Id::make()->requireClientId()                       // a natural key the client supplies
+Id::make()->uuid()->allowClientId()->generated()    // client UUID if given, else minted
+```
+
+> Migrating from the old auto-UUID? A non-`GeneratedValue` string-id entity that
+> must keep minting an id needs `generated()` (or `generateUsing()`); otherwise it
+> will persist a blank id. Use `generateUsing(fn() => Id::generateUuid())` rather
+> than `uuid()->generated()` when the entity already holds non-UUID ids you must not
+> reject (the format shortcuts also pin the route `{id}` and add a format
+> constraint).
+
+### Id format validation
+
+The `uuid()`/`ulid()`/`numeric()`/`pattern()` shortcuts declare a format constraint
+the [Symfony Validator bridge](validation.md) enforces in **both directions** on a
+write — *before* any decode:
+
+- a client-supplied `data.id` is validated against the **owning** resource's id
+  format (a violation is a `422` at `/data/id`); and
+- every relationship **linkage** id (`{ "type": T, "id": X }`) is validated against
+  the **related** type `T`'s id format (a violation is a `422` at
+  `/data/relationships/<rel>/data[/<n>]/id`). For a polymorphic relation the format
+  is resolved from each linkage's own `type`.
+
+This needs `symfony/validator` installed (the bridge is a `suggest` dependency); a
+type whose id declares no format passes any id.
+
+## Encoded resource ids
+
+The JSON:API `id` a client sees need not be the key your entity is stored under.
+Attach an encoder to the `Id` field — `Id::make()->encodeUsing($codec)` — and the
+rendered `id` (and every link) becomes `encode(storageKey)`, while the entity keeps
+holding the real storage key (an integer PK, a binary UUID, …). `Id::matchAs($regex)`
+(or the `uuid()`/`ulid()`/`numeric()`/`pattern()` shortcuts) constrains the route
+`{id}` so a malformed id `404`s at routing. Encoders are user-supplied, and the
+decode happens entirely in the reference Doctrine layer (the in-memory provider has
+no encoder); the full storage-vs-wire boundary lives in
+[doctrine § Encoded resource ids](doctrine.md#encoded-resource-ids-storage-key--wire-id).
+
 ## Compile-time guards
 
 The bundle validates your wiring at **container build time**, not on a request, so

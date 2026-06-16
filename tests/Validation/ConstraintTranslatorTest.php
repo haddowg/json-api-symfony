@@ -26,6 +26,7 @@ use haddowg\JsonApi\Resource\Constraint\MultipleOf;
 use haddowg\JsonApi\Resource\Constraint\NotIn;
 use haddowg\JsonApi\Resource\Constraint\Pattern;
 use haddowg\JsonApi\Resource\Constraint\Sequentially;
+use haddowg\JsonApi\Resource\Constraint\UlidFormat;
 use haddowg\JsonApi\Resource\Constraint\UniqueItems;
 use haddowg\JsonApi\Resource\Constraint\UrlFormat;
 use haddowg\JsonApi\Resource\Constraint\UuidFormat;
@@ -52,6 +53,7 @@ use Symfony\Component\Validator\Constraints\Length;
 use Symfony\Component\Validator\Constraints\LessThan;
 use Symfony\Component\Validator\Constraints\LessThanOrEqual;
 use Symfony\Component\Validator\Constraints\Regex;
+use Symfony\Component\Validator\Constraints\Ulid as SymfonyUlid;
 use Symfony\Component\Validator\Constraints\Unique;
 use Symfony\Component\Validator\Constraints\Url;
 use Symfony\Component\Validator\Constraints\Uuid;
@@ -95,6 +97,28 @@ final class ConstraintTranslatorTest extends TestCase
         yield 'IpFormat (v4) → Ip v4' => [new IpFormat(4), [new Ip(version: Ip::V4)]];
         yield 'Pattern → delimited Regex' => [new Pattern('[a-z]+'), [new Regex(pattern: '~[a-z]+~')]];
         yield 'Each → All of translated inner' => [new Each([new MinLength(2)]), [new All(constraints: [new Length(min: 2)])]];
+    }
+
+    #[Test]
+    public function itTranslatesUlidFormatToAUlidConstraintOrTheRegexFallback(): void
+    {
+        // symfony/validator ships a dedicated Ulid constraint (since 5.4); where it is
+        // present it is used, else the Crockford-base32 pattern is enforced with a Regex
+        // so the constraint still has teeth. This build ships Ulid (asserted), and the
+        // fallback shape is covered by exercising the produced rule below.
+        $translated = $this->translator()->translate(new UlidFormat());
+        self::assertCount(1, $translated);
+
+        if (\class_exists(SymfonyUlid::class)) {
+            self::assertEquals([new SymfonyUlid()], $translated);
+        } else {
+            self::assertInstanceOf(Regex::class, $translated[0]);
+        }
+
+        // The produced rule is exercised, not just its shape: a real ULID passes, a
+        // non-ULID fails — so a regression that dropped or mis-wired the arm is caught.
+        self::assertSame(0, $this->violations(new UlidFormat(), '01ARZ3NDEKTSV4RRFFQ69G5FAV'));
+        self::assertGreaterThan(0, $this->violations(new UlidFormat(), 'not-a-ulid'));
     }
 
     #[Test]

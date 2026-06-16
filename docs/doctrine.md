@@ -99,6 +99,68 @@ execute a cursor window). The page-based paginators core ships all resolve to an
 
 Source: [`DoctrineDataProvider`](../src/DataProvider/Doctrine/DoctrineDataProvider.php).
 
+## Encoded resource ids (storage key != wire id)
+
+A resource can decouple the JSON:API `id` a client sees (the **wire** id) from the
+**storage** key its entity is actually keyed by — exactly Laravel JSON:API's custom
+id encoding. Attach an encoder to the `Id` field with core's
+`Id::encodeUsing(IdEncoderInterface)`:
+
+```php
+public function fields(): array
+{
+    return [
+        Id::make()
+            ->encodeUsing(new ProductIdCodec())   // storage key <-> wire id
+            ->matchAs('prod-[0-9a-f]+'),           // the route {id} requirement
+        Str::make('name')->required(),
+    ];
+}
+```
+
+```php
+interface IdEncoderInterface
+{
+    public function encode(mixed $storageKey): string; // storage -> wire
+    public function decode(string $wireId): mixed;      // wire -> storage; null when undecodable
+}
+```
+
+The entity **always holds the storage key**. The transform runs at two boundaries:
+
+- **Core** owns the entity's-own-id transform: it `encode()`s the stored key on
+  serialize (so the rendered `id` and every self/related link are wire ids) and
+  `decode()`s a **client-supplied** id on create, setting the **storage key** on the
+  new entity (a `null` decode is a `422`). A *server*-generated id (no client id, the
+  default) is the storage key's own wire form and is set **as-is** — it is never fed
+  to `decode()`, so a server-minted create is not spuriously rejected. A `PATCH` does
+  not set the id, so it needs no decode either. (A type whose id is database-generated
+  has no id to hydrate on create at all; expose it without `Create` rather than mint a
+  meaningless id — see the example's `ProductResource`.)
+- The **reference Doctrine layer** owns the id-as-lookup-key transforms, because the
+  storage-agnostic [`DataProvider`/`DataPersister` SPI](data-layer.md) passes ids as
+  **wire** strings and keeps its signatures unchanged. Before the lookup the Doctrine
+  provider `decode()`s the route `{id}`; a `null` decode short-circuits to a `404`
+  (no row holds that key, so no query runs). Before `getReference()` the Doctrine
+  persister `decode()`s each linkage id (keyed by the *related* type's encoder), so a
+  relationship write whose `data` carries wire ids resolves the right managed
+  references; a linkage id that `decode()`s to `null` is a bad target and raises a
+  `404` (rather than passing the raw wire string to `getReference`, which would build
+  a proxy that errors on initialization — a `500`).
+
+So a read round-trips `wire -> (Doctrine decode) -> storageKey -> query -> entity ->
+(core encode) -> wire`, and a create-with-client-id round-trips `wire -> (core decode)
+-> entity (storageKey) -> persist -> (core encode) -> wire`.
+
+The `uuid()` / `ulid()` / `numeric()` / `pattern()` shortcuts set the route `{id}`
+requirement **and** the client-id format constraint; `matchAs()` sets the route
+requirement alone (the inner regex, no surrounding `^…$` — Symfony anchors it). The
+route loader stamps that requirement on every route carrying `{id}`, so a **malformed
+id `404`s at routing** before any handler runs. A type with **no** encoder is
+unchanged (wire == storage), and the **in-memory** provider has no encoder at all, so
+encoding is a Doctrine-only concern — encoders are entirely user-supplied (no encoder
+dependency is added to the bundle). See [ADR 0038](adr/0038-doctrine-layer-decodes-encoded-resource-ids.md).
+
 ## Eager-loading includes (no N+1)
 
 When the optional [`shipmonk/doctrine-entity-preloader`](https://github.com/shipmonk-rnd/doctrine-entity-preloader)
@@ -155,7 +217,13 @@ is [`IncludePreloadTest`](../examples/music-catalog-symfony/tests/IncludePreload
 `DoctrineDataPersister` is the write twin of the provider, committing through the
 **same** `EntityManager` the provider reads with.
 
-- **`create()`** is `persist()` + `flush()`.
+- **`create()`** is `persist()` + `flush()`. It makes **no assumption that the id is
+  pre-set**: with the store-provided default (a `#[ORM\GeneratedValue]` column), the
+  bundle's hydrator sets nothing on the id and Doctrine assigns it on flush — the
+  handler then reads it back (via the serializer's id accessor) for the `201` body
+  and `Location`. So a plain `Id::make()` over an auto-increment entity round-trips
+  the database-assigned id with no persister change (see
+  [resources § Sourcing the resource id](resources.md#sourcing-the-resource-id)).
 - **`update()`** relies on the target being a *managed* instance the hydrator
   mutated in place — the provider loaded it through this same `EntityManager`, so
   `update()` is just `flush()`. There is no `persist`/`merge`.

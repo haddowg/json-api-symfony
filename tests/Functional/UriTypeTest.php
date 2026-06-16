@@ -48,7 +48,7 @@ final class UriTypeTest extends JsonApiFunctionalTestCase
     #[Group('spec:document-resource-object-relationships')]
     public function theDocumentTypeStaysTheJsonApiTypeWhileLinksUseTheSegment(): void
     {
-        $response = $this->handle('/books/b1');
+        $response = $this->handle('/books/1');
         self::assertSame(200, $response->getStatusCode());
 
         $data = $this->decode($response)['data'] ?? null;
@@ -64,8 +64,8 @@ final class UriTypeTest extends JsonApiFunctionalTestCase
         self::assertIsArray($related);
         $links = $related['links'] ?? null;
         self::assertIsArray($links);
-        self::assertSame('https://example.test/books/b1/relationships/related', $links['self'] ?? null);
-        self::assertSame('https://example.test/books/b1/related', $links['related'] ?? null);
+        self::assertSame('https://example.test/books/1/relationships/related', $links['self'] ?? null);
+        self::assertSame('https://example.test/books/1/related', $links['related'] ?? null);
     }
 
     #[Test]
@@ -94,7 +94,7 @@ final class UriTypeTest extends JsonApiFunctionalTestCase
     #[Group('spec:fetching-relationships')]
     public function relationshipEndpointsAreRoutedAtTheUriSegment(): void
     {
-        self::assertSame(200, $this->handle('/books/b1/relationships/related')->getStatusCode());
-        self::assertSame(200, $this->handle('/books/b1/related')->getStatusCode());
+        self::assertSame(200, $this->handle('/books/1/relationships/related')->getStatusCode());
+        self::assertSame(200, $this->handle('/books/1/related')->getStatusCode());
     }
 }
