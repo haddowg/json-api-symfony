@@ -349,22 +349,27 @@ final class WindowedRelationBatch
     }
 
     /**
-     * The generated SQL column alias of `$dqlAlias.$field` off the inner query's RSM (the
-     * PUBLIC documented field-alias accessor). A column the wrap must reference but the
-     * inner query never selected is a logic error.
+     * The generated SQL column alias of `$dqlAlias.$field` off the inner query's RSM,
+     * read off the RSM's public field-mapping maps (`fieldMappings`: sqlColumnAlias =>
+     * field; `columnOwnerMap`: sqlColumnAlias => dqlAlias). This deliberately avoids the
+     * `getColumnAliasByField()`/`hasColumnAliasByField()` accessors, which doctrine/orm
+     * only added after 3.0, so the bundle keeps its `doctrine/orm: ^3.0` floor. A column
+     * the wrap must reference but the inner query never selected is a logic error.
      */
     private function fieldAlias(ResultSetMapping $rsm, string $dqlAlias, string $field): string
     {
-        if (!$rsm->hasColumnAliasByField($dqlAlias, $field)) {
-            throw new \LogicException(\sprintf(
-                'The %s cannot resolve the generated SQL alias for "%s.%s" off the inner query; the field is not selected.',
-                self::class,
-                $dqlAlias,
-                $field,
-            ));
+        foreach ($rsm->fieldMappings as $columnAlias => $mappedField) {
+            if ($mappedField === $field && ($rsm->columnOwnerMap[$columnAlias] ?? null) === $dqlAlias) {
+                return $columnAlias;
+            }
         }
 
-        return $rsm->getColumnAliasByField($dqlAlias, $field);
+        throw new \LogicException(\sprintf(
+            'The %s cannot resolve the generated SQL alias for "%s.%s" off the inner query; the field is not selected.',
+            self::class,
+            $dqlAlias,
+            $field,
+        ));
     }
 
     /**
