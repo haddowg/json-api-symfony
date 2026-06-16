@@ -65,8 +65,18 @@ interface DataProviderInterface
      * `$relation` (a to-many), scoped to the parent then filtered, sorted and
      * windowed per `$criteria` — the related-endpoint twin of
      * {@see fetchCollection()}. The criteria carry the **related** type's declared
-     * filter/sort vocabularies and the per-relation pagination window; a windowed
-     * fetch also carries the pre-window total.
+     * filter/sort vocabularies and the per-relation pagination window.
+     *
+     * The endpoint total is gated by the relation's
+     * {@see RelationInterface::isCountable()} (bundle ADR 0052 / core ADR 0057): a
+     * **countable** relation's windowed fetch computes the pre-window total and
+     * returns it on the result ({@see CollectionResult::$total}), so the handler
+     * emits `meta.page.total` + a `last` link as before; a **non-countable**
+     * relation's windowed fetch is **count-free** — it runs no `COUNT`, returns a
+     * `null` total with {@see CollectionResult::$windowed} `true` and
+     * {@see CollectionResult::$hasMore} set (from probing one item past the window),
+     * so the handler renders a count-free page (no `total`, no `last`; `next` driven
+     * by `$hasMore`). An unwindowed fetch returns neither (a plain collection).
      *
      * @return CollectionResult<TEntity>
      *
@@ -81,6 +91,43 @@ interface DataProviderInterface
         CollectionCriteria $criteria,
         JsonApiRequestInterface $request,
     ): CollectionResult;
+
+    /**
+     * The cardinality of `$relation` (a countable to-many) for each parent in
+     * `$parents`, as a `wire-id => count` map — the count-only batch seam the
+     * {@see \haddowg\JsonApiBundle\DataProvider\RelationCountBatcher} drives for
+     * `?withCount` (bundle ADR 0052). One grouped, pushed-down `COUNT` answers the
+     * whole page of parents, so a collection render does not N+1; a single parent
+     * is just a one-element batch.
+     *
+     * `$type` is the **parent** resource type (the relation lives on the parent);
+     * `$relation` carries the related type(s) and the backing association the
+     * provider counts over. The map is keyed by each parent's JSON:API (wire) id —
+     * the value the serializer renders — so the batcher can resolve a count back to
+     * a parent object at render time. A parent with no count answer is simply
+     * absent from the map (the seam then emits no `meta.total` for it).
+     *
+     * The reference Doctrine provider runs `SELECT <parentKey>, COUNT(<related>) …
+     * WHERE <parentKey> IN (:pageIds) GROUP BY <parentKey>` reusing the same
+     * related-collection scoping as {@see fetchRelatedCollection()} (so it never
+     * materializes a collection); a pivot relation counts its association rows. The
+     * in-memory witness counts the related objects read off each parent. A
+     * polymorphic to-many follows the same support matrix as
+     * {@see fetchRelatedCollection()} — Doctrine throws (members span entity
+     * classes), in-memory counts the mixed set.
+     *
+     * @param list<object> $parents the already-fetched page of parents (the handler holds it)
+     *
+     * @return array<int|string, int> `parentWireId => count` (an integer-PK wire id is a
+     *                                numeric string, which PHP stores as an int array key — the
+     *                                batcher reconciles it against each parent's string wire id)
+     */
+    public function countRelated(
+        string $type,
+        array $parents,
+        RelationInterface $relation,
+        JsonApiRequestInterface $request,
+    ): array;
 
     /**
      * The EXISTING pivot meta for the members currently in `$parent`'s pivot

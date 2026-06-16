@@ -77,4 +77,13 @@ final class ChartProvider implements DataProviderInterface
     {
         return $this->inner->fetchRelationshipPivot($type, $parent, $relation);
     }
+
+    public function countRelated(
+        string $type,
+        array $parents,
+        RelationInterface $relation,
+        JsonApiRequestInterface $request,
+    ): array {
+        return $this->inner->countRelated($type, $parents, $relation, $request);
+    }
 }

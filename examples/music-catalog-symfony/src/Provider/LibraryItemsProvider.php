@@ -181,6 +181,37 @@ final class LibraryItemsProvider implements DataProviderInterface, PivotAwarePro
         return $this->doctrine->fetchRelationshipPivot($type, $parent, $relation);
     }
 
+    public function countRelated(
+        string $type,
+        array $parents,
+        RelationInterface $relation,
+        JsonApiRequestInterface $request,
+    ): array {
+        // A single-typed relation counts through the Doctrine push-down; only the
+        // polymorphic items relation is ours, counted by reading the mixed members
+        // off each Library (the same path fetchRelatedCollection takes).
+        if (\count($relation->relatedTypes()) <= 1) {
+            return $this->doctrine->countRelated($type, $parents, $relation, $request);
+        }
+
+        $counts = [];
+        foreach ($parents as $parent) {
+            if (!$parent instanceof Library || $parent->id === null) {
+                continue;
+            }
+
+            $wireId = (string) $parent->id;
+            $members = $relation->readValue($parent, $request);
+            $members = \is_iterable($members)
+                ? (\is_array($members) ? \array_values($members) : \iterator_to_array($members, false))
+                : $this->resolveItems($wireId);
+
+            $counts[$wireId] = \count($members);
+        }
+
+        return $counts;
+    }
+
     public function supportsPivot(string $relatedType, RelationInterface $relation): bool
     {
         return $this->doctrine->supportsPivot($relatedType, $relation);

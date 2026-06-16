@@ -46,6 +46,14 @@ interface DataProviderInterface
         CollectionCriteria $criteria,
         JsonApiRequestInterface $request,
     ): CollectionResult;
+
+    /** @return array<int|string, int> parentWireId => count */
+    public function countRelated(
+        string $type,
+        array $parents,
+        RelationInterface $relation,
+        JsonApiRequestInterface $request,
+    ): array;
 }
 ```
 
@@ -58,7 +66,15 @@ interface DataProviderInterface
   the to-many collection reachable from `$parent` through `$relation`, scoped to
   the parent then filtered/sorted/windowed per the **related** type's vocabulary
   ([relationships](relationships.md) covers the endpoint; [doctrine](doctrine.md)
-  covers the push-down).
+  covers the push-down). It also threads `relation->isCountable()`: a non-countable
+  relation paginates **count-free** (bundle ADR 0052) — a `null` total with
+  `windowed: true` and a `hasMore` probe on the `CollectionResult`.
+- `countRelated()` is the count-only batch seam for `?withCount` and countable
+  relations: the cardinality of `$relation` for a whole page of `$parents` as a
+  `wireId => count` map — ONE grouped, pushed-down count, no N+1. A pivot relation
+  counts its association rows; a polymorphic to-many is counted in memory but
+  throws on the Doctrine reference ([relationships](relationships.md) covers
+  `countable()`/`?withCount`).
 
 The interface is `@template-covariant TEntity of object`. A single-type provider
 is `DataProviderInterface<Album>`; a multi-type provider (like the Doctrine one)

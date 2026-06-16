@@ -141,14 +141,18 @@ abstract class BaseArticleResource extends AbstractResource
             // `GET /articles/1/pagedComments` paginates by `page[number]`/`page[size]`
             // while plain `comments` stays unpaginated. The same related collection,
             // two pagination policies — pinning that pagination is per-relation.
-            HasMany::make('pagedComments')->type('comments')->storedAs('comments')->paginate(PagePaginator::make()),
+            // Marked countable() (bundle ADR 0052) so its related-collection endpoint
+            // computes the total and emits `meta.page.total` + a `last` link, and
+            // `?withCount=pagedComments` activates the relationship-object `meta.total`.
+            HasMany::make('pagedComments')->type('comments')->storedAs('comments')->paginate(PagePaginator::make())->countable(),
             // A unidirectional many-to-many to `authors` (the `editors` property),
             // exercising the Doctrine subquery-scoped related collection: the
             // parent association is owning-side with no single-valued inverse, so
             // the related-collection fetch scopes membership via an IN subquery.
             // Paginated, so the endpoint witnesses page/filter/sort over the
-            // subquery.
-            HasMany::make('editors')->type('authors')->storedAs('editors')->paginate(PagePaginator::make()),
+            // subquery. Countable so its endpoint still emits a total over the
+            // subquery scope (bundle ADR 0052).
+            HasMany::make('editors')->type('authors')->storedAs('editors')->paginate(PagePaginator::make())->countable(),
             // Load-aware relationships opting into linkageOnlyWhenLoaded() so the
             // storage-aware load-state predicate decides whether `data` is
             // emitted. They exercise the predicate on both providers without

@@ -104,7 +104,33 @@ return static function (ContainerConfigurator $container): void {
         // Optional too: resolves to the FilterValueValidator only when the Symfony
         // Validator bridge is wired (below), else null — a constrained filter is
         // then inert, matching how the resource validator degrades (ADR 0048).
-        ->arg('$filterValues', \Symfony\Component\DependencyInjection\Loader\Configurator\service(FilterValueValidator::class)->nullOnInvalid());
+        ->arg('$filterValues', \Symfony\Component\DependencyInjection\Loader\Configurator\service(FilterValueValidator::class)->nullOnInvalid())
+        // The Relationship Queries profile window seam (bundle ADR 0053): the
+        // per-request pagination holder threaded into the memoized Server (in
+        // loadExtension) and a batcher that windows each rendered to-many relation
+        // to page 1 of its relatedQuery-ordered/filtered set. Both autowired and
+        // always present (the profile parse is gated on negotiation per request).
+        ->arg('$windowBatcher', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataProvider\RelationshipWindowBatcher::class))
+        ->arg('$relationshipPagination', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipPagination::class));
+
+    // The ?withCount count seam (bundle ADR 0052): a stable per-request holder
+    // threaded into the memoized Server (in loadExtension) and a batcher that fills
+    // it. The batcher runs once over a read's fetched page and asks the provider for
+    // ONE grouped count per ?withCount-named countable relation (no N+1); the holder
+    // is the swappable indirection so the immutable Server can render this page's
+    // counts. Both autowired.
+    $services->set(\haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipCount::class);
+    $services->set(\haddowg\JsonApiBundle\DataProvider\RelationCountBatcher::class);
+
+    // The Relationship Queries profile window seam (bundle ADR 0053): a stable
+    // per-request holder threaded into the memoized Server (in loadExtension) and a
+    // batcher that fills it. The batcher windows each rendered to-many relation of a
+    // read's fetched page to page 1 of its relatedQuery-ordered/filtered set (writing
+    // that page back onto each parent so the linkage IS page 1); the holder is the
+    // swappable indirection so the immutable Server can render this request's pages.
+    // Both autowired.
+    $services->set(\haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipPagination::class);
+    $services->set(\haddowg\JsonApiBundle\DataProvider\RelationshipWindowBatcher::class);
 
     // The built-in subscriber that routes each lifecycle event to the resource's
     // overridable hook method (ResourceLifecycleHooksInterface), making the

@@ -92,6 +92,15 @@ final class FavoriteProvider implements DataProviderInterface
         return $this->doctrine->fetchRelationshipPivot($type, $parent, $relation);
     }
 
+    public function countRelated(
+        string $type,
+        array $parents,
+        RelationInterface $relation,
+        JsonApiRequestInterface $request,
+    ): array {
+        return $this->doctrine->countRelated($type, $parents, $relation, $request);
+    }
+
     /**
      * Fills the non-mapped `$favoritable` from the stored `targetType`/`targetId`
      * pair, looking the member up in its per-type repository (so it comes back

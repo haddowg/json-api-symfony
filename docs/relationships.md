@@ -112,6 +112,56 @@ GET /tracks/1/playlists               → unpaginated (the relation declares no 
 A relation that declares no paginator renders its related collection without page
 meta — that is the unpaginated baseline.
 
+### Counting relations (`countable()` and `?withCount`)
+
+Mark a to-many relation `countable()` to opt it into counting (off by default,
+core ADR 0057; bundle ADR 0052). The count is pushed down (never materialising the
+collection) and **batched** across a page of parents (one grouped count per
+relation, no N+1):
+
+```php
+HasMany::make('tracks')->type('tracks')->countable();
+```
+
+Counting is exposed two ways, both on the `total` meta key:
+
+- **`?withCount=rel1,rel2`** — a flat primary-request parameter naming
+  relationships (like `?include`) — adds `meta.total` to each named relationship
+  **object** when the parent is rendered (a single resource, every parent of a
+  collection, and a related-collection member):
+
+  ```
+  GET /albums/1?withCount=tracks         → data.relationships.tracks.meta.total
+  GET /albums?withCount=tracks           → every album's tracks.meta.total (counted in ONE grouped query)
+  ```
+
+  The total is gated by `countable()` **and** being named in `?withCount`. A
+  `?withCount` naming a relation that is not `countable()`, naming a to-one, or
+  naming an unknown relationship is a `400` (`source.parameter: withCount`).
+
+- **The related-collection endpoint** (`GET /{type}/{id}/{rel}`) is gated by
+  `countable()` **alone**. A countable relation's endpoint emits `meta.page.total`
+  + a `last` link; a **non-countable** relation's endpoint paginates **count-free**
+  — no `total`, no `last`, and a further page is signalled by `next` being present
+  (no `COUNT` query runs). This is how a related collection paginates without paying
+  for a count. The gate is universal — it applies to a pivot (`belongsToMany`)
+  relation's endpoint exactly as to a plain one (a non-countable pivot endpoint runs
+  no count over its association entity).
+
+> **Behaviour change.** Related collections used to always emit a total. A relation
+> whose endpoint should keep one must now be `countable()`. Leaving a relation
+> non-countable is the way to get count-free related pagination.
+
+A pivot (`belongsToMany`) relation counts **distinct far members** — so duplicate
+membership (the same member joined to the parent by more than one association row, a
+track at two positions) counts **once**, matching the related-collection endpoint
+(which dedupes to one row per member) and the rendered linkage. The `?withCount`
+relationship-object total and the endpoint pagination total therefore report the same
+number for the same relation/parent. A polymorphic `MorphToMany` is counted by the
+in-memory provider (the mixed member set) but is unsupported by the Doctrine
+reference provider (its members span entity classes) — supply a custom
+`DataProvider` if you need it on Doctrine.
+
 ### Relation-scoped filters and sorts
 
 A relation can declare **its own** `filters()`/`sorts()` that augment **only** its
@@ -148,6 +198,63 @@ A relation-scoped filter/sort operates on the **related entity** (the common cas
 and works out of the box. A filter/sort that reads a **pivot/join-table column** is
 handled separately — see [Pivot (`belongsToMany`) data](#pivot-belongstomany-data)
 below.
+
+### Filtering and sorting a relationship from the primary request (the Relationship Queries profile)
+
+The same scoped vocabulary is reachable from the **primary** request — without a
+second round-trip to the related endpoint — through the **Relationship Queries**
+profile. The bundle registers and advertises it, so a client opts in by negotiating
+its URI in the `Accept` header's `profile` media-type parameter:
+
+```
+Accept: application/vnd.api+json;profile="https://haddowg.dev/profiles/relationship-queries"
+```
+
+With the profile negotiated, the client addresses a relationship by its **include
+path** and supplies a per-relationship `sort` / `filter` via the `relatedQuery`
+family (or the `rQ` shorthand; both are spec-compliant because each base carries an
+uppercase letter):
+
+```
+# order the included tracks by -duration, narrow them to one filter
+GET /albums/1?include=tracks&relatedQuery[tracks][sort]=-duration&relatedQuery[tracks][filter][longerThan]=300
+
+# the rQ shorthand is identical
+GET /albums/1?include=tracks&rQ[tracks][sort]=duration
+```
+
+- The client addresses a **top-level** relation of the request's primary resource by
+  its name. A dotted path (`relatedQuery[tracks.album]`) is legal family **grammar** —
+  it parses without error — but the bundle windows only top-level relations, so a
+  dotted path addressing a relation of an *included* resource resolves to no relation
+  and is a `400` (address that relation at its own endpoint instead). An **unknown
+  relationship path** and a **to-one path** used for a list op are likewise the
+  related-collection endpoint's same `400`, with `source.parameter` the canonical
+  `relatedQuery[<path>]`.
+- **`sort`** orders the relationship's linkage `data` (and so SELECTS which members
+  land on the included page — see below). **`filter`** narrows the set against the
+  **related-collection endpoint's vocabulary** (the related resource's filters/sorts
+  merged with the relation's own scoped ones, exactly as above) — an unknown **key** is
+  the same `400`.
+- **`page` is out** for the profile: an addressed relationship always renders **page
+  1** (the relation's default size), navigated via its own relationship-object
+  pagination links. So a rendered to-many under the profile carries
+  `first`/`prev`/`next` (+`last` only when the relation is `countable()`) in its
+  `links` object — in the spec's **plain form** against the relationship-linkage
+  endpoint (`/albums/1/relationships/tracks?sort=-duration&page[number]=2`), never the
+  `relatedQuery[…]` form (which only addresses a relationship from a *parent* request).
+- On a `[path][op]` **conflict** between `relatedQuery` and `rQ`, the canonical
+  `relatedQuery` wins (the shorthand yields — not an error).
+- The family is **ignored entirely** when the profile is not negotiated (today's
+  behaviour, no profile advertised) — so a relationship literally named after a
+  reserved query family is safe.
+
+Under `?include`, the included resources reflect exactly that page-1 set — the `sort`
+selects the page. On a **collection** include (`GET /albums?include=tracks`) each
+parent's relationship is windowed to its own page 1 independently. Each to-many maps
+to a distinct association, so this is unambiguous; if two relations alias one storage
+column with different pagination, the rendered linkage is last-writer-wins on that
+column (bundle ADR 0053).
 
 ## Pivot (`belongsToMany`) data
 

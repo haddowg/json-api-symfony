@@ -55,4 +55,13 @@ final class AboveFallbackArticleProvider implements DataProviderInterface
     {
         return [];
     }
+
+    public function countRelated(
+        string $type,
+        array $parents,
+        RelationInterface $relation,
+        JsonApiRequestInterface $request,
+    ): array {
+        return [];
+    }
 }

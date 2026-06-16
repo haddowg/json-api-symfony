@@ -78,4 +78,13 @@ final class OverridingArtistProvider implements DataProviderInterface
     {
         return $this->doctrine->fetchRelationshipPivot($type, $parent, $relation);
     }
+
+    public function countRelated(
+        string $type,
+        array $parents,
+        RelationInterface $relation,
+        JsonApiRequestInterface $request,
+    ): array {
+        return $this->doctrine->countRelated($type, $parents, $relation, $request);
+    }
 }

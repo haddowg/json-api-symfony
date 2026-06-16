@@ -103,7 +103,9 @@ abstract class RelatedCollectionParamsConformanceTestCase extends JsonApiFunctio
         // The plain `comments` relation declares no paginator of its own, so the
         // related collection falls back to the server's default paginator (relation
         // → related resource → server default) — which carries the page-size cap.
-        // All members render, now with page meta from that default.
+        // All members render, with page meta from that default. `comments` is NOT
+        // countable(), so the page is count-FREE: page meta is present (number/size)
+        // but carries no `total`, and the links carry no `last` (bundle ADR 0052).
         $document = $this->fetchDocument('/articles/1/comments');
 
         self::assertSame(['1', '2'], $this->ids($document));
@@ -111,6 +113,58 @@ abstract class RelatedCollectionParamsConformanceTestCase extends JsonApiFunctio
         $meta = $document['meta'] ?? null;
         self::assertIsArray($meta);
         self::assertArrayHasKey('page', $meta);
+        self::assertIsArray($meta['page']);
+        self::assertArrayNotHasKey('total', $meta['page'], 'a non-countable relation paginates count-free: no total');
+
+        $links = $document['links'] ?? null;
+        self::assertIsArray($links);
+        self::assertNull($links['last'] ?? null, 'a count-free page carries no last link');
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    #[Group('spec:fetching-pagination')]
+    public function aNonCountableRelatedCollectionSignalsAFurtherPageWithNextNotLast(): void
+    {
+        // `comments` is non-countable, so a windowed page is count-free: a further
+        // page is signalled by `next` being present (the limit+1 probe), and there
+        // is no `total`/`last` to derive a page count from. Article 1 has two
+        // comments; page size 1 yields exactly comment 1 with a `next` to page 2.
+        $document = $this->fetchDocument('/articles/1/comments?page[size]=1&page[number]=1');
+
+        self::assertSame(['1'], $this->ids($document));
+
+        $links = $document['links'] ?? null;
+        self::assertIsArray($links);
+        self::assertNotNull($links['next'] ?? null, 'a count-free page signals more via next');
+        self::assertNull($links['last'] ?? null, 'a count-free page has no last link');
+
+        $meta = $document['meta'] ?? null;
+        self::assertIsArray($meta);
+        self::assertIsArray($meta['page'] ?? null);
+        self::assertArrayNotHasKey('total', $meta['page'], 'a count-free page omits total');
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    #[Group('spec:fetching-pagination')]
+    public function aCountableRelatedCollectionStillEmitsTotalAndLast(): void
+    {
+        // `pagedComments` is countable(), so its related-collection endpoint counts
+        // the total and emits `meta.page.total` + a `last` link as before — the
+        // count-based page the count-free path is contrasted against (bundle ADR 0052).
+        $document = $this->fetchDocument('/articles/1/pagedComments?page[size]=1&page[number]=1');
+
+        self::assertSame(['1'], $this->ids($document));
+
+        $meta = $document['meta'] ?? null;
+        self::assertIsArray($meta);
+        self::assertIsArray($meta['page'] ?? null);
+        self::assertSame(2, $meta['page']['total'] ?? null, 'a countable relation emits the total');
+
+        $links = $document['links'] ?? null;
+        self::assertIsArray($links);
+        self::assertArrayHasKey('last', $links, 'a countable page carries a last link');
     }
 
     #[Test]

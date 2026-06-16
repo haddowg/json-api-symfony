@@ -19,6 +19,13 @@ namespace haddowg\JsonApiBundle\DataProvider;
  * the values come from the same single DQL statement that scoped, filtered, sorted
  * and windowed the collection.
  *
+ * Like {@see CollectionResult}, a non-countable pivot relation paginates
+ * **count-free** (bundle ADR 0052): the related-collection endpoint is gated by
+ * `countable()` alone, so a non-countable `belongsToMany` endpoint runs no `COUNT`,
+ * leaves {@see $total} null, and signals a further page through {@see $windowed} +
+ * {@see $hasMore} (the data layer over-fetches by one). The handler reads those to
+ * build a count-free page (`meta.page`/`links` without `total`/`last`).
+ *
  * @template-covariant TEntity of object
  */
 final readonly class PivotCollectionResult
@@ -26,12 +33,16 @@ final readonly class PivotCollectionResult
     /**
      * @param iterable<TEntity>                     $items    the page of far entities
      * @param array<string, array<string, mixed>>   $pivotMap `farMemberId => [field => typed value]`
-     * @param ?int                                  $total    the pre-window total (non-null exactly when windowed)
+     * @param ?int                                  $total    the pre-window total (non-null exactly when windowed AND counted)
+     * @param bool                                  $windowed whether the fetch was windowed (a counted OR a count-free page); read only when {@see $total} is null, to tell a count-free page from a plain unpaginated collection
+     * @param bool                                  $hasMore  for a count-free page ({@see $total} null, {@see $windowed} true), whether a further page follows — drives the `next` link without a COUNT
      */
     public function __construct(
         public iterable $items,
         public array $pivotMap,
         public ?int $total = null,
+        public bool $windowed = false,
+        public bool $hasMore = false,
     ) {}
 
     /**

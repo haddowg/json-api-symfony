@@ -112,6 +112,16 @@ final class CountryProvider implements DataProviderInterface
         return [];
     }
 
+    public function countRelated(
+        string $type,
+        array $parents,
+        RelationInterface $relation,
+        JsonApiRequestInterface $request,
+    ): array {
+        // Countries are reference data: they are never counted as a relationship.
+        return [];
+    }
+
     /**
      * Every country as a {@see Country}, ordered by ISO code for a deterministic
      * base ordering before any requested sort.

@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Serializer;
 
 use haddowg\JsonApi\Resource\SerializerResolverInterface;
+use haddowg\JsonApi\Serializer\RelationshipCountInterface;
 use haddowg\JsonApi\Serializer\RelationshipLoadStateInterface;
+use haddowg\JsonApi\Serializer\RelationshipPaginationInterface;
 use haddowg\JsonApi\Serializer\SerializerInterface;
 
 /**
@@ -43,5 +45,15 @@ final class PivotSubstitutingResolver implements SerializerResolverInterface
     public function relationshipLoadState(): ?RelationshipLoadStateInterface
     {
         return $this->inner->relationshipLoadState();
+    }
+
+    public function relationshipCount(): ?RelationshipCountInterface
+    {
+        return $this->inner->relationshipCount();
+    }
+
+    public function relationshipPagination(): ?RelationshipPaginationInterface
+    {
+        return $this->inner->relationshipPagination();
     }
 }

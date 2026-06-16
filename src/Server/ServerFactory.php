@@ -8,9 +8,12 @@ use haddowg\JsonApi\Operation\OperationHandlerInterface;
 use haddowg\JsonApi\Pagination\PagePaginator;
 use haddowg\JsonApi\Pagination\PaginatorInterface;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
 use haddowg\JsonApi\Serializer\RelationshipLoadStateInterface;
 use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\Event\ServingEvent;
+use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipCount;
+use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipPagination;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
@@ -85,6 +88,8 @@ final class ServerFactory
         private readonly ?PaginatorInterface $serverDefaultPaginator = null,
         private readonly ?PaginatorInterface $defaultPaginator = null,
         private readonly ?RelationshipLoadStateInterface $relationshipLoadState = null,
+        private readonly ?RequestScopedRelationshipCount $relationshipCount = null,
+        private readonly ?RequestScopedRelationshipPagination $relationshipPagination = null,
         private readonly array $resourceClasses = [],
         private readonly array $serializersByClass = [],
         private readonly array $hydratorsByClass = [],
@@ -108,6 +113,23 @@ final class ServerFactory
             ->withVersion($this->version)
             ->withPsr17($this->responseFactory, $this->streamFactory)
             ->withRelationshipLoadState($this->relationshipLoadState)
+            // The per-request count seam: a stable holder threaded in once (the
+            // Server is memoized), whose batched backing the handler swaps per read
+            // so the render emits `meta.total` for ?withCount-named countable
+            // relations (bundle ADR 0052). Null when no holder is wired — core then
+            // omits every relationship-object total.
+            ->withRelationshipCount($this->relationshipCount)
+            // The per-request relationship-window seam (bundle ADR 0053): the same
+            // stable-holder indirection as the count seam, threaded in once. The
+            // handler swaps its windowed backing per profile read so core renders the
+            // relationship-object pagination links for each rendered to-many; null
+            // when the profile read did not negotiate, so no such links are emitted.
+            ->withRelationshipPagination($this->relationshipPagination)
+            // Recognize the Relationship Queries profile (core ADR 0058) so the
+            // response advertises it (Content-Type `profile` param + `links.profile`)
+            // when a client negotiates it; the opt-in relatedQuery/rQ parse is gated
+            // on the Accept `profile` param, the rendering on this registration.
+            ->withProfile(new RelationshipQueriesProfile())
             // The server-wide default paginator (the tail of core's `relation →
             // related resource → server default` fallback), resolved per server.
             ->withDefaultPaginator($this->resolveDefaultPaginator())
