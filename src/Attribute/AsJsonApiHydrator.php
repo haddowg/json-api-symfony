@@ -14,9 +14,19 @@ namespace haddowg\JsonApiBundle\Attribute;
  *
  * May sit on its own class or on the same class as the serializer (one class
  * implementing both interfaces can carry both attributes).
+ *
+ * `server` names the server(s) this type is exposed on: a single server name, a
+ * list of names (the same type may join several servers at once), or `null` for
+ * the implicit `default` server.
  */
 #[\Attribute(\Attribute::TARGET_CLASS)]
 final readonly class AsJsonApiHydrator
 {
-    public function __construct(public string $type) {}
+    /**
+     * @param string|list<string>|null $server the server name(s) exposing this type (null = the implicit `default`)
+     */
+    public function __construct(
+        public string $type,
+        public string|array|null $server = null,
+    ) {}
 }

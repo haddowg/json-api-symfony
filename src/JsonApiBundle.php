@@ -14,12 +14,20 @@ use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineExtensionInterface;
 use haddowg\JsonApiBundle\DependencyInjection\Compiler\DoctrineEntityMapPass;
 use haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceLocatorPass;
+use haddowg\JsonApiBundle\Operation\CrudOperationHandler;
 use haddowg\JsonApiBundle\Operation\Operation;
+use haddowg\JsonApiBundle\Serializer\Doctrine\DoctrineRelationshipLoadState;
+use haddowg\JsonApiBundle\Server\ResourceLocator;
+use haddowg\JsonApiBundle\Server\ServerFactory;
+use haddowg\JsonApiBundle\Server\ServerProvider;
 use Symfony\Component\Config\Definition\Configurator\DefinitionConfigurator;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\HttpKernel\Bundle\AbstractBundle;
+
+use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
+use function Symfony\Component\DependencyInjection\Loader\Configurator\service_locator;
 
 /**
  * Integrates {@see \haddowg\JsonApi\Server\Server} with Symfony: it discovers
@@ -110,6 +118,16 @@ final class JsonApiBundle extends AbstractBundle
                     ->info('Validate write bodies against the JSON:API JSON Schema (requires opis/json-schema). A dev/CI structural linter, separate from the always-on Symfony Validator bridge.')
                     ->defaultFalse()
                 ->end()
+                ->arrayNode('servers')
+                    ->info('Additional named servers; the top-level base_uri/version define the implicit `default` server. Each named server inherits the top-level value when its own is omitted (ADR 0034).')
+                    ->useAttributeAsKey('name')
+                    ->arrayPrototype()
+                        ->children()
+                            ->scalarNode('base_uri')->defaultNull()->end()
+                            ->scalarNode('version')->defaultNull()->end()
+                        ->end()
+                    ->end()
+                ->end()
             ->end();
     }
 
@@ -118,10 +136,26 @@ final class JsonApiBundle extends AbstractBundle
      */
     public function loadExtension(array $config, ContainerConfigurator $container, ContainerBuilder $builder): void
     {
-        $builder->setParameter('haddowg_json_api.base_uri', $this->stringConfig($config, 'base_uri', ''));
-        $builder->setParameter('haddowg_json_api.version', $this->stringConfig($config, 'version', '1.1'));
+        $baseUri = $this->stringConfig($config, 'base_uri', '');
+        $version = $this->stringConfig($config, 'version', '1.1');
+
+        $builder->setParameter('haddowg_json_api.base_uri', $baseUri);
+        $builder->setParameter('haddowg_json_api.version', $version);
+
+        // The full server map (ADR 0034): the implicit `default` server carries the
+        // top-level base_uri/version, and each named server from `json_api.servers`
+        // inherits the top-level value when its own is omitted. The list of names is
+        // a container parameter the ResourceLocatorPass reads to validate resource
+        // assignments and bucket per server.
+        $servers = $this->serverMap($config, $baseUri, $version);
+        $builder->setParameter('haddowg_json_api.servers', \array_keys($servers));
 
         $container->import(\dirname(__DIR__) . '/config/services.php');
+
+        // One ServerFactory per declared server, plus the ServerProvider that
+        // resolves them by name through a service locator. The per-server resource
+        // class-strings and serializer/hydrator maps are filled by the pass.
+        $this->registerServers($container, $servers);
 
         // The optional opis structural linter: registered (so the RequestListener
         // picks it up) only when explicitly enabled. opis/json-schema is a
@@ -174,7 +208,7 @@ final class JsonApiBundle extends AbstractBundle
             static function (Definition $definition, AsJsonApiResource $attribute): void {
                 $definition->addTag(self::RESOURCE_TAG, \array_filter([
                     'type' => $attribute->type,
-                    'server' => $attribute->server,
+                    'server' => self::serverTag($attribute->server),
                     'entity' => $attribute->entity,
                     'serializer' => $attribute->serializer,
                     'hydrator' => $attribute->hydrator,
@@ -193,6 +227,7 @@ final class JsonApiBundle extends AbstractBundle
             static function (Definition $definition, AsJsonApiSerializer $attribute): void {
                 $definition->addTag(self::SERIALIZER_TAG, \array_filter([
                     'type' => $attribute->type,
+                    'server' => self::serverTag($attribute->server),
                     'operations' => $attribute->operations !== []
                         ? \implode(',', \array_map(static fn(Operation $op): string => $op->value, $attribute->operations))
                         : null,
@@ -203,7 +238,10 @@ final class JsonApiBundle extends AbstractBundle
         $builder->registerAttributeForAutoconfiguration(
             AsJsonApiHydrator::class,
             static function (Definition $definition, AsJsonApiHydrator $attribute): void {
-                $definition->addTag(self::HYDRATOR_TAG, ['type' => $attribute->type]);
+                $definition->addTag(self::HYDRATOR_TAG, \array_filter([
+                    'type' => $attribute->type,
+                    'server' => self::serverTag($attribute->server),
+                ], static fn(mixed $value): bool => $value !== null));
             },
         );
 
@@ -212,7 +250,10 @@ final class JsonApiBundle extends AbstractBundle
         $builder->registerAttributeForAutoconfiguration(
             AsJsonApiRelations::class,
             static function (Definition $definition, AsJsonApiRelations $attribute): void {
-                $definition->addTag(self::RELATIONS_TAG, ['type' => $attribute->type]);
+                $definition->addTag(self::RELATIONS_TAG, \array_filter([
+                    'type' => $attribute->type,
+                    'server' => self::serverTag($attribute->server),
+                ], static fn(mixed $value): bool => $value !== null));
             },
         );
     }
@@ -223,6 +264,107 @@ final class JsonApiBundle extends AbstractBundle
 
         $container->addCompilerPass(new ResourceLocatorPass());
         $container->addCompilerPass(new DoctrineEntityMapPass());
+    }
+
+    /**
+     * The full server map: the implicit `default` server plus each named server
+     * from `json_api.servers`. A named server inherits the top-level base_uri /
+     * version when its own is omitted; a named server may not be literally
+     * `default` (that name is reserved for the implicit, top-level server).
+     *
+     * @param array<string, mixed> $config
+     *
+     * @return array<string, array{base_uri: string, version: string}>
+     */
+    private function serverMap(array $config, string $baseUri, string $version): array
+    {
+        $servers = [ServerProvider::DEFAULT_SERVER => ['base_uri' => $baseUri, 'version' => $version]];
+
+        $named = $config['servers'] ?? [];
+        if (!\is_array($named)) {
+            return $servers;
+        }
+
+        foreach ($named as $name => $settings) {
+            if ($name === ServerProvider::DEFAULT_SERVER) {
+                throw new \LogicException(\sprintf(
+                    'The JSON:API server name "%s" is reserved for the implicit server defined by the '
+                    . 'top-level base_uri/version; declare other servers under different names.',
+                    ServerProvider::DEFAULT_SERVER,
+                ));
+            }
+
+            $settings = \is_array($settings) ? $settings : [];
+            $servers[$name] = [
+                'base_uri' => $this->stringConfig($settings, 'base_uri', $baseUri),
+                'version' => $this->stringConfig($settings, 'version', $version),
+            ];
+        }
+
+        return $servers;
+    }
+
+    /**
+     * Registers one {@see ServerFactory} per declared server (id
+     * `haddowg.json_api.server_factory.<name>`) carrying that server's base_uri /
+     * version and the shared dependencies; the per-server resource class-strings
+     * and serializer/hydrator maps are filled by {@see ResourceLocatorPass}. The
+     * {@see ServerProvider} resolves a server by name through a locator over these
+     * factories.
+     *
+     * @param array<string, array{base_uri: string, version: string}> $servers
+     */
+    private function registerServers(ContainerConfigurator $container, array $servers): void
+    {
+        $services = $container->services();
+
+        $factoryRefs = [];
+        foreach ($servers as $name => $settings) {
+            $id = self::serverFactoryId($name);
+
+            $services->set($id, ServerFactory::class)
+                ->args([
+                    '$resources' => service(ResourceLocator::class),
+                    '$responseFactory' => service(\Psr\Http\Message\ResponseFactoryInterface::class),
+                    '$streamFactory' => service(\Psr\Http\Message\StreamFactoryInterface::class),
+                    '$baseUri' => $settings['base_uri'],
+                    '$version' => $settings['version'],
+                    '$handler' => service(CrudOperationHandler::class),
+                    // Optional: the reference Doctrine predicate, present only on a
+                    // Doctrine application that maps an entity, else null (core then
+                    // treats every relation as loaded).
+                    '$relationshipLoadState' => service(DoctrineRelationshipLoadState::class)->nullOnInvalid(),
+                ]);
+
+            $factoryRefs[$name] = service($id);
+        }
+
+        $services->set(ServerProvider::class)
+            ->args(['$factories' => service_locator($factoryRefs)]);
+    }
+
+    /**
+     * The container service id for a server's {@see ServerFactory}.
+     */
+    public static function serverFactoryId(string $server): string
+    {
+        return 'haddowg.json_api.server_factory.' . $server;
+    }
+
+    /**
+     * Normalises a tag's `server` value to a comma-joined string (mirroring how
+     * `operations` is joined) so it survives the container as a plain scalar; a
+     * scalar stays a scalar, a list is comma-joined, and null/empty is filtered out.
+     *
+     * @param string|list<string>|null $server
+     */
+    private static function serverTag(string|array|null $server): ?string
+    {
+        if (\is_array($server)) {
+            $server = \implode(',', $server);
+        }
+
+        return ($server === null || $server === '') ? null : $server;
     }
 
     /**

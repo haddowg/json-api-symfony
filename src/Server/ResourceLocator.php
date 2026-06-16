@@ -19,9 +19,11 @@ use Psr\Container\ContainerInterface;
  *
  * It also resolves a type's override serializer/hydrator services (ADR 0023) —
  * core asks the same resolver for those class-strings — and exposes the discovered
- * {@see classes()} so the {@see ServerFactory} can register each type. Every
- * looked-up service must be a {@see SerializerInterface} or {@see HydratorInterface}
- * (an {@see AbstractResource} is both); anything else is a wiring error.
+ * {@see classes()} (the global union of every server's resources). The per-server
+ * {@see ServerFactory} registers only its own subset; this locator stays the shared
+ * resolver/container core looks every class up through (ADR 0034). Every looked-up
+ * service must be a {@see SerializerInterface} or {@see HydratorInterface} (an
+ * {@see AbstractResource} is both); anything else is a wiring error.
  */
 final class ResourceLocator implements ContainerInterface
 {

@@ -16,7 +16,6 @@ use haddowg\JsonApiBundle\Operation\TargetResolver;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Server\RelationsRegistry;
 use haddowg\JsonApiBundle\Server\ResourceLocator;
-use haddowg\JsonApiBundle\Server\ServerFactory;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
 use haddowg\JsonApiBundle\Validation\ConstraintTranslator;
@@ -66,23 +65,9 @@ return static function (ContainerConfigurator $container): void {
     $services->set(ResourceLocator::class)
         ->args(['$services' => null, '$classes' => []]);
 
-    // The relationship-load-state argument is optional: it resolves to the
-    // reference Doctrine predicate only when that service is registered
-    // (doctrine/orm installed) and survives the DoctrineEntityMapPass (at least
-    // one resource maps an entity), else null. With null, core treats every
-    // relation as loaded and emits linkage exactly as it always has.
-    $services->set(ServerFactory::class)
-        ->args([
-            '$resources' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(ResourceLocator::class),
-            '$responseFactory' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\Psr\Http\Message\ResponseFactoryInterface::class),
-            '$streamFactory' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\Psr\Http\Message\StreamFactoryInterface::class),
-            '$baseUri' => '%haddowg_json_api.base_uri%',
-            '$version' => '%haddowg_json_api.version%',
-            '$handler' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(CrudOperationHandler::class),
-            '$relationshipLoadState' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Serializer\Doctrine\DoctrineRelationshipLoadState::class)->nullOnInvalid(),
-        ]);
-
-    $services->set(ServerProvider::class);
+    // The per-server ServerFactory services and the ServerProvider are registered
+    // in JsonApiBundle::loadExtension() (one factory per declared server, ADR 0034),
+    // not here — the server map is only known once the extension config is read.
 
     // The type-keyed registry of standalone relations providers; the
     // ResourceLocatorPass fills its locator argument from the tagged providers
@@ -185,9 +170,10 @@ return static function (ContainerConfigurator $container): void {
             ])
             ->tag(JsonApiBundle::DATA_PERSISTER_TAG, ['priority' => -128]);
 
-        // The storage-aware relationship load-state predicate, threaded into the
-        // Server by the ServerFactory (above) via core's withRelationshipLoadState
-        // injector. It reads a managed entity's Doctrine metadata to answer — for
+        // The storage-aware relationship load-state predicate, threaded into each
+        // per-server Server by its ServerFactory (registered in loadExtension) via
+        // core's withRelationshipLoadState injector. It reads a managed entity's
+        // Doctrine metadata to answer — for
         // a relation that opted into linkageOnlyWhenLoaded — whether a to-many
         // association is an initialised PersistentCollection (without iterating
         // it); to-one is always loaded (a lazy proxy carries its id). The

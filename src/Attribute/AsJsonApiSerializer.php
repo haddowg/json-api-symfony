@@ -21,15 +21,21 @@ namespace haddowg\JsonApiBundle\Attribute;
  * `operations` is the exposed operation allow-list: the {@see \haddowg\JsonApiBundle\Operation\Operation}
  * cases this type serves, one route emitted per case (bundle ADR 0025). An empty
  * array means the default — for a standalone serializer, no endpoints (serialize-only).
+ *
+ * `server` names the server(s) this type is exposed on: a single server name, a
+ * list of names (the same type may join several servers at once), or `null` for
+ * the implicit `default` server.
  */
 #[\Attribute(\Attribute::TARGET_CLASS)]
 final readonly class AsJsonApiSerializer
 {
     /**
      * @param list<\haddowg\JsonApiBundle\Operation\Operation> $operations the exposed operation allow-list (empty = none)
+     * @param string|list<string>|null                         $server     the server name(s) exposing this type (null = the implicit `default`)
      */
     public function __construct(
         public string $type,
         public array $operations = [],
+        public string|array|null $server = null,
     ) {}
 }

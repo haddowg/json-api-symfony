@@ -11,13 +11,19 @@ use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 
 /**
- * Builds the immutable core {@see Server} for the implicit `default` server from:
- *  - the Resource service class-strings discovered via the
- *    `haddowg.json_api.resource` tag (held by the {@see ResourceLocator}),
- *    registered through core's lazy container resolver so a Resource can have
- *    real constructor dependencies;
- *  - the configured base URI and JSON:API version;
+ * Builds the immutable core {@see Server} for one declared server (bundle ADR
+ * 0034) from:
+ *  - this server's Resource class-strings (the subset of the discovered resources
+ *    assigned to it via `#[AsJsonApiResource(server: …)]`), registered through
+ *    core's lazy container resolver — held by the shared {@see ResourceLocator},
+ *    which stays the global resolver/container — so a Resource can have real
+ *    constructor dependencies;
+ *  - this server's base URI and JSON:API version;
  *  - the PSR-17 response / stream factories.
+ *
+ * One factory is built per declared server in
+ * {@see \haddowg\JsonApiBundle\JsonApiBundle::loadExtension()}; the implicit
+ * `default` server is just the unnamed one carrying the top-level base_uri/version.
  *
  * It deliberately does **not** install core's PSR-15 `Middleware\*` chain — the
  * bundle drives the request lifecycle from kernel listeners that call
@@ -40,10 +46,11 @@ final class ServerFactory
     private ?Server $server = null;
 
     /**
-     * @param array<class-string, class-string<\haddowg\JsonApi\Serializer\SerializerInterface>> $serializersByClass    override serializer per Resource class-string (ADR 0023)
-     * @param array<class-string, class-string<\haddowg\JsonApi\Hydrator\HydratorInterface>>      $hydratorsByClass      override hydrator per Resource class-string (ADR 0023)
-     * @param array<string, class-string<\haddowg\JsonApi\Serializer\SerializerInterface>>        $standaloneSerializers standalone serializer per type, no resource (ADR 0024)
-     * @param array<string, class-string<\haddowg\JsonApi\Hydrator\HydratorInterface>>            $standaloneHydrators   standalone hydrator per type, no resource (ADR 0024)
+     * @param list<class-string<\haddowg\JsonApi\Resource\AbstractResource>>                      $resourceClasses       this server's Resource class-strings (ADR 0034)
+     * @param array<class-string, class-string<\haddowg\JsonApi\Serializer\SerializerInterface>> $serializersByClass    override serializer per Resource class-string (ADR 0023), this server only
+     * @param array<class-string, class-string<\haddowg\JsonApi\Hydrator\HydratorInterface>>      $hydratorsByClass      override hydrator per Resource class-string (ADR 0023), this server only
+     * @param array<string, class-string<\haddowg\JsonApi\Serializer\SerializerInterface>>        $standaloneSerializers standalone serializer per type, no resource (ADR 0024), this server only
+     * @param array<string, class-string<\haddowg\JsonApi\Hydrator\HydratorInterface>>            $standaloneHydrators   standalone hydrator per type, no resource (ADR 0024), this server only
      */
     public function __construct(
         private readonly ResourceLocator $resources,
@@ -53,6 +60,7 @@ final class ServerFactory
         private readonly string $version,
         private readonly OperationHandlerInterface $handler,
         private readonly ?RelationshipLoadStateInterface $relationshipLoadState = null,
+        private readonly array $resourceClasses = [],
         private readonly array $serializersByClass = [],
         private readonly array $hydratorsByClass = [],
         private readonly array $standaloneSerializers = [],
@@ -60,7 +68,7 @@ final class ServerFactory
     ) {}
 
     /**
-     * The configured, memoized Server for the `default` API surface.
+     * The configured, memoized Server for this server's API surface.
      */
     public function create(): Server
     {
@@ -75,7 +83,7 @@ final class ServerFactory
             ->withRelationshipLoadState($this->relationshipLoadState)
             ->withContainer($this->resources);
 
-        foreach ($this->resources->classes() as $resourceClass) {
+        foreach ($this->resourceClasses as $resourceClass) {
             // A resource may override its serializer/hydrator (ADR 0023); core
             // resolves the override class through the same container resolver and
             // drives the type's reads/writes through it instead of the resource.
