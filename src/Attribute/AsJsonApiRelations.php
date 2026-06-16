@@ -17,9 +17,19 @@ namespace haddowg\JsonApiBundle\Attribute;
  * relationship rendering — the route loader gates relationship routes on a type
  * having relations (resource or standalone), and {@see \haddowg\JsonApiBundle\Server\TypeMetadataResolver}
  * sources relations resource-first then from the registry.
+ *
+ * `server` names the server(s) this type is exposed on: a single server name, a
+ * list of names (the same type may join several servers at once), or `null` for
+ * the implicit `default` server.
  */
 #[\Attribute(\Attribute::TARGET_CLASS)]
 final readonly class AsJsonApiRelations
 {
-    public function __construct(public string $type) {}
+    /**
+     * @param string|list<string>|null $server the server name(s) exposing this type (null = the implicit `default`)
+     */
+    public function __construct(
+        public string $type,
+        public string|array|null $server = null,
+    ) {}
 }

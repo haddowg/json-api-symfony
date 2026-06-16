@@ -153,7 +153,28 @@ final class ExceptionListenerTest extends TestCase
 
     private function serverProvider(): ServerProvider
     {
-        return new ServerProvider($this->serverFactory());
+        $factory = $this->serverFactory();
+
+        // A minimal name → factory locator over the single `default` server.
+        $factories = new class ($factory) implements ContainerInterface {
+            public function __construct(private readonly ServerFactory $default) {}
+
+            public function get(string $id): mixed
+            {
+                if ($id === ServerProvider::DEFAULT_SERVER) {
+                    return $this->default;
+                }
+
+                throw new \LogicException(\sprintf('No server factory "%s" registered.', $id));
+            }
+
+            public function has(string $id): bool
+            {
+                return $id === ServerProvider::DEFAULT_SERVER;
+            }
+        };
+
+        return new ServerProvider($factories);
     }
 
     private function server(): Server

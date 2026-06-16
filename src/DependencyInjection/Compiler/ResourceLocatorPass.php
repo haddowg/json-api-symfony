@@ -13,7 +13,7 @@ use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Server\RelationsProviderInterface;
 use haddowg\JsonApiBundle\Server\RelationsRegistry;
 use haddowg\JsonApiBundle\Server\ResourceLocator;
-use haddowg\JsonApiBundle\Server\ServerFactory;
+use haddowg\JsonApiBundle\Server\ServerProvider;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\Compiler\ServiceLocatorTagPass;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -28,20 +28,31 @@ use Symfony\Component\DependencyInjection\Reference;
  * Resource's `static $type` without instantiating and then resolve the instance
  * (a real Symfony service, dependencies and all) lazily on first lookup.
  *
+ * Multi-server (bundle ADR 0034): a resource — or a standalone serializer /
+ * hydrator — is assigned to one or more named servers via the tag's `server`
+ * value (a comma-joined string the extension wrote from the attribute); absent
+ * means the implicit `default`. The pass reads the declared server names from the
+ * `haddowg_json_api.servers` parameter, validates every reference, and buckets the
+ * resource class-strings, override maps, standalone maps and route descriptors per
+ * server. The shared {@see ResourceLocator} stays the **global** resolver (the
+ * union of every server's references/classes); only the per-server
+ * {@see \haddowg\JsonApiBundle\Server\ServerFactory} args and the route descriptors
+ * are scoped. A type assigned to N servers lands in all N buckets.
+ *
  * A resource may also declare a custom serializer/hydrator via
  * `#[AsJsonApiResource(serializer: …, hydrator: …)]` (bundle ADR 0023). Those
  * override classes must be registered services too, so each is added to the same
  * locator (keyed by its class-string) — core resolves them through the very same
- * resolver — and a `resourceClass → override` map is handed to the
- * {@see ServerFactory}, which passes each to core's
+ * resolver — and a per-server `resourceClass → override` map is handed to that
+ * server's ServerFactory, which passes each to core's
  * {@see \haddowg\JsonApi\Server\Server::register()} so the type's reads/writes run
  * through the override.
  *
  * Standalone serializer/hydrator capabilities (`#[AsJsonApiSerializer]` /
  * `#[AsJsonApiHydrator]`, bundle ADR 0024) — a serializer/hydrator registered for
  * a type with **no** resource — flow the same way: each service joins the locator
- * (keyed by its class-string) and a `type → class` map is handed to the
- * {@see ServerFactory}, which registers them with core's
+ * (keyed by its class-string) and a per-server `type → class` map is handed to that
+ * server's ServerFactory, which registers them with core's
  * {@see \haddowg\JsonApi\Server\Server::registerSerializerHydrator()}.
  *
  * Standalone relations (`#[AsJsonApiRelations]` on a
@@ -51,14 +62,15 @@ use Symfony\Component\DependencyInjection\Reference;
  * are runtime objects, not scalars). A resource-less type that declares relations is
  * recorded so its descriptor gains relationship routes.
  *
- * The pass also builds a per-type **route descriptor** map (the exposed
+ * The pass also builds a per-server, per-type **route descriptor** map (the exposed
  * operation allow-list, the URI segment, whether the type is a full resource, has a
  * hydrator and has relations) and hands it to the {@see JsonApiRouteLoader}, which
- * emits exactly one route per declared operation (bundle ADR 0025) plus the
- * relationship routes for a type that has relations. Descriptors flow as plain
- * scalar arrays — strings, bools and lists of strings — because Symfony cannot dump
- * arbitrary value objects as a compiled service argument. A write operation
- * (`Create`/`Update`) is compile-time-validated to have a hydrator.
+ * emits — for the server a routing import names — exactly one route per declared
+ * operation (bundle ADR 0025) plus the relationship routes for a type that has
+ * relations. Descriptors flow as plain scalar arrays — strings, bools and lists of
+ * strings — because Symfony cannot dump arbitrary value objects as a compiled service
+ * argument. A write operation (`Create`/`Update`) is compile-time-validated to have a
+ * hydrator (server-independent).
  */
 final class ResourceLocatorPass implements CompilerPassInterface
 {
@@ -67,6 +79,8 @@ final class ResourceLocatorPass implements CompilerPassInterface
         if (!$container->hasDefinition(ResourceLocator::class)) {
             return;
         }
+
+        $declaredServers = $this->declaredServers($container);
 
         $references = [];
         $classes = [];
@@ -77,9 +91,26 @@ final class ResourceLocatorPass implements CompilerPassInterface
         /** @var array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>}> $descriptors */
         $descriptors = [];
 
+        // Per-server buckets (ADR 0034): a type/resource assigned to N servers lands
+        // in all N. The ResourceLocator stays global (the union below); only the
+        // per-server ServerFactory args and the route descriptors are scoped.
+        /** @var array<string, list<class-string>> $resourceClassesByServer */
+        $resourceClassesByServer = [];
+        /** @var array<string, array<string, string>> $serializersByServer */
+        $serializersByServer = [];
+        /** @var array<string, array<string, string>> $hydratorsByServer */
+        $hydratorsByServer = [];
+        /** @var array<string, array<string, string>> $standaloneSerializersByServer */
+        $standaloneSerializersByServer = [];
+        /** @var array<string, array<string, string>> $standaloneHydratorsByServer */
+        $standaloneHydratorsByServer = [];
+        /** @var array<string, array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>}>> $descriptorsByServer */
+        $descriptorsByServer = [];
+
         // Standalone relations providers, keyed by type: the registry resolves the
         // provider lazily, and a resource-less type that declares relations gets
-        // relationship routes.
+        // relationship routes. Relations stay global (type-keyed), so the server
+        // attribute on #[AsJsonApiRelations] is irrelevant to the registry.
         $relationReferences = [];
         $typesWithStandaloneRelations = [];
         foreach ($container->findTaggedServiceIds(JsonApiBundle::RELATIONS_TAG) as $id => $tags) {
@@ -118,25 +149,29 @@ final class ResourceLocatorPass implements CompilerPassInterface
             $references[$class] = new Reference($id);
             $classes[] = $class;
 
+            $serializerOverride = null;
+            $hydratorOverride = null;
             foreach ($tags as $tag) {
                 $serializer = $this->overrideClass($tag, 'serializer', SerializerInterface::class, $id, $container);
                 if ($serializer !== null) {
                     $references[$serializer] = new Reference($serializer);
                     $serializers[$class] = $serializer;
+                    $serializerOverride = $serializer;
                 }
 
                 $hydrator = $this->overrideClass($tag, 'hydrator', HydratorInterface::class, $id, $container);
                 if ($hydrator !== null) {
                     $references[$hydrator] = new Reference($hydrator);
                     $hydrators[$class] = $hydrator;
+                    $hydratorOverride = $hydrator;
                 }
             }
 
             // A resource carries two RESOURCE_TAG tags when it also bears the
             // attribute (one from AbstractResource autoconfiguration, one from the
-            // #[AsJsonApiResource] callback), so the type and the operations
+            // #[AsJsonApiResource] callback), so the type, server and operations
             // allow-list are resolved across all of them, not per-tag — the empty
-            // autoconfig tag must not erase the attribute's operations.
+            // autoconfig tag must not erase the attribute's value.
             $type = $this->resourceTypeFromTags($tags, $class);
             if ($type === '') {
                 continue;
@@ -151,45 +186,78 @@ final class ResourceLocatorPass implements CompilerPassInterface
                 ? $class::$uriType
                 : $type;
 
-            $descriptors[$type] = [
+            $descriptor = [
                 'uriType' => $uriType,
                 'isResource' => true,
                 'hasHydrator' => true,
                 'hasRelations' => true,
                 'operations' => $this->operationsFromTags($tags) ?? self::allOperations(),
             ];
+            $descriptors[$type] = $descriptor;
+
+            $servers = $this->serversFromTags($tags, $declaredServers, \sprintf('resource "%s"', $class));
+            foreach ($servers as $server) {
+                $resourceClassesByServer[$server][] = $class;
+                if ($serializerOverride !== null) {
+                    $serializersByServer[$server][$class] = $serializerOverride;
+                }
+                if ($hydratorOverride !== null) {
+                    $hydratorsByServer[$server][$class] = $hydratorOverride;
+                }
+                $descriptorsByServer[$server][$type] = $descriptor;
+            }
         }
 
         /** @var array<string, list<string>> $standaloneSerializerOperations */
         $standaloneSerializerOperations = [];
+        /** @var array<string, list<string>> $standaloneSerializerServers */
+        $standaloneSerializerServers = [];
         $standaloneSerializers = $this->collectStandalone(
             $container,
             JsonApiBundle::SERIALIZER_TAG,
             SerializerInterface::class,
             $references,
+            $declaredServers,
+            $standaloneSerializerServers,
             $standaloneSerializerOperations,
         );
+        /** @var array<string, list<string>> $standaloneHydratorServers */
+        $standaloneHydratorServers = [];
         $standaloneHydrators = $this->collectStandalone(
             $container,
             JsonApiBundle::HYDRATOR_TAG,
             HydratorInterface::class,
             $references,
+            $declaredServers,
+            $standaloneHydratorServers,
         );
 
         // A standalone (resource-less) type is serialize-only by default: no
         // endpoints unless its serializer's operations allow-list opens them.
         foreach ($standaloneSerializers as $type => $class) {
-            if (isset($descriptors[$type])) {
-                continue;
+            if (!isset($descriptors[$type])) {
+                $descriptors[$type] = [
+                    'uriType' => $type,
+                    'isResource' => false,
+                    'hasHydrator' => isset($standaloneHydrators[$type]),
+                    'hasRelations' => isset($typesWithStandaloneRelations[$type]),
+                    'operations' => $standaloneSerializerOperations[$type] ?? [],
+                ];
             }
 
-            $descriptors[$type] = [
-                'uriType' => $type,
-                'isResource' => false,
-                'hasHydrator' => isset($standaloneHydrators[$type]),
-                'hasRelations' => isset($typesWithStandaloneRelations[$type]),
-                'operations' => $standaloneSerializerOperations[$type] ?? [],
-            ];
+            foreach ($standaloneSerializerServers[$type] ?? [ServerProvider::DEFAULT_SERVER] as $server) {
+                $standaloneSerializersByServer[$server][$type] = $class;
+                $descriptorsByServer[$server][$type] = $descriptors[$type];
+            }
+        }
+
+        // A standalone hydrator is registered on its own server(s); core needs the
+        // serializer/hydrator pair registered together per server, so the hydrator's
+        // server membership scopes which server's Server gets it.
+        foreach ($standaloneHydrators as $type => $class) {
+            foreach ($standaloneHydratorServers[$type] ?? [ServerProvider::DEFAULT_SERVER] as $server) {
+                $standaloneHydratorsByServer[$server][$type] = $class;
+            }
         }
 
         $this->validateWriteCapability($descriptors);
@@ -207,17 +275,125 @@ final class ResourceLocatorPass implements CompilerPassInterface
             $container->getDefinition(RelationsRegistry::class)->setArgument('$providers', $relationsLocator);
         }
 
-        if ($container->hasDefinition(ServerFactory::class)) {
-            $factory = $container->getDefinition(ServerFactory::class);
-            $factory->setArgument('$serializersByClass', $serializers);
-            $factory->setArgument('$hydratorsByClass', $hydrators);
-            $factory->setArgument('$standaloneSerializers', $standaloneSerializers);
-            $factory->setArgument('$standaloneHydrators', $standaloneHydrators);
+        // Each declared server's ServerFactory gets only its own buckets (empty when
+        // the server exposes nothing).
+        foreach ($declaredServers as $server) {
+            $factoryId = JsonApiBundle::serverFactoryId($server);
+            if (!$container->hasDefinition($factoryId)) {
+                continue;
+            }
+
+            $factory = $container->getDefinition($factoryId);
+            $factory->setArgument('$resourceClasses', \array_values(\array_unique($resourceClassesByServer[$server] ?? [])));
+            $factory->setArgument('$serializersByClass', $serializersByServer[$server] ?? []);
+            $factory->setArgument('$hydratorsByClass', $hydratorsByServer[$server] ?? []);
+            $factory->setArgument('$standaloneSerializers', $standaloneSerializersByServer[$server] ?? []);
+            $factory->setArgument('$standaloneHydrators', $standaloneHydratorsByServer[$server] ?? []);
         }
 
         if ($container->hasDefinition(JsonApiRouteLoader::class)) {
-            $container->getDefinition(JsonApiRouteLoader::class)->setArgument('$routeDescriptors', $descriptors);
+            $container->getDefinition(JsonApiRouteLoader::class)->setArgument('$routeDescriptorsByServer', $descriptorsByServer);
         }
+    }
+
+    /**
+     * The declared server names, read from the `haddowg_json_api.servers` container
+     * parameter the extension set; falls back to just `default` when absent (e.g. a
+     * test that registers the pass without the extension).
+     *
+     * @return list<string>
+     */
+    private function declaredServers(ContainerBuilder $container): array
+    {
+        if (!$container->hasParameter('haddowg_json_api.servers')) {
+            return [ServerProvider::DEFAULT_SERVER];
+        }
+
+        $servers = $container->getParameter('haddowg_json_api.servers');
+        if (!\is_array($servers) || $servers === []) {
+            return [ServerProvider::DEFAULT_SERVER];
+        }
+
+        $names = [];
+        foreach ($servers as $name) {
+            if (\is_string($name) && $name !== '') {
+                $names[] = $name;
+            }
+        }
+
+        return $names === [] ? [ServerProvider::DEFAULT_SERVER] : $names;
+    }
+
+    /**
+     * The server names a resource is exposed on, resolved across all its tags (the
+     * empty autoconfig tag must not erase the attribute's `server`): the first tag
+     * carrying a `server` value wins, parsed via {@see parseServers}; absent → the
+     * implicit `default`. Every name is validated to be declared.
+     *
+     * @param array<array<string, mixed>> $tags
+     * @param list<string>                 $declaredServers
+     *
+     * @return list<string>
+     */
+    private function serversFromTags(array $tags, array $declaredServers, string $subject): array
+    {
+        $raw = null;
+        foreach ($tags as $tag) {
+            if (\array_key_exists('server', $tag)) {
+                $raw = $tag['server'];
+                break;
+            }
+        }
+
+        return $this->validateServers($this->parseServers($raw), $declaredServers, $subject);
+    }
+
+    /**
+     * Parses a tag's `server` value into a deduped list of names: null/empty/absent
+     * → `['default']`; a comma-joined string is split; whitespace is trimmed.
+     *
+     * @return list<string>
+     */
+    private function parseServers(mixed $raw): array
+    {
+        if (!\is_string($raw) || $raw === '') {
+            return [ServerProvider::DEFAULT_SERVER];
+        }
+
+        $names = [];
+        foreach (\explode(',', $raw) as $name) {
+            $name = \trim($name);
+            if ($name !== '' && !\in_array($name, $names, true)) {
+                $names[] = $name;
+            }
+        }
+
+        return $names === [] ? [ServerProvider::DEFAULT_SERVER] : $names;
+    }
+
+    /**
+     * Validates every referenced server name is one of the declared servers.
+     *
+     * @param list<string> $servers
+     * @param list<string> $declaredServers
+     *
+     * @return list<string>
+     */
+    private function validateServers(array $servers, array $declaredServers, string $subject): array
+    {
+        foreach ($servers as $server) {
+            if (!\in_array($server, $declaredServers, true)) {
+                throw new \LogicException(\sprintf(
+                    'The JSON:API %s references an unknown server "%s"; declare it under json_api.servers '
+                    . '(declared servers: %s).',
+                    $subject,
+                    $server,
+                    \implode(', ', $declaredServers),
+                ));
+            }
+        }
+
+        return $servers;
     }
 
     /**
@@ -321,17 +497,20 @@ final class ResourceLocatorPass implements CompilerPassInterface
     /**
      * Collects the standalone capability services tagged `$tag` into a
      * `type → class-string` map, adding each to `$references` so core's resolver
-     * can construct it. Validates the class implements `$contract`. When
-     * `$operationsByType` is provided, each type's parsed operation allow-list
-     * (from the tag's operations string, else empty) is recorded into it.
+     * can construct it. Validates the class implements `$contract`. Each type's
+     * server membership (parsed + validated against `$declaredServers`) is recorded
+     * into `$serversByType`; when `$operationsByType` is provided, each type's parsed
+     * operation allow-list (from the tag's operations string, else empty) is too.
      *
-     * @param class-string                    $contract
-     * @param array<string, Reference>        $references
+     * @param class-string                     $contract
+     * @param array<string, Reference>         $references
+     * @param list<string>                     $declaredServers
+     * @param array<string, list<string>>      $serversByType
      * @param array<string, list<string>>|null $operationsByType
      *
      * @return array<string, string>
      */
-    private function collectStandalone(ContainerBuilder $container, string $tag, string $contract, array &$references, ?array &$operationsByType = null): array
+    private function collectStandalone(ContainerBuilder $container, string $tag, string $contract, array &$references, array $declaredServers, array &$serversByType, ?array &$operationsByType = null): array
     {
         $map = [];
 
@@ -358,6 +537,12 @@ final class ResourceLocatorPass implements CompilerPassInterface
 
                 $references[$class] = new Reference($id);
                 $map[$type] = $class;
+
+                $serversByType[$type] = $this->validateServers(
+                    $this->parseServers($attributes['server'] ?? null),
+                    $declaredServers,
+                    \sprintf('type "%s"', $type),
+                );
 
                 if ($operationsByType !== null) {
                     $operationsByType[$type] = \array_key_exists('operations', $attributes)
