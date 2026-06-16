@@ -19,12 +19,15 @@ use haddowg\JsonApi\Operation\FetchRelatedOperation;
 use haddowg\JsonApi\Operation\FetchRelationshipOperation;
 use haddowg\JsonApi\Operation\FetchResourceOperation;
 use haddowg\JsonApi\Operation\OperationContext;
+use haddowg\JsonApi\Operation\QueryParameters;
 use haddowg\JsonApi\Operation\RemoveFromRelationshipOperation;
 use haddowg\JsonApi\Operation\UpdateRelationshipOperation;
 use haddowg\JsonApi\Operation\UpdateResourceOperation;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\Filter\FilterInterface;
+use haddowg\JsonApi\Resource\Filter\SupportsSingular;
 use haddowg\JsonApi\Response\DataResponse;
 use haddowg\JsonApi\Response\ErrorResponse;
 use haddowg\JsonApi\Response\IdentifierResponse;
@@ -164,21 +167,57 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $request = $operation->context()->httpRequest();
         $request = $request instanceof JsonApiRequestInterface ? $request : null;
 
-        $paginator = $resource?->pagination() ?? $server->defaultPaginator();
+        $filters = $resource?->filters() ?? [];
+
+        // A singular filter the client applied collapses the collection to a
+        // zero-to-one response — a single resource (the first match) or null,
+        // never an array, and never paginated (core ADR 0039).
+        $singular = $this->appliesSingularFilter($filters, $operation->queryParameters());
+
+        $paginator = $singular ? null : ($resource?->pagination() ?? $server->defaultPaginator());
         $window = $paginator !== null && $request !== null ? $paginator->window($request) : null;
 
         $result = $provider->fetchCollection($type, new CollectionCriteria(
             $operation->queryParameters(),
-            $resource?->filters() ?? [],
+            $filters,
             $resource?->allSorts() ?? [],
             $window,
         ));
+
+        if ($singular) {
+            $first = null;
+            foreach ($result->items as $first) {
+                break;
+            }
+
+            return DataResponse::fromResource($first, $serializer);
+        }
 
         if ($paginator !== null && $request !== null && $result->total !== null) {
             return DataResponse::fromPage($paginator->paginate($request, $result->items, $result->total), $serializer);
         }
 
         return DataResponse::fromCollection($result->items, $serializer);
+    }
+
+    /**
+     * Whether the client applied a filter the resource declares
+     * {@see SupportsSingular singular} — the trigger to collapse the collection to
+     * a zero-to-one ({@see DataResponse::fromResource()}) response.
+     *
+     * @param list<FilterInterface> $filters
+     */
+    private function appliesSingularFilter(array $filters, QueryParameters $queryParameters): bool
+    {
+        foreach ($filters as $filter) {
+            if ($filter instanceof SupportsSingular
+                && $filter->isSingular()
+                && \array_key_exists($filter->key(), $queryParameters->filter)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -272,14 +311,12 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
             if ($paginator !== null && $result->total !== null) {
                 return RelatedResponse::fromPage(
-                    $parent,
-                    $relationshipName,
                     $paginator->paginate($request, $result->items, $result->total),
                     $serializer,
                 );
             }
 
-            return RelatedResponse::fromCollection($parent, $relationshipName, $result->items, $serializer);
+            return RelatedResponse::fromCollection($result->items, $serializer);
         }
 
         // Resolve the to-one serializer from the actual related object so a
@@ -290,7 +327,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $related = $relation->readValue($parent, $request);
         $serializer = $relation->resolveSerializer($related, $server) ?? $server->serializerFor($relatedType);
 
-        return RelatedResponse::fromResource($parent, $relationshipName, $related, $serializer);
+        return RelatedResponse::fromResource($related, $serializer);
     }
 
     /**
@@ -504,7 +541,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // attributes + id; the persister then sets the associations (resolving
         // linkage ids → managed references / stored objects) so a typed entity
         // never has a scalar id assigned to an association property (ADR 0018).
-        $relationships = $this->extractRelationships($server, $type, $body);
+        $relationships = $this->extractRelationships($server, $type, $body, creating: true);
 
         $entity = $server->hydratorFor($type)->hydrate($this->withoutRelationships($body), $persister->instantiate($type));
         \assert(\is_object($entity));
@@ -544,7 +581,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         // As for create: hydrate attributes via core, then replace the associations
         // named in `data.relationships` through the persister seam (ADR 0018).
-        $relationships = $this->extractRelationships($server, $type, $body);
+        $relationships = $this->extractRelationships($server, $type, $body, creating: false);
 
         $entity = $server->hydratorFor($type)->hydrate($this->withoutRelationships($body), $entity);
         \assert(\is_object($entity));
@@ -565,17 +602,26 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * through the dual-source {@see TypeMetadataResolver::relationNamed()} — a
      * resource's own relations or a resource-less type's standalone relations (ADR
      * 0026) — so a type with no resource can still have its relationships set on a
-     * whole-resource write. A relationship that is unknown or read-only for this
-     * operation is skipped (core's hydrator and the validator own those rules).
+     * whole-resource write. A relationship that is unknown, or read-only for this
+     * operation, is skipped — the read-only gate mirrors core's
+     * `AbstractResource::hydrateRelationships()`, which never sees these because the
+     * handler strips relationships from the body before core hydrates, so the gate
+     * is reapplied here.
      *
      * @return list<array{relation: RelationInterface, linkage: ToOneRelationship|ToManyRelationship}>
      */
-    private function extractRelationships(Server $server, string $type, JsonApiRequestInterface $body): array
+    private function extractRelationships(Server $server, string $type, JsonApiRequestInterface $body, bool $creating): array
     {
         $collected = [];
         foreach ($this->bodyRelationshipNames($body) as $name) {
             $relation = $this->types->relationNamed($server, $type, $name);
             if ($relation === null) {
+                continue;
+            }
+
+            // Reapply core's read-only relationship gate: a relation the author marked
+            // readOnly() must not be writable through a whole-resource body.
+            if ($relation->isReadOnly($creating)) {
                 continue;
             }
 

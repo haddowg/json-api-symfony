@@ -161,6 +161,11 @@ abstract class BaseArticleResource extends AbstractResource
             // only the mutation guards exercise them.
             BelongsTo::make('lockedAuthor')->type('authors')->storedAs('author')->cannotReplace(),
             HasMany::make('lockedComments')->type('comments')->storedAs('comments')->cannotRemove(),
+            // Read-only relationship (security): reuses the `author` association but
+            // is declared readOnly(), so a whole-resource write that names it is
+            // silently skipped — a server-assigned association can't be overwritten
+            // through the write body (the gate core enforces, reapplied bundle-side).
+            BelongsTo::make('readOnlyAuthor')->type('authors')->storedAs('author')->readOnly(),
         ];
     }
 
@@ -169,6 +174,10 @@ abstract class BaseArticleResource extends AbstractResource
         return [
             Where::make('title'),
             Where::make('titleContains', 'title', 'like'),
+            // Singular filter (core ADR 0039): a zero-to-one filter on the unique
+            // title. Applying it collapses the collection to a single resource (or
+            // null), so the same `/articles` endpoint serves a to-one shape.
+            Where::make('exactTitle', 'title')->singular(),
             WhereIdIn::make(),
             // Relationship-existence filters (Phase 3 S5). The request value is
             // ignored — presence on the named association decides the match. The

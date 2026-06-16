@@ -86,6 +86,54 @@ abstract class ReadQueryConformanceTestCase extends JsonApiFunctionalTestCase
         self::assertSame(['parameter' => 'filter[nope]'], $error['source'] ?? null);
     }
 
+    // --- singular filters ----------------------------------------------------
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    public function aSingularFilterCollapsesTheCollectionToASingleResource(): void
+    {
+        // `exactTitle` is declared singular(): applying it renders the matched
+        // resource as the document's primary `data` *object*, not a one-element
+        // array — the JSON:API zero-to-one shape (core ADR 0039).
+        $document = $this->fetchDocument('/articles?filter[exactTitle]=Zebra%20patterns');
+
+        $data = $document['data'] ?? null;
+        self::assertIsArray($data);
+        self::assertSame('articles', $data['type'] ?? null);
+        self::assertSame('4', $data['id'] ?? null);
+
+        // Zero-to-one is not a collection, so it carries no pagination meta even
+        // though the resource declares a default paginator.
+        $meta = $document['meta'] ?? [];
+        self::assertIsArray($meta);
+        self::assertArrayNotHasKey('page', $meta);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    public function aSingularFilterWithNoMatchRendersDataNull(): void
+    {
+        // Zero matches is `data: null` with a 200 — not a 404 (the endpoint is the
+        // collection, which exists; the singular result is simply empty).
+        $document = $this->fetchDocument('/articles?filter[exactTitle]=No%20Such%20Title');
+
+        self::assertArrayHasKey('data', $document);
+        self::assertNull($document['data']);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    public function withoutTheSingularFilterTheSameEndpointStaysACollection(): void
+    {
+        // The collapse is triggered only by the applied singular filter; the bare
+        // collection still renders `data` as an array.
+        $document = $this->fetchDocument('/articles');
+
+        $data = $document['data'] ?? null;
+        self::assertIsArray($data);
+        self::assertArrayHasKey(0, $data);
+    }
+
     // --- sorting -------------------------------------------------------------
 
     #[Test]

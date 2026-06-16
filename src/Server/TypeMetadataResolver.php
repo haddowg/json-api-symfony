@@ -17,7 +17,7 @@ use haddowg\JsonApi\Server\Server;
  * so it has no resource, no relations, no filter/sort vocabulary and no paginator.
  *
  * It collapses the
- * `try { $server->resources()->resourceFor($type) } catch (NoResourceRegistered)`
+ * `try { $server->resourceFor($type) } catch (NoResourceRegistered)`
  * dance the generic CRUD engine would otherwise repeat at every
  * metadata-dependent call site into one resource-presence-aware lookup, so the
  * engine stays generic over both a full resource and a bare pair without per-type
@@ -40,7 +40,7 @@ final class TypeMetadataResolver
     public function resourceFor(Server $server, string $type): ?AbstractResource
     {
         try {
-            return $server->resources()->resourceFor($type);
+            return $server->resourceFor($type);
         } catch (NoResourceRegistered) {
             return null;
         }
