@@ -41,6 +41,16 @@ security:
 The example app intentionally ships no firewall (it has nothing to protect), so the
 recipes here are prose — but the mechanism is exactly Symfony's, unchanged.
 
+## Declarative per-resource authorization (optional)
+
+On top of the firewall, the bundle offers an **optional** declarative-authorization
+layer: a resource declares Symfony Security expressions on `#[AsJsonApiResource]`
+(`security:`, `securityCreate:`, …) and the bundle evaluates them at the right
+lifecycle hook for each operation — denying a write *before* it persists, gating a
+single read, delegating `is_granted('EDIT', object)` to a Voter. It activates only
+when `symfony/security-core` is installed and a firewall is configured. See
+[authorization](authorization.md) for the full surface.
+
 ## Firewall failures still render as JSON:API
 
 Because the route-scoped `ExceptionListener` (see [errors](errors.md)) maps any
@@ -52,6 +62,13 @@ an HTML login redirect:
 | --- | --- | --- |
 | `UnauthorizedHttpException` (no credentials) | `401` | `Unauthorized` |
 | `AccessDeniedHttpException` (denied) | `403` | `Forbidden` |
+| `AccessDeniedException` (Security, e.g. the declarative layer) | `403` (or `401` when unauthenticated) | `Forbidden` / `Unauthorized` |
+| `AuthenticationException` (Security) | `401` | `Unauthorized` |
+
+The last two are Symfony Security exceptions that are **not** `HttpExceptionInterface`,
+so the listener maps them explicitly (guarded so it compiles without
+`symfony/security-core`) — this is what lets the declarative-authorization layer
+([authorization](authorization.md)) render a clean `403`/`401`.
 
 So authentication and authorization compose with JSON:API rendering for free. The
 one thing to configure on your side: point the firewall's `entry_point` and

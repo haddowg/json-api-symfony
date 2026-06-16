@@ -77,6 +77,51 @@ final class ExceptionListenerTest extends TestCase
         self::assertSame($this->seamErrorArray($throwable, true), $error);
     }
 
+    #[Test]
+    #[Group('spec:errors')]
+    public function accessDeniedMapsTo403WhenAuthenticated(): void
+    {
+        $response = $this->fire(
+            new \Symfony\Component\Security\Core\Exception\AccessDeniedException('nope'),
+            authenticated: true,
+        );
+
+        self::assertSame(403, $response->getStatusCode());
+        $error = $this->firstError($response);
+        self::assertSame('403', $error['status'] ?? null);
+        self::assertSame('Forbidden', $error['title'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:errors')]
+    public function accessDeniedMapsTo401WhenUnauthenticated(): void
+    {
+        $response = $this->fire(
+            new \Symfony\Component\Security\Core\Exception\AccessDeniedException('nope'),
+            authenticated: false,
+        );
+
+        self::assertSame(401, $response->getStatusCode());
+        $error = $this->firstError($response);
+        self::assertSame('401', $error['status'] ?? null);
+        self::assertSame('Unauthorized', $error['title'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:errors')]
+    public function authenticationExceptionMapsTo401(): void
+    {
+        $response = $this->fire(
+            new \Symfony\Component\Security\Core\Exception\AuthenticationException('login required'),
+            authenticated: true,
+        );
+
+        self::assertSame(401, $response->getStatusCode());
+        $error = $this->firstError($response);
+        self::assertSame('401', $error['status'] ?? null);
+        self::assertSame('Unauthorized', $error['title'] ?? null);
+    }
+
     /**
      * Fires the listener for `$throwable` on a marked route and returns the first
      * rendered error object.
@@ -109,6 +154,51 @@ final class ExceptionListenerTest extends TestCase
         self::assertSame(500, $response->getStatusCode());
 
         return $this->firstError($response);
+    }
+
+    /**
+     * Fires the listener for a Security exception with a token storage + trust
+     * resolver reflecting `$authenticated`, returning the rendered response so the
+     * mapped status (401 vs 403) can be asserted.
+     */
+    private function fire(\Throwable $throwable, bool $authenticated): Response
+    {
+        $tokenStorage = new \Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorage();
+        $trustResolver = $this->createStub(\Symfony\Component\Security\Core\Authentication\AuthenticationTrustResolverInterface::class);
+        if ($authenticated) {
+            $token = $this->createStub(\Symfony\Component\Security\Core\Authentication\Token\TokenInterface::class);
+            $tokenStorage->setToken($token);
+            $trustResolver->method('isAuthenticated')->willReturn(true);
+        } else {
+            $trustResolver->method('isAuthenticated')->willReturn(false);
+        }
+
+        $listener = new ExceptionListener(
+            $this->serverProvider(),
+            $this->psrHttpFactory(),
+            new HttpFoundationFactory(),
+            debug: false,
+            logger: null,
+            tokenStorage: $tokenStorage,
+            trustResolver: $trustResolver,
+        );
+
+        $request = Request::create('/articles', 'GET');
+        $request->attributes->set(ExceptionListener::ROUTE_MARKER, true);
+
+        $event = new ExceptionEvent(
+            $this->createStub(HttpKernelInterface::class),
+            $request,
+            HttpKernelInterface::MAIN_REQUEST,
+            $throwable,
+        );
+
+        $listener->onKernelException($event);
+
+        $response = $event->getResponse();
+        self::assertInstanceOf(Response::class, $response);
+
+        return $response;
     }
 
     /**

@@ -14,6 +14,7 @@ use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineExtensionInterface;
 use haddowg\JsonApiBundle\DependencyInjection\Compiler\DoctrineEntityMapPass;
 use haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceLocatorPass;
+use haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceSecurityPass;
 use haddowg\JsonApiBundle\Operation\CrudOperationHandler;
 use haddowg\JsonApiBundle\Operation\Operation;
 use haddowg\JsonApiBundle\Serializer\Doctrine\DoctrineRelationshipLoadState;
@@ -207,6 +208,35 @@ final class JsonApiBundle extends AbstractBundle
                 ]);
         }
 
+        // Declarative resource authorization (bundle ADR 0043): the type-keyed
+        // ResourceSecurityRegistry + the ResourceSecuritySubscriber that evaluates a
+        // type's security expression at the lifecycle hooks. Registered only when
+        // symfony/security-core (the AuthorizationChecker) and
+        // symfony/expression-language (the Expression syntax) are installed — both
+        // `suggest` dependencies; absent either, a declared `security` is inert. The
+        // ResourceSecurityPass (added in build()) fills the registry's map and is
+        // itself a no-op when the registry is undefined.
+        if (\interface_exists(\Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface::class)
+            && \class_exists(\Symfony\Component\ExpressionLanguage\Expression::class)
+        ) {
+            $services = $container->services();
+
+            $services->set(\haddowg\JsonApiBundle\Security\ResourceSecurityRegistry::class)
+                ->args(['$expressions' => []]);
+
+            // security.authorization_checker exists only when a firewall is
+            // configured (SecurityBundle), not merely when symfony/security-core is
+            // on the classpath. So it is injected ->nullOnInvalid() and the
+            // subscriber is a no-op when absent — a JSON:API app without a firewall
+            // keeps working, and a declared `security` is inert until one is wired.
+            $services->set(\haddowg\JsonApiBundle\Security\ResourceSecuritySubscriber::class)
+                ->args([
+                    '$authorizationChecker' => service('security.authorization_checker')->nullOnInvalid(),
+                    '$registry' => service(\haddowg\JsonApiBundle\Security\ResourceSecurityRegistry::class),
+                ])
+                ->tag('kernel.event_subscriber');
+        }
+
         // Any service extending AbstractResource is auto-tagged for registration;
         // ResourceLocatorPass keys them by class-string for the Server factory.
         $builder->registerForAutoconfiguration(AbstractResource::class)
@@ -245,6 +275,15 @@ final class JsonApiBundle extends AbstractBundle
                     'operations' => $attribute->operations !== []
                         ? \implode(',', \array_map(static fn(Operation $op): string => $op->value, $attribute->operations))
                         : null,
+                    // The declarative authorization expressions (bundle ADR 0043),
+                    // recorded as scalar tag attributes the ResourceSecurityPass reads
+                    // into the type-keyed ResourceSecurityRegistry. Inert (never read)
+                    // when symfony/security-core is absent.
+                    'security_default' => $attribute->security,
+                    'security_create' => $attribute->securityCreate,
+                    'security_update' => $attribute->securityUpdate,
+                    'security_delete' => $attribute->securityDelete,
+                    'security_read' => $attribute->securityRead,
                 ], static fn(mixed $value): bool => $value !== null));
             },
         );
@@ -294,6 +333,7 @@ final class JsonApiBundle extends AbstractBundle
 
         $container->addCompilerPass(new ResourceLocatorPass());
         $container->addCompilerPass(new DoctrineEntityMapPass());
+        $container->addCompilerPass(new ResourceSecurityPass());
     }
 
     /**
@@ -378,6 +418,12 @@ final class JsonApiBundle extends AbstractBundle
                     // Doctrine application that maps an entity, else null (core then
                     // treats every relation as loaded).
                     '$relationshipLoadState' => service(DoctrineRelationshipLoadState::class)->nullOnInvalid(),
+                    // This server's name + the dispatcher the serving bridge fires
+                    // the bundle ServingEvent through (bundle ADR 0042); the
+                    // dispatcher is optional (the lifecycle-hook seam is off when
+                    // symfony/event-dispatcher is absent).
+                    '$serverName' => $name,
+                    '$dispatcher' => service('event_dispatcher')->nullOnInvalid(),
                 ]);
 
             $factoryRefs[$name] = service($id);

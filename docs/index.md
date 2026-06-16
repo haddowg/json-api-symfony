@@ -149,15 +149,17 @@ These docs read in six arcs:
    (serializer / hydrator / relations as independent capabilities), and
    [configuration](configuration.md).
 3. **The request lifecycle** — [routing](routing.md), [lifecycle](lifecycle.md),
-   and route-scoped [errors](errors.md).
+   [lifecycle-hooks](lifecycle-hooks.md) (author seams around each operation), and
+   route-scoped [errors](errors.md).
 4. **The data layer** — the [data-layer](data-layer.md) SPI, the
    [doctrine](doctrine.md) reference adapter, and
    [custom-data-providers](custom-data-providers.md).
 5. **Validation** — the [validation](validation.md) bridge and the opis linter.
 6. **Advanced & cross-cutting** — [relationships](relationships.md), custom
    [serializers and hydrators](custom-serializers-hydrators.md) (and handler
-   decoration), [multi-server and testing](multi-server-and-testing.md), and
-   [security and deployment](security.md).
+   decoration), [multi-server and testing](multi-server-and-testing.md),
+   [security and deployment](security.md), and declarative
+   [authorization](authorization.md) (per-resource `security:` expressions).
 
 If you are new to JSON:API itself, read core's
 [getting-started](https://github.com/haddowg/json-api/blob/main/docs/getting-started.md)

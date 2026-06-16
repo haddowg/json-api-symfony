@@ -12,10 +12,11 @@ is extracted from a CI-run `KernelTestCase`, so the docs cannot drift.
 
 > This example is **not published to Packagist**. Its `composer.json` is a
 > documentation artifact showing what a real integrating app requires (the bundle,
-> `symfony/*` including `symfony/doctrine-bridge` for `UniqueEntity` and
-> `symfony/intl` for the reference-data resource, and `doctrine/*`). It runs as
-> part of the bundle's own test suite via the bundle's autoload-dev + PHPUnit
-> wiring — you do not `composer install` it standalone.
+> `symfony/*` including `symfony/doctrine-bridge` for `UniqueEntity`, `symfony/intl`
+> for the reference-data resource, and `symfony/security-bundle` for the
+> declarative-authorization witness, and `doctrine/*`). It runs as part of the
+> bundle's own test suite via the bundle's autoload-dev + PHPUnit wiring — you do
+> not `composer install` it standalone.
 
 ## The domains
 
@@ -28,7 +29,7 @@ reference-data type sourced from `symfony/intl`.
 | `artists` | `Artist` entity | singular `filter[slug]`, computed `trackCount`, `hasMany albums` (`cannotBeIncluded` — include safeguard A) |
 | `albums` | `Album` entity | multi-server (default + `admin`), directional `CompareField`, `Map releaseInfo` (JSON column), default-include `artist`, `WhereHas tracks` |
 | `tracks` | `Track` entity | **serializer override** (`TrackSerializer`), `storedAs` rename, `ArrayList genres`, `like` filter, `belongsToMany playlists` (`cannotReplace`) |
-| `playlists` | `Playlist` entity | **hydrator override** (`PlaylistHydrator`), **UUID id** (`uuid()->generated()`), derived `slug` |
+| `playlists` | `Playlist` entity | **hydrator override** (`PlaylistHydrator`), **UUID id** (`uuid()->generated()`), derived `slug`, **lifecycle hooks** (`beforeCreate` stamp + `beforeDelete` 409 guard), **authorization** (`securityDelete` admin-only + `securityUpdate` owner Voter) |
 | `users` | `User` entity | **admin-server-only**, `UniqueEntity` on `email`, write-only `password`, validation-composition trio, `getAllowedIncludePaths` whitelist (include safeguard C) |
 | `favorites` | `Favorite` entity | **polymorphic to-one** `MorphTo favoritable` (Track\|Album\|Artist) |
 | `libraries` | `Library` entity | **polymorphic to-many** `MorphToMany items` (custom provider) |
@@ -70,6 +71,78 @@ The fallback when no client id is supplied:
   `ulid()` → ULID; a non-self-generating format is a config error);
 - `generateUsing(\Closure $fn)` — `$fn()` returns the generated storage key.
 
+## Lifecycle hooks
+
+Every CRUD operation fires a per-operation lifecycle event the bundle ships
+(`serving` → `BeforeSave` → `BeforeCreate`/`BeforeUpdate`/`BeforeDelete` → commit →
+`AfterCreate`/… → `AfterSave`, plus the relationship-mutation and read hooks). The
+bundle exposes the seam through **two mechanisms** — overridable per-type resource
+hook methods, and plain Symfony event subscribers (the methods are sugar over the
+events, routed by a built-in subscriber). This app demonstrates both:
+
+- **Per-type resource methods** — `PlaylistResource` implements
+  `ResourceLifecycleHooksInterface` (`use ResourceLifecycleHooksTrait;` for the
+  no-op defaults) and overrides just two hooks:
+  - `beforeCreate(object $entity, HookContext $ctx)` **mutates** the entity (stamps
+    an `externalId` when the create omits one). A before hook runs with the entity
+    mutable and *before* the persister flush, so the change is durably persisted — a
+    follow-up read returns it.
+  - `beforeDelete(object $entity, HookContext $ctx)` is a **guard** that throws a
+    `409` (a `JsonApiExceptionInterface` the route-scoped `ExceptionListener`
+    renders) when the playlist still references tracks. A before hook that throws
+    aborts the operation — nothing is deleted. An empty playlist deletes normally.
+
+- **A cross-cutting event subscriber** — `AuditLogSubscriber` is a plain
+  `EventSubscriberInterface` (autoconfigured, no bundle wiring) that listens to
+  events fired for **every** type, so one concern spans the whole API from one
+  place:
+  - on the **`serving`** event (fired once per request, before the operation) it
+    aborts every mutating request with a `403` when the request carries
+    `X-Read-Only: on` — a deploy flag that freezes writes API-wide;
+  - on `AfterSave` (every create *and* update) and `AfterDelete` it appends an audit
+    line to the public `AuditLog` service. After hooks fire post-commit, so an entry
+    means the write durably happened; the wire id is captured in a `BeforeDelete`
+    handler (the entity is still live there) and the serializer is resolved on the
+    server the operation dispatched on (so the admin-only `users` type audits
+    correctly under multi-server).
+
+A before hook (resource method or subscriber) aborts by throwing a
+`JsonApiExceptionInterface` (`HookAbortException` here, carrying `403`/`409`/`422`);
+an after hook may replace the response value object by returning a new one
+(custom-action shaping). `tests/LifecycleHooksTest.php` exercises both mechanisms
+end to end. See [`docs/lifecycle-hooks.md`](../../docs/lifecycle-hooks.md) for the
+full hook set and semantics.
+
+## Authorization
+
+The bundle ships an optional **declarative authorization** layer (built on the
+lifecycle hooks): a resource declares Symfony Security
+[expressions](https://symfony.com/doc/current/security/expressions.html) on its
+`#[AsJsonApiResource]` attribute, and the bundle evaluates them at the right hook —
+denying with a JSON:API `403` (or `401` when unauthenticated) **before** any
+persistence. `PlaylistResource` carries two:
+
+- `securityDelete: "is_granted('ROLE_ADMIN')"` — a **role gate**: only an admin may
+  delete a playlist.
+- `securityUpdate: "is_granted('EDIT', object)"` — an **ownership gate**: `object` is
+  the loaded playlist, and `is_granted('EDIT', …)` delegates to
+  `Security/PlaylistOwnerVoter` (an ordinary Symfony Voter), which grants `EDIT` only
+  when the authenticated user's identifier equals the playlist owner's email — so only
+  a playlist's owner may update it.
+
+Create and read carry no expression, so they stay ungated (anyone may create or read).
+A type that declares no `security` — every other type here — is never affected.
+
+The layer needs a firewall: `config/packages/security.yaml` wires the smallest
+witness — an in-memory user provider (`admin`; `ada@example.com`, the seeded
+playlist's owner; and `mallory@example.com`, a non-owner) behind a stateless
+HTTP-Basic firewall. The firewall is optional (no `access_control`), so an
+unauthenticated request still reaches the controller and the security expressions are
+what gate it. `tests/AuthorizationTest.php` proves the owner may update / a non-owner
+is `403` / unauthenticated is `401` / an admin may delete / a `ROLE_USER` is `403` /
+the abort happens before any write / an unsecured type is ungated. See
+[`docs/authorization.md`](../../docs/authorization.md) for the full surface.
+
 ## What's here
 
 - **`src/Entity/`** — the Doctrine entities (the entity-backed types above). Their id
@@ -86,8 +159,17 @@ The fallback when no client id is supplied:
   priority-shadow `OverridingArtistProvider`, the `FavoriteProvider` polymorphic
   resolver, the `countries` reference-data provider, the standalone `charts`
   provider).
-- **`config/`** — `bundles.php`, `services.yaml`, `packages/{framework,json_api,doctrine}.yaml`
-  (the `admin` server lives under `json_api.servers`), and `routes/json_api.yaml`
+- **`src/EventListener/AuditLogSubscriber.php`** and **`src/Hook/`** — the
+  lifecycle-hook witnesses: the cross-cutting audit/`serving`-gate subscriber, the
+  `AuditLog` store it appends to, and the `HookAbortException` a before-hook throws
+  to abort (the per-type resource-method hooks live on `PlaylistResource`).
+- **`src/Security/PlaylistOwnerVoter.php`** — the ordinary Symfony Voter backing the
+  `securityUpdate: "is_granted('EDIT', object)"` ownership gate on `PlaylistResource`
+  (the declarative-authorization witness).
+- **`config/`** — `bundles.php`, `services.yaml`,
+  `packages/{framework,json_api,doctrine,security}.yaml`
+  (the `admin` server lives under `json_api.servers`; `security.yaml` is the firewall
+  behind the authorization witness), and `routes/json_api.yaml`
   (the default `.` import plus the per-server `admin` import under `/admin`).
 - **`src/DataFixtures/Seed.php`** — plain deterministic fixtures (not Foundry) seeding
   a coherent object graph. The store-provided rows carry no hand-set ids — the

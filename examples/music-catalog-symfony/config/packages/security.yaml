@@ -1,0 +1,46 @@
+# The firewall behind the example's declarative-authorization witness (bundle
+# ADR 0043, docs/authorization.md). `PlaylistResource` declares
+# `securityDelete: "is_granted('ROLE_ADMIN')"` and
+# `securityUpdate: "is_granted('EDIT', object)"`; the bundle's
+# `ResourceSecuritySubscriber` evaluates those expressions at the lifecycle hooks
+# against a real token, so a denial renders a JSON:API `403` (or `401` when
+# unauthenticated) before any persistence.
+#
+# A real app would back the user provider with a database or an identity provider
+# and front it with token/OIDC authentication; this example keeps the smallest
+# witness — an in-memory provider over plaintext passwords (the example never
+# leaves the test harness) and a stateless HTTP-Basic firewall, authenticated per
+# request via the Authorization header. The firewall is optional (no
+# `access_control` forces authentication), so an unauthenticated request still
+# reaches the controller and the security layer is what gates it.
+#
+# The three users mirror the authz suite: `admin` (the only role allowed to delete
+# a playlist), `ada@example.com` (the seeded Morning Mix playlist's owner, so the
+# `is_granted('EDIT', object)` Voter grants her `EDIT`), and `mallory@example.com`
+# (a non-owner the Voter refuses). The username *is* the user identifier the
+# `PlaylistOwnerVoter` compares against the playlist owner's email.
+security:
+    password_hashers:
+        Symfony\Component\Security\Core\User\InMemoryUser:
+            algorithm: plaintext
+
+    providers:
+        in_memory:
+            memory:
+                users:
+                    admin:
+                        password: 'pass'
+                        roles: ['ROLE_ADMIN']
+                    'ada@example.com':
+                        password: 'pass'
+                        roles: ['ROLE_USER']
+                    'mallory@example.com':
+                        password: 'pass'
+                        roles: ['ROLE_USER']
+
+    firewalls:
+        main:
+            pattern: '^/'
+            stateless: true
+            provider: in_memory
+            http_basic: true

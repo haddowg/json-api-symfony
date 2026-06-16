@@ -52,15 +52,18 @@ abstract class JsonApiFunctionalTestCase extends KernelTestCase
     }
 
     /**
-     * @param array<string, mixed>|null $body a JSON:API document to send (POST/PATCH);
-     *                                         null sends no body (GET/DELETE)
+     * @param array<string, mixed>|null $body         a JSON:API document to send (POST/PATCH);
+     *                                                 null sends no body (GET/DELETE)
+     * @param array<string, string>     $extraServer additional `$_SERVER` entries (e.g.
+     *                                                 `PHP_AUTH_USER`/`PHP_AUTH_PW` for a
+     *                                                 firewall under test)
      */
-    protected function handle(string $path, string $method = 'GET', ?array $body = null): Response
+    protected function handle(string $path, string $method = 'GET', ?array $body = null, array $extraServer = []): Response
     {
         $kernel = static::$kernel;
         self::assertNotNull($kernel);
 
-        $server = ['HTTP_ACCEPT' => 'application/vnd.api+json'];
+        $server = ['HTTP_ACCEPT' => 'application/vnd.api+json'] + $extraServer;
         $content = null;
         if ($body !== null) {
             $server['CONTENT_TYPE'] = 'application/vnd.api+json';

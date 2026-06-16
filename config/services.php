@@ -93,9 +93,20 @@ return static function (ContainerConfigurator $container): void {
     // --- Operations + data providers -----------------------------------------
 
     // The validator argument is optional: it resolves to the ResourceValidator
-    // only when the Symfony Validator bridge is wired (below), else null.
+    // only when the Symfony Validator bridge is wired (below), else null. The
+    // dispatcher fires the per-operation lifecycle events (bundle ADR 0042); it is
+    // optional too, so the handler is a no-op for hooks when symfony/event-dispatcher
+    // is absent.
     $services->set(CrudOperationHandler::class)
-        ->arg('$validator', \Symfony\Component\DependencyInjection\Loader\Configurator\service(ResourceValidator::class)->nullOnInvalid());
+        ->arg('$validator', \Symfony\Component\DependencyInjection\Loader\Configurator\service(ResourceValidator::class)->nullOnInvalid())
+        ->arg('$dispatcher', \Symfony\Component\DependencyInjection\Loader\Configurator\service('event_dispatcher')->nullOnInvalid());
+
+    // The built-in subscriber that routes each lifecycle event to the resource's
+    // overridable hook method (ResourceLifecycleHooksInterface), making the
+    // per-type resource methods sugar over the events (bundle ADR 0042). It is an
+    // EventSubscriberInterface, so framework-bundle autoconfigures it as a
+    // kernel.event_subscriber.
+    $services->set(\haddowg\JsonApiBundle\EventListener\ResourceHookSubscriber::class);
 
     // Core's stateless verb x target-shape dispatch factory; autowired into the
     // RequestListener so the bundle reuses core's operation-construction decision.
@@ -128,12 +139,17 @@ return static function (ContainerConfigurator $container): void {
     // --- Kernel listeners -----------------------------------------------------
 
     // RequestListener runs after Symfony's RouterListener (priority 32) so route
-    // defaults (_jsonapi_type/_jsonapi_server) are populated first. Its schema
-    // validator is null unless json_api.schema_validation registered the optional
-    // opis DocumentValidator.
+    // defaults (_jsonapi_type/_jsonapi_server) are populated first, AND after the
+    // Security Firewall (priority 8) so an authenticated token is in the token
+    // storage before the listener dispatches the operation — the declarative
+    // authorization layer (bundle ADR 0043) evaluates is_granted() at the lifecycle
+    // hooks the dispatch fires, so the firewall must have authenticated first.
+    // Priority 4 keeps it after the firewall but well before the controller is
+    // resolved. Its schema validator is null unless json_api.schema_validation
+    // registered the optional opis DocumentValidator.
     $services->set(RequestListener::class)
         ->arg('$schemaValidator', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApi\Validation\DocumentValidator::class)->nullOnInvalid())
-        ->tag('kernel.event_listener', ['event' => 'kernel.request', 'method' => 'onKernelRequest', 'priority' => 16]);
+        ->tag('kernel.event_listener', ['event' => 'kernel.request', 'method' => 'onKernelRequest', 'priority' => 4]);
 
     $services->set(ViewListener::class)
         ->tag('kernel.event_listener', ['event' => 'kernel.view', 'method' => 'onKernelView']);
@@ -147,6 +163,11 @@ return static function (ContainerConfigurator $container): void {
             '$httpFoundationFactory' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\Symfony\Bridge\PsrHttpMessage\Factory\HttpFoundationFactory::class),
             '$debug' => '%kernel.debug%',
             '$logger' => \Symfony\Component\DependencyInjection\Loader\Configurator\service('logger')->nullOnInvalid(),
+            // Optional Symfony Security collaborators (present only with
+            // symfony/security-core), so an AccessDeniedException maps to 401 when
+            // unauthenticated / 403 when authenticated-but-denied (bundle ADR 0043).
+            '$tokenStorage' => \Symfony\Component\DependencyInjection\Loader\Configurator\service('security.token_storage')->nullOnInvalid(),
+            '$trustResolver' => \Symfony\Component\DependencyInjection\Loader\Configurator\service('security.authentication.trust_resolver')->nullOnInvalid(),
         ])
         ->tag('kernel.event_listener', ['event' => 'kernel.exception', 'method' => 'onKernelException', 'priority' => 128]);
 
