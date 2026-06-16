@@ -57,6 +57,13 @@ final class UriTypeTest extends JsonApiFunctionalTestCase
         // The `type` member is the JSON:API type, not the URI segment.
         self::assertSame('book', $data['type'] ?? null);
 
+        // The convention resource self link uses the URI segment, not the type:
+        // a `book` resource with uriType `books` links to {baseUri}/books/{id}
+        // (core ADR 0054).
+        $dataLinks = $data['links'] ?? null;
+        self::assertIsArray($dataLinks);
+        self::assertSame('https://example.test/books/1', $dataLinks['self'] ?? null);
+
         // The relationship convention links use the URI segment (`books`).
         $relationships = $data['relationships'] ?? null;
         self::assertIsArray($relationships);

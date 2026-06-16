@@ -201,6 +201,130 @@ abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTest
         );
     }
 
+    // --- convention self links (core ADR 0054) ---------------------------------
+
+    #[Test]
+    #[Group('spec:document-resource-objects')]
+    public function aResourceObjectCarriesTheConventionSelfLink(): void
+    {
+        // Every resource object gets links.self = {baseUri}/{uriType}/{id} by
+        // convention (here uriType == type == 'articles'). Provider-agnostic: the
+        // link derives from baseUri/uriType/id, identical on both providers.
+        $resource = $this->fetchResource('/articles/1');
+
+        $links = $resource['links'] ?? null;
+        self::assertIsArray($links);
+        self::assertSame(self::BASE_URI . '/articles/1', $links['self'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:document-resource-objects')]
+    public function aCollectionItemCarriesTheConventionSelfLink(): void
+    {
+        // The resource self link appears on each primary-data item of a collection
+        // fetch, not only on a single-resource fetch.
+        $document = $this->fetchDocument('/articles?filter[id]=3');
+
+        $data = $document['data'] ?? null;
+        self::assertIsArray($data);
+        $resource = $data[0] ?? null;
+        self::assertIsArray($resource);
+
+        $links = $resource['links'] ?? null;
+        self::assertIsArray($links);
+        self::assertSame(self::BASE_URI . '/articles/3', $links['self'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:document-top-level')]
+    public function aSingleResourceDocumentCarriesTheTopLevelSelfLink(): void
+    {
+        // The top-level document self is the request URI ({baseUri}{path}); a
+        // single resource carries no pagination, so the self is the bare path.
+        $document = $this->fetchDocument('/articles/1');
+
+        $links = $document['links'] ?? null;
+        self::assertIsArray($links);
+        self::assertSame(self::BASE_URI . '/articles/1', $links['self'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:document-top-level')]
+    public function aCollectionDocumentCarriesTheTopLevelSelfLink(): void
+    {
+        // A collection is paginated (the resource declares a default paginator), so
+        // the page's own per-page self (carrying the resolved page params) wins as
+        // the top-level self and the query string is percent-encoded.
+        $document = $this->fetchDocument('/articles');
+
+        $links = $document['links'] ?? null;
+        self::assertIsArray($links);
+        self::assertSame(
+            self::BASE_URI . '/articles?page%5Bnumber%5D=1&page%5Bsize%5D=15',
+            $links['self'] ?? null,
+        );
+    }
+
+    #[Test]
+    #[Group('spec:document-top-level')]
+    public function aFilteredCollectionTopLevelSelfPreservesTheQuery(): void
+    {
+        // The winning pagination self preserves the request's filter/sort params
+        // alongside the page params, percent-encoded as the rebuilt query carries
+        // them (spaces as '+').
+        $document = $this->fetchDocument('/articles?filter[title]=Zebra%20patterns');
+
+        $links = $document['links'] ?? null;
+        self::assertIsArray($links);
+        self::assertSame(
+            self::BASE_URI . '/articles?filter%5Btitle%5D=Zebra+patterns&page%5Bnumber%5D=1&page%5Bsize%5D=15',
+            $links['self'] ?? null,
+        );
+    }
+
+    #[Test]
+    #[Group('spec:document-top-level')]
+    #[Group('spec:fetching-pagination')]
+    public function aPaginatedCollectionTopLevelSelfIsThePageSelf(): void
+    {
+        // On a paginated collection the page's own self (with the resolved page
+        // params) wins, applied before the top-level self which only fills when
+        // absent; first/prev/next/last are preserved alongside.
+        $document = $this->fetchDocument('/articles?sort=title&page[number]=2&page[size]=2');
+
+        $links = $document['links'] ?? null;
+        self::assertIsArray($links);
+        self::assertSame(
+            self::BASE_URI . '/articles?sort=title&page%5Bnumber%5D=2&page%5Bsize%5D=2',
+            $links['self'] ?? null,
+        );
+        // The navigation links remain.
+        self::assertArrayHasKey('first', $links);
+        self::assertArrayHasKey('next', $links);
+    }
+
+    #[Test]
+    #[Group('spec:document-resource-objects')]
+    #[Group('spec:fetching-includes')]
+    public function anIncludedResourceCarriesItsOwnConventionSelfLink(): void
+    {
+        // A compound document's included resources are resource objects too, so
+        // each carries its own self link at its own type's URI segment.
+        $document = $this->fetchDocument('/articles/1?include=author');
+
+        $included = $document['included'] ?? null;
+        self::assertIsArray($included);
+
+        $author = $included[0] ?? null;
+        self::assertIsArray($author);
+        self::assertSame('authors', $author['type'] ?? null);
+        self::assertSame('1', $author['id'] ?? null);
+
+        $links = $author['links'] ?? null;
+        self::assertIsArray($links);
+        self::assertSame(self::BASE_URI . '/authors/1', $links['self'] ?? null);
+    }
+
     // --- relationship-existence filters ----------------------------------------
 
     #[Test]

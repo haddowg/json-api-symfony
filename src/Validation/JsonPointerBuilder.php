@@ -63,6 +63,52 @@ final class JsonPointerBuilder
     }
 
     /**
+     * The pointer for a violation on a relationship linkage member's pivot `meta`
+     * field in a **whole-resource write**: the to-one member points at
+     * `/data/relationships/<rel>/data/meta/<field>` and a to-many member at
+     * `/data/relationships/<rel>/data/<index>/meta/<field>` (the index supplied for a
+     * to-many element, omitted for a to-one). `$bracketedField` is the Symfony
+     * Collection property path of the offending meta key (`[position]`).
+     */
+    public function forLinkageMeta(string $relation, string $bracketedField, ?int $index = null): string
+    {
+        $base = '/data/relationships/' . $this->encodeSegment($relation) . '/data';
+        if ($index !== null) {
+            $base .= '/' . $index;
+        }
+
+        return $base . '/meta' . $this->metaSuffix($bracketedField);
+    }
+
+    /**
+     * The pointer for a violation on a linkage member's pivot `meta` field at a
+     * **relationship-mutation endpoint** (`PATCH`/`POST …/relationships/<rel>`),
+     * where the request body root *is* the relationship object: a to-one member
+     * points at `/data/meta/<field>`, a to-many member at `/data/<index>/meta/<field>`
+     * (the index omitted for a to-one).
+     */
+    public function forRelationshipEndpointLinkageMeta(string $bracketedField, ?int $index = null): string
+    {
+        $base = $index === null ? '/data' : '/data/' . $index;
+
+        return $base . '/meta' . $this->metaSuffix($bracketedField);
+    }
+
+    /**
+     * The `/<field>…` suffix for a pivot-meta pointer, from a Symfony Collection
+     * property path (`[position]` → `/position`); an empty path (a meta-level
+     * violation) yields an empty suffix so the pointer ends at `…/meta`.
+     */
+    private function metaSuffix(string $bracketedPath): string
+    {
+        \preg_match_all('/\[([^\]]*)\]/', $bracketedPath, $matches);
+
+        $segments = \array_map([$this, 'encodeSegment'], $matches[1]);
+
+        return $segments === [] ? '' : '/' . \implode('/', $segments);
+    }
+
+    /**
      * Escapes a single JSON Pointer reference token per RFC 6901: `~` → `~0`,
      * `/` → `~1`.
      */

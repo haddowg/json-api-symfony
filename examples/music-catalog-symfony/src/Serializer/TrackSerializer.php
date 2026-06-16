@@ -7,6 +7,8 @@ namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Serializer;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\BelongsTo;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
+use haddowg\JsonApi\Resource\Field\DateTime;
+use haddowg\JsonApi\Resource\Field\Integer;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\RendersRelationsTrait;
 use haddowg\JsonApi\Resource\SerializerResolverAwareInterface;
@@ -131,7 +133,10 @@ final class TrackSerializer extends AbstractSerializer implements SerializerReso
             BelongsTo::make('album')->type('albums'),
             BelongsToMany::make('playlists')
                 ->type('playlists')
-                ->fields(['position' => 'integer', 'addedAt' => 'datetime'])
+                ->fields(
+                    Integer::make('position')->min(1),
+                    DateTime::make('addedAt')->readOnly(),
+                )
                 ->cannotReplace(),
         ];
     }

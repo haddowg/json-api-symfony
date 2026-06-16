@@ -162,6 +162,7 @@ before any [encoder decode](resources.md#encoded-resource-ids) — in two direct
 | a client-supplied `data.id` | the **owning** resource's id format | `/data/id` |
 | a relationship linkage id (`{ "type": T, "id": X }`) in a whole-resource write | the **related** type `T`'s id format | `/data/relationships/<rel>/data[/<n>]/id` |
 | a linkage id at a relationship-mutation endpoint (`PATCH`/`POST`/`DELETE …/relationships/{rel}`) | the **related** type `T`'s id format | `/data/id` or `/data/<n>/id` |
+| a `belongsToMany` linkage member's pivot `meta` field | the relation's **writable** pivot fields' constraints (new-row/create context — an add/replace may create a new row) | `/data/relationships/<rel>/data[/<n>]/meta/<field>` or `/data[/<n>]/meta/<field>` |
 
 For a polymorphic relation the format is resolved from each linkage's own `type`
 member. The bridge resolves a type → its resource → `Id` field → declared format
@@ -177,6 +178,22 @@ regardless of its format — so the bridge does not pre-empt that uniform `403` 
 and the dedicated relationship-mutation endpoints, so an identical malformed linkage
 id `422`s on either surface. The work lives in `ResourceValidator::ownIdError()` /
 `linkageErrors()` / `validateRelationshipLinkage()`.
+
+A **pivot `belongsToMany`** validates each linkage member's pivot `meta` against the
+relation's *writable* pivot fields' constraints, reusing the same `Required` /
+`Nullable` / `Collection` machinery as attributes — a violation points at the linkage
+meta. Because an add/replace (a relationship-endpoint `POST`/`PATCH`, or a
+whole-resource `POST`/`PATCH` whose relationship apply runs in replace) may **create a
+new association row** for any incoming member, the `meta` is validated in the
+**new-row (create) context**, matching the persister (which writes a new row in create
+context); a reorder of an existing row supplies the value, so this never wrongly
+rejects it. A **read-only** pivot field supplied in `meta` is ignored (it is not in
+the writable set, and the meta Collection allows extra fields, so it never raises) —
+exactly how a read-only attribute is handled; a **required** writable pivot field
+absent when a new association row is created is a `422` (before persist — never a
+database NOT-NULL `500`). See [relationships.md](relationships.md#writing-pivot-data)
+for the write convention and
+[ADR 0046](adr/0046-writable-belongs-to-many-pivot-fields.md).
 
 ## The constraint-translation map
 

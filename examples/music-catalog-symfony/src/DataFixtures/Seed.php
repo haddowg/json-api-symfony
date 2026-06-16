@@ -10,6 +10,7 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Artist;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Favorite;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Library;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Playlist;
+use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\PlaylistEntry;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Track;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\User;
 
@@ -19,8 +20,10 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\User;
  * {@see https://github.com/haddowg/json-api/blob/main/examples/music-catalog/src/Seed.php Seed}.
  * {@see into()} persists a coherent object graph for all seven entity-backed
  * types through the {@see EntityManagerInterface}: artists own albums, albums own
- * tracks, tracks belong to playlists, a user owns playlists + a library, and the
- * favorites/library carry their polymorphic targets.
+ * tracks, tracks belong to playlists (the plain join table), a playlist orders its
+ * tracks through {@see PlaylistEntry} pivot rows carrying `position`/`addedAt`, a
+ * user owns playlists + a library, and the favorites/library carry their
+ * polymorphic targets.
  *
  * Counts mirror core so the same values back the query/relationship tests: album
  * "1" has three tracks (so a per-relation perPage=2 paginator yields two pages),
@@ -157,9 +160,36 @@ final class Seed
             externalId: '11111111-1111-4111-8111-111111111111',
             owner: $ada,
         );
-        // track ↔ playlists (the owning side is on Track)
+        // track ↔ playlists (the owning side is on Track) — the PLAIN join table,
+        // carrying no pivot columns.
         $airbag->playlists->add($morningMix);
         $paranoidAndroid->playlists->add($morningMix);
+
+        // --- Playlist entries (the PIVOT relation `playlists.orderedTracks`) -------
+        // Real pivot values on the PlaylistEntry association entity: `position`
+        // orders the tracklist (Exit Music@1, Airbag@2, Paranoid Android@3 — inserted
+        // out of position order so an order assertion cannot pass on insertion order)
+        // and `addedAt` records when each was added. Track 2 (Paranoid Android) is
+        // explicit, so the `tracks` resource's default filter hides it from the
+        // related collection — leaving Exit Music(3)@1 then Airbag(1)@2.
+        $entryAirbag = new PlaylistEntry(
+            playlist: $morningMix,
+            track: $airbag,
+            position: 2,
+            addedAt: new \DateTimeImmutable('2024-04-02T09:00:00+00:00'),
+        );
+        $entryExitMusic = new PlaylistEntry(
+            playlist: $morningMix,
+            track: $exitMusic,
+            position: 1,
+            addedAt: new \DateTimeImmutable('2024-04-01T09:00:00+00:00'),
+        );
+        $entryParanoidAndroid = new PlaylistEntry(
+            playlist: $morningMix,
+            track: $paranoidAndroid,
+            position: 3,
+            addedAt: new \DateTimeImmutable('2024-04-03T09:00:00+00:00'),
+        );
 
         // --- Favorites (ids 1, 2, 3; MorphTo stored as a targetType/targetId pair;
         //     the targetId is the favoritable member's wire id) -----------------
@@ -194,6 +224,9 @@ final class Seed
         }
         $entityManager->persist($ada);
         $entityManager->persist($morningMix);
+        foreach ([$entryAirbag, $entryExitMusic, $entryParanoidAndroid] as $row) {
+            $entityManager->persist($row);
+        }
         foreach ([$favTrack, $favAlbum, $favArtist] as $row) {
             $entityManager->persist($row);
         }

@@ -44,7 +44,10 @@ declares a to-one `album` and a to-many `playlists`:
 BelongsTo::make('album')->type('albums'),
 BelongsToMany::make('playlists')
     ->type('playlists')
-    ->fields(['position' => 'integer', 'addedAt' => 'datetime'])
+    ->fields(
+        Integer::make('position')->min(1),
+        DateTime::make('addedAt')->readOnly(),
+    )
     ->cannotReplace(),
 ```
 
@@ -108,6 +111,179 @@ GET /tracks/1/playlists               → unpaginated (the relation declares no 
 
 A relation that declares no paginator renders its related collection without page
 meta — that is the unpaginated baseline.
+
+### Relation-scoped filters and sorts
+
+A relation can declare **its own** `filters()`/`sorts()` that augment **only** its
+related-collection endpoint `GET /{type}/{id}/{rel}` — never the primary
+`/{relatedType}` collection. Declare them with the relation builders
+`withFilters(...)`/`withSorts(...)`:
+
+```php
+HasMany::make('tracks')->type('tracks')
+    // Available ONLY on GET /playlists/{id}/tracks, not on GET /tracks:
+    ->withFilters(Where::make('titleContains', 'title', 'like'))
+    ->withSorts(SortByField::make('recent', 'id'));
+```
+
+The bundle merges this scoped vocabulary with the related resource's own when it
+parses the request's `?filter`/`?sort` on the related endpoint:
+
+- `effectiveFilters = relatedResource->filters() + relation->filters()`
+- `effectiveSorts   = relatedResource->allSorts() + relation->sorts()`
+
+so both apply together. On a **key clash** (the same `filter[…]`/`sort` key declared
+on both the related resource and the relation) the **relation's declaration wins**
+— it is the more specific scope. A key in **neither** set still `400`s
+(`filter[unknown]` → an unrecognized-parameter error; `sort=unknown` →
+`SORTING_UNRECOGNIZED`), unchanged.
+
+The scoping is load-bearing: a relation-scoped key reaches `GET /{type}/{id}/{rel}`
+**only**. On the primary `/{relatedType}` collection — where just the related
+resource's own vocabulary applies — the relation's key is unrecognized and `400`s.
+This is why a contextual or pivot-derived filter/sort belongs on the relation: it
+stays scoped to the one endpoint where it is meaningful.
+
+A relation-scoped filter/sort operates on the **related entity** (the common case)
+and works out of the box. A filter/sort that reads a **pivot/join-table column** is
+handled separately — see [Pivot (`belongsToMany`) data](#pivot-belongstomany-data)
+below.
+
+## Pivot (`belongsToMany`) data
+
+A `belongsToMany` relation can expose **pivot (join-table) data**: per-member values
+that live on the join, like a `position` ordering or an `addedAt` timestamp. Declare
+the pivot fields on the relation with `fields()` — as **real field definitions**, the
+same field DSL you use for attributes (`Integer`, `Str`, `DateTime`, …) with their
+constraints, casts and read-only / context behaviour:
+
+```php
+BelongsToMany::make('tracks')->type('tracks')
+    ->fields(
+        Integer::make('position')->required()->min(1),
+        DateTime::make('addedAt')->readOnly(),   // server-owned, never written from meta
+        Str::make('note')->maxLength(140),
+    );
+```
+
+One declaration drives every pivot concern — render, filter / sort, and **write /
+validate**. This renders each member's pivot values as `meta.pivot` on both the
+related endpoint (`GET /playlists/1/tracks`) and the relationship-linkage endpoint
+(`GET /playlists/1/relationships/tracks`), and makes `?filter[position]` /
+`?sort=position` recognised on that related endpoint (routed to the pivot column):
+
+```jsonc
+"data": [
+  {
+    "type": "tracks", "id": "7",
+    "attributes": { "title": "Intro" },
+    "meta": { "pivot": { "position": 1, "addedAt": "2024-01-01T00:00:00+00:00" } }
+  }
+]
+```
+
+**The Doctrine fact this rests on.** A plain `#[ORM\ManyToMany]` join table holds
+only the two foreign keys — Doctrine cannot map a `position`/`addedAt` column on it.
+To HAVE pivot columns you must model the join as an **association entity**:
+
+```php
+#[ORM\Entity]
+class PlaylistTrack
+{
+    #[ORM\ManyToOne(targetEntity: Playlist::class, inversedBy: 'playlistTracks')]
+    public ?Playlist $playlist = null;
+
+    #[ORM\ManyToOne(targetEntity: Track::class)]
+    public ?Track $track = null;
+
+    #[ORM\Column(type: 'integer')]
+    public int $position = 0;
+
+    #[ORM\Column(type: 'datetime_immutable')]
+    public ?\DateTimeImmutable $addedAt = null;
+}
+```
+
+with the parent owning a `OneToMany` to it (`Playlist -> playlistTracks ->
+PlaylistTrack`) and the entity a `ManyToOne` to the far type (`PlaylistTrack -> track
+-> Track`). The Doctrine adapter **auto-detects** that association entity from your
+metadata (it finds the one to-many on the parent whose target also has a `ManyToOne`
+to the far type) and reads pivot render + filter + sort in **one** DQL query over it
+— correctly scoped, filtered, sorted and paginated, no extra round-trip. If
+auto-detection is ambiguous (two candidate association entities) or finds none, it
+throws a clear error pointing you at the override:
+
+```php
+BelongsToMany::make('tracks')->type('tracks')
+    ->fields(Integer::make('position'))
+    ->through(PlaylistTrack::class); // name the association entity explicitly
+```
+
+### Writing pivot data
+
+A pivot field is **writable by default** — settable from the linkage's
+resource-identifier `meta` (JSON:API allows a resource identifier to carry `meta`).
+Opt a server-owned column out with `->readOnly()` (or `->readOnlyOnCreate()` /
+`->readOnlyOnUpdate()`); a read-only pivot field is never written from `meta` and
+takes its server value. The convention is the same on the relationship endpoints and
+inline in a whole-resource write:
+
+```jsonc
+// POST /playlists/1/relationships/tracks   — add a member with its pivot data
+{ "data": [ { "type": "tracks", "id": "7", "meta": { "position": 3 } } ] }
+
+// PATCH /playlists/1/relationships/tracks  — full replacement = REORDER + sync
+{ "data": [
+  { "type": "tracks", "id": "9", "meta": { "position": 1 } },
+  { "type": "tracks", "id": "7", "meta": { "position": 2 } }
+] }
+
+// PATCH /playlists  — the SAME linkage meta inline in a whole-resource write
+{ "data": { "type": "playlists", "id": "1", "relationships": {
+  "tracks": { "data": [ { "type": "tracks", "id": "7", "meta": { "position": 3 } } ] }
+} } }
+```
+
+The Doctrine adapter applies an **association-entity diff**: for each incoming member
+it upserts the join row — updating an existing row's writable pivot fields *in place*
+(the reorder), or creating a new row (the writable fields from `meta`, the read-only
+fields taking their server default). A `PATCH` (full replacement) also **removes** the
+rows whose member is no longer in the set; a `POST` adds/upserts the incoming and
+leaves the rest; a `DELETE` removes the incoming members' rows (a remove carries no
+pivot). Each member's `meta` is **validated** against the writable pivot fields'
+constraints, with a violation rendered as a `422` pointed at the linkage meta
+(`/data/relationships/<rel>/data/<n>/meta/<field>`, or `/data/<n>/meta/<field>` on the
+relationship endpoint). Because an add/replace may **create a new association row** for
+any incoming member — even on a `PATCH` — the `meta` is validated in the **new-row
+(create) context**, matching the persister (a new row is written in create context); a
+reorder of an existing row supplies the value, so this never wrongly rejects it. A
+**read-only** pivot field supplied in `meta` is **ignored** (it is not in the writable
+set, so it never raises and is never written — exactly how a read-only attribute is
+handled). A **required** writable pivot field absent when a new row is created is a
+`422` (at the linkage meta, before persist — never a database NOT-NULL `500`), on the
+relationship-endpoint `POST`/`PATCH` and the whole-resource `POST`/`PATCH` alike.
+
+**Boundaries.**
+
+- **Doctrine-only.** Pivot data requires an association entity to query and write. The
+  in-memory provider does not support it: a pivot `?filter`/`?sort` key is
+  unrecognised there (`400`), no `meta.pivot` renders, and a pivot-meta **write is
+  ignored** (the relation is a plain to-many in-memory — there is no join row to hold
+  it). A `belongsToMany` *without* `fields()` (and any `HasMany`) keeps the plain
+  related-collection behaviour on both providers.
+- **Scoped to the pivot relation's related endpoint.** A pivot key is unrecognised on
+  the primary `/{relatedType}` collection (`400`), exactly like a relation-scoped key.
+- **One pivot row per member.** `meta.pivot` is a single per-member value set, not a
+  list. If the same member appears more than once (duplicate membership — a track at
+  two positions), the collection returns one row per distinct member: the total is the
+  distinct member count, no member splits across pages, and the rendered pivot values
+  are a representative membership row. To render every membership, model the
+  membership as its own resource instead.
+
+See [ADR 0045](adr/0045-belongs-to-many-pivot-data-over-an-association-entity.md)
+(read) and [ADR 0046](adr/0046-writable-belongs-to-many-pivot-fields.md) (write), and
+[doctrine.md](doctrine.md#belongstomany-pivot-data) for the query, resolver and
+association-entity-diff detail.
 
 ## Relationship mutation
 

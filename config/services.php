@@ -200,6 +200,14 @@ return static function (ContainerConfigurator $container): void {
         // supports every entity-mapped type, so an application provider at the
         // default priority (0) shadows it for the types it supports without any
         // priority configuration.
+        // Resolves a belongsToMany pivot relation's Doctrine association entity
+        // (auto-detected from metadata, or its through() override) for the
+        // provider's single-DQL pivot-collection fetch.
+        $services->set(\haddowg\JsonApiBundle\DataProvider\Doctrine\PivotAssociationResolver::class)
+            ->args([
+                '$entityManager' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\Doctrine\ORM\EntityManagerInterface::class),
+            ]);
+
         $services->set(DoctrineDataProvider::class)
             ->args([
                 '$entityManager' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\Doctrine\ORM\EntityManagerInterface::class),
@@ -208,6 +216,7 @@ return static function (ContainerConfigurator $container): void {
                 '$extensions' => \Symfony\Component\DependencyInjection\Loader\Configurator\tagged_iterator(JsonApiBundle::DOCTRINE_EXTENSION_TAG),
                 // null when shipmonk/doctrine-entity-preloader is absent → lazy includes.
                 '$preloader' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataProvider\Doctrine\IncludePreloader::class)->nullOnInvalid(),
+                '$pivotAssociations' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataProvider\Doctrine\PivotAssociationResolver::class),
             ])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG, ['priority' => -128]);
 
@@ -219,6 +228,9 @@ return static function (ContainerConfigurator $container): void {
                 '$entityManager' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\Doctrine\ORM\EntityManagerInterface::class),
                 '$entityClassByType' => [],
                 '$idEncoders' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(IdEncoderResolver::class),
+                // Resolves a belongsToMany pivot relation's association entity for the
+                // writable-pivot association-entity diff (upsert / reorder / remove).
+                '$pivotAssociations' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataProvider\Doctrine\PivotAssociationResolver::class),
             ])
             ->tag(JsonApiBundle::DATA_PERSISTER_TAG, ['priority' => -128]);
 

@@ -28,6 +28,7 @@ use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\SupportsSingular;
+use haddowg\JsonApi\Resource\Sort\SortInterface;
 use haddowg\JsonApi\Response\DataResponse;
 use haddowg\JsonApi\Response\ErrorResponse;
 use haddowg\JsonApi\Response\IdentifierResponse;
@@ -41,6 +42,8 @@ use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
+use haddowg\JsonApiBundle\DataProvider\PivotAwareProviderInterface;
+use haddowg\JsonApiBundle\DataProvider\PivotFields;
 use haddowg\JsonApiBundle\DataProvider\PreloadsIncludesInterface;
 use haddowg\JsonApiBundle\Event\AfterCreateEvent;
 use haddowg\JsonApiBundle\Event\AfterDeleteEvent;
@@ -54,6 +57,8 @@ use haddowg\JsonApiBundle\Event\BeforeDeleteEvent;
 use haddowg\JsonApiBundle\Event\BeforeRelationshipMutateEvent;
 use haddowg\JsonApiBundle\Event\BeforeSaveEvent;
 use haddowg\JsonApiBundle\Event\BeforeUpdateEvent;
+use haddowg\JsonApiBundle\Serializer\PivotMetaSerializer;
+use haddowg\JsonApiBundle\Serializer\PivotParentSerializer;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
 use haddowg\JsonApiBundle\Validation\ResourceValidator;
@@ -299,8 +304,12 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      *    renders the related object's own type; it renders a single resource
      *    (`data:null` for an empty to-one — `resolveSerializer(null, …)` falls back
      *    to the first registered serializer, valid for the null render);
-     *  - a to-many resolves the *related* type's filter/sort/pagination vocabulary
-     *    into a {@see CollectionCriteria}, asks the related provider's
+     *  - a to-many resolves the *related* type's filter/sort/pagination vocabulary —
+     *    merged with the relation's own scoped {@see RelationInterface::filters()}/
+     *    {@see RelationInterface::sorts()} (extra filters/sorts available ONLY on this
+     *    related endpoint, never the primary collection; the relation wins a key
+     *    clash, core ADR 0051) — into a {@see CollectionCriteria}, asks the related
+     *    provider's
      *    {@see \haddowg\JsonApiBundle\DataProvider\DataProviderInterface::fetchRelatedCollection()}
      *    to execute it (scoped to the parent), and renders a paginated
      *    {@see RelatedResponse::fromPage()} (else a plain
@@ -364,10 +373,39 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 ?? $server->defaultPaginator();
             $window = $paginator?->window($request);
 
+            $relatedProvider = $this->providers->forType($relatedType);
+
+            // A pivot-backed belongsToMany over a pivot-aware provider (the Doctrine
+            // reference) fetches the page AND the per-member pivot values in one
+            // association-entity query, and renders each member's pivot values as
+            // meta through a PivotMetaSerializer. The pivot field keys join the
+            // recognised filter/sort vocabulary ONLY on this related endpoint, so
+            // `?filter[position]`/`?sort=position` resolve (no 400) and route to the
+            // pivot column; everywhere else (the primary collection, the in-memory
+            // provider) a pivot key stays unrecognised (400).
+            $pivot = $relatedProvider instanceof PivotAwareProviderInterface
+                && $relatedProvider->supportsPivot($relatedType, $relation);
+
+            // The related-collection endpoint resolves `?filter`/`?sort` against the
+            // related resource's vocabulary *merged* with the relation's own
+            // scoped filters()/sorts() — extra filters/sorts a relation declares for
+            // this ONE relationship endpoint (core ADR 0051), never reachable on the
+            // primary /{relatedType} collection — plus, for a pivot relation, the
+            // pivot field keys. The merge happens here (not in the provider) so the
+            // scoping is a pure host concern, and on a key clash the relation's
+            // declaration wins (the more specific scope). The merged vocabulary rides
+            // the CollectionCriteria, so both providers' existing handlers apply it
+            // unchanged (ADR 0044).
             $criteria = new CollectionCriteria(
                 $operation->queryParameters(),
-                $relatedResource?->filters() ?? [],
-                $relatedResource?->allSorts() ?? [],
+                $this->mergeFilters(
+                    $this->mergeFilters($relatedResource?->filters() ?? [], $relation->filters()),
+                    $pivot ? PivotFields::filtersFor($relation) : [],
+                ),
+                $this->mergeSorts(
+                    $this->mergeSorts($relatedResource?->allSorts() ?? [], $relation->sorts()),
+                    $pivot ? PivotFields::sortsFor($relation) : [],
+                ),
                 $window,
                 // The related resource's default order applies to its related
                 // sub-collection too when the request sends no `sort` (core ADR
@@ -375,7 +413,25 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $relatedResource?->defaultSort() ?? [],
             );
 
-            $relatedProvider = $this->providers->forType($relatedType);
+            if ($pivot) {
+                \assert($relatedProvider instanceof PivotAwareProviderInterface);
+                $pivotResult = $relatedProvider
+                    ->fetchRelatedPivotCollection($relatedType, $parent, $relation, $criteria, $request);
+
+                $serializer = new PivotMetaSerializer($server->serializerFor($relatedType), $pivotResult->pivotMap);
+                $items = \is_array($pivotResult->items) ? \array_values($pivotResult->items) : \iterator_to_array($pivotResult->items, false);
+                $this->preloadIncludes($relatedProvider, $items, $relatedType, $request);
+
+                if ($paginator !== null && $pivotResult->total !== null) {
+                    return RelatedResponse::fromPage(
+                        $paginator->paginate($request, $items, $pivotResult->total),
+                        $serializer,
+                    );
+                }
+
+                return RelatedResponse::fromCollection($items, $serializer);
+            }
+
             $result = $relatedProvider
                 ->fetchRelatedCollection($relatedType, $parent, $relation, $criteria, $request);
 
@@ -419,6 +475,52 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         }
 
         return RelatedResponse::fromResource($related, $serializer);
+    }
+
+    /**
+     * Merges the related resource's filter vocabulary with the relation's own
+     * scoped {@see RelationInterface::filters()} for the related-collection endpoint,
+     * keyed by {@see FilterInterface::key()} so a clash resolves to the relation's
+     * declaration (the more specific scope wins, core ADR 0051). The relation's
+     * filters are appended last, so they override a same-keyed related-resource
+     * filter; returned as a list for the {@see CollectionCriteria}.
+     *
+     * @param list<FilterInterface> $resourceFilters
+     * @param list<FilterInterface> $relationFilters
+     *
+     * @return list<FilterInterface>
+     */
+    private function mergeFilters(array $resourceFilters, array $relationFilters): array
+    {
+        $merged = [];
+        foreach ([...$resourceFilters, ...$relationFilters] as $filter) {
+            $merged[$filter->key()] = $filter;
+        }
+
+        return \array_values($merged);
+    }
+
+    /**
+     * Merges the related resource's sort vocabulary with the relation's own scoped
+     * {@see RelationInterface::sorts()} for the related-collection endpoint, keyed by
+     * {@see SortInterface::key()} so a clash resolves to the relation's declaration
+     * (the more specific scope wins, core ADR 0051). The relation's sorts are
+     * appended last, so they override a same-keyed related-resource sort; returned
+     * as a list for the {@see CollectionCriteria}.
+     *
+     * @param list<SortInterface> $resourceSorts
+     * @param list<SortInterface> $relationSorts
+     *
+     * @return list<SortInterface>
+     */
+    private function mergeSorts(array $resourceSorts, array $relationSorts): array
+    {
+        $merged = [];
+        foreach ([...$resourceSorts, ...$relationSorts] as $sort) {
+            $merged[$sort->key()] = $sort;
+        }
+
+        return \array_values($merged);
     }
 
     /**
@@ -467,6 +569,28 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // because the route is parametric — ADR 0027.
         if (!$relation->exposesRelationshipEndpoint()) {
             return ErrorResponse::fromException(new RelationshipNotExists($relationshipName));
+        }
+
+        // A pivot-backed belongsToMany renders its per-member pivot values as
+        // identifier meta here too: the relationship endpoint renders the WHOLE
+        // association off the parent (no window), so the pivot-aware provider
+        // supplies the full pivot map, and a PivotParentSerializer rebinds this one
+        // relationship's linkage to a PivotMetaSerializer — riding core's existing
+        // identifier-meta render path with no core change.
+        $relatedType = $relation->relatedTypes()[0] ?? $type;
+        $relatedProvider = $this->providers->supportsType($relatedType) ? $this->providers->forType($relatedType) : null;
+        if ($relatedProvider instanceof PivotAwareProviderInterface && $relatedProvider->supportsPivot($relatedType, $relation)) {
+            $pivotMap = $relatedProvider->fetchRelatedPivotMap($relatedType, $parent, $relation);
+            $pivotSerializer = new PivotMetaSerializer($server->serializerFor($relatedType), $pivotMap);
+            $parentSerializer = new PivotParentSerializer(
+                $server->serializerFor($type),
+                $relationshipName,
+                $relation,
+                $server,
+                $pivotSerializer,
+            );
+
+            return IdentifierResponse::forRelationship($parent, $parentSerializer, $relationshipName);
         }
 
         return IdentifierResponse::forRelationship($parent, $server->serializerFor($type), $relationshipName);
@@ -530,7 +654,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // the related type's id format exactly as the identical linkage inside a
         // whole-resource write is — so the two surfaces agree (a malformed id 422s
         // before the persister apply, not after).
-        $this->validateLinkage($relation, $linkage);
+        $this->validateLinkage($relation, $linkage, $mode);
 
         $request = $this->jsonApiRequest($operation->context());
 
@@ -947,13 +1071,16 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
     /**
      * Format-validates a relationship-mutation endpoint's parsed linkage against the
      * related type's id format through the validator bridge, when one is wired (it is
-     * optional). A no-op without the validator.
+     * optional). A no-op without the validator. The {@see Mode} is forwarded so a
+     * pivot add/replace validates each member's pivot `meta` in the new-row (create)
+     * context — a required writable pivot field absent on an incoming member is a `422`
+     * before the persister applies (never a DB NOT-NULL `500`).
      *
      * @param ToOneRelationship|ToManyRelationship $linkage
      */
-    private function validateLinkage(RelationInterface $relation, ToOneRelationship|ToManyRelationship $linkage): void
+    private function validateLinkage(RelationInterface $relation, ToOneRelationship|ToManyRelationship $linkage, Mode $mode): void
     {
-        $this->validator?->validateRelationshipLinkage($relation, $linkage);
+        $this->validator?->validateRelationshipLinkage($relation, $linkage, $mode);
     }
 
     /**

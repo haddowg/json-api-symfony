@@ -28,12 +28,24 @@ class Playlist
 {
     /**
      * The inverse side of the tracks↔playlists ManyToMany (the owning side lives
-     * on {@see Track}).
+     * on {@see Track}). A plain join table — it carries no pivot columns.
      *
      * @var Collection<int, Track>
      */
     #[ORM\ManyToMany(targetEntity: Track::class, mappedBy: 'playlists')]
     public Collection $tracks;
+
+    /**
+     * The owning `OneToMany` to the {@see PlaylistEntry} association entity behind
+     * the `orderedTracks` pivot relation — the entity that *can* carry the
+     * `position`/`addedAt` pivot columns the plain `tracks` join table cannot. This
+     * is the only to-many on this entity whose target also has a `ManyToOne` to
+     * {@see Track}, so the pivot relation auto-detects it (no `->through()` needed).
+     *
+     * @var Collection<int, PlaylistEntry>
+     */
+    #[ORM\OneToMany(targetEntity: PlaylistEntry::class, mappedBy: 'playlist')]
+    public Collection $entries;
 
     public function __construct(
         #[ORM\Id]
@@ -52,5 +64,6 @@ class Playlist
         public ?User $owner = null,
     ) {
         $this->tracks = new ArrayCollection();
+        $this->entries = new ArrayCollection();
     }
 }

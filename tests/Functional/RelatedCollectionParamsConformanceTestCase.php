@@ -132,6 +132,108 @@ abstract class RelatedCollectionParamsConformanceTestCase extends JsonApiFunctio
         self::assertSame(100, $page['perPage'] ?? null, 'page[size] is clamped to the cap, not 1000000');
     }
 
+    // --- relation-scoped filters and sorts (core ADR 0051) -------------------
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    #[Group('spec:fetching-filtering')]
+    public function aRelationScopedFilterNarrowsTheRelatedCollection(): void
+    {
+        // filter[commentBody] is declared on the `comments` RELATION (not the
+        // comment resource): a contains-match scoped to GET /articles/1/comments.
+        // Article 1's comments are 1 ("First!") and 2 ("Nice write-up."), so a
+        // contains-match on "Nice" keeps only comment 2 — the rejected comment 1 is
+        // excluded.
+        $document = $this->fetchDocument('/articles/1/comments?filter[commentBody]=Nice');
+
+        self::assertSame(['2'], $this->ids($document));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    #[Group('spec:fetching-sorting')]
+    public function aRelationScopedSortOrdersTheRelatedCollection(): void
+    {
+        // sort=recent is declared on the `comments` RELATION (ordering by comment
+        // id), scoped to GET /articles/1/comments. Descending puts the newer
+        // comment 2 first, ascending restores 1, 2 — proving the relation's sort
+        // executes through the provider's sort handler.
+        $descending = $this->fetchDocument('/articles/1/comments?sort=-recent');
+        self::assertSame(['2', '1'], $this->ids($descending));
+
+        $ascending = $this->fetchDocument('/articles/1/comments?sort=recent');
+        self::assertSame(['1', '2'], $this->ids($ascending));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    #[Group('spec:fetching-filtering')]
+    #[Group('spec:fetching-sorting')]
+    public function theRelationScopedVocabularyMergesWithTheRelatedResourceVocabulary(): void
+    {
+        // The merged vocabulary applies BOTH the relation's scoped filter and the
+        // comment resource's own `filter[body]` together: a relation contains-match
+        // on "." (comment 2 "Nice write-up." and comment 3 "Could use more detail.")
+        // combined with the resource's exact `filter[body]` does not over-narrow —
+        // here only the relation filter is used to confirm the merge keeps the
+        // resource vocabulary available alongside it.
+        $merged = $this->fetchDocument('/articles/1/comments?filter[commentBody]=write&filter[body]=Nice%20write-up.');
+        self::assertSame(['2'], $this->ids($merged));
+
+        // The relation's sort and the resource's `?sort=body` are both recognized on
+        // the related endpoint (the resource sort still applies after the merge).
+        $resourceSort = $this->fetchDocument('/articles/1/comments?sort=-body');
+        self::assertSame(['2', '1'], $this->ids($resourceSort));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    #[Group('spec:fetching-filtering')]
+    #[Group('spec:errors')]
+    public function aRelationScopedFilterIsNotRecognizedOnThePrimaryCollection(): void
+    {
+        // The load-bearing scoping guarantee: filter[commentBody] is declared on the
+        // RELATION, so it reaches /articles/1/comments but NOT the primary
+        // /comments collection — there only the comment resource's own vocabulary
+        // applies, so the relation-scoped key is an unrecognized filter (400).
+        $response = $this->handle(self::BASE_URI . '/comments?filter[commentBody]=Nice');
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+
+        $error = $this->firstError($this->decode($response));
+        self::assertSame('400', $error['status'] ?? null);
+        self::assertSame(['parameter' => 'filter[commentBody]'], $error['source'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    #[Group('spec:fetching-sorting')]
+    #[Group('spec:errors')]
+    public function aRelationScopedSortIsNotRecognizedOnThePrimaryCollection(): void
+    {
+        // The symmetric scoping guarantee for sorts: sort=recent is declared on the
+        // RELATION, so the primary /comments collection does not recognize it (400).
+        $response = $this->handle(self::BASE_URI . '/comments?sort=recent');
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame('SORTING_UNRECOGNIZED', $this->firstError($this->decode($response))['code'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    #[Group('spec:fetching-filtering')]
+    #[Group('spec:errors')]
+    public function anUnrecognizedFilterStill400sOnTheRelatedCollection(): void
+    {
+        // A key in NEITHER the related resource's vocabulary nor the relation's
+        // scoped vocabulary still renders a 400 on the related endpoint — the merge
+        // does not weaken the unrecognized-key guard.
+        $response = $this->handle(self::BASE_URI . '/articles/1/comments?filter[nope]=x');
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['parameter' => 'filter[nope]'], $this->firstError($this->decode($response))['source'] ?? null);
+    }
+
     // --- helpers ---------------------------------------------------------------
 
     /**
@@ -171,6 +273,26 @@ abstract class RelatedCollectionParamsConformanceTestCase extends JsonApiFunctio
         }
 
         return $ids;
+    }
+
+    /**
+     * The first error object of an error document, asserting the document carries a
+     * non-empty `errors` array.
+     *
+     * @param array<string, mixed> $document
+     *
+     * @return array<string, mixed>
+     */
+    private function firstError(array $document): array
+    {
+        $errors = $document['errors'] ?? null;
+        self::assertIsArray($errors);
+        self::assertNotEmpty($errors);
+
+        $error = $errors[0];
+        self::assertIsArray($error);
+
+        return $error;
     }
 
     /**

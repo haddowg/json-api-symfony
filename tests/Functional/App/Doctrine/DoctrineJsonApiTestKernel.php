@@ -133,6 +133,14 @@ final class DoctrineJsonApiTestKernel extends Kernel
         // to an opaque wire token, so the Doctrine provider/persister decode the route
         // {id} and linkage ids before find/getReference (ADR 0038).
         $services->set(CogResource::class);
+
+        // The belongsToMany pivot witnesses: a `playlists` parent whose `tracks`
+        // relation is backed by the PlaylistTrackEntity association entity (the pivot
+        // columns position/addedAt), and the far `tracks` type. The Doctrine adapter
+        // auto-detects the association entity and renders/filters/sorts the pivot in
+        // one query.
+        $services->set(DoctrinePlaylistResource::class);
+        $services->set(DoctrineTrackResource::class);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

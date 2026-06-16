@@ -109,11 +109,44 @@ final class AuthorizationTest extends MusicCatalogKernelTestCase
         $this->assertJsonApiError($response, '403', 'Forbidden');
 
         // The denial aborted before the persister: track 1 is still a member.
+        self::assertContains('1', $this->trackMembers(), 'the denied mutation must not have removed track 1');
+    }
+
+    #[Test]
+    #[Group('spec:updating-relationships')]
+    public function anOwnerMayMutateTheirPlaylistTracksRelationship(): void
+    {
+        // The owner passes the EDIT gate, so the mutation applies — and `tracks` is
+        // the INVERSE (`mappedBy`) side of the Track↔Playlist many-to-many, so the
+        // reference persister must drop / create the JOIN ROW via the owning side
+        // (`Track::$playlists`). This round-trip is the regression witness for that
+        // path, which previously `500`ed by assigning a single object to the owning
+        // `Collection` property.
+        $remove = $this->handle('/playlists/' . self::OWNED_PLAYLIST_ID . '/relationships/tracks', 'DELETE', [
+            'data' => [['type' => 'tracks', 'id' => '1']],
+        ], self::OWNER);
+        self::assertContains($remove->getStatusCode(), [200, 204], (string) $remove->getContent());
+        self::assertNotContains('1', $this->trackMembers(), 'removing the inverse-side member must drop the join row');
+
+        $add = $this->handle('/playlists/' . self::OWNED_PLAYLIST_ID . '/relationships/tracks', 'POST', [
+            'data' => [['type' => 'tracks', 'id' => '1']],
+        ], self::OWNER);
+        self::assertContains($add->getStatusCode(), [200, 204], (string) $add->getContent());
+        self::assertContains('1', $this->trackMembers(), 'adding the inverse-side member must recreate the join row');
+    }
+
+    /**
+     * The current track-id members of the owned playlist's `tracks` relationship.
+     *
+     * @return list<mixed>
+     */
+    private function trackMembers(): array
+    {
         $document = $this->decode($this->handle('/playlists/' . self::OWNED_PLAYLIST_ID . '/relationships/tracks'));
         $data = $document['data'] ?? null;
         self::assertIsArray($data);
-        $ids = \array_map(static fn(mixed $member): mixed => \is_array($member) ? ($member['id'] ?? null) : null, $data);
-        self::assertContains('1', $ids);
+
+        return \array_values(\array_map(static fn(mixed $member): mixed => \is_array($member) ? ($member['id'] ?? null) : null, $data));
     }
 
     // --- securityDelete: is_granted('ROLE_ADMIN') (a role gate) ----------------

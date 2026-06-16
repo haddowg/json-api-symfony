@@ -9,7 +9,9 @@ use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\BelongsTo;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\Boolean;
+use haddowg\JsonApi\Resource\Field\DateTime;
 use haddowg\JsonApi\Resource\Field\Id;
+use haddowg\JsonApi\Resource\Field\Integer;
 use haddowg\JsonApi\Resource\Field\Slug;
 use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApi\Resource\Field\Uuid;
@@ -59,11 +61,22 @@ use haddowg\JsonApiBundle\Hook\ResourceLifecycleHooksTrait;
  * route-scoped ExceptionListener renders a JSON:API `403` (or `401` when
  * unauthenticated). See `docs/authorization.md`.
  *
- * Field/relation declarations are re-themed verbatim from core's in-memory
+ * It is finally the **pivot witness** (bundle ADRs 0045/0046): alongside the plain
+ * `belongsToMany` `tracks` (a bare join table, no pivot columns), it declares a
+ * second `belongsToMany` `orderedTracks` to the same `tracks` type backed by the
+ * {@see \haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\PlaylistEntry}
+ * association entity, whose `position`/`addedAt` columns render as each member's
+ * `meta.pivot` and are recognised as `?filter`/`?sort` keys on that relation's
+ * related endpoint. `position` is declared a **writable** pivot field (so it is set
+ * and reordered through the linkage `meta` on a write), while `addedAt` is
+ * `readOnly()` (server-owned, stamped by the entity's `#[ORM\PrePersist]`). See
+ * `docs/relationships.md` and the example README.
+ *
+ * Field/relation declarations are re-themed from core's in-memory
  * {@see https://github.com/haddowg/json-api/blob/main/examples/music-catalog/src/Resource/PlaylistResource.php PlaylistResource}:
  * a UUID id; a read-only `slug` derived from `title` by the custom hydrator; a
- * `belongsTo` owner; and a pivot-backed `belongsToMany` `tracks` whose related
- * collection paginates two-per-page.
+ * `belongsTo` owner; a plain `belongsToMany` `tracks`; and the pivot-backed
+ * `belongsToMany` `orderedTracks`, both paginating two-per-page.
  */
 #[AsJsonApiResource(
     entity: Playlist::class,
@@ -91,11 +104,51 @@ final class PlaylistResource extends AbstractResource implements ResourceLifecyc
             Uuid::make('externalId')->nullable(),
 
             // Default relation reader: `owner` reads the ManyToOne and `tracks` the
-            // ManyToMany straight off the entity associations.
+            // ManyToMany straight off the entity associations. `tracks` is a PLAIN
+            // join table, so it carries no pivot data (see `orderedTracks` below for
+            // the pivot-bearing variant).
             BelongsTo::make('owner')->type('users'),
             BelongsToMany::make('tracks')
                 ->type('tracks')
-                ->fields(['position' => 'integer', 'addedAt' => 'datetime'])
+                ->paginate(PagePaginator::make()->withDefaultPerPage(2)),
+
+            // The pivot witness (bundle ADRs 0045/0046). `orderedTracks` is the same
+            // far `tracks` type, but backed by the PlaylistEntry association entity
+            // that carries the `position`/`addedAt` pivot columns a plain join table
+            // cannot. Declaring fields() (real FieldInterface definitions) makes the
+            // Doctrine adapter render them as each member's meta.pivot, recognise them
+            // as ?filter/?sort keys on this relation's related endpoint, AND upsert
+            // the writable ones from the linkage meta on a write — auto-detecting
+            // PlaylistEntry (the only to-many on Playlist whose target also has a
+            // ManyToOne to Track), so no ->through() override is needed. `position` is
+            // writable (set/reordered via meta); `addedAt` is readOnly (server-owned).
+            // `extractUsing` maps the parent's entries to their far tracks for the
+            // relationship-linkage endpoint.
+            BelongsToMany::make('orderedTracks')
+                ->type('tracks')
+                ->fields(
+                    Integer::make('position')->min(1),
+                    DateTime::make('addedAt')->readOnly(),
+                )
+                ->extractUsing(static function (mixed $playlist): array {
+                    // The generic engine instantiates the entity without its
+                    // constructor (bundle ADR 0029), so on a freshly-created playlist
+                    // the `entries` collection is uninitialized rather than empty —
+                    // isset() reads it safely (the 201 create response serializes this
+                    // relation before any entry exists).
+                    if (!$playlist instanceof Playlist || !isset($playlist->entries)) {
+                        return [];
+                    }
+
+                    $tracks = [];
+                    foreach ($playlist->entries as $entry) {
+                        if ($entry->track !== null) {
+                            $tracks[] = $entry->track;
+                        }
+                    }
+
+                    return $tracks;
+                })
                 ->paginate(PagePaginator::make()->withDefaultPerPage(2)),
         ];
     }

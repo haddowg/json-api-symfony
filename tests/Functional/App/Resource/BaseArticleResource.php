@@ -18,6 +18,7 @@ use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Filter\WhereDoesntHave;
 use haddowg\JsonApi\Resource\Filter\WhereHas;
 use haddowg\JsonApi\Resource\Filter\WhereIdIn;
+use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApiBundle\Tests\Functional\App\Article;
 use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\ArticleEntity;
 use Symfony\Component\Clock\Clock;
@@ -124,7 +125,17 @@ abstract class BaseArticleResource extends AbstractResource
             // (`$model->author` / `$model->comments`) and emits resource-identifier
             // linkage via the serializer registered for each related type.
             BelongsTo::make('author')->type('authors'),
-            HasMany::make('comments')->type('comments'),
+            // The to-many `comments` relation also declares its OWN scoped filter
+            // and sort (core ADR 0051), available ONLY on
+            // `GET /articles/{id}/comments` — never the primary `/comments`
+            // collection (which exposes just the comment resource's `filter[body]`).
+            // `filter[commentBody]` is a contains-match on the comment body and
+            // `sort=recent` orders by comment id, so the related endpoint gains a
+            // contextual vocabulary the related type does not expose globally. The
+            // host merges these with the comment resource's own vocabulary.
+            HasMany::make('comments')->type('comments')
+                ->withFilters(Where::make('commentBody', 'body', 'like'))
+                ->withSorts(SortByField::make('recent', 'id')),
             // Per-relation default paginator (Phase 4 P7): reuses the `comments`
             // property but carries its own PagePaginator, so
             // `GET /articles/1/pagedComments` paginates by `page[number]`/`page[size]`

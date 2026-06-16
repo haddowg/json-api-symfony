@@ -31,6 +31,12 @@ use PHPUnit\Framework\Attributes\Test;
  */
 abstract class RelationshipEndpointConformanceTestCase extends JsonApiFunctionalTestCase
 {
+    /**
+     * The base URI both functional kernels configure under `json_api.base_uri`;
+     * core builds the convention self links against it (core ADR 0054).
+     */
+    private const string BASE_URI = 'https://example.test';
+
     #[Test]
     #[Group('spec:fetching-relationships')]
     public function aRelatedToOneEndpointRendersASingleFullResource(): void
@@ -209,6 +215,76 @@ abstract class RelationshipEndpointConformanceTestCase extends JsonApiFunctional
         self::assertIsArray($data);
         self::assertSame('authors', $data['type'] ?? null);
         self::assertSame('1', $data['id'] ?? null);
+    }
+
+    // --- convention self links (core ADR 0054) ---------------------------------
+
+    #[Test]
+    #[Group('spec:document-resource-objects')]
+    public function aRelatedFullResourceCarriesItsOwnConventionSelfLink(): void
+    {
+        // The related endpoint renders a full resource through the related type's
+        // serializer, so its primary data carries the related type's self link.
+        $document = $this->fetchDocument('/articles/1/author');
+
+        $data = $document['data'] ?? null;
+        self::assertIsArray($data);
+        $links = $data['links'] ?? null;
+        self::assertIsArray($links);
+        self::assertSame(self::BASE_URI . '/authors/1', $links['self'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:document-top-level')]
+    public function aRelatedToOneDocumentCarriesTheTopLevelSelfLink(): void
+    {
+        // The top-level self on a related document is the request URI; a to-one is
+        // unpaginated, so the self is the bare related path.
+        $document = $this->fetchDocument('/articles/1/author');
+
+        $links = $document['links'] ?? null;
+        self::assertIsArray($links);
+        self::assertSame(self::BASE_URI . '/articles/1/author', $links['self'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:document-top-level')]
+    public function aRelatedToManyDocumentCarriesThePaginatedTopLevelSelfLink(): void
+    {
+        // A related to-many is paginated (the related resource declares a default
+        // paginator), so the page self (with the resolved page params) wins.
+        $document = $this->fetchDocument('/articles/1/comments');
+
+        $links = $document['links'] ?? null;
+        self::assertIsArray($links);
+        self::assertSame(
+            self::BASE_URI . '/articles/1/comments?page%5Bnumber%5D=1&page%5Bsize%5D=15',
+            $links['self'] ?? null,
+        );
+    }
+
+    #[Test]
+    #[Group('spec:document-top-level')]
+    public function aRelationshipToOneDocumentCarriesTheTopLevelSelfLink(): void
+    {
+        // The relationship (linkage) endpoint document carries a top-level self
+        // (the request URI) alongside the relationship's own related link.
+        $document = $this->fetchDocument('/articles/1/relationships/author');
+
+        $links = $document['links'] ?? null;
+        self::assertIsArray($links);
+        self::assertSame(self::BASE_URI . '/articles/1/relationships/author', $links['self'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:document-top-level')]
+    public function aRelationshipToManyDocumentCarriesTheTopLevelSelfLink(): void
+    {
+        $document = $this->fetchDocument('/articles/1/relationships/comments');
+
+        $links = $document['links'] ?? null;
+        self::assertIsArray($links);
+        self::assertSame(self::BASE_URI . '/articles/1/relationships/comments', $links['self'] ?? null);
     }
 
     // --- helpers ---------------------------------------------------------------

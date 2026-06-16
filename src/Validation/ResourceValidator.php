@@ -12,9 +12,11 @@ use haddowg\JsonApi\Resource\Constraint\CompareField;
 use haddowg\JsonApi\Resource\Constraint\Comparison;
 use haddowg\JsonApi\Resource\Constraint\Nullable;
 use haddowg\JsonApi\Resource\Constraint\Required;
+use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\FieldInterface;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Map;
+use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Schema\Error\Error;
 use haddowg\JsonApi\Schema\Error\ErrorSource;
@@ -145,6 +147,13 @@ final class ResourceValidator
         // Relationship linkage ids carry the *related* type's id format (not the
         // owning resource's), so each is validated against that type's id field
         // constraints — before any decode — and a malformed one points at the linkage.
+        // A belongsToMany pivot relation also validates each member's pivot `meta`
+        // against the relation's WRITABLE pivot fields' constraints (a readOnly pivot
+        // field supplied in meta is ignored). The whole-resource relationship apply
+        // always runs in Mode::Replace and may create a NEW association row for any
+        // member (even on a PATCH), so the pivot meta validates in the CREATE (new-row)
+        // context — not the resource-level create/update — matching the persister
+        // (a new row is written in create context).
         foreach ($this->linkageErrors($resource, $data) as $error) {
             $errors[] = $error;
         }
@@ -165,13 +174,29 @@ final class ResourceValidator
      * `/data/<n>/id` (to-many). A polymorphic linkage resolves its format from each
      * member's own `type`; an empty (clearing) linkage has no id to check.
      *
+     * An add ({@see Mode::Add}) or replace ({@see Mode::Replace}) of a pivot relation
+     * may create a NEW association row for any incoming member, and the persister
+     * writes a new row in CREATE context ({@see \haddowg\JsonApi\Resource\Field\BelongsToMany::writablePivotFields()}
+     * with `creating: true`). So the pivot meta validates in the CREATE (new-row)
+     * context here — a required writable pivot field absent on an incoming member is a
+     * `422` before persist (never the DB NOT-NULL `500`), matching the documented
+     * contract that a required pivot field absent when a new row is created is a `422`.
+     * A reorder of an existing row supplies the value, so create-context validation
+     * does not wrongly reject it. {@see Mode::Remove} carries no pivot meta, so no
+     * pivot validation runs.
+     *
      * @throws ValidationFailed when a linkage id violates the related type's id format
      */
     public function validateRelationshipLinkage(
         RelationInterface $relation,
         ToOneRelationship|ToManyRelationship $linkage,
+        Mode $mode = Mode::Replace,
     ): void {
         $errors = [];
+
+        $collection = $mode !== Mode::Remove && $relation instanceof BelongsToMany && $relation->pivotFields() !== []
+            ? $this->pivotMetaCollection($relation, creating: true)
+            : null;
 
         if ($linkage instanceof ToOneRelationship) {
             $identifier = $linkage->resourceIdentifier;
@@ -180,12 +205,18 @@ final class ResourceValidator
                 if ($error !== null) {
                     $errors[] = $error;
                 }
+                foreach ($this->endpointPivotMetaErrors($collection, $identifier->meta, null) as $metaError) {
+                    $errors[] = $metaError;
+                }
             }
         } else {
             foreach ($linkage->resourceIdentifiers as $index => $identifier) {
                 $error = $this->endpointLinkageError($relation, $identifier->type, $identifier->id, $index);
                 if ($error !== null) {
                     $errors[] = $error;
+                }
+                foreach ($this->endpointPivotMetaErrors($collection, $identifier->meta, $index) as $metaError) {
+                    $errors[] = $metaError;
                 }
             }
         }
@@ -195,6 +226,40 @@ final class ResourceValidator
         }
 
         throw new ValidationFailed($errors);
+    }
+
+    /**
+     * Validates one relationship-endpoint linkage member's pivot `meta` against the
+     * relation's writable pivot fields (the pre-built `$collection`), returning one
+     * {@see Error} per violation pointed at the endpoint linkage meta
+     * (`/data[/<index>]/meta/<field>`). A `null` collection (non-pivot relation, or no
+     * writable pivot field) yields no errors; a readOnly pivot field supplied in meta
+     * is ignored (extra fields allowed), exactly as on the whole-resource path.
+     *
+     * @param array<string, mixed> $meta the parsed per-member pivot meta
+     *
+     * @return list<Error>
+     */
+    private function endpointPivotMetaErrors(?Collection $collection, array $meta, ?int $index): array
+    {
+        if ($collection === null) {
+            return [];
+        }
+
+        $errors = [];
+        foreach ($this->validator->validate($meta, $collection) as $violation) {
+            $errors[] = new Error(
+                status: '422',
+                code: 'VALIDATION_FAILED',
+                title: 'Unprocessable Entity',
+                detail: (string) $violation->getMessage(),
+                source: ErrorSource::fromPointer(
+                    $this->pointers->forRelationshipEndpointLinkageMeta((string) $violation->getPropertyPath(), $index),
+                ),
+            );
+        }
+
+        return $errors;
     }
 
     /**
@@ -323,6 +388,9 @@ final class ResourceValidator
                     if ($error !== null) {
                         $errors[] = $error;
                     }
+                    foreach ($this->pivotMetaErrors($field, $member, $name, $index) as $metaError) {
+                        $errors[] = $metaError;
+                    }
                 }
 
                 continue;
@@ -336,9 +404,88 @@ final class ResourceValidator
             if ($error !== null) {
                 $errors[] = $error;
             }
+            foreach ($this->pivotMetaErrors($field, $linkage, $name, null) as $metaError) {
+                $errors[] = $metaError;
+            }
         }
 
         return $errors;
+    }
+
+    /**
+     * Validates one linkage member's pivot `meta` against the relation's WRITABLE
+     * pivot fields' constraints, returning one {@see Error} per violation pointed at
+     * the linkage meta (`/data/relationships/<rel>/data[/<index>]/meta/<field>`). A
+     * non-pivot relation, a non-array member, or a member with no `meta` yields no
+     * errors. A readOnly pivot field supplied in `meta` is ignored — it is not in the
+     * writable set the Collection validates, and the Collection allows extra fields —
+     * so it never raises a violation (consistent with how a readOnly attribute is
+     * handled).
+     *
+     * The constraints resolve in the CREATE (new-row) context: the whole-resource
+     * relationship apply always runs in {@see Mode::Replace} and may create a new
+     * association row for any incoming member (even on a PATCH), and the persister
+     * writes a new row in create context. So a required writable pivot field absent on
+     * an incoming member is a `422` here (a new association row would have no value for
+     * it), never the DB NOT-NULL `500` — matching the documented contract that a
+     * required pivot field absent when a new row is created is a `422`.
+     *
+     * @param array<mixed, mixed>|mixed $member the raw linkage member (`{type, id, meta?}`)
+     *
+     * @return list<Error>
+     */
+    private function pivotMetaErrors(RelationInterface $relation, mixed $member, string $name, ?int $index): array
+    {
+        if (!$relation instanceof BelongsToMany || $relation->pivotFields() === []) {
+            return [];
+        }
+        if (!\is_array($member)) {
+            return [];
+        }
+
+        $collection = $this->pivotMetaCollection($relation, creating: true);
+        if ($collection === null) {
+            return []; // no writable pivot fields → nothing to validate
+        }
+
+        $meta = $member['meta'] ?? [];
+        if (!\is_array($meta)) {
+            $meta = [];
+        }
+
+        $errors = [];
+        foreach ($this->validator->validate($meta, $collection) as $violation) {
+            $errors[] = new Error(
+                status: '422',
+                code: 'VALIDATION_FAILED',
+                title: 'Unprocessable Entity',
+                detail: (string) $violation->getMessage(),
+                source: ErrorSource::fromPointer(
+                    $this->pointers->forLinkageMeta($name, (string) $violation->getPropertyPath(), $index),
+                ),
+            );
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Builds the {@see Collection} validating a pivot relation's WRITABLE pivot
+     * fields' `meta`, mirroring the top-level attribute Collection: each writable
+     * field is wrapped by the same {@see fieldConstraint()} (so its
+     * Required/Optional and Nullable resolution honours the create/update context),
+     * and unknown keys — including a supplied readOnly pivot field — are ignored
+     * (`allowExtraFields: true`). Returns `null` when the relation has no writable
+     * pivot field in this context (nothing to validate).
+     */
+    private function pivotMetaCollection(BelongsToMany $relation, bool $creating): ?Collection
+    {
+        $fields = [];
+        foreach ($relation->writablePivotFields($creating) as $field) {
+            $fields[$field->name()] = $this->fieldConstraint($field, $creating);
+        }
+
+        return $fields === [] ? null : new Collection(fields: $fields, allowExtraFields: true);
     }
 
     /**

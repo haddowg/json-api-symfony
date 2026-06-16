@@ -27,14 +27,14 @@ reference-data type sourced from `symfony/intl`.
 | Type | Backing | Highlights |
 | --- | --- | --- |
 | `artists` | `Artist` entity | singular `filter[slug]`, computed `trackCount`, `hasMany albums` (`cannotBeIncluded` — include safeguard A) |
-| `albums` | `Album` entity | multi-server (default + `admin`), directional `CompareField`, `Map releaseInfo` (JSON column), default-include `artist`, `WhereHas tracks` |
-| `tracks` | `Track` entity | **serializer override** (`TrackSerializer`), `storedAs` rename, `ArrayList genres`, `like` filter, `belongsToMany playlists` (`cannotReplace`) |
-| `playlists` | `Playlist` entity | **hydrator override** (`PlaylistHydrator`), **UUID id** (`uuid()->generated()`), derived `slug`, **lifecycle hooks** (`beforeCreate` stamp + `beforeDelete` 409 guard), **authorization** (`securityDelete` admin-only + `securityUpdate` owner Voter) |
+| `albums` | `Album` entity | multi-server (default + `admin`), directional `CompareField`, `Map releaseInfo` (JSON column), default-include `artist`, `WhereHas tracks`, **relation-scoped `filter`/`sort`** on `tracks` |
+| `tracks` | `Track` entity | **serializer override** (`TrackSerializer`), `storedAs` rename, `ArrayList genres`, `like` filter, plain `belongsToMany playlists` (`cannotReplace`) |
+| `playlists` | `Playlist` entity | **hydrator override** (`PlaylistHydrator`), **UUID id** (`uuid()->generated()`), derived `slug`, **lifecycle hooks** (`beforeCreate` stamp + `beforeDelete` 409 guard), **authorization** (`securityDelete` admin-only + `securityUpdate` owner Voter), **pivot** `belongsToMany orderedTracks` (`PlaylistEntry` association entity: writable `position` + server-owned `addedAt` as `meta.pivot`, set/reordered via linkage `meta`, `?filter`/`?sort`) |
 | `users` | `User` entity | **admin-server-only**, `UniqueEntity` on `email`, write-only `password`, validation-composition trio, `getAllowedIncludePaths` whitelist (include safeguard C) |
 | `favorites` | `Favorite` entity | **polymorphic to-one** `MorphTo favoritable` (Track\|Album\|Artist) |
 | `libraries` | `Library` entity | **polymorphic to-many** `MorphToMany items` (custom provider) |
 | `genres` | `Genre` entity | **client-supplied natural-key id** (`requireClientId()->pattern(slug)`) |
-| `devices` | `Device` entity | **app-generated ULID id** (`ulid()->generated()`) |
+| `devices` | `Device` entity | **app-generated ULID id** (`ulid()->generated()`), **self-link opt-out** (`emitsSelfLink()` false) |
 | `products` | `Product` entity | **encoded store-provided id** (`encodeUsing` over a DB-assigned int), self-referential `parent` |
 | `charts` | store-backed | standalone serializer, read-only (no entity, no resource) |
 | `countries` | `symfony/intl` | reference-data provider, read-only (ISO alpha-2 id) |
@@ -143,9 +143,207 @@ is `403` / unauthenticated is `401` / an admin may delete / a `ROLE_USER` is `40
 the abort happens before any write / an unsecured type is ungated. See
 [`docs/authorization.md`](../../docs/authorization.md) for the full surface.
 
+## Self links by convention
+
+The JSON:API spec **recommends** (SHOULD) two `self` links, and the bundle emits
+both **by convention** — no hand-written `getLinks()` needed (core ADR 0054, bundle
+ADR 0047). Both derive from ingredients the integration already has — the resource's
+`baseUri`/`uriType`/`id` and the request URI — so they are **provider-agnostic**: the
+Doctrine-backed `albums`/`tracks` and the in-memory `charts` render identical self
+URLs. The example's `default` server base URI is `https://music.example`.
+
+- **Resource-level** — every resource object carries
+  `data.links.self = {baseUri}/{uriType}/{id}`, on the primary data, on every
+  `?include`'d resource, and on a `201`-created resource:
+
+  ```jsonc
+  // GET /albums/1
+  "data": { "type": "albums", "id": "1",
+            "links": { "self": "https://music.example/albums/1" }, … }
+  ```
+
+  The path segment is the **`uriType`**, not the `type` — the standalone `charts`
+  serializer implements `UriTypeAwareInterface`, so a `charts` object still links to
+  `/charts/{id}` with no entity behind it.
+
+- **Top-level document** — every data document carries `links.self` = the request
+  URI (`{baseUri}{path}` plus the percent-encoded query when present), on single,
+  collection, related and relationship documents (but **not** error documents). On a
+  **paginated** collection the page's own per-page self wins, carrying the *resolved*
+  `page[...]` params (brackets percent-encoded as `%5B`/`%5D`):
+
+  ```
+  GET /tracks                 → links.self https://music.example/tracks?page%5Bnumber%5D=1&page%5Bsize%5D=15
+  GET /tracks?filter[title]=air → links.self …/tracks?filter%5Btitle%5D=air&page%5Bnumber%5D=1&page%5Bsize%5D=15
+  GET /tracks/1/album         → links.self https://music.example/tracks/1/album
+  ```
+
+**Opting out.** A resource suppresses its *own* `data.links.self` by overriding
+`emitsSelfLink()` to return `false`. `DeviceResource` is the witness:
+
+```php
+public function emitsSelfLink(): bool
+{
+    return false;
+}
+```
+
+A `GET /devices/{id}` then carries **no** `data.links.self`, while the top-level
+document `links.self` is **unaffected** — the opt-out is resource-scoped, not
+document-scoped. (A hand-written `getLinks()` self still wins over the convention.)
+`tests/SelfLinkTest.php` proves both links and the opt-out end to end.
+
+## Relation-scoped filters and sorts
+
+A relation may declare **its own** `filter`/`sort` keys that augment **only** its
+related-collection endpoint `GET /{type}/{id}/{rel}` — never the primary
+`/{relatedType}` collection. `AlbumResource`'s `tracks` relation is the witness:
+
+```php
+HasMany::make('tracks')->type('tracks')
+    ->withFilters(Where::make('longerThan', 'length_seconds', '>'))
+    ->withSorts(SortByField::make('duration', 'length_seconds'));
+```
+
+Both name the related `Track` entity's `length_seconds` column, which is **neither
+a declared filter nor a declared sort** on the `tracks` resource — so the scoping is
+observable end to end:
+
+- on `GET /albums/1/tracks` both keys work, merged on top of the `tracks` resource's
+  own vocabulary: `?filter[longerThan]=270` narrows the album's tracks, `?sort=duration`
+  orders them, and they compose with a `tracks` key like `?filter[title]=air` (both
+  AND together) while the related type's `explicit` default filter still hides the
+  explicit track;
+- on the primary `/tracks` collection both keys are **absent** — `GET
+  /tracks?filter[longerThan]=270` or `?sort=duration` is a `400`, because only the
+  `tracks` resource's own `like`/`explicit`/`genres` filters and `title`/`trackNumber`
+  sorts apply there.
+
+That is the point of declaring on the relation rather than the related resource: a
+contextual filter/sort stays scoped to the one endpoint where it is meaningful.
+
+A relation-scoped filter/sort operates on the **related entity** (the common case,
+as `length_seconds` above) and works out of the box through the existing provider
+handlers. To filter/sort by a **pivot column** — a value carried on the join itself —
+see the next section: a plain join table cannot hold one, so the pivot path models
+the join as an association entity. `tests/RelationScopedParamsTest.php` proves the
+witness above; see [`docs/relationships.md`](../../docs/relationships.md) for the
+full surface.
+
+## Pivot data on an association entity
+
+A `belongsToMany` may carry **pivot data** — values that live on the *join* between
+the two resources, not on either resource itself (a track's `position` in a
+playlist, the `addedAt` timestamp). The catch is a hard Doctrine fact: a plain
+`#[ORM\ManyToMany]` join table holds **only the two foreign keys**, so Doctrine
+cannot map a `position`/`addedAt` column on it. To *have* pivot columns the join
+must be modelled as an **association entity**:
+
+```
+Playlist ──OneToMany──▶ PlaylistEntry ──ManyToOne──▶ Track
+                       { int position;
+                         DateTimeImmutable addedAt;
+                         ManyToOne playlist;
+                         ManyToOne track }
+```
+
+`PlaylistResource` is the witness. Alongside the plain `belongsToMany` `tracks` (a
+bare `playlist_track` join table, **no** pivot columns), it declares a second
+`belongsToMany` `orderedTracks` to the same `tracks` type, backed by the
+[`PlaylistEntry`](src/Entity/PlaylistEntry.php) association entity:
+
+```php
+BelongsToMany::make('orderedTracks')->type('tracks')
+    ->fields(
+        Integer::make('position')->min(1),   // writable from the linkage meta
+        DateTime::make('addedAt')->readOnly(), // server-owned
+    )
+    ->extractUsing(/* map the parent's entries to their far tracks */)
+    ->paginate(PagePaginator::make()->withDefaultPerPage(2)),
+```
+
+Declaring `fields()` is what turns the relation pivot-backed. Those fields are the
+**same field DSL** the resource uses for attributes (`Integer`/`DateTime`/`Str`/…),
+with their constraints, defaults and `->readOnly()` — so `position` is **writable**
+(no `->readOnly()`, set from the linkage `meta` on a write) and `addedAt` is
+server-owned. The Doctrine adapter **auto-detects** the association entity —
+`PlaylistEntry` is the only to-many on `Playlist` whose target also has a
+`ManyToOne` to `Track`, so no `->through()` override is needed (add
+`->through(PlaylistEntry::class)` only when detection is ambiguous or finds none,
+else it throws a clear `LogicException`). It then runs **one** DQL statement over
+that entity to fetch the page, render the pivot values, filter/sort and paginate —
+no second query, correct pagination.
+
+**How it renders / filters / sorts** (`tests/PivotTest.php`):
+
+- pivot values render as `meta.pivot` on **each member** of both
+  `GET /playlists/{id}/orderedTracks` (full resources) and
+  `GET /playlists/{id}/relationships/orderedTracks` (linkage identifiers), typed per
+  the declared fields;
+- the pivot field names become recognised `?filter`/`?sort` keys **on that related
+  endpoint only**: `?sort=position` / `?sort=-position` orders (and flips),
+  `?filter[position]=2` narrows, and they **compose** with the related `tracks`
+  resource's own `?filter[title]` in one correctly-paginated query (no short page).
+
+**Writing / reordering pivot data** (`tests/PivotTest.php`): a writable pivot field
+is set through the linkage member's **resource-identifier `meta`** (JSON:API permits
+meta on a resource identifier) — on the relationship endpoints AND inline in a
+whole-resource write. The Doctrine persister diffs the association entity: it UPSERTS
+each incoming member (updating an existing row's writable fields **in place** —
+that's the reorder — or creating one), and on a full `PATCH` replacement DROPS the
+rows whose member is not in the incoming set.
+
+```jsonc
+// add Mysterons at position 4 (creates the PlaylistEntry row)
+POST  /playlists/{id}/relationships/orderedTracks
+{ "data": [ { "type": "tracks", "id": "4", "meta": { "position": 4 } } ] }
+
+// full replace = reorder the existing rows IN PLACE + drop dropped members
+PATCH /playlists/{id}/relationships/orderedTracks
+{ "data": [ { "type": "tracks", "id": "1", "meta": { "position": 1 } },
+            { "type": "tracks", "id": "3", "meta": { "position": 2 } } ] }
+
+// the SAME meta inline in a whole-resource write
+PATCH /playlists/{id}
+{ "data": { "type": "playlists", "id": "{id}", "relationships": {
+    "orderedTracks": { "data": [ { "type": "tracks", "id": "1", "meta": { "position": 1 } } ] } } } }
+```
+
+- a **reorder updates the existing row in place** — the server-owned `addedAt`
+  survives (it is stamped by `PlaylistEntry`'s `#[ORM\PrePersist]` only on a
+  *freshly-created* row);
+- a pivot value violating a field constraint (`position` `0` vs `min(1)`) is a
+  **`422`** pointed at `…/meta/position` (the relationship endpoint) or
+  `/data/relationships/orderedTracks/data/{n}/meta/position` (a whole-resource
+  write), with **no write** — the store is unchanged; a *required* writable pivot
+  field absent on a new row is likewise a `422`;
+- a **`readOnly` field supplied in `meta` is ignored** — `addedAt` is server-owned,
+  so a supplied value is never written (the row keeps its server default);
+- `DELETE` carries no pivot — it removes the incoming members' rows;
+- mutating the playlist's relationship goes through the same `securityUpdate` owner
+  gate as any other update, so the writes authenticate as the playlist's owner.
+
+**Boundaries** (both tested):
+
+- **Doctrine-only** — the in-memory provider has no association entity to query, so
+  a pivot key 400s there, no `meta.pivot` renders, and a pivot-`meta` write is
+  silently ignored.
+- **Scoped** — a pivot key is unrecognised (`400`) on the primary `/tracks`
+  collection and on the plain `tracks` relation; it is meaningful only on
+  `orderedTracks`.
+- **One pivot row per member** — `meta.pivot` is a single value set per member. If a
+  track were added to the playlist twice (duplicate membership), the collection
+  returns one row per distinct member: the total counts distinct members, no member
+  splits across pages, and the rendered values are a representative membership row.
+
+See [`docs/relationships.md`](../../docs/relationships.md) and
+[`docs/doctrine.md`](../../docs/doctrine.md) for the full surface (bundle ADR 0045).
+
 ## What's here
 
-- **`src/Entity/`** — the Doctrine entities (the entity-backed types above). Their id
+- **`src/Entity/`** — the Doctrine entities (the entity-backed types above), plus the
+  `PlaylistEntry` **association entity** backing the `orderedTracks` pivot relation
+  (a non-resource entity — it carries the `position`/`addedAt` join columns). Their id
   mappings vary by strategy: store-provided types use a `#[ORM\GeneratedValue]`
   auto-increment integer PK; the app/client-keyed types (`playlists`, `genres`,
   `devices`) use a plain string PK with no DB generator.
@@ -155,10 +353,11 @@ the abort happens before any write / an unsecured type is ungated. See
 - **`src/Serializer/TrackSerializer.php`** and **`src/Hydrator/PlaylistHydrator.php`**
   — the override witnesses, each with a bound constructor argument (proving DI
   resolution).
-- **`src/Provider/`** — the custom providers (`LibraryItemsProvider`, the
-  priority-shadow `OverridingArtistProvider`, the `FavoriteProvider` polymorphic
-  resolver, the `countries` reference-data provider, the standalone `charts`
-  provider).
+- **`src/Provider/`** — the custom providers (`LibraryItemsProvider` — the
+  polymorphic `libraries.items` resolver, which also delegates the pivot seam to the
+  Doctrine provider since it shadows `tracks`; the priority-shadow
+  `OverridingArtistProvider`; the `FavoriteProvider` polymorphic resolver; the
+  `countries` reference-data provider; the standalone `charts` provider).
 - **`src/EventListener/AuditLogSubscriber.php`** and **`src/Hook/`** — the
   lifecycle-hook witnesses: the cross-cutting audit/`serving`-gate subscriber, the
   `AuditLog` store it appends to, and the `HookAbortException` a before-hook throws
@@ -175,7 +374,9 @@ the abort happens before any write / an unsecured type is ungated. See
   a coherent object graph. The store-provided rows carry no hand-set ids — the
   database assigns them in persist order (`1, 2, 3, …`).
 - **`tests/`** — the spec-grouped conformance suites, including
-  **`tests/IdStrategyTest.php`** (the id-strategy matrix end to end).
+  **`tests/IdStrategyTest.php`** (the id-strategy matrix end to end) and
+  **`tests/SelfLinkTest.php`** (the convention resource + top-level `self` links and
+  the `devices` opt-out).
 
 ## Running it
 

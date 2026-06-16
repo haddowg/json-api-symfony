@@ -115,7 +115,12 @@ interface DataPersisterInterface
   operations onto these cases). The `ToOneRelationship`/`ToManyRelationship`
   linkage VOs are core's too. The same seam is reused for relationships embedded
   in a whole-resource write — see [relationships](relationships.md) for the
-  endpoint, [validation](validation.md) for the write path's validation hooks.
+  endpoint, [validation](validation.md) for the write path's validation hooks. For
+  a **pivot `belongsToMany`** (an association-entity-backed relation with writable
+  pivot fields) the reference Doctrine persister reads each linkage member's pivot
+  `meta` off the `ToManyRelationship` here and applies the association-entity diff
+  (upsert / reorder-in-place / remove) — Doctrine-only; a custom persister owns its
+  own pivot handling (see [doctrine.md](doctrine.md#belongstomany-pivot-data)).
 
 #### The `$flush` subtlety
 
