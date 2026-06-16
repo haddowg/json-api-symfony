@@ -1,0 +1,21 @@
+# The Doctrine configuration for the example app: an in-memory SQLite database
+# (so the example runs with zero external infrastructure, the schema created per
+# boot by the test case) and attribute mapping over src/Entity.
+#
+# A production app would point `dbal` at a real connection (a DATABASE_URL env
+# var) and likely enable second-level cache / migrations; the in-memory SQLite +
+# create-schema-on-boot here is purely the example/test posture.
+doctrine:
+    dbal:
+        driver: pdo_sqlite
+        memory: true
+    orm:
+        auto_generate_proxy_classes: true
+        report_fields_where_declared: true
+        auto_mapping: false
+        mappings:
+            MusicCatalog:
+                type: attribute
+                dir: '%kernel.project_dir%/src/Entity'
+                prefix: 'haddowg\JsonApiBundle\Examples\MusicCatalog\Entity'
+                is_bundle: false

@@ -43,15 +43,20 @@
         "phpunit/phpunit": "^12.0",
         "symfony/browser-kit": "^6.4 || ^7.0",
         "symfony/clock": "^6.4 || ^7.0",
+        "symfony/doctrine-bridge": "^6.4 || ^7.0",
         "symfony/framework-bundle": "^6.4 || ^7.0",
+        "symfony/intl": "^6.4 || ^7.0",
         "symfony/validator": "^6.4 || ^7.0",
+        "symfony/yaml": "^6.4 || ^7.0",
         "zenstruck/foundry": "^2.10"
     },
     "suggest": {
         "doctrine/orm": "Enables the reference Doctrine data provider/persister for zero-handler CRUD endpoints (^3.0).",
         "symfony/validator": "Enables translating JSON:API resource constraints into Symfony Validator rules for create/update validation (^6.4 || ^7.0).",
+        "symfony/doctrine-bridge": "Enables the UniqueEntity entity-level constraint (it ships Symfony's UniqueEntity constraint + validator); without it UniqueEntity cannot be translated (^6.4 || ^7.0).",
         "egulias/email-validator": "Enables strict (RFC 5322) translation of the email.strict constraint; without it the Email rule falls back to Symfony's HTML5 mode (^4.0).",
-        "opis/json-schema": "Enables the optional dev/CI structural document linter (json_api.schema_validation) that validates write bodies against the JSON:API JSON Schema (^2.6)."
+        "opis/json-schema": "Enables the optional dev/CI structural document linter (json_api.schema_validation) that validates write bodies against the JSON:API JSON Schema (^2.6).",
+        "symfony/intl": "Enables sourcing a reference-data resource (e.g. a countries list) from the ICU dataset; used by the music-catalog example app (^6.4 || ^7.0)."
     },
     "autoload": {
         "psr-4": {
@@ -60,7 +65,9 @@
     },
     "autoload-dev": {
         "psr-4": {
-            "haddowg\\JsonApiBundle\\Tests\\": "tests/"
+            "haddowg\\JsonApiBundle\\Tests\\": "tests/",
+            "haddowg\\JsonApiBundle\\Examples\\MusicCatalog\\": "examples/music-catalog-symfony/src/",
+            "haddowg\\JsonApiBundle\\Examples\\MusicCatalog\\Tests\\": "examples/music-catalog-symfony/tests/"
         }
     },
     "config": {

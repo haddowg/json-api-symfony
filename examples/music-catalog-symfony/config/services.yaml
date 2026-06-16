@@ -1,0 +1,30 @@
+# Service wiring for the example app. The bundle discovers JSON:API types by
+# autoconfiguration, so the only thing this file does is:
+#  - register everything in src/ as autowired + autoconfigured services (so any
+#    AbstractResource is auto-tagged, and the standalone serializers/hydrators and
+#    custom providers in later phases are picked up); and
+#  - bind the two override services' scalar constructor arguments — proving the
+#    bundle resolves serializer/hydrator overrides through the container *with*
+#    their dependencies (a plain `new` could not supply these).
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+
+    haddowg\JsonApiBundle\Examples\MusicCatalog\:
+        resource: '../src/'
+        exclude:
+            - '../src/Entity/'
+            - '../src/MusicCatalogKernel.php'
+
+    # The serializer override (bundle ADR 0023): a bound constructor arg surfaced in
+    # the rendered `meta`, so a successful read proves DI resolution.
+    haddowg\JsonApiBundle\Examples\MusicCatalog\Serializer\TrackSerializer:
+        arguments:
+            $catalogTag: 'music-catalog'
+
+    # The hydrator override (bundle ADR 0023): a bound constructor arg (the slug
+    # delimiter), so a successful write proves DI resolution.
+    haddowg\JsonApiBundle\Examples\MusicCatalog\Hydrator\PlaylistHydrator:
+        arguments:
+            $slugSeparator: '-'

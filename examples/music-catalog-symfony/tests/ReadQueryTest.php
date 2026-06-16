@@ -1,0 +1,313 @@
+<?php
+
+declare(strict_types=1);
+
+namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Tests;
+
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\Test;
+
+/**
+ * The read-query acceptance suite (backs `data-layer.md` / `doctrine.md`):
+ * filtering, sorting, sparse fieldsets, compound `?include` and the singular-filter
+ * collapse, asserted as spec-compliant documents and executed as real DQL through
+ * the bundle's reference Doctrine provider over the seeded catalog.
+ *
+ * The probes lean on the seeded shape: the `tracks` resource declares an `explicit`
+ * filter defaulting to `false`, so a bare `/tracks` list is the three non-explicit
+ * tracks; `albums` carries a `WhereHas('tracks')` relationship-existence filter
+ * (rendered as an `EXISTS` subquery) and default-includes its `artist`; `artists`
+ * declares a singular `slug` filter that collapses zero-to-one.
+ */
+#[Group('spec:fetching')]
+final class ReadQueryTest extends MusicCatalogKernelTestCase
+{
+    // --- filtering -----------------------------------------------------------
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    public function aLikeFilterMatchesASubstringCaseInsensitively(): void
+    {
+        // `Where::make('title', 'title', 'like')` is an ASCII case-insensitive
+        // contains: "air" matches "Airbag" (track 1) and nothing else.
+        self::assertSame(['1'], $this->trackIds($this->fetch('/tracks?filter[title]=air')));
+        self::assertSame(['1'], $this->trackIds($this->fetch('/tracks?filter[title]=AIR')));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    public function aBooleanFilterWithADefaultNarrowsTheCollection(): void
+    {
+        // `explicit` defaults to false, so the bare collection hides the one explicit
+        // track (Paranoid Android, track 2); requesting explicit=true surfaces it.
+        self::assertSame(['1', '3', '4'], $this->trackIds($this->fetch('/tracks?sort=title')));
+        self::assertSame(['2'], $this->trackIds($this->fetch('/tracks?filter[explicit]=true')));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    #[Group('spec:fetching-relationships')]
+    public function aWhereHasFilterRendersAsAnExistsSubquery(): void
+    {
+        // `WhereHas('tracks')` keeps albums with at least one related track. The
+        // request value is ignored — presence is the predicate. Albums 1 and 2 own
+        // tracks (album 3 is unpublished and hidden by the extension regardless).
+        self::assertSame(['2', '1'], $this->albumIds($this->fetch('/albums?filter[tracks]=1&sort=title')));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    #[Group('spec:errors')]
+    public function anUnknownFilterKeyRendersA400ErrorDocument(): void
+    {
+        $response = $this->handle('/tracks?filter[nope]=x');
+
+        self::assertSame(400, $response->getStatusCode());
+        self::assertSame('application/vnd.api+json', $response->headers->get('Content-Type'));
+
+        $error = $this->firstError($response);
+        self::assertSame('400', $error['status'] ?? null);
+        self::assertSame('FILTERING_UNRECOGNIZED', $error['code'] ?? null);
+        self::assertSame(['parameter' => 'filter[nope]'], $error['source'] ?? null);
+    }
+
+    // --- singular filters ----------------------------------------------------
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    public function aSingularFilterCollapsesTheCollectionToASingleResource(): void
+    {
+        // `Where::make('slug')->singular()`: a unique slug match renders the matched
+        // resource as the document's primary `data` object, not a one-element array.
+        $document = $this->fetch('/artists?filter[slug]=radiohead');
+
+        $data = $document['data'] ?? null;
+        self::assertIsArray($data);
+        self::assertSame('artists', $data['type'] ?? null);
+        self::assertSame('1', $data['id'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    public function aSingularFilterWithNoMatchRendersDataNull(): void
+    {
+        // Zero matches is `data: null` with a 200 — the collection exists; the
+        // singular result is simply empty.
+        $document = $this->fetch('/artists?filter[slug]=no-such-artist');
+
+        self::assertArrayHasKey('data', $document);
+        self::assertNull($document['data']);
+    }
+
+    // --- sorting -------------------------------------------------------------
+
+    #[Test]
+    #[Group('spec:fetching-sorting')]
+    public function sortingAscendingOrdersTheCollection(): void
+    {
+        // By title: "Airbag" < "Exit Music…" < "Mysterons" (tracks 1, 3, 4; the
+        // explicit track 2 is hidden by the default filter).
+        self::assertSame(['1', '3', '4'], $this->trackIds($this->fetch('/tracks?sort=title')));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-sorting')]
+    public function aMinusPrefixSortsDescending(): void
+    {
+        // By trackNumber desc: track 3 (no. 3), track 1 (no. 1), track 4 (no. 1) —
+        // ties broken by storage order.
+        self::assertSame('3', $this->trackIds($this->fetch('/tracks?sort=-trackNumber'))[0] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-sorting')]
+    #[Group('spec:errors')]
+    public function anUnknownSortFieldRendersA400ErrorDocument(): void
+    {
+        $response = $this->handle('/tracks?sort=nope');
+
+        self::assertSame(400, $response->getStatusCode());
+        self::assertSame('SORTING_UNRECOGNIZED', $this->firstError($response)['code'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-sorting')]
+    #[Group('spec:errors')]
+    public function aDeclaredButUnsortableFieldRendersA400ErrorDocument(): void
+    {
+        // `genres` is a declared attribute never opted into sorting.
+        $response = $this->handle('/tracks?sort=genres');
+
+        self::assertSame(400, $response->getStatusCode());
+        self::assertSame('SORTING_UNRECOGNIZED', $this->firstError($response)['code'] ?? null);
+    }
+
+    // --- sparse fieldsets ----------------------------------------------------
+
+    #[Test]
+    #[Group('spec:fetching-sparse-fieldsets')]
+    public function sparseFieldsetsNarrowTheAttributes(): void
+    {
+        $data = $this->fetch('/tracks/1?fields[tracks]=title')['data'] ?? null;
+        self::assertIsArray($data);
+
+        $attributes = $data['attributes'] ?? null;
+        self::assertIsArray($attributes);
+        self::assertArrayHasKey('title', $attributes);
+        self::assertArrayNotHasKey('durationSeconds', $attributes);
+        self::assertArrayNotHasKey('genres', $attributes);
+    }
+
+    // --- includes ------------------------------------------------------------
+
+    #[Test]
+    #[Group('spec:fetching-includes')]
+    public function aDefaultIncludeSurfacesTheRelatedResource(): void
+    {
+        // AlbumResource::getDefaultIncludedRelationships() returns ['artist'], so a
+        // bare single-resource fetch carries the artist in the compound document.
+        $included = $this->fetch('/albums/1')['included'] ?? null;
+        self::assertIsArray($included);
+
+        $index = $this->includedIndex($included);
+        self::assertArrayHasKey('artists:1', $index);
+        self::assertSame('Radiohead', $this->attribute($index, 'artists:1', 'name'));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-includes')]
+    public function anExplicitIncludeReplacesTheDefaultInclude(): void
+    {
+        // ?include=tracks surfaces the tracks and suppresses the default artist
+        // include — an explicit include is authoritative.
+        $document = $this->fetch('/albums/1?include=tracks');
+
+        $included = $document['included'] ?? null;
+        self::assertIsArray($included);
+
+        $index = $this->includedIndex($included);
+        self::assertArrayNotHasKey('artists:1', $index);
+        self::assertArrayHasKey('tracks:1', $index);
+        self::assertArrayHasKey('tracks:3', $index);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-includes')]
+    public function aCollectionFetchWithIncludeRendersACompoundDocument(): void
+    {
+        // ?include=artist on the collection surfaces the distinct artists once each.
+        $included = $this->fetch('/albums?include=artist&sort=title')['included'] ?? null;
+        self::assertIsArray($included);
+
+        $index = $this->includedIndex($included);
+        self::assertArrayHasKey('artists:1', $index);
+        self::assertArrayHasKey('artists:2', $index);
+    }
+
+    // --- helpers -------------------------------------------------------------
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function fetch(string $path): array
+    {
+        $response = $this->handle($path);
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame('application/vnd.api+json', $response->headers->get('Content-Type'));
+
+        return $this->decode($response);
+    }
+
+    /**
+     * @param array<string, mixed> $document
+     *
+     * @return list<string>
+     */
+    private function trackIds(array $document): array
+    {
+        return $this->idsOfType($document, 'tracks');
+    }
+
+    /**
+     * @param array<string, mixed> $document
+     *
+     * @return list<string>
+     */
+    private function albumIds(array $document): array
+    {
+        return $this->idsOfType($document, 'albums');
+    }
+
+    /**
+     * @param array<string, mixed> $document
+     *
+     * @return list<string>
+     */
+    private function idsOfType(array $document, string $type): array
+    {
+        $data = $document['data'] ?? null;
+        self::assertIsArray($data);
+
+        $ids = [];
+        foreach ($data as $resource) {
+            self::assertIsArray($resource);
+            self::assertSame($type, $resource['type'] ?? null);
+            $id = $resource['id'] ?? null;
+            self::assertIsString($id);
+            $ids[] = $id;
+        }
+
+        return $ids;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function firstError(\Symfony\Component\HttpFoundation\Response $response): array
+    {
+        $errors = $this->decode($response)['errors'] ?? null;
+        self::assertIsArray($errors);
+        self::assertNotEmpty($errors);
+
+        $first = $errors[0] ?? null;
+        self::assertIsArray($first);
+
+        /** @var array<string, mixed> $first */
+        return $first;
+    }
+
+    /**
+     * @param array<mixed> $included
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    private function includedIndex(array $included): array
+    {
+        $index = [];
+        foreach ($included as $resource) {
+            self::assertIsArray($resource);
+            $type = $resource['type'] ?? null;
+            $id = $resource['id'] ?? null;
+            self::assertIsString($type);
+            self::assertIsString($id);
+            /** @var array<string, mixed> $resource */
+            $index[$type . ':' . $id] = $resource;
+        }
+
+        return $index;
+    }
+
+    /**
+     * The named attribute of the indexed resource keyed `"{type}:{id}"`.
+     *
+     * @param array<string, array<string, mixed>> $index
+     */
+    private function attribute(array $index, string $key, string $name): mixed
+    {
+        $attributes = $index[$key]['attributes'] ?? null;
+        self::assertIsArray($attributes);
+
+        return $attributes[$name] ?? null;
+    }
+}
