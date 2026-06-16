@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Server;
 
+use haddowg\JsonApi\Hydrator\HydratorInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
+use haddowg\JsonApi\Serializer\SerializerInterface;
 use Psr\Container\ContainerInterface;
 
 /**
@@ -15,9 +17,11 @@ use Psr\Container\ContainerInterface;
  * instance on first lookup — so a Resource may be a Symfony service with real
  * constructor dependencies.
  *
- * It also exposes the discovered {@see classes()} so the
- * {@see ServerFactory} can register each type, and double-checks that every
- * looked-up service really is an {@see AbstractResource}.
+ * It also resolves a type's override serializer/hydrator services (ADR 0023) —
+ * core asks the same resolver for those class-strings — and exposes the discovered
+ * {@see classes()} so the {@see ServerFactory} can register each type. Every
+ * looked-up service must be a {@see SerializerInterface} or {@see HydratorInterface}
+ * (an {@see AbstractResource} is both); anything else is a wiring error.
  */
 final class ResourceLocator implements ContainerInterface
 {
@@ -40,16 +44,17 @@ final class ResourceLocator implements ContainerInterface
         return $this->classes;
     }
 
-    public function get(string $id): AbstractResource
+    public function get(string $id): object
     {
         $instance = $this->services->get($id);
 
-        if (!$instance instanceof AbstractResource) {
+        if (!$instance instanceof SerializerInterface && !$instance instanceof HydratorInterface) {
             throw new \LogicException(\sprintf(
-                'The JSON:API resource locator returned %s for "%s", which is not a %s.',
+                'The JSON:API resource locator returned %s for "%s", which is neither a %s nor a %s.',
                 \get_debug_type($instance),
                 $id,
-                AbstractResource::class,
+                SerializerInterface::class,
+                HydratorInterface::class,
             ));
         }
 

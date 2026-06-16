@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Operation;
 
+use haddowg\JsonApi\Exception\AdditionProhibited;
 use haddowg\JsonApi\Exception\FullReplacementProhibited;
-use haddowg\JsonApi\Exception\NoResourceRegistered;
 use haddowg\JsonApi\Exception\RelationshipNotExists;
 use haddowg\JsonApi\Exception\RelationshipTypeInappropriate;
 use haddowg\JsonApi\Exception\RemovalProhibited;
@@ -30,11 +30,14 @@ use haddowg\JsonApi\Response\ErrorResponse;
 use haddowg\JsonApi\Response\IdentifierResponse;
 use haddowg\JsonApi\Response\NoContentResponse;
 use haddowg\JsonApi\Response\RelatedResponse;
+use haddowg\JsonApi\Serializer\PolymorphicSerializer;
+use haddowg\JsonApi\Serializer\SerializerInterface;
 use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
+use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
 use haddowg\JsonApiBundle\Validation\ResourceValidator;
 
 /**
@@ -73,13 +76,17 @@ use haddowg\JsonApiBundle\Validation\ResourceValidator;
  * Relationship reads share the same provider-resolution shape: load the parent
  * through the read provider (a `404` when absent), resolve the named relation on
  * the parent resource via core's {@see \haddowg\JsonApi\Resource\AbstractResource::relationNamed()}
- * (a JSON:API `404` {@see RelationshipNotExists} when the relationship is unknown),
- * then render —
- *  - {@see FetchRelatedOperation} reads the related domain value(s) off the parent
- *    without serializing ({@see RelationInterface::readValue()}) and serializes
- *    them through the *related* type's serializer, as a single resource
- *    ({@see RelatedResponse::fromResource()}, `data:null` for an empty to-one) or a
- *    collection ({@see RelatedResponse::fromCollection()}) per cardinality;
+ * (a JSON:API `404` {@see RelationshipNotExists} when the relationship is unknown
+ * or its endpoint is suppressed — relationship routes stay parametric, so the
+ * handler enforces each relation's endpoint-exposure flags, ADR 0027), then
+ * render —
+ *  - {@see FetchRelatedOperation} renders the related domain value(s) through the
+ *    *related* type's serializer: a single resource for a to-one (read off the
+ *    parent via {@see RelationInterface::readValue()},
+ *    {@see RelatedResponse::fromResource()}, `data:null` when empty), or — for a
+ *    to-many — a queryable, paginated collection resolved over the related
+ *    provider's {@see \haddowg\JsonApiBundle\DataProvider\DataProviderInterface::fetchRelatedCollection()}
+ *    seam ({@see RelatedResponse::fromPage()}, else {@see RelatedResponse::fromCollection()});
  *  - {@see FetchRelationshipOperation} routes the parent through the *parent*
  *    type's serializer with the relationship name set, emitting linkage only
  *    ({@see IdentifierResponse::forRelationship()}).
@@ -97,15 +104,23 @@ use haddowg\JsonApiBundle\Validation\ResourceValidator;
  *
  * Core's typed exceptions (unknown filter/sort keys, hydration failures, the
  * validator bridge's `422`) propagate to the route-scoped `kernel.exception`
- * listener, which owns all error rendering on JSON:API routes. The generic
- * zero-handler CRUD engine is a later phase; this proves the lifecycle over the
- * SPIs first.
+ * listener, which owns all error rendering on JSON:API routes.
+ *
+ * This is the generic, zero-per-type-handler CRUD engine: it drives every
+ * registered type through the Provider/Persister SPIs and the per-type
+ * serializer/hydrator, resolving each type's declarative metadata through the
+ * {@see TypeMetadataResolver} seam so a type with no resource (a bare
+ * serializer/hydrator pair) is tolerated without per-type branching — the
+ * capstone (bundle ADR 0021). Per-type customization composes through the SPIs
+ * (a higher-priority provider/persister), the serializer/hydrator overrides, or
+ * decorating this handler; no per-type handler code is required.
  */
 final class CrudOperationHandler implements \haddowg\JsonApi\Operation\OperationHandlerInterface
 {
     public function __construct(
         private readonly DataProviderRegistry $providers,
         private readonly DataPersisterRegistry $persisters,
+        private readonly TypeMetadataResolver $types,
         private readonly ?ResourceValidator $validator = null,
     ) {}
 
@@ -142,13 +157,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return DataResponse::fromResource($model, $serializer);
         }
 
-        try {
-            $resource = $server->resources()->resourceFor($type);
-        } catch (NoResourceRegistered) {
-            // A bare serializer/hydrator pair declares no field inventory, so
-            // it has no filter/sort vocabulary and no resource-level paginator.
-            $resource = null;
-        }
+        // A bare serializer/hydrator pair declares no field inventory, so it has
+        // no filter/sort vocabulary and no resource-level paginator.
+        $resource = $this->types->resourceFor($server, $type);
 
         $request = $operation->context()->httpRequest();
         $request = $request instanceof JsonApiRequestInterface ? $request : null;
@@ -172,11 +183,32 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
     /**
      * `GET /{type}/{id}/{relationship}` — the related-resource(s) document. Loads
-     * the parent, resolves the named relation, reads the related domain value(s)
-     * off the parent without serializing, and renders them through the related
-     * type's serializer: a single resource (`data:null` for an empty to-one) or a
-     * collection per the relation's cardinality. `?include` on the related
-     * resource flows through the same {@see RelatedResponse} render path.
+     * the parent, resolves the named relation, and renders through the related
+     * type's serializer per cardinality:
+     *  - a to-one reads the related object off the parent and resolves the
+     *    serializer **from that object** ({@see RelationInterface::resolveSerializer()}),
+     *    so a polymorphic to-one ({@see \haddowg\JsonApi\Resource\Field\MorphTo})
+     *    renders the related object's own type; it renders a single resource
+     *    (`data:null` for an empty to-one — `resolveSerializer(null, …)` falls back
+     *    to the first registered serializer, valid for the null render);
+     *  - a to-many resolves the *related* type's filter/sort/pagination vocabulary
+     *    into a {@see CollectionCriteria}, asks the related provider's
+     *    {@see \haddowg\JsonApiBundle\DataProvider\DataProviderInterface::fetchRelatedCollection()}
+     *    to execute it (scoped to the parent), and renders a paginated
+     *    {@see RelatedResponse::fromPage()} (else a plain
+     *    {@see RelatedResponse::fromCollection()}) — mirroring the primary
+     *    collection path. Per-relation pagination resolves
+     *    `relation paginator -> related resource paginator -> server default`. A
+     *    polymorphic to-many ({@see \haddowg\JsonApi\Resource\Field\MorphToMany})
+     *    has no single related type — so no shared filter/sort vocabulary and no
+     *    related-resource paginator — and renders its mixed-type members through a
+     *    {@see PolymorphicSerializer} that resolves each member's serializer from
+     *    the member object (ADR 0032).
+     *
+     * `?include` on the related resource flows through the same
+     * {@see RelatedResponse} render path. A relation that suppresses its related
+     * endpoint ({@see RelationInterface::exposesRelatedEndpoint()}) is enforced
+     * here as a `404`, the route being parametric (ADR 0027).
      */
     private function fetchRelated(FetchRelatedOperation $operation): RelatedResponse|ErrorResponse
     {
@@ -195,22 +227,84 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return ErrorResponse::fromException(new RelationshipNotExists($relationshipName));
         }
 
-        // Polymorphic MorphTo related-resource endpoints (a single relation that
-        // yields several types) need per-item serializer resolution; deferred to a
-        // later slice. The declared related types are monomorphic here.
-        $relatedType = $relation->relatedTypes()[0] ?? $type;
-        $relatedSerializer = $server->serializerFor($relatedType);
-
-        $request = $this->jsonApiRequest($operation->context());
-        $related = $relation->readValue($parent, $request);
-
-        if ($relation->isToMany()) {
-            \assert(\is_iterable($related));
-
-            return RelatedResponse::fromCollection($parent, $relationshipName, $related, $relatedSerializer);
+        // A relation that suppresses its related endpoint (`withoutRelatedEndpoint()`)
+        // is not reachable: the route stays parametric, so the handler enforces the
+        // exposure flag as a `404` (reusing RelationshipNotExists) — ADR 0027.
+        if (!$relation->exposesRelatedEndpoint()) {
+            return ErrorResponse::fromException(new RelationshipNotExists($relationshipName));
         }
 
-        return RelatedResponse::fromResource($parent, $relationshipName, $related, $relatedSerializer);
+        // A polymorphic relation (MorphTo / MorphToMany) declares several related
+        // types, so there is no single related type to resolve a serializer or a
+        // shared filter/sort vocabulary from up front: the serializer is resolved
+        // per related object below.
+        $relatedTypes = $relation->relatedTypes();
+        $polymorphic = \count($relatedTypes) > 1;
+        $relatedType = $relatedTypes[0] ?? $type;
+
+        $request = $this->jsonApiRequest($operation->context());
+
+        if ($relation->isToMany()) {
+            // A polymorphic to-many's members span types, so it carries no single
+            // related resource — no shared filter/sort vocabulary and no
+            // related-resource paginator; only the relation's own paginator (or the
+            // server default) applies, and members render through a
+            // PolymorphicSerializer that resolves each member's serializer.
+            $relatedResource = $polymorphic ? null : $this->types->resourceFor($server, $relatedType);
+            $paginator = $relation->pagination()
+                ?? $relatedResource?->pagination()
+                ?? $server->defaultPaginator();
+            $window = $paginator?->window($request);
+
+            $criteria = new CollectionCriteria(
+                $operation->queryParameters(),
+                $relatedResource?->filters() ?? [],
+                $relatedResource?->allSorts() ?? [],
+                $window,
+            );
+
+            $result = $this->providers->forType($relatedType)
+                ->fetchRelatedCollection($relatedType, $parent, $relation, $criteria, $request);
+
+            $serializer = $polymorphic
+                ? $this->polymorphicSerializer($relation, $server)
+                : $server->serializerFor($relatedType);
+
+            if ($paginator !== null && $result->total !== null) {
+                return RelatedResponse::fromPage(
+                    $parent,
+                    $relationshipName,
+                    $paginator->paginate($request, $result->items, $result->total),
+                    $serializer,
+                );
+            }
+
+            return RelatedResponse::fromCollection($parent, $relationshipName, $result->items, $serializer);
+        }
+
+        // Resolve the to-one serializer from the actual related object so a
+        // polymorphic to-one (MorphTo) renders the object's own type. A null
+        // related value has no object to discriminate, so resolveSerializer falls
+        // back to the first registered serializer and the response renders
+        // `data: null`.
+        $related = $relation->readValue($parent, $request);
+        $serializer = $relation->resolveSerializer($related, $server) ?? $server->serializerFor($relatedType);
+
+        return RelatedResponse::fromResource($parent, $relationshipName, $related, $serializer);
+    }
+
+    /**
+     * A {@see PolymorphicSerializer} that renders a polymorphic to-many's
+     * mixed-type members: for each member object it resolves the serializer among
+     * the relation's declared types ({@see RelationInterface::resolveSerializer()}),
+     * throwing when no declared type serializes a related object.
+     */
+    private function polymorphicSerializer(RelationInterface $relation, Server $server): PolymorphicSerializer
+    {
+        return new PolymorphicSerializer(
+            fn(mixed $object): SerializerInterface => $relation->resolveSerializer($object, $server)
+                ?? throw new \LogicException(\sprintf('No declared type of the "%s" relationship serializes a related object.', $relation->name())),
+        );
     }
 
     /**
@@ -218,6 +312,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * document (resource identifiers only). Loads the parent, validates the
      * relationship exists, and routes the parent through the *parent* type's
      * serializer with the relationship name set so the transformer emits linkage.
+     *
+     * A relation that suppresses its relationship endpoint
+     * ({@see RelationInterface::exposesRelationshipEndpoint()}) is enforced here as
+     * a `404`, the route being parametric (ADR 0027).
      */
     private function fetchRelationship(FetchRelationshipOperation $operation): IdentifierResponse|ErrorResponse
     {
@@ -231,7 +329,15 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return ErrorResponse::fromException(new ResourceNotFound());
         }
 
-        if ($this->resolveRelation($server, $type, $relationshipName) === null) {
+        $relation = $this->resolveRelation($server, $type, $relationshipName);
+        if ($relation === null) {
+            return ErrorResponse::fromException(new RelationshipNotExists($relationshipName));
+        }
+
+        // A relation that suppresses its relationship endpoint
+        // (`withoutRelationshipEndpoint()`) is enforced handler-side as a `404`
+        // because the route is parametric — ADR 0027.
+        if (!$relation->exposesRelationshipEndpoint()) {
             return ErrorResponse::fromException(new RelationshipNotExists($relationshipName));
         }
 
@@ -303,11 +409,14 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      *  - a to-one clear (`data: null`) is a removal — gated by `allowsRemove()`;
      *    a non-null to-one `PATCH` is a replacement — gated by `allowsReplace()`;
      *  - a to-many `PATCH` is a replacement — gated by `allowsReplace()`; a to-many
+     *    `POST` add is gated by the relation's per-relation `allowsAdd()`
+     *    endpoint-exposure flag (`cannotAdd()` → `403`, ADR 0027); a to-many
      *    `DELETE` is a removal — gated by `allowsRemove()`.
      *
      * @param ToOneRelationship|ToManyRelationship $linkage
      *
      * @throws FullReplacementProhibited
+     * @throws AdditionProhibited
      * @throws RemovalProhibited
      */
     private function guardMutability(
@@ -336,6 +445,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             throw new FullReplacementProhibited($relationshipName);
         }
 
+        if ($mode === Mode::Add && $relation->allowsAdd() === false) {
+            throw new AdditionProhibited($relationshipName);
+        }
+
         if ($mode === Mode::Remove && $relation->allowsRemove() === false) {
             throw new RemovalProhibited($relationshipName);
         }
@@ -356,18 +469,12 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
     /**
      * Resolves the declared, non-hidden relation named `$name` on `$type`'s
-     * resource, or `null` when the resource is bare (no field inventory) or has no
-     * such relationship — the handler maps a `null` to a JSON:API `404`.
+     * resource, or `null` when the type is a bare pair (no field inventory) or has
+     * no such relationship — the handler maps a `null` to a JSON:API `404`.
      */
     private function resolveRelation(Server $server, string $type, string $name): ?RelationInterface
     {
-        try {
-            $resource = $server->resources()->resourceFor($type);
-        } catch (NoResourceRegistered) {
-            return null;
-        }
-
-        return $resource->relationNamed($name);
+        return $this->types->relationNamed($server, $type, $name);
     }
 
     /**
@@ -408,9 +515,14 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         $entity = $persister->create($type, $entity);
 
+        // The Location uses the resource's URI segment (its uriType), so it matches
+        // the route the client will GET (ADR 0022); a bare pair has no resource, so
+        // it falls back to the type.
+        $uriType = $this->types->resourceFor($server, $type)?->uriType() ?? $type;
+
         return DataResponse::fromResource($entity, $serializer)
             ->withStatus(201)
-            ->withHeader('Location', $server->baseUri() . '/' . $type . '/' . $serializer->getId($entity));
+            ->withHeader('Location', $server->baseUri() . '/' . $uriType . '/' . $serializer->getId($entity));
     }
 
     private function update(UpdateResourceOperation $operation): DataResponse|ErrorResponse
@@ -449,24 +561,20 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
     /**
      * Collects the writable relationships present in the write body, each paired
      * with its parsed linkage, so the handler can apply them through the persister
-     * seam after core hydrates the attributes. A relationship that is unknown to
-     * the resource or read-only for this operation is skipped (core's hydrator and
-     * the validator own those rules); a bare serializer/hydrator pair declares no
-     * relations, so there is nothing to collect.
+     * seam after core hydrates the attributes. Each named relationship is resolved
+     * through the dual-source {@see TypeMetadataResolver::relationNamed()} — a
+     * resource's own relations or a resource-less type's standalone relations (ADR
+     * 0026) — so a type with no resource can still have its relationships set on a
+     * whole-resource write. A relationship that is unknown or read-only for this
+     * operation is skipped (core's hydrator and the validator own those rules).
      *
      * @return list<array{relation: RelationInterface, linkage: ToOneRelationship|ToManyRelationship}>
      */
     private function extractRelationships(Server $server, string $type, JsonApiRequestInterface $body): array
     {
-        try {
-            $resource = $server->resources()->resourceFor($type);
-        } catch (NoResourceRegistered) {
-            return [];
-        }
-
         $collected = [];
         foreach ($this->bodyRelationshipNames($body) as $name) {
-            $relation = $resource->relationNamed($name);
+            $relation = $this->types->relationNamed($server, $type, $name);
             if ($relation === null) {
                 continue;
             }
@@ -591,9 +699,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return;
         }
 
-        try {
-            $resource = $server->resources()->resourceFor($type);
-        } catch (NoResourceRegistered) {
+        $resource = $this->types->resourceFor($server, $type);
+        if ($resource === null) {
             return;
         }
 
@@ -612,9 +719,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return;
         }
 
-        try {
-            $resource = $server->resources()->resourceFor($type);
-        } catch (NoResourceRegistered) {
+        $resource = $this->types->resourceFor($server, $type);
+        if ($resource === null) {
             return;
         }
 

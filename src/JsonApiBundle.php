@@ -5,12 +5,16 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle;
 
 use haddowg\JsonApi\Resource\AbstractResource;
+use haddowg\JsonApiBundle\Attribute\AsJsonApiHydrator;
+use haddowg\JsonApiBundle\Attribute\AsJsonApiRelations;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
+use haddowg\JsonApiBundle\Attribute\AsJsonApiSerializer;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineExtensionInterface;
 use haddowg\JsonApiBundle\DependencyInjection\Compiler\DoctrineEntityMapPass;
 use haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceLocatorPass;
+use haddowg\JsonApiBundle\Operation\Operation;
 use Symfony\Component\Config\Definition\Configurator\DefinitionConfigurator;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
@@ -70,6 +74,31 @@ final class JsonApiBundle extends AbstractBundle
      * criteria.
      */
     public const string DOCTRINE_EXTENSION_TAG = 'haddowg.json_api.doctrine_extension';
+
+    /**
+     * Tag applied to a standalone {@see \haddowg\JsonApi\Serializer\SerializerInterface}
+     * registered for a type via {@see AsJsonApiSerializer} — a serializer without an
+     * {@see AbstractResource} (bundle ADR 0024). The tag carries the `type` it
+     * serializes; {@see \haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceLocatorPass}
+     * reads it to register the type's serializer with core.
+     */
+    public const string SERIALIZER_TAG = 'haddowg.json_api.serializer';
+
+    /**
+     * Tag applied to a standalone {@see \haddowg\JsonApi\Hydrator\HydratorInterface}
+     * registered for a type via {@see AsJsonApiHydrator} — the decoupled write half
+     * (bundle ADR 0024). The tag carries the `type` it hydrates.
+     */
+    public const string HYDRATOR_TAG = 'haddowg.json_api.hydrator';
+
+    /**
+     * Tag applied to a standalone {@see \haddowg\JsonApiBundle\Server\RelationsProviderInterface}
+     * registered for a type via {@see AsJsonApiRelations} — a type's relations
+     * declared with no {@see AbstractResource} (bundle ADR 0026). The tag carries the
+     * `type` it declares relations for; {@see \haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceLocatorPass}
+     * reads it to wire the type-keyed {@see \haddowg\JsonApiBundle\Server\RelationsRegistry}.
+     */
+    public const string RELATIONS_TAG = 'haddowg.json_api.relations';
 
     public function configure(DefinitionConfigurator $definition): void
     {
@@ -147,7 +176,43 @@ final class JsonApiBundle extends AbstractBundle
                     'type' => $attribute->type,
                     'server' => $attribute->server,
                     'entity' => $attribute->entity,
+                    'serializer' => $attribute->serializer,
+                    'hydrator' => $attribute->hydrator,
+                    'operations' => $attribute->operations !== []
+                        ? \implode(',', \array_map(static fn(Operation $op): string => $op->value, $attribute->operations))
+                        : null,
                 ], static fn(mixed $value): bool => $value !== null));
+            },
+        );
+
+        // Standalone serializer/hydrator capabilities: a class implementing
+        // SerializerInterface/HydratorInterface registers for a type with no
+        // AbstractResource (ADR 0024). A single class may carry both.
+        $builder->registerAttributeForAutoconfiguration(
+            AsJsonApiSerializer::class,
+            static function (Definition $definition, AsJsonApiSerializer $attribute): void {
+                $definition->addTag(self::SERIALIZER_TAG, \array_filter([
+                    'type' => $attribute->type,
+                    'operations' => $attribute->operations !== []
+                        ? \implode(',', \array_map(static fn(Operation $op): string => $op->value, $attribute->operations))
+                        : null,
+                ], static fn(mixed $value): bool => $value !== null));
+            },
+        );
+
+        $builder->registerAttributeForAutoconfiguration(
+            AsJsonApiHydrator::class,
+            static function (Definition $definition, AsJsonApiHydrator $attribute): void {
+                $definition->addTag(self::HYDRATOR_TAG, ['type' => $attribute->type]);
+            },
+        );
+
+        // Standalone relations: a class implementing RelationsProviderInterface
+        // declares a type's relations with no AbstractResource (ADR 0026).
+        $builder->registerAttributeForAutoconfiguration(
+            AsJsonApiRelations::class,
+            static function (Definition $definition, AsJsonApiRelations $attribute): void {
+                $definition->addTag(self::RELATIONS_TAG, ['type' => $attribute->type]);
             },
         );
     }

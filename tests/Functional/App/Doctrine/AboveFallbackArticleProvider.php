@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App\Doctrine;
 
+use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\CollectionResult;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
@@ -36,6 +38,16 @@ final class AboveFallbackArticleProvider implements DataProviderInterface
 
     public function fetchCollection(string $type, CollectionCriteria $criteria): CollectionResult
     {
+        return new CollectionResult([]);
+    }
+
+    public function fetchRelatedCollection(
+        string $relatedType,
+        object $parent,
+        RelationInterface $relation,
+        CollectionCriteria $criteria,
+        JsonApiRequestInterface $request,
+    ): CollectionResult {
         return new CollectionResult([]);
     }
 }

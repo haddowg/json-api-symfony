@@ -88,6 +88,28 @@ final class ArticleFixtures
     }
 
     /**
+     * The many-to-many `editors` linkage per article id: the editor author ids
+     * each article has, distinct from the to-one `author` of
+     * {@see relationships()}. This backs the unidirectional ManyToMany `editors`
+     * relation (article → authors), so it reuses the `authors` type without a new
+     * one. Author `a1` is an editor of articles 1 and 2 — a shared,
+     * cross-parent membership the Doctrine subquery scope must return for each
+     * parent without bleed.
+     *
+     * @return array<int|string, list<string>>
+     */
+    public static function editors(): array
+    {
+        return [
+            '1' => ['a1', 'a2'],
+            '2' => ['a1'],
+            '3' => ['a2'],
+            '4' => [],
+            '5' => [],
+        ];
+    }
+
+    /**
      * The second, independent to-many linkage per article id: the comment ids
      * each article *features*, backing the load-aware `lazyComments` relation. A
      * separate association from {@see relationships()}'s `comments`, so on

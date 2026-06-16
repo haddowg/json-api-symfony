@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\Resource;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Str;
+use haddowg\JsonApi\Resource\Filter\Where;
 
 /**
  * The shared `comments` declaration both functional kernels serve — the related
@@ -23,7 +24,19 @@ abstract class BaseCommentResource extends AbstractResource
     {
         return [
             Id::make(),
-            Str::make('body'),
+            Str::make('body')->sortable(),
+        ];
+    }
+
+    /**
+     * The related-collection vocabulary (Phase 4 P7): this is what scopes
+     * `GET /articles/{id}/comments?filter[body]=…&sort=…` — the comment filters
+     * and sorts the related to-many endpoint resolves against, not the article's.
+     */
+    public function filters(): array
+    {
+        return [
+            Where::make('body'),
         ];
     }
 }

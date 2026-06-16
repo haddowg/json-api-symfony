@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App\Doctrine;
 
+use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\CollectionResult;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
@@ -48,5 +50,15 @@ final class OverridingArticleProvider implements DataProviderInterface
     public function fetchCollection(string $type, CollectionCriteria $criteria): CollectionResult
     {
         return $this->inner->fetchCollection($type, $criteria);
+    }
+
+    public function fetchRelatedCollection(
+        string $relatedType,
+        object $parent,
+        RelationInterface $relation,
+        CollectionCriteria $criteria,
+        JsonApiRequestInterface $request,
+    ): CollectionResult {
+        return $this->inner->fetchRelatedCollection($relatedType, $parent, $relation, $criteria, $request);
     }
 }
