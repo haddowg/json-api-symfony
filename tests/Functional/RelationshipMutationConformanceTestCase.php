@@ -184,6 +184,58 @@ abstract class RelationshipMutationConformanceTestCase extends JsonApiFunctional
 
     #[Test]
     #[Group('spec:creating-resources')]
+    public function aReadOnlyRelationshipIsIgnoredOnAWholeResourceCreate(): void
+    {
+        // `readOnlyAuthor` reuses the `author` association but is declared readOnly(),
+        // so naming it in a write body is silently skipped — a server-assigned
+        // association can't be set through the body. The created article therefore has
+        // no author (a writable relation would have set it).
+        $response = $this->handle('/articles', 'POST', [
+            'data' => [
+                'type' => 'articles',
+                'attributes' => ['title' => 'No author via read-only', 'body' => 'x', 'category' => 'news'],
+                'relationships' => [
+                    'readOnlyAuthor' => ['data' => ['type' => 'authors', 'id' => 'a1']],
+                ],
+            ],
+        ]);
+
+        self::assertSame(201, $response->getStatusCode(), (string) $response->getContent());
+
+        $data = $this->decode($response)['data'] ?? null;
+        self::assertIsArray($data);
+        $id = $data['id'] ?? null;
+        self::assertIsString($id);
+
+        self::assertNull($this->linkageOf('/articles/' . $id . '/relationships/author'));
+    }
+
+    #[Test]
+    #[Group('spec:updating-resources')]
+    public function aReadOnlyRelationshipIsNotOverwrittenByAWholeResourceUpdate(): void
+    {
+        // Article 1 is seeded with author a1; a PATCH naming readOnlyAuthor=a2 must be
+        // skipped, leaving the author unchanged — the over-posting guard.
+        $response = $this->handle('/articles/1', 'PATCH', [
+            'data' => [
+                'type' => 'articles',
+                'id' => '1',
+                'relationships' => [
+                    'readOnlyAuthor' => ['data' => ['type' => 'authors', 'id' => 'a2']],
+                ],
+            ],
+        ]);
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        self::assertSame(
+            ['type' => 'authors', 'id' => 'a1'],
+            $this->linkageOf('/articles/1/relationships/author'),
+        );
+    }
+
+    #[Test]
+    #[Group('spec:creating-resources')]
     public function creatingAResourceWithoutRelationshipsStillWorks(): void
     {
         // No `data.relationships`: the attributes-only create path is unchanged.

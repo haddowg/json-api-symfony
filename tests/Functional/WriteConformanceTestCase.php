@@ -86,6 +86,33 @@ abstract class WriteConformanceTestCase extends JsonApiFunctionalTestCase
 
     #[Test]
     #[Group('spec:crud')]
+    public function anUndeclaredAttributeInAWriteBodyIsSilentlyIgnored(): void
+    {
+        // Allow-list hydration: an attribute the resource did not declare (the classic
+        // mass-assignment over-post) is dropped — never written, and the declared-only
+        // resource the engine renders never surfaces it.
+        $response = $this->handle('/articles/1', 'PATCH', [
+            'data' => [
+                'type' => 'articles',
+                'id' => '1',
+                'attributes' => [
+                    'title' => 'Edited via allow-list',
+                    'isAdmin' => true,
+                    'undeclared' => 'nope',
+                ],
+            ],
+        ]);
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        $attributes = $this->attributesOf($response);
+        self::assertSame('Edited via allow-list', $attributes['title'] ?? null);
+        self::assertArrayNotHasKey('isAdmin', $attributes);
+        self::assertArrayNotHasKey('undeclared', $attributes);
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
     public function deletingAResourceReturns204AndThenItIsGone(): void
     {
         $response = $this->handle('/articles/1', 'DELETE');
