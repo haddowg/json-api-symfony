@@ -36,6 +36,26 @@ namespace haddowg\JsonApiBundle\Attribute;
  * cases this type serves, one route emitted per case (bundle ADR 0025). An empty
  * array means the default — for a resource, all five operations.
  *
+ * `cacheHeaders` declares **declarative HTTP cache headers** for the type's safe
+ * (`GET`) reads (bundle ADR 0054, API-Platform gap G7): a map of `max_age`,
+ * `s_maxage` (shared/CDN), `public`/`private`, `no_cache`, `must_revalidate` and
+ * `vary` (a list of response header names → `Vary`). The
+ * {@see \haddowg\JsonApiBundle\EventListener\ResponseHeadersListener} maps them
+ * onto the `Cache-Control` + `Vary` headers of a **successful `GET`** response only
+ * — never a write or an error. An optional nested `operations` key carries
+ * per-read-shape overrides (`collection`/`read`/`related`/`relationship`), each the
+ * same map, layered over the resource-level value. A resource that declares none
+ * (and has no `json_api.defaults.cache_headers`) gets no `Cache-Control` (unchanged).
+ *
+ * `deprecation` and `sunset` declare **deprecation signalling** — the IETF
+ * Deprecation header field (`draft-ietf-httpapi-deprecation-header`) plus the
+ * RFC 8594 `Sunset` header (bundle ADR 0054, API-Platform gap G16), emitted on
+ * **every** response for the type (reads and writes alike). `deprecation: true`
+ * emits a bare `Deprecation: true`;
+ * `deprecation: '<date>'` emits `Deprecation: <date>` (the author formats the date
+ * per the RFC). `sunset: '<HTTP-date>'` emits `Sunset: <HTTP-date>`, plus — when
+ * `sunsetLink` is set — a companion `Link: <uri>; rel="sunset"`.
+ *
  * `security` (and the per-operation overrides) declare **declarative authorization**
  * for the type (bundle ADR 0043): each is a Symfony Security
  * {@see https://symfony.com/doc/current/security/expressions.html ExpressionLanguage}
@@ -63,6 +83,10 @@ final readonly class AsJsonApiResource
      * @param string|null                                                          $securityUpdate the security expression for update and relationship mutation (falls back to `security`)
      * @param string|null                                                          $securityDelete the security expression for delete (falls back to `security`)
      * @param string|null                                                          $securityRead   the security expression for a single-resource read (falls back to `security`)
+     * @param array<string, mixed>                                                 $cacheHeaders   declarative HTTP cache directives for GET reads (`max_age`/`s_maxage`/`public`/`private`/`no_cache`/`must_revalidate`/`vary`), with an optional nested `operations` per-read-shape override map; empty = none
+     * @param bool|string|null                                                     $deprecation    IETF Deprecation-header deprecation: `true` (bare header), a date string (`Deprecation: <date>`), or null (none)
+     * @param string|null                                                          $sunset         RFC 8594 sunset HTTP-date (`Sunset: <date>`), or null
+     * @param string|null                                                          $sunsetLink     a URI for the companion `Link: <uri>; rel="sunset"` (emitted only when `sunset` is set)
      */
     public function __construct(
         public ?string $type = null,
@@ -76,5 +100,9 @@ final readonly class AsJsonApiResource
         public ?string $securityUpdate = null,
         public ?string $securityDelete = null,
         public ?string $securityRead = null,
+        public array $cacheHeaders = [],
+        public bool|string|null $deprecation = null,
+        public ?string $sunset = null,
+        public ?string $sunsetLink = null,
     ) {}
 }

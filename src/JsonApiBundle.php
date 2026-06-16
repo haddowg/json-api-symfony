@@ -15,6 +15,7 @@ use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineExtensionInterface;
 use haddowg\JsonApiBundle\DependencyInjection\Compiler\DoctrineEntityMapPass;
 use haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceLocatorPass;
 use haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceSecurityPass;
+use haddowg\JsonApiBundle\DependencyInjection\Compiler\ResponseHeadersPass;
 use haddowg\JsonApiBundle\Operation\CrudOperationHandler;
 use haddowg\JsonApiBundle\Operation\Operation;
 use haddowg\JsonApiBundle\Serializer\Doctrine\DoctrineRelationshipLoadState;
@@ -134,6 +135,10 @@ final class JsonApiBundle extends AbstractBundle
                     ->defaultValue(self::DEFAULT_MAX_INCLUDE_DEPTH)
                     ->min(0)
                 ->end()
+                ->booleanNode('strict_query_parameters')
+                    ->info('Reject an unrecognized top-level query-parameter family with a 400 (bundle ADR 0055, core ADR 0059). A param is recognized when its base name is a reserved JSON:API family (include/fields/filter/sort/page), a key the primary resource declares, `withCount`, a negotiated profile keyword (relatedQuery/rQ), or an app-registered custom param. The default is true; set false to restore the old silent-ignore behaviour.')
+                    ->defaultTrue()
+                ->end()
                 ->arrayNode('pagination')
                     ->info('Tuning for the server\'s default page-based paginator. See core docs/pagination.md.')
                     ->addDefaultsIfNotSet()
@@ -142,6 +147,36 @@ final class JsonApiBundle extends AbstractBundle
                             ->info('Cap the client-controlled page[size]/page[limit] of the server default paginator (closes a page-size DoS vector). The default is core\'s PagePaginator::DEFAULT_MAX_PER_PAGE (100); set 0 to disable the cap (unlimited). A resource with its own pagination() sets its own cap via withMaxPerPage().')
                             ->defaultValue(\haddowg\JsonApi\Pagination\PagePaginator::DEFAULT_MAX_PER_PAGE)
                             ->min(0)
+                        ->end()
+                    ->end()
+                ->end()
+                ->arrayNode('defaults')
+                    ->info('Global default response headers applied to a resource that declares none (bundle ADR 0054). A resource-level cacheHeaders / deprecation overrides (and merges with) these.')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->arrayNode('cache_headers')
+                            ->info('Default HTTP cache directives for safe (GET) successful reads: max_age/s_maxage/public/private/no_cache/must_revalidate/vary. Applied only when a resource declares no cacheHeaders of its own.')
+                            ->children()
+                                ->integerNode('max_age')->defaultNull()->end()
+                                ->integerNode('s_maxage')->defaultNull()->end()
+                                ->booleanNode('public')->defaultNull()->end()
+                                ->booleanNode('private')->defaultNull()->end()
+                                ->booleanNode('no_cache')->defaultNull()->end()
+                                ->booleanNode('must_revalidate')->defaultNull()->end()
+                                ->arrayNode('vary')->scalarPrototype()->end()->end()
+                            ->end()
+                        ->end()
+                        ->scalarNode('deprecation')
+                            ->info('Default Deprecation header (IETF Deprecation-header draft): a bool (true => bare header) or a date string. Applied when a resource declares no deprecation.')
+                            ->defaultNull()
+                        ->end()
+                        ->scalarNode('sunset')
+                            ->info('Default RFC 8594 Sunset HTTP-date. Applied when a resource declares no sunset.')
+                            ->defaultNull()
+                        ->end()
+                        ->scalarNode('sunset_link')
+                            ->info('Default URI for the companion Link: <uri>; rel="sunset" (emitted only when a sunset is set).')
+                            ->defaultNull()
                         ->end()
                     ->end()
                 ->end()
@@ -167,6 +202,7 @@ final class JsonApiBundle extends AbstractBundle
         $version = $this->stringConfig($config, 'version', '1.1');
         $maxPerPage = $this->maxPerPageConfig($config);
         $maxIncludeDepth = $this->maxIncludeDepthConfig($config);
+        $strictQueryParameters = $this->strictQueryParametersConfig($config);
 
         $builder->setParameter('haddowg_json_api.base_uri', $baseUri);
         $builder->setParameter('haddowg_json_api.version', $version);
@@ -186,7 +222,7 @@ final class JsonApiBundle extends AbstractBundle
         // One ServerFactory per declared server, plus the ServerProvider that
         // resolves them by name through a service locator. The per-server resource
         // class-strings and serializer/hydrator maps are filled by the pass.
-        $this->registerServers($container, $servers, $maxPerPage, $maxIncludeDepth);
+        $this->registerServers($container, $servers, $maxPerPage, $maxIncludeDepth, $strictQueryParameters);
 
         // The optional opis structural linter: registered (so the RequestListener
         // picks it up) only when explicitly enabled. opis/json-schema is a
@@ -237,6 +273,22 @@ final class JsonApiBundle extends AbstractBundle
                 ->tag('kernel.event_subscriber');
         }
 
+        // Declarative response headers (bundle ADR 0054): the type-keyed
+        // ResponseHeadersRegistry seeded with the global `json_api.defaults`
+        // cache/deprecation defaults, plus the ResponseHeadersListener (wired in
+        // services.php) that emits them per request. The per-type map is filled by
+        // the ResponseHeadersPass (added in build()) from each resource's
+        // #[AsJsonApiResource(cacheHeaders/deprecation/sunset)]; the registry is
+        // always present (no optional dependency — these are pure HTTP headers).
+        [$defaultCache, $defaultDeprecation] = $this->responseHeaderDefaults($config);
+        $container->services()
+            ->set(\haddowg\JsonApiBundle\Http\ResponseHeadersRegistry::class)
+            ->args([
+                '$byType' => [],
+                '$defaultCache' => $defaultCache,
+                '$defaultDeprecation' => $defaultDeprecation,
+            ]);
+
         // Any service extending AbstractResource is auto-tagged for registration;
         // ResourceLocatorPass keys them by class-string for the Server factory.
         $builder->registerForAutoconfiguration(AbstractResource::class)
@@ -284,6 +336,13 @@ final class JsonApiBundle extends AbstractBundle
                     'security_update' => $attribute->securityUpdate,
                     'security_delete' => $attribute->securityDelete,
                     'security_read' => $attribute->securityRead,
+                    // The declarative response-header config (bundle ADR 0054) —
+                    // cache directives + deprecation/sunset headers — JSON-encoded
+                    // into a single scalar tag attribute the ResponseHeadersPass
+                    // decodes into the type-keyed ResponseHeadersRegistry. A nested
+                    // structure (the per-operation cache overrides) does not survive
+                    // as a flat tag attribute, so it is carried as one JSON string.
+                    'response_headers' => self::responseHeadersTag($attribute),
                 ], static fn(mixed $value): bool => $value !== null));
             },
         );
@@ -334,6 +393,7 @@ final class JsonApiBundle extends AbstractBundle
         $container->addCompilerPass(new ResourceLocatorPass());
         $container->addCompilerPass(new DoctrineEntityMapPass());
         $container->addCompilerPass(new ResourceSecurityPass());
+        $container->addCompilerPass(new ResponseHeadersPass());
     }
 
     /**
@@ -384,7 +444,7 @@ final class JsonApiBundle extends AbstractBundle
      *
      * @param array<string, array{base_uri: string, version: string}> $servers
      */
-    private function registerServers(ContainerConfigurator $container, array $servers, int $maxPerPage, int $maxIncludeDepth): void
+    private function registerServers(ContainerConfigurator $container, array $servers, int $maxPerPage, int $maxIncludeDepth, bool $strictQueryParameters): void
     {
         $services = $container->services();
 
@@ -408,6 +468,10 @@ final class JsonApiBundle extends AbstractBundle
                     // (json_api.max_include_depth, default 3); 0 disables it (unlimited).
                     // A resource's own maxIncludeDepth() overrides it per type.
                     '$maxIncludeDepth' => $maxIncludeDepth,
+                    // Reject an unrecognized top-level query-parameter family with a
+                    // 400 (json_api.strict_query_parameters, default true; bundle ADR
+                    // 0055, core ADR 0059). False restores the old silent-ignore.
+                    '$strictQueryParameters' => $strictQueryParameters,
                     // Optional custom server-default paginators (e.g. a CursorPaginator),
                     // resolved by-server-first then generic: an app may register a
                     // PaginatorInterface service for THIS server, or one for all servers
@@ -465,6 +529,33 @@ final class JsonApiBundle extends AbstractBundle
     public static function defaultPaginatorId(?string $server = null): string
     {
         return 'haddowg.json_api.default_paginator' . ($server !== null ? '.' . $server : '');
+    }
+
+    /**
+     * The JSON-encoded response-header config for the `response_headers` tag
+     * attribute (bundle ADR 0054): the resource's `cacheHeaders` map plus its
+     * `deprecation`/`sunset`/`sunsetLink`, as a single scalar string the
+     * {@see \haddowg\JsonApiBundle\DependencyInjection\Compiler\ResponseHeadersPass}
+     * decodes. Returns `null` when the resource declares no response headers (so the
+     * tag attribute is filtered out), keeping a non-declaring resource's tag clean.
+     */
+    private static function responseHeadersTag(AsJsonApiResource $attribute): ?string
+    {
+        $config = [];
+        if ($attribute->cacheHeaders !== []) {
+            $config['cache'] = $attribute->cacheHeaders;
+        }
+        if ($attribute->deprecation !== null && $attribute->deprecation !== false) {
+            $config['deprecation'] = $attribute->deprecation;
+        }
+        if ($attribute->sunset !== null) {
+            $config['sunset'] = $attribute->sunset;
+        }
+        if ($attribute->sunsetLink !== null) {
+            $config['sunset_link'] = $attribute->sunsetLink;
+        }
+
+        return $config === [] ? null : \json_encode($config, \JSON_THROW_ON_ERROR);
     }
 
     /**
@@ -526,5 +617,49 @@ final class JsonApiBundle extends AbstractBundle
         $value = $config['max_include_depth'] ?? null;
 
         return \is_int($value) ? \max(0, $value) : self::DEFAULT_MAX_INCLUDE_DEPTH;
+    }
+
+    /**
+     * The resolved `json_api.strict_query_parameters` — whether an unrecognized
+     * top-level query-parameter family is rejected with a `400` (bundle ADR 0055,
+     * core ADR 0059). Defaults to `true` (strict) when the key is absent; `false`
+     * restores the old silent-ignore behaviour.
+     *
+     * @param array<string, mixed> $config
+     */
+    private function strictQueryParametersConfig(array $config): bool
+    {
+        $value = $config['strict_query_parameters'] ?? null;
+
+        return \is_bool($value) ? $value : true;
+    }
+
+    /**
+     * The resolved global response-header defaults from `json_api.defaults` (bundle
+     * ADR 0054): a tuple of the scalar `cache_headers` map and the
+     * `deprecation`/`sunset`/`sunset_link` map, each in the shape the
+     * {@see \haddowg\JsonApiBundle\Http\CacheHeaders}/{@see \haddowg\JsonApiBundle\Http\DeprecationHeaders}
+     * `fromArray()` factories read. Absent keys yield empty maps (no global default).
+     *
+     * @param array<string, mixed> $config
+     *
+     * @return array{0: array<string, mixed>, 1: array<string, mixed>}
+     */
+    private function responseHeaderDefaults(array $config): array
+    {
+        $defaults = $config['defaults'] ?? [];
+        $defaults = \is_array($defaults) ? $defaults : [];
+
+        $cache = $defaults['cache_headers'] ?? [];
+        $cache = \is_array($cache) ? \array_filter($cache, static fn(mixed $value): bool => $value !== null) : [];
+
+        $deprecation = [];
+        foreach (['deprecation', 'sunset', 'sunset_link'] as $key) {
+            if (($defaults[$key] ?? null) !== null) {
+                $deprecation[$key] = $defaults[$key];
+            }
+        }
+
+        return [$cache, $deprecation];
     }
 }

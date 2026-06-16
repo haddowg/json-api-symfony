@@ -59,10 +59,13 @@ controller, no template — the same render seam the
 **Arm 1 — core exceptions render themselves.** Anything implementing core's
 `JsonApiExceptionInterface` already knows its status and its error objects, so the
 listener hands it straight to `ErrorResponse::fromException()`. This is the common
-case on a JSON:API route: an unknown filter (`FILTERING_UNRECOGNIZED`, 400), a
-missing resource (`RESOURCE_NOT_FOUND`, 404), an unknown relationship
-(`RELATIONSHIP_NOT_EXISTS`, 404), a validation failure (`VALIDATION_FAILED`, 422 —
-see [validation](validation.md)). The bundle adds nothing to the shape; it only
+case on a JSON:API route: an unknown filter (`FILTERING_UNRECOGNIZED`, 400), an
+unrecognized query-parameter family (`QUERY_PARAM_UNRECOGNIZED`, 400 — strict
+query-parameter validation, on by default, see
+[configuration](configuration.md#strict_query_parameters)), a missing resource
+(`RESOURCE_NOT_FOUND`, 404), an unknown relationship (`RELATIONSHIP_NOT_EXISTS`,
+404), a validation failure (`VALIDATION_FAILED`, 422 — see
+[validation](validation.md)). The bundle adds nothing to the shape; it only
 ensures the document is rendered on the JSON:API route instead of being swallowed
 by framework error handling. The example app's
 [`ErrorHandlingTest`](../examples/music-catalog-symfony/tests/ErrorHandlingTest.php)

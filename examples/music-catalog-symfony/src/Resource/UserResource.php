@@ -57,15 +57,20 @@ final class UserResource extends AbstractResource
             // serialization for a stable wire shape.
             ArrayHash::make('preferences')->minProperties(0)->maxProperties(20)->sortKeys(),
             Ip::make('lastSeenIp')->nullable(),
-            // Write-only: a null read hook renders nothing on serialize while the
-            // field still hydrates from the request.
-            Str::make('password')->serializeUsing(fn(): ?string => null),
-            // Computed (no backing column): validated but never persisted. Carries the
-            // composition demos — an AtLeastOneOf alternative, a When rule, and the
-            // equality CompareField against `password`.
+            // A genuine write-only credential (Tier-0 G18, core ADR 0060): accepted on
+            // BOTH create and update and still validated (required on create, min 8) —
+            // but skipped in the attribute render, so it appears on NO read (single,
+            // collection, included, related) and a `fields[users]=password` cannot
+            // resurrect it. The exact inverse of `readOnly()`; no `serializeUsing`
+            // null-hook is needed.
+            Str::make('password')->writeOnly()->minLength(8)->requiredOnCreate(),
+            // Computed (no backing column) AND write-only: validated but never
+            // persisted, never echoed. Carries the composition demos — an AtLeastOneOf
+            // alternative, a When rule, and the equality CompareField against
+            // `password`.
             Str::make('passwordConfirm')
                 ->computed()
-                ->serializeUsing(fn(): ?string => null)
+                ->writeOnly()
                 ->atLeastOneOf(
                     new MinLength(8),
                     new Pattern('^.*[0-9].*$'),

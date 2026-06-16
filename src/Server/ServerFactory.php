@@ -57,6 +57,14 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  * to `null` (unlimited), which a resource's own `maxIncludeDepth()` may still
  * override per type (bundle ADR 0037).
  *
+ * It threads the strict query-parameter toggle
+ * (`json_api.strict_query_parameters`, default true) into the Server through
+ * {@see Server::withStrictQueryParameters()} (bundle ADR 0055, core ADR 0059): when
+ * on, an unrecognized top-level query-parameter family is rejected with a `400`
+ * {@see \haddowg\JsonApi\Exception\QueryParamUnrecognized}, thrown from
+ * `Server::dispatch()` and rendered by the route-scoped exception listener; when
+ * off, an unrecognized family is silently ignored (the old behaviour).
+ *
  * When a {@see RelationshipLoadStateInterface} is wired (the reference Doctrine
  * predicate, present only on a Doctrine application), it is threaded into the
  * Server through core's
@@ -85,6 +93,7 @@ final class ServerFactory
         private readonly OperationHandlerInterface $handler,
         private readonly int $maxPerPage = PagePaginator::DEFAULT_MAX_PER_PAGE,
         private readonly int $maxIncludeDepth = 0,
+        private readonly bool $strictQueryParameters = true,
         private readonly ?PaginatorInterface $serverDefaultPaginator = null,
         private readonly ?PaginatorInterface $defaultPaginator = null,
         private readonly ?RelationshipLoadStateInterface $relationshipLoadState = null,
@@ -137,6 +146,15 @@ final class ServerFactory
             // a non-positive value means unlimited (null), which a resource's own
             // maxIncludeDepth() may still override.
             ->withMaxIncludeDepth($this->maxIncludeDepth > 0 ? $this->maxIncludeDepth : null)
+            // Reject an unrecognized top-level query-parameter family with a 400
+            // (json_api.strict_query_parameters, default true; bundle ADR 0055, core
+            // ADR 0059). The recognized set is assembled per request from the reserved
+            // JSON:API families, the primary resource's declared keys, the always-on
+            // `withCount`, and a negotiated profile's keywords — so the Relationship
+            // Queries profile's relatedQuery/rQ family (registered via withProfile
+            // above) is recognized automatically when the client negotiates it, with
+            // no extra registration. False restores the old silent-ignore behaviour.
+            ->withStrictQueryParameters($this->strictQueryParameters)
             ->withContainer($this->resources);
 
         foreach ($this->resourceClasses as $resourceClass) {

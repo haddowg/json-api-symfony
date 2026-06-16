@@ -185,6 +185,21 @@ return static function (ContainerConfigurator $container): void {
     $services->set(ViewListener::class)
         ->tag('kernel.event_listener', ['event' => 'kernel.view', 'method' => 'onKernelView']);
 
+    // The route-scoped kernel.response listener that emits the declarative cache
+    // (gap G7) + deprecation/sunset (gap G16, RFC 8594) headers a resource declares
+    // via #[AsJsonApiResource(cacheHeaders/deprecation/sunset)] or the global
+    // json_api.defaults (bundle ADR 0054). It runs on kernel.response so the final
+    // Response (data or error) is in hand and its status distinguishes a successful
+    // read (cacheable) from an error (never cached). The ResponseHeadersRegistry is
+    // registered in loadExtension (seeded with the global defaults; its per-type map
+    // filled by the ResponseHeadersPass).
+    $services->set(\haddowg\JsonApiBundle\EventListener\ResponseHeadersListener::class)
+        ->args([
+            '$registry' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Http\ResponseHeadersRegistry::class),
+            '$targetResolver' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(TargetResolver::class),
+        ])
+        ->tag('kernel.event_listener', ['event' => 'kernel.response', 'method' => 'onKernelResponse']);
+
     // The exception listener owns JSON:API-route errors; high priority so it wins
     // over framework error handling on those routes.
     $services->set(ExceptionListener::class)

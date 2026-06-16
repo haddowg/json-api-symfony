@@ -16,7 +16,7 @@ inline in the bundle's `configure()` (an `AbstractBundle`), and the extension al
 
 ## The config tree
 
-Six keys, all optional:
+Eight keys, all optional:
 
 ```yaml
 # config/packages/json_api.yaml
@@ -24,8 +24,13 @@ json_api:
     base_uri: 'https://music.example'
     version: '1.1'
     max_include_depth: 3
+    strict_query_parameters: true
     pagination:
         max_per_page: 50
+    defaults:
+        cache_headers:
+            max_age: 60
+            public: true
     servers:
         admin:
             base_uri: 'https://admin.music.example'
@@ -40,8 +45,11 @@ witness).
 | `base_uri` | scalar | `''` | The absolute base URI the implicit `default` server prepends to every generated link. |
 | `version` | scalar | `'1.1'` | The JSON:API version the implicit `default` server advertises. |
 | `max_include_depth` | int | `3` | The cap on `?include` nesting depth (relationship hops from the primary resource). `0` is unlimited. A resource's own `maxIncludeDepth()` overrides it. |
+| `strict_query_parameters` | bool | `true` | Reject an unrecognized top-level query-parameter family with a `400` (ADR 0055). `false` restores the old silent-ignore behaviour. |
 | `pagination.max_per_page` | int | `100` | The page-size cap the built-in server default paginator clamps `page[size]`/`page[limit]` to. `0` installs no built-in default (those collections render unpaginated). |
 | `schema_validation` | bool | `false` | Registers the optional opis structural linter. Enabling it without `opis/json-schema` **fails the build**. |
+| `defaults.cache_headers` | map | `{}` | Fleet-wide default HTTP cache directives for `GET` reads (ADR 0054). A resource's own `cacheHeaders` overrides these. |
+| `defaults.deprecation` / `sunset` / `sunset_link` | scalar | `null` | Fleet-wide default deprecation/sunset headers (ADR 0054). A resource's own `deprecation`/`sunset` overrides these. |
 | `servers` | map | `[]` | Additional **named** servers, keyed by name (ADR 0034). |
 
 `base_uri` and `version` configure the implicit `default` server — link core
@@ -197,6 +205,121 @@ You can toggle it per-environment by layering a partial override — the example
 [`SchemaValidationKernel`](../examples/music-catalog-symfony/tests/SchemaValidationKernel.php)
 does exactly this, merging `['schema_validation' => true]` over the shipped config so
 `base_uri`/`servers` stay unchanged.
+
+### `strict_query_parameters`
+
+By default the bundle **rejects an unrecognized top-level query-parameter family
+with a `400`** (ADR 0055, core ADR 0059). Before this, a misspelled or unsupported
+family was silently dropped — so `?filtr[title]=x` (a typo for `filter`) returned a
+wrong-but-`200` collection instead of an error, and a client could not tell its
+query was ignored. Strict mode turns that silent failure into a loud one.
+
+A family is **recognized** when its base name is:
+
+- a reserved JSON:API family — `include`, `fields`, `filter`, `sort`, `page` (their
+  *internal* key validation is unchanged: an unknown `filter[…]`/`sort` key or a bad
+  `page` still `400`s on its own);
+- a key the resolved primary resource declares;
+- the always-on implementation-specific `withCount`;
+- a [negotiated profile](relationships.md)'s keyword — the Relationship Queries
+  profile's `relatedQuery`/`rQ` is recognized only when the client negotiated the
+  profile, so addressing it without negotiation now `400`s rather than being ignored;
+- any param an app registers via `Server::withCustomQueryParameter()`.
+
+Anything else is a `400` (`QUERY_PARAM_UNRECOGNIZED`, `source.parameter` = the
+offending base name). This aligns with the spec, which **mandates** a `400` for a
+query param that follows neither the reserved-family rules nor the
+custom-param naming rules and that the server does not recognize, and **permits** a
+`400` for a well-named custom param the server does not support — strict mode takes
+the `400`.
+
+```yaml
+json_api:
+    strict_query_parameters: false   # restore the old silent-ignore behaviour
+```
+
+Set it to `false` to opt out (e.g. while migrating a client that sends stray
+params). Note that core's always-on spec baseline still rejects an *all-lowercase*
+custom param (one with no non-`a-z` character, like `?bogus`) regardless of this
+toggle — the spec requires it. The toggle governs the **strict superset**: a
+*well-named* unsupported custom param (one carrying an uppercase letter or other
+non-`a-z` character) is `400`'d when strict and ignored when relaxed.
+
+## Response headers (caching and deprecation)
+
+Two cross-cutting HTTP-response concerns are **declarative** (ADR 0054): an
+RFC-7234 HTTP cache policy for a type's reads, and a deprecation/sunset signal (the
+IETF `Deprecation` header field plus the RFC-8594 `Sunset` header). Both are emitted
+by one route-scoped `kernel.response` listener that reads
+the resource attribute (falling back to the global `json_api.defaults`) — you never
+mutate the response in an after-hook for these.
+
+### Cache headers (G7)
+
+Declare cache directives on `#[AsJsonApiResource(cacheHeaders: …)]`. The map keys
+are `max_age`, `s_maxage` (the shared/CDN lifetime), `public`/`private`,
+`no_cache`, `must_revalidate`, and `vary` (a list of response-header names added to
+`Vary`). An optional nested `operations` key overrides them per read shape —
+`collection`, `read`, `related`, `relationship`:
+
+```php
+#[AsJsonApiResource(cacheHeaders: [
+    'max_age' => 60,
+    'public'  => true,
+    'vary'    => ['Accept'],
+    'operations' => [
+        'collection' => ['max_age' => 30],   // the collection caches for less
+    ],
+])]
+final class TrackResource extends AbstractResource { /* … */ }
+```
+
+They map onto `Cache-Control` + `Vary` and are applied **only to a successful
+`GET`** — never a write (`POST`/`PATCH`/`DELETE`) and never an error document
+(caching either is wrong). A resource that declares no `cacheHeaders` (and has no
+`json_api.defaults.cache_headers`) gets no `Cache-Control` at all — unchanged
+behaviour. The global default applies to a resource that declares none; a
+resource-level value **merges over** the default directive-by-directive (your
+`max_age` wins, an unset directive inherits the default), and a per-operation
+override merges over the resource-level value. An app that set `Cache-Control`
+itself (e.g. in an after-hook) is never clobbered.
+
+```yaml
+json_api:
+    defaults:
+        cache_headers:
+            max_age: 60
+            public: true
+            vary: ['Accept']
+```
+
+### Deprecation + Sunset (G16)
+
+Declare a deprecation on `#[AsJsonApiResource(deprecation: …, sunset: …,
+sunsetLink: …)]`. `deprecation` is `true` (emit a bare `Deprecation: true`) or a
+date string (`Deprecation: <date>`); `sunset` is an HTTP-date (`Sunset: <date>`);
+when `sunsetLink` is set, a companion `Link: <uri>; rel="sunset"` is emitted too:
+
+```php
+#[AsJsonApiResource(
+    deprecation: true,
+    sunset: 'Sat, 31 Dec 2050 23:59:59 GMT',
+    sunsetLink: 'https://music.example/deprecations/tracks',
+)]
+final class LegacyTrackResource extends AbstractResource { /* … */ }
+```
+
+The `Deprecation` header is the IETF Deprecation header field
+(`draft-ietf-httpapi-deprecation-header`); `Sunset` and the `sunset` link relation
+are RFC 8594. The bundle passes both date values through **verbatim**, so format
+them for whichever draft revision your consumers expect — the latest Deprecation
+draft wants a structured-field date such as `@1688169599`.
+
+Unlike caching, deprecation/sunset ride **every** response for the type — reads
+**and** writes — because a deprecated endpoint is deprecated regardless of method.
+The same `json_api.defaults.deprecation` / `sunset` / `sunset_link` keys supply a
+fleet-wide default a resource overrides. An explicit `Deprecation`/`Sunset` header
+your app already set is never clobbered.
 
 ## Named servers (`json_api.servers`)
 

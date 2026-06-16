@@ -25,8 +25,22 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Device;
  * suppresses it for THIS type only. A `GET /devices/{id}` therefore carries no
  * `data.links.self`, while the top-level document `links.self` (the request URI) is
  * unaffected — the opt-out is resource-scoped.
+ *
+ * Finally it is the **RFC 8594 deprecation** witness (bundle ADR 0054, API-Platform
+ * gap G16): `devices` is a legacy endpoint slated for removal. `deprecation: true`
+ * marks every response for the type with a bare `Deprecation: true`; `sunset` carries
+ * the HTTP-date the endpoint stops responding; and `sunsetLink` adds a companion
+ * `Link: <uri>; rel="sunset"` pointing at the migration notes. Unlike cache headers,
+ * these ride **every** method — a `GET /devices/{id}` and a `POST /devices` both carry
+ * the deprecation signal, because a deprecated endpoint is deprecated regardless of
+ * verb (while a write still gets no `Cache-Control`).
  */
-#[AsJsonApiResource(entity: Device::class)]
+#[AsJsonApiResource(
+    entity: Device::class,
+    deprecation: true,
+    sunset: 'Sat, 31 Dec 2050 23:59:59 GMT',
+    sunsetLink: 'https://music.example/deprecations/devices',
+)]
 final class DeviceResource extends AbstractResource
 {
     public static string $type = 'devices';
