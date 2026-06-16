@@ -73,4 +73,9 @@ final class OverridingArtistProvider implements DataProviderInterface
     ): CollectionResult {
         return $this->doctrine->fetchRelatedCollection($relatedType, $parent, $relation, $criteria, $request);
     }
+
+    public function fetchRelationshipPivot(string $type, object $parent, RelationInterface $relation): array
+    {
+        return $this->doctrine->fetchRelationshipPivot($type, $parent, $relation);
+    }
 }

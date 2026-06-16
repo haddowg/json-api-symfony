@@ -272,6 +272,100 @@ only the window execution differs). A custom provider **should** reuse
 `CriteriaApplier` to stay spec-conformant — see
 [custom providers](custom-data-providers.md).
 
+### Validating filter values
+
+A filter is metadata: a key, a target column, an operator. By default any value a
+client sends for a declared `filter[<key>]` flows straight to the provider — so a
+mistyped value (`filter[age]=banana` on an integer column) reaches the data layer
+and gets the provider's unhelpful default: a **silent non-match** in memory and on
+a loosely-typed database (sqlite), or — on a **strict driver** such as Postgres —
+a PDO type error (a `500`). Either way the client gets no useful signal.
+
+A filter can **declare value constraints** so the bundle rejects a bad value with a
+clean `400` *before* it ever reaches the provider. A value-carrying filter
+(`Where`, `WhereIn`, `WhereNotIn`, `WhereIdIn`, `WhereIdNotIn`) gains the same
+fluent shortcuts the `Id` field's format helper uses — they append the existing
+core constraint vocabulary, so no new validator wiring is needed:
+
+```php
+use haddowg\JsonApi\Resource\Constraint\In;
+use haddowg\JsonApi\Resource\Filter\Where;
+use haddowg\JsonApi\Resource\Filter\WhereIdIn;
+
+public function filters(): array
+{
+    return [
+        // Each member of filter[id]=… must be an integer.
+        WhereIdIn::make()->integer(),
+        // A four-digit year.
+        Where::make('year')->pattern('^[0-9]{4}$'),
+        // A v4 UUID reference; numeric() / boolean() / uuid() are also available.
+        Where::make('ref')->uuid(4),
+        // Any core constraint VO via constrain():
+        Where::make('status')->constrain(new In(['active', 'archived'])),
+    ];
+}
+```
+
+| Builder              | Appends                                            |
+| -------------------- | ------------------------------------------------- |
+| `numeric()`          | `Pattern('^-?[0-9]+(?:\.[0-9]+)?$')` (int/decimal) |
+| `integer()`          | `Pattern('^-?[0-9]+$')`                            |
+| `uuid(?int $v)`      | `UuidFormat($v)` (any version, or pin one)         |
+| `boolean()`          | `Pattern('^(?:true\|false\|1\|0)$')`               |
+| `pattern($regex)`    | `Pattern($regex)` (an ECMA-262 source)            |
+| `constrain(...$c)`   | any core `ConstraintInterface`                     |
+
+A violating value is core's
+[`FilterValueInvalid`](https://github.com/haddowg/json-api/blob/main/src/Exception/FilterValueInvalid.php)
+— a **`400`** with `source.parameter` on `filter[<key>]`, one error per violation:
+
+```http
+GET /articles?filter[id]=banana
+```
+```json
+{
+  "errors": [
+    {
+      "status": "400",
+      "code": "FILTER_VALUE_INVALID",
+      "title": "Filter value is invalid",
+      "detail": "This value should be of type integer.",
+      "source": { "parameter": "filter[id]" }
+    }
+  ]
+}
+```
+
+It is deliberately a **`400`, not a `422`**: a bad query *parameter* (located by
+`source.parameter`), not a document *semantic* error (a `422` located by
+`source.pointer` — that is the [validator bridge](validation.md)). The same `400`
+is rendered on **both** providers, because the validation runs on the value before
+the filter reaches the data layer — turning the provider's unhelpful default (a
+silent non-match, or a PDO `500` on a strict driver) into a deliberate client
+error with `source.parameter`.
+
+Mechanics, all decided in the handler before the `CollectionCriteria` is built:
+
+- the value is checked through the **same** `ConstraintTranslator` that gives
+  attribute constraints teeth (the [validator bridge](validation.md)) — so it is
+  **optional** in exactly the same way: with `symfony/validator` absent a
+  constrained filter is inert (its constraints are metadata core never executes),
+  matching how attribute constraints degrade. A filter with no declared constraints
+  is unaffected;
+- only **client-supplied** values are validated, never a filter's author-set
+  `default()` (a server-trusted value the `FilterDefaults` fold-in supplies);
+- a **set** value (`WhereIn`/`WhereIdIn`/…) is split — array members, or the
+  delimited string per `delimiter()` — and **each scalar member** is validated, so
+  `integer()` applies to every id in `filter[id]=1,banana,3`;
+- it covers the **related-collection** endpoint too: a relation-scoped or
+  related-resource constrained filter (see [relationships](relationships.md) /
+  [ADR 0044](adr/0044-relation-scoped-filters-and-sorts-on-related-collections.md))
+  validates its value the same way on `GET /{type}/{id}/{rel}`.
+
+See [ADR 0048](adr/0048-filter-values-are-validated-against-declared-constraints.md)
+and core's filter docs for the full decision.
+
 ### `CollectionResult`
 
 A provider answers with a

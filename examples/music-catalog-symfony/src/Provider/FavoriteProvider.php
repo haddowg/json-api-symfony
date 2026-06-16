@@ -87,6 +87,11 @@ final class FavoriteProvider implements DataProviderInterface
         return $this->doctrine->fetchRelatedCollection($relatedType, $parent, $relation, $criteria, $request);
     }
 
+    public function fetchRelationshipPivot(string $type, object $parent, RelationInterface $relation): array
+    {
+        return $this->doctrine->fetchRelationshipPivot($type, $parent, $relation);
+    }
+
     /**
      * Fills the non-mapped `$favoritable` from the stored `targetType`/`targetId`
      * pair, looking the member up in its per-type repository (so it comes back

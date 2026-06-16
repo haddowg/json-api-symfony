@@ -87,19 +87,68 @@ final class ResourceValidator
     ) {}
 
     /**
+     * Validates a create/update document against the resource's declared
+     * constraints. On an **update** ($creating === false) the existing domain
+     * object — already loaded by the handler — is folded in: the wire-form
+     * attribute map of the stored resource is **merged** under the incoming
+     * partial (an incoming key overrides per key; a key absent from the partial
+     * keeps its stored value), and that **merged** map is what both the per-field
+     * Collection and the cross-field comparison see. So a cross-field or
+     * conditional rule that depends on a sibling the partial did not re-send
+     * (e.g. `expiresAt` must be after a stored `publishedAt`) evaluates against
+     * the resulting resource state, not the partial-only picture — and a
+     * required-on-update field the client legitimately omitted but that is present
+     * in stored state no longer spuriously fails (the merged map carries it). A
+     * stored value resolving to `null` is **not** folded in (it carries no
+     * value to evaluate, and folding it would flip an absent optional into a
+     * present-null that trips `NotNull`/the comparison), so it is dropped before
+     * the merge — an incoming explicit `null` still overrides because the
+     * incoming partial is merged last. On create there is no existing object and
+     * the incoming document is validated as today (merge-before-validate, ADR
+     * 0049 [HALF A]).
+     *
+     * For a `belongsToMany` pivot relation present in the write body, the existing
+     * pivot rows (keyed by relation name, read by the handler through the
+     * {@see \haddowg\JsonApiBundle\DataProvider\DataProviderInterface::fetchRelationshipPivot()}
+     * seam) are folded the same way **per member**: an incoming member already in the
+     * relationship validates its MERGED pivot (stored row overlaid by the incoming
+     * meta) in the update context, a genuinely-new member validates its incoming meta
+     * in the create (new-row) context — superseding the always-create-context band-aid
+     * (ADR 0050 [HALF B]).
+     *
+     * @param object|null                                        $existingObject the already-loaded domain object on an
+     *                                                                           update (null on create), whose stored
+     *                                                                           attribute values are folded under the
+     *                                                                           incoming partial before validation
+     * @param array<string, array<string, array<string, mixed>>> $existingPivots the existing pivot meta of each pivot
+     *                                                                           relation in the body, keyed by relation
+     *                                                                           name then by related id (empty on create,
+     *                                                                           or for a provider that stores no pivot)
+     *
      * @throws ValidationFailed when the document violates the resource's constraints
      */
-    public function validate(AbstractResource $resource, JsonApiRequestInterface $request, bool $creating): void
-    {
+    public function validate(
+        AbstractResource $resource,
+        JsonApiRequestInterface $request,
+        bool $creating,
+        ?object $existingObject = null,
+        array $existingPivots = [],
+    ): void {
         $data = $request->getResource();
         if (!\is_array($data)) {
             return; // a missing/malformed data member is core's concern, raised in hydration
         }
 
-        $attributes = $data['attributes'] ?? [];
-        if (!\is_array($attributes)) {
+        $incoming = $data['attributes'] ?? [];
+        if (!\is_array($incoming)) {
             return;
         }
+
+        // On update, fold the stored resource's wire-form attributes under the
+        // incoming partial so the constraints see the MERGED resource state.
+        $attributes = !$creating && $existingObject !== null
+            ? \array_merge($this->storedAttributes($resource, $existingObject, $request), $incoming)
+            : $incoming;
 
         $fields = [];
         $compares = [];
@@ -149,12 +198,14 @@ final class ResourceValidator
         // constraints — before any decode — and a malformed one points at the linkage.
         // A belongsToMany pivot relation also validates each member's pivot `meta`
         // against the relation's WRITABLE pivot fields' constraints (a readOnly pivot
-        // field supplied in meta is ignored). The whole-resource relationship apply
-        // always runs in Mode::Replace and may create a NEW association row for any
-        // member (even on a PATCH), so the pivot meta validates in the CREATE (new-row)
-        // context — not the resource-level create/update — matching the persister
-        // (a new row is written in create context).
-        foreach ($this->linkageErrors($resource, $data) as $error) {
+        // field supplied in meta is ignored), in the per-member new/existing context:
+        // a member already in the relationship merges its stored pivot row under the
+        // incoming meta and validates it in the UPDATE context (a writable field absent
+        // from meta keeps its stored value — the persister preserves it), while a
+        // genuinely-new member validates the incoming meta in the CREATE (new-row)
+        // context (a required writable field absent on a new row is still a `422`). The
+        // member is "existing" when its related id is in `$existingPivots[<relation>]`.
+        foreach ($this->linkageErrors($resource, $data, $existingPivots) as $error) {
             $errors[] = $error;
         }
 
@@ -163,6 +214,32 @@ final class ResourceValidator
         }
 
         throw new ValidationFailed($errors);
+    }
+
+    /**
+     * The stored resource's wire-form attribute map: resolves each attribute's
+     * serializer closure ({@see AbstractResource::getAttributes()}) against the
+     * already-loaded domain object, yielding the same wire representation a read
+     * would render. A value resolving to `null` is omitted (a stored null carries
+     * no value to fold and would convert an absent optional into a present-null
+     * that trips `NotNull`/the cross-field comparison); an incoming explicit null
+     * still overrides because the partial is merged on top.
+     *
+     * @return array<string, mixed> the non-null stored attribute wire values, by name
+     */
+    private function storedAttributes(AbstractResource $resource, object $existingObject, JsonApiRequestInterface $request): array
+    {
+        $stored = [];
+        foreach ($resource->getAttributes($existingObject, $request) as $name => $resolve) {
+            $value = $resolve($existingObject, $request, $name);
+            if ($value === null) {
+                continue;
+            }
+
+            $stored[$name] = $value;
+        }
+
+        return $stored;
     }
 
     /**
@@ -175,15 +252,19 @@ final class ResourceValidator
      * member's own `type`; an empty (clearing) linkage has no id to check.
      *
      * An add ({@see Mode::Add}) or replace ({@see Mode::Replace}) of a pivot relation
-     * may create a NEW association row for any incoming member, and the persister
-     * writes a new row in CREATE context ({@see \haddowg\JsonApi\Resource\Field\BelongsToMany::writablePivotFields()}
-     * with `creating: true`). So the pivot meta validates in the CREATE (new-row)
-     * context here — a required writable pivot field absent on an incoming member is a
-     * `422` before persist (never the DB NOT-NULL `500`), matching the documented
-     * contract that a required pivot field absent when a new row is created is a `422`.
-     * A reorder of an existing row supplies the value, so create-context validation
-     * does not wrongly reject it. {@see Mode::Remove} carries no pivot meta, so no
-     * pivot validation runs.
+     * validates each member's pivot `meta` in the per-member new/existing context: a
+     * member whose related id is in `$existingPivot` is already in the relationship, so
+     * its stored pivot row is merged under the incoming meta and validated in the
+     * UPDATE context (a writable field absent from meta keeps its stored value — the
+     * persister reorders the row in place, ADR 0046), while a genuinely-new member
+     * validates the incoming meta in the CREATE (new-row) context — a required writable
+     * pivot field absent on a new row is a `422` before persist (never the DB NOT-NULL
+     * `500`). This supersedes the always-create-context band-aid (ADR 0050).
+     * {@see Mode::Remove} carries no pivot meta, so no pivot validation runs.
+     *
+     * @param array<string, array<string, mixed>> $existingPivot the relation's existing pivot rows, by related id
+     *                                                            (read by the handler through the provider seam; empty
+     *                                                            when the relation stores no pivot, so every member is new)
      *
      * @throws ValidationFailed when a linkage id violates the related type's id format
      */
@@ -191,12 +272,11 @@ final class ResourceValidator
         RelationInterface $relation,
         ToOneRelationship|ToManyRelationship $linkage,
         Mode $mode = Mode::Replace,
+        array $existingPivot = [],
     ): void {
         $errors = [];
 
-        $collection = $mode !== Mode::Remove && $relation instanceof BelongsToMany && $relation->pivotFields() !== []
-            ? $this->pivotMetaCollection($relation, creating: true)
-            : null;
+        $isPivot = $mode !== Mode::Remove && $relation instanceof BelongsToMany && $relation->pivotFields() !== [];
 
         if ($linkage instanceof ToOneRelationship) {
             $identifier = $linkage->resourceIdentifier;
@@ -205,8 +285,10 @@ final class ResourceValidator
                 if ($error !== null) {
                     $errors[] = $error;
                 }
-                foreach ($this->endpointPivotMetaErrors($collection, $identifier->meta, null) as $metaError) {
-                    $errors[] = $metaError;
+                if ($isPivot && $relation instanceof BelongsToMany) {
+                    foreach ($this->endpointMemberPivotErrors($relation, $identifier->id, $identifier->meta, null, $existingPivot) as $metaError) {
+                        $errors[] = $metaError;
+                    }
                 }
             }
         } else {
@@ -215,8 +297,10 @@ final class ResourceValidator
                 if ($error !== null) {
                     $errors[] = $error;
                 }
-                foreach ($this->endpointPivotMetaErrors($collection, $identifier->meta, $index) as $metaError) {
-                    $errors[] = $metaError;
+                if ($isPivot && $relation instanceof BelongsToMany) {
+                    foreach ($this->endpointMemberPivotErrors($relation, $identifier->id, $identifier->meta, $index, $existingPivot) as $metaError) {
+                        $errors[] = $metaError;
+                    }
                 }
             }
         }
@@ -226,6 +310,42 @@ final class ResourceValidator
         }
 
         throw new ValidationFailed($errors);
+    }
+
+    /**
+     * Validates ONE relationship-endpoint member's pivot meta in the per-member
+     * new/existing context (ADR 0050): a member whose related id is in `$existingPivot`
+     * is an existing row, so its stored pivot row is merged under the incoming meta and
+     * validated in the UPDATE context (a writable field absent from meta keeps its
+     * stored value); a member whose id is absent is a new row, validated in the CREATE
+     * context. Runs both the per-field pivot Collection and the cross-pivot-field
+     * comparisons over the merged meta, pointed at the endpoint linkage meta.
+     *
+     * @param array<string, mixed>                 $incoming      the parsed per-member pivot meta
+     * @param array<string, array<string, mixed>>  $existingPivot the relation's existing pivot rows, by related id
+     *
+     * @return list<Error>
+     */
+    private function endpointMemberPivotErrors(BelongsToMany $relation, ?string $id, array $incoming, ?int $index, array $existingPivot): array
+    {
+        $stored = \is_string($id) ? ($existingPivot[$id] ?? null) : null;
+        $creating = $stored === null;
+        $meta = $stored === null ? $incoming : \array_merge($stored, $incoming);
+
+        $errors = [];
+        foreach ($this->endpointPivotMetaErrors($this->pivotMetaCollection($relation, $creating), $meta, $index) as $metaError) {
+            $errors[] = $metaError;
+        }
+        foreach ($this->pivotCompareErrors(
+            $relation,
+            $meta,
+            $creating,
+            fn(string $owner): string => $this->pointers->forRelationshipEndpointLinkageMeta($owner, $index),
+        ) as $compareError) {
+            $errors[] = $compareError;
+        }
+
+        return $errors;
     }
 
     /**
@@ -355,11 +475,12 @@ final class ResourceValidator
      * concern); a well-formed id that violates the related type's format 422s with a
      * pointer at the linkage. A related type with no declared id format passes any id.
      *
-     * @param array<string, mixed> $data the write body's `data` member
+     * @param array<string, mixed>                               $data           the write body's `data` member
+     * @param array<string, array<string, array<string, mixed>>> $existingPivots the existing pivot meta per relation name, by related id
      *
      * @return list<Error>
      */
-    private function linkageErrors(AbstractResource $resource, array $data): array
+    private function linkageErrors(AbstractResource $resource, array $data, array $existingPivots = []): array
     {
         $relationships = $data['relationships'] ?? null;
         if (!\is_array($relationships) || $relationships === []) {
@@ -378,6 +499,8 @@ final class ResourceValidator
                 continue;
             }
 
+            $existingPivot = $existingPivots[$name] ?? [];
+
             $linkage = $relationship['data'];
             if ($field->isToMany()) {
                 if (!\is_array($linkage)) {
@@ -388,7 +511,7 @@ final class ResourceValidator
                     if ($error !== null) {
                         $errors[] = $error;
                     }
-                    foreach ($this->pivotMetaErrors($field, $member, $name, $index) as $metaError) {
+                    foreach ($this->pivotMetaErrors($field, $member, $name, $index, $existingPivot) as $metaError) {
                         $errors[] = $metaError;
                     }
                 }
@@ -404,7 +527,7 @@ final class ResourceValidator
             if ($error !== null) {
                 $errors[] = $error;
             }
-            foreach ($this->pivotMetaErrors($field, $linkage, $name, null) as $metaError) {
+            foreach ($this->pivotMetaErrors($field, $linkage, $name, null, $existingPivot) as $metaError) {
                 $errors[] = $metaError;
             }
         }
@@ -422,19 +545,23 @@ final class ResourceValidator
      * so it never raises a violation (consistent with how a readOnly attribute is
      * handled).
      *
-     * The constraints resolve in the CREATE (new-row) context: the whole-resource
-     * relationship apply always runs in {@see Mode::Replace} and may create a new
-     * association row for any incoming member (even on a PATCH), and the persister
-     * writes a new row in create context. So a required writable pivot field absent on
-     * an incoming member is a `422` here (a new association row would have no value for
-     * it), never the DB NOT-NULL `500` — matching the documented contract that a
-     * required pivot field absent when a new row is created is a `422`.
+     * The context resolves **per member**: a member whose related id is in
+     * `$existingPivot` is already in the relationship, so its stored pivot row is
+     * merged under the incoming meta (`array_merge(stored, incoming)`) and validated in
+     * the UPDATE context — a writable field absent from meta keeps its stored value
+     * (the persister preserves it in place), so it does not spuriously fail a
+     * required-on-create rule. A member whose related id is absent is a genuinely-new
+     * association row, validated in the CREATE (new-row) context — a required writable
+     * pivot field absent on it is a `422` (a new row would have no value for it), never
+     * the DB NOT-NULL `500`. This supersedes the always-create-context band-aid the
+     * pivot-writes work introduced (ADR 0050).
      *
-     * @param array<mixed, mixed>|mixed $member the raw linkage member (`{type, id, meta?}`)
+     * @param array<mixed, mixed>|mixed                $member        the raw linkage member (`{type, id, meta?}`)
+     * @param array<string, array<string, mixed>>      $existingPivot the relation's existing pivot rows, by related id
      *
      * @return list<Error>
      */
-    private function pivotMetaErrors(RelationInterface $relation, mixed $member, string $name, ?int $index): array
+    private function pivotMetaErrors(RelationInterface $relation, mixed $member, string $name, ?int $index, array $existingPivot = []): array
     {
         if (!$relation instanceof BelongsToMany || $relation->pivotFields() === []) {
             return [];
@@ -443,14 +570,22 @@ final class ResourceValidator
             return [];
         }
 
-        $collection = $this->pivotMetaCollection($relation, creating: true);
-        if ($collection === null) {
-            return []; // no writable pivot fields → nothing to validate
-        }
-
         $meta = $member['meta'] ?? [];
         if (!\is_array($meta)) {
             $meta = [];
+        }
+
+        // A member already in the relationship merges its stored pivot row under the
+        // incoming meta and validates in the update context; a new member validates
+        // the incoming meta alone in the create context.
+        $id = $member['id'] ?? null;
+        $stored = \is_string($id) ? ($existingPivot[$id] ?? null) : null;
+        $creating = $stored === null;
+        $meta = $stored === null ? $meta : \array_merge($stored, $meta);
+
+        $collection = $this->pivotMetaCollection($relation, $creating);
+        if ($collection === null) {
+            return []; // no writable pivot fields → nothing to validate
         }
 
         $errors = [];
@@ -464,6 +599,17 @@ final class ResourceValidator
                     $this->pointers->forLinkageMeta($name, (string) $violation->getPropertyPath(), $index),
                 ),
             );
+        }
+
+        // Cross-pivot-field comparisons over the merged meta (the pivot analogue of the
+        // attribute compare loop), pointed at the linkage meta.
+        foreach ($this->pivotCompareErrors(
+            $relation,
+            $meta,
+            $creating,
+            fn(string $owner): string => $this->pointers->forLinkageMeta($name, $owner, $index),
+        ) as $compareError) {
+            $errors[] = $compareError;
         }
 
         return $errors;
@@ -486,6 +632,45 @@ final class ResourceValidator
         }
 
         return $fields === [] ? null : new Collection(fields: $fields, allowExtraFields: true);
+    }
+
+    /**
+     * Validates the cross-field comparisons ({@see CompareField}) a relation's writable
+     * pivot fields declare, over the **merged** pivot meta — the document-level analogue
+     * of the attribute {@see compareError()} loop, scoped to pivot meta. Because the
+     * meta is already merged (stored row overlaid by incoming, ADR 0050), a comparison
+     * against a sibling pivot field the partial did not re-send evaluates against the
+     * member's resulting pivot state, not the partial alone. The pointer is built by the
+     * caller's `$pointer` closure so the same machinery serves the whole-resource linkage
+     * pointer (`/data/relationships/<rel>/data[/<n>]/meta/<owner>`) and the
+     * relationship-endpoint one (`/data[/<n>]/meta/<owner>`).
+     *
+     * @param array<string, mixed>      $meta    the merged per-member pivot meta
+     * @param \Closure(string): string  $pointer maps a bracketed owner (`[position]`) to its meta pointer
+     *
+     * @return list<Error>
+     */
+    private function pivotCompareErrors(BelongsToMany $relation, array $meta, bool $creating, \Closure $pointer): array
+    {
+        $errors = [];
+        foreach ($relation->writablePivotFields($creating) as $field) {
+            foreach ($this->compareConstraints($field, $creating) as $compare) {
+                $detail = $this->compareViolation($field->name(), $compare, $meta);
+                if ($detail === null) {
+                    continue;
+                }
+
+                $errors[] = new Error(
+                    status: '422',
+                    code: 'VALIDATION_FAILED',
+                    title: 'Unprocessable Entity',
+                    detail: $detail,
+                    source: ErrorSource::fromPointer($pointer('[' . $field->name() . ']')),
+                );
+            }
+        }
+
+        return $errors;
     }
 
     /**
@@ -610,22 +795,33 @@ final class ResourceValidator
      */
     private function compareError(string $owner, CompareField $compare, array $attributes): ?Error
     {
-        // A comparison needs both values present and non-null; presence is the
-        // Required rule's concern, not this one's.
-        if (!\array_key_exists($owner, $attributes) || !\array_key_exists($compare->field, $attributes)) {
+        $detail = $this->compareViolation($owner, $compare, $attributes);
+
+        return $detail === null ? null : $this->error($detail, '[' . $owner . ']');
+    }
+
+    /**
+     * The detail message of a violated cross-field comparison, or `null` when the
+     * comparison holds or cannot run (a value absent or null — presence is the Required
+     * rule's concern, not this one's). Context-free so both the attribute path (which
+     * points at `/data/attributes/<owner>`) and the pivot-meta path (which points at a
+     * linkage meta pointer) reuse the same comparison and message.
+     *
+     * @param array<mixed, mixed> $values
+     */
+    private function compareViolation(string $owner, CompareField $compare, array $values): ?string
+    {
+        if (!\array_key_exists($owner, $values) || !\array_key_exists($compare->field, $values)) {
             return null;
         }
 
-        $value = $attributes[$owner];
-        $other = $attributes[$compare->field];
+        $value = $values[$owner];
+        $other = $values[$compare->field];
         if ($value === null || $other === null || $this->satisfies($compare->operator, $value, $other)) {
             return null;
         }
 
-        return $this->error(
-            \sprintf('This value should be %s the value of "%s".', $this->describe($compare->operator), $compare->field),
-            '[' . $owner . ']',
-        );
+        return \sprintf('This value should be %s the value of "%s".', $this->describe($compare->operator), $compare->field);
     }
 
     private function satisfies(Comparison $operator, mixed $value, mixed $other): bool

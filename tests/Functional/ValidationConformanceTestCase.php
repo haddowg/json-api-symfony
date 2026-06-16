@@ -308,6 +308,92 @@ abstract class ValidationConformanceTestCase extends JsonApiFunctionalTestCase
         self::assertSame(['/data/attributes/address/postcode'], $this->pointers($response));
     }
 
+    #[Test]
+    #[Group('spec:crud')]
+    public function updatingValidatesACrossFieldRuleAgainstAStoredSiblingNotInTheBody(): void
+    {
+        self::mockTime(new \DateTimeImmutable('2026-06-08T12:00:00+00:00'));
+
+        // Seed a stored publishedAt the partial PATCH below will NOT re-send, so
+        // the cross-field expiresAt > publishedAt rule must evaluate against the
+        // MERGED resource state (the stored publishedAt folded under the body).
+        $seed = $this->handle('/articles/1', 'PATCH', [
+            'data' => ['type' => 'articles', 'id' => '1', 'attributes' => [
+                'publishedAt' => '2026-06-06T12:00:00+00:00',
+            ]],
+        ]);
+        self::assertSame(200, $seed->getStatusCode(), (string) $seed->getContent());
+
+        // An expiry AFTER the stored publishedAt passes — proving the merge folds
+        // the stored sibling in (the body alone carries no publishedAt to compare).
+        $valid = $this->handle('/articles/1', 'PATCH', [
+            'data' => ['type' => 'articles', 'id' => '1', 'attributes' => [
+                'expiresAt' => '2026-06-07T12:00:00+00:00',
+            ]],
+        ]);
+        self::assertSame(200, $valid->getStatusCode(), (string) $valid->getContent());
+
+        // An expiry BEFORE the stored publishedAt violates the merged result — a
+        // 422 at the owner pointer, even though publishedAt is absent from the body.
+        $invalid = $this->handle('/articles/1', 'PATCH', [
+            'data' => ['type' => 'articles', 'id' => '1', 'attributes' => [
+                'expiresAt' => '2026-06-05T12:00:00+00:00',
+            ]],
+        ]);
+        self::assertSame(422, $invalid->getStatusCode());
+        self::assertSame(['/data/attributes/expiresAt'], $this->pointers($invalid));
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function updatingValidatesAConditionalRuleAgainstAStoredSiblingNotInTheBody(): void
+    {
+        // Seed a stored couponCode that LOOKS like a promo code but is too short;
+        // it was stored without the resource's when()-conditional ever running on
+        // it (the seed PATCH only carries couponCode, which IS validated then).
+        // The point is the SECOND PATCH: it does not re-send couponCode, so the
+        // merged state still carries the stored promo code — and a per-field
+        // re-validation of an untouched stored field must NOT spuriously fail a
+        // field the client did not touch.
+        $seed = $this->handle('/articles/1', 'PATCH', [
+            'data' => ['type' => 'articles', 'id' => '1', 'attributes' => [
+                'couponCode' => 'PROMO-LONG-ENOUGH',
+            ]],
+        ]);
+        self::assertSame(200, $seed->getStatusCode(), (string) $seed->getContent());
+
+        // A later partial PATCH that touches only category leaves the stored
+        // (valid) promo code folded into the merged map — and passes.
+        $later = $this->handle('/articles/1', 'PATCH', [
+            'data' => ['type' => 'articles', 'id' => '1', 'attributes' => ['category' => 'opinion']],
+        ]);
+        self::assertSame(200, $later->getStatusCode(), (string) $later->getContent());
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function updatingDoesNotResendARequiredAttributePresentInStoredStateAndPasses(): void
+    {
+        // `title` is required and present (valid) in stored state. A partial PATCH
+        // that does NOT re-send it must stay a 200: the merge folds the stored
+        // title into the validated map, so re-running the per-field title rule
+        // re-validates the persisted-valid value benignly — never a false 422 on a
+        // field the client legitimately did not touch.
+        $response = $this->handle('/articles/1', 'PATCH', [
+            'data' => ['type' => 'articles', 'id' => '1', 'attributes' => ['body' => 'Edited body only.']],
+        ]);
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        $data = $this->decode($response)['data'] ?? null;
+        self::assertIsArray($data);
+        $attributes = $data['attributes'] ?? null;
+        self::assertIsArray($attributes);
+        // The untouched required title is preserved (the fixture value), proving the
+        // merge folded the stored value rather than the client having re-sent it.
+        self::assertSame('JSON:API in PHP', $attributes['title'] ?? null);
+    }
+
     /**
      * The `source.pointer` of every error in the response document.
      *

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use haddowg\JsonApiBundle\Testing\JsonApiBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -24,6 +25,8 @@ abstract class JsonApiFunctionalTestCase extends KernelTestCase
     private mixed $errorHandler = null;
 
     private mixed $exceptionHandler = null;
+
+    private ?JsonApiBrowser $browser = null;
 
     /**
      * Hook for data-layer setup that needs the booted container (e.g. creating
@@ -48,6 +51,7 @@ abstract class JsonApiFunctionalTestCase extends KernelTestCase
     {
         parent::tearDown();
 
+        $this->browser = null;
         $this->restoreHandlers();
     }
 
@@ -55,8 +59,8 @@ abstract class JsonApiFunctionalTestCase extends KernelTestCase
      * @param array<string, mixed>|null $body         a JSON:API document to send (POST/PATCH);
      *                                                 null sends no body (GET/DELETE)
      * @param array<string, string>     $extraServer additional `$_SERVER` entries (e.g.
-     *                                                 `PHP_AUTH_USER`/`PHP_AUTH_PW` for a
-     *                                                 firewall under test)
+     *                                                 `HTTP_AUTHORIZATION` for a firewall
+     *                                                 under test, or a custom request header)
      */
     protected function handle(string $path, string $method = 'GET', ?array $body = null, array $extraServer = []): Response
     {
@@ -96,6 +100,20 @@ abstract class JsonApiFunctionalTestCase extends KernelTestCase
 
         /** @var array<string, mixed> $decoded */
         return $decoded;
+    }
+
+    /**
+     * A lazily-built {@see JsonApiBrowser} over the one booted kernel — the fluent
+     * successor to {@see handle()}/{@see decode()}. It reuses the kernel (reboot
+     * disabled in the browser ctor) so an in-memory seed survives across a
+     * write-then-read in a single test.
+     */
+    protected function browser(): JsonApiBrowser
+    {
+        $kernel = static::$kernel;
+        self::assertNotNull($kernel);
+
+        return $this->browser ??= new JsonApiBrowser($kernel);
     }
 
     /**

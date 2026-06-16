@@ -104,7 +104,14 @@ final class AlbumResource extends AbstractResource
             //  - `filter[longerThan]` narrows the album's tracks to those whose
             //    `length_seconds` exceeds the value — a contextual filter that only
             //    makes sense when listing one album's tracks, so it lives on the
-            //    relation, not the `tracks` type.
+            //    relation, not the `tracks` type. Its `->integer()` value constraint
+            //    (core ADR 0055, bundle ADR 0048) is validated before the
+            //    related-collection fetch reaches the provider, so a mistyped
+            //    `filter[longerThan]=banana` is a clean `400` (`FILTER_VALUE_INVALID`,
+            //    `source.parameter`) instead of the provider's unhelpful default on
+            //    the integer `length_seconds` column (a silent non-match on sqlite, or
+            //    a Doctrine PDO `500` on a strict driver) — and only this
+            //    client-supplied value is checked, never an author-set `default()`.
             //  - `sort=duration` orders them by `length_seconds`. Neither `longerThan`
             //    nor `duration` is a `/tracks` key, so `GET /tracks?filter[longerThan]`
             //    or `?sort=duration` is a 400 — proving the scope.
@@ -118,7 +125,7 @@ final class AlbumResource extends AbstractResource
             HasMany::make('tracks')
                 ->type('tracks')
                 ->paginate(PagePaginator::make()->withDefaultPerPage(2))
-                ->withFilters(Where::make('longerThan', 'length_seconds', '>'))
+                ->withFilters(Where::make('longerThan', 'length_seconds', '>')->integer())
                 ->withSorts(SortByField::make('duration', 'length_seconds'))
                 ->linkageOnlyWhenLoaded(),
         ];

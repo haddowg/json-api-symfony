@@ -72,4 +72,9 @@ final class ChartProvider implements DataProviderInterface
     ): CollectionResult {
         return $this->inner->fetchRelatedCollection($relatedType, $parent, $relation, $criteria, $request);
     }
+
+    public function fetchRelationshipPivot(string $type, object $parent, RelationInterface $relation): array
+    {
+        return $this->inner->fetchRelationshipPivot($type, $parent, $relation);
+    }
 }

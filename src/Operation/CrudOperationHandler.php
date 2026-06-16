@@ -24,6 +24,7 @@ use haddowg\JsonApi\Operation\RemoveFromRelationshipOperation;
 use haddowg\JsonApi\Operation\UpdateRelationshipOperation;
 use haddowg\JsonApi\Operation\UpdateResourceOperation;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
@@ -61,6 +62,7 @@ use haddowg\JsonApiBundle\Serializer\PivotMetaSerializer;
 use haddowg\JsonApiBundle\Serializer\PivotParentSerializer;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
+use haddowg\JsonApiBundle\Validation\FilterValueValidator;
 use haddowg\JsonApiBundle\Validation\ResourceValidator;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
@@ -147,6 +149,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         private readonly TypeMetadataResolver $types,
         private readonly ?ResourceValidator $validator = null,
         private readonly ?EventDispatcherInterface $dispatcher = null,
+        private readonly ?FilterValueValidator $filterValues = null,
     ) {}
 
     public function handle(\haddowg\JsonApi\Operation\JsonApiOperationInterface $operation): DataResponse|RelatedResponse|IdentifierResponse|NoContentResponse|ErrorResponse
@@ -207,6 +210,15 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $resource = $this->types->resourceFor($server, $type);
 
         $filters = $resource?->filters() ?? [];
+
+        // Validate each client-supplied filter value against the declared value
+        // constraints before the filter reaches the provider, so a mistyped value
+        // (filter[id]=banana on an integer column) is a clean 400 rather than the
+        // provider's silent non-match (or, on a strict driver, a PDO 500). A no-op
+        // without the optional validator, or for a filter with no declared
+        // constraints; only the raw requested values are checked, never an
+        // author-set default (ADR 0048).
+        $this->validateFilterValues($operation->queryParameters(), $filters);
 
         // A singular filter the client applied collapses the collection to a
         // zero-to-one response — a single resource (the first match) or null,
@@ -396,12 +408,22 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // declaration wins (the more specific scope). The merged vocabulary rides
             // the CollectionCriteria, so both providers' existing handlers apply it
             // unchanged (ADR 0044).
+            $mergedFilters = $this->mergeFilters(
+                $this->mergeFilters($relatedResource?->filters() ?? [], $relation->filters()),
+                $pivot ? PivotFields::filtersFor($relation) : [],
+            );
+
+            // The related endpoint validates a client-supplied filter value against
+            // the declared constraints too — over the SAME merged vocabulary the
+            // criteria carries (the related resource's filters, the relation's own
+            // scoped filters, and any pivot filters), so a relation-scoped or
+            // related-resource constrained filter rejects a mistyped value with the
+            // same 400 (ADR 0048).
+            $this->validateFilterValues($operation->queryParameters(), $mergedFilters);
+
             $criteria = new CollectionCriteria(
                 $operation->queryParameters(),
-                $this->mergeFilters(
-                    $this->mergeFilters($relatedResource?->filters() ?? [], $relation->filters()),
-                    $pivot ? PivotFields::filtersFor($relation) : [],
-                ),
+                $mergedFilters,
                 $this->mergeSorts(
                     $this->mergeSorts($relatedResource?->allSorts() ?? [], $relation->sorts()),
                     $pivot ? PivotFields::sortsFor($relation) : [],
@@ -521,6 +543,25 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         }
 
         return \array_values($merged);
+    }
+
+    /**
+     * Validates each client-supplied `filter[<key>]` value against the value
+     * constraints the matching declared filter carries, through the optional
+     * {@see FilterValueValidator} (wired only when `symfony/validator` is present),
+     * before the filters reach the provider. A no-op without the validator, or when
+     * no requested filter declares constraints; on a violation it throws core's
+     * {@see \haddowg\JsonApi\Exception\FilterValueInvalid} (`400`, `source.parameter`
+     * on `filter[<key>]`), which propagates to the route-scoped exception listener.
+     * Only the **raw** requested values are validated, never an author-set
+     * `default()` — the default folding happens later in the provider's
+     * {@see \haddowg\JsonApiBundle\DataProvider\CriteriaApplier} (ADR 0048).
+     *
+     * @param list<FilterInterface> $filters
+     */
+    private function validateFilterValues(QueryParameters $queryParameters, array $filters): void
+    {
+        $this->filterValues?->validate($queryParameters->filter, $filters);
     }
 
     /**
@@ -653,8 +694,14 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // A linkage id at a relationship-mutation endpoint is format-validated against
         // the related type's id format exactly as the identical linkage inside a
         // whole-resource write is — so the two surfaces agree (a malformed id 422s
-        // before the persister apply, not after).
-        $this->validateLinkage($relation, $linkage, $mode);
+        // before the persister apply, not after). The relation's existing pivot rows
+        // are read off the loaded parent so a pivot member already in the relationship
+        // validates its MERGED pivot in the update context (a new member stays create
+        // context); a Remove carries no pivot, so it reads none (ADR 0050).
+        $existingPivot = $mode !== Mode::Remove && $relation instanceof BelongsToMany && $relation->pivotFields() !== []
+            ? $this->providers->forType($type)->fetchRelationshipPivot($type, $parent, $relation)
+            : [];
+        $this->validateLinkage($relation, $linkage, $mode, $existingPivot);
 
         $request = $this->jsonApiRequest($operation->context());
 
@@ -857,7 +904,13 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // before-update hook can diff the incoming change against the prior state.
         $original = clone $entity;
 
-        $this->validate($server, $type, $body, creating: false);
+        // The already-loaded target is passed to the validator so a PATCH
+        // validates the MERGED resource state (stored values overlaid by the
+        // incoming partial), not the partial alone — so a cross-field/conditional
+        // rule that depends on a stored sibling absent from the body evaluates
+        // correctly, and a required-on-update field present in stored state but
+        // not re-sent does not spuriously 422 (ADR 0049).
+        $this->validate($server, $type, $body, creating: false, existingObject: $entity);
 
         $serializer = $server->serializerFor($type);
         $persister = $this->persisters->forType($type);
@@ -1052,9 +1105,12 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * Runs the Symfony Validator bridge over the request document, when one is
      * wired (it is optional — `symfony/validator` is a `suggest` dependency). A
      * bare serializer/hydrator pair declares no constraints, so there is nothing
-     * to validate.
+     * to validate. On an update the already-loaded `$existingObject` is forwarded
+     * so the bridge validates the MERGED resource state (stored values overlaid by
+     * the incoming partial) rather than the partial alone (ADR 0049); on create it
+     * is null.
      */
-    private function validate(Server $server, string $type, JsonApiRequestInterface $body, bool $creating): void
+    private function validate(Server $server, string $type, JsonApiRequestInterface $body, bool $creating, ?object $existingObject = null): void
     {
         if ($this->validator === null) {
             return;
@@ -1065,22 +1121,67 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return;
         }
 
-        $this->validator->validate($resource, $body, $creating);
+        // On an update, read each pivot relation's existing rows so the validator can
+        // fold them under the incoming linkage meta per member (an existing member
+        // validates the merged pivot in the update context, a new member the incoming
+        // meta in create context). On create there is no parent, so the map is empty —
+        // every member is new (ADR 0050).
+        $existingPivots = $existingObject !== null
+            ? $this->existingPivots($server, $type, $body, $existingObject)
+            : [];
+
+        $this->validator->validate($resource, $body, $creating, $existingObject, $existingPivots);
+    }
+
+    /**
+     * The existing pivot rows of each `belongsToMany` pivot relation present in the
+     * write body, keyed by relation name then by related id — read through the read
+     * provider's {@see DataProviderInterface::fetchRelationshipPivot()} seam off the
+     * already-loaded parent. Only pivot relations carried in the body are read; a
+     * non-pivot relation (or a provider that stores no pivot) returns `[]` and is
+     * skipped. The validator uses this to validate an existing member's MERGED pivot in
+     * the update context (ADR 0050).
+     *
+     * @return array<string, array<string, array<string, mixed>>>
+     */
+    private function existingPivots(Server $server, string $type, JsonApiRequestInterface $body, object $parent): array
+    {
+        $provider = $this->providers->forType($type);
+
+        $existingPivots = [];
+        foreach ($this->bodyRelationshipNames($body) as $name) {
+            $relation = $this->types->relationNamed($server, $type, $name);
+            if (!$relation instanceof BelongsToMany || $relation->pivotFields() === []) {
+                continue;
+            }
+
+            $pivot = $provider->fetchRelationshipPivot($type, $parent, $relation);
+            if ($pivot !== []) {
+                $existingPivots[$name] = $pivot;
+            }
+        }
+
+        return $existingPivots;
     }
 
     /**
      * Format-validates a relationship-mutation endpoint's parsed linkage against the
      * related type's id format through the validator bridge, when one is wired (it is
-     * optional). A no-op without the validator. The {@see Mode} is forwarded so a
-     * pivot add/replace validates each member's pivot `meta` in the new-row (create)
-     * context — a required writable pivot field absent on an incoming member is a `422`
-     * before the persister applies (never a DB NOT-NULL `500`).
+     * optional). A no-op without the validator. The {@see Mode} and the relation's
+     * existing pivot rows are forwarded so a pivot add/replace validates each member's
+     * pivot `meta` in the per-member new/existing context — a member already in the
+     * relationship merges its stored pivot row under the incoming meta and validates in
+     * the update context (a writable field absent from meta keeps its stored value),
+     * while a genuinely-new member validates the incoming meta in the create (new-row)
+     * context (a required writable pivot field absent on it is a `422` before persist,
+     * never a DB NOT-NULL `500`) (ADR 0050).
      *
      * @param ToOneRelationship|ToManyRelationship $linkage
+     * @param array<string, array<string, mixed>>  $existingPivot the relation's existing pivot rows, by related id
      */
-    private function validateLinkage(RelationInterface $relation, ToOneRelationship|ToManyRelationship $linkage, Mode $mode): void
+    private function validateLinkage(RelationInterface $relation, ToOneRelationship|ToManyRelationship $linkage, Mode $mode, array $existingPivot = []): void
     {
-        $this->validator?->validateRelationshipLinkage($relation, $linkage, $mode);
+        $this->validator?->validateRelationshipLinkage($relation, $linkage, $mode, $existingPivot);
     }
 
     /**

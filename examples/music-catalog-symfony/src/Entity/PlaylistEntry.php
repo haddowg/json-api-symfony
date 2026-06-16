@@ -17,7 +17,14 @@ use Doctrine\ORM\Mapping as ORM;
  * `OneToMany` to this entity, this entity carries the pivot columns plus a
  * `ManyToOne` back to the parent and a `ManyToOne` to the far {@see Track}, and the
  * resource declares the relation as
- * `BelongsToMany::make('orderedTracks')->fields(Integer::make('position')->min(1), DateTime::make('addedAt')->readOnly())`.
+ * `BelongsToMany::make('orderedTracks')->fields(Integer::make('position')->required()->min(1), Integer::make('weight')->compareWith('position', Comparison::GreaterThanOrEqual), DateTime::make('addedAt')->readOnly())`.
+ *
+ * `position` is a **required-on-create** writable field and `weight` a second
+ * writable field constrained `weight >= position` — together they back the
+ * merge-before-validate witness (bundle ADR 0050): on an existing-member partial
+ * pivot update the omitted `position` is preserved from the stored row (no false
+ * `422`), and the cross-pivot `weight >= position` rule compares an incoming
+ * `weight` against the MERGED (stored) `position`.
  *
  * The bundle's Doctrine adapter renders `position`/`addedAt` as each member's
  * `meta.pivot`, recognises them as `?filter`/`?sort` keys on that relation's
@@ -52,6 +59,15 @@ class PlaylistEntry
         // the moment the track was added to the playlist.
         #[ORM\Column(type: 'integer')]
         public int $position = 0,
+        // A second WRITABLE pivot field the relation constrains to be >= `position`
+        // — a cross-pivot-field rule the merge-before-validate witness exercises over
+        // the MERGED pivot row (a partial update sending `weight` alone compares it
+        // against the stored `position`). Nullable so a row created without a `weight`
+        // in meta inserts cleanly through the constructor-less persister (bundle ADR
+        // 0029); the `weight >= position` rule simply does not fire when weight is
+        // absent (a comparison needs both values present).
+        #[ORM\Column(type: 'integer', nullable: true)]
+        public ?int $weight = null,
         #[ORM\Column(name: 'added_at', type: 'datetime_immutable')]
         public ?\DateTimeImmutable $addedAt = null,
     ) {}

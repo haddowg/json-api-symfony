@@ -6,7 +6,6 @@ namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Tests;
 
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
-use Symfony\Component\HttpFoundation\Response;
 
 /**
  * The CRUD-write acceptance suite (backs `data-layer.md`): create / update / delete
@@ -20,6 +19,12 @@ use Symfony\Component\HttpFoundation\Response;
  * Doctrine entity the hydrator mutates in place. A whole-resource write that embeds
  * relationships (the relationship-strip + single-flush flow) is exercised in
  * {@see RelationshipMutationTest}.
+ *
+ * The suite drives every request through the shipped
+ * {@see \haddowg\JsonApiBundle\Testing\JsonApiBrowser} — `assertCreated()`
+ * (201 + `Location` + content type), `assertNoContent()` (204 + empty body) and the
+ * fluent document assertions — and proves write-then-read in one test (the browser
+ * disables kernel reboot, so the seed and the new row both survive).
  */
 #[Group('spec:crud')]
 final class WriteTest extends MusicCatalogKernelTestCase
@@ -30,7 +35,9 @@ final class WriteTest extends MusicCatalogKernelTestCase
     #[Group('spec:creating-resources')]
     public function creatingAResourceReturns201WithLocationAndPersists(): void
     {
-        $response = $this->handle('/playlists', 'POST', [
+        $browser = $this->browser();
+
+        $browser->post('/playlists', [
             'data' => [
                 'type' => 'playlists',
                 'id' => self::PLAYLIST_ID,
@@ -39,28 +46,23 @@ final class WriteTest extends MusicCatalogKernelTestCase
                     'public' => false,
                 ],
             ],
-        ]);
+        ])
+            ->assertCreated()
+            ->assertHeader('Location', 'https://music.example/playlists/' . self::PLAYLIST_ID);
 
-        self::assertSame(201, $response->getStatusCode(), (string) $response->getContent());
+        $browser->getDocument()
+            ->assertHasType('playlists')
+            ->assertHasId(self::PLAYLIST_ID)
+            ->assertHasAttribute('title', 'Deep Focus')
+            ->assertHasAttribute('public', false)
+            // The custom hydrator derives the read-only slug from the title.
+            ->assertHasAttribute('slug', 'deep-focus');
 
-        $data = $this->dataOf($response);
-        self::assertSame('playlists', $data['type'] ?? null);
-        self::assertSame(self::PLAYLIST_ID, $data['id'] ?? null);
-        self::assertSame(
-            'https://music.example/playlists/' . self::PLAYLIST_ID,
-            $response->headers->get('Location'),
-        );
-
-        $attributes = $data['attributes'] ?? null;
-        self::assertIsArray($attributes);
-        self::assertSame('Deep Focus', $attributes['title'] ?? null);
-        self::assertFalse($attributes['public'] ?? null);
-        // The custom hydrator derives the read-only slug from the title.
-        self::assertSame('deep-focus', $attributes['slug'] ?? null);
-
-        // The created resource is persisted: a follow-up read returns it.
-        $fetched = $this->attributesOf($this->handle('/playlists/' . self::PLAYLIST_ID));
-        self::assertSame('Deep Focus', $fetched['title'] ?? null);
+        // The created resource is persisted: a follow-up read on the same browser
+        // (reboot disabled) returns it.
+        $browser->get('/playlists/' . self::PLAYLIST_ID)
+            ->assertFetchedOne()
+            ->assertHasAttribute('title', 'Deep Focus');
     }
 
     #[Test]
@@ -71,20 +73,16 @@ final class WriteTest extends MusicCatalogKernelTestCase
         // create/update arms render the same DataResponse as a fetch (and the
         // Doctrine provider batch-preloads it, ADR 0035). PATCH track 1 — whose
         // to-one `album` is on the same server — asking for ?include=album.
-        $response = $this->handle('/tracks/1?include=album', 'PATCH', [
-            'data' => [
-                'type' => 'tracks',
-                'id' => '1',
-                'attributes' => ['title' => 'Airbag (Remaster)'],
-            ],
-        ]);
-
-        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
-
-        $document = $this->decode($response);
-        $included = $document['included'] ?? [];
-        self::assertIsArray($included);
-        self::assertContains('albums', \array_column($included, 'type'), 'the related album is compound-included on the PATCH response');
+        $this->browser()
+            ->patch('/tracks/1?include=album', [
+                'data' => [
+                    'type' => 'tracks',
+                    'id' => '1',
+                    'attributes' => ['title' => 'Airbag (Remaster)'],
+                ],
+            ])
+            ->assertFetchedOne()
+            ->assertHasIncluded('albums');
     }
 
     #[Test]
@@ -93,25 +91,24 @@ final class WriteTest extends MusicCatalogKernelTestCase
     {
         // Track 1 is "Airbag", trackNumber 1. A PATCH of the title only must leave
         // the unsupplied attributes untouched.
-        $response = $this->handle('/tracks/1', 'PATCH', [
+        $browser = $this->browser();
+        $browser->patch('/tracks/1', [
             'data' => [
                 'type' => 'tracks',
                 'id' => '1',
                 'attributes' => ['title' => 'Airbag (Remaster)'],
             ],
-        ]);
-
-        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
-
-        $attributes = $this->attributesOf($response);
-        self::assertSame('Airbag (Remaster)', $attributes['title'] ?? null);
-        self::assertSame(1, $attributes['trackNumber'] ?? null);
-        self::assertSame(284, $attributes['durationSeconds'] ?? null);
+        ])
+            ->assertFetchedOne()
+            ->assertHasAttribute('title', 'Airbag (Remaster)')
+            ->assertHasAttribute('trackNumber', 1)
+            ->assertHasAttribute('durationSeconds', 284);
 
         // The change is persisted.
-        $fetched = $this->attributesOf($this->handle('/tracks/1'));
-        self::assertSame('Airbag (Remaster)', $fetched['title'] ?? null);
-        self::assertSame(284, $fetched['durationSeconds'] ?? null);
+        $browser->get('/tracks/1')
+            ->assertFetchedOne()
+            ->assertHasAttribute('title', 'Airbag (Remaster)')
+            ->assertHasAttribute('durationSeconds', 284);
     }
 
     #[Test]
@@ -120,17 +117,18 @@ final class WriteTest extends MusicCatalogKernelTestCase
     {
         // `durationSeconds` is stored on the `length_seconds` column via storedAs();
         // a write through the JSON:API member round-trips transparently.
-        $response = $this->handle('/tracks/1', 'PATCH', [
+        $browser = $this->browser();
+        $browser->patch('/tracks/1', [
             'data' => [
                 'type' => 'tracks',
                 'id' => '1',
                 'attributes' => ['durationSeconds' => 300],
             ],
-        ]);
+        ])
+            ->assertFetchedOne()
+            ->assertHasAttribute('durationSeconds', 300);
 
-        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
-        self::assertSame(300, $this->attributesOf($response)['durationSeconds'] ?? null);
-        self::assertSame(300, $this->attributesOf($this->handle('/tracks/1'))['durationSeconds'] ?? null);
+        $browser->get('/tracks/1')->assertFetchedOne()->assertHasAttribute('durationSeconds', 300);
     }
 
     #[Test]
@@ -139,7 +137,8 @@ final class WriteTest extends MusicCatalogKernelTestCase
     {
         // Allow-list hydration: an attribute the resource never declared is dropped,
         // never written, and never surfaces on the rendered resource.
-        $response = $this->handle('/tracks/1', 'PATCH', [
+        $browser = $this->browser();
+        $browser->patch('/tracks/1', [
             'data' => [
                 'type' => 'tracks',
                 'id' => '1',
@@ -149,12 +148,13 @@ final class WriteTest extends MusicCatalogKernelTestCase
                     'undeclared' => 'nope',
                 ],
             ],
-        ]);
+        ])
+            ->assertFetchedOne()
+            ->assertHasAttribute('title', 'Edited via allow-list');
 
-        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
-
-        $attributes = $this->attributesOf($response);
-        self::assertSame('Edited via allow-list', $attributes['title'] ?? null);
+        $data = $this->decode($browser->getResponse())['data'] ?? null;
+        self::assertIsArray($data);
+        $attributes = $this->attributesOf($data);
         self::assertArrayNotHasKey('isAdmin', $attributes);
         self::assertArrayNotHasKey('undeclared', $attributes);
     }
@@ -163,54 +163,42 @@ final class WriteTest extends MusicCatalogKernelTestCase
     #[Group('spec:deleting-resources')]
     public function deletingAResourceReturns204AndThenItIsGone(): void
     {
-        $response = $this->handle('/tracks/4', 'DELETE');
-
-        self::assertSame(204, $response->getStatusCode());
-        self::assertSame('', (string) $response->getContent());
-
-        self::assertSame(404, $this->handle('/tracks/4')->getStatusCode());
+        $browser = $this->browser();
+        $browser->delete('/tracks/4')->assertNoContent();
+        $browser->get('/tracks/4')->getDocument()->assertStatus(404);
     }
 
     #[Test]
     #[Group('spec:updating-resources')]
     public function updatingAMissingResourceReturns404(): void
     {
-        $response = $this->handle('/tracks/999', 'PATCH', [
-            'data' => [
-                'type' => 'tracks',
-                'id' => '999',
-                'attributes' => ['title' => 'Does not matter'],
-            ],
-        ]);
-
-        self::assertSame(404, $response->getStatusCode());
+        $this->browser()
+            ->patch('/tracks/999', [
+                'data' => [
+                    'type' => 'tracks',
+                    'id' => '999',
+                    'attributes' => ['title' => 'Does not matter'],
+                ],
+            ])
+            ->getErrors()
+            ->assertStatus(404);
     }
 
     #[Test]
     #[Group('spec:deleting-resources')]
     public function deletingAMissingResourceReturns404(): void
     {
-        self::assertSame(404, $this->handle('/tracks/999', 'DELETE')->getStatusCode());
+        $this->browser()->delete('/tracks/999')->getErrors()->assertStatus(404);
     }
 
     /**
+     * @param array<string, mixed> $resource
+     *
      * @return array<string, mixed>
      */
-    private function dataOf(Response $response): array
+    private function attributesOf(array $resource): array
     {
-        $data = $this->decode($response)['data'] ?? null;
-        self::assertIsArray($data);
-
-        /** @var array<string, mixed> $data */
-        return $data;
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function attributesOf(Response $response): array
-    {
-        $attributes = $this->dataOf($response)['attributes'] ?? null;
+        $attributes = $resource['attributes'] ?? null;
         self::assertIsArray($attributes);
 
         /** @var array<string, mixed> $attributes */

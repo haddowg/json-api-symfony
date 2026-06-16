@@ -91,7 +91,9 @@ final class InMemorySecurityTestKernel extends Kernel
                     'pattern' => '^/',
                     'stateless' => true,
                     'provider' => 'in_memory',
-                    'http_basic' => true,
+                    'access_token' => [
+                        'token_handler' => AccessTokenHandler::class,
+                    ],
                 ],
             ],
         ]);
@@ -101,6 +103,7 @@ final class InMemorySecurityTestKernel extends Kernel
             ->autowire()
             ->autoconfigure();
 
+        $services->set(AccessTokenHandler::class);
         $services->set(InMemorySecuredWidgetResource::class);
 
         $services->set('test.in_memory_secured_widgets_provider', \haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider::class)

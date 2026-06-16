@@ -50,4 +50,9 @@ final class AboveFallbackArticleProvider implements DataProviderInterface
     ): CollectionResult {
         return new CollectionResult([]);
     }
+
+    public function fetchRelationshipPivot(string $type, object $parent, RelationInterface $relation): array
+    {
+        return [];
+    }
 }

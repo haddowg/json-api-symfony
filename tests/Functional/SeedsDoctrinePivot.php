@@ -73,6 +73,12 @@ trait SeedsDoctrinePivot
                 playlist: $parent,
                 track: $track,
                 position: $position,
+                // weight seeds comfortably above any position the suite uses, so the
+                // `weight >= position` cross-pivot rule holds for every seed row and a
+                // plain reorder (which moves position, not weight) keeps passing. The
+                // merge-before-validate witness deliberately sends a LOW weight that
+                // only violates once the stored position is folded in.
+                weight: 100,
                 addedAt: new \DateTimeImmutable($addedAt),
             ));
         }

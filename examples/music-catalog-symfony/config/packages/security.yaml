@@ -9,16 +9,26 @@
 # A real app would back the user provider with a database or an identity provider
 # and front it with token/OIDC authentication; this example keeps the smallest
 # witness — an in-memory provider over plaintext passwords (the example never
-# leaves the test harness) and a stateless HTTP-Basic firewall, authenticated per
-# request via the Authorization header. The firewall is optional (no
-# `access_control` forces authentication), so an unauthenticated request still
-# reaches the controller and the security layer is what gates it.
+# leaves the test harness) and a stateless firewall, authenticated per request via
+# the `Authorization` header. The firewall is optional (no `access_control` forces
+# authentication), so an unauthenticated request still reaches the controller and
+# the security layer is what gates it.
+#
+# The firewall authenticates a **Bearer `access_token`** — the most common API auth
+# scenario, and the scheme the shipped `JsonApiBrowser::actingAs()` uses — backed by
+# the same UserInterface provider via a tiny `AccessTokenHandler` (the token IS the
+# user identifier here; a real app maps an opaque token). Because the seeded users
+# are identified by email (`ada@example.com`), which is not a strict RFC 6750
+# `b64token`, the firewall also names a permissive `BearerTokenExtractor` that trims
+# the `Bearer ` prefix and passes the rest verbatim. This is the *only* authenticator —
+# there is no `http_basic` fallback; the whole suite presents a Bearer token.
 #
 # The three users mirror the authz suite: `admin` (the only role allowed to delete
 # a playlist), `ada@example.com` (the seeded Morning Mix playlist's owner, so the
 # `is_granted('EDIT', object)` Voter grants her `EDIT`), and `mallory@example.com`
 # (a non-owner the Voter refuses). The username *is* the user identifier the
-# `PlaylistOwnerVoter` compares against the playlist owner's email.
+# `PlaylistOwnerVoter` compares against the playlist owner's email — and the bearer
+# token a client presents.
 security:
     password_hashers:
         Symfony\Component\Security\Core\User\InMemoryUser:
@@ -43,4 +53,7 @@ security:
             pattern: '^/'
             stateless: true
             provider: in_memory
-            http_basic: true
+            access_token:
+                token_handler: haddowg\JsonApiBundle\Examples\MusicCatalog\Security\AccessTokenHandler
+                token_extractors:
+                    - haddowg\JsonApiBundle\Examples\MusicCatalog\Security\BearerTokenExtractor

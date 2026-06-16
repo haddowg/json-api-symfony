@@ -235,6 +235,99 @@ final class DoctrinePivotWriteTest extends JsonApiFunctionalTestCase
     }
 
     #[Test]
+    #[Group('spec:updating-relationships')]
+    public function anExistingMemberPivotUpdateOmittingTheRequiredFieldKeepsItAnd200s(): void
+    {
+        // Intro (id 1) is already a member of playlist 1 at position 1. A relationship
+        // POST (Mode::Add) re-asserting it with NO meta is a partial pivot update of an
+        // EXISTING row, so the required `position` is taken from the MERGED pivot (the
+        // stored value folded in) — NOT a 422 as the always-create band-aid would have
+        // raised. The stored position is preserved (the persister leaves an absent
+        // writable field untouched).
+        $response = $this->handle(
+            self::BASE_URI . '/playlists/1/relationships/tracks',
+            'POST',
+            ['data' => [['type' => 'tracks', 'id' => '1']]],
+        );
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        $byId = $this->byId($this->fetchDocument('/playlists/1/tracks?sort=position'));
+        // Intro keeps its stored position 1 — the merge folded it in, the persister
+        // preserved it (the membership and the other members are untouched).
+        self::assertSame(1, $this->pivotField($byId['1'] ?? [], 'position'));
+        self::assertSame(['1', '2', '3'], $this->ids($this->fetchDocument('/playlists/1/tracks?sort=position')));
+    }
+
+    #[Test]
+    #[Group('spec:updating-relationships')]
+    public function aWholeResourcePatchExistingMemberOmittingTheRequiredPivotFieldKeepsItAnd200s(): void
+    {
+        // A whole-resource PATCH (Mode::Replace) re-asserting playlist 1's three EXISTING
+        // members with NO meta on any of them. Each is an existing row, so the required
+        // `position` resolves from the merged pivot — a 200, not the band-aid's 422 — and
+        // every stored position is preserved (the persister leaves them in place).
+        $response = $this->handle(
+            self::BASE_URI . '/playlists/1',
+            'PATCH',
+            ['data' => [
+                'type' => 'playlists',
+                'id' => '1',
+                'relationships' => [
+                    'tracks' => ['data' => [
+                        ['type' => 'tracks', 'id' => '1'],
+                        ['type' => 'tracks', 'id' => '2'],
+                        ['type' => 'tracks', 'id' => '3'],
+                    ]],
+                ],
+            ]],
+        );
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        $byId = $this->byId($this->fetchDocument('/playlists/1/tracks?sort=position'));
+        self::assertSame(1, $this->pivotField($byId['1'] ?? [], 'position'));
+        self::assertSame(2, $this->pivotField($byId['2'] ?? [], 'position'));
+        self::assertSame(3, $this->pivotField($byId['3'] ?? [], 'position'));
+    }
+
+    #[Test]
+    #[Group('spec:updating-relationships')]
+    public function aCrossPivotFieldRuleIsEvaluatedAgainstTheMergedPivot(): void
+    {
+        // `weight >= position` is a cross-pivot-field rule. Intro (id 1) is stored at
+        // position 1 (weight 100). A partial pivot update sends weight 0 and OMITS
+        // position: the rule must compare the incoming weight against the MERGED (stored)
+        // position — 0 >= 1 is false → 422 at the linkage meta. (Were the stored position
+        // not folded in, the comparison would skip for want of a sibling and 200.)
+        $violation = $this->handle(
+            self::BASE_URI . '/playlists/1/relationships/tracks',
+            'POST',
+            ['data' => [['type' => 'tracks', 'id' => '1', 'meta' => ['weight' => 0]]]],
+        );
+
+        self::assertSame(422, $violation->getStatusCode(), (string) $violation->getContent());
+        self::assertSame('/data/0/meta/weight', $this->firstErrorPointer($violation));
+
+        // The store is unchanged — no write on a 422.
+        $byId = $this->byId($this->fetchDocument('/playlists/1/tracks?sort=position'));
+        self::assertSame(1, $this->pivotField($byId['1'] ?? [], 'position'));
+
+        // A weight at/above the merged stored position passes (50 >= 1) and writes.
+        $ok = $this->handle(
+            self::BASE_URI . '/playlists/1/relationships/tracks',
+            'POST',
+            ['data' => [['type' => 'tracks', 'id' => '1', 'meta' => ['weight' => 50]]]],
+        );
+
+        self::assertSame(200, $ok->getStatusCode(), (string) $ok->getContent());
+        $byId = $this->byId($this->fetchDocument('/playlists/1/tracks?sort=position'));
+        self::assertSame(50, $this->pivotField($byId['1'] ?? [], 'weight'));
+        // Position is preserved (it was omitted from the partial meta).
+        self::assertSame(1, $this->pivotField($byId['1'] ?? [], 'position'));
+    }
+
+    #[Test]
     #[Group('spec:creating-resources')]
     public function aWholeResourceWriteAppliesPivotMetaInline(): void
     {
