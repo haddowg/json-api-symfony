@@ -22,6 +22,7 @@ use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Schema\Link\ResourceLinks;
+use haddowg\JsonApi\Serializer\IncludeControlsInterface;
 use haddowg\JsonApi\Serializer\SerializerInterface;
 use haddowg\JsonApi\Serializer\UriTypeAwareInterface;
 
@@ -42,7 +43,7 @@ use haddowg\JsonApi\Serializer\UriTypeAwareInterface;
  * the transformer reading {@see \haddowg\JsonApi\Resource\Field\FieldInterface::isSparseField()} and the request, so the
  * resource emits every non-hidden field and lets the engine narrow.
  */
-abstract class AbstractResource implements SerializerInterface, HydratorInterface, UpdateRelationshipHydratorInterface, UriTypeAwareInterface, SerializerResolverAwareInterface
+abstract class AbstractResource implements SerializerInterface, HydratorInterface, UpdateRelationshipHydratorInterface, UriTypeAwareInterface, SerializerResolverAwareInterface, IncludeControlsInterface
 {
     use RendersRelationsTrait;
 
@@ -93,6 +94,30 @@ abstract class AbstractResource implements SerializerInterface, HydratorInterfac
      * @return list<\haddowg\JsonApi\Resource\Sort\SortInterface>
      */
     public function sorts(): array
+    {
+        return [];
+    }
+
+    /**
+     * The default sort order applied to a collection of this resource **only when
+     * the request carries no `sort` parameter**. An explicit `?sort=` overrides it
+     * entirely (the default is not appended to it).
+     *
+     * Each entry is a {@see \haddowg\JsonApi\Resource\Sort\SortDirective} — the
+     * same shape a data layer builds for a requested sort — pairing one
+     * {@see \haddowg\JsonApi\Resource\Sort\SortInterface} (any sort the resource
+     * exposes, typically a {@see \haddowg\JsonApi\Resource\Sort\SortByField}) with
+     * its direction, most significant first. Default: `[]` (no default order, the
+     * collection is returned in storage order).
+     *
+     * A default sort makes an otherwise unsorted collection — and therefore its
+     * pagination — deterministic. The directives are applied through the resource's
+     * sort handler exactly as a requested sort would be, so a default must name a
+     * sort the handler can execute.
+     *
+     * @return list<\haddowg\JsonApi\Resource\Sort\SortDirective>
+     */
+    public function defaultSort(): array
     {
         return [];
     }
@@ -189,6 +214,47 @@ abstract class AbstractResource implements SerializerInterface, HydratorInterfac
     public function getDefaultIncludedRelationships(mixed $object): array
     {
         return [];
+    }
+
+    /**
+     * The relationship names this resource has opted out of inclusion for, derived
+     * from {@see relationFields()} where the relation declared
+     * {@see \haddowg\JsonApi\Resource\Field\AbstractRelation::cannotBeIncluded()}.
+     *
+     * @return list<string>
+     */
+    public function getNonIncludableRelationships(mixed $object): array
+    {
+        $names = [];
+        foreach ($this->relationFields() as $relation) {
+            if ($relation->isIncludable() === false) {
+                $names[] = $relation->name();
+            }
+        }
+
+        return $names;
+    }
+
+    /**
+     * No per-resource maximum include depth by default — the server default (if
+     * any) applies. Override to cap includes for this resource specifically.
+     */
+    public function maxIncludeDepth(): ?int
+    {
+        return null;
+    }
+
+    /**
+     * No allowed-include-paths whitelist by default — includes are unrestricted
+     * (subject to per-relation includability and the max include depth). Override
+     * to return the full dotted paths permissible when this resource is the
+     * request's primary/root type.
+     *
+     * @return list<string>|null
+     */
+    public function getAllowedIncludePaths(): ?array
+    {
+        return null;
     }
 
     public function getRelationships(mixed $object, JsonApiRequestInterface $request): array
