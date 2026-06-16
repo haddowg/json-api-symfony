@@ -8,8 +8,8 @@ serializer written by hand**. Every snippet here is lifted from the CI-run
 you read is what runs.
 
 This page assumes the bundle is already installed and registered — if not, do
-[install](install.md) first (the `dev-main` install is unusual and is covered there
-once). It also assumes you have read core's
+[install](install.md) first (it covers the `dev-main` Composer setup). It also
+assumes you have read core's
 [getting-started](https://github.com/haddowg/json-api/blob/main/docs/getting-started.md)
 for the JSON:API mental model; this page is the *Symfony* counterpart of that page.
 

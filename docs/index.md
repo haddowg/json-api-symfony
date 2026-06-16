@@ -35,12 +35,6 @@ operation handler you would hand-write in core is here a single generic handler
 driven by listeners; the same constraint VOs core *declares but never executes* are
 here translated to Symfony Validator rules and actually enforced.
 
-## Pre-1.0: expect breaking changes
-
-This bundle and its core dependency are **co-evolving pre-1.0**. Breaking changes
-land between `0.x` minors (release-please drives the changelog), and the public API
-is not yet frozen. Pin a minor and read the changelog before you upgrade.
-
 ## Requirements
 
 | Requirement | Version | Why |
@@ -53,14 +47,16 @@ Everything else — Doctrine, the validator, strict email, the opis linter — i
 **opt-in**, declared as `suggest`. See the optional-dependency matrix on
 [configuration](configuration.md).
 
-## Install caveat (stated once)
+## Install
 
-Core `haddowg/json-api` is **not yet published to Packagist**, so installing this
-bundle is not yet a plain `composer require`. You add core as `dev-main` through a
-global Composer path or VCS repository; once core ships v1 this collapses to a
-normal `composer require haddowg/json-api-symfony` with a `^1.0` core pin. The full
-recipe — and bundle registration — lives in [install](install.md). It is the one
-place these docs cover it.
+Require the bundle and its core dependency, both on `dev-main`:
+
+```bash
+composer require haddowg/json-api-symfony:dev-main
+```
+
+The full recipe — adding core through a Composer path or VCS repository, and
+registering the bundle — lives in [install](install.md).
 
 ## A taste
 
