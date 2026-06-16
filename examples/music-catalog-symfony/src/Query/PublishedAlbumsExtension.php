@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Query;
 
 use Doctrine\ORM\QueryBuilder;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineExtensionInterface;
+use haddowg\JsonApiBundle\DataProvider\Doctrine\ExtensionContext;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\QueryPurpose;
 
 /**
@@ -35,7 +36,7 @@ final class PublishedAlbumsExtension implements DoctrineExtensionInterface
         return $type === 'albums';
     }
 
-    public function apply(QueryBuilder $builder, string $type, QueryPurpose $purpose): QueryBuilder
+    public function apply(QueryBuilder $builder, ExtensionContext $context): QueryBuilder
     {
         $alias = $builder->getRootAliases()[0]
             ?? throw new \LogicException('The builder arrived without a root alias.');

@@ -4,6 +4,13 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use haddowg\JsonApi\Operation\QueryParameters;
+use haddowg\JsonApi\Resource\Field\BelongsToMany;
+use haddowg\JsonApi\Resource\Field\DateTime;
+use haddowg\JsonApi\Resource\Field\Integer;
+use haddowg\JsonApi\Resource\Filter\FilterInterface;
+use haddowg\JsonApi\Resource\Filter\Where;
+use haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory;
 use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\DoctrineJsonApiTestKernel;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
@@ -200,6 +207,100 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
 
     #[Test]
     #[Group('spec:fetching-filtering')]
+    public function anEqualityPivotFilterIsBehaviourIdentical(): void
+    {
+        // Regression guard: routing the equality Where through the shared handler is
+        // behaviour-identical to the old hand-rolled applier — filter[position]=2 still
+        // keeps only the member at pivot position 2 (Outro, id 2).
+        $document = $this->fetchDocument('/playlists/1/tracks?filter[position]=2');
+
+        self::assertSame(['2'], $this->ids($document));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    public function aPivotFilterAttachesTheFieldCastDeserializer(): void
+    {
+        // Cast-thread guard (bundle ADR 0067): a pivot filter is AUTHOR-declared with a
+        // `pivot.`-prefixed column and carries NO explicit deserializer; the
+        // RelationCriteriaFactory must auto-attach the field's own cast (resolved by the
+        // STRIPPED column, not the filter key) so the handler binds a typed value — a
+        // bare Where::make() leaves deserialize null, which would silently regress a
+        // typed pivot column (a DateTime/bool would bind the raw request string; an int
+        // survives only via DQL's type coercion). The filter KEY is independent of the
+        // column: `addedAfter` filters `pivot.addedAt`, resolved by column.
+        $relation = BelongsToMany::make('tracks')
+            ->type('tracks')
+            ->fields(
+                Integer::make('position')->required()->min(1),
+                DateTime::make('addedAt')->readOnly(),
+            )
+            ->withFilters(
+                // No explicit deserializer — the factory resolves the cast by the
+                // stripped column (`position`/`addedAt`).
+                Where::make('position', 'pivot.position'),
+                Where::make('addedAfter', 'pivot.addedAt', '>'),
+                // An author's explicit deserializer must WIN — never overwritten.
+                Where::make('weightExplicit', 'pivot.weight')->deserializeUsing(static fn(mixed $v): string => 'kept'),
+            );
+
+        $factory = new RelationCriteriaFactory();
+        $params = new QueryParameters([], [], [], [], []);
+
+        // With includePivotFields=true (the Doctrine related endpoint) the relation's
+        // pivot filters ride the criteria, the cast auto-attached.
+        $withPivot = $factory->criteriaFor($params, null, $relation, null, true);
+        $byKey = $this->filtersByKey($withPivot->filters);
+
+        // `position` (int) coerces the raw request string '2' to int 2 via the field's
+        // OWN cast — the exact typed-bind the thread guards against.
+        $position = $byKey['position'] ?? null;
+        self::assertInstanceOf(Where::class, $position);
+        self::assertNotNull($position->deserialize, 'an author pivot filter must carry the resolved field cast');
+        self::assertSame(2, ($position->deserialize)('2'));
+
+        // `addedAfter` resolves the cast by the STRIPPED column `addedAt` (the key
+        // differs from the column): the DateTime field coerces the wire value to an
+        // ISO-8601 string, so a non-null cast is attached.
+        $addedAfter = $byKey['addedAfter'] ?? null;
+        self::assertInstanceOf(Where::class, $addedAfter);
+        self::assertNotNull($addedAfter->deserialize, 'the cast resolves by the stripped column, not the filter key');
+
+        // The author's explicit deserializer wins — it is not overwritten by the cast.
+        $weightExplicit = $byKey['weightExplicit'] ?? null;
+        self::assertInstanceOf(Where::class, $weightExplicit);
+        self::assertNotNull($weightExplicit->deserialize);
+        self::assertSame('kept', ($weightExplicit->deserialize)('anything'));
+
+        // With includePivotFields=false (the in-memory provider + the include/count
+        // Doctrine paths) every `pivot.`-columned filter is STRIPPED from the criteria,
+        // so a pivot key stays unrecognised and never routes a `pivot.`-column to the
+        // wrong root.
+        $withoutPivot = $factory->criteriaFor($params, null, $relation, null, false);
+        $strippedKeys = \array_map(static fn(FilterInterface $f): string => $f->key(), $withoutPivot->filters);
+        self::assertNotContains('position', $strippedKeys);
+        self::assertNotContains('addedAfter', $strippedKeys);
+        self::assertNotContains('weightExplicit', $strippedKeys);
+        self::assertSame([], $withoutPivot->aliasOf, 'no pivot aliasOf off the pivot path');
+    }
+
+    /**
+     * @param list<FilterInterface> $filters
+     *
+     * @return array<string, FilterInterface>
+     */
+    private function filtersByKey(array $filters): array
+    {
+        $byKey = [];
+        foreach ($filters as $filter) {
+            $byKey[$filter->key()] = $filter;
+        }
+
+        return $byKey;
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
     public function aPivotFilterComposesWithARelatedFilterInOnePage(): void
     {
         // filter[title] (the related `tracks` vocabulary, contains "o" → Intro,
@@ -217,6 +318,44 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
         // Two matched the composed filter, page size two — the total is exactly two,
         // so the page is full and there is no second page (no short page).
         self::assertSame(2, $page['total'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    public function aPivotOperatorFilterNarrowsTheRelatedCollection(): void
+    {
+        // An author-declared pivot OPERATOR filter (bundle ADR 0067): `positionGte`
+        // targets `pivot.position` with the `>=` operator. filter[positionGte]=2 keeps
+        // the members at pivot position >= 2 (Outro@2, Bridge@3), ordered by position.
+        $document = $this->fetchDocument('/playlists/1/tracks?filter[positionGte]=2&sort=position');
+
+        self::assertSame(['2', '3'], $this->ids($document));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    public function aPivotWhereInFilterNarrowsTheRelatedCollection(): void
+    {
+        // An author-declared pivot WhereIn filter (bundle ADR 0067): `positionIn`
+        // targets `pivot.position`. filter[positionIn]=1,3 keeps the members at pivot
+        // position 1 or 3 (Intro@1, Bridge@3), ordered by position.
+        $document = $this->fetchDocument('/playlists/1/tracks?filter[positionIn]=1,3&sort=position');
+
+        self::assertSame(['1', '3'], $this->ids($document));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    public function aTypedDatePivotOperatorFilterNarrowsTheRelatedCollection(): void
+    {
+        // An author-declared TYPED-DATE pivot operator filter (bundle ADR 0067):
+        // `addedAfter` targets `pivot.addedAt` with `>`, and the DateTime field's cast
+        // auto-resolves by the stripped column so the wire value is compared as a date.
+        // Playlist 1's rows are added 2024-01-01/02/03; > 2024-01-01 keeps Outro(2) and
+        // Bridge(3), ordered by position.
+        $document = $this->fetchDocument('/playlists/1/tracks?filter[addedAfter]=2024-01-01T00:00:00%2B00:00&sort=position');
+
+        self::assertSame(['2', '3'], $this->ids($document));
     }
 
     #[Test]
@@ -283,6 +422,29 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
     }
 
     #[Test]
+    #[Group('spec:fetching-filtering')]
+    public function aHiddenPivotFieldFiltersButIsNotRendered(): void
+    {
+        // `note` is a HIDDEN pivot field (core hidden() gates rendering only, never
+        // query): it is filterable via the `pivot.note` prefix, so filter[noteIs]=alpha
+        // narrows playlist 1 to the member at note 'alpha' (Intro, id 1) — the filter
+        // reads the column on the `pivot` alias, not the rendered scalar.
+        $document = $this->fetchDocument('/playlists/1/tracks?filter[noteIs]=alpha');
+
+        self::assertSame(['1'], $this->ids($document));
+
+        // The rendered pivot meta on that member does NOT contain `note` — a hidden
+        // pivot field is omitted from the SELECT and the pivot map, so only the visible
+        // fields (position, addedAt, weight) render.
+        $byId = $this->byId($document);
+        $pivot = $this->pivotMap($byId['1'] ?? []);
+        self::assertArrayNotHasKey('note', $pivot, 'a hidden pivot field must not render in the pivot meta');
+        self::assertArrayHasKey('position', $pivot);
+        self::assertArrayHasKey('addedAt', $pivot);
+        self::assertArrayHasKey('weight', $pivot);
+    }
+
+    #[Test]
     #[Group('spec:fetching-relationships')]
     public function aPivotRelatedCollectionScopesToItsParent(): void
     {
@@ -311,6 +473,20 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
         $response = $this->handle(self::BASE_URI . '/tracks?sort=position');
 
         self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    public function anUnknownKeyStill400sOverTheUnifiedPivotVocabulary(): void
+    {
+        // The unified alias-aware applier owns the WHOLE merged related+pivot vocab in
+        // one pass (bundle ADR 0059), so an undeclared key in NEITHER the related nor
+        // the pivot vocabulary is still a 400 on the pivot related endpoint.
+        $unknownFilter = $this->handle(self::BASE_URI . '/playlists/1/tracks?filter[nope]=x');
+        self::assertSame(400, $unknownFilter->getStatusCode(), (string) $unknownFilter->getContent());
+
+        $unknownSort = $this->handle(self::BASE_URI . '/playlists/1/tracks?sort=nope');
+        self::assertSame(400, $unknownSort->getStatusCode(), (string) $unknownSort->getContent());
     }
 
     // --- helpers ---------------------------------------------------------------
@@ -368,6 +544,30 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
         }
 
         return $pivot[$field] ?? null;
+    }
+
+    /**
+     * The whole `meta.pivot` map of a resource, or an empty array when absent — used to
+     * assert which pivot fields are present (a hidden field must be absent).
+     *
+     * @param array<string, mixed> $resource
+     *
+     * @return array<string, mixed>
+     */
+    private function pivotMap(array $resource): array
+    {
+        $meta = $resource['meta'] ?? null;
+        if (!\is_array($meta)) {
+            return [];
+        }
+
+        $pivot = $meta['pivot'] ?? null;
+        if (!\is_array($pivot)) {
+            return [];
+        }
+
+        /** @var array<string, mixed> $pivot */
+        return $pivot;
     }
 
     /**

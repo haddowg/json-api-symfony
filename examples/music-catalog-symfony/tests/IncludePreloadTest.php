@@ -5,8 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Tests;
 
 use Doctrine\ORM\EntityManagerInterface;
-use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
-use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineDataProvider;
+use haddowg\JsonApiBundle\DataProvider\RelatedIncludeBatcher;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Album;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Artist;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Track;
@@ -15,28 +14,32 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The include-batch-preloading acceptance suite (backs ADR 0035 + the `doctrine.md`
- * eager-loading section): the reference Doctrine provider batch-loads a read's
+ * The include-batch-loading acceptance suite (backs ADR 0035/0062 + the `doctrine.md`
+ * eager-loading section): the provider-agnostic
+ * {@see \haddowg\JsonApiBundle\DataProvider\RelatedIncludeBatcher} batch-loads a read's
  * effective `?include` tree (explicit includes, or a resource's
  * {@see \haddowg\JsonApi\Resource\AbstractResource::getDefaultIncludedRelationships()}
- * fallback) one query per level, so includes do not N+1.
+ * fallback) one query per level through the reference Doctrine provider's
+ * {@see \haddowg\JsonApiBundle\DataProvider\DataProviderInterface::fetchRelatedCollectionBatch()}
+ * in plain-include (fast-path) mode, so includes do not N+1.
  *
  * It seeds extra artists/albums/tracks beyond the base {@see DataFixtures\Seed} so a
  * bounded query count (≈ one per include level) is clearly distinct from N+1 across
  * the population, then counts the SQL the DBAL logging middleware feeds to the
  * {@see QueryCountingLogger} and asserts the bound — decisively, by toggling the
- * preloader off on the same request and watching the lazy count grow with the album
+ * batcher off on the same request and watching the lazy count grow with the album
  * population. The compound documents are asserted correct and proven byte-identical
- * with the preloader disabled — the preload is a pure optimization.
+ * with batching disabled — the batch is a pure optimization (bundle ADR 0062).
  *
  * Probes ride the (non-cyclic) include trees rooted at `albums` (which the bundled
  * Doctrine provider serves directly, and whose to-many relations are all load-aware
  * so they add no linkage noise): a collection `albums?include=tracks` (one batched
- * tracks load), the nested `albums?include=tracks.album` (a batch per level), and
- * `AlbumResource`'s existing default include `artist` (rendered + preloaded when no
- * `?include` is sent, suppressed by an explicit empty include). `artists` is
- * deliberately avoided: it is served by a custom provider that does not implement the
- * preload capability, so it renders lazily (a witness that the capability is opt-in).
+ * tracks load), the nested `albums?include=tracks.album` (a batch per level — the
+ * to-one `album` arm), and `AlbumResource`'s existing default include `artist`
+ * (rendered + batched when no `?include` is sent, suppressed by an explicit empty
+ * include). `artists` is deliberately avoided: it is served by a custom provider that
+ * does not implement the batch for its type, so it renders lazily (a witness that
+ * batching is opt-in per provider).
  */
 #[Group('spec:fetching-includes')]
 final class IncludePreloadTest extends MusicCatalogKernelTestCase
@@ -60,16 +63,10 @@ final class IncludePreloadTest extends MusicCatalogKernelTestCase
 
     protected function setUp(): void
     {
-        // The preloader is suggest-gated: without shipmonk/doctrine-entity-preloader
-        // installed the Doctrine provider renders includes lazily, so the batching
-        // assertions do not apply — skip the whole suite (the rest of the bundle still
-        // works, proven by every other example suite passing). parent::setUp() runs
-        // first so the base case's error-handler snapshot/restore stays balanced.
+        // Include batching is now always available (no optional library): the
+        // RelatedIncludeBatcher drives the reference Doctrine provider's batch SPI, so
+        // the suite always runs (bundle ADR 0062).
         parent::setUp();
-
-        if (!\class_exists(\ShipMonk\DoctrineEntityPreloader\EntityPreloader::class)) {
-            self::markTestSkipped('shipmonk/doctrine-entity-preloader is not installed; includes render lazily.');
-        }
     }
 
     protected function afterBoot(): void
@@ -281,22 +278,17 @@ final class IncludePreloadTest extends MusicCatalogKernelTestCase
     }
 
     /**
-     * Turns off include preloading on the bundled Doctrine `albums` provider, so the
-     * next request renders the includes lazily — the "without preloader" arm of the
+     * Turns off include batching process-wide (the single RelatedIncludeBatcher service),
+     * so the next request renders the includes lazily — the "without batching" arm of the
      * identical-output and N+1 proofs. The identity map is cleared so the next read is
-     * genuinely cold (not served from the preloaded units of work).
+     * genuinely cold (not served from the batched units of work).
      */
     private function disablePreloader(): void
     {
-        $registry = static::getContainer()->get(DataProviderRegistry::class);
-        \assert($registry instanceof DataProviderRegistry);
+        $batcher = static::getContainer()->get(RelatedIncludeBatcher::class);
+        \assert($batcher instanceof RelatedIncludeBatcher);
 
-        // `albums` is served by the bundled Doctrine provider (no custom override),
-        // so the include preloader lives on it directly.
-        $provider = $registry->forType('albums');
-        self::assertInstanceOf(DoctrineDataProvider::class, $provider);
-
-        $provider->disableIncludePreloading();
+        $batcher->disable();
 
         $entityManager = static::getContainer()->get('doctrine.orm.entity_manager');
         \assert($entityManager instanceof EntityManagerInterface);

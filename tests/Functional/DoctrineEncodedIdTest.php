@@ -167,6 +167,110 @@ final class DoctrineEncodedIdTest extends JsonApiFunctionalTestCase
     }
 
     #[Test]
+    public function aToOneRelationFilterNullsAnExcludedEncodedParent(): void
+    {
+        // Cog 1's parent is cog 2 (Flywheel). A non-matching `filter[name]` on the
+        // related endpoint excludes it, so the to-one renders `data: null` — the
+        // single-probe nulling path (relatedToOneMatches) on an ENCODED-ID parent,
+        // proving the encoded `cog-…` parent id does not break the lookup (bundle ADR
+        // 0068 follow-up #4).
+        $response = $this->handle('/cogs/' . $this->wireIds[1] . '/parent?filter[name]=Nonexistent');
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        $decoded = $this->decode($response);
+        self::assertArrayHasKey('data', $decoded);
+        self::assertNull($decoded['data'], 'the excluded parent renders data: null');
+
+        // A MATCHING filter keeps the encoded parent (the lookup did not erroneously
+        // null a present, matching target).
+        $kept = $this->handle('/cogs/' . $this->wireIds[1] . '/parent?filter[name]=Flywheel');
+        self::assertSame(200, $kept->getStatusCode(), (string) $kept->getContent());
+        self::assertSame($this->wireIds[2], $this->dataOf($kept)['id'] ?? null);
+    }
+
+    #[Test]
+    public function aRelatedQueryFilterNullsAnExcludedEncodedParentOnTheIncludePath(): void
+    {
+        // The BATCHED nulling path on an encoded-id parent: GET /cogs?include=parent with
+        // relatedQuery[parent][filter][name]=<non-matching> over the page. Cog 1's parent
+        // (cog 2) is excluded, so its linkage is nulled AND cog 2 is omitted from
+        // included[] — proving parentWireId() keys (encoder-aware) agree with the
+        // serializer's getId(), so the encoded parent is not erroneously left intact nor
+        // every parent wrongly nulled (bundle ADR 0068 follow-up #4).
+        $response = $this->handle(
+            '/cogs?include=parent&relatedQuery[parent][filter][name]=Nonexistent',
+            extraServer: ['HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . \haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile::URI . '"'],
+        );
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        $document = $this->decode($response);
+
+        // Cog 1's `parent` linkage is nulled.
+        $data = $document['data'] ?? null;
+        self::assertIsArray($data);
+        $sawCog1 = false;
+        foreach ($data as $resource) {
+            self::assertIsArray($resource);
+            if (($resource['id'] ?? null) === $this->wireIds[1]) {
+                $sawCog1 = true;
+                $relationships = $resource['relationships'] ?? null;
+                self::assertIsArray($relationships);
+                $parent = $relationships['parent'] ?? null;
+                self::assertIsArray($parent);
+                self::assertArrayHasKey('data', $parent);
+                self::assertNull($parent['data'], "cog 1's excluded parent linkage is nulled");
+            }
+        }
+        self::assertTrue($sawCog1, 'cog 1 was rendered in the primary collection');
+
+        // The excluded parent (cog 2) is omitted from included[].
+        $included = $document['included'] ?? [];
+        self::assertIsArray($included);
+        foreach ($included as $resource) {
+            self::assertIsArray($resource);
+            self::assertNotSame($this->wireIds[2], $resource['id'] ?? null, 'the nulled parent is omitted from included[]');
+        }
+    }
+
+    #[Test]
+    public function aMatchingRelatedQueryFilterKeepsTheEncodedParentLinkageOnTheIncludePath(): void
+    {
+        // The matching-filter counterpart: a MATCHING relatedQuery filter keeps cog 1's
+        // encoded parent (cog 2) linkage intact — the encoder-aware batch key matched the
+        // present target rather than nulling everything (follow-up #4). The linkage (not
+        // included[]) is the witness here: cog 2 is itself a primary collection member of
+        // the self-referential `cogs`, so the spec never duplicates it into included[];
+        // what proves the encoded key agreed is that the linkage survived.
+        $response = $this->handle(
+            '/cogs?include=parent&relatedQuery[parent][filter][name]=Flywheel',
+            extraServer: ['HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . \haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile::URI . '"'],
+        );
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        $document = $this->decode($response);
+        $data = $document['data'] ?? null;
+        self::assertIsArray($data);
+
+        $sawCog1 = false;
+        foreach ($data as $resource) {
+            self::assertIsArray($resource);
+            if (($resource['id'] ?? null) === $this->wireIds[1]) {
+                $sawCog1 = true;
+                $relationships = $resource['relationships'] ?? null;
+                self::assertIsArray($relationships);
+                $parent = $relationships['parent'] ?? null;
+                self::assertIsArray($parent);
+                self::assertSame(
+                    ['type' => 'cogs', 'id' => $this->wireIds[2]],
+                    $parent['data'] ?? null,
+                    "cog 1's matching encoded parent linkage is kept",
+                );
+            }
+        }
+        self::assertTrue($sawCog1, 'cog 1 was rendered in the primary collection');
+    }
+
+    #[Test]
     public function anEncoderLessTypeOnTheSameProviderRendersWireEqualsStorage(): void
     {
         // `vaults` declares no encoder, so the SAME Doctrine provider treats the wire
@@ -188,8 +292,13 @@ final class DoctrineEncodedIdTest extends JsonApiFunctionalTestCase
         $schemaTool = new SchemaTool($entityManager);
         $schemaTool->createSchema($entityManager->getMetadataFactory()->getAllMetadata());
 
-        $entityManager->persist(new CogEntity(1, 'Sprocket'));
-        $entityManager->persist(new CogEntity(2, 'Flywheel'));
+        $cog2 = new CogEntity(2, 'Flywheel');
+        // Cog 1's parent is cog 2 — a self-referential to-one whose target carries an
+        // ENCODED `cog-…` wire id, so the to-one nulling path (bundle ADR 0068) can be
+        // exercised on an encoded-id parent (follow-up #4).
+        $cog1 = new CogEntity(1, 'Sprocket', $cog2);
+        $entityManager->persist($cog2);
+        $entityManager->persist($cog1);
         $entityManager->flush();
         $entityManager->clear();
 

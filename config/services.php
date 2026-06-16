@@ -93,6 +93,14 @@ return static function (ContainerConfigurator $container): void {
 
     // --- Operations + data providers -----------------------------------------
 
+    // The stateless factory that owns the related-collection vocabulary merge (the
+    // resource⊕relation⊕pivot filter/sort assembly), the 3-tier per-relation
+    // paginator chain, and the CollectionCriteria assembly — shared by the
+    // related-collection endpoint (the handler) and its include/linkage windowing
+    // twin (RelationshipWindowBatcher), so the logic lives once (bundle ADR 0057).
+    // Autowired into both.
+    $services->set(\haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory::class);
+
     // The validator argument is optional: it resolves to the ResourceValidator
     // only when the Symfony Validator bridge is wired (below), else null. The
     // dispatcher fires the per-operation lifecycle events (bundle ADR 0042); it is
@@ -111,7 +119,12 @@ return static function (ContainerConfigurator $container): void {
         // to page 1 of its relatedQuery-ordered/filtered set. Both autowired and
         // always present (the profile parse is gated on negotiation per request).
         ->arg('$windowBatcher', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataProvider\RelationshipWindowBatcher::class))
-        ->arg('$relationshipPagination', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipPagination::class));
+        ->arg('$relationshipPagination', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipPagination::class))
+        // The provider-agnostic include batcher (bundle ADR 0062): batch eager-loads a
+        // read's effective ?include tree one query per level through the
+        // fetchRelatedCollectionBatch SPI, for every batching provider (Doctrine AND
+        // in-memory). Always wired; a relation/provider that cannot batch falls to lazy.
+        ->arg('$includeBatcher', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataProvider\RelatedIncludeBatcher::class));
 
     // The ?withCount count seam (bundle ADR 0052): a stable per-request holder
     // threaded into the memoized Server (in loadExtension) and a batcher that fills
@@ -130,7 +143,21 @@ return static function (ContainerConfigurator $container): void {
     // swappable indirection so the immutable Server can render this request's pages.
     // Both autowired.
     $services->set(\haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipPagination::class);
-    $services->set(\haddowg\JsonApiBundle\DataProvider\RelationshipWindowBatcher::class);
+    $services->set(\haddowg\JsonApiBundle\DataProvider\RelationshipWindowBatcher::class)
+        // The optional filter-value validator: resolves to the FilterValueValidator
+        // only when the Symfony Validator bridge is wired, else null — so a mistyped
+        // relatedQuery filter value on the include/linkage path is the endpoint's same
+        // 400, and a constrained filter is inert without the validator, exactly as the
+        // handler degrades (bundle ADR 0068 follow-up #2).
+        ->arg('$filterValues', \Symfony\Component\DependencyInjection\Loader\Configurator\service(FilterValueValidator::class)->nullOnInvalid());
+
+    // The include batcher (bundle ADR 0062): a provider-agnostic orchestrator that
+    // batch eager-loads a read's effective ?include tree one query per level through
+    // the fetchRelatedCollectionBatch SPI (the successor to the Doctrine-only
+    // IncludePreloader + shipmonk/doctrine-entity-preloader, now dissolved). Autowired
+    // from the DataProviderRegistry, TypeMetadataResolver and ServerProvider; it carries
+    // the disable() seam the conformance witness toggles to prove byte-identical output.
+    $services->set(\haddowg\JsonApiBundle\DataProvider\RelatedIncludeBatcher::class);
 
     // The built-in subscriber that routes each lifecycle event to the resource's
     // overridable hook method (ResourceLifecycleHooksInterface), making the
@@ -224,24 +251,6 @@ return static function (ContainerConfigurator $container): void {
     // maps an entity, so non-Doctrine applications never reference the (absent)
     // EntityManagerInterface service.
     if (\interface_exists(\Doctrine\ORM\EntityManagerInterface::class)) {
-        // The include batch-preloader — wired only when the optional
-        // shipmonk/doctrine-entity-preloader library is installed. The
-        // DoctrineDataProvider injects it with ->nullOnInvalid() below, so without
-        // the library the provider's preload capability is a no-op and includes
-        // render lazily (ADR 0035).
-        if (\class_exists(\ShipMonk\DoctrineEntityPreloader\EntityPreloader::class)) {
-            $services->set(\ShipMonk\DoctrineEntityPreloader\EntityPreloader::class)
-                ->args([
-                    \Symfony\Component\DependencyInjection\Loader\Configurator\service(\Doctrine\ORM\EntityManagerInterface::class),
-                ]);
-
-            $services->set(\haddowg\JsonApiBundle\DataProvider\Doctrine\IncludePreloader::class)
-                ->args([
-                    '$entityManager' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\Doctrine\ORM\EntityManagerInterface::class),
-                    '$preloader' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\ShipMonk\DoctrineEntityPreloader\EntityPreloader::class),
-                ]);
-        }
-
         // priority -128: the reference provider is always the *fallback* — it
         // supports every entity-mapped type, so an application provider at the
         // default priority (0) shadows it for the types it supports without any
@@ -260,9 +269,13 @@ return static function (ContainerConfigurator $container): void {
                 '$entityClassByType' => [],
                 '$idEncoders' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(IdEncoderResolver::class),
                 '$extensions' => \Symfony\Component\DependencyInjection\Loader\Configurator\tagged_iterator(JsonApiBundle::DOCTRINE_EXTENSION_TAG),
-                // null when shipmonk/doctrine-entity-preloader is absent → lazy includes.
-                '$preloader' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataProvider\Doctrine\IncludePreloader::class)->nullOnInvalid(),
                 '$pivotAssociations' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataProvider\Doctrine\PivotAssociationResolver::class),
+                // Whether the windowed-include batch runs the bounded ROW_NUMBER/COUNT
+                // OVER native query (true, the default) or the per-parent bounded
+                // fallback (false) — json_api.doctrine.window_functions (bundle ADR
+                // 0065). Defaulted true so a provider wired outside the extension
+                // (a plain service test) keeps the native path.
+                '$windowFunctions' => '%haddowg_json_api.doctrine.window_functions%',
             ])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG, ['priority' => -128]);
 

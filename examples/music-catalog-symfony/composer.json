@@ -21,13 +21,11 @@
     },
     "require-dev": {
         "phpunit/phpunit": "^12.0",
-        "shipmonk/doctrine-entity-preloader": "^1.4",
         "symfony/clock": "^6.4 || ^7.0"
     },
     "suggest": {
         "egulias/email-validator": "Enables strict (RFC 5322) email validation (the users.email field uses ->strict()).",
-        "opis/json-schema": "Enables the optional structural document linter (json_api.schema_validation).",
-        "shipmonk/doctrine-entity-preloader": "Enables automatic batch eager-loading of the Doctrine provider's ?include tree so includes do not N+1 (the IncludePreloadTest witness)."
+        "opis/json-schema": "Enables the optional structural document linter (json_api.schema_validation)."
     },
     "autoload": {
         "psr-4": {

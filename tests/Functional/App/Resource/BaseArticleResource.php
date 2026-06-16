@@ -153,6 +153,13 @@ abstract class BaseArticleResource extends AbstractResource
             // subquery. Countable so its endpoint still emits a total over the
             // subquery scope (bundle ADR 0052).
             HasMany::make('editors')->type('authors')->storedAs('editors')->paginate(PagePaginator::make())->countable(),
+            // A countable, paginated inverse-FK to-many over the UNIQUE `pinnedComments`
+            // column (no other relation shares it), so the windowed-include batch (bundle
+            // ADR 0065) asserts per-parent order + the REAL total on the inverse-FK shape
+            // without the shared-column last-writer-wins boundary the `comments`-backed
+            // relations carry.
+            HasMany::make('pinnedComments')->type('comments')->storedAs('pinnedComments')->paginate(PagePaginator::make())->countable()
+                ->withFilters(Where::make('bodyContains', 'body', 'like')),
             // Load-aware relationships opting into linkageOnlyWhenLoaded() so the
             // storage-aware load-state predicate decides whether `data` is
             // emitted. They exercise the predicate on both providers without

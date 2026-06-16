@@ -53,22 +53,24 @@ trait SeedsDoctrinePivot
         $entityManager->persist($repeats);
 
         // Playlist 1: Intro@1, Outro@2, Bridge@3 — inserted out of position order so
-        // the order assertions cannot accidentally pass on insertion order.
+        // the order assertions cannot accidentally pass on insertion order. The `note`
+        // is a HIDDEN pivot field (filterable, never rendered): playlist 1 carries
+        // distinct notes so a `?filter[noteIs]` narrows by it.
         $rows = [
-            [$playlist, $outro, 2, '2024-01-02T00:00:00+00:00'],
-            [$playlist, $intro, 1, '2024-01-01T00:00:00+00:00'],
-            [$playlist, $bridge, 3, '2024-01-03T00:00:00+00:00'],
+            [$playlist, $outro, 2, '2024-01-02T00:00:00+00:00', 'beta'],
+            [$playlist, $intro, 1, '2024-01-01T00:00:00+00:00', 'alpha'],
+            [$playlist, $bridge, 3, '2024-01-03T00:00:00+00:00', 'gamma'],
             // Playlist 2 shares Intro, so per-parent scoping must not bleed.
-            [$other, $intro, 1, '2024-02-01T00:00:00+00:00'],
+            [$other, $intro, 1, '2024-02-01T00:00:00+00:00', null],
             // Playlist 3: Intro appears TWICE (positions 1 and 3) plus Outro once —
             // duplicate membership. Two distinct members across three association
             // rows, so the page total must be two and no member may split a page.
-            [$repeats, $intro, 1, '2024-03-01T00:00:00+00:00'],
-            [$repeats, $outro, 2, '2024-03-02T00:00:00+00:00'],
-            [$repeats, $intro, 3, '2024-03-03T00:00:00+00:00'],
+            [$repeats, $intro, 1, '2024-03-01T00:00:00+00:00', null],
+            [$repeats, $outro, 2, '2024-03-02T00:00:00+00:00', null],
+            [$repeats, $intro, 3, '2024-03-03T00:00:00+00:00', null],
         ];
 
-        foreach ($rows as [$parent, $track, $position, $addedAt]) {
+        foreach ($rows as [$parent, $track, $position, $addedAt, $note]) {
             $entityManager->persist(new PlaylistTrackEntity(
                 playlist: $parent,
                 track: $track,
@@ -80,6 +82,7 @@ trait SeedsDoctrinePivot
                 // only violates once the stored position is folded in.
                 weight: 100,
                 addedAt: new \DateTimeImmutable($addedAt),
+                note: $note,
             ));
         }
 

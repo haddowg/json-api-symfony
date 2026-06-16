@@ -36,5 +36,13 @@ class CommentEntity
         #[ORM\ManyToOne(targetEntity: ArticleEntity::class, inversedBy: 'featuredComments')]
         #[ORM\JoinColumn(name: 'featured_article_id', referencedColumnName: 'id', nullable: true)]
         public ?ArticleEntity $featuredArticle = null,
+        // A third, independent to-many owning side backing the article's
+        // `pinnedComments` relation — a UNIQUE column no other relation shares, so the
+        // windowed-include batch (bundle ADR 0065) can assert per-parent order + the real
+        // total on the inverse-FK shape without the shared-column last-writer-wins the
+        // `comments`/`featuredComments` columns carry (each backs several relations).
+        #[ORM\ManyToOne(targetEntity: ArticleEntity::class, inversedBy: 'pinnedComments')]
+        #[ORM\JoinColumn(name: 'pinned_article_id', referencedColumnName: 'id', nullable: true)]
+        public ?ArticleEntity $pinnedArticle = null,
     ) {}
 }

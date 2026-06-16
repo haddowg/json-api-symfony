@@ -5,18 +5,19 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Provider;
 
 use Doctrine\ORM\EntityManagerInterface;
+use haddowg\JsonApi\Collection\CollectionResult;
 use haddowg\JsonApi\Pagination\OffsetWindow;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\InMemory\ArrayFilterHandler;
 use haddowg\JsonApi\Resource\Sort\InMemory\ArraySortHandler;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
-use haddowg\JsonApiBundle\DataProvider\CollectionResult;
 use haddowg\JsonApiBundle\DataProvider\CriteriaApplier;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineDataProvider;
 use haddowg\JsonApiBundle\DataProvider\PivotAwareProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\PivotCollectionResult;
+use haddowg\JsonApiBundle\DataProvider\RelatedBatch;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Album;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Artist;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Library;
@@ -174,6 +175,39 @@ final class LibraryItemsProvider implements DataProviderInterface, PivotAwarePro
         );
     }
 
+    public function fetchRelatedCollectionBatch(
+        string $parentType,
+        array $parents,
+        RelationInterface $relation,
+        CollectionCriteria $criteria,
+        JsonApiRequestInterface $request,
+    ): RelatedBatch {
+        // A single-typed relation batches through the Doctrine push-down; only the
+        // polymorphic items relation is ours, batched by reading the mixed members off
+        // each Library and windowing per parent (the same per-parent loop the in-memory
+        // witness runs — fetchRelatedCollection lifted over the page).
+        if (\count($relation->relatedTypes()) <= 1) {
+            return $this->doctrine->fetchRelatedCollectionBatch($parentType, $parents, $relation, $criteria, $request);
+        }
+
+        $results = [];
+        foreach ($parents as $parent) {
+            if (!$parent instanceof Library || $parent->id === null) {
+                continue;
+            }
+
+            $results[(string) $parent->id] = $this->fetchRelatedCollection(
+                self::RELATED_TYPE,
+                $parent,
+                $relation,
+                $criteria,
+                $request,
+            );
+        }
+
+        return new RelatedBatch($results);
+    }
+
     public function fetchRelationshipPivot(string $type, object $parent, RelationInterface $relation): array
     {
         // The polymorphic items relation carries no pivot; any real pivot relation
@@ -185,13 +219,14 @@ final class LibraryItemsProvider implements DataProviderInterface, PivotAwarePro
         string $type,
         array $parents,
         RelationInterface $relation,
+        CollectionCriteria $criteria,
         JsonApiRequestInterface $request,
     ): array {
         // A single-typed relation counts through the Doctrine push-down; only the
         // polymorphic items relation is ours, counted by reading the mixed members
         // off each Library (the same path fetchRelatedCollection takes).
         if (\count($relation->relatedTypes()) <= 1) {
-            return $this->doctrine->countRelated($type, $parents, $relation, $request);
+            return $this->doctrine->countRelated($type, $parents, $relation, $criteria, $request);
         }
 
         $counts = [];
@@ -210,6 +245,29 @@ final class LibraryItemsProvider implements DataProviderInterface, PivotAwarePro
         }
 
         return $counts;
+    }
+
+    public function relatedToOneMatches(
+        string $relatedType,
+        object $related,
+        RelationInterface $relation,
+        CollectionCriteria $criteria,
+        JsonApiRequestInterface $request,
+    ): bool {
+        // The to-one match seam only fires for a monomorphic to-one; the polymorphic
+        // `items` relation is to-many, so this always routes through the Doctrine
+        // push-down for the library's single-typed to-ones.
+        return $this->doctrine->relatedToOneMatches($relatedType, $related, $relation, $criteria, $request);
+    }
+
+    public function relatedToOneMatchesBatch(
+        string $parentType,
+        array $parents,
+        RelationInterface $relation,
+        CollectionCriteria $criteria,
+        JsonApiRequestInterface $request,
+    ): array {
+        return $this->doctrine->relatedToOneMatchesBatch($parentType, $parents, $relation, $criteria, $request);
     }
 
     public function supportsPivot(string $relatedType, RelationInterface $relation): bool

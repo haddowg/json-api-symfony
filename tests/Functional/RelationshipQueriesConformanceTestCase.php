@@ -180,11 +180,11 @@ abstract class RelationshipQueriesConformanceTestCase extends JsonApiFunctionalT
     #[Test]
     #[Group('spec:profiles')]
     #[Group('spec:errors')]
-    public function aToOneRelationshipPathUnderTheProfileIs400(): void
+    public function aToOneRelationshipPathWithSortUnderTheProfileIs400(): void
     {
-        // `author` is a to-one (BelongsTo) relation: addressing it with a list-op
-        // sort/filter is the locked spec rule's `400` (a to-one path for a list op),
-        // with the offending canonical profile param in `source.parameter`.
+        // `author` is a to-one (BelongsTo) relation: addressing it with a [sort] op is
+        // the `400` (a single member has nothing to order), with the offending canonical
+        // profile param in `source.parameter`. [filter] on a to-one is allowed (ADR 0068).
         $response = $this->profileRequest('/articles/1?relatedQuery[author][sort]=name');
 
         self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
@@ -192,6 +192,100 @@ abstract class RelationshipQueriesConformanceTestCase extends JsonApiFunctionalT
             ['parameter' => 'relatedQuery[author]'],
             $this->firstError($this->decode($response))['source'] ?? null,
         );
+    }
+
+    #[Test]
+    #[Group('spec:profiles')]
+    #[Group('spec:errors')]
+    public function aToOneRelationshipPathWithPageUnderTheProfileIs400(): void
+    {
+        // A [page] op addressed to a to-one path is a `400` (a single member has nothing
+        // to page). Core's parser drops a [page] op silently, so the batcher detects it
+        // off the raw relatedQuery family (ADR 0068).
+        $response = $this->profileRequest('/articles/1?relatedQuery[author][page][number]=2');
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(
+            ['parameter' => 'relatedQuery[author]'],
+            $this->firstError($this->decode($response))['source'] ?? null,
+        );
+    }
+
+    // --- to-one nulling via relatedQuery[filter] on a primary request (ADR 0068) ---
+
+    #[Test]
+    #[Group('spec:profiles')]
+    #[Group('spec:fetching-filtering')]
+    public function relatedQueryFilterNullsAnExcludedToOneAndOmitsItFromIncluded(): void
+    {
+        // Article 1's author is Ada Lovelace (1). relatedQuery[author][filter][name]=Grace
+        // Hopper excludes the single target, so the to-one linkage is nulled AND the
+        // author is omitted from included[].
+        $document = $this->profileDocument('/articles/1?include=author&relatedQuery[author][filter][name]=Grace%20Hopper');
+
+        self::assertNull($this->toOneLinkage($document, 'author'));
+        self::assertSame([], $this->includedIds($document, 'authors'));
+    }
+
+    #[Test]
+    #[Group('spec:profiles')]
+    #[Group('spec:fetching-filtering')]
+    public function relatedQueryFilterKeepsAMatchingToOneAndItsInclude(): void
+    {
+        // The matching filter keeps the to-one: filter[name]=Ada Lovelace matches author
+        // 1, so the linkage and the include are unchanged.
+        $document = $this->profileDocument('/articles/1?include=author&relatedQuery[author][filter][name]=Ada%20Lovelace');
+
+        self::assertSame(['type' => 'authors', 'id' => '1'], $this->toOneLinkage($document, 'author'));
+        self::assertSame(['1'], $this->includedIds($document, 'authors'));
+    }
+
+    #[Test]
+    #[Group('spec:profiles')]
+    #[Group('spec:fetching-filtering')]
+    public function relatedQueryFilterNullsAnExcludedToOnePerParentOnACollection(): void
+    {
+        // GET /articles?include=author with relatedQuery[author][filter][name]=Ada Lovelace:
+        // each parent's to-one author is matched independently in ONE batched probe (no
+        // N+1). Articles 1 and 3 are authored by Ada (kept); article 4 by Grace and
+        // article 5 authorless (both nulled).
+        $document = $this->profileDocument('/articles?include=author&relatedQuery[author][filter][name]=Ada%20Lovelace');
+
+        $data = $document['data'] ?? null;
+        self::assertIsArray($data);
+
+        $expected = ['1' => ['type' => 'authors', 'id' => '1'], '3' => ['type' => 'authors', 'id' => '1'], '4' => null, '5' => null];
+        $seen = [];
+        foreach ($data as $resource) {
+            self::assertIsArray($resource);
+            $id = $resource['id'] ?? null;
+            self::assertIsString($id);
+            if (!\array_key_exists($id, $expected)) {
+                continue;
+            }
+            self::assertSame($expected[$id], $this->toOneLinkage($resource, 'author'), \sprintf('article "%s" author linkage', $id));
+            $seen[$id] = true;
+        }
+
+        \ksort($seen);
+        self::assertSame(\array_keys($expected), \array_keys($seen), 'every expected article was matched');
+
+        // Only Ada's author resource survives the per-parent filter in included[].
+        self::assertSame(['1'], $this->includedIds($document, 'authors'));
+    }
+
+    #[Test]
+    #[Group('spec:profiles')]
+    #[Group('spec:fetching-filtering')]
+    #[Group('spec:errors')]
+    public function anUnknownFilterKeyOnAToOnePathUnderTheProfileIs400(): void
+    {
+        // An unknown filter key on the to-one path is the to-many endpoint's same 400 —
+        // the filter resolves against the merged vocabulary either way.
+        $response = $this->profileRequest('/articles/1?relatedQuery[author][filter][nope]=x');
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['parameter' => 'filter[nope]'], $this->firstError($this->decode($response))['source'] ?? null);
     }
 
     #[Test]
@@ -341,6 +435,34 @@ abstract class RelationshipQueriesConformanceTestCase extends JsonApiFunctionalT
         }
 
         return $ids;
+    }
+
+    /**
+     * The linkage `data` of a resource's named TO-ONE relationship: a `{type, id}`
+     * identifier, or `null` when the to-one was nulled (the filter excluded it). Accepts
+     * either a whole document (reads `data`) or a single resource object.
+     *
+     * @param array<string, mixed> $resourceOrDocument
+     *
+     * @return array{type: mixed, id: mixed}|null
+     */
+    private function toOneLinkage(array $resourceOrDocument, string $relationship): ?array
+    {
+        $resource = $resourceOrDocument['data'] ?? $resourceOrDocument;
+        $relationships = $this->relationships($resource);
+
+        $relationshipObject = $relationships[$relationship] ?? null;
+        self::assertIsArray($relationshipObject, \sprintf('relationship "%s" is present', $relationship));
+        self::assertArrayHasKey('data', $relationshipObject, \sprintf('relationship "%s" carries linkage data', $relationship));
+
+        $data = $relationshipObject['data'];
+        if ($data === null) {
+            return null;
+        }
+
+        self::assertIsArray($data);
+
+        return ['type' => $data['type'] ?? null, 'id' => $data['id'] ?? null];
     }
 
     /**

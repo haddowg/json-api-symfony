@@ -16,6 +16,7 @@ use haddowg\JsonApi\Resource\Field\Integer;
 use haddowg\JsonApi\Resource\Field\Slug;
 use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApi\Resource\Field\Uuid;
+use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Playlist;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Hook\HookAbortException;
@@ -145,6 +146,17 @@ final class PlaylistResource extends AbstractResource implements ResourceLifecyc
                     // `position`), so `weight` may be set without re-sending `position`.
                     Integer::make('weight')->compareWith('position', Comparison::GreaterThanOrEqual),
                     DateTime::make('addedAt')->readOnly(),
+                )
+                // Pivot filters are AUTHOR-DECLARED via the `pivot.` column prefix
+                // (bundle ADR 0067): a filter whose column starts with `pivot.` targets
+                // the association-entity join, with the value cast auto-resolved from the
+                // pivot field backing the stripped column. `?filter[position]=2` keeps the
+                // member at pivot position 2; `?sort=position` still works zero-config (a
+                // pivot SORT auto-derives). Declaring the field alone no longer wires the
+                // filter — declare each pivot filter you want to expose.
+                ->withFilters(
+                    Where::make('position', 'pivot.position'),
+                    Where::make('weight', 'pivot.weight'),
                 )
                 ->extractUsing(static function (mixed $playlist): array {
                     // The generic engine instantiates the entity without its

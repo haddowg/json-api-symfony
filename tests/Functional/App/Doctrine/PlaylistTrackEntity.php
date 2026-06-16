@@ -45,6 +45,12 @@ class PlaylistTrackEntity
         public ?int $weight = null,
         #[ORM\Column(type: 'datetime_immutable')]
         public ?\DateTimeImmutable $addedAt = null,
+        // A HIDDEN pivot field's backing column: declared `hidden()` on the relation,
+        // so it is filterable/sortable via the `pivot.` prefix but NEVER rendered in
+        // the relationship's pivot meta (core hidden() gates rendering only, never
+        // query). Nullable so a freshly-created row without one inserts cleanly.
+        #[ORM\Column(type: 'string', nullable: true)]
+        public ?string $note = null,
     ) {}
 
     /**

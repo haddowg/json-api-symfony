@@ -6,23 +6,29 @@ namespace haddowg\JsonApiBundle\DataProvider\Doctrine;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\QueryBuilder;
-use haddowg\JsonApi\Exception\SortingUnsupported;
-use haddowg\JsonApi\Exception\SortParamUnrecognized;
+use haddowg\JsonApi\Collection\CollectionResult;
+use haddowg\JsonApi\Collection\CursorCollectionResult;
+use haddowg\JsonApi\Collection\WindowExecutor;
 use haddowg\JsonApi\Operation\QueryParameters;
+use haddowg\JsonApi\Pagination\CursorCodec;
+use haddowg\JsonApi\Pagination\CursorWindow;
 use haddowg\JsonApi\Pagination\OffsetWindow;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
-use haddowg\JsonApi\Resource\Field\FieldInterface;
+use haddowg\JsonApi\Resource\Field\IdEncoderInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
-use haddowg\JsonApi\Resource\Sort\SortDirective;
-use haddowg\JsonApi\Resource\Sort\SortInterface;
+use haddowg\JsonApi\Resource\Filter\FilterDefaults;
+use haddowg\JsonApi\Resource\Filter\WhereDoesntHave;
+use haddowg\JsonApi\Resource\Filter\WhereHas;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
-use haddowg\JsonApiBundle\DataProvider\CollectionResult;
 use haddowg\JsonApiBundle\DataProvider\CriteriaApplier;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
+use haddowg\JsonApiBundle\DataProvider\Keyset\CursorTokenMinter;
+use haddowg\JsonApiBundle\DataProvider\Keyset\KeysetColumn;
+use haddowg\JsonApiBundle\DataProvider\Keyset\KeysetResolver;
 use haddowg\JsonApiBundle\DataProvider\PivotAwareProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\PivotCollectionResult;
 use haddowg\JsonApiBundle\DataProvider\PivotFields;
-use haddowg\JsonApiBundle\DataProvider\PreloadsIncludesInterface;
+use haddowg\JsonApiBundle\DataProvider\RelatedBatch;
 use haddowg\JsonApiBundle\Server\IdEncoderResolver;
 
 /**
@@ -59,17 +65,19 @@ use haddowg\JsonApiBundle\Server\IdEncoderResolver;
  * `404` (no query runs). A type with no encoder decodes to itself, so the path is
  * identical to today.
  *
- * It also implements {@see PreloadsIncludesInterface}: when the optional
- * `shipmonk/doctrine-entity-preloader` library is installed (and so an
- * {@see IncludePreloader} is injected), the handler asks it to batch eager-load a
- * read's effective `?include` tree before rendering, so includes do not N+1
- * (ADR 0035). Without the library the injected preloader is null and the capability
- * is a no-op — the includes render lazily.
+ * Includes are batch eager-loaded by the provider-agnostic
+ * {@see \haddowg\JsonApiBundle\DataProvider\RelatedIncludeBatcher} (bundle ADR 0062),
+ * which drives this provider's {@see fetchRelatedCollectionBatch()} in plain-include
+ * (fast-path) mode one query per level — the successor to the dissolved
+ * `PreloadsIncludesInterface` + `shipmonk/doctrine-entity-preloader`. A relation this
+ * provider cannot batch (a computed/`extractUsing` column that is not a real
+ * association, or a composite-id target) returns an empty batch, so the orchestrator's
+ * write-back is a no-op and the relation renders lazily — the document is identical.
  *
  * @implements DataProviderInterface<object>
  * @implements PivotAwareProviderInterface<object>
  */
-final class DoctrineDataProvider implements DataProviderInterface, PreloadsIncludesInterface, PivotAwareProviderInterface
+final class DoctrineDataProvider implements DataProviderInterface, PivotAwareProviderInterface
 {
     /**
      * The root alias every generated QueryBuilder uses; handlers re-read it
@@ -79,37 +87,55 @@ final class DoctrineDataProvider implements DataProviderInterface, PreloadsInclu
 
     private readonly CriteriaApplier $applier;
 
+    private readonly WindowExecutor $windowExecutor;
+
     private readonly DoctrineFilterHandler $filterHandler;
 
     private readonly DoctrineSortHandler $sortHandler;
+
+    private readonly RelationScope $relationScope;
+
+    private readonly KeysetResolver $keysetResolver;
+
+    private readonly CursorTokenMinter $minter;
 
     /**
      * @var list<DoctrineExtensionInterface>
      */
     private readonly array $extensions;
 
+    private readonly WindowedRelationBatch $windowedBatch;
+
     /**
      * @param array<string, class-string>          $entityClassByType a `type → entity FQCN` map
      * @param IdEncoderResolver                    $idEncoders        resolves a type's id encoder (route `{id}` decode)
      * @param iterable<DoctrineExtensionInterface> $extensions        in descending tag-priority order
-     * @param ?IncludePreloader                    $preloader         the optional include batch-preloader (null when `shipmonk/doctrine-entity-preloader` is absent)
      * @param ?PivotAssociationResolver            $pivotAssociations resolves a `belongsToMany` pivot relation's association entity (always wired under Doctrine)
+     * @param bool                                 $windowFunctions   whether the windowed-include batch runs the bounded ROW_NUMBER/COUNT OVER native query (`json_api.doctrine.window_functions`, default true) or the per-parent bounded fallback (bundle ADR 0065)
      */
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
         private readonly array $entityClassByType,
         private readonly IdEncoderResolver $idEncoders,
         iterable $extensions = [],
-        // Not readonly: the include preloader is a pure optimization that can be
-        // toggled off at runtime (the conformance suite disables it to prove the
-        // rendered document is identical with and without preloading).
-        private ?IncludePreloader $preloader = null,
         private readonly ?PivotAssociationResolver $pivotAssociations = null,
+        private readonly bool $windowFunctions = true,
     ) {
         $this->extensions = \is_array($extensions) ? \array_values($extensions) : \iterator_to_array($extensions, false);
         $this->applier = new CriteriaApplier();
+        $this->windowExecutor = new WindowExecutor();
         $this->filterHandler = new DoctrineFilterHandler();
         $this->sortHandler = new DoctrineSortHandler();
+        $this->relationScope = new RelationScope($this->entityManager);
+        $this->keysetResolver = new KeysetResolver();
+        $this->minter = new CursorTokenMinter(new CursorCodec());
+        $this->windowedBatch = new WindowedRelationBatch(
+            $this->entityManager,
+            $this->idEncoders,
+            $this->applier,
+            $this->filterHandler,
+            $this->sortHandler,
+        );
     }
 
     public function supports(string $type): bool
@@ -151,7 +177,8 @@ final class DoctrineDataProvider implements DataProviderInterface, PreloadsInclu
             ->setParameter('jsonapi_id', $storageKey);
 
         foreach ($extensions as $extension) {
-            $builder = $extension->apply($builder, $type, QueryPurpose::FetchOne);
+            // The SPI fetchOne carries no request, so the context's request is null.
+            $builder = $extension->apply($builder, new ExtensionContext($type, QueryPurpose::FetchOne));
         }
 
         $result = $builder->getQuery()->getOneOrNullResult();
@@ -161,34 +188,151 @@ final class DoctrineDataProvider implements DataProviderInterface, PreloadsInclu
 
     public function fetchCollection(string $type, CollectionCriteria $criteria): CollectionResult
     {
+        $entityClass = $this->entityClassFor($type);
+
         $builder = $this->entityManager
-            ->getRepository($this->entityClassFor($type))
+            ->getRepository($entityClass)
             ->createQueryBuilder(self::ROOT_ALIAS);
 
         foreach ($this->extensionsFor($type) as $extension) {
-            $builder = $extension->apply($builder, $type, QueryPurpose::FetchCollection);
+            // The primary collection: the SPI fetchCollection carries no request, so the
+            // context's request is null. A related load of the same type reports the
+            // distinct FetchRelatedCollection purpose (and carries the request).
+            $builder = $extension->apply($builder, new ExtensionContext($type, QueryPurpose::FetchCollection));
+        }
+
+        // A cursor (keyset) window is its own pushed-down execution (the keyset
+        // WHERE + the forced NULL=largest ORDER BY); the OffsetWindow / null-window
+        // path stays byte-identical below. The keyset still applies the FILTERS via
+        // the shared applier (and validates `?sort` through the resolver) but builds
+        // its OWN order, never the plain sort handler (bundle ADR 0063).
+        if ($criteria->window instanceof CursorWindow) {
+            return $this->runCursor($type, $entityClass, $builder, $criteria, $criteria->window);
         }
 
         $builder = $this->applier->apply($criteria, $builder, $this->filterHandler, $this->sortHandler);
 
-        $window = $criteria->window;
-        if ($window === null) {
-            return new CollectionResult($this->items($builder));
+        // A primary collection is always countable: the executor counts the
+        // pre-window total then fetches the windowed page (core ADR 0061).
+        return $this->windowExecutor->run(
+            $criteria->window,
+            countable: true,
+            all: fn(): array => $this->items($builder),
+            count: fn(): int => $this->count($builder),
+            page: fn(int $offset, int $limit): array => $this->items(
+                (clone $builder)->setFirstResult($offset)->setMaxResults($limit),
+            ),
+            // Unused on the countable branch, but supplied for the contract.
+            probe: fn(int $offset, int $limit): array => $this->items(
+                (clone $builder)->setFirstResult($offset)->setMaxResults($limit),
+            ),
+        );
+    }
+
+    /**
+     * The cursor (keyset) execution pushed down to DQL — the twin of the in-memory
+     * witness ({@see \haddowg\JsonApiBundle\DataProvider\Keyset\InMemoryKeyset}),
+     * which is the ground truth (bundle ADR 0063). It resolves the keyset columns
+     * (the active sort + the appended/deduped PK; validates `?sort`), applies the
+     * filters, checks the cursor against the resolved columns (a stale cursor →
+     * 400), then via {@see DoctrineKeyset} builds the forced NULL=largest
+     * `ORDER BY` and the IS-NULL-branched keyset `WHERE`, over-fetching `limit + 1`
+     * through the shared {@see WindowExecutor::runCursor()}. A backward
+     * (`page[before]`) page flips every direction (which flips the null bucket via
+     * the leading `CASE WHEN c IS NULL` term) and the after-predicate, then reverses
+     * the sliced rows to natural forward order before minting.
+     *
+     * @param class-string $entityClass
+     *
+     * @return CursorCollectionResult<object>
+     */
+    private function runCursor(
+        string $type,
+        string $entityClass,
+        QueryBuilder $builder,
+        CollectionCriteria $criteria,
+        CursorWindow $window,
+    ): CursorCollectionResult {
+        $metadata = $this->entityManager->getClassMetadata($entityClass);
+        $pkColumn = $metadata->getSingleIdentifierFieldName();
+
+        $columns = $this->keysetResolver->resolve($criteria, $pkColumn);
+
+        // Apply the FILTERS only (the keyset owns the order). A sort-stripped,
+        // window-less criteria reuses the shared applier so the filter semantics
+        // are identical to a plain fetch, and the empty sort adds no ORDER BY.
+        $builder = $this->applier->apply(
+            $this->filtersOnly($criteria),
+            $builder,
+            $this->filterHandler,
+            $this->sortHandler,
+        );
+
+        // page[before] wins over page[after]: a backward page flips the directions
+        // (incl. the null bucket) and the after-predicate, so "after under the
+        // reversed order" is "before under the natural order".
+        $backward = $window->before !== null;
+        $boundary = $backward ? $window->before : $window->after;
+        $orderColumns = $backward
+            ? \array_map(static fn(KeysetColumn $c): KeysetColumn => new KeysetColumn($c->column, !$c->descending), $columns)
+            : $columns;
+
+        if ($boundary !== null) {
+            $parameter = $backward ? 'page[before]' : 'page[after]';
+            $this->keysetResolver->assertFresh($boundary, $columns, $parameter);
         }
 
-        if (!$window instanceof OffsetWindow) {
-            throw new \LogicException(\sprintf(
-                'The %s can only execute a %s pagination window; got %s.',
-                self::class,
-                OffsetWindow::class,
-                \get_debug_type($window),
-            ));
+        $keyset = new DoctrineKeyset($metadata, self::ROOT_ALIAS);
+        if ($boundary !== null) {
+            $keyset->applyAfter($builder, $boundary, $orderColumns);
         }
+        $keyset->orderBy($builder, $orderColumns);
 
-        $total = $this->count($builder);
-        $builder->setFirstResult($window->offset)->setMaxResults($window->limit);
+        return $this->windowExecutor->runCursor(
+            $window,
+            // Over-fetch limit+1 in the (possibly flipped) order. For a backward
+            // page the surplus is dropped by runCursor BEFORE this closure mints,
+            // so reverse here only after the slice — done in the cursors closure.
+            probe: fn(CursorWindow $w): array => $this->items(
+                (clone $builder)->setMaxResults($w->limit + 1),
+            ),
+            cursors: function (array $rows, bool $hasMore) use ($window, $columns, $backward, $metadata): CursorCollectionResult {
+                // Re-orient a backward page to natural forward order for rendering.
+                $page = $backward ? \array_reverse($rows) : $rows;
 
-        return new CollectionResult($this->items($builder), $total);
+                return $this->minter->mint(
+                    $window,
+                    $columns,
+                    \array_values($page),
+                    $hasMore,
+                    static fn(object $row, string $column): string|int|float|bool|null => CursorTokenMinter::coerce(
+                        $metadata->getFieldValue($row, $column),
+                    ),
+                );
+            },
+        );
+    }
+
+    /**
+     * A sort-stripped, window-less copy of `$criteria` so the shared applier
+     * applies only its FILTERS on the cursor path (the keyset owns the order).
+     */
+    private function filtersOnly(CollectionCriteria $criteria): CollectionCriteria
+    {
+        return new CollectionCriteria(
+            new QueryParameters(
+                $criteria->queryParameters->fields,
+                $criteria->queryParameters->includes,
+                sort: [],
+                filter: $criteria->queryParameters->filter,
+                pagination: $criteria->queryParameters->pagination,
+            ),
+            $criteria->filters,
+            sorts: [],
+            window: null,
+            defaultSort: [],
+            aliasOf: $criteria->aliasOf,
+        );
     }
 
     /**
@@ -223,102 +367,603 @@ final class DoctrineDataProvider implements DataProviderInterface, PreloadsInclu
             ));
         }
 
-        $property = $relation->column() ?? $relation->name();
         $relatedClass = $this->entityClassFor($relatedType);
 
         $builder = $this->entityManager
             ->getRepository($relatedClass)
             ->createQueryBuilder(self::ROOT_ALIAS);
 
-        $owningField = $this->inverseOwningField($parent, $property);
-        $relatedMetadata = $this->entityManager->getClassMetadata($relatedClass);
-
-        // Fast-path: a single-valued inverse association (the related entity
-        // carries the owning FK). A many-to-many *inverse* side also has a
-        // non-null mappedBy, but it points to a COLLECTION — the
-        // isSingleValuedAssociation guard routes it to the subquery instead.
-        if ($owningField !== null && $relatedMetadata->isSingleValuedAssociation($owningField)) {
-            $builder
-                ->andWhere(\sprintf('%s.%s = :jsonapi_parent', self::ROOT_ALIAS, $owningField))
-                ->setParameter('jsonapi_parent', $parent);
-        } else {
-            // Subquery branch (owning-side, or many-to-many either side): scope
-            // by membership with an IN subquery that keeps the related entity as
-            // the outer query root. getClassMetadata resolves a proxy class to
-            // its real entity name.
-            $parentClass = $this->entityManager->getClassMetadata($parent::class)->getName();
-            $relatedIdField = $relatedMetadata->getSingleIdentifierFieldName();
-
-            $sub = $this->entityManager->createQueryBuilder()
-                ->select(\sprintf('related_scope.%s', $relatedIdField))
-                ->from($parentClass, 'parent_scope')
-                ->innerJoin(\sprintf('parent_scope.%s', $property), 'related_scope')
-                ->where('parent_scope = :jsonapi_parent');
-
-            $builder
-                ->andWhere($builder->expr()->in(
-                    \sprintf('%s.%s', self::ROOT_ALIAS, $relatedIdField),
-                    $sub->getDQL(),
-                ))
-                ->setParameter('jsonapi_parent', $parent); // bind on the OUTER builder, which executes
-        }
+        // Scope the related-rooted query to the parent — a single-valued inverse
+        // FK fast-path, otherwise an IN subquery rooted on the parent (the related
+        // entity stays the outer root, so the shared machinery below is identical).
+        $this->relationScope->scopeToParent($builder, self::ROOT_ALIAS, $relatedClass, $parent, $relation);
 
         foreach ($this->extensionsFor($relatedType) as $extension) {
-            $builder = $extension->apply($builder, $relatedType, QueryPurpose::FetchCollection);
+            $builder = $extension->apply($builder, new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request));
         }
 
         $builder = $this->applier->apply($criteria, $builder, $this->filterHandler, $this->sortHandler);
 
-        $window = $criteria->window;
-        if ($window === null) {
-            return new CollectionResult($this->items($builder));
-        }
-
-        if (!$window instanceof OffsetWindow) {
-            throw new \LogicException(\sprintf(
-                'The %s can only execute a %s pagination window; got %s.',
-                self::class,
-                OffsetWindow::class,
-                \get_debug_type($window),
-            ));
-        }
-
-        // A non-countable related to-many paginates count-FREE: no COUNT query runs;
-        // instead the page is over-fetched by one (limit+1) and the surplus row
-        // signals a further page, driving the count-free page's `next` link without
-        // a total (bundle ADR 0052). A countable relation counts the pre-window total
-        // as before, emitting total + `last`.
-        if (!$relation->isCountable()) {
-            return $this->countFreePage($builder, $window);
-        }
-
-        $total = $this->count($builder);
-        $builder->setFirstResult($window->offset)->setMaxResults($window->limit);
-
-        return new CollectionResult($this->items($builder), $total);
+        // The window/count/count-free tail runs through the shared executor (core
+        // ADR 0061). A non-countable related to-many takes the count-free branch (no
+        // COUNT; the probe over-fetches by one and the surplus row drives the
+        // count-free page's `next` link); a countable relation counts the pre-window
+        // total as before, emitting total + `last` (bundle ADR 0052). The executor
+        // passes `limit + 1` to the probe, so the closure does NOT add one itself.
+        return $this->windowExecutor->run(
+            $criteria->window,
+            countable: $relation->isCountable(),
+            all: fn(): array => $this->items($builder),
+            count: fn(): int => $this->count($builder),
+            page: fn(int $offset, int $limit): array => $this->items(
+                (clone $builder)->setFirstResult($offset)->setMaxResults($limit),
+            ),
+            probe: fn(int $offset, int $limit): array => $this->items(
+                (clone $builder)->setFirstResult($offset)->setMaxResults($limit),
+            ),
+        );
     }
 
     /**
-     * The count-free page for a non-countable related collection: the window is
-     * applied with `LIMIT $limit + 1` (one row past the page), so the surplus row
-     * proves a further page exists without any `COUNT`. The surplus is dropped from
-     * the rendered items and reported through {@see CollectionResult::$hasMore}; the
-     * result carries a `null` total with {@see CollectionResult::$windowed} true so
-     * the handler builds a count-free page (bundle ADR 0052 / core ADR 0057).
+     * The batched related-collection fetch for a page of parents (Approach B, bundle
+     * ADR 0061): ONE query scopes the related entity to the WHOLE page and projects
+     * the parent discriminator, the shared {@see CriteriaApplier} applies the
+     * filters/sorts IN that query, the flat result is materialized, partitioned by
+     * parent in PHP, and each partition windowed through the shared
+     * {@see WindowExecutor} — so a windowed collection include costs O(N) statements
+     * (one per relation), not O(M*N) (the per-parent
+     * {@see fetchRelatedCollection()} loop the {@see \haddowg\JsonApiBundle\DataProvider\RelationshipWindowBatcher}
+     * drove). Because the whole filtered set is materialized, the per-partition window
+     * (the countable count / the count-free `hasMore` probe) is computed in PHP with no
+     * further query.
      *
-     * @return CollectionResult<object>
+     * The scope has two shapes ({@see RelationScope::scopeBatchToParents()}): an
+     * inverse-FK fast-path roots on the related entity and scopes by the owning FK
+     * `IN` the page; an owning-side / many-to-many shape roots on the PARENT and joins
+     * the related collection (mirroring {@see countRelated()}). Either way the related
+     * entity is reachable under the scope's related alias, so the applier applies the
+     * related vocabulary on it (passed as the default alias), and the parent
+     * discriminator is selected so the rows partition by parent.
+     *
+     * A polymorphic to-many keeps the same boundary as {@see fetchRelatedCollection()}:
+     * its members span entity classes, so there is no single scoped query — it throws
+     * (supply a custom provider).
+     *
+     * @param list<object> $parents
      */
-    private function countFreePage(QueryBuilder $builder, OffsetWindow $window): CollectionResult
-    {
-        $builder->setFirstResult($window->offset)->setMaxResults($window->limit + 1);
-        $rows = $this->items($builder);
-
-        $hasMore = \count($rows) > $window->limit;
-        if ($hasMore) {
-            $rows = \array_slice($rows, 0, $window->limit);
+    public function fetchRelatedCollectionBatch(
+        string $parentType,
+        array $parents,
+        RelationInterface $relation,
+        CollectionCriteria $criteria,
+        JsonApiRequestInterface $request,
+    ): RelatedBatch {
+        if (\count($relation->relatedTypes()) > 1) {
+            throw new \LogicException(\sprintf(
+                'The %s does not support a polymorphic (morph-to-many) related collection for relationship "%s": its members span entity classes and cannot be one scoped query. Supply a custom DataProvider that resolves the related members across types.',
+                self::class,
+                $relation->name(),
+            ));
         }
 
-        return new CollectionResult($rows, total: null, windowed: true, hasMore: $hasMore);
+        if ($parents === []) {
+            return new RelatedBatch([]);
+        }
+
+        // The opt-out moves into how the provider batches (bundle ADR 0062): a column
+        // that is not a real Doctrine association (a computed/extractUsing value, or an
+        // alias that is not the association name), or a target with a composite id, is
+        // not batchable here — return an EMPTY batch so the orchestrator's write-back is
+        // a no-op and the relation renders lazily, exactly as the retired preloader
+        // skipped it. (These were the preloader's hasAssociation/composite-id guards.)
+        if (!$this->isBatchableAssociation($parents[0], $relation)) {
+            return new RelatedBatch([]);
+        }
+
+        $relatedType = $relation->relatedTypes()[0] ?? $parentType;
+        $relatedClass = $this->entityClassFor($relatedType);
+
+        // A to-one include is the WHERE id IN (:targetIds) arm (bundle ADR 0062): the
+        // page's target ids are projected as scalars off the already-loaded parents (no
+        // proxy init), loaded in ONE id-IN query, and partitioned 1:1 to their parents.
+        if (!$relation->isToMany()) {
+            return $this->fetchToOneBatch($parentType, $parents, $relation, $relatedClass, $request);
+        }
+
+        // A WINDOWED to-many include (an OffsetWindow, the profile's page-1 slice) is
+        // BOUNDED rather than materialised whole (bundle ADRs 0065/0066). With window
+        // functions on (the default) and no query extension on the related type, ONE
+        // native ROW_NUMBER/COUNT OVER query fetches only ~limit rows per parent AND the
+        // REAL per-parent total — for a FILTERED include too: the inner scoped+filtered
+        // query is built by the same DQL filter executor the endpoint runs, then wrapped
+        // for the window (bundle ADR 0066), so the per-parent fallback no longer serves a
+        // filtered include on the `on` path. Only an extended related type (or window
+        // functions off) routes to the per-parent BOUNDED fallback: a loop over the proven
+        // single-parent fetch, each a real LIMIT push-down. A PLAIN include (no window)
+        // keeps the materialise-and-partition fast path below, UNTOUCHED.
+        if ($criteria->window instanceof OffsetWindow) {
+            if ($this->windowFunctions && $this->isNativelyWindowable($relatedType, $relation, $criteria)) {
+                return $this->windowedBatch->fetch($parentType, $parents, $relatedType, $relatedClass, $relation, $criteria);
+            }
+
+            return $this->fetchWindowedBatchPerParent($parentType, $parents, $relatedType, $relation, $criteria, $request);
+        }
+
+        $scope = $this->relationScope->scopeBatchToParents($relatedClass, $parents, $relation);
+        $builder = $scope->builder;
+
+        // Apply the related type's query extensions ON the related entity, never the
+        // query root. For the inverse-FK shape the root IS the related entity, so the
+        // extensions apply to the builder as the unbatched path does. For the pair shape
+        // the query roots on the PARENT (the related entity is a join alias), so an
+        // extension reading $builder->getRootAliases()[0] would scope the parent — the
+        // wrong entity; instead the extension constraint is built on a related-rooted
+        // subquery and the pair query's related membership is filtered to it, so a
+        // soft-delete / tenant / published-only related extension excludes the right
+        // members exactly as the related-rooted unbatched fetch does (bundle ADR 0061).
+        $builder = $this->applyRelatedBatchExtensions($builder, $scope, $relatedType, $request);
+
+        // Apply the related vocabulary on the scope's related alias (the query root for
+        // the inverse-FK shape, the join alias for the parent-rooted shape), so the
+        // filters/sorts land on the related entity exactly as the per-parent fetch does.
+        $builder = $this->applier->apply($criteria, $builder, $this->filterHandler, $this->sortHandler, $scope->relatedAlias);
+
+        // Materialize the scoped rows once, then partition by parent — Approach B's
+        // single round-trip.
+        $partitions = $this->partitionByParent($builder, $scope, $parentType);
+
+        // Window each parent's partition through the shared executor. The whole set is
+        // already in PHP, so the closures slice/count the partition with no query — a
+        // countable relation counts the partition size, a non-countable one probes it
+        // limit+1 (count-free), identical to fetchRelatedCollection()'s tail.
+        $results = [];
+        foreach ($partitions as $wireId => $members) {
+            $results[$wireId] = $this->windowExecutor->run(
+                $criteria->window,
+                countable: $relation->isCountable(),
+                all: static fn(): array => $members,
+                count: static fn(): int => \count($members),
+                page: static fn(int $offset, int $limit): array => \array_slice($members, $offset, $limit),
+                probe: static fn(int $offset, int $limit): array => \array_slice($members, $offset, $limit),
+            );
+        }
+
+        return new RelatedBatch($results);
+    }
+
+    /**
+     * Whether a windowed to-many include can run the native ROW_NUMBER batch
+     * ({@see WindowedRelationBatch}) rather than the per-parent bounded fallback (bundle
+     * ADRs 0065/0066). The native path now serves a FILTERED and an unfiltered windowed
+     * include alike — the inner scoped query is built by the EXACT same DQL machinery the
+     * related endpoint runs (RelationScope-style parent-scope + the shared
+     * {@see CriteriaApplier} driving the #1 DQL {@see DoctrineFilterHandler}), then wrapped
+     * with the window functions over the generated SQL aliases READ off its
+     * {@see \Doctrine\ORM\Query\ResultSetMapping}; so a filtered windowed include is
+     * witness-equivalent for free (it IS the same executor) and runs in ONE bounded query
+     * (bundle ADR 0066). The filter check is therefore RETIRED from this gate.
+     *
+     * It still requires **no query extension** on the related type — a soft-delete /
+     * tenant / published-only extension adds a DQL `WHERE` keyed on the query root that the
+     * batched native shape does not thread, so an extended related type routes to the
+     * per-parent fallback (which applies the extension through the proven DQL path; folding
+     * extensions onto the native path is out of scope of this slice).
+     *
+     * The relation's sort and filters are handled natively; the native builder itself
+     * rejects a shape it cannot express (a polymorphic to-many, a composite-id
+     * parent/related, a computed sort) by throwing, so this gate only screens the
+     * routing-level condition.
+     */
+    private function isNativelyWindowable(string $relatedType, RelationInterface $relation, CollectionCriteria $criteria): bool
+    {
+        // A query extension on the related type still routes to the per-parent fallback —
+        // its DQL WHERE is applied on the related root, which the batched native shape does
+        // not thread (the only routing condition; the filter deviation is removed).
+        return $this->extensionsFor($relatedType) === [];
+    }
+
+    /**
+     * The OFF / EXTENDED fallback for a windowed to-many include (bundle ADRs 0065/0066):
+     * a per-parent BOUNDED loop over the proven single-parent
+     * {@see fetchRelatedCollection()}, assembled into a {@see RelatedBatch} keyed by
+     * parent wire id. Each call pushes down a REAL `LIMIT`/`OFFSET` (a countable relation
+     * counts the pre-window total, a non-countable one probes limit+1 count-free) and
+     * applies the criteria filters/sorts AND the related type's query extensions through
+     * the same DQL path the related-collection endpoint runs — so it is witness-correct
+     * by construction (it IS the per-parent twin the in-memory witness mirrors) and
+     * BOUNDED (M queries, each a LIMIT, never the whole-set materialise the 6a batch ran).
+     * A FILTERED include no longer routes here on the `on` path — the native batch now
+     * serves it in ONE bounded query (bundle ADR 0066); this fallback serves only window
+     * functions OFF and an EXTENDED related type.
+     *
+     * @param list<object> $parents
+     */
+    private function fetchWindowedBatchPerParent(
+        string $parentType,
+        array $parents,
+        string $relatedType,
+        RelationInterface $relation,
+        CollectionCriteria $criteria,
+        JsonApiRequestInterface $request,
+    ): RelatedBatch {
+        $parentMetadata = $this->entityManager->getClassMetadata($parents[0]::class);
+        $encoder = $this->idEncoders->encoderFor($parentType);
+
+        $results = [];
+        foreach ($parents as $parent) {
+            $wireId = $this->parentWireId($parent, $parentMetadata, $encoder);
+            if ($wireId === null) {
+                continue;
+            }
+
+            $results[$wireId] = $this->fetchRelatedCollection($relatedType, $parent, $relation, $criteria, $request);
+        }
+
+        return new RelatedBatch($results);
+    }
+
+    /**
+     * The to-one include arm of {@see fetchRelatedCollectionBatch()} (bundle ADR 0062):
+     * the successor to ShipMonk's to-one preload (one `WHERE id IN (:targetIds)` over the
+     * page's distinct target ids — ONE query for the level, matching ShipMonk's budget).
+     * It reads each parent's target id directly off the already-managed parent (a Doctrine
+     * proxy exposes its identifier WITHOUT initialising it, so no extra round-trip), loads
+     * the distinct targets in ONE id-IN query keyed by id, and partitions each parent to a
+     * 0-or-1 {@see CollectionResult} keyed by the parent's wire id — so the orchestrator
+     * writes back `items[0] ?? null` onto the to-one column.
+     *
+     * Reading the target off the managed parent (rather than a scalar `IDENTITY()`
+     * projection query) keeps the to-one level at ONE store round-trip — the id-IN load —
+     * matching the retired ShipMonk preload's budget and so the nested include bound.
+     *
+     * A to-one include carries no filter/sort/window (the fast path), so no criteria is
+     * applied; the related type's query extensions still apply to the id-IN load so a
+     * soft-delete / tenant / published-only target is excluded exactly as a lazy load
+     * would be (a parent whose target the extension hides then renders `data: null`, the
+     * same lazy result).
+     *
+     * @param list<object> $parents
+     * @param class-string $relatedClass
+     */
+    private function fetchToOneBatch(
+        string $parentType,
+        array $parents,
+        RelationInterface $relation,
+        string $relatedClass,
+        ?JsonApiRequestInterface $request,
+    ): RelatedBatch {
+        $property = $relation->column() ?? $relation->name();
+        $parentMetadata = $this->entityManager->getClassMetadata($parents[0]::class);
+        $relatedMetadata = $this->entityManager->getClassMetadata($relatedClass);
+        $relatedIdField = $relatedMetadata->getSingleIdentifierFieldName();
+        $encoder = $this->idEncoders->encoderFor($parentType);
+
+        // Read each parent's target reference + its id off the managed parent. A Doctrine
+        // proxy carries its identifier, so reading the FK id never initialises the target
+        // (no extra round-trip) — the ShipMonk "read the reference id" shape. A parent
+        // whose to-one is null carries no target.
+        $parentTargetId = [];
+        $targetIds = [];
+        foreach ($parents as $parent) {
+            $wireId = $this->parentWireId($parent, $parentMetadata, $encoder);
+            if ($wireId === null) {
+                continue;
+            }
+
+            $targetId = $this->toOneTargetId($parent, $property, $relatedMetadata, $relatedIdField);
+            $parentTargetId[$wireId] = $targetId;
+            if ($targetId !== null) {
+                $targetIds[(string) $targetId] = $targetId;
+            }
+        }
+
+        $targetsById = $this->loadToOneTargets($relatedClass, $relatedMetadata, $relatedIdField, $relation->relatedTypes()[0] ?? $parentType, \array_values($targetIds), $request);
+
+        // Partition each parent to its single target (0-or-1 members), keyed by wire id.
+        $results = [];
+        foreach ($parentTargetId as $wireId => $targetId) {
+            $target = $targetId !== null ? ($targetsById[(string) $targetId] ?? null) : null;
+            $results[$wireId] = new CollectionResult($target !== null ? [$target] : []);
+        }
+
+        return new RelatedBatch($results);
+    }
+
+    /**
+     * The wire id of a managed `$parent` (encoded when the parent type declares an
+     * encoder), or null when its identifier is not a single scalar.
+     *
+     * @param \Doctrine\ORM\Mapping\ClassMetadata<object> $parentMetadata
+     */
+    private function parentWireId(object $parent, \Doctrine\ORM\Mapping\ClassMetadata $parentMetadata, ?IdEncoderInterface $encoder): ?string
+    {
+        $parentIdField = $parentMetadata->getSingleIdentifierFieldName();
+        $key = $parentMetadata->getIdentifierValues($parent)[$parentIdField] ?? null;
+        if (!\is_scalar($key)) {
+            return null;
+        }
+
+        return $encoder !== null ? $encoder->encode($key) : (string) $key;
+    }
+
+    /**
+     * The single-id of a to-one target read off the managed `$parent` WITHOUT initialising
+     * it (a Doctrine proxy exposes its identifier), or null when the to-one is unset. Reads
+     * the association value via the parent metadata's reflection, then the target's id via
+     * the related metadata — a proxy returns its id field without a database round-trip.
+     *
+     * @param \Doctrine\ORM\Mapping\ClassMetadata<object> $relatedMetadata
+     */
+    private function toOneTargetId(object $parent, string $property, \Doctrine\ORM\Mapping\ClassMetadata $relatedMetadata, string $relatedIdField): int|string|null
+    {
+        $reflection = $this->entityManager->getClassMetadata($parent::class)->getReflectionProperty($property);
+        if ($reflection === null || !$reflection->isInitialized($parent)) {
+            return null;
+        }
+
+        $target = $reflection->getValue($parent);
+        if (!\is_object($target)) {
+            return null;
+        }
+
+        $key = $relatedMetadata->getIdentifierValues($target)[$relatedIdField] ?? null;
+        if (\is_int($key) || \is_string($key)) {
+            return $key;
+        }
+
+        return null;
+    }
+
+    /**
+     * Loads the to-one targets of `$relatedClass` for the distinct `$targetIds` in ONE
+     * id-IN query, applying the related type's {@see DoctrineExtensionInterface}s so a
+     * scoped target (soft-deleted / un-tenant / unpublished) is excluded exactly as a
+     * lazy load would exclude it, keyed by storage id. Empty when there are no target ids.
+     *
+     * @param class-string                  $relatedClass
+     * @param \Doctrine\ORM\Mapping\ClassMetadata<object> $relatedMetadata
+     * @param list<mixed>                   $targetIds
+     *
+     * @return array<string, object> `storageId => target`
+     */
+    private function loadToOneTargets(
+        string $relatedClass,
+        \Doctrine\ORM\Mapping\ClassMetadata $relatedMetadata,
+        string $relatedIdField,
+        string $relatedType,
+        array $targetIds,
+        ?JsonApiRequestInterface $request,
+    ): array {
+        if ($targetIds === []) {
+            return [];
+        }
+
+        $builder = $this->entityManager
+            ->getRepository($relatedClass)
+            ->createQueryBuilder(self::ROOT_ALIAS)
+            ->where(\sprintf('%s.%s IN (:jsonapi_target_ids)', self::ROOT_ALIAS, $relatedIdField))
+            ->setParameter('jsonapi_target_ids', $targetIds);
+
+        foreach ($this->extensionsFor($relatedType) as $extension) {
+            $builder = $extension->apply($builder, new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request));
+        }
+
+        $loaded = $builder->getQuery()->getResult();
+        \assert(\is_array($loaded));
+
+        $targetsById = [];
+        foreach ($loaded as $entity) {
+            if (!\is_object($entity)) {
+                continue;
+            }
+            $key = $relatedMetadata->getIdentifierValues($entity)[$relatedIdField] ?? null;
+            if (\is_scalar($key)) {
+                $targetsById[(string) $key] = $entity;
+            }
+        }
+
+        return $targetsById;
+    }
+
+    /**
+     * Whether `$relation` is a real, single-identifier Doctrine association on the
+     * `$parent`'s entity that {@see fetchRelatedCollectionBatch()} can batch — the
+     * provider-side opt-out (bundle ADR 0062), replacing the retired preloader's
+     * pre-call guards. Lazy (an empty batch) when the column is not an association (a
+     * computed/`extractUsing` value, or an alias that is not the association name) or
+     * the target carries a composite identifier (the batch id-loads by a single id).
+     */
+    private function isBatchableAssociation(object $parent, RelationInterface $relation): bool
+    {
+        $property = $relation->column() ?? $relation->name();
+        $metadata = $this->entityManager->getClassMetadata($parent::class);
+
+        if (!$metadata->hasAssociation($property)) {
+            return false;
+        }
+
+        $mapping = $metadata->getAssociationMapping($property);
+        $targetEntity = $mapping['targetEntity'] ?? null;
+        if (!\is_string($targetEntity)) {
+            return false;
+        }
+
+        return !$this->entityManager->getClassMetadata($targetEntity)->isIdentifierComposite;
+    }
+
+    /**
+     * Applies the related type's {@see DoctrineExtensionInterface}s to the batched scope's
+     * query, ON the related entity in BOTH shapes — the divergence the unbatched
+     * {@see fetchRelatedCollection()} avoids because its query is always related-rooted.
+     *
+     *  - **Inverse-FK shape** ({@see BatchScope::$relatedClass} null) — the related entity
+     *    IS the query root, so each extension applies to the builder directly, reading
+     *    `$builder->getRootAliases()[0]` (the related root) exactly as the unbatched path
+     *    does.
+     *  - **Pair shape** ({@see BatchScope::$relatedClass} set) — the query roots on the
+     *    PARENT, so an extension applied to the builder would scope the PARENT (its root
+     *    alias), not the related members. Instead each extension applies to a fresh
+     *    related-ROOTED subquery builder (whose root alias IS the related entity, so the
+     *    contract holds), and the pair query's related membership is constrained `IN` the
+     *    extension-narrowed related ids — so a soft-delete / tenant / published-only related
+     *    extension excludes the right members, matching the related-rooted unbatched fetch
+     *    (bundle ADR 0061). With no related extension the subquery is never built and the
+     *    pair query is unchanged.
+     */
+    private function applyRelatedBatchExtensions(QueryBuilder $builder, BatchScope $scope, string $relatedType, ?JsonApiRequestInterface $request): QueryBuilder
+    {
+        $extensions = $this->extensionsFor($relatedType);
+        if ($extensions === []) {
+            return $builder;
+        }
+
+        $context = new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request);
+
+        // Inverse-FK shape: the related entity is the query root, so the extensions apply
+        // to the builder directly (their getRootAliases()[0] is the related root).
+        if ($scope->relatedClass === null || $scope->relatedIdField === null) {
+            foreach ($extensions as $extension) {
+                $builder = $extension->apply($builder, $context);
+            }
+
+            return $builder;
+        }
+
+        // Pair shape: the query roots on the parent, so build the extension constraints on
+        // a related-ROOTED subquery (its root IS the related entity) and constrain the pair
+        // query's related membership to the extension-narrowed related ids.
+        $subAlias = 'jsonapi_ext_related';
+        $sub = $this->entityManager
+            ->getRepository($scope->relatedClass)
+            ->createQueryBuilder($subAlias)
+            ->select(\sprintf('%s.%s', $subAlias, $scope->relatedIdField));
+
+        foreach ($extensions as $extension) {
+            $sub = $extension->apply($sub, $context);
+        }
+
+        // Fold the subquery's parameters onto the outer (executing) builder — extensions
+        // bind their constraint parameters on the builder they were handed (the subquery),
+        // but only the outer builder executes the merged DQL. Appending the Parameter
+        // objects preserves each one's declared DBAL type.
+        $merged = $builder->getParameters();
+        foreach ($sub->getParameters() as $parameter) {
+            $merged->add($parameter);
+        }
+        $builder->setParameters($merged);
+
+        return $builder->andWhere($builder->expr()->in(
+            \sprintf('%s.%s', $scope->relatedAlias, $scope->relatedIdField),
+            $sub->getDQL(),
+        ));
+    }
+
+    /**
+     * Materializes the batched scope's result and groups the related entities by their
+     * parent's WIRE id (Approach B's PHP partition), per the scope's shape
+     * ({@see BatchScope}). The inverse-FK shape's rows hydrate
+     * `[0 => relatedEntity, 'jsonapi_parent_id' => parentStorageId]` (one related entity
+     * per row, keyed by the projected scalar). The pair shape's rows are scalar
+     * `(parentId, relatedId)` pairs — the distinct related entities are loaded by id in
+     * ONE further IN-query and re-associated per pair, preserving order (see
+     * {@see partitionPairs()}). Either way the parent storage id maps to the wire id the
+     * partition keys on (encoded when the parent type declares an id encoder) so the
+     * keys match {@see countRelated()} and {@see RelatedBatch}.
+     *
+     * @return array<string, list<object>> `parentWireId => related entities`, request order preserved per parent
+     */
+    private function partitionByParent(QueryBuilder $builder, BatchScope $scope, string $parentType): array
+    {
+        $encoder = $this->idEncoders->encoderFor($parentType);
+
+        if ($scope->relatedClass !== null && $scope->relatedIdField !== null) {
+            return $this->partitionPairs($builder, $scope->relatedClass, $scope->relatedIdField, $encoder);
+        }
+
+        /** @var list<array<int|string, mixed>> $rows */
+        $rows = $builder->getQuery()->getResult();
+
+        $partitions = [];
+        foreach ($rows as $row) {
+            $related = $row[0] ?? null;
+            $storageKey = $row[BatchScope::PARENT_DISCRIMINATOR_ALIAS] ?? null;
+            if (!\is_object($related) || !\is_scalar($storageKey)) {
+                continue;
+            }
+
+            $wireId = $encoder !== null ? $encoder->encode($storageKey) : (string) $storageKey;
+            $partitions[$wireId][] = $related;
+        }
+
+        return $partitions;
+    }
+
+    /**
+     * The pair shape's partition (the owning-side / many-to-many path): the scalar
+     * `(parentId, relatedId)` pairs are materialized (no entity dedup, so the
+     * filtered/ordered membership is exact), the DISTINCT related ids are loaded as
+     * managed entities in ONE IN-query keyed by id, and each pair is re-associated to
+     * its parent's partition in the query's order. Two scalar+load queries, still O(N)
+     * per relation.
+     *
+     * @param class-string         $relatedClass
+     * @param ?IdEncoderInterface  $encoder the parent type's id encoder, or null
+     *
+     * @return array<string, list<object>> `parentWireId => related entities`, query order preserved per parent
+     */
+    private function partitionPairs(QueryBuilder $builder, string $relatedClass, string $relatedIdField, ?IdEncoderInterface $encoder): array
+    {
+        /** @var list<array<string, mixed>> $pairs */
+        $pairs = $builder->getQuery()->getResult();
+
+        $relatedIds = [];
+        foreach ($pairs as $pair) {
+            $relatedId = $pair[BatchScope::RELATED_DISCRIMINATOR_ALIAS] ?? null;
+            if (\is_scalar($relatedId)) {
+                $relatedIds[(string) $relatedId] = $relatedId;
+            }
+        }
+
+        // Load the distinct related entities by id in one IN-query, keyed by id.
+        $entitiesById = [];
+        if ($relatedIds !== []) {
+            $loaded = $this->entityManager->getRepository($relatedClass)
+                ->createQueryBuilder('related')
+                ->where(\sprintf('related.%s IN (:ids)', $relatedIdField))
+                ->setParameter('ids', \array_values($relatedIds))
+                ->getQuery()
+                ->getResult();
+
+            \assert(\is_array($loaded));
+            $relatedMetadata = $this->entityManager->getClassMetadata($relatedClass);
+            foreach ($loaded as $entity) {
+                if (!\is_object($entity)) {
+                    continue;
+                }
+                $key = $relatedMetadata->getIdentifierValues($entity)[$relatedIdField] ?? null;
+                if (\is_scalar($key)) {
+                    $entitiesById[(string) $key] = $entity;
+                }
+            }
+        }
+
+        // Re-associate each ordered pair to its parent's partition.
+        $partitions = [];
+        foreach ($pairs as $pair) {
+            $parentKey = $pair[BatchScope::PARENT_DISCRIMINATOR_ALIAS] ?? null;
+            $relatedId = $pair[BatchScope::RELATED_DISCRIMINATOR_ALIAS] ?? null;
+            if (!\is_scalar($parentKey) || !\is_scalar($relatedId)) {
+                continue;
+            }
+            $entity = $entitiesById[(string) $relatedId] ?? null;
+            if ($entity === null) {
+                continue;
+            }
+            $wireId = $encoder !== null ? $encoder->encode($parentKey) : (string) $parentKey;
+            $partitions[$wireId][] = $entity;
+        }
+
+        return $partitions;
     }
 
     /**
@@ -341,6 +986,20 @@ final class DoctrineDataProvider implements DataProviderInterface, PreloadsInclu
      * when the parent type declares an id encoder), so the batcher resolves a count
      * back to its parent object at render time.
      *
+     * The count is over the relation's **filtered** set: `$criteria`'s filters are
+     * applied on the `related` JOIN alias via the shared alias-aware
+     * {@see CriteriaApplier} (the count passes `related` as the default alias, so a
+     * related filter lands on the join, not the `parent` root — bundle ADR 0060).
+     * Because an `andWhere` on a `LEFT JOIN` drops a parent with no matching member,
+     * the grouped result OMITS such a parent; so the page is **zero-filled** — every
+     * parent is seeded to `0` first, then the query rows overlay it — restoring a
+     * filtered-out parent to `0`, matching the in-memory witness. With an empty
+     * criteria (the common no-relatedQuery case) no predicate is added and the count
+     * is raw membership unchanged; the zero-fill is then idempotent (every parent has
+     * a row). A relationship-existence filter ({@see WhereHas}/{@see WhereDoesntHave})
+     * cannot route to the `related` alias — it re-roots on the count query's parent —
+     * so it is rejected on this path (supply a custom provider).
+     *
      * A polymorphic to-many is the same boundary as
      * {@see fetchRelatedCollection()}: its members span entity classes, so there is
      * no single related entity to count — it throws (supply a custom provider).
@@ -348,11 +1007,14 @@ final class DoctrineDataProvider implements DataProviderInterface, PreloadsInclu
      * @param list<object> $parents
      *
      * @return array<string, int>
+     *
+     * @throws \haddowg\JsonApi\Exception\FilterParamUnrecognized when a relatedQuery filter key is not declared
      */
     public function countRelated(
         string $type,
         array $parents,
         RelationInterface $relation,
+        CollectionCriteria $criteria,
         JsonApiRequestInterface $request,
     ): array {
         if (\count($relation->relatedTypes()) > 1) {
@@ -393,13 +1055,22 @@ final class DoctrineDataProvider implements DataProviderInterface, PreloadsInclu
         $relatedType = $relation->relatedTypes()[0] ?? null;
         $parentIds = \array_keys($storageToWire);
 
+        // A relationship-existence filter re-roots on the count query's own root (the
+        // parent), not the joined related entity, so it cannot scope the count to the
+        // related alias — reject it on this path (the related-collection endpoint still
+        // supports it; a custom provider can count it).
+        $this->guardCountFilters($criteria, $relation);
+
         // A pivot-backed belongsToMany counts the ASSOCIATION-entity rows per parent
         // (so duplicate membership counts each row), grouped over the association
         // entity's parent FK — not the parent's own property, which is not a Doctrine
         // association for a through-entity pivot. A plain to-many counts the related
-        // members via a left join on the parent property.
+        // members via a left join on the parent property. Either way `$criteria`'s
+        // filters land on the related members so the count reflects the relation's
+        // filtered set (bundle ADR 0060); an empty criteria adds no predicate, so the
+        // common no-filter count is the unchanged grouped query.
         if ($relatedType !== null && $this->supportsPivot($relatedType, $relation)) {
-            $builder = $this->pivotCountQuery($relation, $parents[0], $relatedType, $parentIds);
+            $builder = $this->pivotCountQuery($relation, $parents[0], $relatedType, $parentIds, $criteria);
         } else {
             $builder = $this->entityManager->createQueryBuilder()
                 ->select(\sprintf('parent.%s AS parent_id', $parentIdField))
@@ -409,12 +1080,23 @@ final class DoctrineDataProvider implements DataProviderInterface, PreloadsInclu
                 ->where(\sprintf('parent.%s IN (:jsonapi_parent_ids)', $parentIdField))
                 ->setParameter('jsonapi_parent_ids', $parentIds)
                 ->groupBy(\sprintf('parent.%s', $parentIdField));
+
+            // Apply the relation's relatedQuery filters on the `related` JOIN alias
+            // (the default alias the count passes), never the `parent` root.
+            $builder = $this->applier->apply($criteria, $builder, $this->filterHandler, $this->sortHandler, 'related');
         }
 
         /** @var list<array<string, mixed>> $rows */
         $rows = $builder->getQuery()->getResult();
 
-        $counts = [];
+        // Zero-fill the whole page first: a parent whose filtered related set is empty
+        // is dropped from the grouped result by the related-alias `andWhere` (an
+        // `andWhere` on a LEFT JOIN excludes the non-matching parent), so seed every
+        // parent to 0 and overlay the query rows — restoring a filtered-out parent to a
+        // 0 count, matching the in-memory witness. With no filter every parent already
+        // has a row, so the overlay is idempotent and the unfiltered count is unchanged.
+        $counts = \array_fill_keys(\array_values($storageToWire), 0);
+
         foreach ($rows as $row) {
             $storageKey = $row['parent_id'] ?? null;
             if (!\is_scalar($storageKey)) {
@@ -432,6 +1114,197 @@ final class DoctrineDataProvider implements DataProviderInterface, PreloadsInclu
     }
 
     /**
+     * Whether the single related object of a monomorphic to-one survives `$criteria`'s
+     * filters (bundle ADR 0068): a cheap `SELECT 1 FROM <relatedClass> related WHERE
+     * related.<idField> = :id` probe with the shared {@see CriteriaApplier} driving the
+     * {@see DoctrineFilterHandler} (so column/operator/cast semantics match the to-many
+     * endpoint exactly), `setMaxResults(1)`, returning whether a row survived. Read-only —
+     * no flush. The related type's query extensions apply so a scoped target
+     * (soft-deleted / un-tenant / unpublished) reports a no-match exactly as a lazy load
+     * would hide it.
+     */
+    public function relatedToOneMatches(
+        string $relatedType,
+        object $related,
+        RelationInterface $relation,
+        CollectionCriteria $criteria,
+        JsonApiRequestInterface $request,
+    ): bool {
+        $relatedClass = $this->entityClassFor($relatedType);
+        $relatedMetadata = $this->entityManager->getClassMetadata($relatedClass);
+        $relatedIdField = $relatedMetadata->getSingleIdentifierFieldName();
+
+        $targetId = $relatedMetadata->getIdentifierValues($related)[$relatedIdField] ?? null;
+        if (!\is_scalar($targetId)) {
+            return false;
+        }
+
+        $builder = $this->entityManager
+            ->getRepository($relatedClass)
+            ->createQueryBuilder(self::ROOT_ALIAS)
+            ->andWhere(\sprintf('%s.%s = :jsonapi_to_one_id', self::ROOT_ALIAS, $relatedIdField))
+            ->setParameter('jsonapi_to_one_id', $targetId);
+
+        foreach ($this->extensionsFor($relatedType) as $extension) {
+            $builder = $extension->apply($builder, new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request));
+        }
+
+        $builder = $this->applier->apply($criteria, $builder, $this->filterHandler, $this->sortHandler);
+
+        $builder->setMaxResults(1);
+
+        return $builder->getQuery()->getOneOrNullResult() !== null;
+    }
+
+    /**
+     * The batched to-one match over a page of parents (bundle ADR 0068): ONE
+     * `SELECT related.<idField> … WHERE related.<idField> IN (:targetIds) AND <filters>`
+     * query over the page's distinct to-one target ids (projected off each managed parent
+     * with no proxy init, reusing {@see toOneTargetId()}/{@see parentWireId()}), then the
+     * surviving id set is intersected per parent — O(1) store round-trips per relation,
+     * not per parent. A parent whose to-one is `null` is a no-match (`false`) with no
+     * query contribution. The related type's query extensions apply on the id-IN load so a
+     * scoped target reports a no-match exactly as a lazy load would hide it.
+     *
+     * @param list<object> $parents
+     *
+     * @return array<string, bool>
+     */
+    public function relatedToOneMatchesBatch(
+        string $parentType,
+        array $parents,
+        RelationInterface $relation,
+        CollectionCriteria $criteria,
+        JsonApiRequestInterface $request,
+    ): array {
+        if ($parents === []) {
+            return [];
+        }
+
+        $relatedType = $relation->relatedTypes()[0] ?? $parentType;
+        $relatedClass = $this->entityClassFor($relatedType);
+        $relatedMetadata = $this->entityManager->getClassMetadata($relatedClass);
+        $relatedIdField = $relatedMetadata->getSingleIdentifierFieldName();
+
+        $property = $relation->column() ?? $relation->name();
+        $parentMetadata = $this->entityManager->getClassMetadata($parents[0]::class);
+        $encoder = $this->idEncoders->encoderFor($parentType);
+
+        // Project each parent's to-one target id off the managed parent (a proxy exposes
+        // its identifier without initialising — no round-trip), keyed by parent wire id. A
+        // parent with a null to-one carries no target.
+        $parentTargetId = [];
+        $targetIds = [];
+        foreach ($parents as $parent) {
+            $wireId = $this->parentWireId($parent, $parentMetadata, $encoder);
+            if ($wireId === null) {
+                continue;
+            }
+
+            $targetId = $this->toOneTargetId($parent, $property, $relatedMetadata, $relatedIdField);
+            $parentTargetId[$wireId] = $targetId;
+            if ($targetId !== null) {
+                $targetIds[(string) $targetId] = $targetId;
+            }
+        }
+
+        $survivingIds = $this->matchingToOneTargetIds($relatedClass, $relatedType, $relatedIdField, $criteria, \array_values($targetIds), $request);
+
+        $matches = [];
+        foreach ($parentTargetId as $wireId => $targetId) {
+            $matches[$wireId] = $targetId !== null && isset($survivingIds[(string) $targetId]);
+        }
+
+        return $matches;
+    }
+
+    /**
+     * The set of `$targetIds` that survive `$criteria`'s filters, as a `storageId => true`
+     * lookup, loaded in ONE `SELECT related.<idField> … WHERE related.<idField> IN
+     * (:ids) AND <filters>` query driving the shared {@see DoctrineFilterHandler} (so the
+     * filter semantics match the single probe and the to-many endpoint). Empty when there
+     * are no target ids. The related type's query extensions apply too.
+     *
+     * @param class-string  $relatedClass
+     * @param list<mixed>   $targetIds
+     *
+     * @return array<string, true>
+     */
+    private function matchingToOneTargetIds(
+        string $relatedClass,
+        string $relatedType,
+        string $relatedIdField,
+        CollectionCriteria $criteria,
+        array $targetIds,
+        ?JsonApiRequestInterface $request,
+    ): array {
+        if ($targetIds === []) {
+            return [];
+        }
+
+        $builder = $this->entityManager
+            ->getRepository($relatedClass)
+            ->createQueryBuilder(self::ROOT_ALIAS)
+            ->select(\sprintf('%s.%s', self::ROOT_ALIAS, $relatedIdField))
+            ->andWhere(\sprintf('%s.%s IN (:jsonapi_to_one_ids)', self::ROOT_ALIAS, $relatedIdField))
+            ->setParameter('jsonapi_to_one_ids', $targetIds);
+
+        foreach ($this->extensionsFor($relatedType) as $extension) {
+            $builder = $extension->apply($builder, new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request));
+        }
+
+        $builder = $this->applier->apply($criteria, $builder, $this->filterHandler, $this->sortHandler);
+
+        /** @var list<mixed> $rows */
+        $rows = $builder->getQuery()->getScalarResult();
+
+        $surviving = [];
+        foreach ($rows as $row) {
+            $id = \is_array($row) ? \reset($row) : $row;
+            if (\is_scalar($id)) {
+                $surviving[(string) $id] = true;
+            }
+        }
+
+        return $surviving;
+    }
+
+    /**
+     * Rejects a relationship-existence filter ({@see WhereHas}/{@see WhereDoesntHave})
+     * in a `?withCount` count criteria: the count query roots on the parent and joins
+     * the related entity as `related`, but a relationship-existence filter re-roots on
+     * the query's own root entity, so routed to `related` it would scope the parent,
+     * not the related members — the wrong semantics. It is supported on the
+     * related-collection endpoint (which roots on the related entity); for the count,
+     * supply a custom provider. The common related-attribute filters (`Where`,
+     * `WhereIn`, …) apply correctly on the `related` join and are untouched.
+     */
+    private function guardCountFilters(CollectionCriteria $criteria, RelationInterface $relation): void
+    {
+        $requested = FilterDefaults::apply($criteria->queryParameters->filter, $criteria->filters);
+
+        foreach (\array_keys($requested) as $key) {
+            $filter = null;
+            foreach ($criteria->filters as $declared) {
+                if ($declared->key() === (string) $key) {
+                    $filter = $declared;
+
+                    break;
+                }
+            }
+
+            if ($filter instanceof WhereHas || $filter instanceof WhereDoesntHave) {
+                throw new \LogicException(\sprintf(
+                    'The %s cannot apply a relationship-existence filter "%s" to a ?withCount count of "%s": the count roots on the parent, so the filter would scope the parent, not the related members. Supply a custom DataProvider to count this filtered relationship.',
+                    self::class,
+                    (string) $key,
+                    $relation->name(),
+                ));
+            }
+        }
+    }
+
+    /**
      * The grouped distinct-member count query for a pivot-backed `belongsToMany` over
      * its association entity: roots on the association entity, scopes to the page of
      * parents by the entity's parent-side `ManyToOne` FK, and groups by that FK so each
@@ -441,13 +1314,20 @@ final class DoctrineDataProvider implements DataProviderInterface, PreloadsInclu
      * NOT association rows — so a member joined to the parent by more than one
      * association row (a track at two positions) contributes ONCE. This matches the
      * related-collection endpoint, which groups one row per distinct far member
-     * ({@see countPivot()} counts `DISTINCT` too) and renders deduped linkage: the
+     * ({@see count()} counts `DISTINCT` too) and renders deduped linkage: the
      * `?withCount` relationship-object total and the endpoint pagination total are the
      * one consistent `total` semantic the contract requires (bundle ADR 0052).
      *
+     * When `$criteria` carries a related filter (a `relatedQuery` filter on this
+     * relation, bundle ADR 0060), the far member is joined as `related` and the filter
+     * is applied on it, so the distinct-member count reflects the relation's filtered
+     * set exactly as the endpoint pages it; with no filter the far join is omitted and
+     * the query is the unchanged distinct-member count (the budget is preserved for the
+     * common case).
+     *
      * @param list<int|string> $parentIds the parent storage keys (the IN-clause binds them)
      */
-    private function pivotCountQuery(RelationInterface $relation, object $parent, string $relatedType, array $parentIds): QueryBuilder
+    private function pivotCountQuery(RelationInterface $relation, object $parent, string $relatedType, array $parentIds, CollectionCriteria $criteria): QueryBuilder
     {
         $relatedClass = $this->entityClassFor($relatedType);
         $association = $this->pivotAssociation($relation, $parent, $relatedClass);
@@ -460,7 +1340,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PreloadsInclu
             ->getAssociationTargetClass($association->parentProperty);
         $parentIdField = $this->entityManager->getClassMetadata($parentClass)->getSingleIdentifierFieldName();
 
-        return $this->entityManager->createQueryBuilder()
+        $builder = $this->entityManager->createQueryBuilder()
             ->select(\sprintf('parent.%s AS parent_id', $parentIdField))
             // DISTINCT far members so duplicate membership counts once, matching the
             // endpoint's deduped total and rendered linkage (bundle ADR 0052).
@@ -470,6 +1350,18 @@ final class DoctrineDataProvider implements DataProviderInterface, PreloadsInclu
             ->where(\sprintf('parent.%s IN (:jsonapi_parent_ids)', $parentIdField))
             ->setParameter('jsonapi_parent_ids', $parentIds)
             ->groupBy(\sprintf('parent.%s', $parentIdField));
+
+        // A related filter needs the far member to scope against, so join it as
+        // `related` (the count's default alias) and apply the filters there — the far
+        // join is added ONLY when there is a filter, so the unfiltered count keeps its
+        // original distinct-member query and budget (bundle ADR 0060).
+        if (FilterDefaults::apply($criteria->queryParameters->filter, $criteria->filters) === []) {
+            return $builder;
+        }
+
+        $builder->innerJoin(\sprintf('pivot.%s', $association->farProperty), 'related');
+
+        return $this->applier->apply($criteria, $builder, $this->filterHandler, $this->sortHandler, 'related');
     }
 
     // --- pivot (belongsToMany association-entity) collection -------------------
@@ -518,10 +1410,15 @@ final class DoctrineDataProvider implements DataProviderInterface, PreloadsInclu
         $builder = $this->pivotQuery($relatedType, $parent, $relation);
 
         foreach ($this->extensionsFor($relatedType) as $extension) {
-            $builder = $extension->apply($builder, $relatedType, QueryPurpose::FetchCollection);
+            $builder = $extension->apply($builder, new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request));
         }
 
-        $this->applyPivotCriteria($criteria, $builder, $relation);
+        // The criteria already carries the merged related+pivot filter/sort vocab AND
+        // the pivot-key→`pivot`-alias routing map (RelationCriteriaFactory populated
+        // both for this endpoint), so the shared alias-aware applier owns the WHOLE
+        // pivot vocabulary in one pass — related keys on the root, pivot keys on the
+        // joined `pivot` alias — replacing the hand-rolled split (bundle ADR 0059).
+        $builder = $this->applier->apply($criteria, $builder, $this->filterHandler, $this->sortHandler);
 
         $window = $criteria->window;
         if ($window === null) {
@@ -537,30 +1434,40 @@ final class DoctrineDataProvider implements DataProviderInterface, PreloadsInclu
             ));
         }
 
-        // A non-countable pivot relation paginates count-FREE, exactly as the plain
-        // path does: no COUNT runs; the page is over-fetched by one (limit+1) and the
-        // surplus far member signals a further page, driving the count-free page's
-        // `next` link without a total (bundle ADR 0052). A countable relation counts
-        // the pre-window total as before, emitting total + `last`.
+        // The pivot tail stays hand-rolled rather than delegating to the shared
+        // WindowExecutor (core ADR 0061): the executor is generic over OBJECT entities,
+        // but a pivot fetch windows over "mixed" rows (each `[0 => farEntity,
+        // 'pivot_<field>' => value]`), and the far-entity windowing cannot be separated
+        // from the per-member pivot map — they ride the SAME grouped query. So this
+        // path mirrors the executor's branches in-place (the same count-free probe /
+        // countable count), keeping it behaviour-identical until the pivot row shape is
+        // reconciled with the executor's entity contract.
+        //
+        // A non-countable pivot relation paginates count-FREE: no COUNT runs; the page
+        // is over-fetched by one (limit+1) and the surplus far member signals a further
+        // page, driving the count-free page's `next` link without a total (bundle ADR
+        // 0052). A countable relation counts the pre-window total as before.
         if (!$relation->isCountable()) {
             return $this->countFreePivotPage($builder, $window, $relatedType, $relation);
         }
 
-        $total = $this->countPivot($builder);
+        $total = $this->count($builder, distinct: true);
         $builder->setFirstResult($window->offset)->setMaxResults($window->limit);
 
         return $this->pivotResult($this->pivotRows($builder), $relatedType, $relation, $total);
     }
 
     /**
-     * The count-free page for a non-countable pivot relation — the {@see countFreePage()}
-     * analogue over the pivot query. The window is applied with `LIMIT $limit + 1` (one
-     * far member past the page), so the surplus row proves a further page exists without
-     * any `COUNT`. The pivot query already groups one row per distinct far member (see
-     * {@see pivotQuery()}), so the over-fetch and slice are over distinct members. The
-     * surplus is dropped before the pivot map is built; the result carries a `null` total
-     * with {@see PivotCollectionResult::$windowed} true so the handler builds a count-free
-     * page (bundle ADR 0052).
+     * The count-free page for a non-countable pivot relation — the count-free branch
+     * of the shared {@see WindowExecutor}, mirrored in-place over the pivot query (the
+     * executor is generic over object entities, so the pivot's "mixed" rows cannot ride
+     * it; see {@see fetchRelatedPivotCollection()}). The window is applied with `LIMIT
+     * $limit + 1` (one far member past the page), so the surplus row proves a further
+     * page exists without any `COUNT`. The pivot query already groups one row per
+     * distinct far member (see {@see pivotQuery()}), so the over-fetch and slice are
+     * over distinct members. The surplus is dropped before the pivot map is built; the
+     * result carries a `null` total with {@see PivotCollectionResult::$windowed} true so
+     * the handler builds a count-free page (bundle ADR 0052).
      *
      * @return PivotCollectionResult<object>
      */
@@ -665,209 +1572,18 @@ final class DoctrineDataProvider implements DataProviderInterface, PreloadsInclu
             ->groupBy(\sprintf('%s.%s', self::ROOT_ALIAS, $idField));
 
         foreach (PivotFields::declaredFor($relation) as $field) {
+            // A hidden pivot field (core hidden()) is never rendered in the pivot
+            // meta, so it is not selected here — it can still be filtered/sorted,
+            // which reads its column on the `pivot` alias directly, not this scalar.
+            if ($field->isHidden()) {
+                continue;
+            }
             // Select the backing column under a `pivot_<name>` alias keyed by the
             // wire name (column defaults to the name, but may differ via storedAs()).
             $builder->addSelect(\sprintf('pivot.%s AS pivot_%s', $field->column() ?? $field->name(), $field->name()));
         }
 
         return $builder;
-    }
-
-    /**
-     * Applies the requested filters and sorts to the pivot query, routing each to
-     * the right alias: a key declared as a pivot field hits `pivot.<field>`, every
-     * other key hits the related-entity root via the shared {@see CriteriaApplier}.
-     * Filters compose commutatively, so the related ones go through the shared
-     * applier and the pivot ones are appended separately; sorts do NOT compose
-     * commutatively, so the whole `ORDER BY` is built in ONE request-ordered pass
-     * across both aliases (see {@see applyPivotSorts}) rather than letting the
-     * shared applier append all related sorts first.
-     */
-    private function applyPivotCriteria(CollectionCriteria $criteria, QueryBuilder $builder, RelationInterface $relation): void
-    {
-        $pivotFields = PivotFields::byName($relation);
-
-        // Filters: a pivot field routes to pivot.<field>; the rest run through the
-        // shared applier against the related vocabulary on the root. Splitting the
-        // declared vocabulary the same way keeps the unrecognised-key 400 intact —
-        // a key in neither set is matched by neither sub-applier.
-        $relatedFilters = \array_values(\array_filter(
-            $criteria->filters,
-            static fn($filter): bool => !isset($pivotFields[$filter->key()]),
-        ));
-
-        // Related-entity filters on the ROOT alias, via the shared handler. The
-        // requested query parameters are projected to the RELATED filter keys only
-        // (pivot keys stripped so the shared applier never tries to match them
-        // against the pivot-free related vocabulary and 400) — and to an EMPTY sort,
-        // because the ORDER BY is built request-ordered across both aliases below,
-        // not by the shared applier (which would append all related sorts first and
-        // demote a pivot-first sort; the bug a `?sort=<pivot>,<related>` exposed).
-        $relatedParameters = new QueryParameters(
-            $criteria->queryParameters->fields,
-            $criteria->queryParameters->includes,
-            [],
-            \array_filter(
-                $criteria->queryParameters->filter,
-                static fn($key): bool => !isset($pivotFields[$key]),
-                \ARRAY_FILTER_USE_KEY,
-            ),
-            $criteria->queryParameters->pagination,
-        );
-
-        $relatedCriteria = new CollectionCriteria(
-            $relatedParameters,
-            $relatedFilters,
-            // No sorts on the shared applier — the request sort is applied below in
-            // request order. An empty default carried for the same reason.
-            [],
-            null,
-            [],
-        );
-        $this->applier->apply($relatedCriteria, $builder, $this->filterHandler, $this->sortHandler);
-
-        $this->applyPivotFilters($criteria, $builder, $pivotFields);
-
-        // The full ORDER BY, request-ordered across the pivot and root aliases. The
-        // related sort vocabulary is the criteria's declared sorts minus the pivot
-        // keys, and the default sort applies only when no `?sort` was requested.
-        $relatedSorts = \array_values(\array_filter(
-            $criteria->sorts,
-            static fn($sort): bool => !isset($pivotFields[$sort->key()]),
-        ));
-        $defaultSort = \array_values(\array_filter(
-            $criteria->defaultSort,
-            static fn(SortDirective $directive): bool => !isset($pivotFields[$directive->sort->key()]),
-        ));
-        $this->applyPivotSorts($criteria, $builder, $pivotFields, $relatedSorts, $defaultSort);
-    }
-
-    /**
-     * Applies the requested pivot-field filters on the `pivot` alias. A pivot filter
-     * is an equality match on the field's backing column, rebuilt here on the
-     * `pivot` alias because the shared handler only ever targets the query root; the
-     * value is coerced through the field's own cast.
-     *
-     * @param array<string, FieldInterface> $pivotFields the declared pivot fields keyed by wire name
-     */
-    private function applyPivotFilters(CollectionCriteria $criteria, QueryBuilder $builder, array $pivotFields): void
-    {
-        foreach ($criteria->queryParameters->filter as $key => $value) {
-            $key = (string) $key;
-            $field = $pivotFields[$key] ?? null;
-            if ($field === null) {
-                continue;
-            }
-
-            $placeholder = 'jsonapi_pivot_filter_' . \count($builder->getParameters());
-            $builder
-                ->andWhere(\sprintf('pivot.%s = :%s', $field->column() ?? $field->name(), $placeholder))
-                ->setParameter($placeholder, PivotFields::cast($value, $field));
-        }
-    }
-
-    /**
-     * Builds the whole `ORDER BY` in ONE pass, in the request's exact `sort`
-     * directive order, routing each field to the correct alias so the precedence
-     * matches the client's list: a pivot field appends `pivot.<field>`, every other
-     * field resolves its column from the related sort vocabulary and appends
-     * `resource.<column>` on the root. So `?sort=position,title` orders by
-     * `pivot.position` then `resource.title`, and `?sort=title,position` flips that —
-     * the request-first directive is always the most significant key (the bug a
-     * pivot-first sort exposed when related sorts were appended first).
-     *
-     * Sorting semantics match the shared {@see CriteriaApplier}: with no `?sort` the
-     * related default order applies (pivot fields declare no default direction and
-     * have no related column, so a pivot default does not belong); a requested field
-     * in neither the pivot set nor the related vocabulary is a 400
-     * ({@see SortParamUnrecognized}), and requesting any sort when neither vocabulary
-     * exists is a 400 ({@see SortingUnsupported}).
-     *
-     * @param array<string, FieldInterface> $pivotFields  the declared pivot fields keyed by wire name
-     * @param list<SortInterface>            $relatedSorts the related sort vocabulary (criteria sorts minus pivot keys)
-     * @param list<SortDirective>            $defaultSort  the related default order, applied only when no `?sort` is requested
-     */
-    private function applyPivotSorts(
-        CollectionCriteria $criteria,
-        QueryBuilder $builder,
-        array $pivotFields,
-        array $relatedSorts,
-        array $defaultSort,
-    ): void {
-        $requested = $criteria->queryParameters->sort;
-
-        if ($requested === []) {
-            // No `?sort`: fall back to the related default order through the shared
-            // handler (validated against the related vocabulary exactly as a
-            // requested related sort is).
-            if ($defaultSort !== []) {
-                $this->sortHandler->apply($this->validateDefaults($defaultSort, $relatedSorts), $builder);
-            }
-
-            return;
-        }
-
-        if ($pivotFields === [] && $relatedSorts === []) {
-            throw new SortingUnsupported();
-        }
-
-        foreach ($requested as $field) {
-            $descending = \str_starts_with($field, '-');
-            $key = $descending ? \substr($field, 1) : $field;
-
-            $pivotField = $pivotFields[$key] ?? null;
-            if ($pivotField !== null) {
-                $builder->addOrderBy(\sprintf('pivot.%s', $pivotField->column() ?? $pivotField->name()), $descending ? 'DESC' : 'ASC');
-
-                continue;
-            }
-
-            // A related sort field: resolve its declared column and order on the
-            // root through the shared handler (one directive at a time preserves the
-            // request order across both aliases). A field in neither vocabulary is
-            // unrecognised — the 400 the shared applier would have raised.
-            $sort = $this->relatedSortFor($relatedSorts, $key) ?? throw new SortParamUnrecognized($key);
-            $this->sortHandler->apply([new SortDirective($sort, $descending)], $builder);
-        }
-    }
-
-    /**
-     * Validates each default directive names a declared related sort (a server-config
-     * error otherwise, exactly as the shared {@see CriteriaApplier} validates a
-     * default), returning them unchanged for the handler.
-     *
-     * @param list<SortDirective> $defaultSort
-     * @param list<SortInterface> $relatedSorts
-     *
-     * @return list<SortDirective>
-     *
-     * @throws SortParamUnrecognized when a default names an undeclared related sort
-     */
-    private function validateDefaults(array $defaultSort, array $relatedSorts): array
-    {
-        foreach ($defaultSort as $directive) {
-            if ($this->relatedSortFor($relatedSorts, $directive->sort->key()) === null) {
-                throw new SortParamUnrecognized($directive->sort->key());
-            }
-        }
-
-        return $defaultSort;
-    }
-
-    /**
-     * The declared related sort whose key matches `$key`, or null when none does.
-     *
-     * @param list<SortInterface> $relatedSorts
-     */
-    private function relatedSortFor(array $relatedSorts, string $key): ?SortInterface
-    {
-        foreach ($relatedSorts as $sort) {
-            if ($sort->key() === $key) {
-                return $sort;
-            }
-        }
-
-        return null;
     }
 
     /**
@@ -933,6 +1649,11 @@ final class DoctrineDataProvider implements DataProviderInterface, PreloadsInclu
 
             $values = [];
             foreach ($pivotFields as $name => $field) {
+                // A hidden pivot field is filterable/sortable but never rendered in
+                // the relationship meta (core hidden()); it was not selected above.
+                if ($field->isHidden()) {
+                    continue;
+                }
                 // The scalar was selected under the `pivot_<name>` alias (keyed by
                 // wire name) in pivotQuery(); cast it through the field's own type.
                 $values[$name] = PivotFields::cast($row['pivot_' . $name] ?? null, $field);
@@ -942,27 +1663,6 @@ final class DoctrineDataProvider implements DataProviderInterface, PreloadsInclu
         }
 
         return new PivotCollectionResult($items, $pivotMap, $total, $windowed, $hasMore);
-    }
-
-    /**
-     * The pre-window total of the pivot query: the same builder re-selected as a
-     * `COUNT(DISTINCT …)` of the far-entity root, ordering and grouping dropped, no
-     * window. `DISTINCT` so the total counts distinct far members rather than joined
-     * pivot rows — the page is grouped to one row per member (see {@see pivotQuery}),
-     * so the total must match it under duplicate membership (a member joined by more
-     * than one association-entity row). The scalar pivot selects and the `GROUP BY`
-     * must be cleared too — a `COUNT` query carries a single ungrouped select.
-     */
-    private function countPivot(QueryBuilder $builder): int
-    {
-        $counter = clone $builder;
-        $counter->resetDQLPart('orderBy');
-        $counter->resetDQLPart('groupBy');
-        $counter->select(\sprintf('COUNT(DISTINCT %s)', self::ROOT_ALIAS));
-
-        $total = $counter->getQuery()->getSingleScalarResult();
-
-        return \is_numeric($total) ? (int) $total : 0;
     }
 
     /**
@@ -979,35 +1679,6 @@ final class DoctrineDataProvider implements DataProviderInterface, PreloadsInclu
     }
 
     /**
-     * Batch eager-loads the read's effective `?include` tree (explicit includes or
-     * a resource's default-include fallback) so the included relationships do not
-     * N+1, delegating to the injected {@see IncludePreloader}. A no-op when the
-     * `shipmonk/doctrine-entity-preloader` library is absent (the preloader is then
-     * null) — the includes render lazily (ADR 0035).
-     */
-    public function preloadIncludes(iterable $entities, string $type, JsonApiRequestInterface $request): void
-    {
-        $this->preloader?->preload($entities, $type, $request);
-    }
-
-    /**
-     * Disables include preloading on this provider, returning the previously
-     * installed {@see IncludePreloader} (or `null`) so a caller can restore it.
-     * Preloading is a pure optimization, so turning it off only changes how the
-     * includes are loaded (lazily), never what is rendered — the property the
-     * conformance suite asserts by comparing the document with and without it.
-     *
-     * @internal a test/diagnostic seam, not part of the provider contract
-     */
-    public function disableIncludePreloading(): ?IncludePreloader
-    {
-        $previous = $this->preloader;
-        $this->preloader = null;
-
-        return $previous;
-    }
-
-    /**
      * @return list<object>
      */
     private function items(QueryBuilder $builder): array
@@ -1020,44 +1691,31 @@ final class DoctrineDataProvider implements DataProviderInterface, PreloadsInclu
      * The total of the filtered collection: the same builder re-selected as a
      * `COUNT` of the root entity, with ordering dropped (it cannot change the
      * count) and no window applied.
+     *
+     * With `$distinct` set the count is the **pivot** variant: a
+     * `COUNT(DISTINCT …)` of the far-entity root with both ordering AND grouping
+     * dropped, so the total counts distinct far members rather than joined pivot
+     * rows — the page is grouped to one row per member (see {@see pivotQuery}),
+     * so the total must match it under duplicate membership (a member joined by
+     * more than one association-entity row). The scalar pivot selects and the
+     * `GROUP BY` must be cleared too — a `COUNT` query carries a single ungrouped
+     * select.
      */
-    private function count(QueryBuilder $builder): int
+    private function count(QueryBuilder $builder, bool $distinct = false): int
     {
         $counter = clone $builder;
         $counter->resetDQLPart('orderBy');
-        $counter->select(\sprintf('COUNT(%s)', self::ROOT_ALIAS));
+
+        if ($distinct) {
+            $counter->resetDQLPart('groupBy');
+            $counter->select(\sprintf('COUNT(DISTINCT %s)', self::ROOT_ALIAS));
+        } else {
+            $counter->select(\sprintf('COUNT(%s)', self::ROOT_ALIAS));
+        }
 
         $total = $counter->getQuery()->getSingleScalarResult();
 
         return \is_numeric($total) ? (int) $total : 0;
-    }
-
-    /**
-     * The owning-side field on the related entity for an inverse-side association
-     * on the parent (the single-valued FK an inverse OneToMany is `mappedBy`), or
-     * `null` when the parent's association is itself the owning side (or
-     * many-to-many — no single-valued inverse FK on the related entity to scope
-     * by). Mirrors the persister's resolver of the same name.
-     */
-    private function inverseOwningField(object $parent, string $property): ?string
-    {
-        $metadata = $this->entityManager->getClassMetadata($parent::class);
-        if (!$metadata->hasAssociation($property)) {
-            return null;
-        }
-
-        $mapping = $metadata->getAssociationMapping($property);
-
-        if ($mapping->isOwningSide()) {
-            return null;
-        }
-
-        // `mappedBy` lives on the inverse-side mapping; read it through the
-        // mapping's array access so the lookup is robust across the ORM 3 mapping
-        // class hierarchy.
-        $mappedBy = $mapping['mappedBy'] ?? null;
-
-        return \is_string($mappedBy) ? $mappedBy : null;
     }
 
     /**

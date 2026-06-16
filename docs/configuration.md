@@ -27,6 +27,8 @@ json_api:
     strict_query_parameters: true
     pagination:
         max_per_page: 50
+    doctrine:
+        window_functions: true
     defaults:
         cache_headers:
             max_age: 60
@@ -47,6 +49,7 @@ witness).
 | `max_include_depth` | int | `3` | The cap on `?include` nesting depth (relationship hops from the primary resource). `0` is unlimited. A resource's own `maxIncludeDepth()` overrides it. |
 | `strict_query_parameters` | bool | `true` | Reject an unrecognized top-level query-parameter family with a `400` (ADR 0055). `false` restores the old silent-ignore behaviour. |
 | `pagination.max_per_page` | int | `100` | The page-size cap the built-in server default paginator clamps `page[size]`/`page[limit]` to. `0` installs no built-in default (those collections render unpaginated). |
+| `doctrine.window_functions` | bool | `true` | Use SQL window functions (`ROW_NUMBER`/`COUNT OVER`) for the bounded windowed-include batch (ADR 0065). Requires MySQL ≥ 8, MariaDB ≥ 10.2, SQLite ≥ 3.25, or any PostgreSQL. On an older engine the default `true` throws a `500` at the first windowed include — set `false` for the per-parent bounded fallback. |
 | `schema_validation` | bool | `false` | Registers the optional opis structural linter. Enabling it without `opis/json-schema` **fails the build**. |
 | `defaults.cache_headers` | map | `{}` | Fleet-wide default HTTP cache directives for `GET` reads (ADR 0054). A resource's own `cacheHeaders` overrides these. |
 | `defaults.deprecation` / `sunset` / `sunset_link` | scalar | `null` | Fleet-wide default deprecation/sunset headers (ADR 0054). A resource's own `deprecation`/`sunset` overrides these. |
@@ -67,6 +70,7 @@ Two of the keys surface as container parameters you can read elsewhere:
 | `haddowg_json_api.version` | `version` | the configured (or `'1.1'`) version |
 | `haddowg_json_api.max_include_depth` | `max_include_depth` | the resolved include-depth cap (default `3`, `0` = unlimited) |
 | `haddowg_json_api.pagination.max_per_page` | `pagination.max_per_page` | the resolved page-size cap (default `100`, `0` = no built-in default) |
+| `haddowg_json_api.doctrine.window_functions` | `doctrine.window_functions` | whether the Doctrine provider runs the native windowed-include batch (default `true`) or the per-parent bounded fallback |
 | `haddowg_json_api.servers` | derived | the list of all server names, e.g. `['default', 'admin']` |
 
 `haddowg_json_api.servers` is the resolved name list — always including the implicit

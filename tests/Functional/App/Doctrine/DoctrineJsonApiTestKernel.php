@@ -119,6 +119,11 @@ final class DoctrineJsonApiTestKernel extends Kernel
         $services->set(DoctrineAuthorResource::class);
         $services->set(DoctrineCommentResource::class);
 
+        // The cursor (keyset) conformance type: a `cursorWidgets` resource whose
+        // pagination() returns a CursorPaginator, mapped to its entity so the
+        // Doctrine provider runs the keyset push-down (bundle ADR 0063).
+        $services->set(DoctrineCursorWidgetResource::class);
+
         // The genericity witness: a `tags` type served over the Doctrine path by
         // the `-128` fallback provider/persister from its `#[AsJsonApiResource]`
         // entity map alone — no per-type engine code (ADR 0021).

@@ -21,10 +21,10 @@ use Zenstruck\Foundry\ZenstruckFoundryBundle;
  * DoctrineBundle + JsonApiBundle over an in-memory SQLite database, mapping ONLY
  * this slice's `Include\Doctrine` entities so its `nodes`/`tags` types do not
  * collide with the article kernel's. It leaves `json_api.max_include_depth` UNSET,
- * so the bundle's opinionated default of `3` governs, and the Doctrine batch
- * include-preloader (when `shipmonk/doctrine-entity-preloader` is installed) walks
- * the same effective tree — so the safeguards are witnessed against the real
- * Doctrine read + preload path, not only the in-memory accessor.
+ * so the bundle's opinionated default of `3` governs, and the provider-agnostic
+ * {@see \haddowg\JsonApiBundle\DataProvider\RelatedIncludeBatcher} walks the same
+ * effective tree (driving the Doctrine provider's batch SPI) — so the safeguards are
+ * witnessed against the real Doctrine read + batch path, not only the in-memory accessor.
  */
 final class DoctrineIncludeSafeguardsTestKernel extends Kernel
 {

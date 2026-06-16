@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\DataProvider;
 
+use haddowg\JsonApi\Collection\CollectionResult;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
-use haddowg\JsonApiBundle\DataProvider\CollectionResult;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
+use haddowg\JsonApiBundle\DataProvider\RelatedBatch;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -71,6 +72,16 @@ final class DataProviderRegistryTest extends TestCase
                 return new CollectionResult([]);
             }
 
+            public function fetchRelatedCollectionBatch(
+                string $parentType,
+                array $parents,
+                RelationInterface $relation,
+                CollectionCriteria $criteria,
+                JsonApiRequestInterface $request,
+            ): RelatedBatch {
+                return new RelatedBatch([]);
+            }
+
             public function fetchRelationshipPivot(string $type, object $parent, RelationInterface $relation): array
             {
                 return [];
@@ -80,6 +91,27 @@ final class DataProviderRegistryTest extends TestCase
                 string $type,
                 array $parents,
                 RelationInterface $relation,
+                CollectionCriteria $criteria,
+                JsonApiRequestInterface $request,
+            ): array {
+                return [];
+            }
+
+            public function relatedToOneMatches(
+                string $relatedType,
+                object $related,
+                RelationInterface $relation,
+                CollectionCriteria $criteria,
+                JsonApiRequestInterface $request,
+            ): bool {
+                return true;
+            }
+
+            public function relatedToOneMatchesBatch(
+                string $parentType,
+                array $parents,
+                RelationInterface $relation,
+                CollectionCriteria $criteria,
                 JsonApiRequestInterface $request,
             ): array {
                 return [];

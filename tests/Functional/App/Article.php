@@ -33,6 +33,10 @@ final class Article
      * @param list<Author> $editors the related editor objects backing the
      *                               unidirectional many-to-many `editors` relation,
      *                               distinct from the to-one `author`
+     * @param list<Comment> $pinnedComments a third, independent comment list over a
+     *                                       UNIQUE column backing the `pinnedComments`
+     *                                       relation the windowed-include batch asserts
+     *                                       the inverse-FK shape on (bundle ADR 0065)
      */
     public function __construct(
         public ?int $id = null,
@@ -47,5 +51,6 @@ final class Article
         public array $featuredComments = [],
         public ?array $address = null,
         public array $editors = [],
+        public array $pinnedComments = [],
     ) {}
 }

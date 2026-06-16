@@ -10,6 +10,7 @@ use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\ArticleResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\AuthorResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\CommentResource;
+use haddowg\JsonApiBundle\Tests\Functional\App\Resource\CursorWidgetResource;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Component\Config\Loader\LoaderInterface;
@@ -84,6 +85,14 @@ final class JsonApiTestKernel extends Kernel
         $services->set(ArticleResource::class);
         $services->set(AuthorResource::class);
         $services->set(CommentResource::class);
+
+        // The cursor (keyset) conformance witness: a `cursorWidgets` type whose
+        // pagination() returns a CursorPaginator, served over the in-memory provider
+        // (bundle ADR 0063).
+        $services->set(CursorWidgetResource::class);
+        $services->set('test.cursor_widgets_provider', InMemoryDataProvider::class)
+            ->factory([CursorWidgetProviderFactory::class, 'create'])
+            ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
 
         $services->set('test.articles_provider', InMemoryDataProvider::class)
             ->factory([ArticleProviderFactory::class, 'createArticles'])

@@ -161,6 +161,73 @@ abstract class RelationshipEndpointConformanceTestCase extends JsonApiFunctional
         $this->assertNotFound('/articles/1/relationships/bogusrel');
     }
 
+    // --- to-one nulling: a relation filter excludes the single target (ADR 0068) ---
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    #[Group('spec:fetching-filtering')]
+    public function aRelatedToOneEndpointRendersDataNullWhenAFilterExcludesTheTarget(): void
+    {
+        // Article 1's author is Ada Lovelace (1). filter[name]=Grace Hopper (the related
+        // authors vocabulary, reachable on the to-one path) excludes the single target,
+        // so the related endpoint renders 200 with data:null — the to-one twin of the
+        // to-many endpoint's filtered collection.
+        $document = $this->fetchDocument('/articles/1/author?filter[name]=Grace%20Hopper');
+
+        self::assertArrayHasKey('data', $document);
+        self::assertNull($document['data']);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    #[Group('spec:fetching-filtering')]
+    public function aRelatedToOneEndpointRendersTheTargetWhenAFilterIncludesIt(): void
+    {
+        // The matching filter keeps the target: filter[name]=Ada Lovelace matches author
+        // 1, so the full author resource renders unchanged.
+        $document = $this->fetchDocument('/articles/1/author?filter[name]=Ada%20Lovelace');
+
+        $data = $document['data'] ?? null;
+        self::assertIsArray($data);
+        self::assertSame('authors', $data['type'] ?? null);
+        self::assertSame('1', $data['id'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    #[Group('spec:fetching-filtering')]
+    public function aRelationshipToOneEndpointRendersNullLinkageWhenAFilterExcludesTheTarget(): void
+    {
+        // The linkage endpoint over the same exclusion renders 200 with null linkage.
+        $document = $this->fetchDocument('/articles/1/relationships/author?filter[name]=Grace%20Hopper');
+
+        self::assertArrayHasKey('data', $document);
+        self::assertNull($document['data']);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    #[Group('spec:fetching-filtering')]
+    public function aRelationshipToOneEndpointRendersLinkageWhenAFilterIncludesTheTarget(): void
+    {
+        $document = $this->fetchDocument('/articles/1/relationships/author?filter[name]=Ada%20Lovelace');
+
+        self::assertSame(['type' => 'authors', 'id' => '1'], $document['data'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    #[Group('spec:fetching-filtering')]
+    #[Group('spec:errors')]
+    public function anUnknownFilterKeyOnAToOneRelatedEndpointIs400(): void
+    {
+        // An unknown filter key on the to-one related path is the to-many endpoint's
+        // same 400 — the filter is resolved against the merged vocabulary either way.
+        $response = $this->handle('/articles/1/author?filter[nope]=x');
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+    }
+
     #[Test]
     #[Group('spec:fetching-includes')]
     public function aSingleResourceFetchWithIncludeRendersACompoundDocument(): void

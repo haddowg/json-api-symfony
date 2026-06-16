@@ -12,11 +12,11 @@ use PHPUnit\Framework\Attributes\Test;
  * {@see IncludeSafeguardsConformanceTestCase} against the Doctrine provider: the
  * same include-safeguard assertions as the in-memory suite, executed as real DQL
  * over an in-memory SQLite database created per test and seeded with the circular
- * `nodes` chain. The Doctrine batch include-preloader (when
- * `shipmonk/doctrine-entity-preloader` is installed) walks the same effective tree,
- * so the safeguards bound the real preload recursion too — a too-deep request 400s
- * before the preloader runs, and the mutual default-include cycle terminates at the
- * cap rather than recursing the preloader forever (bundle ADR 0037).
+ * `nodes` chain. The provider-agnostic {@see \haddowg\JsonApiBundle\DataProvider\RelatedIncludeBatcher}
+ * walks the same effective tree (driving the Doctrine provider's batch SPI), so the
+ * safeguards bound the real batch recursion too — a too-deep request 400s before the
+ * batcher runs, and the mutual default-include cycle terminates at the cap rather than
+ * recursing the batcher forever (bundle ADR 0037).
  */
 final class DoctrineIncludeSafeguardsTest extends IncludeSafeguardsConformanceTestCase
 {

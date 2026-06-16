@@ -12,6 +12,8 @@ use haddowg\JsonApi\Resource\Field\DateTime;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Integer;
 use haddowg\JsonApi\Resource\Field\Str;
+use haddowg\JsonApi\Resource\Filter\Where;
+use haddowg\JsonApi\Resource\Filter\WhereIn;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 
 /**
@@ -59,6 +61,27 @@ final class DoctrinePlaylistResource extends AbstractResource
                     Integer::make('position')->required()->min(1),
                     Integer::make('weight')->compareWith('position', Comparison::GreaterThanOrEqual),
                     DateTime::make('addedAt')->readOnly(),
+                    // A HIDDEN pivot field (core hidden() gates rendering only): it is
+                    // filterable via `pivot.note` below, yet never appears in the rendered
+                    // pivot meta — the provider skips it from the SELECT and the pivot map.
+                    Str::make('note')->hidden(),
+                )
+                // Pivot filters are AUTHOR-DECLARED via the `pivot.` column prefix
+                // (bundle ADR 0067): a filter whose column starts with `pivot.` targets
+                // the association-entity join. The value cast auto-resolves from the
+                // pivot field backing the stripped column (so `addedAfter` coerces the
+                // wire value to a DateTime exactly as the field renders it). The filter
+                // KEY is independent of the column — `addedAfter` filters `pivot.addedAt`.
+                ->withFilters(
+                    Where::make('position', 'pivot.position'),
+                    Where::make('weight', 'pivot.weight'),
+                    Where::make('positionGte', 'pivot.position', '>='),
+                    WhereIn::make('positionIn', 'pivot.position'),
+                    Where::make('addedAfter', 'pivot.addedAt', '>'),
+                    // A filter over the HIDDEN `note` pivot field: a hidden pivot field is
+                    // queryable via the `pivot.` prefix (the filter reads the column on the
+                    // `pivot` alias, not the rendered scalar) even though it never renders.
+                    Where::make('noteIs', 'pivot.note'),
                 )
                 ->extractUsing($this->extractTracks())
                 ->paginate(PagePaginator::make())
@@ -78,6 +101,7 @@ final class DoctrinePlaylistResource extends AbstractResource
                     Integer::make('position')->required()->min(1),
                     DateTime::make('addedAt')->readOnly(),
                 )
+                ->withFilters(Where::make('position', 'pivot.position'))
                 ->extractUsing($this->extractTracks())
                 ->paginate(PagePaginator::make()),
         ];
