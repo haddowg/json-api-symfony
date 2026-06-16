@@ -8,12 +8,18 @@ use haddowg\JsonApi\Hydrator\Relationship\ToManyRelationship as InputToMany;
 use haddowg\JsonApi\Hydrator\Relationship\ToOneRelationship as InputToOne;
 use haddowg\JsonApi\Resource\Constraint\MaxItems;
 use haddowg\JsonApi\Resource\Constraint\RelationshipType;
+use haddowg\JsonApi\Resource\Constraint\Required;
 use haddowg\JsonApi\Resource\Field\BelongsTo;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
+use haddowg\JsonApi\Resource\Field\DateTime as DateTimeField;
 use haddowg\JsonApi\Resource\Field\HasMany;
 use haddowg\JsonApi\Resource\Field\HasOne;
+use haddowg\JsonApi\Resource\Field\Integer;
 use haddowg\JsonApi\Resource\Field\MorphTo;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
+use haddowg\JsonApi\Resource\Field\Str;
+use haddowg\JsonApi\Resource\Filter\Where;
+use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApi\Schema\Relationship\ToManyRelationship as OutputToMany;
 use haddowg\JsonApi\Schema\Relationship\ToOneRelationship as OutputToOne;
 use haddowg\JsonApi\Schema\ResourceIdentifier;
@@ -390,20 +396,85 @@ final class RelationTest extends TestCase
     }
 
     #[Test]
-    public function belongsToManyDeclaresPivotFields(): void
+    public function belongsToManyDeclaresPivotFieldDefinitions(): void
     {
-        $relation = BelongsToMany::make('roles')->type('roles')->fields(['assigned_at' => 'datetime']);
+        $position = Integer::make('position')->required()->min(1);
+        $addedAt = DateTimeField::make('addedAt')->readOnly();
+
+        $relation = BelongsToMany::make('roles')->type('roles')->fields($position, $addedAt);
 
         self::assertTrue($relation->isToMany());
-        self::assertSame(['assigned_at' => 'datetime'], $relation->pivotFields());
+        self::assertSame([$position, $addedAt], $relation->pivotFields());
     }
 
     #[Test]
-    public function belongsToManyResolvesClosurePivotFields(): void
+    public function belongsToManyHasNoPivotFieldsByDefault(): void
     {
-        $relation = BelongsToMany::make('roles')->fields(static fn(): array => ['x' => 1]);
+        $relation = BelongsToMany::make('roles')->type('roles');
 
-        self::assertSame(['x' => 1], $relation->pivotFields());
+        self::assertSame([], $relation->pivotFields());
+    }
+
+    #[Test]
+    public function belongsToManyLooksUpAPivotFieldByName(): void
+    {
+        $position = Integer::make('position');
+
+        $relation = BelongsToMany::make('roles')->fields($position);
+
+        self::assertSame($position, $relation->pivotField('position'));
+        self::assertNull($relation->pivotField('missing'));
+    }
+
+    #[Test]
+    public function belongsToManyPivotFieldCarriesItsConstraints(): void
+    {
+        $position = Integer::make('position')->required();
+
+        $relation = BelongsToMany::make('roles')->fields($position);
+
+        $constraints = $relation->pivotFields()[0]->constraints();
+        self::assertCount(1, $constraints);
+        self::assertInstanceOf(Required::class, $constraints[0]);
+    }
+
+    #[Test]
+    public function belongsToManyPivotFieldsAreWritableUnlessReadOnly(): void
+    {
+        $position = Integer::make('position');
+        $addedAt = DateTimeField::make('addedAt')->readOnly();
+        $note = Str::make('note')->readOnlyOnUpdate();
+
+        $relation = BelongsToMany::make('roles')->fields($position, $addedAt, $note);
+
+        // On create: position + note are writable, addedAt is read-only.
+        self::assertSame([$position, $note], $relation->writablePivotFields(true));
+        // On update: only position is writable (note is read-only on update).
+        self::assertSame([$position], $relation->writablePivotFields(false));
+    }
+
+    #[Test]
+    public function belongsToManyHasNoPivotThroughByDefault(): void
+    {
+        $relation = BelongsToMany::make('roles')->type('roles');
+
+        self::assertNull($relation->pivotThrough());
+    }
+
+    #[Test]
+    public function belongsToManyNamesPivotThroughAssociationEntity(): void
+    {
+        $relation = BelongsToMany::make('roles')->type('roles')->through('App\\Entity\\UserRole');
+
+        self::assertSame('App\\Entity\\UserRole', $relation->pivotThrough());
+    }
+
+    #[Test]
+    public function belongsToManyClearsPivotThrough(): void
+    {
+        $relation = BelongsToMany::make('roles')->through('App\\Entity\\UserRole')->through(null);
+
+        self::assertNull($relation->pivotThrough());
     }
 
     #[Test]
@@ -570,6 +641,64 @@ final class RelationTest extends TestCase
         // paginate() mutates and returns the same builder (not a clone).
         self::assertSame($relation, $returned);
         self::assertSame($paginator, $relation->pagination());
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    public function filtersDefaultToEmptyAndWithFiltersDeclaresThem(): void
+    {
+        $relation = HasMany::make('tracks')->type('tracks');
+        self::assertSame([], $relation->filters());
+
+        $byPosition = Where::make('position', 'pivot_position');
+        $byName = Where::make('name');
+        $returned = $relation->withFilters($byPosition, $byName);
+
+        // withFilters() mutates and returns the same builder (not a clone).
+        self::assertSame($relation, $returned);
+        self::assertSame([$byPosition, $byName], $relation->filters());
+    }
+
+    #[Test]
+    public function withFiltersAppendsAcrossCalls(): void
+    {
+        $first = Where::make('a');
+        $second = Where::make('b');
+
+        $relation = HasMany::make('tracks')->type('tracks')
+            ->withFilters($first)
+            ->withFilters($second);
+
+        self::assertSame([$first, $second], $relation->filters());
+    }
+
+    #[Test]
+    #[Group('spec:fetching-sorting')]
+    public function sortsDefaultToEmptyAndWithSortsDeclaresThem(): void
+    {
+        $relation = HasMany::make('tracks')->type('tracks');
+        self::assertSame([], $relation->sorts());
+
+        $byPosition = SortByField::make('position', 'pivot_position');
+        $byName = SortByField::make('name');
+        $returned = $relation->withSorts($byPosition, $byName);
+
+        // withSorts() mutates and returns the same builder (not a clone).
+        self::assertSame($relation, $returned);
+        self::assertSame([$byPosition, $byName], $relation->sorts());
+    }
+
+    #[Test]
+    public function withSortsAppendsAcrossCalls(): void
+    {
+        $first = SortByField::make('a');
+        $second = SortByField::make('b');
+
+        $relation = HasMany::make('tracks')->type('tracks')
+            ->withSorts($first)
+            ->withSorts($second);
+
+        self::assertSame([$first, $second], $relation->sorts());
     }
 
     #[Test]

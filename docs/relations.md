@@ -121,20 +121,107 @@ playlists:
 // src/Resource/TrackResource.php
 BelongsToMany::make('playlists')
     ->type('playlists')
-    ->fields(['position' => 'integer', 'addedAt' => 'datetime'])
+    ->fields(
+        Integer::make('position')->min(1),
+        DateTime::make('addedAt')->readOnly(),
+    )
     ->cannotReplace(),
 ```
 
-`fields()` declares the pivot fields and accepts either an array or a closure
-returning one:
+`fields()` declares the pivot (join-table) fields as **real field definitions** —
+the same field DSL you use for attributes (`Integer`, `Str`, `DateTime`, …) with
+their constraints, casts and read-only / context behaviour:
 
 ```php
-public function fields(\Closure|array $fields): static
+public function fields(FieldInterface ...$fields): static
+public function pivotFields(): array              // list<FieldInterface>
+public function pivotField(string $name): ?FieldInterface
+public function writablePivotFields(bool $creating): array  // list<FieldInterface>
 ```
 
-In core 1.0 these are **declare-only** — carried as metadata, never validated by
-core. The Symfony bundle's Doctrine adapter consumes them to write the join row.
-Read them back with the `pivotFields()` accessor (which resolves the closure form).
+One declaration drives every pivot concern:
+
+- **render** — the field's value cast applies to the raw pivot column before it
+  emits as relationship meta;
+- **filter / sort** — the field's name + column become a `filter[…]` / `sort=`
+  key on the related-collection endpoint;
+- **write / validate** — the field's constraints validate the incoming `meta`,
+  resolved by the operation's create vs update context exactly as for an attribute.
+
+### Writing pivot fields — the linkage `meta` convention
+
+A pivot field is **writable by default**; opt a server-owned column out with
+`->readOnly()` (or `->readOnlyOnUpdate()` / `->readOnlyOnCreate()` for a
+context-scoped opt-out). Pivot values are written through the JSON:API
+**resource-identifier `meta`** on each linkage member — the spec allows a
+resource identifier to carry `meta`:
+
+```http
+POST /playlists/1/relationships/orderedTracks
+{ "data": [ { "type": "tracks", "id": "7", "meta": { "position": 3 } } ] }
+```
+
+```http
+PATCH /playlists/1/relationships/orderedTracks
+{ "data": [
+  { "type": "tracks", "id": "7", "meta": { "position": 1 } },
+  { "type": "tracks", "id": "9", "meta": { "position": 2 } }
+] }
+```
+
+The same per-member `meta` rides the relationship when it appears inline in a
+whole-resource `POST` / `PATCH` body. `DELETE` (remove) carries no pivot.
+
+The relevant readers:
+
+- `writablePivotFields($creating)` returns the fields settable from `meta` in the
+  given operation context (read-only ones filtered out by their context);
+- each parsed linkage member exposes its `meta` on the
+  [`ResourceIdentifier`](../src/Schema/ResourceIdentifier.php) value object
+  (`$identifier->meta`) — on **both** the relationship-endpoint body and a
+  relationship nested in a whole-resource body. No new wire-parsing surface was
+  needed: a resource identifier has always parsed its `meta`.
+
+Core stays **storage-agnostic**: it carries the field definitions and the parsed
+`meta`, but never writes the join row. The Symfony bundle's Doctrine adapter is
+the executor — it validates the `meta` against the writable pivot fields'
+constraints (a violation is a `422` pointing at the linkage `meta`), and persists
+the association entity as an **upsert / reorder diff** (update an existing row in
+place, create a missing one, and on a full replace remove rows whose member is no
+longer present). A read-only pivot field supplied in `meta` is never written. See
+the bundle's relationships / Doctrine docs for the persistence details.
+
+> **The Doctrine fact.** A plain `#[ORM\ManyToMany]` join table holds only the
+> two foreign keys — Doctrine cannot map a `position` / `addedAt` column on it. To
+> *have* pivot columns the join must be modelled as an **association entity**
+> (`PlaylistTrack { int position; \DateTime addedAt; ManyToOne playlist; ManyToOne
+> track }`), with the parent owning a `OneToMany` to it and the association entity
+> a `ManyToOne` to the far type. The bundle's Doctrine adapter auto-detects this
+> association entity from the parent's metadata.
+
+When auto-detection is ambiguous (the parent has more than one to-many association
+that could back the pivot) or finds nothing, name the association entity explicitly
+with `through()` — an **opaque, declare-only** class-string that core carries but
+never interprets (it stays storage-agnostic), and the host adapter reads as the
+association entity backing the pivot:
+
+```php
+public function through(?string $associationEntity): static
+public function pivotThrough(): ?string
+```
+
+```php
+BelongsToMany::make('tracks')
+    ->type('tracks')
+    ->fields(
+        Integer::make('position')->min(1),
+        DateTime::make('addedAt')->readOnly(),
+    )
+    ->through(PlaylistTrack::class),
+```
+
+`pivotThrough()` reads it back (`null` when no override was declared). Passing
+`null` clears an earlier override.
 
 `BelongsToMany` extends `HasMany`, so it inherits `minItems()` / `maxItems()` and
 the deduplicated-set apply. The `cannotReplace()` above is a mutation gate covered
@@ -313,6 +400,48 @@ The host resolves the effective strategy as **relation → related resource →
 server default**: a relation-level paginator wins, otherwise the related
 resource's default, otherwise the server's. A to-one relation has no collection
 and ignores it. See [pagination](pagination.md) for the paginators.
+
+## Relation-scoped filters and sorts
+
+A to-many relation can declare extra `filter`/`sort` keys that apply **only** to
+its related-collection endpoint (`GET /{type}/{id}/{rel}`) — not the primary
+collection of the related type. Declare them with `withFilters()` / `withSorts()`,
+passing the same [`FilterInterface`](filters.md) / [`SortInterface`](sorts.md)
+value objects a resource exposes:
+
+```php
+use haddowg\JsonApi\Resource\Filter\Where;
+use haddowg\JsonApi\Resource\Sort\SortByField;
+
+// src/Resource/PlaylistResource.php
+HasMany::make('tracks')
+    ->type('tracks')
+    ->withFilters(Where::make('genre'))
+    ->withSorts(SortByField::make('title')),
+```
+
+The point is **scoping**. A filter or sort declared on the related *resource* is
+exposed everywhere that type is listed — `/tracks` **and** `/playlists/1/tracks`.
+Declaring it on the *relation* scopes it to that one related-collection endpoint:
+the natural home for a contextual filter/sort (ordering a playlist's tracks by
+their in-playlist position; a filter only meaningful when listing a user's
+posts). The same key is **not** recognized on the primary `/{relatedType}`
+collection — a request using it there `400`s (or simply isn't advertised), exactly
+as for any unknown key.
+
+The host merges a relation's `withFilters()`/`withSorts()` with the related
+resource's own vocabulary, so both apply together on the related endpoint. On a
+**key clash** (the same `filter`/`sort` key declared on both the related resource
+and the relation) the **relation's** declaration wins — the more specific scope.
+A key in *neither* set still `400`s as an unrecognized parameter.
+
+> **Scope: the related entity, not the pivot.** A relation-scoped filter/sort
+> targets a column on the **related entity** (the common case) — that works out of
+> the box. A **pivot/join-table** filter/sort (e.g. a many-to-many `position`
+> column on the join row, not on the related entity) is supported **only** via a
+> custom `FilterHandler` / `SortHandler` you supply — the seam allows it, but the
+> framework does not auto-wire join-table columns. Declare the metadata here and
+> point it at your handler.
 
 ## Custom relation hooks
 
