@@ -166,13 +166,30 @@ abstract class RelationshipQueriesConformanceTestCase extends JsonApiFunctionalT
     {
         // No `bogusRel` relation exists on articles: the path resolves to nothing, so
         // (per the locked spec rule) it is the related-collection endpoint's same
-        // `400`, with `source.parameter` the offending canonical profile param —
-        // never a silent 200 that masks a client typo.
+        // `400`, with `source.parameter` naming the offending profile param as the
+        // client wrote it — never a silent 200 that masks a client typo.
         $response = $this->profileRequest('/articles/1?relatedQuery[bogusRel][sort]=name');
 
         self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
         self::assertSame(
             ['parameter' => 'relatedQuery[bogusRel]'],
+            $this->firstError($this->decode($response))['source'] ?? null,
+        );
+    }
+
+    #[Test]
+    #[Group('spec:profiles')]
+    #[Group('spec:errors')]
+    public function anUnknownRelationshipPathViaTheShorthandReportsTheShorthand(): void
+    {
+        // The error names the parameter as the client wrote it: addressing the unknown
+        // path through the `rQ` shorthand reports `rQ[bogusRel]`, not a normalised
+        // canonical `relatedQuery[bogusRel]`.
+        $response = $this->profileRequest('/articles/1?rQ[bogusRel][sort]=name');
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(
+            ['parameter' => 'rQ[bogusRel]'],
             $this->firstError($this->decode($response))['source'] ?? null,
         );
     }
