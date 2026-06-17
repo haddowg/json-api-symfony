@@ -429,9 +429,11 @@ final class RelationshipWindowBatcher
      * ALLOWED through (bundle ADR 0068): its single target is matched against the
      * filters and the linkage nulled when excluded.
      *
-     * `source.parameter` points at the canonical profile form (`relatedQuery[<path>]`);
-     * the unknown sort/filter KEY on a valid path is still validated downstream by the
-     * fetch (core ADR 0058 delegates path/cardinality validation to the host).
+     * `source.parameter` names the parameter as the client wrote it — the family base
+     * it used (`relatedQuery[<path>]` or `rQ[<path>]`), matching core's structural
+     * errors rather than normalising to the canonical family. The unknown sort/filter
+     * KEY on a valid path is still validated downstream by the fetch (core ADR 0058
+     * delegates path/cardinality validation to the host).
      *
      * Core's `parseRelatedQueries()` captures only `sort`+`filter` ops and silently
      * drops a `[page]` op, so a `[page]`-on-to-one cannot be seen through
@@ -459,6 +461,7 @@ final class RelationshipWindowBatcher
         // family is scanned too (bundle ADR 0068). A path's raw op set decides a to-one's
         // fate: filter-only passes, any sort/page is rejected.
         $rawOps = $this->rawPathOps($request);
+        $rawFamilies = $this->rawPathFamilies($request);
         $paths = [...$request->getRelatedQueryPaths(), ...\array_keys($rawOps)];
 
         $seen = [];
@@ -478,8 +481,39 @@ final class RelationshipWindowBatcher
                 continue;
             }
 
-            throw new QueryParamUnrecognized(RelationshipQueriesProfile::FAMILY . '[' . $path . ']');
+            // Name the parameter as the client wrote it: the family base it used
+            // (`rQ` when only the shorthand addressed the path), so the error source
+            // points at what was sent rather than a normalised canonical form.
+            $family = $rawFamilies[$path] ?? RelationshipQueriesProfile::FAMILY;
+            throw new QueryParamUnrecognized($family . '[' . $path . ']');
         }
+    }
+
+    /**
+     * The family base (`relatedQuery` or `rQ`) the client used to address each
+     * `relatedQuery`/`rQ` path, so an error names the parameter as written rather than
+     * normalising to the canonical family (core's structural errors do the same). The
+     * canonical `relatedQuery` is recorded first, so a path addressed by BOTH families
+     * is reported against the canonical one (the profile's canonical-wins rule), while
+     * a path addressed only by the shorthand is reported against `rQ`.
+     *
+     * @return array<string, string> `path => family base`
+     */
+    private function rawPathFamilies(JsonApiRequestInterface $request): array
+    {
+        $families = [];
+        foreach ([RelationshipQueriesProfile::FAMILY, RelationshipQueriesProfile::FAMILY_SHORTHAND] as $family) {
+            $value = $request->getQueryParam($family);
+            if (!\is_array($value)) {
+                continue;
+            }
+
+            foreach (\array_keys($value) as $path) {
+                $families[(string) $path] ??= $family;
+            }
+        }
+
+        return $families;
     }
 
     /**
