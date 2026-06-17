@@ -127,6 +127,92 @@ The reason-phrase table:
 This arm is where the firewall (401/403) and routing (404, 405) land — see the
 firewall interplay below.
 
+> Between arm 1 and arm 2, the listener consults the application-extensible
+> exception mappers (below). Arm 1 always runs first: a core
+> `JsonApiExceptionInterface` is **never** intercepted by a mapper or the config
+> map.
+
+## Mapping your own exceptions
+
+A domain or third-party exception that is *not* a core `JsonApiExceptionInterface`
+and *not* a Symfony `HttpExceptionInterface` falls to the generic `500` by default.
+Two facets let you map it to a JSON:API error without decorating the listener.
+
+Both are consulted **after** arm 1 and **only** for a throwable that is not a core
+`JsonApiExceptionInterface` — the invariant being that **a core JSON:API exception
+always renders natively and is never overridden** by a mapper or the config map.
+
+### Facet 1 — the `json_api.exceptions` config map
+
+For the common status-only case, map an exception class to an HTTP status in config:
+
+```yaml
+# config/packages/json_api.yaml
+json_api:
+    exceptions:
+        App\Exception\PaymentRequired: 402
+        App\Exception\TooManyWidgets: 409
+```
+
+A thrown instance renders as a JSON:API error with that `status`, the bundle's
+reason-phrase `title`, and — only in debug — the exception message as `detail`
+(identical in shape to the Symfony HTTP-exception arm). When a throwable matches
+several mapped classes (a subclass hierarchy), the **most-specific** (most-derived)
+mapped class wins.
+
+### Facet 2 — a tagged `ExceptionMapperInterface`
+
+For richer errors (a custom `source`, `meta`, multiple error objects, or
+conditional status), implement
+[`ExceptionMapperInterface`](../src/EventListener/ExceptionMapperInterface.php) — a
+service returns an `ErrorResponse`, or `null` to defer to the next mapper:
+
+```php
+use haddowg\JsonApi\Response\ErrorResponse;
+use haddowg\JsonApi\Schema\Error\Error;
+use haddowg\JsonApi\Schema\Error\ErrorSource;
+use haddowg\JsonApiBundle\EventListener\ExceptionMapperInterface;
+
+final class PaymentExceptionMapper implements ExceptionMapperInterface
+{
+    public function map(\Throwable $throwable): ?ErrorResponse
+    {
+        if (!$throwable instanceof PaymentFailed) {
+            return null; // defer to the next mapper
+        }
+
+        return ErrorResponse::fromErrors(new Error(
+            status: '402',
+            code: 'PAYMENT_FAILED',
+            title: 'Payment failed',
+            detail: $throwable->reason(),
+            source: ErrorSource::fromPointer('/data/attributes/card'),
+        ));
+    }
+}
+```
+
+Any service implementing the interface is **auto-tagged**
+(`json_api.exception_mapper`) — no manual tagging needed.
+
+### Priority and ordering
+
+The mappers are consulted in **descending tag `priority`** order (default `0`),
+first non-null `ErrorResponse` wins. The bundle's config-driven mapper (the facet-1
+`json_api.exceptions` map) is itself registered as a mapper at a **low priority
+(`-1000`)**, so your own mappers (default `0`) are always consulted **before** the
+config map. To order two of your own mappers, set an explicit tag `priority`:
+
+```yaml
+services:
+    App\Exception\PaymentExceptionMapper:
+        tags:
+            - { name: json_api.exception_mapper, priority: 10 }
+```
+
+If no mapper returns a response, the listener falls through to arm 2 (Symfony HTTP
+exceptions) and arm 3 (the generic `500`) unchanged.
+
 **Arm 3 — everything else is a generic 500.** Any other `\Throwable` is delegated
 to core's public, stateless `InternalServerError::for($throwable, $debug)` seam, so
 the rendered error object is **byte-identical** to the one core's own

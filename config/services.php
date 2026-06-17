@@ -236,6 +236,13 @@ return static function (ContainerConfigurator $container): void {
             '$httpFoundationFactory' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\Symfony\Bridge\PsrHttpMessage\Factory\HttpFoundationFactory::class),
             '$debug' => '%kernel.debug%',
             '$logger' => \Symfony\Component\DependencyInjection\Loader\Configurator\service('logger')->nullOnInvalid(),
+            // The application-extensible exception → JSON:API-error mappers (bundle
+            // ADR 0073), priority-ordered (mirrors how DOCTRINE_EXTENSION_TAG is
+            // injected). Consulted only for a throwable that is NOT a core
+            // JsonApiExceptionInterface; the config-driven ConfiguredExceptionMapper
+            // (registered in loadExtension) sits at the low -1000 fallback priority,
+            // so an app mapper (default 0) is consulted before the config map.
+            '$mappers' => \Symfony\Component\DependencyInjection\Loader\Configurator\tagged_iterator(JsonApiBundle::EXCEPTION_MAPPER_TAG),
             // Optional Symfony Security collaborators (present only with
             // symfony/security-core), so an AccessDeniedException maps to 401 when
             // unauthenticated / 403 when authenticated-but-denied (bundle ADR 0043).

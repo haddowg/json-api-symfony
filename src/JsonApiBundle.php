@@ -16,6 +16,8 @@ use haddowg\JsonApiBundle\DependencyInjection\Compiler\DoctrineEntityMapPass;
 use haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceLocatorPass;
 use haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceSecurityPass;
 use haddowg\JsonApiBundle\DependencyInjection\Compiler\ResponseHeadersPass;
+use haddowg\JsonApiBundle\EventListener\ConfiguredExceptionMapper;
+use haddowg\JsonApiBundle\EventListener\ExceptionMapperInterface;
 use haddowg\JsonApiBundle\Operation\CrudOperationHandler;
 use haddowg\JsonApiBundle\Operation\Operation;
 use haddowg\JsonApiBundle\Serializer\Doctrine\DoctrineRelationshipLoadState;
@@ -86,6 +88,18 @@ final class JsonApiBundle extends AbstractBundle
     public const string DOCTRINE_EXTENSION_TAG = 'haddowg.json_api.doctrine_extension';
 
     /**
+     * Tag applied to every {@see \haddowg\JsonApiBundle\EventListener\ExceptionMapperInterface}.
+     * The {@see \haddowg\JsonApiBundle\EventListener\ExceptionListener} consults them
+     * (descending tag `priority`, first non-null result wins) to map a throwable
+     * that is NOT a core {@see \haddowg\JsonApi\Exception\JsonApiExceptionInterface}
+     * to a JSON:API error document (bundle ADR 0073). The bundle's config-driven
+     * {@see \haddowg\JsonApiBundle\EventListener\ConfiguredExceptionMapper} registers
+     * at the low `-1000` fallback priority, so an application mapper (default `0`) is
+     * always consulted before the `json_api.exceptions` config map.
+     */
+    public const string EXCEPTION_MAPPER_TAG = 'json_api.exception_mapper';
+
+    /**
      * Tag applied to a standalone {@see \haddowg\JsonApi\Serializer\SerializerInterface}
      * registered for a type via {@see AsJsonApiSerializer} — a serializer without an
      * {@see AbstractResource} (bundle ADR 0024). The tag carries the `type` it
@@ -138,6 +152,11 @@ final class JsonApiBundle extends AbstractBundle
                 ->booleanNode('strict_query_parameters')
                     ->info('Reject an unrecognized top-level query-parameter family with a 400 (bundle ADR 0055, core ADR 0059). A param is recognized when its base name is a reserved JSON:API family (include/fields/filter/sort/page), a key the primary resource declares, a negotiated profile keyword (relatedQuery/rQ for the Relationship Queries profile, withCount for the Relationship Counts profile), or an app-registered custom param. The default is true; set false to restore the old silent-ignore behaviour.')
                     ->defaultTrue()
+                ->end()
+                ->arrayNode('exceptions')
+                    ->info('Map an exception class (FQCN) to an HTTP status; a thrown instance renders as a JSON:API error with that status, reason-phrase title, and (in debug) its message as detail. A core JsonApiExceptionInterface always renders natively and is never overridden by this map. For richer errors (custom source/meta), implement ExceptionMapperInterface (bundle ADR 0073). Default empty.')
+                    ->useAttributeAsKey('class')
+                    ->integerPrototype()->end()
                 ->end()
                 ->arrayNode('pagination')
                     ->info('Tuning for the server\'s default page-based paginator. See core docs/pagination.md.')
@@ -220,6 +239,10 @@ final class JsonApiBundle extends AbstractBundle
         $builder->setParameter('haddowg_json_api.pagination.max_per_page', $maxPerPage);
         $builder->setParameter('haddowg_json_api.max_include_depth', $maxIncludeDepth);
         $builder->setParameter('haddowg_json_api.doctrine.window_functions', $windowFunctions);
+        // The exception-class => HTTP-status map (bundle ADR 0073) the config-driven
+        // ConfiguredExceptionMapper reads to map a thrown app/third-party exception
+        // to a JSON:API error. Default empty (no config mappings).
+        $builder->setParameter('json_api.exceptions', $this->exceptionsConfig($config));
 
         // The full server map (ADR 0034): the implicit `default` server carries the
         // top-level base_uri/version, and each named server from `json_api.servers`
@@ -230,6 +253,19 @@ final class JsonApiBundle extends AbstractBundle
         $builder->setParameter('haddowg_json_api.servers', \array_keys($servers));
 
         $container->import(\dirname(__DIR__) . '/config/services.php');
+
+        // The config-driven exception mapper (bundle ADR 0073): maps a thrown
+        // app/third-party exception named in `json_api.exceptions` to a status-keyed
+        // JSON:API error. Tagged at the low `-1000` fallback priority so an
+        // application's own ExceptionMapperInterface (default `0`) is consulted
+        // first. The parameter is set above (default empty).
+        $container->services()
+            ->set(ConfiguredExceptionMapper::class)
+            ->args([
+                '$map' => '%json_api.exceptions%',
+                '$debug' => '%kernel.debug%',
+            ])
+            ->tag(self::EXCEPTION_MAPPER_TAG, ['priority' => -1000]);
 
         // One ServerFactory per declared server, plus the ServerProvider that
         // resolves them by name through a service locator. The per-server resource
@@ -314,6 +350,12 @@ final class JsonApiBundle extends AbstractBundle
 
         $builder->registerForAutoconfiguration(DoctrineExtensionInterface::class)
             ->addTag(self::DOCTRINE_EXTENSION_TAG);
+
+        // Any app service implementing the exception-mapper seam is auto-tagged, so
+        // it is consulted by the ExceptionListener (before the config map) for a
+        // throwable that is not a core JsonApiExceptionInterface (bundle ADR 0073).
+        $builder->registerForAutoconfiguration(ExceptionMapperInterface::class)
+            ->addTag(self::EXCEPTION_MAPPER_TAG);
 
         // The constraint-translator interface references Symfony Validator types,
         // so only register its autoconfiguration when the optional
@@ -661,6 +703,35 @@ final class JsonApiBundle extends AbstractBundle
         $value = \is_array($doctrine) ? ($doctrine['window_functions'] ?? null) : null;
 
         return \is_bool($value) ? $value : true;
+    }
+
+    /**
+     * The resolved `json_api.exceptions` map (bundle ADR 0073): each exception
+     * class-string keyed to its HTTP status, read by the config-driven
+     * {@see ConfiguredExceptionMapper}. Absent / malformed entries are filtered out,
+     * so the parameter is always a clean `array<class-string, int>` (empty by
+     * default).
+     *
+     * @param array<string, mixed> $config
+     *
+     * @return array<class-string, int>
+     */
+    private function exceptionsConfig(array $config): array
+    {
+        $exceptions = $config['exceptions'] ?? [];
+        if (!\is_array($exceptions)) {
+            return [];
+        }
+
+        $map = [];
+        foreach ($exceptions as $class => $status) {
+            if (\is_string($class) && $class !== '' && \is_int($status)) {
+                /** @var class-string $class */
+                $map[$class] = $status;
+            }
+        }
+
+        return $map;
     }
 
     /**
