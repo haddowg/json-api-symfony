@@ -62,7 +62,7 @@ final class ArtistResource extends AbstractResource
             // `?include=albums` naming it is a 400, and it is never auto-compounded by
             // a default-include cascade. The forward `albums?include=artist` is a
             // different relation and is unaffected.
-            HasMany::make('albums')->type('albums')->dataOnlyWhenLoaded()->cannotBeIncluded(),
+            HasMany::make('albums')->type('albums')->cannotBeIncluded(),
         ];
     }
 

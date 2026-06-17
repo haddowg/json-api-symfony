@@ -142,8 +142,8 @@ final class AlbumResource extends AbstractResource
                 // Countable (bundle ADR 0052): the related-collection endpoint emits
                 // meta.page.total + a last link, and ?withCount=tracks activates the
                 // relationship-object meta.total on an album.
-                ->countable()
-                ->dataOnlyWhenLoaded(),
+                // (A to-many is lazy by default — links-only until loaded/included.)
+                ->countable(),
         ];
     }
 

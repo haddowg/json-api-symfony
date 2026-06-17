@@ -128,11 +128,10 @@ abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTest
     #[Group('spec:fetching-relationships')]
     public function aRelationshipWithoutTheLoadStatePolicyAlwaysEmitsData(): void
     {
-        // Regression: the `comments` to-many does NOT opt into
-        // dataOnlyWhenLoaded(), so its `data` member is always present on both
-        // providers regardless of any injected load-state predicate — the policy
-        // is strictly opt-in and changes nothing for relations that do not enable
-        // it.
+        // Regression: the `comments` to-many opts into eager linkage with
+        // `withData()` (a to-many is lazy by default since core ADR 0067), so its
+        // `data` member is always present on both providers regardless of any
+        // injected load-state predicate — `withData()` overrides the lazy default.
         $relationships = $this->relationshipsOf($this->fetchResource('/articles/1'));
 
         $comments = $relationships['comments'] ?? null;
@@ -151,12 +150,12 @@ abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTest
     #[Group('spec:fetching-relationships')]
     public function aToOneRelationshipUnderTheLoadStatePolicyStillEmitsData(): void
     {
-        // `lazyAuthor` opts into dataOnlyWhenLoaded() but is a to-one: the
-        // Doctrine predicate reports a to-one as always loaded (a lazy ManyToOne
-        // proxy carries its identifier, so emitting the identifier needs no DB
-        // load), and the in-memory kernel injects no predicate at all — so on
-        // BOTH providers the `data` member is present and carries the author
-        // identifier.
+        // `lazyAuthor` is a `BelongsTo` to-one, EAGER by default (core ADR 0067:
+        // its id is on the owner). Its `data` is always present — mirroring the
+        // Doctrine predicate's "a to-one is always loaded" verdict (a lazy ManyToOne
+        // proxy carries its identifier, so emitting it needs no DB load); the
+        // in-memory kernel injects no predicate at all. So on BOTH providers the
+        // `data` member carries the author identifier.
         $relationships = $this->relationshipsOf($this->fetchResource('/articles/1'));
 
         $lazyAuthor = $relationships['lazyAuthor'] ?? null;

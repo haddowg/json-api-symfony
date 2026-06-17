@@ -1,6 +1,11 @@
 # Relationship linkage load-state is a storage-aware predicate, wired only for Doctrine
 
-A relation that opts into core's `dataOnlyWhenLoaded()` policy must answer
+> Update: core's opt-in `dataOnlyWhenLoaded()` is **superseded by a per-type lazy
+> default** (core ADR 0067 / bundle ADR 0074) — a to-many and `HasOne` are lazy by
+> default, `withData()` opts back to eager. This `DoctrineRelationshipLoadState`
+> predicate is unchanged; it now serves the lazy *default* rather than an opt-in.
+
+A lazy relation (a to-many or `HasOne` by default) must answer
 "is this linkage already in memory?" **without triggering a load** — but the core
 library is storage-agnostic and cannot know. Core's seam
 (`RelationshipLoadStateInterface`, injected via `Server::withRelationshipLoadState()`,
