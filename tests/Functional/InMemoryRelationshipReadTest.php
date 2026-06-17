@@ -50,7 +50,7 @@ final class InMemoryRelationshipReadTest extends RelationshipReadConformanceTest
     #[Group('spec:fetching-relationships')]
     public function aToManyRelationshipUnderTheLoadStatePolicyStillEmitsDataInMemory(): void
     {
-        // `lazyComments` opts into linkageOnlyWhenLoaded(), but the in-memory
+        // `lazyComments` opts into dataOnlyWhenLoaded(), but the in-memory
         // kernel wires no load-state predicate (no doctrine/orm), so core treats
         // every relation as loaded: the in-memory `comments` are materialised
         // objects, so the `data` member is present exactly as for the always-on

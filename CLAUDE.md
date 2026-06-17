@@ -138,7 +138,7 @@ decision, then 1–3 sentences of *why*). The ADRs already written: `0001`–`00
 > **Phase 3 (relationships) then landed end-to-end on both providers (slices
 > S0–S6) — unsigned/unpushed locally pending re-sign.** Resources declare
 > relations and render linkage plus self/related `links` by convention (default
-> on, `withoutLinks()` opt-out; core ADR 0024), with a `linkageOnlyWhenLoaded()`
+> on, `withoutLinks()` opt-out; core ADR 0024), with a `dataOnlyWhenLoaded()`
 > policy over a storage-aware **load-state seam** so a lazy Doctrine to-many emits
 > links-only without forcing a fetch (core ADR 0025, bundle ADR 0015). The related
 > (`GET /{type}/{id}/{rel}`) and relationship (`GET …/relationships/{rel}`) read
@@ -224,7 +224,7 @@ decision, then 1–3 sentences of *why*). The ADRs already written: `0001`–`00
    (post-hydration entity-validation seam) added — only the `Valid`-cascade gap
    remains for v1. **Done.**
 3. ✅ Relationships (S0–S6, both providers). Declared relations + linkage/links
-   rendering (`withoutLinks`, `linkageOnlyWhenLoaded` over a load-state seam);
+   rendering (`withoutLinks`, `dataOnlyWhenLoaded` over a load-state seam);
    related + relationship **read** endpoints + compound `?include`; relationship
    **mutation** (`PATCH`/`POST`/`DELETE …/relationships/{rel}`) closing the
    `UpdateRelationshipHydratorInterface` gap and finally throwing

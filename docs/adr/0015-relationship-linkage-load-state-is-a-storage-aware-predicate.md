@@ -1,6 +1,6 @@
 # Relationship linkage load-state is a storage-aware predicate, wired only for Doctrine
 
-A relation that opts into core's `linkageOnlyWhenLoaded()` policy must answer
+A relation that opts into core's `dataOnlyWhenLoaded()` policy must answer
 "is this linkage already in memory?" **without triggering a load** — but the core
 library is storage-agnostic and cannot know. Core's seam
 (`RelationshipLoadStateInterface`, injected via `Server::withRelationshipLoadState()`,

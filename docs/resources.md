@@ -60,7 +60,7 @@ final class ArtistResource extends AbstractResource
             Id::make(),
             Str::make('name')->required()->maxLength(120)->sortable(),
             // …
-            HasMany::make('albums')->type('albums')->linkageOnlyWhenLoaded(),
+            HasMany::make('albums')->type('albums')->dataOnlyWhenLoaded(),
         ];
     }
 }

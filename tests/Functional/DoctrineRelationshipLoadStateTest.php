@@ -89,7 +89,7 @@ final class DoctrineRelationshipLoadStateTest extends JsonApiFunctionalTestCase
     public function aToManyOverAnUninitialisedCollectionReportsNotLoadedWithoutInitialisingIt(): void
     {
         $predicate = new DoctrineRelationshipLoadState($this->entityManager);
-        $relation = HasMany::make('lazyComments')->type('comments')->storedAs('featuredComments')->linkageOnlyWhenLoaded();
+        $relation = HasMany::make('lazyComments')->type('comments')->storedAs('featuredComments')->dataOnlyWhenLoaded();
 
         $article = $this->entityManager->find(ArticleEntity::class, '1');
         self::assertInstanceOf(ArticleEntity::class, $article);
@@ -109,7 +109,7 @@ final class DoctrineRelationshipLoadStateTest extends JsonApiFunctionalTestCase
     public function aToManyOverAnInitialisedCollectionReportsLoaded(): void
     {
         $predicate = new DoctrineRelationshipLoadState($this->entityManager);
-        $relation = HasMany::make('lazyComments')->type('comments')->storedAs('featuredComments')->linkageOnlyWhenLoaded();
+        $relation = HasMany::make('lazyComments')->type('comments')->storedAs('featuredComments')->dataOnlyWhenLoaded();
 
         $article = $this->entityManager->find(ArticleEntity::class, '1');
         self::assertInstanceOf(ArticleEntity::class, $article);
@@ -129,7 +129,7 @@ final class DoctrineRelationshipLoadStateTest extends JsonApiFunctionalTestCase
     public function aToOneAlwaysReportsLoaded(): void
     {
         $predicate = new DoctrineRelationshipLoadState($this->entityManager);
-        $relation = BelongsTo::make('lazyAuthor')->type('authors')->storedAs('author')->linkageOnlyWhenLoaded();
+        $relation = BelongsTo::make('lazyAuthor')->type('authors')->storedAs('author')->dataOnlyWhenLoaded();
 
         $article = $this->entityManager->find(ArticleEntity::class, '1');
         self::assertInstanceOf(ArticleEntity::class, $article);
@@ -147,7 +147,7 @@ final class DoctrineRelationshipLoadStateTest extends JsonApiFunctionalTestCase
         // `column()` names a property that is not a collection-valued association
         // on the entity: the predicate must not change behaviour for a relation it
         // cannot reason about — it reports loaded.
-        $relation = HasMany::make('unmapped')->type('comments')->storedAs('notAnAssociation')->linkageOnlyWhenLoaded();
+        $relation = HasMany::make('unmapped')->type('comments')->storedAs('notAnAssociation')->dataOnlyWhenLoaded();
 
         $article = $this->entityManager->find(ArticleEntity::class, '1');
         self::assertInstanceOf(ArticleEntity::class, $article);
@@ -160,7 +160,7 @@ final class DoctrineRelationshipLoadStateTest extends JsonApiFunctionalTestCase
     public function aNonEntityModelReportsLoaded(): void
     {
         $predicate = new DoctrineRelationshipLoadState($this->entityManager);
-        $relation = HasMany::make('lazyComments')->type('comments')->storedAs('featuredComments')->linkageOnlyWhenLoaded();
+        $relation = HasMany::make('lazyComments')->type('comments')->storedAs('featuredComments')->dataOnlyWhenLoaded();
 
         // A model the entity manager does not manage: the predicate must not touch
         // it — it reports loaded.

@@ -9,7 +9,7 @@ the resource-document *required-top-level-member* rule is **skipped** for
 relationship-endpoint bodies, because a relationship body's `data` is legitimately
 `null` (to-one clear) or `[]` (to-many clear) — shapes that rule would reject — and
 the exact linkage shape is instead validated by core's relationship-linkage parser
-(`getRelationshipLinkageToOne()` / `getRelationshipLinkageToMany()`).
+(`getRelationshipDataToOne()` / `getRelationshipDataToMany()`).
 
 The `CrudOperationHandler` gains `UpdateRelationship` / `AddToRelationship` /
 `RemoveFromRelationship` arms sharing one shape: load the parent through the read

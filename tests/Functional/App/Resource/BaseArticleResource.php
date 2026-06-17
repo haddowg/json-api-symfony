@@ -160,7 +160,7 @@ abstract class BaseArticleResource extends AbstractResource
             // relations carry.
             HasMany::make('pinnedComments')->type('comments')->storedAs('pinnedComments')->paginate(PagePaginator::make())->countable()
                 ->withFilters(Where::make('bodyContains', 'body', 'like')),
-            // Load-aware relationships opting into linkageOnlyWhenLoaded() so the
+            // Load-aware relationships opting into dataOnlyWhenLoaded() so the
             // storage-aware load-state predicate decides whether `data` is
             // emitted. They exercise the predicate on both providers without
             // changing the always-emitting `author`/`comments` above (the
@@ -176,8 +176,8 @@ abstract class BaseArticleResource extends AbstractResource
             // plain fetch and the predicate omits its `data` (links only) unless
             // the relationship is included (include-wins). In-memory has no
             // predicate, so it always emits.
-            BelongsTo::make('lazyAuthor')->type('authors')->storedAs('author')->linkageOnlyWhenLoaded(),
-            HasMany::make('lazyComments')->type('comments')->storedAs('featuredComments')->linkageOnlyWhenLoaded(),
+            BelongsTo::make('lazyAuthor')->type('authors')->storedAs('author')->dataOnlyWhenLoaded(),
+            HasMany::make('lazyComments')->type('comments')->storedAs('featuredComments')->dataOnlyWhenLoaded(),
             // Mutability variants (Phase 3 S3): relationship-endpoint mutation
             // guards. `lockedAuthor` reuses the `author` property but forbids
             // replacement (a PATCH to its endpoint is FullReplacementProhibited);
