@@ -362,7 +362,7 @@ parameter — otherwise it is ignored entirely (today's behaviour) and the profi
 not advertised.
 
 ```
-Accept: application/vnd.api+json;profile="https://haddowg.dev/profiles/relationship-queries"
+Accept: application/vnd.api+json;profile="https://haddowg.github.io/json-api/profiles/relationship-queries/"
 ```
 
 With the profile negotiated, the client addresses a relationship **by its include

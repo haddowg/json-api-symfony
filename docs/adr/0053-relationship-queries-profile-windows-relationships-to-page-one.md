@@ -1,7 +1,7 @@
 # The Relationship Queries profile windows each relationship to page 1
 
 The bundle wires core's Relationship Queries profile (core ADR 0058): a client that
-negotiates the profile URI (`https://haddowg.dev/profiles/relationship-queries`) in
+negotiates the profile URI (`https://haddowg.github.io/json-api/profiles/relationship-queries/`) in
 the `Accept` `profile` media-type parameter may filter and sort a **relationship's**
 linkage from the PRIMARY request, addressing the relationship by its include path via
 the `relatedQuery[<path>][sort|filter]` family (or the `rQ` shorthand; on a conflict
