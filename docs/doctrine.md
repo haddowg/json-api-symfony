@@ -288,6 +288,32 @@ persister must share the `EntityManager` — the reference pair does. If you rep
 
 Source: [`DoctrineDataPersister`](../src/DataPersister/Doctrine/DoctrineDataPersister.php).
 
+### Relationship write query cost
+
+When a write carries a `data.relationships` member, the persister resolves each
+linkage id with `EntityManager::getReference()` — a lazy proxy, **no query** — so how
+the linkage costs depends on the relation's *owning side*:
+
+- **A many-to-many the parent owns** (the join-table side, e.g. `editors`) stays
+  **O(1)**: the proxy is added to the owning collection and the join row inserts from
+  its known id, never loading the related entity. Creating or replacing such a
+  relation with 2 ids or 200 issues the same number of `SELECT`s (none for the
+  linkage).
+- **An inverse one-to-many** (the foreign key lives on the *child*, e.g. `comments`
+  where `comment.article_id` is the FK) costs **one `SELECT` per incoming id**:
+  re-pointing a child means setting its owning-side association
+  (`$comment->article = $article`), and setting a field on a `getReference()` proxy
+  initialises it. So a create / replace / add / remove of an inverse one-to-many is
+  O(linkage size).
+
+This is an **accepted limitation** (bundle ADR 0072), not a bug: re-pointing N managed
+children through the ORM inherently needs them managed (the unit of work tracks each
+FK change), and the only O(1) alternative — a bulk `UPDATE … WHERE id IN (...)` —
+bypasses the unit of work and the children's lifecycle/cascade events. It only matters
+for *large* to-many re-points; a handful of ids is negligible. If you need O(1) bulk
+re-pointing, supply a [custom `DataPersister`](custom-data-providers.md) that issues
+the bulk update. `DoctrineWriteQueryBudgetTest` pins both behaviours.
+
 ### Constructor-less instantiation
 
 On create, the persister builds a blank instance via
@@ -639,7 +665,7 @@ declaration, the rendered shape and the write convention.
 
 ## The load-state seam
 
-`DoctrineRelationshipLoadState` powers a relation's `linkageOnlyWhenLoaded()`
+`DoctrineRelationshipLoadState` powers a relation's `dataOnlyWhenLoaded()`
 policy (ADR 0015 — wired into core through
 `Server::withRelationshipLoadState()`). It answers, **without triggering a load**,
 whether a relation's linkage is already in memory, so a relation that opted in can
@@ -661,7 +687,7 @@ The example uses it on the albums→tracks relation:
 HasMany::make('tracks')
     ->type('tracks')
     ->paginate(PagePaginator::make()->withDefaultPerPage(2))
-    ->linkageOnlyWhenLoaded(),
+    ->dataOnlyWhenLoaded(),
 ```
 
 A relation whose `column()` does not name a Doctrine association on the entity (or
@@ -671,7 +697,7 @@ non-Doctrine apps the seam is absent and core treats every relation as loaded.
 
 Source: [`DoctrineRelationshipLoadState`](../src/Serializer/Doctrine/DoctrineRelationshipLoadState.php),
 [ADR 0015](adr/0015-relationship-linkage-load-state-is-a-storage-aware-predicate.md).
-The `linkageOnlyWhenLoaded()` rendering convention is core's — link
+The `dataOnlyWhenLoaded()` rendering convention is core's — link
 [relations](https://github.com/haddowg/json-api/blob/main/docs/relations.md).
 
 ## Next / see also

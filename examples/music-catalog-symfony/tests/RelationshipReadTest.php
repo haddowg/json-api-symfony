@@ -16,7 +16,7 @@ use PHPUnit\Framework\Attributes\Test;
  *
  * Probes ride `tracks` (a `belongsTo album` to-one and a `belongsToMany playlists`
  * to-many, both read straight off the entity) and `albums` (whose `tracks` to-many
- * opts into `linkageOnlyWhenLoaded()`, so a lazy collection emits links without
+ * opts into `dataOnlyWhenLoaded()`, so a lazy collection emits links without
  * forcing a fetch). The empty to-one is a freshly created `favorites` row with no
  * target (rendering `data: null`); a seeded `favorites.favoritable` (a `MorphTo`)
  * resolves its member's own serializer per related object.
@@ -70,7 +70,7 @@ final class RelationshipReadTest extends MusicCatalogKernelTestCase
     #[Test]
     public function aLoadStateOptInToManyEmitsLinksWithoutForcingAFetch(): void
     {
-        // AlbumResource's `tracks` to-many declares linkageOnlyWhenLoaded(): on a
+        // AlbumResource's `tracks` to-many declares dataOnlyWhenLoaded(): on a
         // lazy Doctrine collection it emits the convention links but NO `data`
         // member — the load-state seam reports the uninitialised collection as
         // "not loaded", so the identifiers are not materialised.

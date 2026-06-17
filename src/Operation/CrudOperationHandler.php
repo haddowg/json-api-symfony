@@ -833,8 +833,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         }
 
         $linkage = $relation->isToMany()
-            ? $body->getRelationshipLinkageToMany($relationshipName)
-            : $body->getRelationshipLinkageToOne($relationshipName);
+            ? $body->getRelationshipDataToMany($relationshipName)
+            : $body->getRelationshipDataToOne($relationshipName);
 
         $this->guardMutability($relation, $relationshipName, $linkage, $mode);
 

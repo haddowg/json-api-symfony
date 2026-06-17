@@ -95,8 +95,8 @@ final class RequestListener
             // `null` (to-one clear) or `[]` (to-many clear), both of which the rule
             // would reject as "missing". The exact linkage shape is instead
             // validated by core's relationship-linkage parser
-            // ({@see \haddowg\JsonApi\Request\JsonApiRequest::getRelationshipLinkageToOne()}
-            // / `getRelationshipLinkageToMany()`) when the handler reads it, so the
+            // ({@see \haddowg\JsonApi\Request\JsonApiRequest::getRelationshipDataToOne()}
+            // / `getRelationshipDataToMany()`) when the handler reads it, so the
             // rule is skipped for relationship-endpoint writes.
             if ($target->isRelationshipEndpoint === false) {
                 $validator->validateTopLevelMembers($jsonApiRequest);

@@ -297,7 +297,7 @@ return static function (ContainerConfigurator $container): void {
         // per-server Server by its ServerFactory (registered in loadExtension) via
         // core's withRelationshipLoadState injector. It reads a managed entity's
         // Doctrine metadata to answer — for
-        // a relation that opted into linkageOnlyWhenLoaded — whether a to-many
+        // a relation that opted into dataOnlyWhenLoaded — whether a to-many
         // association is an initialised PersistentCollection (without iterating
         // it); to-one is always loaded (a lazy proxy carries its id). The
         // DoctrineEntityMapPass removes it alongside the provider/persister when no

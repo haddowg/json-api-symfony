@@ -143,7 +143,7 @@ final class AlbumResource extends AbstractResource
                 // meta.page.total + a last link, and ?withCount=tracks activates the
                 // relationship-object meta.total on an album.
                 ->countable()
-                ->linkageOnlyWhenLoaded(),
+                ->dataOnlyWhenLoaded(),
         ];
     }
 

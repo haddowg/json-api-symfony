@@ -129,7 +129,7 @@ abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTest
     public function aRelationshipWithoutTheLoadStatePolicyAlwaysEmitsData(): void
     {
         // Regression: the `comments` to-many does NOT opt into
-        // linkageOnlyWhenLoaded(), so its `data` member is always present on both
+        // dataOnlyWhenLoaded(), so its `data` member is always present on both
         // providers regardless of any injected load-state predicate — the policy
         // is strictly opt-in and changes nothing for relations that do not enable
         // it.
@@ -151,7 +151,7 @@ abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTest
     #[Group('spec:fetching-relationships')]
     public function aToOneRelationshipUnderTheLoadStatePolicyStillEmitsData(): void
     {
-        // `lazyAuthor` opts into linkageOnlyWhenLoaded() but is a to-one: the
+        // `lazyAuthor` opts into dataOnlyWhenLoaded() but is a to-one: the
         // Doctrine predicate reports a to-one as always loaded (a lazy ManyToOne
         // proxy carries its identifier, so emitting the identifier needs no DB
         // load), and the in-memory kernel injects no predicate at all — so on
