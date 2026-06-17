@@ -276,11 +276,14 @@ below.
 
 The same scoped vocabulary is reachable from the **primary** request — without a
 second round-trip to the related endpoint — through the **Relationship Queries**
-profile. The bundle registers and advertises it, so a client opts in by negotiating
-its URI in the `Accept` header's `profile` media-type parameter:
+profile (its
+[specification](https://haddowg.github.io/json-api/profiles/relationship-queries/)
+lives on the core docs site, the URI it is negotiated by). The bundle registers and
+advertises it, so a client opts in by negotiating its URI in the `Accept` header's
+`profile` media-type parameter:
 
 ```
-Accept: application/vnd.api+json;profile="https://haddowg.dev/profiles/relationship-queries"
+Accept: application/vnd.api+json;profile="https://haddowg.github.io/json-api/profiles/relationship-queries/"
 ```
 
 With the profile negotiated, the client addresses a relationship by its **include
