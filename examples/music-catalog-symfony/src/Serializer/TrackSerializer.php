@@ -137,7 +137,11 @@ final class TrackSerializer extends AbstractSerializer implements SerializerReso
                     Integer::make('position')->min(1),
                     DateTime::make('addedAt')->readOnly(),
                 )
-                ->cannotReplace(),
+                ->cannotReplace()
+                // A to-many is lazy by default (core ADR 0067); withData() opts this
+                // one back to EAGER so its linkage renders on a track read — the
+                // deliberate contrast with AlbumResource's lazy `tracks`.
+                ->withData(),
         ];
     }
 }

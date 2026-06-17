@@ -50,11 +50,11 @@ final class InMemoryRelationshipReadTest extends RelationshipReadConformanceTest
     #[Group('spec:fetching-relationships')]
     public function aToManyRelationshipUnderTheLoadStatePolicyStillEmitsDataInMemory(): void
     {
-        // `lazyComments` opts into dataOnlyWhenLoaded(), but the in-memory
-        // kernel wires no load-state predicate (no doctrine/orm), so core treats
-        // every relation as loaded: the in-memory `comments` are materialised
-        // objects, so the `data` member is present exactly as for the always-on
-        // `comments` relation. The policy is inert without a storage adapter.
+        // `lazyComments` is a lazy-by-default to-many (core ADR 0067), but the
+        // in-memory kernel wires no load-state predicate (no doctrine/orm), so core
+        // treats every relation as loaded: the in-memory `comments` are materialised
+        // objects, so the `data` member is present exactly as for the eager
+        // `comments` relation. The lazy policy is inert without a storage adapter.
         $relationships = $this->relationshipsOf('/articles/1');
 
         $lazyComments = $relationships['lazyComments'] ?? null;

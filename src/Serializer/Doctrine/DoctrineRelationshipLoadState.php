@@ -13,9 +13,10 @@ use haddowg\JsonApi\Serializer\RelationshipLoadStateInterface;
 /**
  * The reference Doctrine load-state predicate: answers, **without triggering a
  * load**, whether a relation's linkage is already in memory for a managed
- * entity, so a relation that opted into
- * {@see RelationInterface::dataOnlyWhenLoaded()} can omit its `data` member
- * rather than force a lazy round-trip just to render identifiers.
+ * entity, so a lazy relation
+ * ({@see RelationInterface::emitsDataOnlyWhenLoaded()} — the per-type default) can
+ * omit its `data` member rather than force a lazy round-trip just to render
+ * identifiers.
  *
  * The decision is by cardinality:
  *

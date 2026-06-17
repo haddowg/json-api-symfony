@@ -133,7 +133,12 @@ abstract class BaseArticleResource extends AbstractResource
             // `sort=recent` orders by comment id, so the related endpoint gains a
             // contextual vocabulary the related type does not expose globally. The
             // host merges these with the comment resource's own vocabulary.
+            // `withData()` keeps this to-many EAGER (a to-many is lazy by default since
+            // the flip to per-type defaults, core ADR 0067): it is the always-emitting
+            // regression baseline its data-presence assertions rely on, distinct from
+            // the lazy `lazyComments`/`pinnedComments` witnesses below.
             HasMany::make('comments')->type('comments')
+                ->withData()
                 ->withFilters(Where::make('commentBody', 'body', 'like'))
                 ->withSorts(SortByField::make('recent', 'id')),
             // Per-relation default paginator (Phase 4 P7): reuses the `comments`
@@ -160,24 +165,23 @@ abstract class BaseArticleResource extends AbstractResource
             // relations carry.
             HasMany::make('pinnedComments')->type('comments')->storedAs('pinnedComments')->paginate(PagePaginator::make())->countable()
                 ->withFilters(Where::make('bodyContains', 'body', 'like')),
-            // Load-aware relationships opting into dataOnlyWhenLoaded() so the
-            // storage-aware load-state predicate decides whether `data` is
-            // emitted. They exercise the predicate on both providers without
-            // changing the always-emitting `author`/`comments` above (the
-            // regression baseline).
+            // Load-aware relationships under the lazy default (core ADR 0067) so the
+            // storage-aware load-state predicate decides whether `data` is emitted.
+            // They exercise the predicate on both providers, distinct from the
+            // eager `withData()` `comments` baseline above.
             //
-            // `lazyAuthor` reuses the `author` property: a to-one, which the
-            // Doctrine predicate always reports loaded (a lazy proxy carries its
-            // id), so data always emits.
+            // `lazyAuthor` reuses the `author` property: a to-one. As a `BelongsTo`
+            // it is EAGER by default (its id is on the owner), so data always emits —
+            // mirroring the Doctrine predicate's "a to-one is always loaded" verdict.
             //
             // `lazyComments` is backed by the SEPARATE `featuredComments`
             // association — one no eager relation reads — so on Doctrine that
             // collection stays an uninitialised PersistentCollection through a
-            // plain fetch and the predicate omits its `data` (links only) unless
+            // plain fetch and the lazy default omits its `data` (links only) unless
             // the relationship is included (include-wins). In-memory has no
             // predicate, so it always emits.
-            BelongsTo::make('lazyAuthor')->type('authors')->storedAs('author')->dataOnlyWhenLoaded(),
-            HasMany::make('lazyComments')->type('comments')->storedAs('featuredComments')->dataOnlyWhenLoaded(),
+            BelongsTo::make('lazyAuthor')->type('authors')->storedAs('author'),
+            HasMany::make('lazyComments')->type('comments')->storedAs('featuredComments'),
             // Mutability variants (Phase 3 S3): relationship-endpoint mutation
             // guards. `lockedAuthor` reuses the `author` property but forbids
             // replacement (a PATCH to its endpoint is FullReplacementProhibited);

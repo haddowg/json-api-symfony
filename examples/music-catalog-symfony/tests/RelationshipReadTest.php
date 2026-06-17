@@ -15,9 +15,9 @@ use PHPUnit\Framework\Attributes\Test;
  * compound `?include` — all over the reference Doctrine provider.
  *
  * Probes ride `tracks` (a `belongsTo album` to-one and a `belongsToMany playlists`
- * to-many, both read straight off the entity) and `albums` (whose `tracks` to-many
- * opts into `dataOnlyWhenLoaded()`, so a lazy collection emits links without
- * forcing a fetch). The empty to-one is a freshly created `favorites` row with no
+ * to-many opted back to eager with `withData()`, both read straight off the entity)
+ * and `albums` (whose `tracks` to-many keeps the lazy default, so a lazy collection
+ * emits links without forcing a fetch). The empty to-one is a freshly created `favorites` row with no
  * target (rendering `data: null`); a seeded `favorites.favoritable` (a `MorphTo`)
  * resolves its member's own serializer per related object.
  */
@@ -70,10 +70,11 @@ final class RelationshipReadTest extends MusicCatalogKernelTestCase
     #[Test]
     public function aLoadStateOptInToManyEmitsLinksWithoutForcingAFetch(): void
     {
-        // AlbumResource's `tracks` to-many declares dataOnlyWhenLoaded(): on a
-        // lazy Doctrine collection it emits the convention links but NO `data`
-        // member — the load-state seam reports the uninitialised collection as
-        // "not loaded", so the identifiers are not materialised.
+        // AlbumResource's `tracks` to-many is lazy by default (a to-many's per-type
+        // default since core ADR 0067): on a lazy Doctrine collection it emits the
+        // convention links but NO `data` member — the load-state seam reports the
+        // uninitialised collection as "not loaded", so the identifiers are not
+        // materialised.
         $relationships = $this->relationshipsOf($this->fetchResource('/albums/1'));
 
         $tracks = $relationships['tracks'] ?? null;

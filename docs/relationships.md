@@ -3,7 +3,7 @@
 The core library owns the relation DSL — `BelongsTo`/`HasMany`/`BelongsToMany`/`MorphTo`
 (`HasMany` is the plain to-many, `BelongsToMany` the pivot-backed to-many — see
 [core relations](https://github.com/haddowg/json-api/blob/main/docs/relations.md)),
-the `type()`/`paginate()`/`dataOnlyWhenLoaded()` builders, the
+the `type()`/`paginate()`/`withData()` builders, the
 `withoutLinks()`/`cannotReplace()` exposure flags, and the rendering of linkage,
 `self`/`related` links and `?include`. Read
 [core relations](https://github.com/haddowg/json-api/blob/main/docs/relations.md)
@@ -69,15 +69,15 @@ asserts:
 
 ### Load-state-aware linkage
 
-A relation may opt into `dataOnlyWhenLoaded()` so a lazy to-many renders the
-convention links **without** forcing a fetch. On the Doctrine path the bundle
-backs this with a storage-aware load-state seam (`DoctrineRelationshipLoadState`,
-owned by [doctrine.md](doctrine.md)): an uninitialised `PersistentCollection`
-reports "not loaded", so the rendered relationship carries `links` but omits the
-`data` member.
-[`AlbumResource`](../examples/music-catalog-symfony/src/Resource/AlbumResource.php)
-declares `HasMany::make('tracks')->…->dataOnlyWhenLoaded()`, and `GET /albums/1`
-renders `tracks` with links and no `data`, while the explicit
+A to-many (and a `HasOne`) is **lazy by default** (core ADR 0067), rendering the
+convention links **without** forcing a fetch; `withData()` opts one back to eager.
+On the Doctrine path the bundle backs the lazy default with a storage-aware
+load-state seam (`DoctrineRelationshipLoadState`, owned by
+[doctrine.md](doctrine.md)): an uninitialised `PersistentCollection` reports "not
+loaded", so the rendered relationship carries `links` but omits the `data` member.
+[`AlbumResource`](../examples/music-catalog-symfony/src/Resource/AlbumResource.php)'s
+`HasMany::make('tracks')` keeps the lazy default, and `GET /albums/1` renders
+`tracks` with links and no `data`, while the explicit
 `GET /albums/1/relationships/tracks` materialises the full identifier list.
 
 ## Queryable, paginated related collections

@@ -43,10 +43,10 @@ final class DoctrineReadQueryBudgetTest extends JsonApiFunctionalTestCase
         // preloader batches the INCLUDED comments in ONE query across the page
         // (SELECT … FROM comment WHERE article_id IN (…)), so the include load is O(1)
         // in the parent count — a per-parent preloader regression would emit five
-        // `WHERE article_id = ?` loads instead. (NB: linkage rendering of OTHER, non-
-        // included to-many relations not marked `dataOnlyWhenLoaded` is a separate
-        // per-parent concern — see the audit's second finding — so this isolates the
-        // include batch by its `IN (…)` fingerprint.)
+        // `WHERE article_id = ?` loads instead. (Since the lazy-by-default flip, core
+        // ADR 0067, a non-included to-many renders links-only and forces no per-parent
+        // load at all — see the Finding-2 witness below — so this isolates the include
+        // batch by its `IN (…)` fingerprint.)
         $response = $this->handle(self::BASE_URI . '/articles?include=comments');
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
 
@@ -90,6 +90,41 @@ final class DoctrineReadQueryBudgetTest extends JsonApiFunctionalTestCase
             $existsOverComments,
             "the existence filter must compile to an EXISTS subquery over the comment table; statements were:\n"
                 . \implode("\n", $logger->statements()),
+        );
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    public function aLazyToManyOnACollectionForcesNoPerParentLinkageLoad(): void
+    {
+        $logger = $this->logger();
+        $logger->reset();
+
+        // GET /articles (5 parents) — a plain collection, no `?include`. The Finding-2
+        // fix (core ADR 0067): a to-many is lazy by default, so a non-included to-many
+        // renders its links only and never initialises its collection just to serialize
+        // identifiers. The `pinnedComments` relation is an inverse one-to-many keyed by
+        // the UNIQUE `pinned_article_id` FK on the comment table, so a per-parent
+        // linkage load would fingerprint as `… FROM comment WHERE pinned_article_id = ?`
+        // — five of them before the flip. After it, there are zero.
+        $response = $this->handle(self::BASE_URI . '/articles');
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        // Fingerprint the WHERE predicate (`pinned_article_id = …`), not the column in
+        // the SELECT list — the eager `comments` baseline (FK `article_id`) selects the
+        // `pinned_article_id` column too, but only a pinnedComments load filters on it.
+        $perParentPinnedLoads = \array_filter(
+            $this->selectsFrom($logger, 'comment'),
+            static fn(string $sql): bool => \str_contains(\strtolower($sql), 'pinned_article_id ='),
+        );
+        self::assertSame(
+            [],
+            \array_values($perParentPinnedLoads),
+            \sprintf(
+                "a lazy to-many must force no per-parent linkage load; matched %d:\n%s",
+                \count($perParentPinnedLoads),
+                \implode("\n", $perParentPinnedLoads),
+            ),
         );
     }
 

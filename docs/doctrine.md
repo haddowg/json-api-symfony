@@ -665,11 +665,11 @@ declaration, the rendered shape and the write convention.
 
 ## The load-state seam
 
-`DoctrineRelationshipLoadState` powers a relation's `dataOnlyWhenLoaded()`
-policy (ADR 0015 — wired into core through
-`Server::withRelationshipLoadState()`). It answers, **without triggering a load**,
-whether a relation's linkage is already in memory, so a relation that opted in can
-omit its `data` member rather than force a lazy round-trip just to render
+`DoctrineRelationshipLoadState` powers a relation's lazy-linkage policy (ADR 0015 —
+wired into core through `Server::withRelationshipLoadState()`). A to-many and a
+`HasOne` are **lazy by default** (core ADR 0067); it answers, **without triggering a
+load**, whether such a relation's linkage is already in memory, so a lazy relation
+can omit its `data` member rather than force a lazy round-trip just to render
 identifiers:
 
 - a **to-many** is "loaded" only when its backing association is an
@@ -681,13 +681,12 @@ identifiers:
   identifier, so emitting the linkage reads the foreign key off the proxy and
   never hits the database.
 
-The example uses it on the albums→tracks relation:
+The example's albums→tracks relation relies on the lazy default — no opt-in needed:
 
 ```php
 HasMany::make('tracks')
     ->type('tracks')
-    ->paginate(PagePaginator::make()->withDefaultPerPage(2))
-    ->dataOnlyWhenLoaded(),
+    ->paginate(PagePaginator::make()->withDefaultPerPage(2)),
 ```
 
 A relation whose `column()` does not name a Doctrine association on the entity (or
@@ -697,8 +696,8 @@ non-Doctrine apps the seam is absent and core treats every relation as loaded.
 
 Source: [`DoctrineRelationshipLoadState`](../src/Serializer/Doctrine/DoctrineRelationshipLoadState.php),
 [ADR 0015](adr/0015-relationship-linkage-load-state-is-a-storage-aware-predicate.md).
-The `dataOnlyWhenLoaded()` rendering convention is core's — link
-[relations](https://github.com/haddowg/json-api/blob/main/docs/relations.md).
+The lazy-linkage rendering convention (and the `withData()` eager opt-in) is core's —
+link [relations](https://github.com/haddowg/json-api/blob/main/docs/relations.md).
 
 ## Next / see also
 
