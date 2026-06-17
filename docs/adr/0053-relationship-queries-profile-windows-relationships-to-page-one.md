@@ -7,7 +7,7 @@ linkage from the PRIMARY request, addressing the relationship by its include pat
 the `relatedQuery[<path>][sort|filter]` family (or the `rQ` shorthand; on a conflict
 the canonical `relatedQuery` wins). The `ServerFactory` registers the profile with
 `Server::withProfile()` so the response advertises it (the `Content-Type` `profile`
-param + `links.profile`), and the relatedQuery parse is otherwise gated entirely on
+param + `jsonapi.profile`), and the relatedQuery parse is otherwise gated entirely on
 negotiation — when the profile is not negotiated the params are ignored and rendering
 is exactly as before.
 

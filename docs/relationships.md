@@ -182,16 +182,23 @@ Counting is exposed two ways, both on the `total` meta key:
 - **`?withCount=rel1,rel2`** — a flat primary-request parameter naming
   relationships (like `?include`) — adds `meta.total` to each named relationship
   **object** when the parent is rendered (a single resource, every parent of a
-  collection, and a related-collection member):
+  collection, and a related-collection member). `withCount` is the
+  [**Relationship Counts profile**](https://haddowg.github.io/json-api/profiles/relationship-counts/)'s
+  family (the bundle registers and advertises it), so a client opts in by
+  negotiating the profile URI in the `Accept` header's `profile` parameter —
+  without it the family is unrecognized (a `400` under strict validation):
 
   ```
+  Accept: application/vnd.api+json;profile="https://haddowg.github.io/json-api/profiles/relationship-counts/"
+
   GET /albums/1?withCount=tracks         → data.relationships.tracks.meta.total
   GET /albums?withCount=tracks           → every album's tracks.meta.total (counted in ONE grouped query)
   ```
 
-  The total is gated by `countable()` **and** being named in `?withCount`. A
-  `?withCount` naming a relation that is not `countable()`, naming a to-one, or
-  naming an unknown relationship is a `400` (`source.parameter: withCount`).
+  The total is gated by `countable()` **and** being named in `?withCount` (with the
+  profile negotiated). A `?withCount` naming a relation that is not `countable()`,
+  naming a to-one, or naming an unknown relationship is a `400`
+  (`source.parameter: withCount`).
 
 - **The related-collection endpoint** (`GET /{type}/{id}/{rel}`) is gated by
   `countable()` **alone**. A countable relation's endpoint emits `meta.page.total`

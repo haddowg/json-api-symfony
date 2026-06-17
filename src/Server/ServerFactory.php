@@ -8,6 +8,7 @@ use haddowg\JsonApi\Operation\OperationHandlerInterface;
 use haddowg\JsonApi\Pagination\PagePaginator;
 use haddowg\JsonApi\Pagination\PaginatorInterface;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Schema\Profile\RelationshipCountsProfile;
 use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
 use haddowg\JsonApi\Serializer\RelationshipLoadStateInterface;
 use haddowg\JsonApi\Server\Server;
@@ -135,10 +136,14 @@ final class ServerFactory
             // when the profile read did not negotiate, so no such links are emitted.
             ->withRelationshipPagination($this->relationshipPagination)
             // Recognize the Relationship Queries profile (core ADR 0058) so the
-            // response advertises it (Content-Type `profile` param + `links.profile`)
+            // response advertises it (Content-Type `profile` param + `jsonapi.profile`)
             // when a client negotiates it; the opt-in relatedQuery/rQ parse is gated
             // on the Accept `profile` param, the rendering on this registration.
             ->withProfile(new RelationshipQueriesProfile())
+            // Recognize the Relationship Counts profile (core ADR 0065) so the opt-in
+            // `?withCount` family is parsed and recognized only when a client
+            // negotiates it; the response then advertises it like any applied profile.
+            ->withProfile(new RelationshipCountsProfile())
             // The server-wide default paginator (the tail of core's `relation →
             // related resource → server default` fallback), resolved per server.
             ->withDefaultPaginator($this->resolveDefaultPaginator())

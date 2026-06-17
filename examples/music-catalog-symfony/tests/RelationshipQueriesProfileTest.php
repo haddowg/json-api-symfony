@@ -266,11 +266,11 @@ final class RelationshipQueriesProfileTest extends MusicCatalogKernelTestCase
         $response = $this->profileRequest('/albums/1?include=tracks&relatedQuery[tracks][sort]=-duration');
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
 
-        // links.profile carries the URI, and the Content-Type profile param echoes it.
+        // jsonapi.profile carries the URI, and the Content-Type profile param echoes it.
         $document = $this->decode($response);
-        $links = $document['links'] ?? null;
-        self::assertIsArray($links);
-        self::assertContains(RelationshipQueriesProfile::URI, (array) ($links['profile'] ?? []));
+        $jsonapi = $document['jsonapi'] ?? null;
+        self::assertIsArray($jsonapi);
+        self::assertContains(RelationshipQueriesProfile::URI, (array) ($jsonapi['profile'] ?? []));
 
         $contentType = (string) $response->headers->get('Content-Type');
         self::assertStringContainsString('profile="' . RelationshipQueriesProfile::URI . '"', $contentType);

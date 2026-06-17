@@ -319,9 +319,13 @@ A countable relation surfaces a total two ways, both keyed `total`
 
 - **`?withCount=rel1,rel2`** — a flat primary-request parameter naming relationships
   (like `?include`) — activates `meta.total` on the **relationship object** when the
-  parent is rendered:
+  parent is rendered. `withCount` is the **Relationship Counts profile**'s family, so
+  the client negotiates the profile URI in the `Accept` `profile` parameter (without
+  it the family is unrecognized — a `400` under strict validation):
 
   ```
+  Accept: application/vnd.api+json;profile="https://haddowg.github.io/json-api/profiles/relationship-counts/"
+
   GET /albums/1?withCount=tracks   → data.relationships.tracks.meta.total = 3
   GET /albums?withCount=tracks     → each album's own tracks.meta.total, BATCHED
                                      (album 1 has 3 tracks, album 2 has 1) — one
@@ -329,7 +333,8 @@ A countable relation surfaces a total two ways, both keyed `total`
   ```
 
   The relationship-object total is gated by `countable()` **and** being named in
-  `?withCount` (a countable relation **not** named carries no total). Naming a
+  `?withCount` (with the profile negotiated; a countable relation **not** named
+  carries no total). Naming a
   relation that is not `countable()`, a to-one, or an unknown name is a clean
   **`400`** (`source.parameter: withCount`) — `?withCount=orderedTracks` (a
   non-countable to-many), `?withCount=artist` (a to-one) and `?withCount=nope` all
@@ -438,15 +443,16 @@ GET /albums?myParam=1        → 400  QUERY_PARAM_UNRECOGNIZED  source.parameter
 
 A family is **recognized** (no `400`) when its base name is a reserved JSON:API family
 used well-formed (`include`/`fields`/`filter`/`sort`/`page`), a key the primary resource
-**declares**, or a **known custom param** — the always-on `?withCount`, and the
-Relationship Queries profile's `relatedQuery`/`rQ` family **when the profile is
-negotiated**:
+**declares**, or a **known custom param** — a negotiated profile's keyword: the
+Relationship Counts profile's `?withCount` and the Relationship Queries profile's
+`relatedQuery`/`rQ` family, each recognized **when its profile is negotiated**:
 
 ```
 GET /albums?include=tracks&fields[albums]=title&filter[tracks]=1&sort=title&page[number]=1
                              → 200  (every reserved family, used well-formed)
 GET /albums/1?withCount=tracks
-                             → 200  (the always-on withCount)
+  Accept: …;profile="…/relationship-counts"
+                             → 200  (withCount, profile negotiated)
 GET /albums/1?include=tracks&relatedQuery[tracks][sort]=-duration
   Accept: …;profile="…/relationship-queries"
                              → 200  (relatedQuery, profile negotiated)

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Tests;
 
+use haddowg\JsonApi\Schema\Profile\RelationshipCountsProfile;
 use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
@@ -39,6 +40,8 @@ use Symfony\Component\HttpFoundation\Response;
 final class StrictQueryParametersTest extends MusicCatalogKernelTestCase
 {
     private const string PROFILE_ACCEPT = 'application/vnd.api+json;profile="' . RelationshipQueriesProfile::URI . '"';
+
+    private const string COUNTS_ACCEPT = 'application/vnd.api+json;profile="' . RelationshipCountsProfile::URI . '"';
 
     #[Test]
     #[Group('spec:errors')]
@@ -124,14 +127,16 @@ final class StrictQueryParametersTest extends MusicCatalogKernelTestCase
     }
 
     #[Test]
-    #[Group('spec:fetching-pagination')]
-    public function theAlwaysOnWithCountParameterIsRecognized(): void
+    #[Group('spec:profiles')]
+    public function theWithCountParameterIsRecognizedOnlyWhenTheCountsProfileIsNegotiated(): void
     {
-        // `?withCount` is recognized automatically (no host registration), so naming a
-        // countable relation on an album is not rejected.
-        $response = $this->handle('/albums/1?withCount=tracks');
+        // `?withCount` is the Relationship Counts profile keyword: a `400` unless the
+        // profile is negotiated, recognized when it is.
+        $rejected = $this->handle('/albums/1?withCount=tracks');
+        self::assertSame(400, $rejected->getStatusCode(), (string) $rejected->getContent());
 
-        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $accepted = $this->handle('/albums/1?withCount=tracks', extraServer: ['HTTP_ACCEPT' => self::COUNTS_ACCEPT]);
+        self::assertSame(200, $accepted->getStatusCode(), (string) $accepted->getContent());
     }
 
     #[Test]
