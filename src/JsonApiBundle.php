@@ -136,7 +136,7 @@ final class JsonApiBundle extends AbstractBundle
                     ->min(0)
                 ->end()
                 ->booleanNode('strict_query_parameters')
-                    ->info('Reject an unrecognized top-level query-parameter family with a 400 (bundle ADR 0055, core ADR 0059). A param is recognized when its base name is a reserved JSON:API family (include/fields/filter/sort/page), a key the primary resource declares, `withCount`, a negotiated profile keyword (relatedQuery/rQ), or an app-registered custom param. The default is true; set false to restore the old silent-ignore behaviour.')
+                    ->info('Reject an unrecognized top-level query-parameter family with a 400 (bundle ADR 0055, core ADR 0059). A param is recognized when its base name is a reserved JSON:API family (include/fields/filter/sort/page), a key the primary resource declares, a negotiated profile keyword (relatedQuery/rQ for the Relationship Queries profile, withCount for the Relationship Counts profile), or an app-registered custom param. The default is true; set false to restore the old silent-ignore behaviour.')
                     ->defaultTrue()
                 ->end()
                 ->arrayNode('pagination')

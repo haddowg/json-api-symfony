@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Tests;
 
+use haddowg\JsonApi\Schema\Profile\RelationshipCountsProfile;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
@@ -36,6 +37,10 @@ use PHPUnit\Framework\Attributes\Test;
 #[Group('spec:fetching-relationships')]
 final class RelationCountTest extends MusicCatalogKernelTestCase
 {
+    // `?withCount` is gated behind the Relationship Counts profile; every count read
+    // here negotiates it.
+    private const string COUNTS_ACCEPT = 'application/vnd.api+json;profile="' . RelationshipCountsProfile::URI . '"';
+
     #[Test]
     public function withCountEmitsTheRelationshipObjectTotalOnASingleAlbum(): void
     {
@@ -137,7 +142,7 @@ final class RelationCountTest extends MusicCatalogKernelTestCase
     {
         // `orderedTracks` is a to-many but NOT countable(): core rejects it up front
         // against the album/playlist's countable set (source.parameter withCount).
-        $response = $this->handle('/playlists/00000000-0000-4000-8000-000000000001?withCount=orderedTracks');
+        $response = $this->handle('/playlists/00000000-0000-4000-8000-000000000001?withCount=orderedTracks', extraServer: ['HTTP_ACCEPT' => self::COUNTS_ACCEPT]);
 
         self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
         self::assertSame(['parameter' => 'withCount'], $this->firstErrorSource($response));
@@ -149,7 +154,7 @@ final class RelationCountTest extends MusicCatalogKernelTestCase
     {
         // `artist` is a to-one — counting is a to-many concern, so it is never in the
         // countable set and ?withCount=artist is a 400.
-        $response = $this->handle('/albums/1?withCount=artist');
+        $response = $this->handle('/albums/1?withCount=artist', extraServer: ['HTTP_ACCEPT' => self::COUNTS_ACCEPT]);
 
         self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
         self::assertSame(['parameter' => 'withCount'], $this->firstErrorSource($response));
@@ -159,7 +164,7 @@ final class RelationCountTest extends MusicCatalogKernelTestCase
     #[Group('spec:errors')]
     public function anUnknownRelationInWithCountIs400(): void
     {
-        $response = $this->handle('/albums/1?withCount=nope');
+        $response = $this->handle('/albums/1?withCount=nope', extraServer: ['HTTP_ACCEPT' => self::COUNTS_ACCEPT]);
 
         self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
         self::assertSame(['parameter' => 'withCount'], $this->firstErrorSource($response));
@@ -172,7 +177,7 @@ final class RelationCountTest extends MusicCatalogKernelTestCase
      */
     private function fetch(string $path): array
     {
-        $response = $this->handle($path);
+        $response = $this->handle($path, extraServer: ['HTTP_ACCEPT' => self::COUNTS_ACCEPT]);
 
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use haddowg\JsonApi\Schema\Profile\RelationshipCountsProfile;
 use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
@@ -42,7 +43,14 @@ abstract class RelationCountConformanceTestCase extends JsonApiFunctionalTestCas
 {
     private const string BASE_URI = 'https://example.test';
 
-    private const string PROFILE_ACCEPT = 'application/vnd.api+json;profile="' . RelationshipQueriesProfile::URI . '"';
+    // `?withCount` is gated behind the Relationship Counts profile, so every count
+    // fetch negotiates it.
+    private const string COUNTS_ACCEPT = 'application/vnd.api+json;profile="' . RelationshipCountsProfile::URI . '"';
+
+    // The D5 filtered-count tests carry BOTH `?withCount` and a `relatedQuery[<rel>]`
+    // filter, so they negotiate the Relationship Counts and Relationship Queries
+    // profiles together (a space-separated list in the one `profile` parameter).
+    private const string PROFILE_ACCEPT = 'application/vnd.api+json;profile="' . RelationshipCountsProfile::URI . ' ' . RelationshipQueriesProfile::URI . '"';
 
     #[Test]
     #[Group('spec:fetching-relationships')]
@@ -106,7 +114,7 @@ abstract class RelationCountConformanceTestCase extends JsonApiFunctionalTestCas
     {
         // `comments` is a to-many but not countable(): core rejects it up front
         // against the primary serializer's countable set (source.parameter withCount).
-        $response = $this->handle(self::BASE_URI . '/articles/1?withCount=comments');
+        $response = $this->handle(self::BASE_URI . '/articles/1?withCount=comments', extraServer: ['HTTP_ACCEPT' => self::COUNTS_ACCEPT]);
 
         self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
         self::assertSame(['parameter' => 'withCount'], $this->firstError($this->decode($response))['source'] ?? null);
@@ -119,7 +127,7 @@ abstract class RelationCountConformanceTestCase extends JsonApiFunctionalTestCas
     {
         // `author` is a to-one — counting is a to-many concern, so it is never in the
         // countable set and ?withCount=author is a 400.
-        $response = $this->handle(self::BASE_URI . '/articles/1?withCount=author');
+        $response = $this->handle(self::BASE_URI . '/articles/1?withCount=author', extraServer: ['HTTP_ACCEPT' => self::COUNTS_ACCEPT]);
 
         self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
         self::assertSame(['parameter' => 'withCount'], $this->firstError($this->decode($response))['source'] ?? null);
@@ -130,7 +138,20 @@ abstract class RelationCountConformanceTestCase extends JsonApiFunctionalTestCas
     #[Group('spec:errors')]
     public function anUnknownRelationInWithCountIs400(): void
     {
-        $response = $this->handle(self::BASE_URI . '/articles/1?withCount=nope');
+        $response = $this->handle(self::BASE_URI . '/articles/1?withCount=nope', extraServer: ['HTTP_ACCEPT' => self::COUNTS_ACCEPT]);
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['parameter' => 'withCount'], $this->firstError($this->decode($response))['source'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    #[Group('spec:errors')]
+    public function withCountIsUnrecognizedWhenTheRelationshipCountsProfileIsNotNegotiated(): void
+    {
+        // `?withCount` is gated behind the Relationship Counts profile: without it
+        // negotiated, the family is unrecognized and strict validation rejects it.
+        $response = $this->handle(self::BASE_URI . '/articles/1?withCount=editors');
 
         self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
         self::assertSame(['parameter' => 'withCount'], $this->firstError($this->decode($response))['source'] ?? null);
@@ -281,7 +302,7 @@ abstract class RelationCountConformanceTestCase extends JsonApiFunctionalTestCas
      */
     protected function fetchDocument(string $path): array
     {
-        $response = $this->handle(self::BASE_URI . $path);
+        $response = $this->handle(self::BASE_URI . $path, extraServer: ['HTTP_ACCEPT' => self::COUNTS_ACCEPT]);
 
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
 

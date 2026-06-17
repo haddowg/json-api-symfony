@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use haddowg\JsonApi\Schema\Profile\RelationshipCountsProfile;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
@@ -21,9 +22,9 @@ use PHPUnit\Framework\Attributes\Test;
  *  - a reserved JSON:API family used well-formed (`include`, `fields`, `filter`,
  *    `sort`, `page`) — their internal key validation still owns an unknown
  *    filter/sort key or a bad page;
- *  - the always-on implementation-specific `withCount`;
- *  - a negotiated profile's keyword (the Relationship Queries profile's
- *    `relatedQuery`/`rQ`, asserted by {@see RelationshipQueriesConformanceTestCase}).
+ *  - a negotiated profile's keyword — the Relationship Queries profile's
+ *    `relatedQuery`/`rQ` (asserted by {@see RelationshipQueriesConformanceTestCase})
+ *    or the Relationship Counts profile's `withCount`.
  *
  * A misspelled reserved family (`pag[number]` for `page`) fails on the base name
  * `pag`, not on the inner key — proving the check is family-level. An undeclared
@@ -119,13 +120,17 @@ abstract class StrictQueryParametersConformanceTestCase extends JsonApiFunctiona
 
     #[Test]
     #[Group('spec:fetching')]
-    public function theAlwaysOnWithCountParameterIsRecognized(): void
+    public function theWithCountParameterIsRecognizedOnlyWhenTheCountsProfileIsNegotiated(): void
     {
-        // `withCount` is recognized automatically (no host registration), so a
-        // ?withCount request on a single resource is not rejected.
-        $response = $this->handle('/articles/1?withCount=pagedComments');
+        // `withCount` is the Relationship Counts profile's keyword: unrecognized (a
+        // `400`) unless the client negotiates the profile, recognized when it does.
+        $rejected = $this->handle('/articles/1?withCount=pagedComments');
+        self::assertSame(400, $rejected->getStatusCode(), (string) $rejected->getContent());
 
-        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $accepted = $this->handle('/articles/1?withCount=pagedComments', extraServer: [
+            'HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . RelationshipCountsProfile::URI . '"',
+        ]);
+        self::assertSame(200, $accepted->getStatusCode(), (string) $accepted->getContent());
     }
 
     // --- helpers ---------------------------------------------------------------

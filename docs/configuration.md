@@ -224,10 +224,10 @@ A family is **recognized** when its base name is:
   *internal* key validation is unchanged: an unknown `filter[…]`/`sort` key or a bad
   `page` still `400`s on its own);
 - a key the resolved primary resource declares;
-- the always-on implementation-specific `withCount`;
 - a [negotiated profile](relationships.md)'s keyword — the Relationship Queries
-  profile's `relatedQuery`/`rQ` is recognized only when the client negotiated the
-  profile, so addressing it without negotiation now `400`s rather than being ignored;
+  profile's `relatedQuery`/`rQ` and the Relationship Counts profile's `withCount`
+  are recognized only when the client negotiated the relevant profile, so addressing
+  one without negotiation now `400`s rather than being ignored;
 - any param an app registers via `Server::withCustomQueryParameter()`.
 
 Anything else is a `400` (`QUERY_PARAM_UNRECOGNIZED`, `source.parameter` = the

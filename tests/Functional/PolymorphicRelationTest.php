@@ -104,8 +104,13 @@ final class PolymorphicRelationTest extends JsonApiFunctionalTestCase
     {
         // items is a countable() polymorphic to-many; the in-memory provider counts
         // the mixed member set (board 1: n1, i1, n2 = 3), so ?withCount=items emits
-        // meta.total on the items relationship object (bundle ADR 0052).
-        $document = $this->fetchDocument('/boards/1?withCount=items');
+        // meta.total on the items relationship object (bundle ADR 0052). `?withCount`
+        // is gated behind the Relationship Counts profile, so the read negotiates it.
+        $response = $this->handle(self::BASE_URI . '/boards/1?withCount=items', extraServer: [
+            'HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . \haddowg\JsonApi\Schema\Profile\RelationshipCountsProfile::URI . '"',
+        ]);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $document = $this->decode($response);
 
         $data = $document['data'] ?? null;
         self::assertIsArray($data);

@@ -10,6 +10,7 @@ use haddowg\JsonApi\Resource\Field\DateTime;
 use haddowg\JsonApi\Resource\Field\Integer;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\Where;
+use haddowg\JsonApi\Schema\Profile\RelationshipCountsProfile;
 use haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory;
 use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\DoctrineJsonApiTestKernel;
 use PHPUnit\Framework\Attributes\Group;
@@ -61,7 +62,7 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
         // The pivot relation is countable(): ?withCount=tracks emits meta.total on
         // the tracks relationship object, counting DISTINCT far members. Playlist 1
         // has three distinct tracks (Intro@1, Outro@2, Bridge@3), so the total is 3.
-        $document = $this->fetchDocument('/playlists/1?withCount=tracks');
+        $document = $this->countsFetchDocument('/playlists/1?withCount=tracks');
 
         self::assertSame(3, $this->relationshipTotal($document, 'tracks'));
     }
@@ -75,7 +76,7 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
         // DISTINCT far members (2), so it agrees with the related-collection endpoint's
         // page total (also 2, see aPivotRelatedCollectionDedupesDuplicateMembership)
         // and the deduped rendered linkage — one consistent `total` semantic (ADR 0052).
-        $document = $this->fetchDocument('/playlists/3?withCount=tracks');
+        $document = $this->countsFetchDocument('/playlists/3?withCount=tracks');
 
         self::assertSame(2, $this->relationshipTotal($document, 'tracks'));
 
@@ -500,6 +501,24 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
 
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
         self::assertSame('application/vnd.api+json', $response->headers->get('Content-Type'));
+
+        return $this->decode($response);
+    }
+
+    /**
+     * A `?withCount` fetch: negotiates the Relationship Counts profile its family is
+     * gated behind (the response then advertises it, so the Content-Type is not the
+     * bare media type checked by {@see fetchDocument()}).
+     *
+     * @return array<string, mixed>
+     */
+    private function countsFetchDocument(string $path): array
+    {
+        $response = $this->handle(self::BASE_URI . $path, extraServer: [
+            'HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . RelationshipCountsProfile::URI . '"',
+        ]);
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
 
         return $this->decode($response);
     }

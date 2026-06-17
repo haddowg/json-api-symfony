@@ -151,6 +151,10 @@ JSON:API service needs. Each links the page that covers it in full:
   from the *primary* request (`relatedQuery[rel][sort]`/`[filter]`), opt-in by
   negotiating the profile. See
   [relationships](relationships.md#filtering-and-sorting-a-relationship-from-the-primary-request-the-relationship-queries-profile).
+- **The Relationship Counts profile** — ask for a countable relationship's size
+  from the *primary* request (`?withCount=rel1,rel2` → `meta.total` per relationship
+  object), opt-in by negotiating the profile. See
+  [relationships](relationships.md#counting-relations-countable-and-withcount).
 - **Constrained-existence filtering** — `WhereThrough` dotted-path traversal
   (`filter[author.name]=Smith`) as a correlated `EXISTS`, plus the `WhereHas`/
   `WhereDoesntHave` existence filters. See
