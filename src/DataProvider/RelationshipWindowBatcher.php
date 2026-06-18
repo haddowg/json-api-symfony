@@ -228,6 +228,12 @@ final class RelationshipWindowBatcher
             $relation,
             $window,
             includePivotFields: false,
+            // The windowed-include relationship object emits the REAL total + `last`
+            // for a countable relation (§6d, bundle ADR 0053), so its batch fetch
+            // counts iff the relation is countable — unchanged by G21's primary/related
+            // count-free flip, the include path's count opt-in stays the relation's
+            // countable() declaration (carried as the criteria's wantsCount).
+            wantsCount: $relation->isCountable(),
         );
 
         // Validate the relatedQuery filter VALUE against the per-relation merged

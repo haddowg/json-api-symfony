@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use haddowg\JsonApi\Schema\Profile\CountableProfile;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
@@ -17,9 +18,19 @@ use PHPUnit\Framework\Attributes\Test;
  * `BaseArticleResource` declaration over the shared {@see \haddowg\JsonApiBundle\Tests\Functional\App\ArticleFixtures}
  * seeds, so a test failing on one provider and not the other localizes the bug
  * to that provider's execution.
+ *
+ * Since G21 the `articles` paginator is **count-free by default** but the resource
+ * is `countable()`, so the count-dependent pagination assertions (`meta.page.total`,
+ * `lastPage`, the `last` link) opt into the total with `?withCount=_self_` under the
+ * negotiated Countable profile ({@see fetchCountedDocument()}); the count-free
+ * default is asserted directly with the bare {@see fetchDocument()}.
  */
 abstract class ReadQueryConformanceTestCase extends JsonApiFunctionalTestCase
 {
+    // `?withCount=_self_` is gated behind the Countable profile, so a primary-collection
+    // count fetch negotiates it.
+    private const string COUNTS_ACCEPT = 'application/vnd.api+json;profile="' . CountableProfile::URI . '"';
+
     // --- filtering -----------------------------------------------------------
 
     #[Test]
@@ -202,9 +213,13 @@ abstract class ReadQueryConformanceTestCase extends JsonApiFunctionalTestCase
     #[Group('spec:fetching-pagination')]
     public function paginationWindowsTheSortedCollection(): void
     {
-        $document = $this->fetchDocument('/articles?sort=title&page[number]=2&page[size]=2');
+        // Counted under `?withCount=_self_` (G21 §6a): the total fans to BOTH the
+        // top-level meta.total AND meta.page.total, from one count.
+        $document = $this->fetchCountedDocument('/articles?sort=title&page[number]=2&page[size]=2');
 
         self::assertSame(['1', '2'], $this->ids($document));
+
+        self::assertSame(5, $this->topLevelMeta($document)['total'] ?? null);
 
         $meta = $this->pageMeta($document);
         self::assertSame(2, $meta['currentPage'] ?? null);
@@ -215,9 +230,33 @@ abstract class ReadQueryConformanceTestCase extends JsonApiFunctionalTestCase
 
     #[Test]
     #[Group('spec:fetching-pagination')]
+    public function aCountFreePageWindowsWithoutATotalOrLastLink(): void
+    {
+        // The G21 default: a bare `?page` (no `?withCount`) windows count-free — no
+        // top-level meta.total, no meta.page.total/lastPage, no `last` link; `next`
+        // is driven by the over-fetch `hasMore`, not a total.
+        $document = $this->fetchDocument('/articles?sort=title&page[number]=2&page[size]=2');
+
+        self::assertSame(['1', '2'], $this->ids($document));
+        self::assertArrayNotHasKey('total', $this->topLevelMeta($document));
+
+        $meta = $this->pageMeta($document);
+        self::assertSame(2, $meta['currentPage'] ?? null);
+        self::assertSame(2, $meta['perPage'] ?? null);
+        self::assertArrayNotHasKey('total', $meta);
+        self::assertArrayNotHasKey('lastPage', $meta);
+
+        $links = $document['links'] ?? null;
+        self::assertIsArray($links);
+        self::assertArrayHasKey('next', $links);
+        self::assertArrayNotHasKey('last', $links);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-pagination')]
     public function paginationLinksNavigateAndPreserveTheQuery(): void
     {
-        $document = $this->fetchDocument('/articles?sort=title&page[number]=2&page[size]=2');
+        $document = $this->fetchCountedDocument('/articles?sort=title&page[number]=2&page[size]=2');
 
         $links = $document['links'] ?? null;
         self::assertIsArray($links);
@@ -239,7 +278,7 @@ abstract class ReadQueryConformanceTestCase extends JsonApiFunctionalTestCase
     #[Group('spec:fetching-pagination')]
     public function theLastPageIsPartialAndHasNoNextLink(): void
     {
-        $document = $this->fetchDocument('/articles?sort=title&page[number]=3&page[size]=2');
+        $document = $this->fetchCountedDocument('/articles?sort=title&page[number]=3&page[size]=2');
 
         self::assertSame(['4'], $this->ids($document));
 
@@ -253,11 +292,14 @@ abstract class ReadQueryConformanceTestCase extends JsonApiFunctionalTestCase
     #[Group('spec:fetching-pagination')]
     public function paginationDefaultsApplyWithoutPageParameters(): void
     {
-        // The resource declares a PagePaginator (default size 15), so even a
-        // bare collection fetch is page 1 of one page — with full page meta.
-        $document = $this->fetchDocument('/articles');
+        // The resource declares a PagePaginator (default size 15) and opts into the
+        // count via `?withCount=_self_`, so a bare collection fetch is page 1 of one
+        // page — with full page meta and the top-level meta.total.
+        $document = $this->fetchCountedDocument('/articles');
 
         self::assertCount(5, $this->ids($document));
+
+        self::assertSame(5, $this->topLevelMeta($document)['total'] ?? null);
 
         $meta = $this->pageMeta($document);
         self::assertSame(1, $meta['currentPage'] ?? null);
@@ -282,8 +324,9 @@ abstract class ReadQueryConformanceTestCase extends JsonApiFunctionalTestCase
     public function aZeroPageSizeRendersADegenerateEmptyPageNotAnError(): void
     {
         // page[size] is client-controlled: size 0 must not 500 (division by
-        // zero in last-page math) — it renders an empty page with the total.
-        $document = $this->fetchDocument('/articles?page[size]=0');
+        // zero in last-page math) — under `?withCount=_self_` it renders an empty
+        // page with the total.
+        $document = $this->fetchCountedDocument('/articles?page[size]=0');
 
         self::assertSame([], $this->ids($document));
 
@@ -298,9 +341,10 @@ abstract class ReadQueryConformanceTestCase extends JsonApiFunctionalTestCase
     {
         // 4 of the 5 articles survive the filter; page 2 of size 2 holds the
         // 3rd and 4th by title, and the total reflects the *filtered* count.
-        $document = $this->fetchDocument('/articles?filter[id]=1,2,3,5&sort=title&page[number]=2&page[size]=2');
+        $document = $this->fetchCountedDocument('/articles?filter[id]=1,2,3,5&sort=title&page[number]=2&page[size]=2');
 
         self::assertSame(['1', '2'], $this->ids($document));
+        self::assertSame(4, $this->topLevelMeta($document)['total'] ?? null);
         self::assertSame(4, $this->pageMeta($document)['total'] ?? null);
     }
 
@@ -337,6 +381,41 @@ abstract class ReadQueryConformanceTestCase extends JsonApiFunctionalTestCase
         self::assertSame('application/vnd.api+json', $response->headers->get('Content-Type'));
 
         return $this->decode($response);
+    }
+
+    /**
+     * Fetches `$path` with `?withCount=_self_` appended and the Countable profile
+     * negotiated, so the count-free-by-default `articles` collection (G21) renders
+     * the total — `meta.total`, `meta.page.total`, `lastPage` and the `last` link.
+     *
+     * @return array<string, mixed>
+     */
+    private function fetchCountedDocument(string $path): array
+    {
+        $separator = \str_contains($path, '?') ? '&' : '?';
+        $response = $this->handle($path . $separator . 'withCount=_self_', extraServer: [
+            'HTTP_ACCEPT' => self::COUNTS_ACCEPT,
+        ]);
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        return $this->decode($response);
+    }
+
+    /**
+     * The document's top-level `meta` (asserted to be an array).
+     *
+     * @param array<string, mixed> $document
+     *
+     * @return array<string, mixed>
+     */
+    private function topLevelMeta(array $document): array
+    {
+        $meta = $document['meta'] ?? [];
+        self::assertIsArray($meta);
+
+        /** @var array<string, mixed> $meta */
+        return $meta;
     }
 
     /**

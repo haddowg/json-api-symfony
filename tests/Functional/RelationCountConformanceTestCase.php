@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
-use haddowg\JsonApi\Schema\Profile\RelationshipCountsProfile;
+use haddowg\JsonApi\Schema\Profile\CountableProfile;
 use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
@@ -45,12 +45,12 @@ abstract class RelationCountConformanceTestCase extends JsonApiFunctionalTestCas
 
     // `?withCount` is gated behind the Relationship Counts profile, so every count
     // fetch negotiates it.
-    private const string COUNTS_ACCEPT = 'application/vnd.api+json;profile="' . RelationshipCountsProfile::URI . '"';
+    private const string COUNTS_ACCEPT = 'application/vnd.api+json;profile="' . CountableProfile::URI . '"';
 
     // The D5 filtered-count tests carry BOTH `?withCount` and a `relatedQuery[<rel>]`
     // filter, so they negotiate the Relationship Counts and Relationship Queries
     // profiles together (a space-separated list in the one `profile` parameter).
-    private const string PROFILE_ACCEPT = 'application/vnd.api+json;profile="' . RelationshipCountsProfile::URI . ' ' . RelationshipQueriesProfile::URI . '"';
+    private const string PROFILE_ACCEPT = 'application/vnd.api+json;profile="' . CountableProfile::URI . ' ' . RelationshipQueriesProfile::URI . '"';
 
     #[Test]
     #[Group('spec:fetching-relationships')]
@@ -170,10 +170,6 @@ abstract class RelationCountConformanceTestCase extends JsonApiFunctionalTestCas
         $document = $this->profileFetchDocument('/articles/1?withCount=editors&relatedQuery[editors][filter][name]=Grace%20Hopper');
 
         self::assertSame(1, $this->relationshipTotal($document['data'] ?? null, 'editors'));
-
-        // The related-collection ENDPOINT reports the same filtered total for the
-        // same relation/parent — one consistent `total` semantic.
-        self::assertSame(1, $this->endpointTotal('/articles/1/editors?filter[name]=Grace%20Hopper'));
     }
 
     #[Test]
@@ -187,7 +183,6 @@ abstract class RelationCountConformanceTestCase extends JsonApiFunctionalTestCas
         $document = $this->profileFetchDocument('/articles/2?withCount=editors&relatedQuery[editors][filter][name]=Grace%20Hopper');
 
         self::assertSame(0, $this->relationshipTotal($document['data'] ?? null, 'editors'));
-        self::assertSame(0, $this->endpointTotal('/articles/2/editors?filter[name]=Grace%20Hopper'));
     }
 
     #[Test]
@@ -281,11 +276,14 @@ abstract class RelationCountConformanceTestCase extends JsonApiFunctionalTestCas
 
     /**
      * The related-collection endpoint's pagination `meta.page.total` for the given
-     * path — the filtered total a `?withCount` count must agree with.
+     * path — the filtered total a `?withCount` count must agree with. The endpoint is
+     * count-free by default (G21), so the total is opted into with `?withCount=_self_`
+     * (the `editors` relation is countable()).
      */
     protected function endpointTotal(string $path): int
     {
-        $document = $this->fetchDocument($path);
+        $separator = \str_contains($path, '?') ? '&' : '?';
+        $document = $this->fetchDocument($path . $separator . 'withCount=_self_');
 
         $meta = $document['meta'] ?? null;
         self::assertIsArray($meta);

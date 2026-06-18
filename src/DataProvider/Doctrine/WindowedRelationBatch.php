@@ -128,7 +128,10 @@ final class WindowedRelationBatch
         /** @var class-string $parentClass */
         $parentClass = $parentMetadata->getName();
 
-        $countable = $relation->isCountable();
+        // The include path's count opt-in rides the criteria (the RelationshipWindowBatcher
+        // sets `wantsCount: $relation->isCountable()` — §6d, bundle ADR 0053), so the
+        // native batch reads it uniformly with the per-parent tail.
+        $countable = $criteria->wantsCount;
         // A non-countable relation is count-free: bound rn <= limit+1 and read the
         // surplus row per parent as the hasMore probe. A countable one bounds rn <=
         // offset+limit (the offset window's last row) and reads jsonapi_total.

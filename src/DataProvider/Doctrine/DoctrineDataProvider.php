@@ -212,11 +212,14 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
         $builder = $this->applier->apply($criteria, $builder, $this->filterHandler, $this->sortHandler);
 
-        // A primary collection is always countable: the executor counts the
-        // pre-window total then fetches the windowed page (core ADR 0061).
+        // Count-free by default (G21): the executor counts the pre-window total and
+        // fetches the windowed page only when the handler resolved a COUNT for this
+        // fetch (the paginator's withCount() author opt-in, or ?withCount=_self_ under
+        // a countable() resource); otherwise it fetches count-free via the window+1
+        // probe (no COUNT) and reports `hasMore` (bundle ADR 0075).
         return $this->windowExecutor->run(
             $criteria->window,
-            countable: true,
+            countable: $criteria->wantsCount,
             all: fn(): array => $this->items($builder),
             count: fn(): int => $this->count($builder),
             page: fn(int $offset, int $limit): array => $this->items(
@@ -385,14 +388,17 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $builder = $this->applier->apply($criteria, $builder, $this->filterHandler, $this->sortHandler);
 
         // The window/count/count-free tail runs through the shared executor (core
-        // ADR 0061). A non-countable related to-many takes the count-free branch (no
-        // COUNT; the probe over-fetches by one and the surplus row drives the
-        // count-free page's `next` link); a countable relation counts the pre-window
-        // total as before, emitting total + `last` (bundle ADR 0052). The executor
-        // passes `limit + 1` to the probe, so the closure does NOT add one itself.
+        // ADR 0061). Count-free by default (G21): the related endpoint counts only
+        // when the handler resolved a COUNT for this fetch (`$criteria->wantsCount` —
+        // the relation paginator's withCount() author opt-in, or ?withCount=_self_
+        // under a countable() relation; the handler 400s an un-countable `_self_`
+        // first). Otherwise the count-free branch runs (no COUNT; the probe
+        // over-fetches by one and the surplus drives the count-free page's `next`
+        // link). The executor passes `limit + 1` to the probe, so the closure does
+        // NOT add one itself.
         return $this->windowExecutor->run(
             $criteria->window,
-            countable: $relation->isCountable(),
+            countable: $criteria->wantsCount,
             all: fn(): array => $this->items($builder),
             count: fn(): int => $this->count($builder),
             page: fn(int $offset, int $limit): array => $this->items(
@@ -513,14 +519,15 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $partitions = $this->partitionByParent($builder, $scope, $parentType);
 
         // Window each parent's partition through the shared executor. The whole set is
-        // already in PHP, so the closures slice/count the partition with no query — a
-        // countable relation counts the partition size, a non-countable one probes it
-        // limit+1 (count-free), identical to fetchRelatedCollection()'s tail.
+        // already in PHP, so the closures slice/count the partition with no query —
+        // a counted batch (the include path's `wantsCount: $relation->isCountable()`,
+        // set by the RelationshipWindowBatcher) counts the partition size, a count-free
+        // one probes it limit+1, identical to fetchRelatedCollection()'s tail.
         $results = [];
         foreach ($partitions as $wireId => $members) {
             $results[$wireId] = $this->windowExecutor->run(
                 $criteria->window,
-                countable: $relation->isCountable(),
+                countable: $criteria->wantsCount,
                 all: static fn(): array => $members,
                 count: static fn(): int => \count($members),
                 page: static fn(int $offset, int $limit): array => \array_slice($members, $offset, $limit),
@@ -1443,11 +1450,14 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         // countable count), keeping it behaviour-identical until the pivot row shape is
         // reconciled with the executor's entity contract.
         //
-        // A non-countable pivot relation paginates count-FREE: no COUNT runs; the page
-        // is over-fetched by one (limit+1) and the surplus far member signals a further
-        // page, driving the count-free page's `next` link without a total (bundle ADR
-        // 0052). A countable relation counts the pre-window total as before.
-        if (!$relation->isCountable()) {
+        // Count-free by default (G21): the pivot endpoint counts only when the handler
+        // resolved a COUNT for this fetch (`$criteria->wantsCount` — the relation
+        // paginator's withCount() author opt-in, or ?withCount=_self_ under a
+        // countable() relation; the handler 400s an un-countable `_self_` first).
+        // Otherwise it paginates count-FREE: no COUNT runs; the page is over-fetched by
+        // one (limit+1) and the surplus far member signals a further page, driving the
+        // count-free page's `next` link without a total (bundle ADR 0052).
+        if (!$criteria->wantsCount) {
             return $this->countFreePivotPage($builder, $window, $relatedType, $relation);
         }
 

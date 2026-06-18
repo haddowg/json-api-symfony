@@ -247,8 +247,24 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // never an array, and never paginated (core ADR 0039).
         $singular = $this->appliesSingularFilter($filters, $operation->queryParameters());
 
-        $paginator = $singular ? null : ($resource?->pagination() ?? $server->defaultPaginator());
+        // The resource's pagination() return is the single source of truth (G21):
+        // used verbatim, with `null` meaning *no pagination* (fetch-all). The base
+        // impl returns the resolved server default, so a non-overriding resource still
+        // inherits it; a bare serializer/hydrator pair (no resource) has no override
+        // and falls back to the server default directly. A singular filter collapses
+        // to a zero-to-one response, so it is never paginated.
+        $paginator = $singular ? null : ($resource !== null ? $resource->pagination($server->defaultPaginator()) : $server->defaultPaginator());
         $window = $paginator !== null && $request !== null ? $paginator->window($request) : null;
+
+        // The single COUNT decision (G21): a count-based paginator counts when its
+        // own withCount() author opt-in flipped it, OR the client asked
+        // `?withCount=_self_` (already 400-ed by core's document gate if the resource
+        // is not countable(), so an accepted `_self_` here implies countable). The
+        // cursor strategy is inherently count-free and resolves a total-null page on
+        // its own branch, so it is excluded.
+        $wantsCount = $paginator !== null
+            && !($paginator instanceof CursorPaginator)
+            && ($paginator->wantsCount() || ($request !== null && $request->countsRelationship('_self_')));
 
         $result = $provider->fetchCollection($type, new CollectionCriteria(
             $operation->queryParameters(),
@@ -258,6 +274,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // Applied only when the request carries no `sort` (core ADR 0044); a
             // bare serializer/hydrator pair has no resource and so no default.
             $resource?->defaultSort() ?? [],
+            wantsCount: $wantsCount,
         ));
 
         // Materialize once so the items can be both preloaded and rendered (and a
@@ -324,9 +341,28 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return $this->afterFetchCollection($response, $type, $request, $items);
         }
 
-        $response = $paginator !== null && $request !== null && $result->total !== null
-            ? DataResponse::fromPage($paginator->paginate($request, $items, $result->total), $serializer)
-            : DataResponse::fromCollection($items, $serializer);
+        // Fan the single resolved total to BOTH meta slots from one count, per the
+        // G21 §6a matrix (never recount):
+        //
+        // - FETCH-ALL (no paginator): the whole collection is materialized, so its
+        //   size is free — render `meta.total` UNCONDITIONALLY, no `meta.page` (§5).
+        // - PAGINATED + counted (`$result->total !== null`): the count-based page
+        //   carries `meta.page.total`/`links.last`; the SAME int is echoed at
+        //   top-level `meta.total` — never a second count.
+        // - PAGINATED + count-free (`windowed`, total null): render a count-free page
+        //   (self/first/prev/next, no total/last; `next` via `hasMore`) and NO
+        //   `meta.total` — counting is opt-in (mirrors the related path).
+        if ($paginator === null) {
+            $response = DataResponse::fromCollection($items, $serializer)
+                ->withMeta(['total' => \count($items)]);
+        } elseif ($request !== null && $result->total !== null) {
+            $response = DataResponse::fromPage($paginator->paginate($request, $items, $result->total), $serializer)
+                ->withMeta(['total' => $result->total]);
+        } elseif ($request !== null && $result->windowed) {
+            $response = DataResponse::fromPage($paginator->paginateWithoutCount($request, $items, $result->hasMore), $serializer);
+        } else {
+            $response = DataResponse::fromCollection($items, $serializer);
+        }
 
         return $this->afterFetchCollection($response, $type, $request, $items);
     }
@@ -447,6 +483,25 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $paginator = $this->relationCriteria->paginatorFor($relation, $relatedResource, $server);
             $window = $paginator?->window($request);
 
+            // The related endpoint renders via CollectionDocument, which does NOT run
+            // core's primary-collection `_self_` document gate — so the handler enforces
+            // the relation's countable() here: `?withCount=_self_` on a non-countable
+            // relation is a 400 (G21 §6b row 4), mirroring the document gate's reject.
+            if ($request->countsRelationship('_self_') && !$relation->isCountable()) {
+                return ErrorResponse::fromException(
+                    new \haddowg\JsonApi\Exception\RelationshipCountNotAllowed(['_self_']),
+                );
+            }
+
+            // The single COUNT decision for the related collection (G21): the relation's
+            // paginator counts when its own withCount() author opt-in flipped it, OR the
+            // client asked `?withCount=_self_` (gated above on the relation's countable()).
+            // The cursor strategy is inherently count-free and resolves total-null on its
+            // own branch, so it is excluded.
+            $relWantsCount = $paginator !== null
+                && !($paginator instanceof CursorPaginator)
+                && ($paginator->wantsCount() || $request->countsRelationship('_self_'));
+
             $relatedProvider = $this->providers->forType($relatedType);
 
             // A pivot-backed belongsToMany over a pivot-aware provider (the Doctrine
@@ -478,6 +533,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $relation,
                 $window,
                 includePivotFields: $pivot,
+                wantsCount: $relWantsCount,
             );
 
             // The related endpoint validates a client-supplied filter value against
@@ -498,11 +554,15 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $this->preloadIncludes($relatedProvider, $items, $relatedType, $request);
                 $this->applyRelationshipCounts($server, $relatedType, $items, $request);
 
+                // Counted page: the single total fans to BOTH meta.page.total (inside
+                // the count-based page) AND the universal top-level meta.total — one
+                // count, two slots (G21 §6b).
                 if ($paginator !== null && $pivotResult->total !== null) {
                     return RelatedResponse::fromPage(
                         $paginator->paginate($request, $items, $pivotResult->total),
                         $serializer,
-                    );
+                        $relation->isCountable(),
+                    )->withMeta(['total' => $pivotResult->total]);
                 }
 
                 // A non-countable pivot relation's windowed fetch carries no total,
@@ -513,10 +573,14 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                     return RelatedResponse::fromPage(
                         $paginator->paginateWithoutCount($request, $items, $pivotResult->hasMore),
                         $serializer,
+                        $relation->isCountable(),
                     );
                 }
 
-                return RelatedResponse::fromCollection($items, $serializer);
+                // Fetch-all (no paginator): the whole related set is materialized, so
+                // its size is free — render meta.total UNCONDITIONALLY (G21 §5).
+                return RelatedResponse::fromCollection($items, $serializer, $relation->isCountable())
+                    ->withMeta(['total' => \count($items)]);
             }
 
             $result = $relatedProvider
@@ -538,11 +602,15 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $this->applyRelationshipCounts($server, $relatedType, $items, $request);
             }
 
+            // Counted page: the single total fans to BOTH meta.page.total (inside the
+            // count-based page) AND the universal top-level meta.total — one count, two
+            // slots (G21 §6b).
             if ($paginator !== null && $result->total !== null) {
                 return RelatedResponse::fromPage(
                     $paginator->paginate($request, $items, $result->total),
                     $serializer,
-                );
+                    $relation->isCountable(),
+                )->withMeta(['total' => $result->total]);
             }
 
             // A count-free page: a non-countable relation's windowed fetch carries no
@@ -552,10 +620,22 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 return RelatedResponse::fromPage(
                     $paginator->paginateWithoutCount($request, $items, $result->hasMore),
                     $serializer,
+                    $relation->isCountable(),
                 );
             }
 
-            return RelatedResponse::fromCollection($items, $serializer);
+            // Fetch-all (no paginator): the whole related set is materialized, so its
+            // size is free — render meta.total UNCONDITIONALLY (G21 §5).
+            return RelatedResponse::fromCollection($items, $serializer, $relation->isCountable())
+                ->withMeta(['total' => \count($items)]);
+        }
+
+        // A to-one related endpoint has no collection, so `?withCount=_self_` is
+        // invalid here — reject it up front (the to-one twin of the to-many `_self_`
+        // gate above; RelatedResponse::fromResource also carries selfCountable:false so
+        // core's document gate agrees).
+        if ($request->countsRelationship('_self_')) {
+            throw new \haddowg\JsonApi\Exception\RelationshipCountNotAllowed(['_self_']);
         }
 
         // Resolve the to-one serializer from the actual related object so a
