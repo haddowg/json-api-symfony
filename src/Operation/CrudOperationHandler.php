@@ -15,6 +15,7 @@ use haddowg\JsonApi\Hydrator\Relationship\ToManyRelationship;
 use haddowg\JsonApi\Hydrator\Relationship\ToOneRelationship;
 use haddowg\JsonApi\Operation\AddToRelationshipOperation;
 use haddowg\JsonApi\Operation\CreateResourceOperation;
+use haddowg\JsonApi\Operation\CustomActionOperation;
 use haddowg\JsonApi\Operation\DeleteResourceOperation;
 use haddowg\JsonApi\Operation\FetchRelatedOperation;
 use haddowg\JsonApi\Operation\FetchRelationshipOperation;
@@ -35,11 +36,13 @@ use haddowg\JsonApi\Resource\Filter\SupportsSingular;
 use haddowg\JsonApi\Response\DataResponse;
 use haddowg\JsonApi\Response\ErrorResponse;
 use haddowg\JsonApi\Response\IdentifierResponse;
+use haddowg\JsonApi\Response\MetaResponse;
 use haddowg\JsonApi\Response\NoContentResponse;
 use haddowg\JsonApi\Response\RelatedResponse;
 use haddowg\JsonApi\Serializer\PolymorphicSerializer;
 use haddowg\JsonApi\Serializer\SerializerInterface;
 use haddowg\JsonApi\Server\Server;
+use haddowg\JsonApiBundle\Action\ActionInvoker;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
@@ -162,9 +165,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         private readonly ?RelationshipWindowBatcher $windowBatcher = null,
         private readonly ?RequestScopedRelationshipPagination $relationshipPagination = null,
         private readonly ?RelatedIncludeBatcher $includeBatcher = null,
+        private readonly ?ActionInvoker $actions = null,
     ) {}
 
-    public function handle(\haddowg\JsonApi\Operation\JsonApiOperationInterface $operation): DataResponse|RelatedResponse|IdentifierResponse|NoContentResponse|ErrorResponse
+    public function handle(\haddowg\JsonApi\Operation\JsonApiOperationInterface $operation): DataResponse|RelatedResponse|IdentifierResponse|MetaResponse|NoContentResponse|ErrorResponse
     {
         return match (true) {
             $operation instanceof FetchResourceOperation => $this->fetch($operation),
@@ -176,6 +180,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $operation instanceof UpdateRelationshipOperation => $this->mutateRelationship($operation, $operation->body(), Mode::Replace),
             $operation instanceof AddToRelationshipOperation => $this->mutateRelationship($operation, $operation->body(), Mode::Add),
             $operation instanceof RemoveFromRelationshipOperation => $this->mutateRelationship($operation, $operation->body(), Mode::Remove),
+            $operation instanceof CustomActionOperation => $this->actions?->invoke($operation) ?? ErrorResponse::fromException(new ResourceNotFound()),
             default => ErrorResponse::fromException(new ResourceNotFound()),
         };
     }

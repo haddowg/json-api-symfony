@@ -13,6 +13,12 @@
     <extensions>
         <bootstrap class="Zenstruck\Foundry\PHPUnit\FoundryExtension"/>
     </extensions>
+    <php>
+        <!-- The functional suites boot one Symfony kernel per test (each compiling
+             and caching a container); the cumulative footprint of the dual-provider
+             conformance runs now exceeds the stock 128M CLI ceiling. -->
+        <ini name="memory_limit" value="256M"/>
+    </php>
     <testsuites>
         <testsuite name="haddowg/json-api-symfony test suite">
             <directory>tests</directory>

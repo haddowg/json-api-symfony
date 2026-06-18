@@ -7,6 +7,11 @@ namespace haddowg\JsonApiBundle\DependencyInjection\Compiler;
 use haddowg\JsonApi\Hydrator\HydratorInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Serializer\SerializerInterface;
+use haddowg\JsonApiBundle\Action\ActionDescriptor;
+use haddowg\JsonApiBundle\Action\ActionHandlerInterface;
+use haddowg\JsonApiBundle\Action\ActionInput;
+use haddowg\JsonApiBundle\Action\ActionRegistry;
+use haddowg\JsonApiBundle\Action\ActionScope;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Operation\Operation;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
@@ -291,9 +296,227 @@ final class ResourceLocatorPass implements CompilerPassInterface
             $factory->setArgument('$standaloneHydrators', $standaloneHydratorsByServer[$server] ?? []);
         }
 
+        // Custom actions (bundle ADR 0076): collect the ACTION_TAG handler services
+        // + their flattened attribute metadata into the ActionRegistry's descriptor
+        // map (keyed by the composite (server, type, scope, path)) and handler
+        // locator, plus the per-server action route descriptors the loader emits. The
+        // mount type's uriType resolves from its resource descriptor when present
+        // (else the type itself), so an action hangs off the same URI segment as the
+        // resource it mounts on (ADR 0022).
+        $this->collectActions($container, $declaredServers, $descriptors);
+
         if ($container->hasDefinition(JsonApiRouteLoader::class)) {
             $container->getDefinition(JsonApiRouteLoader::class)->setArgument('$routeDescriptorsByServer', $descriptorsByServer);
         }
+    }
+
+    /**
+     * Collects every {@see JsonApiBundle::ACTION_TAG} handler service and wires the
+     * custom-action seam (bundle ADR 0076): the {@see ActionRegistry}'s
+     * composite-keyed {@see ActionDescriptor} map + a handler service-locator (keyed
+     * by service id, resolved lazily so a handler with real constructor dependencies
+     * is built only when invoked), and the per-server **action route descriptors**
+     * the {@see JsonApiRouteLoader} emits — each a plain scalar array (the loader and
+     * the registry cannot receive value objects as compiled arguments).
+     *
+     * The mount type's URI segment resolves from that type's resource descriptor's
+     * `uriType` when present (a resource may customize it, ADR 0022), else the type
+     * itself. The decoupled-document defaults are applied here:
+     * `inputType`/`outputType` fall back to the mount `type` when the attribute left
+     * them `null`.
+     *
+     * @param list<string>                                                                                                                             $declaredServers
+     * @param array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>}> $descriptors the resource/standalone descriptors, read for each mount type's uriType
+     */
+    private function collectActions(ContainerBuilder $container, array $declaredServers, array $descriptors): void
+    {
+        if (!$container->hasDefinition(ActionRegistry::class)) {
+            return;
+        }
+
+        $handlerReferences = [];
+        /** @var array<string, array{type: string, path: string, methods: list<string>, scope: string, input: string, inputType: string, outputType: string, security: ?string, handlerServiceId: string, server: string}> $actionDescriptors */
+        $actionDescriptors = [];
+        /** @var array<string, list<array{uriType: string, type: string, path: string, methods: list<string>, scope: string, name: string}>> $routeDescriptorsByServer */
+        $routeDescriptorsByServer = [];
+
+        foreach ($container->findTaggedServiceIds(JsonApiBundle::ACTION_TAG) as $id => $tags) {
+            $definition = $container->findDefinition($id);
+            $class = $definition->getClass() ?? (\is_string($id) && \class_exists($id) ? $id : null);
+            if ($class === null) {
+                continue;
+            }
+
+            if (!\is_a($class, ActionHandlerInterface::class, true)) {
+                throw new \LogicException(\sprintf(
+                    'The service "%s" registered with #[AsJsonApiAction] must implement %s.',
+                    $id,
+                    ActionHandlerInterface::class,
+                ));
+            }
+
+            $handlerReferences[$id] = new Reference($id);
+
+            foreach ($tags as $tag) {
+                $type = $tag['type'] ?? null;
+                $path = $tag['path'] ?? null;
+                if (!\is_string($type) || $type === '' || !\is_string($path) || $path === '') {
+                    continue;
+                }
+
+                // The action name is emitted as a literal URL segment under
+                // `-actions/`, so it must be a single path segment (no slash) — a
+                // multi-segment action name is rejected at build time, not silently
+                // mis-routed.
+                if (\str_contains($path, '/')) {
+                    throw new \LogicException(\sprintf(
+                        'The JSON:API action path "%s" on service "%s" must be a single URL segment (no "/").',
+                        $path,
+                        $id,
+                    ));
+                }
+
+                $scope = $this->actionScope($tag, $id);
+                $input = $this->actionInput($tag, $id);
+                $methods = $this->actionMethods($tag);
+                $inputType = \is_string($tag['inputType'] ?? null) && $tag['inputType'] !== '' ? $tag['inputType'] : $type;
+                $outputType = \is_string($tag['outputType'] ?? null) && $tag['outputType'] !== '' ? $tag['outputType'] : $type;
+                $security = \is_string($tag['security'] ?? null) && $tag['security'] !== '' ? $tag['security'] : null;
+
+                $servers = $this->validateServers(
+                    $this->parseServers($tag['server'] ?? null),
+                    $declaredServers,
+                    \sprintf('action "%s" on service "%s"', $path, $id),
+                );
+
+                // The mount type's URI segment: its resource descriptor's uriType
+                // when registered (ADR 0022), else the type itself.
+                $uriType = $descriptors[$type]['uriType'] ?? $type;
+                $name = \is_string($tag['name'] ?? null) && $tag['name'] !== '' ? $tag['name'] : null;
+
+                foreach ($servers as $server) {
+                    $key = ActionRegistry::key($server, $type, $scope, $path);
+                    if (isset($actionDescriptors[$key])) {
+                        throw new \LogicException(\sprintf(
+                            'A JSON:API custom action "%s" is already declared for type "%s" (%s scope) on server "%s"; '
+                            . 'action names must be unique per (server, type, scope).',
+                            $path,
+                            $type,
+                            $scope->name,
+                            $server,
+                        ));
+                    }
+
+                    // A plain scalar array (not an ActionDescriptor value object): the
+                    // container dumper cannot dump a value object — nor the
+                    // ActionScope/ActionInput enums it carries — as a compiled
+                    // argument, exactly as the route descriptors below stay scalar. The
+                    // ActionRegistry rehydrates the value object (enums by name) on
+                    // lookup.
+                    $actionDescriptors[$key] = [
+                        'type' => $type,
+                        'path' => $path,
+                        'methods' => $methods,
+                        'scope' => $scope->name,
+                        'input' => $input->name,
+                        'inputType' => $inputType,
+                        'outputType' => $outputType,
+                        'security' => $security,
+                        'handlerServiceId' => $id,
+                        'server' => $server,
+                    ];
+
+                    $routeDescriptorsByServer[$server][] = [
+                        'uriType' => $uriType,
+                        'type' => $type,
+                        'path' => $path,
+                        'methods' => $methods,
+                        'scope' => $scope->name,
+                        'name' => $name ?? '',
+                    ];
+                }
+            }
+        }
+
+        $handlerLocator = ServiceLocatorTagPass::register($container, $handlerReferences);
+        $registry = $container->getDefinition(ActionRegistry::class);
+        $registry->setArgument('$handlers', $handlerLocator);
+        $registry->setArgument('$descriptors', $actionDescriptors);
+
+        if ($container->hasDefinition(JsonApiRouteLoader::class)) {
+            $container->getDefinition(JsonApiRouteLoader::class)
+                ->setArgument('$actionRouteDescriptorsByServer', $routeDescriptorsByServer);
+        }
+    }
+
+    /**
+     * The {@see ActionScope} the tag's `scope` case name names (default
+     * {@see ActionScope::Resource}); an unknown name is a build error.
+     *
+     * @param array<string, mixed> $tag
+     */
+    private function actionScope(array $tag, string $id): ActionScope
+    {
+        $scope = $tag['scope'] ?? null;
+        if (!\is_string($scope) || $scope === '') {
+            return ActionScope::Resource;
+        }
+
+        foreach (ActionScope::cases() as $case) {
+            if ($case->name === $scope) {
+                return $case;
+            }
+        }
+
+        throw new \LogicException(\sprintf('Unknown action scope "%s" on service "%s".', $scope, $id));
+    }
+
+    /**
+     * The {@see ActionInput} the tag's `input` case name names (default
+     * {@see ActionInput::None}); an unknown name is a build error.
+     *
+     * @param array<string, mixed> $tag
+     */
+    private function actionInput(array $tag, string $id): ActionInput
+    {
+        $input = $tag['input'] ?? null;
+        if (!\is_string($input) || $input === '') {
+            return ActionInput::None;
+        }
+
+        foreach (ActionInput::cases() as $case) {
+            if ($case->name === $input) {
+                return $case;
+            }
+        }
+
+        throw new \LogicException(\sprintf('Unknown action input mode "%s" on service "%s".', $input, $id));
+    }
+
+    /**
+     * The author-declared HTTP method allow-list parsed from the comma-joined
+     * `methods` tag string, uppercased; defaults to `['POST']` when absent/empty.
+     *
+     * @param array<string, mixed> $tag
+     *
+     * @return list<string>
+     */
+    private function actionMethods(array $tag): array
+    {
+        $methods = $tag['methods'] ?? null;
+        if (!\is_string($methods) || $methods === '') {
+            return ['POST'];
+        }
+
+        $values = [];
+        foreach (\explode(',', $methods) as $method) {
+            $method = \strtoupper(\trim($method));
+            if ($method !== '' && !\in_array($method, $values, true)) {
+                $values[] = $method;
+            }
+        }
+
+        return $values === [] ? ['POST'] : $values;
     }
 
     /**

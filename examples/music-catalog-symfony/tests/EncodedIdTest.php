@@ -75,7 +75,10 @@ final class EncodedIdTest extends MusicCatalogKernelTestCase
 
         $show = $router->getRouteCollection()->get('jsonapi.products.show');
         self::assertNotNull($show);
-        self::assertSame('prod-[0-9a-f]+', $show->getRequirement('id'));
+        // The author's declared id pattern (`prod-[0-9a-f]+`) is preserved, composed
+        // behind a negative lookahead that excludes the reserved `-actions` segment so a
+        // collection-scope custom action is never shadowed by an {id} route (design §7).
+        self::assertSame('(?!\-actions(?:/|$))(?:prod-[0-9a-f]+)', $show->getRequirement('id'));
 
         // The ROUTER itself rejects a malformed id (a bare integer): matching the path
         // throws a routing ResourceNotFoundException because the `{id}` requirement does
