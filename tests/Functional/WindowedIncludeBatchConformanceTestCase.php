@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use haddowg\JsonApi\Schema\Profile\CountableProfile;
 use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
@@ -31,6 +32,9 @@ abstract class WindowedIncludeBatchConformanceTestCase extends JsonApiFunctional
 
     private const string PROFILE_ACCEPT = 'application/vnd.api+json;profile="' . RelationshipQueriesProfile::URI . '"';
 
+    /** Negotiates BOTH the Relationship-Queries (windowing) and Countable (`?withCount`) profiles. */
+    private const string COUNTING_ACCEPT = 'application/vnd.api+json;profile="' . RelationshipQueriesProfile::URI . ' ' . CountableProfile::URI . '"';
+
     /** The server-default page size the windowed include slices to (PagePaginator). */
     private const int PAGE_SIZE = 15;
 
@@ -40,10 +44,12 @@ abstract class WindowedIncludeBatchConformanceTestCase extends JsonApiFunctional
     public function aWindowedInverseFkIncludeIsBoundedAndCarriesTheRealTotal(): void
     {
         // GET /articles including pinnedComments (a countable inverse-FK to-many) windowed
-        // by -body. Article 1 has 50 comments comment-00..comment-49, so the page-1 window
-        // is the 15 NEWEST (comment-49..comment-35) — bounded, and the relationship total
-        // is the REAL 50, not the 15-row page size (the headline 6a bug).
-        $document = $this->profileDocument('/articles?include=pinnedComments&relatedQuery[pinnedComments][sort]=-body');
+        // by -body, with `?withCount=pinnedComments` opting into the total (G21: a windowed
+        // include is count-free until asked). Article 1 has 50 comments
+        // comment-00..comment-49, so the page-1 window is the 15 NEWEST
+        // (comment-49..comment-35) — bounded, and the relationship total is the REAL 50,
+        // not the 15-row page size (the headline 6a bug).
+        $document = $this->countingProfileDocument('/articles?include=pinnedComments&withCount=pinnedComments&relatedQuery[pinnedComments][sort]=-body');
 
         $article1 = $this->resource($document, '1');
         $linkage = $this->linkageIds($article1, 'pinnedComments');
@@ -51,12 +57,34 @@ abstract class WindowedIncludeBatchConformanceTestCase extends JsonApiFunctional
         self::assertCount(self::PAGE_SIZE, $linkage, 'the window is bounded to the page size, not the whole 50-comment set');
         self::assertSame($this->expectedDescBodyIds(50, self::PAGE_SIZE), $linkage, 'the 15 newest comments by -body land on page 1');
 
-        // The REAL total (50) drives the countable relationship object's `last` link:
-        // ceil(50 / 15) = page 4 — NOT a page-size-derived total (the headline 6a bug,
-        // which would have pointed `last` at page 1 over the 15-row over-fetch).
+        // The REAL total (50) drives the relationship object's `last` link under the count
+        // opt-in: ceil(50 / 15) = page 4 — NOT a page-size-derived total (the headline 6a
+        // bug, which would have pointed `last` at page 1 over the 15-row over-fetch).
         $links = $this->relationshipLinks($article1, 'pinnedComments');
-        self::assertNotNull($links['last'] ?? null, 'a countable relation emits a last link');
+        self::assertNotNull($links['last'] ?? null, 'the count opt-in emits a last link');
         self::assertSame('4', $this->pageNumber($this->href($links['last'])), 'the last page reflects the REAL total of 50 (ceil(50/15) = 4)');
+    }
+
+    #[Test]
+    #[Group('spec:profiles')]
+    #[Group('spec:fetching-pagination')]
+    public function aCountableWindowedIncludeIsCountFreeWithoutWithCount(): void
+    {
+        // G21: a windowed include counts ONLY when the pagination counts. A bare
+        // `?include=pinnedComments` (countable, but no `?withCount`, no `withCount()`
+        // paginator) is therefore count-free — bounded to page 1, a `next` driven by the
+        // over-fetch probe (50 > 15), but NO `last` and no total. (Pre-G21 it counted just
+        // because the relation is countable; that "always counts on include" is gone.)
+        $document = $this->profileDocument('/articles?include=pinnedComments&relatedQuery[pinnedComments][sort]=-body');
+
+        $article1 = $this->resource($document, '1');
+        self::assertCount(self::PAGE_SIZE, $this->linkageIds($article1, 'pinnedComments'), 'still bounded to the page size');
+
+        $relationship = $this->relationshipObjectOf($article1, 'pinnedComments');
+        $links = $this->relationshipLinks($article1, 'pinnedComments');
+        self::assertArrayNotHasKey('last', $links, 'count-free: no last link without ?withCount');
+        self::assertNotNull($links['next'] ?? null, 'a further page exists (50 > 15), so a count-free next is emitted');
+        self::assertArrayNotHasKey('meta', $relationship, 'count-free: no total on the relationship object');
     }
 
     #[Test]
@@ -113,8 +141,8 @@ abstract class WindowedIncludeBatchConformanceTestCase extends JsonApiFunctional
         // fallback). filter[bodyContains]=comment-4 is a LIKE match selecting
         // comment-40..comment-49 (10 comments), ordered -body -> comment-49..comment-40 on
         // a single page, and the relationship total is the FILTERED cardinality (10).
-        $document = $this->profileDocument(
-            '/articles?include=pinnedComments'
+        $document = $this->countingProfileDocument(
+            '/articles?include=pinnedComments&withCount=pinnedComments'
             . '&relatedQuery[pinnedComments][filter][bodyContains]=comment-4&relatedQuery[pinnedComments][sort]=-body',
         );
 
@@ -123,8 +151,9 @@ abstract class WindowedIncludeBatchConformanceTestCase extends JsonApiFunctional
 
         self::assertSame(['50', '49', '48', '47', '46', '45', '44', '43', '42', '41'], $linkage, 'the 10 filtered comments (comment-49..comment-40), ordered -body');
 
-        // The filtered window fits one page (10 <= 15), so the `last` link points at page 1
-        // — the FILTERED cardinality drives pagination, not the unfiltered 50.
+        // Under `?withCount`, the filtered window fits one page (10 <= 15), so the `last`
+        // link points at page 1 — the FILTERED cardinality drives pagination, not the
+        // unfiltered 50.
         $links = $this->relationshipLinks($article1, 'pinnedComments');
         self::assertSame('1', $this->pageNumber($this->href($links['last'] ?? '')), 'the filtered windowed total (10) fits one page');
     }
@@ -163,6 +192,21 @@ abstract class WindowedIncludeBatchConformanceTestCase extends JsonApiFunctional
     protected function profileDocument(string $path): array
     {
         $response = $this->profileRequest($path);
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        return $this->decode($response);
+    }
+
+    /**
+     * Fetches under BOTH the Relationship-Queries and Countable profiles, so a windowed
+     * include can also opt into the total via `?withCount`.
+     *
+     * @return array<string, mixed>
+     */
+    protected function countingProfileDocument(string $path): array
+    {
+        $response = $this->handle(self::BASE_URI . $path, extraServer: ['HTTP_ACCEPT' => self::COUNTING_ACCEPT]);
 
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
 

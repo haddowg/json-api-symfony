@@ -216,6 +216,16 @@ final class RelationshipWindowBatcher
         // is owned by the shared RelationCriteriaFactory; includes never pivot.
         $pageRequest = $this->page1Request($request, $relatedQuery);
         $window = $paginator?->window($pageRequest);
+
+        // A windowed include is counted only when the pagination itself counts — the
+        // relation's paginator opted in (`withCount()`) or the client named the relation
+        // in `?withCount` (`countable()` is the upstream gate for that). A count-free
+        // paginator default emits `first`/`prev`/`next` with no total/`last`, exactly
+        // like the primary and related-collection endpoints (G21; supersedes the
+        // slice-1 "countable() always counts on include" of bundle ADR 0053). The
+        // `?withCount` flag rides the ORIGINAL request, not the synthetic page request.
+        $wantsCount = ($paginator?->wantsCount() ?? false) || $request->countsRelationship($relation->name());
+
         $criteria = $this->relationCriteria->criteriaFor(
             new QueryParameters(
                 fields: [],
@@ -228,12 +238,7 @@ final class RelationshipWindowBatcher
             $relation,
             $window,
             includePivotFields: false,
-            // The windowed-include relationship object emits the REAL total + `last`
-            // for a countable relation (§6d, bundle ADR 0053), so its batch fetch
-            // counts iff the relation is countable — unchanged by G21's primary/related
-            // count-free flip, the include path's count opt-in stays the relation's
-            // countable() declaration (carried as the criteria's wantsCount).
-            wantsCount: $relation->isCountable(),
+            wantsCount: $wantsCount,
         );
 
         // Validate the relatedQuery filter VALUE against the per-relation merged
@@ -257,7 +262,7 @@ final class RelationshipWindowBatcher
         $pages = [];
         foreach ($parents as $parent) {
             $result = $batch->for($serializer->getId($parent));
-            $page = $this->applyResult($paginator, $pageRequest, $relation, $parent, $result, $relatedQuery, $snapshots[\spl_object_id($parent)][$column] ?? null);
+            $page = $this->applyResult($paginator, $pageRequest, $relation, $parent, $result, $relatedQuery, $snapshots[\spl_object_id($parent)][$column] ?? null, $wantsCount);
             if ($page !== null) {
                 $pages[\spl_object_id($parent)] = $page;
             }
@@ -287,6 +292,7 @@ final class RelationshipWindowBatcher
         CollectionResult $result,
         RelatedQuery $relatedQuery,
         mixed $snapshot,
+        bool $wantsCount,
     ): ?RelationshipPagination {
         $items = \is_array($result->items) ? \array_values($result->items) : \iterator_to_array($result->items, false);
 
@@ -300,7 +306,7 @@ final class RelationshipWindowBatcher
             return null;
         }
 
-        return $this->paginationFor($paginator, $pageRequest, $relation, $items, $result, $relatedQuery);
+        return $this->paginationFor($paginator, $pageRequest, $items, $result, $relatedQuery, $wantsCount);
     }
 
     /**
@@ -586,12 +592,12 @@ final class RelationshipWindowBatcher
     }
 
     /**
-     * Builds the {@see RelationshipPagination} for the windowed page: a countable
-     * relation counts the total and emits `first`/`prev`/`next`/`last`; a
-     * non-countable one paginates count-free (no total, no `last`; `next` driven by
-     * the `hasMore` probe), reusing the slice-1 count-free vs countable distinction
-     * (bundle ADR 0052/0053). The plain-form query string carries the relatedQuery
-     * sort/filter so the links mirror them.
+     * Builds the {@see RelationshipPagination} for the windowed page: when the
+     * pagination counts (`$wantsCount` — the paginator's `withCount()` or a client
+     * `?withCount`), it emits the total + `first`/`prev`/`next`/`last`; otherwise it
+     * paginates count-free (no total, no `last`; `next` driven by the `hasMore` probe).
+     * The plain-form query string carries the relatedQuery sort/filter so the links
+     * mirror them.
      *
      * @param CollectionResult<object> $result
      * @param list<object>             $items
@@ -599,14 +605,14 @@ final class RelationshipWindowBatcher
     private function paginationFor(
         PaginatorInterface $paginator,
         JsonApiRequestInterface $pageRequest,
-        RelationInterface $relation,
         array $items,
         CollectionResult $result,
         RelatedQuery $relatedQuery,
+        bool $wantsCount,
     ): RelationshipPagination {
         $queryString = $relatedQuery->toPlainQueryString();
 
-        if ($relation->isCountable() && $result->total !== null) {
+        if ($wantsCount && $result->total !== null) {
             return new RelationshipPagination($paginator->paginate($pageRequest, $items, $result->total), $queryString);
         }
 
