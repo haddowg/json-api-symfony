@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Tests;
 
+use haddowg\JsonApi\Schema\Profile\CountableProfile;
 use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
@@ -225,10 +226,16 @@ final class RelationshipQueriesProfileTest extends MusicCatalogKernelTestCase
     #[Group('spec:fetching-pagination')]
     public function aCountableRelationshipObjectEmitsPlainFormPaginationLinksWithLast(): void
     {
-        // tracks is countable(): its relationship object carries first + last
-        // pagination links, in the PLAIN form against the relationship-linkage
+        // tracks is countable(); with `?withCount=tracks` opting into the count (G21: a
+        // windowed include is count-free until asked) its relationship object carries
+        // first + last pagination links, in the PLAIN form against the relationship-linkage
         // endpoint, mirroring the relatedQuery sort — never the relatedQuery[…] form.
-        $document = $this->profileDocument('/albums/1?include=tracks&relatedQuery[tracks][sort]=-duration');
+        $response = $this->handle(
+            '/albums/1?include=tracks&withCount=tracks&relatedQuery[tracks][sort]=-duration',
+            extraServer: ['HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . RelationshipQueriesProfile::URI . ' ' . CountableProfile::URI . '"'],
+        );
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $document = $this->decode($response);
 
         $links = $this->relationshipLinks($document['data'] ?? null, 'tracks');
 
@@ -238,7 +245,7 @@ final class RelationshipQueriesProfileTest extends MusicCatalogKernelTestCase
         self::assertStringNotContainsString('relatedQuery', $first, 'the endpoint link never uses the profile form');
         self::assertStringNotContainsString('rQ%5B', $first);
 
-        self::assertArrayHasKey('last', $links, 'a countable relation emits a last link');
+        self::assertArrayHasKey('last', $links, 'the count opt-in emits a last link');
         self::assertNotNull($links['last'] ?? null);
     }
 

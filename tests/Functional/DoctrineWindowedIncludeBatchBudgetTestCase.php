@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use haddowg\JsonApi\Schema\Profile\CountableProfile;
 use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
 use haddowg\JsonApiBundle\Tests\Functional\App\QueryCountingLogger;
 
@@ -28,26 +29,33 @@ abstract class DoctrineWindowedIncludeBatchBudgetTestCase extends JsonApiFunctio
     protected const string PROFILE_ACCEPT = 'application/vnd.api+json;profile="' . RelationshipQueriesProfile::URI . '"';
 
     /**
-     * The captured SQL of a windowed pinnedComments include over article 1's 50 comments.
+     * Negotiates BOTH the Relationship-Queries (windowing) and Countable (`?withCount`)
+     * profiles — the count rides the bounded scan only when the count is opted into (G21).
+     */
+    protected const string COUNTING_ACCEPT = 'application/vnd.api+json;profile="' . RelationshipQueriesProfile::URI . ' ' . CountableProfile::URI . '"';
+
+    /**
+     * The captured SQL of a windowed pinnedComments include over article 1's 50 comments,
+     * with `?withCount` opting into the count so the `COUNT(*) OVER` rides the bounded scan.
      *
      * @return list<string>
      */
     protected function windowedIncludeStatements(): array
     {
-        return $this->captureStatements('/articles?include=pinnedComments&relatedQuery[pinnedComments][sort]=-body');
+        return $this->captureStatements('/articles?include=pinnedComments&withCount=pinnedComments&relatedQuery[pinnedComments][sort]=-body');
     }
 
     /**
      * The captured SQL of a FILTERED windowed pinnedComments include (a relatedQuery
-     * `filter[bodyContains]` + a sort + the page-1 window) over article 1's 50 comments —
-     * the case the native batch now folds onto ONE bounded query (bundle ADR 0066).
+     * `filter[bodyContains]` + a sort + the page-1 window), counted via `?withCount` — the
+     * case the native batch now folds onto ONE bounded query (bundle ADR 0066).
      *
      * @return list<string>
      */
     protected function filteredWindowedIncludeStatements(): array
     {
         return $this->captureStatements(
-            '/articles?include=pinnedComments'
+            '/articles?include=pinnedComments&withCount=pinnedComments'
             . '&relatedQuery[pinnedComments][filter][bodyContains]=comment-4&relatedQuery[pinnedComments][sort]=-body',
         );
     }
@@ -65,7 +73,7 @@ abstract class DoctrineWindowedIncludeBatchBudgetTestCase extends JsonApiFunctio
 
         $response = $this->handle(
             self::BASE_URI . $path,
-            extraServer: ['HTTP_ACCEPT' => self::PROFILE_ACCEPT],
+            extraServer: ['HTTP_ACCEPT' => self::COUNTING_ACCEPT],
         );
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
 

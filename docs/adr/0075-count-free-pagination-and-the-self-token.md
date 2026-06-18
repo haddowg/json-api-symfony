@@ -28,9 +28,12 @@ Countable profile rename).
 - **Providers** (Doctrine + in-memory) take `countable: $criteria->wantsCount` on the
   primary and related fetches, reaching the already-built count-free branch of the
   shared `WindowExecutor` (the window+1 probe). The `RelationshipWindowBatcher` /
-  windowed-include batch set `wantsCount: $relation->isCountable()` so the §6d
-  included-relationship pagination stays count-aware for a countable relation
-  (unchanged by the flip).
+  windowed-include batch sets `wantsCount: $relation->paginator->wantsCount() ||
+  $request->countsRelationship($name)` — so the §6d included-relationship pagination is
+  **count-free by default and counted only when the pagination counts** (the relation's
+  `withCount()` paginator or a client `?withCount`), the same rule as the primary and
+  related collections. This **supersedes** the slice-1 "a `countable()` relation always
+  counts on include" of bundle ADR 0053.
 - **`RelationCriteriaFactory::paginatorFor()`** composes the fallback bottom-up
   (`related resource → server default`) and feeds it into `relation->pagination($fallback)`,
   so `withoutPagination()` can return a real `null`.

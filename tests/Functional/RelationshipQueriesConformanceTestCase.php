@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use haddowg\JsonApi\Schema\Profile\CountableProfile;
 use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
@@ -328,10 +329,16 @@ abstract class RelationshipQueriesConformanceTestCase extends JsonApiFunctionalT
     #[Group('spec:fetching-pagination')]
     public function aCountableRelationshipObjectEmitsPlainFormPaginationLinksWithLast(): void
     {
-        // editors is countable(): its relationship object carries first + last
-        // pagination links, in the PLAIN form against the relationship-linkage
+        // editors is countable(); with `?withCount=editors` opting into the count (G21: a
+        // windowed include is count-free until asked) its relationship object carries
+        // first + last pagination links, in the PLAIN form against the relationship-linkage
         // endpoint, mirroring the relatedQuery sort — never the relatedQuery[…] form.
-        $document = $this->profileDocument('/articles/1?include=editors&relatedQuery[editors][sort]=-name');
+        $response = $this->handle(
+            self::BASE_URI . '/articles/1?include=editors&withCount=editors&relatedQuery[editors][sort]=-name',
+            extraServer: ['HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . RelationshipQueriesProfile::URI . ' ' . CountableProfile::URI . '"'],
+        );
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $document = $this->decode($response);
 
         $links = $this->relationshipLinks($document['data'] ?? null, 'editors');
 
@@ -341,7 +348,7 @@ abstract class RelationshipQueriesConformanceTestCase extends JsonApiFunctionalT
         self::assertStringNotContainsString('relatedQuery', $first, 'the endpoint link never uses the profile form');
         self::assertStringNotContainsString('rQ%5B', $first);
 
-        self::assertArrayHasKey('last', $links, 'a countable relation emits a last link');
+        self::assertArrayHasKey('last', $links, 'the count opt-in emits a last link');
         self::assertNotNull($links['last'] ?? null);
     }
 
