@@ -225,7 +225,7 @@ A family is **recognized** when its base name is:
   `page` still `400`s on its own);
 - a key the resolved primary resource declares;
 - a [negotiated profile](relationships.md)'s keyword — the Relationship Queries
-  profile's `relatedQuery`/`rQ` and the Relationship Counts profile's `withCount`
+  profile's `relatedQuery`/`rQ` and the Countable profile's `withCount`
   are recognized only when the client negotiated the relevant profile, so addressing
   one without negotiation now `400`s rather than being ignored;
 - any param an app registers via `Server::withCustomQueryParameter()`.

@@ -120,7 +120,12 @@ final class InMemoryDataProvider implements DataProviderInterface
             return $this->runCursor($criteria, $this->store->all());
         }
 
-        return $this->applyAndWindow($criteria, $this->store->all(), countable: true);
+        // Count-free by default (G21): count the pre-window total only when the
+        // handler resolved a COUNT for this fetch (the paginator's withCount() author
+        // opt-in, or ?withCount=_self_ under a countable() resource); otherwise the
+        // executor fetches count-free via the window+1 probe and reports `hasMore`
+        // (bundle ADR 0075).
+        return $this->applyAndWindow($criteria, $this->store->all(), countable: $criteria->wantsCount);
     }
 
     public function fetchRelatedCollection(
@@ -133,15 +138,17 @@ final class InMemoryDataProvider implements DataProviderInterface
         // Read the related objects off the parent via the relation's public
         // accessor (honours storedAs/extractUsing; the default accessor returns
         // the stored related collection), then run the same criteria pipeline as
-        // a primary collection fetch. A non-countable relation paginates
-        // count-free (no total, the page driven by a limit+1 probe); a countable
-        // one counts as before (bundle ADR 0052).
+        // a primary collection fetch. Count-free by default (G21): the related
+        // endpoint counts only when the handler resolved a COUNT for this fetch
+        // (`$criteria->wantsCount` — the relation paginator's withCount() author
+        // opt-in, or ?withCount=_self_ under a countable() relation); otherwise it
+        // paginates count-free (no total, the page driven by a limit+1 probe).
         $related = $relation->readValue($parent, $request);
         \assert(\is_iterable($related));
 
         $items = \is_array($related) ? \array_values($related) : \iterator_to_array($related, false);
 
-        return $this->applyAndWindow($criteria, $items, $relation->isCountable());
+        return $this->applyAndWindow($criteria, $items, $criteria->wantsCount);
     }
 
     /**
@@ -247,6 +254,10 @@ final class InMemoryDataProvider implements DataProviderInterface
             window: $criteria->window,
             defaultSort: $defaultSort,
             aliasOf: $criteria->aliasOf,
+            // Preserve the count decision through the tiebreak rebuild (G21): a
+            // windowed include of a countable relation counts (§6d), so the rebuilt
+            // criteria must carry the same wantsCount the batcher resolved.
+            wantsCount: $criteria->wantsCount,
         );
     }
 

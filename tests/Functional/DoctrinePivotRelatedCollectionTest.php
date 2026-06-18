@@ -10,7 +10,7 @@ use haddowg\JsonApi\Resource\Field\DateTime;
 use haddowg\JsonApi\Resource\Field\Integer;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\Where;
-use haddowg\JsonApi\Schema\Profile\RelationshipCountsProfile;
+use haddowg\JsonApi\Schema\Profile\CountableProfile;
 use haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory;
 use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\DoctrineJsonApiTestKernel;
 use PHPUnit\Framework\Attributes\Group;
@@ -78,15 +78,10 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
         // and the deduped rendered linkage — one consistent `total` semantic (ADR 0052).
         $document = $this->countsFetchDocument('/playlists/3?withCount=tracks');
 
+        // The inline `?withCount=tracks` relationship-object count (the §6c path,
+        // unchanged by G21) reports the DISTINCT far-member count (2), agreeing with the
+        // deduped rendered linkage — one consistent `total` semantic (ADR 0052).
         self::assertSame(2, $this->relationshipTotal($document, 'tracks'));
-
-        // The endpoint reports the SAME total for the same relation/parent.
-        $endpoint = $this->fetchDocument('/playlists/3/tracks?sort=position');
-        $meta = $endpoint['meta'] ?? null;
-        self::assertIsArray($meta);
-        $page = $meta['page'] ?? null;
-        self::assertIsArray($page);
-        self::assertSame(2, $page['total'] ?? null);
     }
 
     #[Test]
@@ -306,7 +301,9 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
     {
         // filter[title] (the related `tracks` vocabulary, contains "o" → Intro,
         // Outro, NOT Bridge) composes with the pivot sort in ONE query; a page of
-        // size 2 holds both, so the page is full (no short page).
+        // size 2 holds both, so the page is full (no short page). Count-free by
+        // default (G21): the page carries no total, and with both matches on page 1
+        // there is no further page (no `next`).
         $document = $this->fetchDocument('/playlists/1/tracks?filter[title]=o&sort=position&page[size]=2&page[number]=1');
 
         self::assertSame(['1', '2'], $this->ids($document));
@@ -316,9 +313,11 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
         self::assertArrayHasKey('page', $meta);
         $page = $meta['page'];
         self::assertIsArray($page);
-        // Two matched the composed filter, page size two — the total is exactly two,
-        // so the page is full and there is no second page (no short page).
-        self::assertSame(2, $page['total'] ?? null);
+        self::assertArrayNotHasKey('total', $page, 'count-free by default: no page total');
+
+        $links = $document['links'] ?? null;
+        self::assertIsArray($links);
+        self::assertArrayNotHasKey('next', $links, 'both matches are on page 1, so no further page');
     }
 
     #[Test]
@@ -382,13 +381,11 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
         self::assertNotSame($firstIds, $secondIds, 'a member was duplicated across pages');
         self::assertSame(['1', '2'], [...$firstIds, ...$secondIds]);
 
-        // The reported total is the distinct member count (two), so a client paging
-        // by it never requests a phantom third page.
-        $meta = $first['meta'] ?? null;
-        self::assertIsArray($meta);
-        $page = $meta['page'] ?? null;
-        self::assertIsArray($page);
-        self::assertSame(2, $page['total'] ?? null);
+        // Page 1 of two distinct members signals a further page via `next` (count-free
+        // by default, G21); the dedup holds without a total being needed.
+        $links = $first['links'] ?? null;
+        self::assertIsArray($links);
+        self::assertNotNull($links['next'] ?? null, 'a second distinct member follows on page 2');
     }
 
     #[Test]
@@ -515,7 +512,7 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
     private function countsFetchDocument(string $path): array
     {
         $response = $this->handle(self::BASE_URI . $path, extraServer: [
-            'HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . RelationshipCountsProfile::URI . '"',
+            'HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . CountableProfile::URI . '"',
         ]);
 
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());

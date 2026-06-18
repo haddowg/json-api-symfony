@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Tests;
 
-use haddowg\JsonApi\Schema\Profile\RelationshipCountsProfile;
+use haddowg\JsonApi\Schema\Profile\CountableProfile;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
@@ -39,7 +39,7 @@ final class RelationCountTest extends MusicCatalogKernelTestCase
 {
     // `?withCount` is gated behind the Relationship Counts profile; every count read
     // here negotiates it.
-    private const string COUNTS_ACCEPT = 'application/vnd.api+json;profile="' . RelationshipCountsProfile::URI . '"';
+    private const string COUNTS_ACCEPT = 'application/vnd.api+json;profile="' . CountableProfile::URI . '"';
 
     #[Test]
     public function withCountEmitsTheRelationshipObjectTotalOnASingleAlbum(): void
@@ -101,19 +101,22 @@ final class RelationCountTest extends MusicCatalogKernelTestCase
     }
 
     #[Test]
-    public function aCountableRelatedEndpointEmitsTheTotalAndLastLink(): void
+    public function aCountableRelatedEndpointPaginatesCountFreeByDefault(): void
     {
-        // The related-collection endpoint of a COUNTABLE relation pays for the COUNT:
-        // it emits meta.page.total and a `last` pagination link (perPage is 2, album
-        // 1 has two non-explicit visible tracks, so it is one full page).
+        // Since G21 the related-collection endpoint is count-free BY DEFAULT even for a
+        // COUNTABLE relation: a bare fetch windows without a COUNT, so there is no
+        // meta.page.total. (perPage is 2, album 1 has two non-explicit visible tracks,
+        // so it is one full page with no further page — hence no `next`/`last`.) The
+        // total returns only under `?withCount=_self_` on the countable relation, or
+        // with withCount() on the relation's paginator.
         $document = $this->fetch('/albums/1/tracks');
 
         $page = $this->pageMeta($document);
-        self::assertSame(2, $page['total'] ?? null);
+        self::assertArrayNotHasKey('total', $page, 'count-free by default: no page total');
 
         $links = $document['links'] ?? null;
         self::assertIsArray($links);
-        self::assertArrayHasKey('last', $links);
+        self::assertArrayNotHasKey('last', $links, 'count-free by default: no last link');
     }
 
     #[Test]

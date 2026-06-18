@@ -53,6 +53,14 @@ abstract class BaseArticleResource extends AbstractResource
 {
     public static string $type = 'articles';
 
+    public function __construct()
+    {
+        // The primary collection is client-countable (G21 §6a): `?withCount=_self_`
+        // under the Countable profile renders the total; the paginator stays
+        // count-free by default, so an unrequested page never counts.
+        $this->countable();
+    }
+
     public function fields(): array
     {
         return [
@@ -221,7 +229,15 @@ abstract class BaseArticleResource extends AbstractResource
         ];
     }
 
-    public function pagination(): ?PaginatorInterface
+    /**
+     * The `articles` collection paginates with the default page strategy and is
+     * **count-free by default** (G21): a bare `?page[size]=…` windows without a
+     * `COUNT`. The resource is {@see countable()} (in the constructor), so a client
+     * may opt into the total per request with `?withCount=_self_` under the
+     * negotiated Countable profile — the matrix witness for the primary-collection
+     * `_self_` count.
+     */
+    public function pagination(?PaginatorInterface $serverDefault): ?PaginatorInterface
     {
         return PagePaginator::make();
     }

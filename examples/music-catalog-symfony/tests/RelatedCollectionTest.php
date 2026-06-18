@@ -37,7 +37,9 @@ final class RelatedCollectionTest extends MusicCatalogKernelTestCase
     {
         // Album 1's tracks are the non-explicit 1 and 3 (track 2 is explicit and
         // hidden by the related type's default filter). perPage is 2, so page 1 is
-        // the full window with page meta and navigation links.
+        // the full window. Since G21 the related endpoint is count-free by default,
+        // so the page carries currentPage/perPage but NO total — and with no further
+        // page there is no `next`/`last`.
         $document = $this->fetch('/albums/1/tracks');
 
         self::assertSame(['1', '3'], $this->ids($document));
@@ -45,13 +47,13 @@ final class RelatedCollectionTest extends MusicCatalogKernelTestCase
         $page = $this->pageMeta($document);
         self::assertSame(1, $page['currentPage'] ?? null);
         self::assertSame(2, $page['perPage'] ?? null);
-        self::assertSame(2, $page['total'] ?? null);
+        self::assertArrayNotHasKey('total', $page, 'count-free by default: no page total');
 
         $links = $document['links'] ?? null;
         self::assertIsArray($links);
         self::assertArrayHasKey('self', $links);
         self::assertArrayHasKey('first', $links);
-        self::assertArrayHasKey('last', $links);
+        self::assertArrayNotHasKey('last', $links, 'count-free by default: no last link');
     }
 
     #[Test]
@@ -112,13 +114,14 @@ final class RelatedCollectionTest extends MusicCatalogKernelTestCase
         // The Morning Mix holds tracks 1 and 2, but track 2 is explicit (hidden by
         // the default filter), so the related collection is just track 1. The
         // many-to-many is scoped by an IN subquery rooted on the related entity.
+        // Count-free by default (G21): page meta carries no total.
         $document = $this->fetch('/playlists/' . self::PLAYLIST_ID . '/tracks');
 
         self::assertSame(['1'], $this->ids($document));
 
         $page = $this->pageMeta($document);
         self::assertSame(2, $page['perPage'] ?? null);
-        self::assertSame(1, $page['total'] ?? null);
+        self::assertArrayNotHasKey('total', $page, 'count-free by default: no page total');
     }
 
     #[Test]
@@ -126,7 +129,8 @@ final class RelatedCollectionTest extends MusicCatalogKernelTestCase
     public function aManyToManyRelatedCollectionWindowsByExplicitPageParams(): void
     {
         // page[size]=1 with a second page that is empty (one member): the window
-        // params override the per-relation default and the meta agrees.
+        // params override the per-relation default and the meta agrees. Count-free by
+        // default (G21): currentPage/perPage are echoed, but no total.
         $document = $this->fetch('/playlists/' . self::PLAYLIST_ID . '/tracks?page[size]=1&page[number]=2');
 
         self::assertSame([], $this->ids($document));
@@ -134,7 +138,7 @@ final class RelatedCollectionTest extends MusicCatalogKernelTestCase
         $page = $this->pageMeta($document);
         self::assertSame(2, $page['currentPage'] ?? null);
         self::assertSame(1, $page['perPage'] ?? null);
-        self::assertSame(1, $page['total'] ?? null);
+        self::assertArrayNotHasKey('total', $page, 'count-free by default: no page total');
     }
 
     // --- server-default fallback ---------------------------------------------
@@ -146,13 +150,14 @@ final class RelatedCollectionTest extends MusicCatalogKernelTestCase
         // `tracks.playlists` declares no per-relation paginator, so its related
         // collection falls back to the server's default paginator (relation →
         // related resource → server default). The default carries the page-size cap
-        // (json_api.pagination.max_per_page), so the collection is paginated.
+        // (json_api.pagination.max_per_page), so the collection is paginated —
+        // count-free by default (G21), so the page meta carries perPage but no total.
         $document = $this->fetch('/tracks/1/playlists');
 
         self::assertSame([self::PLAYLIST_ID], $this->ids($document));
 
         $page = $this->pageMeta($document);
-        self::assertSame(1, $page['total'] ?? null);
+        self::assertArrayNotHasKey('total', $page, 'count-free by default: no page total');
     }
 
     // --- helpers -------------------------------------------------------------

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use haddowg\JsonApi\Schema\Profile\CountableProfile;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
@@ -148,23 +149,91 @@ abstract class RelatedCollectionParamsConformanceTestCase extends JsonApiFunctio
     #[Test]
     #[Group('spec:fetching-relationships')]
     #[Group('spec:fetching-pagination')]
-    public function aCountableRelatedCollectionStillEmitsTotalAndLast(): void
+    public function aCountableRelatedCollectionEmitsTotalAndLastUnderWithCountSelf(): void
     {
-        // `pagedComments` is countable(), so its related-collection endpoint counts
-        // the total and emits `meta.page.total` + a `last` link as before — the
-        // count-based page the count-free path is contrasted against (bundle ADR 0052).
+        // G21 §6b: `pagedComments` is countable(), so a client opts into the total via
+        // `?withCount=_self_` under the Countable profile, and the single total fans to
+        // BOTH the top-level meta.total and meta.page.total, plus a `last` link. Core's
+        // `_self_` gate is relation-aware on a related render (it keys on the *relation*,
+        // not the related-type resource — core ADR 0068 / bundle ADR 0075), so the
+        // countable relation's collection is counted even though the `comments` resource
+        // is not itself countable().
+        $response = $this->handle(self::BASE_URI . '/articles/1/pagedComments?withCount=_self_&page[size]=1&page[number]=1', extraServer: [
+            'HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . CountableProfile::URI . '"',
+        ]);
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $document = $this->decode($response);
+
+        self::assertSame(['1'], $this->ids($document));
+
+        $meta = $document['meta'] ?? null;
+        self::assertIsArray($meta);
+        self::assertSame(2, $meta['total'] ?? null, 'the single total fans to the universal top-level meta.total');
+        $page = $meta['page'] ?? null;
+        self::assertIsArray($page);
+        self::assertSame(2, $page['total'] ?? null, 'meta.page.total echoes the same total (one count, two slots)');
+
+        $links = $document['links'] ?? null;
+        self::assertIsArray($links);
+        self::assertNotNull($links['last'] ?? null, 'a counted page emits a last link');
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    #[Group('spec:fetching-pagination')]
+    public function aCountableRelatedCollectionPaginatesCountFreeWithoutWithCount(): void
+    {
+        // The G21 §6b default: even a countable() relation paginates count-FREE until
+        // the client asks — a bare windowed `pagedComments` fetch carries no total/last,
+        // only `next` (driven by the over-fetch probe).
         $document = $this->fetchDocument('/articles/1/pagedComments?page[size]=1&page[number]=1');
 
         self::assertSame(['1'], $this->ids($document));
 
         $meta = $document['meta'] ?? null;
         self::assertIsArray($meta);
-        self::assertIsArray($meta['page'] ?? null);
-        self::assertSame(2, $meta['page']['total'] ?? null, 'a countable relation emits the total');
+        self::assertArrayNotHasKey('total', $meta);
+        $page = $meta['page'] ?? null;
+        self::assertIsArray($page);
+        self::assertArrayNotHasKey('total', $page, 'count-free: no page total');
 
         $links = $document['links'] ?? null;
         self::assertIsArray($links);
-        self::assertArrayHasKey('last', $links, 'a countable page carries a last link');
+        self::assertNotNull($links['next'] ?? null, 'a further page is signalled via next');
+        self::assertNull($links['last'] ?? null, 'count-free: no last link');
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    #[Group('spec:fetching-pagination')]
+    public function withCountSelfOnANonCountableRelatedCollectionIs400(): void
+    {
+        // `comments` is NOT countable(), so `?withCount=_self_` on its related endpoint
+        // is rejected by the handler's gate (CollectionDocument runs no document-level
+        // countable validation) — G21 §6b row 4.
+        $response = $this->handle(self::BASE_URI . '/articles/1/comments?withCount=_self_', extraServer: [
+            'HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . CountableProfile::URI . '"',
+        ]);
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    #[Group('spec:fetching-pagination')]
+    public function withCountSelfOnAToOneRelatedEndpointIs400(): void
+    {
+        // A to-one related endpoint (`/articles/1/author`) has no collection, so
+        // `?withCount=_self_` is invalid there regardless of the related resource's
+        // countability — rejected by the handler's to-one gate (and core's document
+        // gate, which `RelatedResponse::fromResource` carries `selfCountable:false`
+        // into). G21 §6b: `_self_` names the *primary collection*; a to-one has none.
+        $response = $this->handle(self::BASE_URI . '/articles/1/author?withCount=_self_', extraServer: [
+            'HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . CountableProfile::URI . '"',
+        ]);
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
     }
 
     #[Test]
@@ -302,6 +371,25 @@ abstract class RelatedCollectionParamsConformanceTestCase extends JsonApiFunctio
 
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
         self::assertSame('application/vnd.api+json', $response->headers->get('Content-Type'));
+
+        return $this->decode($response);
+    }
+
+    /**
+     * Fetches `$path` with `?withCount=_self_` appended and the Countable profile
+     * negotiated, so a `countable()` relation's related endpoint renders the total
+     * (`meta.total` + `meta.page.total` + the `last` link) — the §6b client count.
+     *
+     * @return array<string, mixed>
+     */
+    protected function fetchCountedDocument(string $path): array
+    {
+        $separator = \str_contains($path, '?') ? '&' : '?';
+        $response = $this->handle(self::BASE_URI . $path . $separator . 'withCount=_self_', extraServer: [
+            'HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . CountableProfile::URI . '"',
+        ]);
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
 
         return $this->decode($response);
     }

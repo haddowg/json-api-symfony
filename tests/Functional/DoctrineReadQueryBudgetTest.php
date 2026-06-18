@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use haddowg\JsonApi\Schema\Profile\CountableProfile;
 use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\QueryCountingDoctrineKernel;
 use haddowg\JsonApiBundle\Tests\Functional\App\QueryCountingLogger;
 use PHPUnit\Framework\Attributes\Group;
@@ -130,19 +131,22 @@ final class DoctrineReadQueryBudgetTest extends JsonApiFunctionalTestCase
 
     #[Test]
     #[Group('spec:fetching-pagination')]
-    public function aPaginatedCollectionRunsExactlyOneCountAndOnePrimarySelect(): void
+    public function aCountFreePaginatedCollectionRunsZeroCountAndOnePrimarySelect(): void
     {
         $logger = $this->logger();
         $logger->reset();
 
+        // The G21 default flip: a bare `?page[size]=2` (no `?withCount`) now windows
+        // count-free — ZERO COUNT queries, one primary SELECT (the windowed page over
+        // the limit+1 probe).
         $response = $this->handle(self::BASE_URI . '/articles?page[size]=2');
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
 
         $counts = $this->statementsContaining($logger, 'count(');
         self::assertCount(
-            1,
+            0,
             $counts,
-            \sprintf("pagination must run exactly one COUNT; ran %d:\n%s", \count($counts), \implode("\n", $counts)),
+            \sprintf("a count-free page must run ZERO COUNT; ran %d:\n%s", \count($counts), \implode("\n", $counts)),
         );
 
         $primarySelects = \array_filter(
@@ -153,6 +157,67 @@ final class DoctrineReadQueryBudgetTest extends JsonApiFunctionalTestCase
             1,
             $primarySelects,
             \sprintf("the page must run exactly one primary article SELECT; ran %d:\n%s", \count($primarySelects), \implode("\n", $primarySelects)),
+        );
+    }
+
+    #[Test]
+    #[Group('spec:fetching-pagination')]
+    public function withCountSelfRunsExactlyOneCount(): void
+    {
+        $logger = $this->logger();
+        $logger->reset();
+
+        // `?withCount=_self_` under the Countable profile opts into the total on the
+        // countable() `articles` collection: EXACTLY one COUNT (the pre-window total),
+        // fanned to meta.total + meta.page.total from that single count.
+        $response = $this->handle(self::BASE_URI . '/articles?page[size]=2&withCount=_self_', extraServer: [
+            'HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . CountableProfile::URI . '"',
+        ]);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        $document = $this->decode($response);
+        $meta = $document['meta'] ?? null;
+        self::assertIsArray($meta);
+        $page = $meta['page'] ?? null;
+        self::assertIsArray($page);
+        self::assertSame(5, $meta['total'] ?? null);
+        self::assertSame(5, $page['total'] ?? null);
+
+        $counts = $this->statementsContaining($logger, 'count(');
+        self::assertCount(
+            1,
+            $counts,
+            \sprintf("`?withCount=_self_` must run exactly one COUNT; ran %d:\n%s", \count($counts), \implode("\n", $counts)),
+        );
+    }
+
+    #[Test]
+    #[Group('spec:fetching-pagination')]
+    public function aFetchAllCollectionRendersMetaTotalWithNoCountQuery(): void
+    {
+        $logger = $this->logger();
+        $logger->reset();
+
+        // A resource that disables pagination (pagination() returns null) is fetched
+        // whole, so its size is free — `meta.total` is rendered unconditionally with
+        // NO COUNT query (the size comes from the materialised set, G21 §5). The
+        // `unpaginatedArticles` resource serves the same article rows with no paginator.
+        $response = $this->handle(self::BASE_URI . '/unpaginatedArticles');
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        $document = $this->decode($response);
+        $meta = $document['meta'] ?? null;
+        self::assertIsArray($meta);
+        self::assertSame(5, $meta['total'] ?? null);
+        self::assertArrayNotHasKey('page', $meta, 'fetch-all carries no page meta');
+
+        // The `unpaginatedArticles` type maps the same `article` table; a fetch-all
+        // runs no COUNT at all.
+        $counts = $this->statementsContaining($logger, 'count(');
+        self::assertCount(
+            0,
+            $counts,
+            \sprintf("fetch-all must run NO COUNT; ran %d:\n%s", \count($counts), \implode("\n", $counts)),
         );
     }
 

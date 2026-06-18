@@ -183,13 +183,13 @@ Counting is exposed two ways, both on the `total` meta key:
   relationships (like `?include`) — adds `meta.total` to each named relationship
   **object** when the parent is rendered (a single resource, every parent of a
   collection, and a related-collection member). `withCount` is the
-  [**Relationship Counts profile**](https://haddowg.github.io/json-api/profiles/relationship-counts/)'s
+  [**Countable profile**](https://haddowg.github.io/json-api/profiles/countable/)'s
   family (the bundle registers and advertises it), so a client opts in by
   negotiating the profile URI in the `Accept` header's `profile` parameter —
   without it the family is unrecognized (a `400` under strict validation):
 
   ```
-  Accept: application/vnd.api+json;profile="https://haddowg.github.io/json-api/profiles/relationship-counts/"
+  Accept: application/vnd.api+json;profile="https://haddowg.github.io/json-api/profiles/countable/"
 
   GET /albums/1?withCount=tracks         → data.relationships.tracks.meta.total
   GET /albums?withCount=tracks           → every album's tracks.meta.total (counted in ONE grouped query)
@@ -200,18 +200,22 @@ Counting is exposed two ways, both on the `total` meta key:
   naming a to-one, or naming an unknown relationship is a `400`
   (`source.parameter: withCount`).
 
-- **The related-collection endpoint** (`GET /{type}/{id}/{rel}`) is gated by
-  `countable()` **alone**. A countable relation's endpoint emits `meta.page.total`
-  + a `last` link; a **non-countable** relation's endpoint paginates **count-free**
-  — no `total`, no `last`, and a further page is signalled by `next` being present
-  (no `COUNT` query runs). This is how a related collection paginates without paying
-  for a count. The gate is universal — it applies to a pivot (`belongsToMany`)
-  relation's endpoint exactly as to a plain one (a non-countable pivot endpoint runs
-  no count over its association entity).
+- **The related-collection endpoint** (`GET /{type}/{id}/{rel}`) is **count-free by
+  default** (since G21), exactly like a primary collection: it windows without a
+  `COUNT` — no `total`, no `last`, a further page signalled by `next`. A client opts
+  into the total with `?withCount=_self_` on a `countable()` relation under the
+  Countable profile (the `_self_` token meaning "this related collection"); an author
+  can make it always count with `withCount()` on the relation's paginator. The gate is
+  universal — it applies to a pivot (`belongsToMany`) relation's endpoint exactly as to
+  a plain one.
 
-> **Behaviour change.** Related collections used to always emit a total. A relation
-> whose endpoint should keep one must now be `countable()`. Leaving a relation
-> non-countable is the way to get count-free related pagination.
+> **Behaviour change.** Related collections are now count-free by default (matching
+> primary collections). The `meta.page.total` + `last` link (and the top-level
+> `meta.total`) return only under `?withCount=_self_` on a `countable()` relation, or
+> with `withCount()` on the relation's paginator. The related-endpoint `_self_` count is
+> gated by the **relation's** `countable()` (not the related-type resource's): core's
+> document gate is relation-aware on a related render via the relation's countability
+> threaded through `RelatedResponse` (core ADR 0068 / bundle ADR 0075).
 
 **`?withCount` counts the relation's filtered set.** The count reflects the SAME
 filters the related-collection endpoint applies (bundle ADR 0060): a relation's own

@@ -42,6 +42,14 @@ use haddowg\JsonApi\Resource\Sort\SortInterface;
  *   alias, see {@see RelationCriteriaFactory}); it is empty on every other Doctrine
  *   path and on EVERY in-memory path, so the alias-aware branches are provably inert
  *   off the pivot path (bundle ADR 0059).
+ * - {@see $wantsCount} — whether the handler resolved a `COUNT` for this windowed
+ *   fetch: `true` when the paginator's `withCount()` author opt-in flipped it, or
+ *   when `?withCount=_self_` was requested under a `countable()` resource/relation
+ *   (G21). The provider issues the `COUNT` (the count-based page with
+ *   `meta.page.total`/`links.last`) iff `true`, else fetches count-free (the
+ *   window+1 probe → `hasMore`, no total). Defaulted `false` so every existing
+ *   construction site stays count-free unless the handler explicitly asks for a
+ *   count (bundle ADR 0075).
  */
 final readonly class CollectionCriteria
 {
@@ -50,6 +58,7 @@ final readonly class CollectionCriteria
      * @param list<SortInterface>       $sorts       the sort vocabulary declared for the type
      * @param list<SortDirective>       $defaultSort the resource's default sort order, applied when no `sort` is requested
      * @param array<string, string>     $aliasOf     directive KEY → target query alias; an absent key resolves to the root alias (bundle-only, empty off the Doctrine pivot path)
+     * @param bool                      $wantsCount  whether the provider should run the `COUNT` for this windowed fetch (G21 author/client opt-in; default false = count-free)
      */
     public function __construct(
         public QueryParameters $queryParameters,
@@ -58,5 +67,6 @@ final readonly class CollectionCriteria
         public ?WindowInterface $window = null,
         public array $defaultSort = [],
         public array $aliasOf = [],
+        public bool $wantsCount = false,
     ) {}
 }

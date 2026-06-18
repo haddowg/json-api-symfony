@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
-use haddowg\JsonApi\Schema\Profile\RelationshipCountsProfile;
+use haddowg\JsonApi\Schema\Profile\CountableProfile;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
@@ -128,7 +128,7 @@ abstract class StrictQueryParametersConformanceTestCase extends JsonApiFunctiona
         self::assertSame(400, $rejected->getStatusCode(), (string) $rejected->getContent());
 
         $accepted = $this->handle('/articles/1?withCount=pagedComments', extraServer: [
-            'HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . RelationshipCountsProfile::URI . '"',
+            'HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . CountableProfile::URI . '"',
         ]);
         self::assertSame(200, $accepted->getStatusCode(), (string) $accepted->getContent());
     }

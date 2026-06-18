@@ -29,9 +29,11 @@ resolution chain are detailed on
 and
 [data-layer → the effective paginator](data-layer.md).
 
-The effective paginator follows core's **resource → server default** chain: a
-resource (or relation) that returns a paginator from `pagination()` overrides the
-server default entirely.
+The effective paginator follows core's **resource → server default** chain. Your
+`pagination()` receives the resolved server default and its **return value is the
+single source of truth**: return it (or don't override) to inherit the server
+default, return a paginator to pin one for this resource, or return `null` to
+**disable pagination** (the collection is fetched whole — see "No pagination" below).
 
 ```php
 use haddowg\JsonApi\Pagination\PagePaginator;
@@ -40,12 +42,24 @@ use haddowg\JsonApi\Pagination\PaginatorInterface;
 final class AlbumResource extends AbstractResource
 {
     // 25 per page, capped at 50, for this resource only.
-    public function pagination(): ?PaginatorInterface
+    public function pagination(?PaginatorInterface $serverDefault): ?PaginatorInterface
     {
         return PagePaginator::make()->withDefaultPerPage(25)->withMaxPerPage(50);
     }
 }
 ```
+
+> ### Pagination is count-free by default
+>
+> A paginated collection **windows without running the expensive `COUNT`** unless
+> counting is asked for. So by default a paged response carries no `meta.page.total`
+> and no `links.last` — the `next` link is driven by a cheap "is there another row?"
+> probe, not a total. Opt into the total either as the **author** —
+> `PagePaginator::make()->withCount()` makes *this* paginator count on every paged
+> request — or let a **client** ask per request with `?withCount=_self_` on a
+> [`countable()`](#counting-the-primary-collection-withcountself) resource under the
+> negotiated Countable profile. When a total is computed it is rendered once in both
+> `meta.total` (the universal cardinality slot) and `meta.page.total`.
 
 ## The count-based strategies (briefly)
 
@@ -132,13 +146,17 @@ use haddowg\JsonApi\Pagination\PaginatorInterface;
 
 final class WidgetResource extends AbstractResource
 {
-    public function pagination(): ?PaginatorInterface
+    public function pagination(?PaginatorInterface $serverDefault): ?PaginatorInterface
     {
         // Cursor pagination, 15 items per page (the default), capped at 100.
         return CursorPaginator::make();
     }
 }
 ```
+
+> The cursor strategy is **inherently count-free** — it never derives a total, so it
+> takes neither `withCount()` nor `?withCount=_self_` and emits no `meta.page.total`
+> or `last` link. The count-free default flip above leaves it unchanged.
 
 `CursorPaginator::make()` defaults to **15 per page**, capped at **100**. Tune both
 with the withers:
@@ -293,6 +311,52 @@ both providers. The fix for a stale cursor is to restart paging from the first p
 under the new sort. Note the staleness check pins **direction**, not just the column
 set: flipping `?sort=category` to `?sort=-category` while reusing a cursor is stale,
 because the cursor was minted under the opposite order (bundle ADR 0064).
+
+## No pagination (fetch-all)
+
+Return `null` from `pagination()` to **disable pagination** for a resource — its
+collection is then **fetched whole**:
+
+```php
+public function pagination(?PaginatorInterface $serverDefault): ?PaginatorInterface
+{
+    return null;   // no pagination — fetch the whole collection
+}
+```
+
+Because the whole collection is materialised, its size is already in hand, so a
+fetch-all collection renders **`meta.total` unconditionally** (no extra `COUNT`
+query) and carries **no `meta.page`** (there is no pagination). This keeps "no
+pagination" honest: you always know the size, because you fetched all of it.
+
+## Counting the primary collection (`?withCount=_self_`)
+
+A paged collection is count-free by default. To let a **client** request the total
+per request, mark the resource `countable()` and have them negotiate the Countable
+profile and send `?withCount=_self_`:
+
+```php
+final class AlbumResource extends AbstractResource
+{
+    public function __construct()
+    {
+        $this->countable();   // opt the primary collection into ?withCount=_self_
+    }
+}
+```
+
+```http
+Accept: application/vnd.api+json;profile="https://haddowg.github.io/json-api/profiles/countable/"
+
+GET /albums?page[size]=2&withCount=_self_
+  → meta.total: N  AND  meta.page.total: N  AND  links.last
+```
+
+`_self_` is the reserved token meaning "the primary collection". A `?withCount=_self_`
+against a resource that is **not** `countable()` is rejected with a `400`
+(`RELATIONSHIP_COUNT_NOT_ALLOWED`). For the author-always alternative, return
+`PagePaginator::make()->withCount()` from `pagination()` — then every paged request
+counts, no profile or param needed.
 
 ## See also
 

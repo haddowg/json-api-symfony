@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
+use haddowg\JsonApi\Schema\Profile\CountableProfile;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\QueryPurpose;
 use haddowg\JsonApiBundle\Tests\Functional\App\ArticleFixtures;
 use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\ArticleEntityFactory;
@@ -72,12 +73,18 @@ final class DoctrineExtensionTest extends JsonApiFunctionalTestCase
     #[Test]
     public function windowedTotalsCountTheScopedCollection(): void
     {
-        $document = $this->decode($this->handle('/articles?sort=title&page[number]=2&page[size]=2'));
+        // The scoped COUNT is opted into with `?withCount=_self_` under the Countable
+        // profile (G21: the `articles` paginator is count-free by default), so the
+        // total reflects the extension-scoped (guide-only) collection.
+        $document = $this->decode($this->handle('/articles?sort=title&page[number]=2&page[size]=2&withCount=_self_', extraServer: [
+            'HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . CountableProfile::URI . '"',
+        ]));
 
         self::assertSame(['4'], $this->ids($document));
 
         $meta = $document['meta'] ?? null;
         self::assertIsArray($meta);
+        self::assertSame(3, $meta['total'] ?? null);
         $page = $meta['page'] ?? null;
         self::assertIsArray($page);
 

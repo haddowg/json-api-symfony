@@ -121,6 +121,9 @@ final class QueryCountingDoctrineKernel extends Kernel
         $services->set(DoctrineArticleResource::class);
         $services->set(DoctrineAuthorResource::class);
         $services->set(DoctrineCommentResource::class);
+        // A second type over the SAME ArticleEntity with pagination disabled — the
+        // G21 fetch-all witness (renders meta.total with no COUNT).
+        $services->set(UnpaginatedArticleResource::class);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

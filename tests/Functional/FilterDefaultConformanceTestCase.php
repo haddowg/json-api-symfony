@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use haddowg\JsonApi\Schema\Profile\CountableProfile;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
@@ -50,9 +51,19 @@ abstract class FilterDefaultConformanceTestCase extends JsonApiFunctionalTestCas
     {
         // The default narrows before the pre-window COUNT, so the total
         // describes the defaulted (guide-only) collection, not all five rows.
-        $document = $this->fetchDocument('/articles?sort=title&page[number]=1&page[size]=2');
+        // The `articles` paginator is count-free by default (G21), so the count
+        // is opted into with `?withCount=_self_` under the Countable profile.
+        $response = $this->handle('/articles?sort=title&page[number]=1&page[size]=2&withCount=_self_', extraServer: [
+            'HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . CountableProfile::URI . '"',
+        ]);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $document = $this->decode($response);
 
         self::assertSame(['1', '2'], $this->ids($document));
+
+        $meta = $document['meta'] ?? null;
+        self::assertIsArray($meta);
+        self::assertSame(3, $meta['total'] ?? null);
 
         $page = $this->pageMeta($document);
         self::assertSame(3, $page['total'] ?? null);

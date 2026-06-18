@@ -324,7 +324,7 @@ A countable relation surfaces a total two ways, both keyed `total`
   it the family is unrecognized — a `400` under strict validation):
 
   ```
-  Accept: application/vnd.api+json;profile="https://haddowg.github.io/json-api/profiles/relationship-counts/"
+  Accept: application/vnd.api+json;profile="https://haddowg.github.io/json-api/profiles/countable/"
 
   GET /albums/1?withCount=tracks   → data.relationships.tracks.meta.total = 3
   GET /albums?withCount=tracks     → each album's own tracks.meta.total, BATCHED
@@ -451,7 +451,7 @@ Relationship Counts profile's `?withCount` and the Relationship Queries profile'
 GET /albums?include=tracks&fields[albums]=title&filter[tracks]=1&sort=title&page[number]=1
                              → 200  (every reserved family, used well-formed)
 GET /albums/1?withCount=tracks
-  Accept: …;profile="…/relationship-counts"
+  Accept: …;profile="…/countable"
                              → 200  (withCount, profile negotiated)
 GET /albums/1?include=tracks&relatedQuery[tracks][sort]=-duration
   Accept: …;profile="…/relationship-queries"

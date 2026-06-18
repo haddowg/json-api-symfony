@@ -41,7 +41,7 @@ abstract class BaseCursorWidgetResource extends AbstractResource
         ];
     }
 
-    public function pagination(): ?PaginatorInterface
+    public function pagination(?PaginatorInterface $serverDefault): ?PaginatorInterface
     {
         return CursorPaginator::make()->withDefaultSize(2);
     }

@@ -1,5 +1,11 @@
 # The bundle registers the Relationship Counts profile on every server
 
+> **Updated by [ADR 0075](0075-count-free-pagination-and-the-self-token.md) (G21):** the
+> profile is renamed **Relationship Counts → Countable** (class
+> `RelationshipCountsProfile → CountableProfile`, URI slug
+> `/profiles/countable/`); `ServerFactory` registers `CountableProfile`. The
+> `?withCount` family name and the `withCount` keyword are unchanged.
+
 `ServerFactory` registers core's `RelationshipCountsProfile` (core ADR 0065) on
 every server it builds, alongside the Relationship Queries profile, so the
 `?withCount` family — the relationship-count request that adds a `meta.total` to a
