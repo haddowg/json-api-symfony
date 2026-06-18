@@ -99,6 +99,7 @@ nav:
       - authorization.md
       - lifecycle.md
       - lifecycle-hooks.md
+      - actions.md
   - Routing, errors & operations:
       - routing.md
       - errors.md

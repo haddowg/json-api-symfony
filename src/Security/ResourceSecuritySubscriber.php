@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Security;
 
 use haddowg\JsonApiBundle\Event\AfterFetchOneEvent;
+use haddowg\JsonApiBundle\Event\BeforeActionEvent;
 use haddowg\JsonApiBundle\Event\BeforeCreateEvent;
 use haddowg\JsonApiBundle\Event\BeforeDeleteEvent;
 use haddowg\JsonApiBundle\Event\BeforeRelationshipMutateEvent;
@@ -61,7 +62,32 @@ final class ResourceSecuritySubscriber implements EventSubscriberInterface
             BeforeRelationshipMutateEvent::class => 'onBeforeRelationshipMutate',
             BeforeDeleteEvent::class => 'onBeforeDelete',
             AfterFetchOneEvent::class => 'onAfterFetchOne',
+            BeforeActionEvent::class => 'onBeforeAction',
         ];
+    }
+
+    /**
+     * Enforces a custom action's per-action {@see BeforeActionEvent::$security}
+     * expression (bundle ADR 0076) — carried on the *event*, not the
+     * {@see ResourceSecurityRegistry} (it is per-action, not per-type) — evaluating
+     * it against the action's subject: the resolved entity for a resource-scope
+     * action, `null` for a collection-scope action. A `null` expression leaves the
+     * action ungated; a false result throws {@see AccessDeniedException} (→ `403`),
+     * exactly mirroring the create/update before-gates.
+     */
+    public function onBeforeAction(BeforeActionEvent $event): void
+    {
+        if ($event->security === null || $this->authorizationChecker === null) {
+            return;
+        }
+
+        if (!$this->authorizationChecker->isGranted(new Expression($event->security), $event->subject)) {
+            throw new AccessDeniedException(\sprintf(
+                'Access denied to the JSON:API action "%s" on the type "%s".',
+                $event->action,
+                $event->type,
+            ));
+        }
     }
 
     public function onBeforeCreate(BeforeCreateEvent $event): void

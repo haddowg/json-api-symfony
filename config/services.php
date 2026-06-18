@@ -84,6 +84,23 @@ return static function (ContainerConfigurator $container): void {
     // relations resource-first then from the RelationsRegistry (autowired).
     $services->set(TypeMetadataResolver::class);
 
+    // Custom, non-CRUD actions (bundle ADR 0076). The ActionRegistry resolves an
+    // ActionDescriptor + its ActionHandlerInterface by the composite key
+    // (server, type, scope, path); both its handler service-locator and its
+    // descriptor map are filled by the ResourceLocatorPass from the ACTION_TAG
+    // services (mirroring the RelationsRegistry's lazy locator). The ActionInvoker
+    // drives the per-action concerns (entity resolution, Document hydration +
+    // validation, the before/after gates) and is injected — optionally — into the
+    // single CrudOperationHandler's CustomActionOperation arm. Its validator and
+    // dispatcher are optional, so an app without the Validator bridge / the
+    // event-dispatcher still invokes actions (just unvalidated / un-hooked).
+    $services->set(\haddowg\JsonApiBundle\Action\ActionRegistry::class)
+        ->args(['$handlers' => null, '$descriptors' => []]);
+
+    $services->set(\haddowg\JsonApiBundle\Action\ActionInvoker::class)
+        ->arg('$validator', \Symfony\Component\DependencyInjection\Loader\Configurator\service(ResourceValidator::class)->nullOnInvalid())
+        ->arg('$dispatcher', \Symfony\Component\DependencyInjection\Loader\Configurator\service('event_dispatcher')->nullOnInvalid());
+
     // Resolves a type's id encoder + route {id} pattern from its resource's Id
     // field (ADR 0038). The Doctrine provider/persister decode wire ids through it
     // (the SPI stays wire-id; the in-memory provider has no encoder so wire ==
@@ -124,7 +141,11 @@ return static function (ContainerConfigurator $container): void {
         // read's effective ?include tree one query per level through the
         // fetchRelatedCollectionBatch SPI, for every batching provider (Doctrine AND
         // in-memory). Always wired; a relation/provider that cannot batch falls to lazy.
-        ->arg('$includeBatcher', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataProvider\RelatedIncludeBatcher::class));
+        ->arg('$includeBatcher', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataProvider\RelatedIncludeBatcher::class))
+        // The custom-action invoker (bundle ADR 0076): the optional collaborator the
+        // CustomActionOperation arm delegates to. Always wired in the bundle (a null
+        // would 404 every action); an app with no actions simply registers none.
+        ->arg('$actions', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Action\ActionInvoker::class));
 
     // The ?withCount count seam (bundle ADR 0052): a stable per-request holder
     // threaded into the memoized Server (in loadExtension) and a batcher that fills

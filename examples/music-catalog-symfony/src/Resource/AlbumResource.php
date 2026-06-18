@@ -53,6 +53,10 @@ final class AlbumResource extends AbstractResource
             Id::make(),
             Str::make('title')->required()->maxLength(200)->sortable(),
             Decimal::make('averageRating')->readOnly()->nullable(),
+            // Cover artwork — read-only on the CRUD path; only the Raw-input `artwork`
+            // upload action (G13) ever fills it. Surfaced here so the upload's
+            // side-effect is observable through a normal fetch.
+            Str::make('artwork')->readOnly()->nullable(),
             // Closure bound: no future release dates, resolved at validation time so
             // it reflects "now" per request. Hydrated values normalise to UTC.
             DateTime::make('releasedAt')

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Routing;
 
+use haddowg\JsonApiBundle\Action\ActionScope;
 use haddowg\JsonApiBundle\Controller\JsonApiController;
 use haddowg\JsonApiBundle\EventListener\ExceptionListener;
 use haddowg\JsonApiBundle\Operation\Operation;
@@ -75,11 +76,41 @@ final class JsonApiRouteLoader extends Loader
     public const string ROUTE_TYPE = 'jsonapi';
 
     /**
-     * @param array<string, array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>}>> $routeDescriptorsByServer keyed by server name, then by JSON:API type
-     * @param ?IdEncoderResolver                                                                                                                          $idEncoders               resolves each type's route `{id}` pattern (null in a bare scalar-only test wiring)
+     * The route default carrying a custom action's name (the `{action}` segment),
+     * read by the {@see \haddowg\JsonApiBundle\EventListener\RequestListener} to
+     * branch into the action dispatch path (bundle ADR 0076).
+     */
+    public const string ACTION_ATTRIBUTE = '_jsonapi_action';
+
+    /**
+     * The route default carrying a custom action's scope (the {@see ActionScope}
+     * case name), so the request listener and registry agree on the resource /
+     * collection scope without re-deriving it from the presence of `{id}`.
+     */
+    public const string ACTION_SCOPE_ATTRIBUTE = '_jsonapi_action_scope';
+
+    /**
+     * The reserved path segment custom actions hang off (design §1/§7). It is a
+     * **literal** in every action path and must never be captured as a resource
+     * `{id}`: a collection-scope action `/{uriType}/-actions/{name}` is three
+     * segments — structurally identical to the generic related route
+     * `GET /{uriType}/{id}/{relationship}` — so the action route (declared methods
+     * only) shields just its own verbs, and any other method would otherwise fall
+     * through to the related route with `{id}` = the literal `-actions`. Excluding
+     * it from every `{id}` requirement (see {@see idRequirement()}) makes §7's
+     * "the literal `-actions` is never captured as an `{id}`" guarantee hold for
+     * *all* methods, not only the ordering between same-method routes.
+     */
+    private const string RESERVED_ACTIONS_SEGMENT = '-actions';
+
+    /**
+     * @param array<string, array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>}>> $routeDescriptorsByServer       keyed by server name, then by JSON:API type
+     * @param array<string, list<array{uriType: string, type: string, path: string, methods: list<string>, scope: string, name: string}>>            $actionRouteDescriptorsByServer keyed by server name; the custom-action routes to emit before the generic routes (bundle ADR 0076)
+     * @param ?IdEncoderResolver                                                                                                                          $idEncoders                     resolves each type's route `{id}` pattern (null in a bare scalar-only test wiring)
      */
     public function __construct(
         private readonly array $routeDescriptorsByServer = [],
+        private readonly array $actionRouteDescriptorsByServer = [],
         private readonly ?IdEncoderResolver $idEncoders = null,
     ) {
         parent::__construct();
@@ -94,6 +125,13 @@ final class JsonApiRouteLoader extends Loader
         $routes = new RouteCollection();
 
         $server = $this->serverName($resource);
+
+        // Custom action routes (bundle ADR 0076) are emitted FIRST so the literal
+        // `-actions` segment is never captured as an `{id}` (a collection-scope
+        // action's `/{uriType}/-actions/{action}` would otherwise be shadowed by the
+        // related route `/{uriType}/{id}/{relationship}`) or a `{relationship}` name.
+        $this->addActionRoutes($routes, $server);
+
         $descriptors = $this->routeDescriptorsByServer[$server] ?? [];
 
         foreach ($descriptors as $resourceType => $descriptor) {
@@ -129,9 +167,10 @@ final class JsonApiRouteLoader extends Loader
             // A resource whose Id field declares a route pattern (matchAs / the
             // uuid()/ulid()/numeric()/pattern() shortcuts, ADR 0038) constrains the
             // {id} segment on every route that carries it, so a malformed id 404s at
-            // routing before any handler runs. No pattern => unconstrained (today).
-            $idRequirement = $this->idEncoders?->routePatternFor($resourceType);
-            $idRequirements = $idRequirement !== null ? ['id' => $idRequirement] : [];
+            // routing before any handler runs. The requirement always excludes the
+            // reserved `-actions` segment (see {@see idRequirement()}) so an action
+            // path is never shadowed by a generic {id} route on a non-action method.
+            $idRequirements = ['id' => $this->idRequirement($resourceType)];
 
             // One route per declared operation: a type that omits an operation
             // never gets its route, so unexposed verbs are unrouted (the router
@@ -217,6 +256,106 @@ final class JsonApiRouteLoader extends Loader
         }
 
         return $routes;
+    }
+
+    /**
+     * Emits the custom-action routes for `$server` (bundle ADR 0076, design §7),
+     * each under the reserved `-actions` segment with the action's author-declared
+     * HTTP methods. The single `{action}` segment is emitted as a **literal** (the
+     * action's own name), not a parametric `{action}`, so two actions of the same
+     * (type, scope) but different methods/inputs never collapse onto one parametric
+     * path — each is its own concrete route the router dispatches by method:
+     *  - resource scope: `/{uriType}/{id}/-actions/{name}` (4 segments) — the `{id}`
+     *    is resolved to an entity before the handler runs; it carries the type's
+     *    route `{id}` pattern when one is declared (ADR 0038);
+     *  - collection scope: `/{uriType}/-actions/{name}` (3 segments) — no id.
+     *
+     * Each route carries the standard JSON:API defaults plus `_jsonapi_action` (the
+     * action name) and `_jsonapi_action_scope` (the scope case name) the request
+     * listener branches on. The route name is stable —
+     * `jsonapi[.{server}].{type}.action.{scope}.{name}` — honouring an optional
+     * `name` override.
+     */
+    private function addActionRoutes(RouteCollection $routes, string $server): void
+    {
+        $namePrefix = $server === ServerProvider::DEFAULT_SERVER
+            ? 'jsonapi.'
+            : \sprintf('jsonapi.%s.', $server);
+
+        foreach ($this->actionRouteDescriptorsByServer[$server] ?? [] as $action) {
+            $type = $action['type'];
+            $uriType = $action['uriType'];
+            $path = $action['path'];
+            $scopeName = $action['scope'];
+            $methods = $action['methods'];
+
+            $resourceScope = $scopeName === ActionScope::Resource->name;
+
+            $defaults = [
+                '_controller' => JsonApiController::class,
+                TargetResolver::TYPE_ATTRIBUTE => $type,
+                '_jsonapi_server' => $server,
+                ExceptionListener::ROUTE_MARKER => true,
+                self::ACTION_ATTRIBUTE => $path,
+                self::ACTION_SCOPE_ATTRIBUTE => $scopeName,
+            ];
+
+            $requirements = [];
+
+            if ($resourceScope) {
+                $actionPath = \sprintf('/%s/{id}/-actions/%s', $uriType, $path);
+
+                // Constrain {id} with the type's declared id pattern (ADR 0038) so a
+                // malformed id 404s at routing, exactly as the CRUD resource routes;
+                // the requirement also excludes the reserved `-actions` segment.
+                $requirements['id'] = $this->idRequirement($type);
+            } else {
+                $actionPath = \sprintf('/%s/-actions/%s', $uriType, $path);
+            }
+
+            $routeName = $action['name'] !== ''
+                ? $namePrefix . $action['name']
+                : \sprintf('%s%s.action.%s.%s', $namePrefix, $type, \strtolower($scopeName), $path);
+
+            $routes->add($routeName, new Route($actionPath, $defaults, $requirements, methods: $methods));
+        }
+    }
+
+    /**
+     * The `{id}` route requirement for `$type` — the inner regex (no anchors;
+     * Symfony anchors requirements itself) every route carrying an `{id}` uses.
+     *
+     * It always excludes the reserved {@see RESERVED_ACTIONS_SEGMENT} via a leading
+     * negative lookahead, so the literal `-actions` can never be captured as a
+     * resource id (design §7) — closing the collection-scope action shadow where a
+     * non-action method (e.g. `GET /{uriType}/-actions/{name}`) would otherwise fall
+     * through to the generic related route `GET /{uriType}/{id}/{relationship}` with
+     * `{id}` = `-actions`, bypassing the action's authz/dispatch entirely.
+     *
+     * When the type's Id field declares a route pattern (matchAs / the
+     * uuid()/ulid()/numeric()/pattern() shortcuts, ADR 0038), the author pattern is
+     * preserved and the lookahead is composed in front of it (so a malformed id
+     * still 404s at routing); with no declared pattern the requirement is the
+     * single-segment default `[^/]+` (Symfony's implicit placeholder regex), now
+     * minus `-actions`.
+     */
+    private function idRequirement(string $type): string
+    {
+        $authorPattern = $this->idEncoders?->routePatternFor($type);
+
+        // With no author pattern, keep Symfony's implicit single-segment placeholder
+        // regex (`[^/]+`) so the {id} still cannot span a `/` boundary; the negative
+        // lookahead only carves out the reserved `-actions` literal.
+        $body = $authorPattern !== null ? '(?:' . $authorPattern . ')' : '[^/]+';
+
+        // The lookahead is anchored to the *segment* boundary — `-actions` followed
+        // by the next path separator or the end of the path — NOT `$` (end of the
+        // whole string). Symfony embeds the requirement inside a larger compiled
+        // matcher regex, so a bare `(?!-actions$)` would only fire when `-actions`
+        // is the final segment; a collection-scope action `/{uriType}/-actions/{name}`
+        // has `/{name}` after it, so `$` never matches there and the exclusion would
+        // silently fail. `(?:/|$)` covers both the followed-by-`/` and trailing cases.
+        return \sprintf('(?!%s(?:/|$))%s', \preg_quote(self::RESERVED_ACTIONS_SEGMENT, '#'), $body);
     }
 
     /**

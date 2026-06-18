@@ -65,6 +65,11 @@ class Album
         // sub-object as one stored value.
         #[ORM\Column(type: 'json', nullable: true)]
         public ?array $releaseInfo = null,
+        // Cover artwork, attached by the Raw-input `artwork` upload action (G13). It is
+        // never set through the CRUD write path — only the custom upload action fills
+        // it — so it stays null until uploaded.
+        #[ORM\Column(type: 'text', nullable: true)]
+        public ?string $artwork = null,
         #[ORM\ManyToOne(targetEntity: Artist::class, inversedBy: 'albums')]
         #[ORM\JoinColumn(name: 'artist_id', referencedColumnName: 'id', nullable: true)]
         public ?Artist $artist = null,

@@ -71,7 +71,12 @@ final class DoctrineEncodedIdTest extends JsonApiFunctionalTestCase
 
         $show = $router->getRouteCollection()->get('jsonapi.cogs.show');
         self::assertNotNull($show);
-        self::assertSame('cog-[0-9a-f]+', $show->getRequirement('id'));
+        // The author's declared id pattern (`cog-[0-9a-f]+`) is preserved, composed
+        // behind a negative lookahead that excludes the reserved `-actions` segment so
+        // a collection-scope custom action is never shadowed by an {id} route (design
+        // §7). The lookahead is anchored to the segment boundary (`/` or end of path),
+        // not the whole string.
+        self::assertSame('(?!\-actions(?:/|$))(?:cog-[0-9a-f]+)', $show->getRequirement('id'));
 
         // The ROUTER itself rejects a malformed id (a bare integer): matching the path
         // throws a routing ResourceNotFoundException because the `{id}` requirement does

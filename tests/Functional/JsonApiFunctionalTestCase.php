@@ -93,6 +93,35 @@ abstract class JsonApiFunctionalTestCase extends KernelTestCase
     }
 
     /**
+     * Issues a request with a **raw** (non-JSON:API) body and content type — the path
+     * a {@see \haddowg\JsonApiBundle\Action\ActionInput::Raw} upload action takes (a
+     * `multipart/form-data` / blob body that is not `application/vnd.api+json`). The
+     * response `Accept` stays the JSON:API media type so response negotiation resolves;
+     * the request content-type assertion is what the Raw action relaxes.
+     *
+     * @param array<string, string> $extraServer additional `$_SERVER` entries (e.g.
+     *                                            `HTTP_AUTHORIZATION` for a firewall)
+     */
+    protected function handleRaw(string $path, string $content, string $contentType = 'application/octet-stream', string $method = 'POST', array $extraServer = []): Response
+    {
+        $kernel = static::$kernel;
+        self::assertNotNull($kernel);
+
+        $server = $extraServer + [
+            'HTTP_ACCEPT' => 'application/vnd.api+json',
+            'CONTENT_TYPE' => $contentType,
+        ];
+
+        $request = Request::create($path, $method, server: $server, content: $content);
+
+        $response = $kernel->handle($request, HttpKernelInterface::MAIN_REQUEST, true);
+
+        $this->restoreHandlers();
+
+        return $response;
+    }
+
+    /**
      * @return array<string, mixed>
      */
     protected function decode(Response $response): array

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle;
 
 use haddowg\JsonApi\Resource\AbstractResource;
+use haddowg\JsonApiBundle\Attribute\AsJsonApiAction;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiHydrator;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiRelations;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
@@ -123,6 +124,18 @@ final class JsonApiBundle extends AbstractBundle
      * reads it to wire the type-keyed {@see \haddowg\JsonApiBundle\Server\RelationsRegistry}.
      */
     public const string RELATIONS_TAG = 'haddowg.json_api.relations';
+
+    /**
+     * Tag applied to a custom, non-CRUD action handler — a
+     * {@see \haddowg\JsonApiBundle\Action\ActionHandlerInterface} registered for a
+     * mount type via {@see \haddowg\JsonApiBundle\Attribute\AsJsonApiAction} (bundle
+     * ADR 0076). The tag carries the flattened attribute metadata (type/server/path/
+     * scope/input/inputType/outputType/security/methods/name);
+     * {@see \haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceLocatorPass}
+     * reads it to wire the {@see \haddowg\JsonApiBundle\Action\ActionRegistry}'s
+     * descriptor map + handler locator and the per-server action route descriptors.
+     */
+    public const string ACTION_TAG = 'haddowg.json_api.action';
 
     /**
      * The bundle's opinionated default `json_api.max_include_depth`: a `?include`
@@ -435,6 +448,31 @@ final class JsonApiBundle extends AbstractBundle
                 $definition->addTag(self::RELATIONS_TAG, \array_filter([
                     'type' => $attribute->type,
                     'server' => self::serverTag($attribute->server),
+                ], static fn(mixed $value): bool => $value !== null));
+            },
+        );
+
+        // Custom, non-CRUD actions: a standalone ActionHandlerInterface class
+        // declared with #[AsJsonApiAction] hangs off a mount type under the
+        // reserved `-actions` segment (bundle ADR 0076). The attribute's enums and
+        // method list are flattened to plain scalar tag attributes (enum case names,
+        // a comma-joined method list — mirroring how `operations` is encoded) so the
+        // ResourceLocatorPass can read them from the compiled container; the
+        // decoupled-document defaults (inputType/outputType) are resolved there.
+        $builder->registerAttributeForAutoconfiguration(
+            AsJsonApiAction::class,
+            static function (Definition $definition, AsJsonApiAction $attribute): void {
+                $definition->addTag(self::ACTION_TAG, \array_filter([
+                    'type' => $attribute->type,
+                    'server' => self::serverTag($attribute->server),
+                    'path' => $attribute->path,
+                    'scope' => $attribute->scope->name,
+                    'input' => $attribute->input->name,
+                    'inputType' => $attribute->inputType,
+                    'outputType' => $attribute->outputType,
+                    'security' => $attribute->security,
+                    'methods' => $attribute->methods !== [] ? \implode(',', $attribute->methods) : null,
+                    'name' => $attribute->name,
                 ], static fn(mixed $value): bool => $value !== null));
             },
         );
