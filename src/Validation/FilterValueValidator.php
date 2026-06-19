@@ -34,11 +34,14 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
  * requested `filter` map, before core's `FilterDefaults::apply()` folds the
  * defaults in, so a server-declared default value is trusted and never re-checked.
  *
- * A filter's value may be a single scalar ({@see \haddowg\JsonApi\Resource\Filter\Where})
- * or a set — an array, or a delimited string for an `IN`-style filter
- * ({@see \haddowg\JsonApi\Resource\Filter\WhereIn} et al.). Each **scalar member**
- * is validated against the constraints individually, so a per-id rule like
- * `integer()` applies to every member of `filter[id]=1,banana,3`.
+ * A filter's value may be a single scalar ({@see \haddowg\JsonApi\Resource\Filter\Where}),
+ * a set — an array, or a delimited string for an `IN`-style filter
+ * ({@see \haddowg\JsonApi\Resource\Filter\WhereIn} et al.) — or the structured
+ * `{min?, max?}` of a {@see \haddowg\JsonApi\Resource\Filter\Range}/`DateRange`.
+ * Each **scalar member** is validated against the constraints individually, so a
+ * per-id rule like `integer()` applies to every member of `filter[id]=1,banana,3`,
+ * and a `Range`'s per-bound rule applies to each present bound — an open
+ * (blank/absent) bound is left unvalidated so `filter[price][max]=` does not `400`.
  */
 final class FilterValueValidator
 {
@@ -78,6 +81,8 @@ final class FilterValueValidator
 
             $constraints = $this->symfonyConstraints($filter);
             if ($constraints === []) {
+                // An unconstrained filter costs nothing. A DateRange always carries
+                // its ISO-8601 shape Pattern, so it never reaches this short-circuit.
                 continue;
             }
 
@@ -87,6 +92,12 @@ final class FilterValueValidator
                     $messages[] = (string) $violation->getMessage();
                 }
             }
+
+            // A DateRange's shape `Pattern` is deliberately lenient on the calendar
+            // (it admits `1997-13-99`), so a present bound is additionally checked for
+            // temporal validity — an unparseable date is a clean 400 here rather than
+            // a silent, provider-divergent non-match in the data layer.
+            $messages = [...$messages, ...$this->dateRangeMessages($filter, $requested[$key])];
 
             if ($messages !== []) {
                 throw new FilterValueInvalid($key, $messages);
@@ -131,6 +142,14 @@ final class FilterValueValidator
      */
     private function members(FilterInterface $filter, mixed $value): array
     {
+        // A structured Range/DateRange carries a nested {min?, max?} value, not a
+        // scalar or an IN-style set: validate each PRESENT bound individually so a
+        // blank/absent bound (open-ended) is not validated and a malformed present
+        // bound is rejected against the range's per-bound constraints.
+        if ($filter instanceof \haddowg\JsonApi\Resource\Filter\Range) {
+            return $this->rangeMembers($value);
+        }
+
         if (\is_array($value)) {
             return \array_values(\array_filter($value, static fn(mixed $member): bool => $member !== null));
         }
@@ -146,6 +165,77 @@ final class FilterValueValidator
         }
 
         return [$value];
+    }
+
+    /**
+     * The PRESENT, non-blank bounds of a {@see \haddowg\JsonApi\Resource\Filter\Range}
+     * value — the nested `{min?, max?}` array. A blank (`''`) or absent bound is
+     * open-ended, so it is treated as **absent** and never validated (matching the
+     * in-memory and Doctrine `bound()` semantics — `filter[<key>][max]=` must not
+     * `400`); each present bound is validated individually against the range's
+     * per-bound constraints (a numeric `Pattern` for `Range`, an ISO-8601 `Pattern`
+     * for `DateRange`), so a malformed bound is a clean `400`. A non-array value is a
+     * no-op in both handlers, so there is nothing to validate.
+     *
+     * @return list<mixed>
+     */
+    private function rangeMembers(mixed $value): array
+    {
+        if (!\is_array($value)) {
+            return [];
+        }
+
+        $members = [];
+        foreach (['min', 'max'] as $key) {
+            if (!\array_key_exists($key, $value)) {
+                continue;
+            }
+
+            /** @var mixed $bound */
+            $bound = $value[$key];
+            if ($bound === null || $bound === '') {
+                continue;
+            }
+
+            $members[] = $bound;
+        }
+
+        return $members;
+    }
+
+    /**
+     * Temporal-validity messages for a {@see \haddowg\JsonApi\Resource\Filter\DateRange}'s
+     * present bounds. The range's shape `Pattern` is deliberately lenient on the
+     * calendar (a regex cannot reject `1997-13-99` — month 13, day 99), so each
+     * present bound is additionally run through the filter's own date deserializer
+     * (the exact coercion the handlers apply); a bound that does not coerce to a
+     * `\DateTimeInterface` is a calendar-invalid date and yields one message, so the
+     * request is a clean `400` rather than a silent, provider-divergent non-match.
+     * A non-`DateRange` filter (a numeric {@see \haddowg\JsonApi\Resource\Filter\Range}
+     * or any scalar filter) contributes nothing — its shape `Pattern` is already a
+     * complete check.
+     *
+     * @return list<string>
+     */
+    private function dateRangeMessages(FilterInterface $filter, mixed $value): array
+    {
+        if (!$filter instanceof \haddowg\JsonApi\Resource\Filter\DateRange) {
+            return [];
+        }
+
+        $deserialize = $filter->deserialize;
+        if ($deserialize === null) {
+            return [];
+        }
+
+        $messages = [];
+        foreach ($this->rangeMembers($value) as $bound) {
+            if (!$deserialize($bound) instanceof \DateTimeInterface) {
+                $messages[] = 'This value is not a valid date.';
+            }
+        }
+
+        return $messages;
     }
 
     /**

@@ -335,6 +335,66 @@ rather than re-deriving the countable-vs-count-free branch logic; the cursor (ke
 window has its own `runCursor()` entry point on the same executor (see
 [pagination → cursor](pagination.md#cursor-keyset-pagination)).
 
+### Convenience filters
+
+`Where::make('name', 'name', 'like')` works, but it makes you hand-wire the operator,
+the value coercion and the OpenAPI schema yourself — and `Where::make('age', 'age', '>=')`
+compares the raw **string** `'18'`, so `'18' >= '5'` is a *string* comparison (a
+footgun). The **convenience filter library** ships intent-named strategies that bake
+in the operator, a typed value coercion, the matching value constraint *and* the
+OpenAPI value schema from one declaration. They run identically on both providers
+(the Doctrine handler translates each to push-down DQL, the in-memory handler is the
+conformance witness):
+
+```php
+use haddowg\JsonApi\Resource\Filter\Contains;
+use haddowg\JsonApi\Resource\Filter\StartsWith;
+use haddowg\JsonApi\Resource\Filter\EndsWith;
+use haddowg\JsonApi\Resource\Filter\GreaterThan;
+use haddowg\JsonApi\Resource\Filter\Numeric;
+use haddowg\JsonApi\Resource\Filter\Boolean;
+use haddowg\JsonApi\Resource\Filter\Range;
+use haddowg\JsonApi\Resource\Filter\DateRange;
+
+public function filters(): array
+{
+    return [
+        // Strings — case-insensitive (ASCII) substring / prefix / suffix.
+        Contains::make('title'),          // ?filter[title]=comput   (LIKE '%comput%')
+        StartsWith::make('sku'),          // ?filter[sku]=AB         (LIKE 'AB%')
+        EndsWith::make('domain'),         // ?filter[domain]=.io     (LIKE '%.io')
+
+        // Numbers — coercion + a numeric value constraint, so '18' > '5' is numeric.
+        GreaterThan::make('age'),         // also GreaterThanOrEqual / LessThan / LessThanOrEqual
+        Numeric::make('rating'),          // = with numeric coercion (kills the string-compare footgun)
+        Boolean::make('active', 'is_active'),
+
+        // Structured ranges — min/max in ONE key, either bound optional.
+        Range::make('rating', 'averageRating'),   // ?filter[rating][min]=9&filter[rating][max]=10
+        DateRange::make('published', 'published_at'), // ?filter[published][min]=1995-01-01
+    ];
+}
+```
+
+`Contains`/`StartsWith`/`EndsWith` and the numeric/boolean strategies are thin
+`Where` subclasses presetting an operator (the two prefix/suffix operators `starts`/`ends`
+are new in this library) — the handler's existing `Where` arm dispatches them. `Range`
+and `DateRange` are a **structured** filter: their wire value is nested —
+`?filter[<key>][min]=…&filter[<key>][max]=…` (Symfony parses it into `['min' => …, 'max' => …]`),
+either bound optional so an open-ended range works (`min` alone is a `>=`, `max` alone
+a `<=`, both absent a no-op). A **blank** bound (`filter[rating][max]=`) is treated as
+absent, so it is not a `400`. On Doctrine a `Range` is **two push-down `>=`/`<=`
+predicates on one query** — no subquery, no fetch, no N+1. `DateRange` coerces each
+bound ISO-8601 → `\DateTimeImmutable`, so the comparison is temporal not lexical, and
+a malformed bound is a clean `400` (see below). All keep the usual `Where` ergonomics
+(an optional second arg is the backing column, plus `->describedAs()` / `->example()` /
+relation-scoped use).
+
+In the [generated OpenAPI](openapi.md) each filter parameter carries its strategy's
+description, and a `Range`/`DateRange` renders as an OAS `deepObject` parameter
+(`style: deepObject, explode: true`) with a `{min, max}` object value schema —
+documenting the nested wire shape precisely.
+
 ### Validating filter values
 
 A filter is metadata: a key, a target column, an operator. By default any value a
@@ -424,7 +484,15 @@ Mechanics, all decided in the handler before the `CollectionCriteria` is built:
 - it covers the **related-collection** endpoint too: a relation-scoped or
   related-resource constrained filter (see [relationships](relationships.md) /
   [ADR 0044](adr/0044-relation-scoped-filters-and-sorts-on-related-collections.md))
-  validates its value the same way on `GET /{type}/{id}/{rel}`.
+  validates its value the same way on `GET /{type}/{id}/{rel}`;
+- the [convenience filters](#convenience-filters) **preset** their constraint, so a
+  `Numeric`/`Range` rejects a non-numeric value and a `DateRange` a non-ISO-8601 bound
+  out of the box — for `Range`/`DateRange` each **present, non-blank** bound is
+  validated individually (an open `filter[<key>][max]=` is never validated, so it does
+  not `400`). A `DateRange` bound is additionally checked for **temporal validity**: a
+  value that is shape-valid ISO-8601 but not a real date (`1997-13-99` — month 13, day
+  99 — which a regex cannot reject) is a clean `400`, so a calendar-invalid bound never
+  reaches the data layer where it would compare divergently across providers.
 
 See [ADR 0048](adr/0048-filter-values-are-validated-against-declared-constraints.md)
 and core's filter docs for the full decision.

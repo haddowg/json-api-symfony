@@ -72,6 +72,105 @@ final class ReadQueryTest extends MusicCatalogKernelTestCase
         self::assertSame([], $this->albumIds($this->fetch('/albums?filter[artist.name]=Nobody')));
     }
 
+    // --- convenience filter library (G8b) ------------------------------------
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    public function aContainsFilterMatchesASubstringCaseInsensitively(): void
+    {
+        // `Contains::make('title')` is the intent-named substring search (the `like`
+        // operator): "comput" keeps OK Computer (album 1) only, case-insensitively.
+        self::assertSame(['1'], $this->albumIds($this->fetch('/albums?filter[title]=comput')));
+        self::assertSame(['1'], $this->albumIds($this->fetch('/albums?filter[title]=COMPUT')));
+        // A substring no title carries excludes every album.
+        self::assertSame([], $this->albumIds($this->fetch('/albums?filter[title]=zzz')));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    public function aRangeFilterAppliesAnInclusiveNumericMinAndMax(): void
+    {
+        // `Range::make('rating', 'averageRating')`: nested min/max in one key, numeric
+        // coercion so the comparison is numeric. OK Computer 9.8, Dummy 9.1.
+        self::assertSame(['1'], $this->albumIds($this->fetch('/albums?filter[rating][min]=9.5')));
+        self::assertSame(['2'], $this->albumIds($this->fetch('/albums?filter[rating][min]=9&filter[rating][max]=9.5')));
+        // Both bounds present, spanning both rated albums (default releasedAt-desc order).
+        self::assertSame(['1', '2'], $this->albumIds($this->fetch('/albums?filter[rating][min]=9&filter[rating][max]=10')));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    public function aRangeFilterWithAnOpenBlankBoundIsNotA400(): void
+    {
+        // A blank bound is open-ended (treated as absent) — `filter[rating][max]=`
+        // must NOT 400 and leaves the min as the only predicate.
+        self::assertSame(['1'], $this->albumIds($this->fetch('/albums?filter[rating][min]=9.5&filter[rating][max]=')));
+        // Both bounds blank is a no-op: every rated album (album 3 is hidden by scope).
+        self::assertSame(['1', '2'], $this->albumIds($this->fetch('/albums?filter[rating][min]=&filter[rating][max]=')));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    #[Group('spec:errors')]
+    public function aRangeFilterRejectsAMalformedNumericBound(): void
+    {
+        // A malformed present bound is a clean 400 (the preset numeric() constraint,
+        // validated before the filter reaches the provider).
+        $response = $this->handle('/albums?filter[rating][min]=banana');
+
+        self::assertSame(400, $response->getStatusCode());
+        $error = $this->firstError($response);
+        self::assertSame('400', $error['status'] ?? null);
+        self::assertSame('FILTER_VALUE_INVALID', $error['code'] ?? null);
+        self::assertSame(['parameter' => 'filter[rating]'], $error['source'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    public function aDateRangeFilterAppliesAnInclusiveTemporalMinAndMax(): void
+    {
+        // `DateRange::make('releasedAt')`: ISO-8601 bounds coerced to \DateTimeImmutable.
+        // OK Computer 1997-05-21, Dummy 1994-08-22.
+        self::assertSame(['1'], $this->albumIds($this->fetch('/albums?filter[releasedAt][min]=1995-01-01')));
+        self::assertSame(['2'], $this->albumIds($this->fetch('/albums?filter[releasedAt][min]=1994-01-01&filter[releasedAt][max]=1995-01-01')));
+        // An open upper bound keeps both released albums (default releasedAt-desc order).
+        self::assertSame(['1', '2'], $this->albumIds($this->fetch('/albums?filter[releasedAt][min]=1990-01-01')));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    #[Group('spec:errors')]
+    public function aDateRangeFilterRejectsAMalformedIso8601Bound(): void
+    {
+        // A malformed ISO-8601 bound is a clean 400 (the preset ISO-8601 constraint).
+        $response = $this->handle('/albums?filter[releasedAt][min]=not-a-date');
+
+        self::assertSame(400, $response->getStatusCode());
+        $error = $this->firstError($response);
+        self::assertSame('400', $error['status'] ?? null);
+        self::assertSame('FILTER_VALUE_INVALID', $error['code'] ?? null);
+        self::assertSame(['parameter' => 'filter[releasedAt]'], $error['source'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    #[Group('spec:errors')]
+    public function aDateRangeFilterRejectsACalendarInvalidBound(): void
+    {
+        // `1997-13-99` (month 13, day 99) passes the deliberately-lenient ISO-8601
+        // SHAPE pattern but is not a real date, so it does not coerce to a
+        // \DateTimeImmutable. The filter-value validator's temporal-validity check
+        // rejects it as a clean 400 BEFORE the data layer — so the bound never reaches
+        // the query as a raw string (which would compare divergently across providers).
+        $response = $this->handle('/albums?filter[releasedAt][min]=1997-13-99');
+
+        self::assertSame(400, $response->getStatusCode());
+        $error = $this->firstError($response);
+        self::assertSame('400', $error['status'] ?? null);
+        self::assertSame('FILTER_VALUE_INVALID', $error['code'] ?? null);
+        self::assertSame(['parameter' => 'filter[releasedAt]'], $error['source'] ?? null);
+    }
+
     #[Test]
     #[Group('spec:fetching-filtering')]
     #[Group('spec:errors')]

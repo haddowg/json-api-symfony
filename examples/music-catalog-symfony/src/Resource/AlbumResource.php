@@ -16,6 +16,9 @@ use haddowg\JsonApi\Resource\Field\HasMany;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Map;
 use haddowg\JsonApi\Resource\Field\Str;
+use haddowg\JsonApi\Resource\Filter\Contains;
+use haddowg\JsonApi\Resource\Filter\DateRange;
+use haddowg\JsonApi\Resource\Filter\Range;
 use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Filter\WhereHas;
 use haddowg\JsonApi\Resource\Filter\WhereThrough;
@@ -175,6 +178,31 @@ final class AlbumResource extends AbstractResource
             // fetch-join, so it neither hydrates the relation nor multiplies rows). The
             // wire key carries the dots; the operator defaults to `=`.
             WhereThrough::make('artist.name'),
+            // --- The convenience filter library (G8b, core ADR 0075-0077; bundle ADR
+            // 0082). Each is an intent-named strategy that bakes in its operator, value
+            // coercion, the matching value constraint, and the OpenAPI value schema +
+            // description from one declaration — no hand-wired Where operator.
+            //
+            // Contains('title'): a case-insensitive substring search —
+            // `filter[title]=comput` keeps "OK Computer". The `like` operator (Doctrine
+            // `LOWER(...) LIKE '%comput%'`, in-memory `stripos`), wildcards added by the
+            // handler, never leaked to the client; the value schema stays a plain string.
+            Contains::make('title'),
+            // Range('rating', 'averageRating'): a structured numeric range over the
+            // `averageRating` column — `filter[rating][min]=9.5` keeps only OK Computer
+            // (9.8), `filter[rating][min]=9&filter[rating][max]=9.5` keeps Dummy (9.1).
+            // Either bound is optional (a blank `[max]=` is open-ended, never a 400), the
+            // value is coerced to a number so the comparison is numeric (not lexical),
+            // and on Doctrine it is two push-down `andWhere` predicates on ONE query —
+            // no subquery, no N+1. Renders as an OpenAPI `deepObject` parameter.
+            Range::make('rating', 'averageRating'),
+            // DateRange('releasedAt'): a structured date-time range over `releasedAt` —
+            // `filter[releasedAt][min]=1995-01-01` keeps OK Computer (1997),
+            // `filter[releasedAt][min]=1994-01-01&filter[releasedAt][max]=1995-01-01`
+            // keeps Dummy (1994). Each bound is coerced ISO-8601 → `\DateTimeImmutable`
+            // so the comparison is temporal, a malformed bound is a clean 400, and the
+            // bounds project as `string`/`date-time` in the deepObject value schema.
+            DateRange::make('releasedAt'),
         ];
     }
 

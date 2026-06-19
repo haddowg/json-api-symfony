@@ -6,8 +6,10 @@ namespace haddowg\JsonApiBundle\DataProvider\Doctrine;
 
 use Doctrine\ORM\Mapping\ClassMetadata;
 use Doctrine\ORM\QueryBuilder;
+use haddowg\JsonApi\Resource\Filter\DateRange;
 use haddowg\JsonApi\Resource\Filter\FilterHandlerInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
+use haddowg\JsonApi\Resource\Filter\Range;
 use haddowg\JsonApi\Resource\Filter\UnsupportedFilter;
 use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Filter\WhereDoesntHave;
@@ -27,14 +29,20 @@ use haddowg\JsonApiBundle\DataProvider\Doctrine\Filter\WhereHasMatching;
  * mirror core's in-memory `ArrayFilterHandler` — the conformance witness — so
  * the same spec test passes on both providers:
  *
- * - {@see Where} comparison operators map to their DQL equivalents; `like`
- *   means **contains, case-insensitive for ASCII** (the reference contract —
- *   the in-memory handler folds via `stripos`): the value is wildcard-escaped,
- *   wrapped in `%…%`, and both sides are `LOWER()`ed so the behaviour does not
- *   depend on the platform's `LIKE` collation (PostgreSQL's `LIKE` is
- *   case-sensitive, SQLite's folds ASCII only). Case-folding beyond ASCII
- *   remains platform-defined. `==`/`===` both map to `=` — DQL has a single,
- *   type-coercing equality.
+ * - {@see Where} comparison operators map to their DQL equivalents; `like`,
+ *   `starts` and `ends` are the three wildcard-`LIKE` string strategies — all
+ *   **case-insensitive for ASCII** (the reference contract — the in-memory handler
+ *   folds via `stripos`/`str_ends_with`): the value is wildcard-escaped and both
+ *   sides are `LOWER()`ed so the behaviour does not depend on the platform's `LIKE`
+ *   collation (PostgreSQL's `LIKE` is case-sensitive, SQLite's folds ASCII only).
+ *   They differ only in where the `%` wildcard wraps the value — contains `%…%`,
+ *   starts `…%`, ends `%…` (the `Contains`/`StartsWith`/`EndsWith` conveniences).
+ *   Case-folding beyond ASCII remains platform-defined. `==`/`===` both map to `=`
+ *   — DQL has a single, type-coercing equality.
+ * - {@see Range} (and {@see \haddowg\JsonApi\Resource\Filter\DateRange}, which
+ *   extends it) is the structured `min`/`max` filter: two push-down `andWhere`
+ *   predicates (`>= min`, `<= max`) over the present bounds on the SAME primary
+ *   query — one query, no join, no subquery, no relation load.
  * - {@see WhereIn}/{@see WhereIdIn} with an empty value list match nothing
  *   (`IN ()` is not valid SQL); the negated variants then match everything.
  * - {@see WhereNull}/{@see WhereNotNull} ignore the request value entirely.
@@ -114,6 +122,9 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
             $filter instanceof WhereHas => $this->whereHas($query, $filter->relationship, false),
             $filter instanceof WhereDoesntHave => $this->whereHas($query, $filter->relationship, true),
             $filter instanceof WhereHasMatching => $this->whereHasMatching($query, $filter, $value),
+            // Range (and DateRange, which extends it) is a structured min/max filter:
+            // two push-down andWhere predicates on the SAME builder, no subquery.
+            $filter instanceof Range => $this->range($query, $filter, $value, $alias),
             default => throw new UnsupportedFilter($filter),
         };
     }
@@ -376,8 +387,21 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
      */
     private function applyComparison(QueryBuilder $bindOn, QueryBuilder $predicateOn, string $path, string $operator, mixed $expected, string $key): void
     {
+        // The three wildcard-LIKE operators differ only in where the `%` wildcard
+        // wraps the (escaped) value — contains `%v%`, starts `v%`, ends `%v` —
+        // mirroring the in-memory handler's stripos !== false / === 0 / str_ends_with.
         if ($operator === 'like') {
-            $this->like($bindOn, $predicateOn, $path, $expected);
+            $this->likeMatch($bindOn, $predicateOn, $path, $expected, '%', '%');
+
+            return;
+        }
+        if ($operator === 'starts') {
+            $this->likeMatch($bindOn, $predicateOn, $path, $expected, '', '%');
+
+            return;
+        }
+        if ($operator === 'ends') {
+            $this->likeMatch($bindOn, $predicateOn, $path, $expected, '%', '');
 
             return;
         }
@@ -400,13 +424,17 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
     }
 
     /**
-     * Contains-match, mirroring the in-memory handler's `stripos`: the value's
-     * `%`/`_` are literal (escaped with `!`), matching folds ASCII case on both
-     * sides (`LOWER()` in DQL + `strtolower` on the bound value, so the result
-     * does not depend on the platform's `LIKE` collation), and a non-string
-     * value matches nothing — `stripos` requires two strings.
+     * Wildcard-`LIKE` match, mirroring the in-memory handler's `stripos` family:
+     * the value's `%`/`_` are literal (escaped with `!`), matching folds ASCII case
+     * on both sides (`LOWER()` in DQL + `strtolower` on the bound value, so the
+     * result does not depend on the platform's `LIKE` collation), and a non-string
+     * value matches nothing — the in-memory comparison requires two strings. The
+     * `$prefix`/`$suffix` wrap the escaped value with the SQL `%` wildcard for the
+     * three string strategies: contains (`%v%`, the `like` operator → in-memory
+     * `stripos !== false`), starts-with (`v%`, `starts` → `stripos === 0`), and
+     * ends-with (`%v`, `ends` → `str_ends_with`).
      */
-    private function like(QueryBuilder $bindOn, QueryBuilder $predicateOn, string $path, mixed $expected): void
+    private function likeMatch(QueryBuilder $bindOn, QueryBuilder $predicateOn, string $path, mixed $expected, string $prefix, string $suffix): void
     {
         if (!\is_string($expected)) {
             $predicateOn->andWhere('1 = 0');
@@ -418,7 +446,83 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         $escaped = \str_replace(['!', '%', '_'], ['!!', '!%', '!_'], \strtolower($expected));
 
         $predicateOn->andWhere(\sprintf("LOWER(%s) LIKE :%s ESCAPE '!'", $path, $placeholder));
-        $bindOn->setParameter($placeholder, '%' . $escaped . '%');
+        $bindOn->setParameter($placeholder, $prefix . $escaped . $suffix);
+    }
+
+    /**
+     * Inclusive range predicate ({@see Range}, and {@see \haddowg\JsonApi\Resource\Filter\DateRange}
+     * which extends it): the structured value carries an optional `min` and/or `max`
+     * bound (the nested `filter[<key>][min]`/`[max]` query Symfony parses into an
+     * array). Each present, non-blank bound is coerced through the filter's
+     * deserializer (numeric for `Range`, ISO-8601 → `\DateTimeImmutable` for
+     * `DateRange`) and bound as a parameter on a `>=`/`<=` predicate added to the
+     * SAME primary query — so an open-ended range works (`min` alone is a `>=`,
+     * `max` alone a `<=`, neither a no-op) and the whole filter is ONE query with no
+     * join, no subquery and no relation load, mirroring the in-memory
+     * `ArrayFilterHandler::range()`. A blank/absent bound is treated as absent,
+     * byte-for-byte with the in-memory `bound()`, so `filter[<key>][max]=` is a no-op.
+     *
+     * A {@see DateRange} bound that is shape-valid ISO-8601 but calendar-invalid
+     * (`1997-13-99` — passes the lenient shape `Pattern` but not `\DateTimeImmutable`)
+     * does not coerce to a `\DateTimeInterface`; the {@see \haddowg\JsonApiBundle\Validation\FilterValueValidator}
+     * rejects it as a clean `400` pre-provider, but when that validation is absent
+     * this handler **skips** the bound rather than binding a raw non-date string as a
+     * datetime parameter — which would compare lexically on a loose driver (SQLite)
+     * and raise a driver error (a `500`) on a strict one (PostgreSQL `timestamp`),
+     * each diverging from the in-memory witness. So both providers degrade identically.
+     */
+    private function range(QueryBuilder $query, Range $filter, mixed $value, string $alias): QueryBuilder
+    {
+        $path = $this->path($this->pivotColumn($filter->column, $alias), $alias);
+        $bounds = \is_array($value) ? $value : [];
+        $min = $this->bound($filter, $bounds, 'min');
+        $max = $this->bound($filter, $bounds, 'max');
+
+        if ($min !== null) {
+            $placeholder = $this->placeholder($query);
+            $query->andWhere(\sprintf('%s >= :%s', $path, $placeholder))->setParameter($placeholder, $min);
+        }
+
+        if ($max !== null) {
+            $placeholder = $this->placeholder($query);
+            $query->andWhere(\sprintf('%s <= :%s', $path, $placeholder))->setParameter($placeholder, $max);
+        }
+
+        return $query;
+    }
+
+    /**
+     * Extracts and coerces one range bound: the deserialized bound value, or `null`
+     * when the bound is absent or blank (`''`) — so an open-ended range works and a
+     * blank bound is a no-op, byte-for-byte with the in-memory
+     * {@see \haddowg\JsonApi\Resource\Filter\InMemory\ArrayFilterHandler::bound()}.
+     *
+     * For a {@see DateRange} a coercion that did not yield a `\DateTimeInterface`
+     * (a shape-valid but unparseable ISO-8601 string such as `1997-13-99`) is also
+     * treated as absent, so a non-date string is never bound as a datetime
+     * parameter — see {@see range()}.
+     *
+     * @param array<array-key, mixed> $bounds
+     */
+    private function bound(Range $filter, array $bounds, string $key): mixed
+    {
+        if (!\array_key_exists($key, $bounds)) {
+            return null;
+        }
+
+        /** @var mixed $value */
+        $value = $bounds[$key];
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        $value = $filter->deserialize !== null ? ($filter->deserialize)($value) : $value;
+
+        if ($filter instanceof DateRange && !$value instanceof \DateTimeInterface) {
+            return null;
+        }
+
+        return $value;
     }
 
     /**

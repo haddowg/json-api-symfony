@@ -14,6 +14,11 @@ use haddowg\JsonApi\Resource\Field\HasMany;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Map;
 use haddowg\JsonApi\Resource\Field\Str;
+use haddowg\JsonApi\Resource\Filter\Contains;
+use haddowg\JsonApi\Resource\Filter\DateRange;
+use haddowg\JsonApi\Resource\Filter\EndsWith;
+use haddowg\JsonApi\Resource\Filter\Range;
+use haddowg\JsonApi\Resource\Filter\StartsWith;
 use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Filter\WhereDoesntHave;
 use haddowg\JsonApi\Resource\Filter\WhereHas;
@@ -226,6 +231,29 @@ abstract class BaseArticleResource extends AbstractResource
             WhereDoesntHave::make('lacksComments', 'comments'),
             WhereHas::make('hasAuthor', 'author'),
             WhereDoesntHave::make('lacksAuthor', 'author'),
+
+            // Convenience filter library (G8b, core ADRs 0075-0077, bundle ADR 0082) —
+            // shared across the article kernels so the dual-provider
+            // ConvenienceFilterConformanceTestCase and the DoctrineReadQueryBudgetTest
+            // both see them. The intent-named string strategies on `title` and the
+            // structured numeric Range on the int `id` column.
+            //  - Contains: the `like` operator (case-insensitive substring).
+            //  - StartsWith / EndsWith: the two NEW prefix/suffix wildcard-LIKE operators
+            //    (in-memory stripos===0 / str_ends_with, Doctrine LIKE 'v%' / '%v').
+            //  - Range: min/max in one key with numeric coercion — two push-down
+            //    `>=`/`<=` andWhere predicates on ONE query (no subquery, no N+1).
+            Contains::make('titleHas', 'title'),
+            StartsWith::make('titleStarts', 'title'),
+            EndsWith::make('titleEnds', 'title'),
+            Range::make('idRange', 'id'),
+            //  - DateRange: ISO-8601 min/max in one key over the `publishedAt`
+            //    date column, coerced to \DateTimeImmutable so the comparison is
+            //    temporal. The shape Pattern is lenient on the calendar (it admits
+            //    `1997-13-99`), so a calendar-invalid bound is caught as a clean 400
+            //    by the filter-value validator (the temporal-validity check) BEFORE
+            //    the provider — identical on both providers, never a divergent
+            //    lexical match in memory or a strict-driver 500.
+            DateRange::make('publishedRange', 'publishedAt'),
         ];
     }
 
