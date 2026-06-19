@@ -53,7 +53,10 @@ final class OpenApiExposeAndMultiServerTest extends \Symfony\Bundle\FrameworkBun
         \assert($router instanceof RouterInterface);
         $paths = \array_map(static fn($r) => $r->getPath(), $router->getRouteCollection()->all());
 
+        // Neither the document nor the viewer route is emitted: the UI rides the same
+        // expose gate as the document (D6/D9).
         self::assertNotContains('/docs.json', $paths);
+        self::assertNotContains('/docs', $paths);
 
         $kernel->shutdown();
     }
@@ -69,7 +72,9 @@ final class OpenApiExposeAndMultiServerTest extends \Symfony\Bundle\FrameworkBun
         \assert($router instanceof RouterInterface);
         $paths = \array_map(static fn($r) => $r->getPath(), $router->getRouteCollection()->all());
 
+        // Debug auto-exposes both the document and the viewer (ui.enabled default true).
         self::assertContains('/docs.json', $paths);
+        self::assertContains('/docs', $paths);
 
         $kernel->shutdown();
     }

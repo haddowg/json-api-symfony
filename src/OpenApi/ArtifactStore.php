@@ -46,7 +46,9 @@ final class ArtifactStore
 
     /**
      * The pre-built document's JSON string, or null when the warmer has not (yet)
-     * written it — the controller's signal to lazy-build (dev) or 404 (prod).
+     * written it — the controller's signal to lazy-build via the {@see DocumentFactory}
+     * (in every environment; it only persists the lazy result back to disk under
+     * `kernel.debug`).
      */
     public function read(string $server): ?string
     {
@@ -103,12 +105,18 @@ final class ArtifactStore
         }
     }
 
-    /**
-     * Sanitises a server / type name for use as a path segment (it comes from
-     * trusted config / registered types, but a defensive whitelist keeps the artifact
-     * tree flat and prevents any traversal).
-     */
     private function safe(string $name): string
+    {
+        return self::sanitizeSegment($name);
+    }
+
+    /**
+     * Sanitises a server / type name for use as a single path segment (it comes from
+     * trusted config / registered types, but a defensive whitelist keeps the artifact
+     * tree flat and prevents any traversal). Shared with the JSON-Schema export command
+     * so a CLI directory dump names its files by the same rule the warmer/controller use.
+     */
+    public static function sanitizeSegment(string $name): string
     {
         $safe = \preg_replace('/[^A-Za-z0-9._-]/', '_', $name);
 

@@ -23,6 +23,7 @@ use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApi\Resource\Sort\SortDirective;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Album;
+use haddowg\JsonApiBundle\Examples\MusicCatalog\Model\AlbumStatus;
 
 /**
  * The `albums` resource type, mapped to its backing {@see Album} entity.
@@ -42,7 +43,7 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Album;
  * Map-level serialize/fill hooks (the pattern the bundle's Doctrine infra already
  * proves for a nested object stored as one JSON value).
  */
-#[AsJsonApiResource(entity: Album::class, server: ['default', 'admin'])]
+#[AsJsonApiResource(entity: Album::class, server: ['default', 'admin'], tags: ['Catalog'])]
 final class AlbumResource extends AbstractResource
 {
     public static string $type = 'albums';
@@ -64,6 +65,14 @@ final class AlbumResource extends AbstractResource
                 ->useTimezone('UTC')
                 ->sortable(),
             Boolean::make('explicit'),
+            // Backed-enum attribute (design §4.8/D16): `->enum(AlbumStatus::class)`
+            // constrains `status` to the enum's backing values and keeps the enum
+            // class-string, so the OpenAPI projection emits a reusable, *described*
+            // `#/components/schemas/AlbumStatus` component the docs viewer renders.
+            Str::make('status')
+                ->enum(AlbumStatus::class)
+                ->sortable()
+                ->description('Where the album sits in its release lifecycle.'),
             Date::make('availableFrom')->nullable(),
             // Directional CompareField: the operator reads `availableUntil >
             // availableFrom` — this field is the LEFT operand.
@@ -74,7 +83,7 @@ final class AlbumResource extends AbstractResource
             // than flat columns), via the Map-level serialize/fill hooks. The child
             // constraints still cascade to /data/attributes/releaseInfo/<child>
             // (catalogueNumber is read-only, so it never hydrates).
-            Map::make('releaseInfo')->fields(
+            Map::make('releaseInfo')->nullable()->fields(
                 Str::make('label'),
                 Str::make('catalogueNumber')->readOnly(),
             )->serializeUsing(static function (mixed $model): mixed {

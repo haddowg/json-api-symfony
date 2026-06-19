@@ -13,8 +13,9 @@ use haddowg\JsonApiBundle\OpenApi\Metadata\ServerDocumentConfig;
  * wiring.
  *
  * It is a plain immutable carrier of the document-generation settings (enabled,
- * exposure, multi-server mode, enum-description mode, json path, public path) and the
- * per-server {@see ServerDocumentConfig} map (info / servers / security / tags) the
+ * exposure, multi-server mode, enum-description mode, json path, public path, the
+ * {@see OpenApiUiConfig} viewer settings) and the per-server {@see ServerDocumentConfig}
+ * map (info / servers / security / tags) the
  * {@see \haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource} folds in. The bundle
  * destructures it in `loadExtension()` to set parameters + wire services; it is not a
  * runtime service.
@@ -31,6 +32,7 @@ final readonly class OpenApiConfig
         public EnumDescriptionMode $enumDescriptionMode,
         public string $jsonPath,
         public ?string $publicPath,
+        public OpenApiUiConfig $ui,
         public array $serverDocuments,
     ) {}
 }

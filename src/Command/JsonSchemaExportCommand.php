@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Command;
 
+use haddowg\JsonApiBundle\OpenApi\ArtifactStore;
 use haddowg\JsonApiBundle\OpenApi\JsonSchemaFactory;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -104,7 +105,9 @@ final class JsonSchemaExportCommand extends Command
         }
 
         foreach ($documents as $type => $document) {
-            $file = \rtrim($outputPath, '/') . '/' . $type . '.json';
+            // Reuse the artifact store's path-segment sanitiser so a type carrying a
+            // separator (or any non-`[A-Za-z0-9._-]`) can't escape the output directory.
+            $file = \rtrim($outputPath, '/') . '/' . ArtifactStore::sanitizeSegment((string) $type) . '.json';
             if (\file_put_contents($file, $this->encode($document)) === false) {
                 $io->error(\sprintf('Could not write to "%s".', $file));
 

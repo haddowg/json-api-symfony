@@ -19,7 +19,7 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Album;
  * returns it as a meta-only JSON:API document — a non-CRUD report that has no natural
  * place in the CRUD verb set.
  */
-#[AsJsonApiAction(type: 'albums', path: 'summary', scope: ActionScope::Collection)]
+#[AsJsonApiAction(type: 'albums', path: 'summary', scope: ActionScope::Collection, tags: ['Catalog'])]
 final class SummarizeAlbums implements ActionHandlerInterface
 {
     public function __construct(private readonly EntityManagerInterface $entityManager) {}

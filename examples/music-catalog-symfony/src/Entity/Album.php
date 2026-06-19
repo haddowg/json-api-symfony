@@ -56,6 +56,12 @@ class Album
         public bool $published = true,
         #[ORM\Column(type: 'boolean')]
         public bool $explicit = false,
+        // The release lifecycle, stored as the backing scalar of the
+        // {@see \haddowg\JsonApiBundle\Examples\MusicCatalog\Model\AlbumStatus} backed
+        // enum — surfaced on the `albums.status` attribute via `->enum()` so the
+        // generated OpenAPI hoists a reusable, described `AlbumStatus` component.
+        #[ORM\Column(type: 'string', length: 16)]
+        public string $status = 'released',
         #[ORM\Column(type: 'date_immutable', nullable: true)]
         public ?\DateTimeImmutable $availableFrom = null,
         #[ORM\Column(type: 'date_immutable', nullable: true)]

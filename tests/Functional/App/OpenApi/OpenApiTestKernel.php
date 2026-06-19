@@ -86,6 +86,21 @@ final class OpenApiTestKernel extends Kernel
                 'security' => [
                     'schemes' => [
                         'bearer' => ['type' => 'bearer', 'bearerFormat' => 'JWT'],
+                        // An oauth2 scheme exercises the flows graph end-to-end (config
+                        // tree → resolver → projection → OAS 3.1 meta-validation).
+                        'oauth' => [
+                            'type' => 'oauth2',
+                            'flows' => [
+                                'authorizationCode' => [
+                                    'authorizationUrl' => 'https://catalog.test/oauth/authorize',
+                                    'tokenUrl' => 'https://catalog.test/oauth/token',
+                                    'scopes' => [
+                                        'catalog:read' => 'Read the catalog',
+                                        'catalog:write' => 'Manage the catalog',
+                                    ],
+                                ],
+                            ],
+                        ],
                     ],
                     'default_requirement' => ['bearer'],
                 ],
@@ -106,6 +121,11 @@ final class OpenApiTestKernel extends Kernel
         $services->set(ProductResource::class);
         $services->set(CategoryResource::class);
         $services->set(RecalculatePrices::class);
+
+        // The decorator seam witness (ADR 0080): autoconfigured onto the OpenAPI factory
+        // tag, it stamps a tag onto every built document, so the serving + warmer tests
+        // can prove the decorator runs on both build paths.
+        $services->set(StampDecorator::class);
 
         $services->set('test.openapi.products_provider', \haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider::class)
             ->factory([OpenApiProviderFactory::class, 'products'])

@@ -94,6 +94,9 @@ final class Seed
             releasedAt: null,
             published: false,
             explicit: false,
+            // The backed-enum `status` witness: an unreleased album is `upcoming`
+            // (the two published albums keep the constructor default `released`).
+            status: 'upcoming',
             availableFrom: null,
             availableUntil: null,
             releaseInfo: null,

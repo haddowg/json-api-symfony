@@ -153,6 +153,19 @@ final class OpenApiServingTest extends JsonApiFunctionalTestCase
         self::assertArrayHasKey('bearer', $schemes);
         self::assertSame('http', $this->nested($schemes, 'bearer')['type'] ?? null);
 
+        // The oauth2 scheme is emitted with its flows graph (and the whole document still
+        // meta-validates — see theServedDocumentValidatesAgainstTheOas31MetaSchema).
+        self::assertArrayHasKey('oauth', $schemes);
+        $oauth = $this->nested($schemes, 'oauth');
+        self::assertSame('oauth2', $oauth['type'] ?? null);
+        $authCode = $this->nested($oauth, 'flows', 'authorizationCode');
+        self::assertSame('https://catalog.test/oauth/authorize', $authCode['authorizationUrl'] ?? null);
+        self::assertSame('https://catalog.test/oauth/token', $authCode['tokenUrl'] ?? null);
+        self::assertSame(
+            ['catalog:read' => 'Read the catalog', 'catalog:write' => 'Manage the catalog'],
+            $authCode['scopes'] ?? null,
+        );
+
         // products read (FetchOne) and create are secured (securityRead/securityCreate),
         // so they carry a security requirement; the collection read is not.
         self::assertArrayHasKey('security', $this->nested($document, 'paths', '/products/{id}', 'get'));

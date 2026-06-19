@@ -33,6 +33,7 @@ use Symfony\Component\HttpKernel\Bundle\AbstractBundle;
 
 use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 use function Symfony\Component\DependencyInjection\Loader\Configurator\service_locator;
+use function Symfony\Component\DependencyInjection\Loader\Configurator\tagged_iterator;
 
 /**
  * Integrates {@see \haddowg\JsonApi\Server\Server} with Symfony: it discovers
@@ -136,6 +137,17 @@ final class JsonApiBundle extends AbstractBundle
      * descriptor map + handler locator and the per-server action route descriptors.
      */
     public const string ACTION_TAG = 'haddowg.json_api.action';
+
+    /**
+     * Tag applied to an {@see \haddowg\JsonApiBundle\OpenApi\OpenApiFactoryInterface}
+     * decorator (design §5, D7 — bundle ADR 0080). The
+     * {@see \haddowg\JsonApiBundle\OpenApi\DocumentFactory} consumes the tagged services
+     * as a priority-ordered iterator and applies them after the core projection, so an
+     * app can mutate the built document (servers/security/tags/examples/anything) before
+     * it is served, warmed, or exported. Lower `priority` runs first; the highest gets
+     * the final word.
+     */
+    public const string OPENAPI_FACTORY_TAG = 'haddowg.json_api.openapi_factory';
 
     /**
      * The bundle's opinionated default `json_api.max_include_depth`: a `?include`
@@ -284,13 +296,13 @@ final class JsonApiBundle extends AbstractBundle
                     ->end()
                 ->end()
                 ->arrayNode('ui')
-                    ->info('The Swagger UI / ReDoc viewer (consumed in Slice 5; declared here forward-compatibly).')
+                    ->info('The Swagger UI / ReDoc documentation viewer (design D6, ADR 0079): a single config-driven route rendering plain CDN-linked HTML, behind the same expose gate as the document plus `ui.enabled`.')
                     ->addDefaultsIfNotSet()
                     ->children()
-                        ->booleanNode('enabled')->defaultTrue()->end()
-                        ->enumNode('renderer')->values(['swagger', 'redoc'])->defaultValue('swagger')->end()
-                        ->scalarNode('path')->defaultValue('/docs')->end()
-                        ->scalarNode('cdn')->defaultNull()->end()
+                        ->booleanNode('enabled')->info('Serve the viewer route. Default true (still subject to the expose gate).')->defaultTrue()->end()
+                        ->enumNode('renderer')->info('swagger (default) or redoc — one, not both.')->values(['swagger', 'redoc'])->defaultValue('swagger')->end()
+                        ->scalarNode('path')->info('The viewer route path. Default /docs.')->defaultValue('/docs')->end()
+                        ->scalarNode('cdn')->info('Override the pinned CDN asset origin (self-host / air-gap). Null = the bundle-pinned jsDelivr URL.')->defaultNull()->end()
                     ->end()
                 ->end()
                 ->arrayNode('info')
@@ -343,6 +355,15 @@ final class JsonApiBundle extends AbstractBundle
                                     ->scalarNode('in')->defaultNull()->end()
                                     ->scalarNode('apiKeyName')->info('The header/query/cookie key name for an apiKey scheme.')->defaultNull()->end()
                                     ->scalarNode('openIdConnectUrl')->defaultNull()->end()
+                                    ->arrayNode('flows')
+                                        ->info('The supported OAuth2 flows (only for type: oauth2). Each flow: authorizationUrl/tokenUrl/refreshUrl as its grant requires + scopes (name => description).')
+                                        ->children()
+                                            ->append($this->oauthFlowNode('implicit'))
+                                            ->append($this->oauthFlowNode('password'))
+                                            ->append($this->oauthFlowNode('clientCredentials'))
+                                            ->append($this->oauthFlowNode('authorizationCode'))
+                                        ->end()
+                                    ->end()
                                 ->end()
                             ->end()
                         ->end()
@@ -388,6 +409,34 @@ final class JsonApiBundle extends AbstractBundle
             ->end();
 
         return $root;
+    }
+
+    /**
+     * One OAuth2 flow node (implicit/password/clientCredentials/authorizationCode) under
+     * a scheme's `flows` graph (§4.6, D8). The member URLs a flow needs depend on its
+     * grant (authorizationUrl for implicit/authorizationCode, tokenUrl for the token
+     * grants); the resolver maps whatever is present, and a flow node only contributes a
+     * flow when at least one member is set.
+     */
+    private function oauthFlowNode(string $name): \Symfony\Component\Config\Definition\Builder\NodeDefinition
+    {
+        $treeBuilder = new \Symfony\Component\Config\Definition\Builder\TreeBuilder($name);
+        /** @var \Symfony\Component\Config\Definition\Builder\ArrayNodeDefinition $node */
+        $node = $treeBuilder->getRootNode();
+
+        $node
+            ->children()
+                ->scalarNode('authorizationUrl')->defaultNull()->end()
+                ->scalarNode('tokenUrl')->defaultNull()->end()
+                ->scalarNode('refreshUrl')->defaultNull()->end()
+                ->arrayNode('scopes')
+                    ->info('Available scopes for this flow: scope name => human description.')
+                    ->useAttributeAsKey('name')
+                    ->scalarPrototype()->end()
+                ->end()
+            ->end();
+
+        return $node;
     }
 
     /**
@@ -524,6 +573,12 @@ final class JsonApiBundle extends AbstractBundle
         // throwable that is not a core JsonApiExceptionInterface (bundle ADR 0073).
         $builder->registerForAutoconfiguration(ExceptionMapperInterface::class)
             ->addTag(self::EXCEPTION_MAPPER_TAG);
+
+        // Any app service implementing the OpenAPI decorator seam is auto-tagged, so the
+        // DocumentFactory applies it (priority-ordered) over the built document for every
+        // build path — warmer, controller lazy-build, and CLI export (bundle ADR 0080).
+        $builder->registerForAutoconfiguration(\haddowg\JsonApiBundle\OpenApi\OpenApiFactoryInterface::class)
+            ->addTag(self::OPENAPI_FACTORY_TAG);
 
         // The constraint-translator interface references Symfony Validator types,
         // so only register its autoconfiguration when the optional
@@ -728,6 +783,10 @@ final class JsonApiBundle extends AbstractBundle
             ->args([
                 '$metadata' => service(\haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource::class),
                 '$enumDescriptionMode' => $enumMode,
+                // The wholesale-customisation decorators (design §5, ADR 0080), composed
+                // priority-ordered (lower first); applied after projection on every build
+                // path — warmer, controller lazy-build, CLI export.
+                '$decorators' => tagged_iterator(self::OPENAPI_FACTORY_TAG),
             ]);
 
         $services->set(\haddowg\JsonApiBundle\OpenApi\JsonSchemaFactory::class)
@@ -769,6 +828,18 @@ final class JsonApiBundle extends AbstractBundle
             ->public()
             ->tag('controller.service_arguments');
 
+        // The documentation viewer controller (design D6): renders Swagger UI or ReDoc
+        // (one, per config) pointed at the configured json path; CDN-linked, overridable.
+        $services->set(\haddowg\JsonApiBundle\Controller\OpenApiUiController::class)
+            ->args([
+                '$urlGenerator' => service('router'),
+                '$renderer' => $openApiConfig->ui->renderer,
+                '$jsonPath' => $openApiConfig->jsonPath,
+                '$cdn' => $openApiConfig->ui->cdn,
+            ])
+            ->public()
+            ->tag('controller.service_arguments');
+
         // The docs route loader: emits the document routes only when generation is
         // enabled AND the expose gate passes (kernel.debug || expose_in_prod). The
         // gate is OR-ed inside load() because %kernel.debug% is a parameter resolved
@@ -781,6 +852,8 @@ final class JsonApiBundle extends AbstractBundle
                 '$exposeInProd' => $openApiConfig->exposeInProd,
                 '$combined' => $openApiConfig->combined,
                 '$jsonPath' => $openApiConfig->jsonPath,
+                '$uiEnabled' => $openApiConfig->ui->enabled,
+                '$uiPath' => $openApiConfig->ui->path,
             ])
             ->tag('routing.loader');
 

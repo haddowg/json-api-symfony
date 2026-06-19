@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Routing;
 
 use haddowg\JsonApiBundle\Controller\OpenApiController;
+use haddowg\JsonApiBundle\Controller\OpenApiUiController;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use Symfony\Component\Config\Loader\Loader;
 use Symfony\Component\Routing\Route;
@@ -29,6 +30,13 @@ use Symfony\Component\Routing\RouteCollection;
  * the single `{json.path}` route is emitted — it serves one document spanning every
  * server (D5); the per-server `{server}/docs.json` route is not registered.
  *
+ * It also emits the single config-driven **documentation viewer** route (design D6) at
+ * `json_api.openapi.ui.path` (default `/docs`) — when `json_api.openapi.ui.enabled` is
+ * true **and** the same expose gate passes — serving the {@see OpenApiUiController}
+ * (Swagger UI or ReDoc per config). The viewer rides the same import / prefix / host as
+ * the document routes; it points at the configured json path resolved against the
+ * request, so per-server / combined doc selection stays the controller's concern.
+ *
  * When generation is disabled (`json_api.openapi.enabled: false`) or exposure is not
  * allowed, **no** route is emitted — so the document is unreachable over HTTP exactly
  * as configured (the CLI export stays available regardless, D6/D9). These routes
@@ -46,6 +54,8 @@ final class OpenApiRouteLoader extends Loader
      * @param bool         $exposeInProd `json_api.openapi.expose_in_prod` — exposes outside debug
      * @param bool         $combined     `json_api.openapi.multi_server === combined`
      * @param string       $jsonPath     `json_api.openapi.json.path` (default `/docs.json`)
+     * @param bool         $uiEnabled    `json_api.openapi.ui.enabled` — register the viewer route
+     * @param string       $uiPath       `json_api.openapi.ui.path` (default `/docs`)
      */
     public function __construct(
         private readonly array $servers,
@@ -54,6 +64,8 @@ final class OpenApiRouteLoader extends Loader
         private readonly bool $exposeInProd,
         private readonly bool $combined,
         private readonly string $jsonPath = '/docs.json',
+        private readonly bool $uiEnabled = true,
+        private readonly string $uiPath = '/docs',
     ) {
         parent::__construct();
     }
@@ -75,6 +87,17 @@ final class OpenApiRouteLoader extends Loader
             ['_controller' => OpenApiController::class, 'server' => ServerProvider::DEFAULT_SERVER],
             methods: ['GET'],
         ));
+
+        // The documentation viewer (design D6) — gated on ui.enabled in addition to the
+        // shared expose gate. One route regardless of multi-server mode; it points at the
+        // configured json path (the controller selects per-server / combined).
+        if ($this->uiEnabled) {
+            $routes->add('jsonapi.openapi.ui', new Route(
+                $this->normaliseUiPath($this->uiPath),
+                ['_controller' => OpenApiUiController::class],
+                methods: ['GET'],
+            ));
+        }
 
         // A combined document spans every server in one doc (D5), so no per-server
         // route is emitted in that mode.
@@ -115,5 +138,12 @@ final class OpenApiRouteLoader extends Loader
         $path = '/' . \ltrim(\trim($path), '/');
 
         return $path === '/' ? '/docs.json' : $path;
+    }
+
+    private function normaliseUiPath(string $path): string
+    {
+        $path = '/' . \ltrim(\trim($path), '/');
+
+        return $path === '/' ? '/docs' : $path;
     }
 }

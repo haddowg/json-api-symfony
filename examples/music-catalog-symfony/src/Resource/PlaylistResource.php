@@ -85,6 +85,7 @@ use haddowg\JsonApiBundle\Hook\ResourceLifecycleHooksTrait;
     hydrator: PlaylistHydrator::class,
     securityUpdate: "is_granted('EDIT', object)",
     securityDelete: "is_granted('ROLE_ADMIN')",
+    tags: ['Library'],
 )]
 final class PlaylistResource extends AbstractResource implements ResourceLifecycleHooksInterface
 {
