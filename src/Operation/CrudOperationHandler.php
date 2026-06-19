@@ -456,6 +456,13 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return ErrorResponse::fromException(new ResourceNotFound());
         }
 
+        // The related read reaches the parent through a single fetch, so it carries the
+        // parent type's read-security gate exactly as the primary read does — a
+        // read-gated resource is not reachable via its related endpoints (and the
+        // served document, which reports this read secured iff FetchOne is, stays
+        // faithful).
+        $this->gateParentRead($type, $parent, $operation->context());
+
         $relation = $this->resolveRelation($server, $type, $relationshipName);
         if ($relation === null) {
             return ErrorResponse::fromException(new RelationshipNotExists($relationshipName));
@@ -788,6 +795,13 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return ErrorResponse::fromException(new ResourceNotFound());
         }
 
+        // The relationship read reaches the parent through a single fetch, so it carries
+        // the parent type's read-security gate exactly as the primary read does — a
+        // read-gated resource is not reachable via its relationship endpoints (and the
+        // served document, which reports this read secured iff FetchOne is, stays
+        // faithful).
+        $this->gateParentRead($type, $parent, $operation->context());
+
         $relation = $this->resolveRelation($server, $type, $relationshipName);
         if ($relation === null) {
             return ErrorResponse::fromException(new RelationshipNotExists($relationshipName));
@@ -1093,6 +1107,33 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         }
 
         return $this->providers->forType($type)->fetchOne($type, $id);
+    }
+
+    /**
+     * Applies the parent type's read-security gate to a related / relationship read.
+     *
+     * A related (`GET /{type}/{id}/{rel}`) or relationship (`GET …/relationships/{rel}`)
+     * read reaches the parent through {@see loadParent()} — the same single-resource
+     * fetch the primary read gates at {@see AfterFetchOneEvent} (so a `securityRead`
+     * expression denies it with a `403`). Dispatching the **same** event here closes
+     * the gap where a read-gated resource was reachable via its relationship endpoints,
+     * and keeps the served OpenAPI document faithful: core's projector reports these
+     * related reads as secured iff `FetchOne` is, and now the runtime enforces it
+     * identically (the parent IS fetched as a single resource). The response-shaping
+     * read hook is not consumed here — the related/relationship path renders the
+     * related value(s), not the parent — so only the security gate is observed; a
+     * subscriber that replaces the response has its replacement (harmlessly) ignored
+     * on this path. A no-op when no JSON:API request is available (a programmatic
+     * dispatch) or no dispatcher is wired.
+     */
+    private function gateParentRead(string $type, object $parent, OperationContext $context): void
+    {
+        $request = $context->httpRequest();
+        if (!$request instanceof JsonApiRequestInterface) {
+            return;
+        }
+
+        $this->dispatch(new AfterFetchOneEvent($type, $request, $parent, $this->serverName($request)));
     }
 
     /**

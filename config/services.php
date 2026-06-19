@@ -84,6 +84,33 @@ return static function (ContainerConfigurator $container): void {
     // relations resource-first then from the RelationsRegistry (autowired).
     $services->set(TypeMetadataResolver::class);
 
+    // The per-server, per-type route descriptor map (uriType / operations / tags /
+    // resource-or-standalone shape) surfaced as a service so the OpenAPI
+    // MetadataSource can enumerate a server's types — the same scalar descriptors
+    // the ResourceLocatorPass hands to the JsonApiRouteLoader. Its argument is
+    // filled by that pass.
+    $services->set(\haddowg\JsonApiBundle\Server\RouteDescriptorRegistry::class)
+        ->args(['$descriptorsByServer' => []]);
+
+    // --- OpenAPI metadata source (Slice 4 stage A) ----------------------------
+
+    // The pure helpers the MetadataSource composes: the paginator-class -> kind
+    // discriminator, the humanized-type tag-name default, and the include-path
+    // graph walk (autowired from the TypeMetadataResolver).
+    $services->set(\haddowg\JsonApiBundle\OpenApi\Metadata\PaginatorKindResolver::class);
+    $services->set(\haddowg\JsonApiBundle\OpenApi\Metadata\TagNameResolver::class);
+    $services->set(\haddowg\JsonApiBundle\OpenApi\Metadata\IncludePathResolver::class);
+
+    // The bundle implementation of core's OpenAPI metadata contract: it builds a
+    // ServerMetadataInterface (+ its TypeMetadataInterface family) per server from
+    // the live registry. The ResourceSecurityRegistry is optional (present only
+    // when symfony/security-core is installed), so it is injected ->nullOnInvalid();
+    // the per-server document config (info / servers / tags / security schemes) is
+    // empty here and wired from json_api.openapi.* config in Slice 4 stage B.
+    $services->set(\haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource::class)
+        ->arg('$security', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Security\ResourceSecurityRegistry::class)->nullOnInvalid())
+        ->arg('$configByServer', []);
+
     // Custom, non-CRUD actions (bundle ADR 0076). The ActionRegistry resolves an
     // ActionDescriptor + its ActionHandlerInterface by the composite key
     // (server, type, scope, path); both its handler service-locator and its

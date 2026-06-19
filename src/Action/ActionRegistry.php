@@ -34,6 +34,7 @@ use Psr\Container\ContainerInterface;
  *     security: ?string,
  *     handlerServiceId: string,
  *     server: string,
+ *     tags?: string,
  * }
  */
 final class ActionRegistry
@@ -60,6 +61,38 @@ final class ActionRegistry
             return null;
         }
 
+        return $this->rehydrate($descriptor);
+    }
+
+    /**
+     * Every action declared for `(server, type)`, in registration order — the
+     * enumeration seam the OpenAPI {@see \haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource}
+     * walks to describe a type's `-actions` paths (the composite-key
+     * {@see descriptorFor()} cannot list, only look up a known key). Each stored
+     * scalar array is rehydrated into an {@see ActionDescriptor}.
+     *
+     * @return list<ActionDescriptor>
+     */
+    public function forServerType(string $server, string $type): array
+    {
+        $matches = [];
+        foreach ($this->descriptors as $descriptor) {
+            if ($descriptor['server'] === $server && $descriptor['type'] === $type) {
+                $matches[] = $this->rehydrate($descriptor);
+            }
+        }
+
+        return $matches;
+    }
+
+    /**
+     * Rebuilds an {@see ActionDescriptor} value object from its stored scalar array
+     * (enums reconstructed by name, the comma-joined `tags` split back into a list).
+     *
+     * @param ActionDescriptorArray $descriptor
+     */
+    private function rehydrate(array $descriptor): ActionDescriptor
+    {
         return new ActionDescriptor(
             $descriptor['type'],
             $descriptor['path'],
@@ -71,7 +104,31 @@ final class ActionRegistry
             $descriptor['security'],
             $descriptor['handlerServiceId'],
             $descriptor['server'],
+            $this->splitTags($descriptor['tags'] ?? ''),
         );
+    }
+
+    /**
+     * Splits the comma-joined `tags` scalar back into a deduped list of non-empty
+     * tag names (empty string → empty list).
+     *
+     * @return list<string>
+     */
+    private function splitTags(string $tags): array
+    {
+        if ($tags === '') {
+            return [];
+        }
+
+        $names = [];
+        foreach (\explode(',', $tags) as $name) {
+            $name = \trim($name);
+            if ($name !== '' && !\in_array($name, $names, true)) {
+                $names[] = $name;
+            }
+        }
+
+        return $names;
     }
 
     /**

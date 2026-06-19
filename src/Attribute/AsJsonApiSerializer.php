@@ -25,6 +25,11 @@ namespace haddowg\JsonApiBundle\Attribute;
  * `server` names the server(s) this type is exposed on: a single server name, a
  * list of names (the same type may join several servers at once), or `null` for
  * the implicit `default` server.
+ *
+ * `tags` declares the **OpenAPI tag names** every operation of this standalone type
+ * is grouped under in the generated OpenAPI document (design §4.7, D15). An empty
+ * array means the default: a single tag named the humanized-type form. Tags carry
+ * no JSON:API meaning.
  */
 #[\Attribute(\Attribute::TARGET_CLASS)]
 final readonly class AsJsonApiSerializer
@@ -32,10 +37,12 @@ final readonly class AsJsonApiSerializer
     /**
      * @param list<\haddowg\JsonApiBundle\Operation\Operation> $operations the exposed operation allow-list (empty = none)
      * @param string|list<string>|null                         $server     the server name(s) exposing this type (null = the implicit `default`)
+     * @param list<string>                                     $tags       the OpenAPI tag names this type is grouped under (empty = the humanized-type default)
      */
     public function __construct(
         public string $type,
         public array $operations = [],
         public string|array|null $server = null,
+        public array $tags = [],
     ) {}
 }

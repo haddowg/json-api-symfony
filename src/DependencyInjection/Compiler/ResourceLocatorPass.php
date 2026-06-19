@@ -18,6 +18,7 @@ use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Server\RelationsProviderInterface;
 use haddowg\JsonApiBundle\Server\RelationsRegistry;
 use haddowg\JsonApiBundle\Server\ResourceLocator;
+use haddowg\JsonApiBundle\Server\RouteDescriptorRegistry;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\Compiler\ServiceLocatorTagPass;
@@ -93,7 +94,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
         $serializers = [];
         /** @var array<string, string> $hydrators */
         $hydrators = [];
-        /** @var array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>}> $descriptors */
+        /** @var array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>}> $descriptors */
         $descriptors = [];
 
         // Per-server buckets (ADR 0034): a type/resource assigned to N servers lands
@@ -109,7 +110,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
         $standaloneSerializersByServer = [];
         /** @var array<string, array<string, string>> $standaloneHydratorsByServer */
         $standaloneHydratorsByServer = [];
-        /** @var array<string, array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>}>> $descriptorsByServer */
+        /** @var array<string, array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>}>> $descriptorsByServer */
         $descriptorsByServer = [];
 
         // Standalone relations providers, keyed by type: the registry resolves the
@@ -197,6 +198,10 @@ final class ResourceLocatorPass implements CompilerPassInterface
                 'hasHydrator' => true,
                 'hasRelations' => true,
                 'operations' => $this->operationsFromTags($tags) ?? self::allOperations(),
+                // The OpenAPI tag refs (design §4.7); empty = the humanized-type
+                // default the MetadataSource resolves. Read across all tags so the
+                // empty autoconfig tag does not erase the attribute's value.
+                'tags' => $this->tagsFromTags($tags),
             ];
             $descriptors[$type] = $descriptor;
 
@@ -217,6 +222,8 @@ final class ResourceLocatorPass implements CompilerPassInterface
         $standaloneSerializerOperations = [];
         /** @var array<string, list<string>> $standaloneSerializerServers */
         $standaloneSerializerServers = [];
+        /** @var array<string, list<string>> $standaloneSerializerTags */
+        $standaloneSerializerTags = [];
         $standaloneSerializers = $this->collectStandalone(
             $container,
             JsonApiBundle::SERIALIZER_TAG,
@@ -225,6 +232,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
             $declaredServers,
             $standaloneSerializerServers,
             $standaloneSerializerOperations,
+            $standaloneSerializerTags,
         );
         /** @var array<string, list<string>> $standaloneHydratorServers */
         $standaloneHydratorServers = [];
@@ -247,6 +255,9 @@ final class ResourceLocatorPass implements CompilerPassInterface
                     'hasHydrator' => isset($standaloneHydrators[$type]),
                     'hasRelations' => isset($typesWithStandaloneRelations[$type]),
                     'operations' => $standaloneSerializerOperations[$type] ?? [],
+                    // The standalone-type OpenAPI tag refs (design §4.7); empty = the
+                    // humanized-type default the MetadataSource resolves.
+                    'tags' => $standaloneSerializerTags[$type] ?? [],
                 ];
             }
 
@@ -308,6 +319,13 @@ final class ResourceLocatorPass implements CompilerPassInterface
         if ($container->hasDefinition(JsonApiRouteLoader::class)) {
             $container->getDefinition(JsonApiRouteLoader::class)->setArgument('$routeDescriptorsByServer', $descriptorsByServer);
         }
+
+        // Surface the same per-server descriptor map as a service so the OpenAPI
+        // MetadataSource can enumerate a server's types + read uriType/operations/
+        // tags at runtime, independent of the route loader.
+        if ($container->hasDefinition(RouteDescriptorRegistry::class)) {
+            $container->getDefinition(RouteDescriptorRegistry::class)->setArgument('$descriptorsByServer', $descriptorsByServer);
+        }
     }
 
     /**
@@ -326,7 +344,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
      * them `null`.
      *
      * @param list<string>                                                                                                                             $declaredServers
-     * @param array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>}> $descriptors the resource/standalone descriptors, read for each mount type's uriType
+     * @param array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>}> $descriptors the resource/standalone descriptors, read for each mount type's uriType
      */
     private function collectActions(ContainerBuilder $container, array $declaredServers, array $descriptors): void
     {
@@ -335,7 +353,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
         }
 
         $handlerReferences = [];
-        /** @var array<string, array{type: string, path: string, methods: list<string>, scope: string, input: string, inputType: string, outputType: string, security: ?string, handlerServiceId: string, server: string}> $actionDescriptors */
+        /** @var array<string, array{type: string, path: string, methods: list<string>, scope: string, input: string, inputType: string, outputType: string, security: ?string, handlerServiceId: string, server: string, tags: string}> $actionDescriptors */
         $actionDescriptors = [];
         /** @var array<string, list<array{uriType: string, type: string, path: string, methods: list<string>, scope: string, name: string}>> $routeDescriptorsByServer */
         $routeDescriptorsByServer = [];
@@ -380,7 +398,26 @@ final class ResourceLocatorPass implements CompilerPassInterface
                 $input = $this->actionInput($tag, $id);
                 $methods = $this->actionMethods($tag);
                 $inputType = \is_string($tag['inputType'] ?? null) && $tag['inputType'] !== '' ? $tag['inputType'] : $type;
-                $outputType = \is_string($tag['outputType'] ?? null) && $tag['outputType'] !== '' ? $tag['outputType'] : $type;
+                $declaredOutputType = \is_string($tag['outputType'] ?? null) && $tag['outputType'] !== '' ? $tag['outputType'] : null;
+                $returns204 = ($tag['returns204'] ?? false) === true;
+
+                // A no-output (204) action keeps the empty-string sentinel as its
+                // outputType — the ActionMetadata maps it to null so the generated
+                // document advertises a 204 instead of a 200 body (design §4.5). It is
+                // mutually exclusive with an explicit outputType (a 204 carries no body).
+                if ($returns204 && $declaredOutputType !== null) {
+                    throw new \LogicException(\sprintf(
+                        'The JSON:API action "%s" on service "%s" declares both returns204 and an outputType; a 204 action describes no response body, so they are mutually exclusive.',
+                        $path,
+                        $id,
+                    ));
+                }
+
+                $outputType = match (true) {
+                    $returns204 => '',
+                    $declaredOutputType !== null => $declaredOutputType,
+                    default => $type,
+                };
                 $security = \is_string($tag['security'] ?? null) && $tag['security'] !== '' ? $tag['security'] : null;
 
                 $servers = $this->validateServers(
@@ -393,6 +430,17 @@ final class ResourceLocatorPass implements CompilerPassInterface
                 // when registered (ADR 0022), else the type itself.
                 $uriType = $descriptors[$type]['uriType'] ?? $type;
                 $name = \is_string($tag['name'] ?? null) && $tag['name'] !== '' ? $tag['name'] : null;
+
+                // The action's OpenAPI tag refs (design §4.7): explicit refs on the
+                // action, else inherit the mount type's resource tags so the action
+                // groups with its resource. Empty when the mount type declared none —
+                // the MetadataSource then resolves the humanized-type default. Carried
+                // through the descriptor as a comma-joined scalar (not a list) so it
+                // survives the compiled container, like every other action field.
+                $actionTags = $this->parseTags($tag['tags'] ?? null);
+                if ($actionTags === []) {
+                    $actionTags = $descriptors[$type]['tags'] ?? [];
+                }
 
                 foreach ($servers as $server) {
                     $key = ActionRegistry::key($server, $type, $scope, $path);
@@ -424,6 +472,10 @@ final class ResourceLocatorPass implements CompilerPassInterface
                         'security' => $security,
                         'handlerServiceId' => $id,
                         'server' => $server,
+                        // The OpenAPI tag refs (design §4.7), comma-joined so the map
+                        // value stays a flat scalar shape; the ActionRegistry splits
+                        // it back into a list on rehydration.
+                        'tags' => \implode(',', $actionTags),
                     ];
 
                     $routeDescriptorsByServer[$server][] = [
@@ -659,6 +711,51 @@ final class ResourceLocatorPass implements CompilerPassInterface
     }
 
     /**
+     * The OpenAPI tag refs declared across a resource's tags (design §4.7), resolved
+     * like {@see operationsFromTags}: the first tag carrying a `tags` string wins (so
+     * the empty autoconfig tag does not erase the attribute's value), parsed via
+     * {@see parseTags}; empty when none declared (the MetadataSource then applies the
+     * humanized-type default).
+     *
+     * @param array<array<string, mixed>> $tags
+     *
+     * @return list<string>
+     */
+    private function tagsFromTags(array $tags): array
+    {
+        foreach ($tags as $tag) {
+            if (\array_key_exists('tags', $tag)) {
+                return $this->parseTags($tag['tags']);
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * Parses the comma-joined OpenAPI tag string into a deduped list of trimmed,
+     * non-empty tag names; a non-string / empty value yields an empty list.
+     *
+     * @return list<string>
+     */
+    private function parseTags(mixed $tags): array
+    {
+        if (!\is_string($tags) || $tags === '') {
+            return [];
+        }
+
+        $names = [];
+        foreach (\explode(',', $tags) as $name) {
+            $name = \trim($name);
+            if ($name !== '' && !\in_array($name, $names, true)) {
+                $names[] = $name;
+            }
+        }
+
+        return $names;
+    }
+
+    /**
      * @return list<string>
      */
     private static function allOperations(): array
@@ -693,7 +790,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
      * Compile-time guard: a type cannot expose a write operation (`Create` /
      * `Update`) without a hydrator to populate the entity.
      *
-     * @param array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>}> $descriptors
+     * @param array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>}> $descriptors
      */
     private function validateWriteCapability(array $descriptors): void
     {
@@ -723,17 +820,20 @@ final class ResourceLocatorPass implements CompilerPassInterface
      * can construct it. Validates the class implements `$contract`. Each type's
      * server membership (parsed + validated against `$declaredServers`) is recorded
      * into `$serversByType`; when `$operationsByType` is provided, each type's parsed
-     * operation allow-list (from the tag's operations string, else empty) is too.
+     * operation allow-list (from the tag's operations string, else empty) is too;
+     * when `$tagsByType` is provided, each type's parsed OpenAPI tag refs (from the
+     * tag's `tags` string, else empty) are too.
      *
      * @param class-string                     $contract
      * @param array<string, Reference>         $references
      * @param list<string>                     $declaredServers
      * @param array<string, list<string>>      $serversByType
      * @param array<string, list<string>>|null $operationsByType
+     * @param array<string, list<string>>|null $tagsByType
      *
      * @return array<string, string>
      */
-    private function collectStandalone(ContainerBuilder $container, string $tag, string $contract, array &$references, array $declaredServers, array &$serversByType, ?array &$operationsByType = null): array
+    private function collectStandalone(ContainerBuilder $container, string $tag, string $contract, array &$references, array $declaredServers, array &$serversByType, ?array &$operationsByType = null, ?array &$tagsByType = null): array
     {
         $map = [];
 
@@ -771,6 +871,10 @@ final class ResourceLocatorPass implements CompilerPassInterface
                     $operationsByType[$type] = \array_key_exists('operations', $attributes)
                         ? $this->parseOperations($attributes['operations'])
                         : [];
+                }
+
+                if ($tagsByType !== null) {
+                    $tagsByType[$type] = $this->parseTags($attributes['tags'] ?? null);
                 }
             }
         }
