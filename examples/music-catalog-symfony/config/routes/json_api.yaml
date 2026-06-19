@@ -15,3 +15,11 @@ json_api_admin:
     resource: admin
     type: jsonapi
     prefix: /admin
+
+# The OpenAPI document + viewer routes (one import, all servers). In per-server mode
+# this emits GET /docs.json (the default server's document), GET /{server}/docs.json
+# (the admin server's document) and GET /docs (the Swagger UI viewer). All ride the
+# expose gate (kernel.debug OR openapi.expose_in_prod), which the example opts into.
+json_api_openapi:
+    resource: .
+    type: jsonapi_openapi

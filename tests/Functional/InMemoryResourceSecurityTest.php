@@ -43,6 +43,23 @@ final class InMemoryResourceSecurityTest extends JsonApiFunctionalTestCase
     }
 
     #[Test]
+    public function the_read_gate_covers_the_related_endpoint(): void
+    {
+        // A read-gated resource is not reachable via its related endpoint: the parent
+        // read-security gate fires on /{id}/{rel} too.
+        $this->browser()->get('/securedWidgets/1/partner')->getErrors()->assertStatus(401)->assertHasError(status: '401');
+        $this->browser()->actingAs('user')->get('/securedWidgets/1/partner')->assertStatus(200);
+    }
+
+    #[Test]
+    public function the_read_gate_covers_the_relationship_endpoint(): void
+    {
+        // The relationship-linkage endpoint /{id}/relationships/{rel} is likewise gated.
+        $this->browser()->get('/securedWidgets/1/relationships/partner')->getErrors()->assertStatus(401)->assertHasError(status: '401');
+        $this->browser()->actingAs('user')->get('/securedWidgets/1/relationships/partner')->assertStatus(200);
+    }
+
+    #[Test]
     public function create_is_forbidden_for_a_user_and_leaves_the_store_unchanged(): void
     {
         $this->browser()

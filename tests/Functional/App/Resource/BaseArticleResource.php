@@ -96,7 +96,7 @@ abstract class BaseArticleResource extends AbstractResource
             // /data/attributes/address/<child>. The whole object round-trips through a
             // single JSON/array `address` member via the Map-level serialize/fill
             // hooks, so the children don't spread across separate columns.
-            Map::make('address')->fields(
+            Map::make('address')->nullable()->fields(
                 Str::make('street')->required()->minLength(3),
                 Str::make('postcode')->required()->pattern('[0-9]{5}'),
             )->serializeUsing(static function (mixed $model): mixed {

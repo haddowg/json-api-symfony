@@ -38,6 +38,13 @@ use haddowg\JsonApiBundle\Action\ActionScope;
  * command document and/or return a bespoke response document while staying valid
  * JSON:API. A `null` `inputType`/`outputType` resolves to `type`.
  *
+ * `returns204` declares the action returns **no response body** (a `204 No Content`,
+ * e.g. a handler returning `$context->noContent()`): it suppresses the `outputType`
+ * default so the generated OpenAPI document advertises a `204` response instead of a
+ * `200` document body (design §4.5). It is mutually exclusive with an explicit
+ * `outputType` (a `204` action describes no body). It affects only the generated
+ * document — the runtime response is whatever the handler returns.
+ *
  * `server` names the server this action is exposed on (a single server name, or
  * `null` for the implicit `default` server).
  *
@@ -48,12 +55,19 @@ use haddowg\JsonApiBundle\Action\ActionScope;
  * `403` on a false result (design §6). It rides on the action, not the type.
  *
  * `name` is an optional route-name override.
+ *
+ * `tags` declares the **OpenAPI tag names** this action's operation is grouped under
+ * in the generated OpenAPI document (design §4.7, D15). An empty array means the
+ * default: inherit the resource tag(s) of the action's mount `type`, so actions
+ * group with their resource. Tags carry no JSON:API meaning.
  */
 #[\Attribute(\Attribute::TARGET_CLASS)]
 final readonly class AsJsonApiAction
 {
     /**
-     * @param list<string> $methods the author-declared HTTP method allow-list (default `['POST']`)
+     * @param list<string> $methods    the author-declared HTTP method allow-list (default `['POST']`)
+     * @param bool         $returns204 the action returns no response body (the document advertises `204` instead of a `200` body); mutually exclusive with `outputType`
+     * @param list<string> $tags       the OpenAPI tag names this action is grouped under (empty = inherit the mount type's resource tags)
      */
     public function __construct(
         public string $type,
@@ -63,8 +77,10 @@ final readonly class AsJsonApiAction
         public ActionInput $input = ActionInput::None,
         public ?string $inputType = null,
         public ?string $outputType = null,
+        public bool $returns204 = false,
         public ?string $server = null,
         public ?string $security = null,
         public ?string $name = null,
+        public array $tags = [],
     ) {}
 }

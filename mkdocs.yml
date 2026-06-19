@@ -75,6 +75,9 @@ exclude_docs: |
   laravel-gap-build-plan.md
   query-building-consolidation-review.md
   step6-batched-related-fetch-design.md
+  openapi-generation-design.md
+  g13-custom-actions-design.md
+  g21-count-free-pagination-design.md
 
 nav:
   - Home: index.md
@@ -104,3 +107,5 @@ nav:
       - routing.md
       - errors.md
       - multi-server-and-testing.md
+  - OpenAPI & documentation:
+      - openapi.md

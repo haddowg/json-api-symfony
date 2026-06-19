@@ -36,3 +36,37 @@ json_api:
     servers:
         admin:
             base_uri: 'https://admin.music.example'
+
+    # OpenAPI 3.1 generation (G1–G6). The document is projected from the live
+    # registry and served at /docs.json (+ /admin/docs.json for the named server),
+    # with a Swagger UI viewer at /docs. `expose_in_prod: true` registers the HTTP
+    # routes even outside kernel.debug — the example's functional kernel boots
+    # debug=false, so this is what lets its OpenApiDocsTest reach /docs.json.
+    openapi:
+        expose_in_prod: true
+        info:
+            title: 'Music Catalog API'
+            version: '1.0.0'
+            description: 'A JSON:API music catalogue — albums, artists, tracks, playlists and libraries.'
+            contact: { name: 'Catalog Team', email: 'api@music.example' }
+            license: { name: 'MIT' }
+        ui:
+            renderer: swagger
+            path: /docs
+        # A `bearer` security scheme matching the example's Bearer firewall
+        # (config/packages/security.yaml). Operations carrying a `security*`
+        # expression — PlaylistResource's update/delete, the ReissueAlbum action —
+        # get the default requirement, so the docs show them as authenticated.
+        security:
+            schemes:
+                bearer: { type: bearer, bearerFormat: JWT, description: 'A Bearer access token (the user identifier in this example).' }
+            default_requirement: [bearer]
+        # Top-level tag DEFINITIONS (authoritative): descriptions + emit order for the
+        # tags the resources/actions reference. `Catalog` groups albums + the album
+        # actions; `Library` groups playlists. A resource that references a tag not
+        # defined here (or declares none) still groups under its humanized-default tag.
+        tags:
+            - name: Catalog
+              description: 'Albums and the album lifecycle actions (reissue, summarize, artwork upload).'
+            - name: Library
+              description: 'A user''s saved playlists.'

@@ -47,6 +47,14 @@ namespace haddowg\JsonApiBundle\Attribute;
  * same map, layered over the resource-level value. A resource that declares none
  * (and has no `json_api.defaults.cache_headers`) gets no `Cache-Control` (unchanged).
  *
+ * `tags` declares the **OpenAPI tag names** every operation of this type is grouped
+ * under in the generated OpenAPI document (design §4.7, D15). Tags carry **no
+ * JSON:API meaning** — they only drive how Swagger UI / ReDoc group operations. An
+ * empty array means the default: a single tag named the humanized, title-cased,
+ * pluralized form of the type (e.g. `blog-post` -> `'Blog Posts'`). Tag *definitions*
+ * (description / externalDocs / ordering) are config-authoritative; a
+ * referenced-but-undefined tag is auto-synthesized name-only.
+ *
  * `deprecation` and `sunset` declare **deprecation signalling** — the IETF
  * Deprecation header field (`draft-ietf-httpapi-deprecation-header`) plus the
  * RFC 8594 `Sunset` header (bundle ADR 0054, API-Platform gap G16), emitted on
@@ -87,6 +95,7 @@ final readonly class AsJsonApiResource
      * @param bool|string|null                                                     $deprecation    IETF Deprecation-header deprecation: `true` (bare header), a date string (`Deprecation: <date>`), or null (none)
      * @param string|null                                                          $sunset         RFC 8594 sunset HTTP-date (`Sunset: <date>`), or null
      * @param string|null                                                          $sunsetLink     a URI for the companion `Link: <uri>; rel="sunset"` (emitted only when `sunset` is set)
+     * @param list<string>                                                         $tags           the OpenAPI tag names every operation of this type is grouped under (empty = the humanized-type default)
      */
     public function __construct(
         public ?string $type = null,
@@ -104,5 +113,6 @@ final readonly class AsJsonApiResource
         public bool|string|null $deprecation = null,
         public ?string $sunset = null,
         public ?string $sunsetLink = null,
+        public array $tags = [],
     ) {}
 }

@@ -33,6 +33,7 @@ use Symfony\Component\HttpKernel\Bundle\AbstractBundle;
 
 use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 use function Symfony\Component\DependencyInjection\Loader\Configurator\service_locator;
+use function Symfony\Component\DependencyInjection\Loader\Configurator\tagged_iterator;
 
 /**
  * Integrates {@see \haddowg\JsonApi\Server\Server} with Symfony: it discovers
@@ -138,6 +139,17 @@ final class JsonApiBundle extends AbstractBundle
     public const string ACTION_TAG = 'haddowg.json_api.action';
 
     /**
+     * Tag applied to an {@see \haddowg\JsonApiBundle\OpenApi\OpenApiFactoryInterface}
+     * decorator (design §5, D7 — bundle ADR 0080). The
+     * {@see \haddowg\JsonApiBundle\OpenApi\DocumentFactory} consumes the tagged services
+     * as a priority-ordered iterator and applies them after the core projection, so an
+     * app can mutate the built document (servers/security/tags/examples/anything) before
+     * it is served, warmed, or exported. Lower `priority` runs first; the highest gets
+     * the final word.
+     */
+    public const string OPENAPI_FACTORY_TAG = 'haddowg.json_api.openapi_factory';
+
+    /**
      * The bundle's opinionated default `json_api.max_include_depth`: a `?include`
      * may nest at most this many relationship hops from the primary resource
      * unless a resource overrides it with its own `maxIncludeDepth()`. Core itself
@@ -232,7 +244,199 @@ final class JsonApiBundle extends AbstractBundle
                         ->end()
                     ->end()
                 ->end()
+                ->append($this->openApiNode())
             ->end();
+    }
+
+    /**
+     * The `json_api.openapi.*` configuration subtree (design §6, D8/D13/D15/D16): the
+     * OpenAPI document generation, serving + exposure, info / servers / security /
+     * tags metadata, and the cache-warmer's optional static-file output. The UI
+     * subtree is declared here (forward-compatibly) but only consumed in Slice 5.
+     */
+    private function openApiNode(): \Symfony\Component\Config\Definition\Builder\NodeDefinition
+    {
+        $treeBuilder = new \Symfony\Component\Config\Definition\Builder\TreeBuilder('openapi');
+        /** @var \Symfony\Component\Config\Definition\Builder\ArrayNodeDefinition $root */
+        $root = $treeBuilder->getRootNode();
+
+        $root
+            ->info('OpenAPI 3.1 document generation, serving and export (G1–G6).')
+            ->addDefaultsIfNotSet()
+            ->children()
+                ->booleanNode('enabled')
+                    ->info('Whether OpenAPI generation is available at all. When false, no document routes are emitted and the cache warmer skips warming (the CLI export still works). Default true.')
+                    ->defaultTrue()
+                ->end()
+                ->booleanNode('expose_in_prod')
+                    ->info('Expose the document HTTP routes outside kernel.debug (D9). Routes are auto-exposed in debug; set true to also serve them in prod. Default false.')
+                    ->defaultFalse()
+                ->end()
+                ->enumNode('multi_server')
+                    ->info('per_server (default): one document per server, served at /{server}/docs.json. combined: a single document spanning every server at the json path only (D5).')
+                    ->values(['per_server', 'combined'])
+                    ->defaultValue('per_server')
+                ->end()
+                ->enumNode('enum_value_descriptions')
+                    ->info('How a backed enum\'s per-value descriptions are surfaced (D16): both (markdown table + x-enum-* extensions), extensions (only the extensions), or description (only the markdown table). Default both.')
+                    ->values(['both', 'extensions', 'description'])
+                    ->defaultValue('both')
+                ->end()
+                ->scalarNode('public_path')
+                    ->info('Also emit a fully static <server>.json (+ .yaml when symfony/yaml is installed) into this directory at cache:warmup (D17), so a web server/CDN can serve the document with zero PHP. Null = controller-only (served from the cache dir).')
+                    ->defaultNull()
+                ->end()
+                ->arrayNode('json')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->scalarNode('path')
+                            ->info('The path the default server\'s document is served at. Default /docs.json.')
+                            ->defaultValue('/docs.json')
+                        ->end()
+                    ->end()
+                ->end()
+                ->arrayNode('ui')
+                    ->info('The Swagger UI / ReDoc documentation viewer (design D6, ADR 0079): a single config-driven route rendering plain CDN-linked HTML, behind the same expose gate as the document plus `ui.enabled`.')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->booleanNode('enabled')->info('Serve the viewer route. Default true (still subject to the expose gate).')->defaultTrue()->end()
+                        ->enumNode('renderer')->info('swagger (default) or redoc — one, not both.')->values(['swagger', 'redoc'])->defaultValue('swagger')->end()
+                        ->scalarNode('path')->info('The viewer route path. Default /docs.')->defaultValue('/docs')->end()
+                        ->scalarNode('cdn')->info('Override the pinned CDN asset origin (self-host / air-gap). Null = the bundle-pinned jsDelivr URL.')->defaultNull()->end()
+                    ->end()
+                ->end()
+                ->arrayNode('info')
+                    ->info('The OpenAPI info block (G4/G5). Title/version default to JSON:API / 1.0.0 per server when omitted.')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->scalarNode('title')->defaultNull()->end()
+                        ->scalarNode('version')->defaultNull()->end()
+                        ->scalarNode('description')->defaultNull()->end()
+                        ->arrayNode('contact')
+                            ->addDefaultsIfNotSet()
+                            ->children()
+                                ->scalarNode('name')->defaultNull()->end()
+                                ->scalarNode('url')->defaultNull()->end()
+                                ->scalarNode('email')->defaultNull()->end()
+                            ->end()
+                        ->end()
+                        ->arrayNode('license')
+                            ->addDefaultsIfNotSet()
+                            ->children()
+                                ->scalarNode('name')->defaultNull()->end()
+                                ->scalarNode('identifier')->defaultNull()->end()
+                                ->scalarNode('url')->defaultNull()->end()
+                            ->end()
+                        ->end()
+                    ->end()
+                ->end()
+                ->arrayNode('servers')
+                    ->info('Override the advertised OAS servers list. Null/empty = derive one server from each JSON:API server\'s base URI (D2). A non-empty list replaces that derivation document-wide.')
+                    ->arrayPrototype()
+                        ->children()
+                            ->scalarNode('url')->isRequired()->cannotBeEmpty()->end()
+                            ->scalarNode('description')->defaultNull()->end()
+                        ->end()
+                    ->end()
+                ->end()
+                ->arrayNode('security')
+                    ->info('Named security schemes + the document-level default requirement applied to operations carrying a security expression (D8). The authz expression itself is never parsed for scheme semantics.')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->arrayNode('schemes')
+                            ->info('Named securitySchemes (components.securitySchemes). type: http|apiKey|oauth2|openIdConnect|bearer (bearer is shorthand for http+bearer).')
+                            ->useAttributeAsKey('name')
+                            ->arrayPrototype()
+                                ->children()
+                                    ->scalarNode('type')->isRequired()->end()
+                                    ->scalarNode('description')->defaultNull()->end()
+                                    ->scalarNode('scheme')->defaultNull()->end()
+                                    ->scalarNode('bearerFormat')->defaultNull()->end()
+                                    ->scalarNode('in')->defaultNull()->end()
+                                    ->scalarNode('apiKeyName')->info('The header/query/cookie key name for an apiKey scheme.')->defaultNull()->end()
+                                    ->scalarNode('openIdConnectUrl')->defaultNull()->end()
+                                    ->arrayNode('flows')
+                                        ->info('The supported OAuth2 flows (only for type: oauth2). Each flow: authorizationUrl/tokenUrl/refreshUrl as its grant requires + scopes (name => description).')
+                                        ->children()
+                                            ->append($this->oauthFlowNode('implicit'))
+                                            ->append($this->oauthFlowNode('password'))
+                                            ->append($this->oauthFlowNode('clientCredentials'))
+                                            ->append($this->oauthFlowNode('authorizationCode'))
+                                        ->end()
+                                    ->end()
+                                ->end()
+                            ->end()
+                        ->end()
+                        ->arrayNode('default_requirement')
+                            ->info('The scheme name(s) required by a secured operation by default. Each entry: a bare scheme name (no scopes), or {name, scopes:[...]}.')
+                            ->beforeNormalization()
+                                ->ifString()->then(static fn(string $value): array => [$value])
+                            ->end()
+                            ->arrayPrototype()
+                                ->beforeNormalization()
+                                    ->ifString()->then(static fn(string $value): array => ['name' => $value])
+                                ->end()
+                                ->children()
+                                    ->scalarNode('name')->isRequired()->end()
+                                    ->arrayNode('scopes')->scalarPrototype()->end()->end()
+                                ->end()
+                            ->end()
+                        ->end()
+                    ->end()
+                ->end()
+                ->arrayNode('externalDocs')
+                    ->info('Document-level external documentation link.')
+                    ->children()
+                        ->scalarNode('url')->isRequired()->cannotBeEmpty()->end()
+                        ->scalarNode('description')->defaultNull()->end()
+                    ->end()
+                ->end()
+                ->arrayNode('tags')
+                    ->info('Top-level tag DEFINITIONS (authoritative; D15). Any tag referenced by a resource/action but undefined here is auto-synthesized (name only). Config order is the emit order.')
+                    ->arrayPrototype()
+                        ->children()
+                            ->scalarNode('name')->isRequired()->cannotBeEmpty()->end()
+                            ->scalarNode('description')->defaultNull()->end()
+                            ->arrayNode('externalDocs')
+                                ->children()
+                                    ->scalarNode('url')->isRequired()->cannotBeEmpty()->end()
+                                    ->scalarNode('description')->defaultNull()->end()
+                                ->end()
+                            ->end()
+                        ->end()
+                    ->end()
+                ->end()
+            ->end();
+
+        return $root;
+    }
+
+    /**
+     * One OAuth2 flow node (implicit/password/clientCredentials/authorizationCode) under
+     * a scheme's `flows` graph (§4.6, D8). The member URLs a flow needs depend on its
+     * grant (authorizationUrl for implicit/authorizationCode, tokenUrl for the token
+     * grants); the resolver maps whatever is present, and a flow node only contributes a
+     * flow when at least one member is set.
+     */
+    private function oauthFlowNode(string $name): \Symfony\Component\Config\Definition\Builder\NodeDefinition
+    {
+        $treeBuilder = new \Symfony\Component\Config\Definition\Builder\TreeBuilder($name);
+        /** @var \Symfony\Component\Config\Definition\Builder\ArrayNodeDefinition $node */
+        $node = $treeBuilder->getRootNode();
+
+        $node
+            ->children()
+                ->scalarNode('authorizationUrl')->defaultNull()->end()
+                ->scalarNode('tokenUrl')->defaultNull()->end()
+                ->scalarNode('refreshUrl')->defaultNull()->end()
+                ->arrayNode('scopes')
+                    ->info('Available scopes for this flow: scope name => human description.')
+                    ->useAttributeAsKey('name')
+                    ->scalarPrototype()->end()
+                ->end()
+            ->end();
+
+        return $node;
     }
 
     /**
@@ -370,6 +574,12 @@ final class JsonApiBundle extends AbstractBundle
         $builder->registerForAutoconfiguration(ExceptionMapperInterface::class)
             ->addTag(self::EXCEPTION_MAPPER_TAG);
 
+        // Any app service implementing the OpenAPI decorator seam is auto-tagged, so the
+        // DocumentFactory applies it (priority-ordered) over the built document for every
+        // build path — warmer, controller lazy-build, and CLI export (bundle ADR 0080).
+        $builder->registerForAutoconfiguration(\haddowg\JsonApiBundle\OpenApi\OpenApiFactoryInterface::class)
+            ->addTag(self::OPENAPI_FACTORY_TAG);
+
         // The constraint-translator interface references Symfony Validator types,
         // so only register its autoconfiguration when the optional
         // symfony/validator dependency is installed.
@@ -410,6 +620,10 @@ final class JsonApiBundle extends AbstractBundle
                     // structure (the per-operation cache overrides) does not survive
                     // as a flat tag attribute, so it is carried as one JSON string.
                     'response_headers' => self::responseHeadersTag($attribute),
+                    // The OpenAPI tag refs (design §4.7, D15), comma-joined to survive
+                    // the container as a plain scalar (mirroring `operations`); the
+                    // ResourceLocatorPass parses them back for the OpenAPI MetadataSource.
+                    'tags' => self::tagsTag($attribute->tags),
                 ], static fn(mixed $value): bool => $value !== null));
             },
         );
@@ -426,6 +640,9 @@ final class JsonApiBundle extends AbstractBundle
                     'operations' => $attribute->operations !== []
                         ? \implode(',', \array_map(static fn(Operation $op): string => $op->value, $attribute->operations))
                         : null,
+                    // Standalone-type OpenAPI tag refs (design §4.7); empty = the
+                    // humanized-type default resolved by the MetadataSource.
+                    'tags' => self::tagsTag($attribute->tags),
                 ], static fn(mixed $value): bool => $value !== null));
             },
         );
@@ -470,12 +687,26 @@ final class JsonApiBundle extends AbstractBundle
                     'input' => $attribute->input->name,
                     'inputType' => $attribute->inputType,
                     'outputType' => $attribute->outputType,
+                    // Only carried when set: a no-output (204) action suppresses the
+                    // outputType default so the document advertises 204 (design §4.5).
+                    'returns204' => $attribute->returns204 ? true : null,
                     'security' => $attribute->security,
                     'methods' => $attribute->methods !== [] ? \implode(',', $attribute->methods) : null,
                     'name' => $attribute->name,
+                    // The OpenAPI tag refs (design §4.7); empty = inherit the mount
+                    // type's resource tags, resolved by the MetadataSource.
+                    'tags' => self::tagsTag($attribute->tags),
                 ], static fn(mixed $value): bool => $value !== null));
             },
         );
+
+        // OpenAPI document generation, serving, warming + export (Slice 4 stage B,
+        // bundle ADRs 0077/0078): resolve json_api.openapi.* into the typed config, set
+        // its parameters, and register the document/JSON-schema factories, the cache
+        // warmer, the serving controller, the docs route loader and the two export
+        // commands. The MetadataSource (registered in services.php) is given the
+        // per-server document config (info / servers / security / tags) here.
+        $this->registerOpenApi($config, $container, $builder, \array_keys($servers));
     }
 
     public function build(ContainerBuilder $container): void
@@ -486,6 +717,154 @@ final class JsonApiBundle extends AbstractBundle
         $container->addCompilerPass(new DoctrineEntityMapPass());
         $container->addCompilerPass(new ResourceSecurityPass());
         $container->addCompilerPass(new ResponseHeadersPass());
+    }
+
+    /**
+     * Wires the OpenAPI subsystem from `json_api.openapi.*` (design §3, §6,
+     * D9/D13/D17; bundle ADRs 0077/0078):
+     *  - resolves the config into a typed {@see \haddowg\JsonApiBundle\OpenApi\Config\OpenApiConfig};
+     *  - feeds the per-server document config (info / servers / security / tags) into
+     *    the already-registered {@see \haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource};
+     *  - registers the {@see \haddowg\JsonApiBundle\OpenApi\DocumentFactory} +
+     *    {@see \haddowg\JsonApiBundle\OpenApi\JsonSchemaFactory} (configured with the
+     *    enum-description mode), the {@see \haddowg\JsonApiBundle\OpenApi\ArtifactStore},
+     *    the optional {@see \haddowg\JsonApiBundle\OpenApi\DocumentWarmer}, the serving
+     *    {@see \haddowg\JsonApiBundle\Controller\OpenApiController}, the docs route
+     *    loader, and the two export commands.
+     *
+     * The route loader applies the expose gate (`kernel.debug || expose_in_prod`), so
+     * no document route exists when generation is disabled or exposure is not allowed
+     * — while the CLI export and the warmer stay available regardless (D9).
+     *
+     * @param array<string, mixed> $config
+     * @param list<string>         $serverNames
+     */
+    private function registerOpenApi(array $config, ContainerConfigurator $container, ContainerBuilder $builder, array $serverNames): void
+    {
+        $openApiConfig = (new \haddowg\JsonApiBundle\OpenApi\Config\OpenApiConfigResolver())->resolve($config, $serverNames);
+
+        $services = $container->services();
+
+        // The resolved openapi config as a pure-scalar parameter: the compiled
+        // container cannot dump the OAS value objects (info / servers / security / tag
+        // VOs) as service arguments, so the ServerDocumentConfigProvider rebuilds them
+        // at runtime from this scalar array (the same OpenApiConfigResolver, called on
+        // boot rather than at compile).
+        $openApiScalarConfig = \is_array($config['openapi'] ?? null) ? $config['openapi'] : [];
+        $builder->setParameter('haddowg_json_api.openapi', $openApiScalarConfig);
+
+        $services->set(\haddowg\JsonApiBundle\OpenApi\Config\OpenApiConfigResolver::class);
+
+        // The per-server ServerDocumentConfig map, produced on boot and injected into
+        // the MetadataSource (registered in services.php with an empty default) via a
+        // service factory — a service may resolve to an array value.
+        $services->set(\haddowg\JsonApiBundle\OpenApi\Config\ServerDocumentConfigProvider::class)
+            ->args([
+                '$resolver' => service(\haddowg\JsonApiBundle\OpenApi\Config\OpenApiConfigResolver::class),
+                '$openApiConfig' => '%haddowg_json_api.openapi%',
+                '$servers' => $serverNames,
+            ]);
+
+        // A factory service that resolves to the array<server, ServerDocumentConfig>
+        // (a service may resolve to a non-object value via its factory). It is
+        // injected as the MetadataSource's $configByServer; its declared class is the
+        // provider (harmless metadata — the factory return is the real value).
+        $services->set('haddowg.json_api.openapi.server_document_config', \haddowg\JsonApiBundle\OpenApi\Config\ServerDocumentConfigProvider::class)
+            ->factory([service(\haddowg\JsonApiBundle\OpenApi\Config\ServerDocumentConfigProvider::class), 'map']);
+
+        $builder->getDefinition(\haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource::class)
+            ->setArgument('$configByServer', new \Symfony\Component\DependencyInjection\Reference('haddowg.json_api.openapi.server_document_config'));
+
+        $enumMode = $openApiConfig->enumDescriptionMode;
+
+        // The per-server document + per-type JSON-Schema factories, both configured
+        // with the enum-description mode so a backed enum surfaces identically.
+        $services->set(\haddowg\JsonApiBundle\OpenApi\DocumentFactory::class)
+            ->args([
+                '$metadata' => service(\haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource::class),
+                '$enumDescriptionMode' => $enumMode,
+                // The wholesale-customisation decorators (design §5, ADR 0080), composed
+                // priority-ordered (lower first); applied after projection on every build
+                // path — warmer, controller lazy-build, CLI export.
+                '$decorators' => tagged_iterator(self::OPENAPI_FACTORY_TAG),
+            ]);
+
+        $services->set(\haddowg\JsonApiBundle\OpenApi\JsonSchemaFactory::class)
+            ->args([
+                '$servers' => service(ServerProvider::class),
+                '$types' => service(\haddowg\JsonApiBundle\Server\TypeMetadataResolver::class),
+                '$descriptors' => service(\haddowg\JsonApiBundle\Server\RouteDescriptorRegistry::class),
+                '$enumDescriptionMode' => $enumMode,
+            ]);
+
+        // The shared cache-artifact store the warmer writes and the controller reads.
+        $services->set(\haddowg\JsonApiBundle\OpenApi\ArtifactStore::class)
+            ->args(['$cacheDir' => '%kernel.cache_dir%']);
+
+        // The optional cache warmer (D17): pre-builds each server's document + JSON
+        // Schemas at cache:warmup, and (when public_path is set) a static .json/.yaml.
+        // isOptional() === true, so a docs failure never breaks a deploy.
+        $services->set(\haddowg\JsonApiBundle\OpenApi\DocumentWarmer::class)
+            ->args([
+                '$documents' => service(\haddowg\JsonApiBundle\OpenApi\DocumentFactory::class),
+                '$schemas' => service(\haddowg\JsonApiBundle\OpenApi\JsonSchemaFactory::class),
+                '$store' => service(\haddowg\JsonApiBundle\OpenApi\ArtifactStore::class),
+                '$servers' => $serverNames,
+                '$enabled' => $openApiConfig->enabled,
+                '$combined' => $openApiConfig->combined,
+                '$publicPath' => $openApiConfig->publicPath,
+                '$logger' => service('logger')->nullOnInvalid(),
+            ])
+            ->tag('kernel.cache_warmer');
+
+        // The serving controller: serves the pre-built artifact, lazy-builds in dev.
+        $services->set(\haddowg\JsonApiBundle\Controller\OpenApiController::class)
+            ->args([
+                '$documents' => service(\haddowg\JsonApiBundle\OpenApi\DocumentFactory::class),
+                '$store' => service(\haddowg\JsonApiBundle\OpenApi\ArtifactStore::class),
+                '$debug' => '%kernel.debug%',
+                '$combined' => $openApiConfig->combined,
+            ])
+            ->public()
+            ->tag('controller.service_arguments');
+
+        // The documentation viewer controller (design D6): renders Swagger UI or ReDoc
+        // (one, per config) pointed at the configured json path; CDN-linked, overridable.
+        $services->set(\haddowg\JsonApiBundle\Controller\OpenApiUiController::class)
+            ->args([
+                '$urlGenerator' => service('router'),
+                '$renderer' => $openApiConfig->ui->renderer,
+                '$jsonPath' => $openApiConfig->jsonPath,
+                '$cdn' => $openApiConfig->ui->cdn,
+            ])
+            ->public()
+            ->tag('controller.service_arguments');
+
+        // The docs route loader: emits the document routes only when generation is
+        // enabled AND the expose gate passes (kernel.debug || expose_in_prod). The
+        // gate is OR-ed inside load() because %kernel.debug% is a parameter resolved
+        // at container build, not known here at compile.
+        $services->set(\haddowg\JsonApiBundle\Routing\OpenApiRouteLoader::class)
+            ->args([
+                '$servers' => $serverNames,
+                '$enabled' => $openApiConfig->enabled,
+                '$debug' => '%kernel.debug%',
+                '$exposeInProd' => $openApiConfig->exposeInProd,
+                '$combined' => $openApiConfig->combined,
+                '$jsonPath' => $openApiConfig->jsonPath,
+                '$uiEnabled' => $openApiConfig->ui->enabled,
+                '$uiPath' => $openApiConfig->ui->path,
+            ])
+            ->tag('routing.loader');
+
+        // The two export commands (D13) — always available (independent of exposure).
+        $services->set(\haddowg\JsonApiBundle\Command\OpenApiExportCommand::class)
+            ->args(['$documents' => service(\haddowg\JsonApiBundle\OpenApi\DocumentFactory::class)])
+            ->tag('console.command');
+
+        $services->set(\haddowg\JsonApiBundle\Command\JsonSchemaExportCommand::class)
+            ->args(['$schemas' => service(\haddowg\JsonApiBundle\OpenApi\JsonSchemaFactory::class)])
+            ->tag('console.command');
     }
 
     /**
@@ -648,6 +1027,28 @@ final class JsonApiBundle extends AbstractBundle
         }
 
         return $config === [] ? null : \json_encode($config, \JSON_THROW_ON_ERROR);
+    }
+
+    /**
+     * Normalises the OpenAPI `tags` ref list to a comma-joined string (mirroring how
+     * `operations`/`server` are joined) so it survives the container as a plain
+     * scalar; an empty list (the humanized-type default) is filtered out. Individual
+     * tag names are trimmed; a tag name may not contain a comma (it is the list
+     * delimiter), so a comma in a name is silently stripped at the split boundary.
+     *
+     * @param list<string> $tags
+     */
+    private static function tagsTag(array $tags): ?string
+    {
+        $names = [];
+        foreach ($tags as $tag) {
+            $tag = \trim($tag);
+            if ($tag !== '' && !\in_array($tag, $names, true)) {
+                $names[] = $tag;
+            }
+        }
+
+        return $names === [] ? null : \implode(',', $names);
     }
 
     /**
