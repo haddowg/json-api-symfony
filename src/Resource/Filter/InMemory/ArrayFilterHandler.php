@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace haddowg\JsonApi\Resource\Filter\InMemory;
 
 use haddowg\JsonApi\Resource\Field\Accessor;
+use haddowg\JsonApi\Resource\Filter\DateRange;
 use haddowg\JsonApi\Resource\Filter\FilterHandlerInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
+use haddowg\JsonApi\Resource\Filter\Range;
 use haddowg\JsonApi\Resource\Filter\UnsupportedFilter;
 use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Filter\WhereDoesntHave;
@@ -56,6 +58,7 @@ final class ArrayFilterHandler implements FilterHandlerInterface
             $filter instanceof WhereNull => static fn(mixed $row): bool => Accessor::get($row, $filter->column) === null,
             $filter instanceof WhereNotNull => static fn(mixed $row): bool => Accessor::get($row, $filter->column) !== null,
             $filter instanceof WhereThrough => $this->whereThrough($filter, $value),
+            $filter instanceof Range => $this->range($filter, $value),
             $filter instanceof WhereHas => fn(mixed $row): bool => $this->hasRelation($row, $filter->relationship),
             $filter instanceof WhereDoesntHave => fn(mixed $row): bool => !$this->hasRelation($row, $filter->relationship),
             default => throw new UnsupportedFilter($filter),
@@ -90,6 +93,82 @@ final class ArrayFilterHandler implements FilterHandlerInterface
     }
 
     /**
+     * Inclusive range filter ({@see Range}): the structured value carries an
+     * optional `min` and/or `max` bound (the nested
+     * `filter[<key>][min]`/`[max]` query, which Symfony parses into an array).
+     * Each **present, non-blank** bound and the column value are coerced through
+     * the filter's deserializer (numeric for {@see Range}, ISO-8601 →
+     * `\DateTimeImmutable` for {@see DateRange}), then tested `min <= v <= max`
+     * over whichever bounds are present — `min` alone is a `>=`, `max` alone a
+     * `<=`. A value that is not an array, or that supplies neither bound, is a
+     * no-op (keeps every row).
+     *
+     * A {@see DateRange} bound whose value is shape-valid ISO-8601 but
+     * calendar-invalid (`1997-13-99` — passes the lenient shape `Pattern` but not
+     * `\DateTimeImmutable`) does not coerce to a `\DateTimeInterface`; the
+     * framework adapter's pre-provider validation rejects it as a clean `400`, but
+     * when that validation is absent this handler **skips** such a bound (treats it
+     * as open/absent) rather than comparing a `\DateTimeImmutable` column against a
+     * raw string — which PHP would silently coerce to a lexical compare, diverging
+     * from a database adapter. {@see bound()} applies this guard, so both bounds and
+     * both providers degrade identically.
+     *
+     * @return \Closure(mixed): bool
+     */
+    private function range(Range $filter, mixed $value): \Closure
+    {
+        $bounds = \is_array($value) ? $value : [];
+        $min = $this->bound($filter, $bounds, 'min');
+        $max = $this->bound($filter, $bounds, 'max');
+
+        return function (mixed $row) use ($filter, $min, $max): bool {
+            if ($min === null && $max === null) {
+                return true;
+            }
+
+            $actual = Accessor::get($row, $filter->column);
+            $actual = $filter->deserialize !== null ? ($filter->deserialize)($actual) : $actual;
+
+            if ($min !== null && !($actual >= $min)) {
+                return false;
+            }
+
+            return $max === null || $actual <= $max;
+        };
+    }
+
+    /**
+     * Extracts and coerces one range bound: returns the deserialized bound value,
+     * or `null` when the bound is absent or blank (so an open-ended range works).
+     *
+     * For a {@see DateRange} a coercion that did not yield a `\DateTimeInterface`
+     * (a shape-valid but unparseable ISO-8601 string such as `1997-13-99`) is also
+     * treated as absent, so the comparison never crosses a `\DateTimeImmutable`
+     * column against a raw string — see {@see range()}.
+     *
+     * @param array<array-key, mixed> $bounds
+     */
+    private function bound(Range $filter, array $bounds, string $key): mixed
+    {
+        if (!\array_key_exists($key, $bounds)) {
+            return null;
+        }
+
+        $value = $bounds[$key];
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        $value = $filter->deserialize !== null ? ($filter->deserialize)($value) : $value;
+
+        if ($filter instanceof DateRange && !$value instanceof \DateTimeInterface) {
+            return null;
+        }
+
+        return $value;
+    }
+
+    /**
      * Shared operator comparison, identical for a {@see Where} column and a
      * {@see WhereThrough} leaf so the two stay byte-for-byte equivalent.
      */
@@ -108,6 +187,11 @@ final class ArrayFilterHandler implements FilterHandlerInterface
             // only; anything beyond is platform-defined), so database
             // adapters can match this reference behaviour.
             'like' => \is_string($actual) && \is_string($expected) && \stripos($actual, $expected) !== false,
+            // Prefix / suffix, case-insensitive for ASCII (same fold as `like`)
+            // — the semantics a SQL `LIKE '…%'` / `LIKE '%…'` gives, so database
+            // adapters can match this reference behaviour.
+            'starts' => \is_string($actual) && \is_string($expected) && \stripos($actual, $expected) === 0,
+            'ends' => \is_string($actual) && \is_string($expected) && \str_ends_with(\strtolower($actual), \strtolower($expected)),
             default => false,
         };
     }
