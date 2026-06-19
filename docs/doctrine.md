@@ -358,7 +358,9 @@ so the same spec test passes on both providers.
 | `Where` (`=`/`==`/`===`) | `= :param` (DQL has one type-coercing equality) |
 | `Where` (`!=`/`<>`) | `<> :param` |
 | `Where` (`>`/`>=`/`<`/`<=`) | the same operator, `:param`-bound |
-| `Where` (`like`) | `LOWER(col) LIKE :param ESCAPE '!'` — contains-match, ASCII case-insensitive |
+| `Where` (`like`) | `LOWER(col) LIKE :param ESCAPE '!'` (`%v%`) — contains-match, ASCII case-insensitive |
+| `Where` (`starts`/`ends`) | `LOWER(col) LIKE :param ESCAPE '!'` with `v%` / `%v` — prefix / suffix (`StartsWith` / `EndsWith`) |
+| `Range` / `DateRange` | two push-down `>= :min` / `<= :max` predicates over the present bounds, on the same query |
 | `WhereIn` / `WhereIdIn` | `col IN (:list)` |
 | `WhereNotIn` / `WhereIdNotIn` | `col NOT IN (:list)` |
 | `WhereNull` / `WhereNotNull` | `col IS NULL` / `col IS NOT NULL` (request value ignored) |
@@ -375,6 +377,18 @@ A few translations carry nuance:
   is case-sensitive; SQLite folds ASCII only). Case-folding beyond ASCII remains
   platform-defined. A non-string filter value matches nothing (`stripos` requires
   two strings).
+- **`starts`/`ends` mirror `like`'s fold.** The two prefix/suffix operators (backing
+  the `StartsWith`/`EndsWith` [convenience filters](data-layer.md#convenience-filters))
+  reuse the same wildcard-`LIKE` helper — same `%`/`_` escaping, same `LOWER()` both
+  sides, same non-string → no-match — differing only in where the `%` wildcard wraps
+  (`v%` for `starts`, `%v` for `ends`), so they match the in-memory `stripos === 0` /
+  `str_ends_with` exactly.
+- **`Range`/`DateRange` are two push-down predicates, not a subquery.** A structured
+  `Range` adds a `>= :min` and/or `<= :max` over the present bounds onto the **same**
+  primary query — one query, no join, no subquery, no N+1. A blank/absent bound is
+  open-ended (treated as absent, byte-for-byte with the in-memory `bound()`), so an
+  open `filter[<key>][max]=` is a no-op rather than a `400`; `DateRange` binds each
+  bound as a coerced `\DateTimeImmutable`.
 - **Empty-list semantics.** `WhereIn`/`WhereIdIn` with an empty list match nothing
   (`IN ()` is not valid SQL, so the handler emits `1 = 0`); the negated variants
   then match everything (a no-op).

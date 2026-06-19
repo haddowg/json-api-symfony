@@ -88,11 +88,61 @@ final class OpenApiDocsTest extends MusicCatalogKernelTestCase
     }
 
     #[Test]
+    #[Group('spec:fetching-filtering')]
+    public function theConvenienceFiltersProjectTheirParametersAndDescriptions(): void
+    {
+        $document = $this->decode($this->handle('/docs.json'));
+        $parameters = $this->nested($document, 'paths', '/albums', 'get', 'parameters');
+
+        // A Contains filter surfaces its strategy description on a plain string schema.
+        $title = $this->parameterNamed($parameters, 'filter[title]');
+        self::assertSame('Matches values containing the given substring.', $title['description'] ?? null);
+
+        // A Range filter is a deepObject parameter with a {min, max} object value schema.
+        $rating = $this->parameterNamed($parameters, 'filter[rating]');
+        self::assertSame('deepObject', $rating['style'] ?? null);
+        self::assertTrue($rating['explode'] ?? null);
+        self::assertSame(
+            'Matches values within the given inclusive numeric range (min/max, either optional).',
+            $rating['description'] ?? null,
+        );
+        $ratingSchema = $this->nested($rating, 'schema');
+        self::assertSame('object', $ratingSchema['type'] ?? null);
+        self::assertArrayHasKey('min', $this->nested($ratingSchema, 'properties'));
+        self::assertArrayHasKey('max', $this->nested($ratingSchema, 'properties'));
+
+        // A DateRange filter is a deepObject whose bounds are string/date-time.
+        $releasedAt = $this->parameterNamed($parameters, 'filter[releasedAt]');
+        self::assertSame('deepObject', $releasedAt['style'] ?? null);
+        self::assertTrue($releasedAt['explode'] ?? null);
+        $minBound = $this->nested($releasedAt, 'schema', 'properties', 'min');
+        self::assertSame('date-time', $minBound['format'] ?? null);
+    }
+
+    #[Test]
     public function theUiViewerServes(): void
     {
         $response = $this->handle('/docs');
         self::assertSame(200, $response->getStatusCode());
         self::assertStringContainsString('swagger', \strtolower((string) $response->getContent()));
+    }
+
+    /**
+     * Finds the OpenAPI parameter object with the given `name` in a parameter list.
+     *
+     * @param array<array-key, mixed> $parameters
+     *
+     * @return array<array-key, mixed>
+     */
+    private function parameterNamed(array $parameters, string $name): array
+    {
+        foreach ($parameters as $parameter) {
+            if (\is_array($parameter) && ($parameter['name'] ?? null) === $name) {
+                return $parameter;
+            }
+        }
+
+        self::fail(\sprintf('No parameter named "%s" in the operation.', $name));
     }
 
     /**

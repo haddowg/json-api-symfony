@@ -95,6 +95,44 @@ final class DoctrineReadQueryBudgetTest extends JsonApiFunctionalTestCase
     }
 
     #[Test]
+    #[Group('spec:fetching-filtering')]
+    public function aRangeFilterRunsOnePrimarySelectWithTwoBoundPredicatesNoSubquery(): void
+    {
+        $logger = $this->logger();
+        $logger->reset();
+
+        // GET /articles?filter[idRange][min]=2&filter[idRange][max]=4 — the structured
+        // Range compiles to TWO push-down `>=`/`<=` predicates on the SAME primary
+        // article SELECT, NOT a correlated subquery or a per-row probe. So: exactly one
+        // primary article SELECT, zero EXISTS subqueries (the fingerprint distinguishing
+        // Range's two andWhere from a WhereHas-style correlated EXISTS).
+        $response = $this->handle(self::BASE_URI . '/articles?filter[idRange][min]=2&filter[idRange][max]=4&sort=title');
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        $primarySelects = \array_filter(
+            $this->selectsFrom($logger, 'article'),
+            static fn(string $sql): bool => !\str_contains(\strtolower($sql), 'count('),
+        );
+        self::assertCount(
+            1,
+            $primarySelects,
+            \sprintf("a Range filter must run exactly one primary article SELECT; ran %d:\n%s", \count($primarySelects), \implode("\n", $primarySelects)),
+        );
+
+        $existsSubqueries = $this->statementsContaining($logger, 'exists');
+        self::assertSame(
+            [],
+            $existsSubqueries,
+            "a Range filter must NOT emit an EXISTS subquery (it is two push-down bound predicates):\n" . \implode("\n", $existsSubqueries),
+        );
+
+        // The single primary SELECT carries both bound predicates (`>=` and `<=`).
+        $primary = \strtolower($primarySelects[\array_key_first($primarySelects)] ?? '');
+        self::assertStringContainsString('>=', $primary);
+        self::assertStringContainsString('<=', $primary);
+    }
+
+    #[Test]
     #[Group('spec:fetching-relationships')]
     public function aLazyToManyOnACollectionForcesNoPerParentLinkageLoad(): void
     {
