@@ -32,7 +32,7 @@ final class TagNameResolverTest extends TestCase
     {
         yield 'hyphenated compound' => ['blog-post', 'Blog Posts'];
         yield 'single word' => ['genre', 'Genres'];
-        yield 'snake compound' => ['music_album', 'Music Albums'];
+        yield 'snake compound' => ['music_track', 'Music Tracks'];
         yield 'camelCase compound' => ['blogPost', 'Blog Posts'];
         yield 'y to ies' => ['category', 'Categories'];
     }
