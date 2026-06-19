@@ -57,7 +57,7 @@ final class AlbumResource extends AbstractResource
 > probe, not a total. Opt into the total either as the **author** —
 > `PagePaginator::make()->withCount()` makes *this* paginator count on every paged
 > request — or let a **client** ask per request with `?withCount=_self_` on a
-> [`countable()`](#counting-the-primary-collection-withcountself) resource under the
+> [`countable()`](#counting-the-primary-collection-withcount_self_) resource under the
 > negotiated Countable profile. When a total is computed it is rendered once in both
 > `meta.total` (the universal cardinality slot) and `meta.page.total`.
 
