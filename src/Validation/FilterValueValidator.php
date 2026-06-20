@@ -121,6 +121,11 @@ final class FilterValueValidator
     {
         $constraints = [];
         foreach ($filter->constraints() as $constraint) {
+            // Filter-side validation passes no request to translate(): a widened
+            // `when($value, $request)` condition on a filter constraint receives a
+            // null request here (the documented MVP boundary, ADR 0084) — the
+            // request-aware visibility/authz axis is the headline, filter-side
+            // conditional vocabulary stays static for now.
             foreach ($this->translator->translate($constraint) as $symfonyConstraint) {
                 $constraints[] = $symfonyConstraint;
             }

@@ -144,6 +144,51 @@ A denied expression throws `AccessDeniedException`; the route-scoped
 Both render as `application/vnd.api+json` with the standard `errors[].status` /
 `errors[].title`, exactly like every other bundle error.
 
+## Request-aware predicates: lightweight per-caller authz
+
+Separate from the firewall/voter path, the **field and relation builders** carry a
+family of request-aware predicates (core ADRs 0079/0080) — a learnable, uniform way
+to say "this field/verb is restricted *for this caller*" without writing a voter or
+an expression. Each predicate is a closure that returns **`true` when the restriction
+applies**, and the family is consistent across reading, writing and relationships:
+
+| Builder | Signature | Restriction when the closure returns `true` |
+| --- | --- | --- |
+| `hidden(fn)` | `fn($request, $model)` | the attribute is omitted from the response |
+| `writeOnly(fn)` | `fn($request)` | accepted on write, never rendered |
+| `readOnly(fn)` / `readOnlyOnCreate(fn)` / `readOnlyOnUpdate(fn)` | `fn($request)` | ignored on write (never hydrated, never validated) |
+| `cannotReplace(fn)` / `cannotAdd(fn)` / `cannotRemove(fn)` | `fn($request, $model)` | the relationship verb is `403` |
+| `cannotBeIncluded(fn)` | `fn($request, $model)` | `?include` naming it is `400` |
+| `when(fn, …)` | `fn($value, $request)` | the wrapped validation rules apply (e.g. `required()` per caller) |
+
+```php
+use haddowg\JsonApi\Request\JsonApiRequestInterface;
+
+Str::make('secret')->hidden(
+    static fn(JsonApiRequestInterface $request, mixed $model): bool
+        => $request->getHeaderLine('X-Role') !== 'admin',
+)
+```
+
+The request is a PSR-7 `ServerRequestInterface`, so a predicate can read a header, a
+query param or anything you put on the request — no security plumbing required (though
+nothing stops a predicate from consulting an injected service). These execute on
+**both** providers identically and compose with the firewall/voter layer above: use
+the predicates for per-field visibility and per-caller verb gating, and the
+`security:` expressions for entity-level allow/deny.
+
+> **Static getters describe the *superset*.** A closure-declared restriction is not
+> *unconditional*, so the static getters (`isHidden()`, `allowsReplace()`, …) report
+> the permissive value — which is what the OpenAPI generator reads. A sometimes-hidden
+> field still appears in the schema, and a sometimes-prohibited verb is still exposed:
+> the generated document is the union of what *any* caller may see or do, by design
+> (a runtime, per-request condition cannot be expressed in a cached schema).
+>
+> **Scope.** The predicates run on the write-document and read/render/include paths.
+> Filter-side and entity-level `when()` conditions, pivot-field visibility and
+> Map-child visibility are out of scope (they pass a `null` request / stay static) —
+> see [bundle ADR 0084](adr/0084-request-aware-predicates-executing-the-core-resolvers.md).
+
 ## Two equivalent layers
 
 This declarative layer is sugar over the [lifecycle hooks](lifecycle-hooks.md). For

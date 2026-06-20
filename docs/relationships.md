@@ -677,6 +677,46 @@ carrying `album` replaces the association.
 > hydrates id+attributes, then applies each relationship through
 > `mutateRelationship(... Mode::Replace, flush: false)`. See [data-layer.md](data-layer.md).
 
+### Request-aware mutation guards
+
+The `cannotReplace()`/`cannotAdd()`/`cannotRemove()` flags also accept a **closure**,
+making the 403 a per-caller decision rather than a blanket lock:
+
+```php
+HasMany::make('medals')->type('medals')
+    ->cannotReplace(static fn(JsonApiRequestInterface $request, mixed $model): bool
+        => $request->getHeaderLine('X-Role') !== 'admin')
+```
+
+The closure returns `true` when the restriction **applies** (cannot replace), so a
+non-admin `PATCH …/relationships/medals` is `FullReplacementProhibited` (403) while an
+admin's succeeds; `cannotAdd`/`cannotRemove` gate `POST`/`DELETE` the same way. The
+handler resolves each gate against the inbound request and the loaded parent
+(`allows*For($request, $parent)`), and the same request-aware read-only gate applies
+to a relation embedded in a whole-resource write (a `readOnly(fn)` relation is skipped
+only for the callers it is read-only for). This is the relationship arm of the
+[per-caller predicate family](authorization.md#request-aware-predicates-lightweight-per-caller-authz).
+
+#### The replacement gate on embedded whole-resource writes
+
+A relationship embedded in a `data.relationships` member of a whole-resource write is
+applied as a **full replacement** of that association (an embedded write is always the
+complete set, never an incremental add or remove). So on a whole-resource **`PATCH`**
+the handler enforces `cannotReplace()` on each embedded relation exactly as it does at
+the dedicated endpoint — a non-admin `PATCH /badges/1` whose body embeds the gated
+`medals` relation is `FullReplacementProhibited` (403), not a silent replacement. The
+gate runs before the persister applies, so nothing is mutated.
+
+The gate is **skipped on a `POST`** (create): a create sets the relationship's *initial*
+state — there is nothing to replace — and gating it would make a `cannotReplace` relation
+impossible to ever set, since such a relation has no relationship endpoint either. So a
+guest may `POST /badges` with the gated `medals` embedded; only a *replacement* of an
+existing relationship is gated.
+
+`cannotAdd()`/`cannotRemove()` have **no embedded analogue**: an embedded write is always
+a full set, never an incremental `POST`-add or `DELETE`-remove, so those two gates apply
+only at the `…/relationships/{rel}` endpoint (bundle ADR 0084).
+
 ## Per-relation endpoint exposure
 
 A relation can suppress individual endpoints. The exposure flags themselves are

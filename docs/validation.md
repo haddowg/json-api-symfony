@@ -82,6 +82,14 @@ Symfony `Collection` field entry, then validates the attributes array against a
 `Collection(fields: …, allowExtraFields: true)` — unknown attributes are ignored,
 matching the hydrator.
 
+> **Read-only skip is request-aware.** A field may be `readOnly(fn => …)` —
+> read-only *for some callers only* (see [authorization](authorization.md)). The
+> validation skip consults the **same** request-aware gate the hydrator does
+> (`isReadOnlyFor($creating, $request)`), so validation and hydration stay
+> consistent: a field that is read-only for this caller is skipped in **both** — it
+> is never validated-but-never-hydrated, which would surface a spurious 422 the
+> write could not satisfy.
+
 Two mechanisms combine in each field entry, and it is worth keeping them apart:
 
 **1. Presence and nullability — resolved, not translated.** Core's `Required` and
@@ -261,7 +269,25 @@ A few core constraints carry PHP closures that no stock Symfony constraint accep
 so each translates to a `Callback` whose body runs the closure at validation time:
 
 - **`When`** evaluates its condition closure against the value and, only when it
-  returns `true`, validates the value against the translated inner constraints.
+  returns `true`, validates the value against the translated inner constraints. The
+  condition is **request-aware**: it receives the value first and the inbound request
+  second (`fn($value, $request)`), so a rule can branch on the caller — and because
+  the value stays first, an existing `fn($value)` closure keeps binding unchanged. A
+  presence rule (`required()`/`nullable()`) wrapped in a `when()` is honoured by
+  presence resolution, so a field can be *conditionally required per caller*:
+
+  ```php
+  Str::make('clearance')->nullable()->when(
+      static fn(mixed $value, ?JsonApiRequestInterface $request): bool => $request?->getHeaderLine('X-Role') === 'admin',
+      static fn(Str $field) => $field->required(),
+  )
+  // admin omitting `clearance` → 422 at /data/attributes/clearance
+  // a non-admin omitting it → accepted (the condition is false for it)
+  ```
+
+  > The request is threaded only on the **write document** path. The filter-side
+  > validator, the id-format check and the entity-level pass (`UniqueEntity` and the
+  > like) pass `null` as the second argument — their `when()` conditions stay static.
 - **`After` / `Before` / `Between`** coerce the value to a `\DateTimeImmutable`,
   skip an absent/empty/unparseable value, and resolve the bound **at validation
   time** — so a closure bound such as "now" reflects the moment of the request.

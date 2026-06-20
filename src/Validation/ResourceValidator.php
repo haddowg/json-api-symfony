@@ -10,8 +10,10 @@ use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Constraint\CompareField;
 use haddowg\JsonApi\Resource\Constraint\Comparison;
+use haddowg\JsonApi\Resource\Constraint\ConstraintInterface;
 use haddowg\JsonApi\Resource\Constraint\Nullable;
 use haddowg\JsonApi\Resource\Constraint\Required;
+use haddowg\JsonApi\Resource\Constraint\When;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\FieldInterface;
 use haddowg\JsonApi\Resource\Field\Id;
@@ -156,11 +158,21 @@ final class ResourceValidator
             if ($field instanceof Id || $field instanceof RelationInterface) {
                 continue;
             }
-            if ($field->isReadOnly($creating)) {
+            // The read-only gate is request-aware (core ADR 0079): a field the author
+            // marked `readOnly(fn)` is validated for a caller it is *writable* for and
+            // skipped for one it is *read-only* for — so validation and hydration stay
+            // consistent. Were this static, a conditionally-read-only field would be
+            // validated (e.g. required) but then never hydrated for the same caller,
+            // surfacing a spurious 422 the write could never satisfy.
+            if ($field->isReadOnlyFor($creating, $request)) {
                 continue;
             }
 
-            $fields[$field->name()] = $this->fieldConstraint($field, $creating);
+            // The field's incoming (merged) value, or null when absent — used to
+            // evaluate a request-aware `when()` condition during presence resolution
+            // (a conditionally-required field, ADR 0084).
+            $value = $attributes[$field->name()] ?? null;
+            $fields[$field->name()] = $this->fieldConstraint($field, $creating, request: $request, value: $value);
             foreach ($this->compareConstraints($field, $creating) as $compare) {
                 $compares[] = [$field->name(), $compare];
             }
@@ -907,13 +919,22 @@ final class ResourceValidator
      * @param bool $descend whether to descend into a {@see Map} child's own children;
      *                      true at the top level, false one level in so the cascade
      *                      stops at a Map's direct children (ADR 0020)
+     * @param ?JsonApiRequestInterface $request the inbound request threaded into a
+     *                                           widened {@see \haddowg\JsonApi\Resource\Constraint\When}
+     *                                           condition (null on the filter/pivot/id paths — the
+     *                                           documented MVP boundary)
+     * @param mixed $value the field's incoming value (or null when absent), used to
+     *                     evaluate a widened `when()` condition during presence
+     *                     resolution so a *conditionally*-required field (a `Required`
+     *                     wrapped in a `When` whose condition holds for the caller) is
+     *                     required for the matching caller (ADR 0084)
      */
-    private function fieldConstraint(FieldInterface $field, bool $creating, bool $descend = true): RequiredField|Optional
+    private function fieldConstraint(FieldInterface $field, bool $creating, bool $descend = true, ?JsonApiRequestInterface $request = null, mixed $value = null): RequiredField|Optional
     {
-        $constraints = $this->valueConstraints($field, $creating, $descend);
+        $constraints = $this->valueConstraints($field, $creating, $descend, $request);
 
-        $isRequired = $this->hasRequired($field, $creating);
-        $isNullable = $this->hasNullable($field, $creating);
+        $isRequired = $this->hasRequired($field, $creating, $request, $value);
+        $isNullable = $this->hasNullable($field, $creating, $request, $value);
 
         if ($isRequired) {
             // Present-and-non-empty on create; if-present-non-empty on update.
@@ -932,10 +953,12 @@ final class ResourceValidator
     /**
      * @param bool $descend whether a {@see Map} field's children are validated by a
      *                      nested Collection; false stops the cascade one level in
+     * @param ?JsonApiRequestInterface $request threaded into a widened {@see \haddowg\JsonApi\Resource\Constraint\When}
+     *                                           condition (null on the filter/pivot/id paths)
      *
      * @return list<\Symfony\Component\Validator\Constraint>
      */
-    private function valueConstraints(FieldInterface $field, bool $creating, bool $descend = true): array
+    private function valueConstraints(FieldInterface $field, bool $creating, bool $descend = true, ?JsonApiRequestInterface $request = null): array
     {
         $constraints = [];
 
@@ -946,7 +969,7 @@ final class ResourceValidator
         // descended into here ($descend is false one level in), which also bounds
         // the recursion (ADR 0020).
         if ($descend && $field instanceof Map) {
-            $constraints[] = $this->nestedCollection($field, $creating);
+            $constraints[] = $this->nestedCollection($field, $creating, $request);
         }
 
         foreach ($field->constraints() as $constraint) {
@@ -962,7 +985,7 @@ final class ResourceValidator
             if ($constraint instanceof EntityConstraintInterface) {
                 continue; // validated against the hydrated entity, not the document
             }
-            foreach ($this->translator->translate($constraint) as $symfonyConstraint) {
+            foreach ($this->translator->translate($constraint, $request) as $symfonyConstraint) {
                 $constraints[] = $symfonyConstraint;
             }
         }
@@ -980,38 +1003,70 @@ final class ResourceValidator
      * out of scope here (ADR 0020), so a nested Map's *own* children are not
      * descended into, which also guards against unbounded recursion.
      */
-    private function nestedCollection(Map $map, bool $creating): Collection
+    private function nestedCollection(Map $map, bool $creating, ?JsonApiRequestInterface $request = null): Collection
     {
         $fields = [];
         foreach ($map->children() as $child) {
+            // A Map child's *visibility* (read-only / hidden) is an explicit non-goal
+            // of request-aware predicates (ADR 0020 / core ADR 0079), so this skip
+            // stays static; only the child's `when()` condition sees the request,
+            // which is why the request still threads into fieldConstraint() below.
             if ($child->isReadOnly($creating)) {
                 continue;
             }
 
             // descend: false — one level only; a nested Map child's own children are
             // not validated here (ADR 0020), which also bounds the recursion.
-            $fields[$child->name()] = $this->fieldConstraint($child, $creating, descend: false);
+            $fields[$child->name()] = $this->fieldConstraint($child, $creating, descend: false, request: $request);
         }
 
         return new Collection(fields: $fields, allowExtraFields: true);
     }
 
-    private function hasRequired(FieldInterface $field, bool $creating): bool
+    /**
+     * Whether the field is required in this context — resolving a {@see Required}
+     * declared directly **or** wrapped in a {@see When} whose (widened) condition
+     * holds for this caller and value (ADR 0084). The latter is how a *conditionally*
+     * required field — `when(fn($v, $req) => …, fn($f) => $f->required())` — gates
+     * presence on the request: an admin omitting it then 422s while another caller is
+     * unaffected. The `When` condition receives the incoming value (null when absent)
+     * and the request, matching the execution-site signature.
+     */
+    private function hasRequired(FieldInterface $field, bool $creating, ?JsonApiRequestInterface $request = null, mixed $value = null): bool
     {
-        foreach ($field->constraints() as $constraint) {
-            if ($constraint instanceof Required && $constraint->context()->appliesTo($creating)) {
-                return true;
-            }
-        }
-
-        return false;
+        return $this->hasPresenceRule($field, Required::class, $creating, $request, $value);
     }
 
-    private function hasNullable(FieldInterface $field, bool $creating): bool
+    private function hasNullable(FieldInterface $field, bool $creating, ?JsonApiRequestInterface $request = null, mixed $value = null): bool
+    {
+        return $this->hasPresenceRule($field, Nullable::class, $creating, $request, $value);
+    }
+
+    /**
+     * Whether a presence rule of `$ruleClass` ({@see Required}/{@see Nullable}) applies
+     * in this context, looking both at the field's own constraints and inside any
+     * {@see When} whose condition holds for the caller/value — the seam that lets a
+     * `when()`-wrapped presence rule be request-aware (ADR 0084).
+     *
+     * @param class-string<ConstraintInterface> $ruleClass
+     */
+    private function hasPresenceRule(FieldInterface $field, string $ruleClass, bool $creating, ?JsonApiRequestInterface $request, mixed $value): bool
     {
         foreach ($field->constraints() as $constraint) {
-            if ($constraint instanceof Nullable && $constraint->context()->appliesTo($creating)) {
+            if (!$constraint->context()->appliesTo($creating)) {
+                continue;
+            }
+            if ($constraint instanceof $ruleClass) {
                 return true;
+            }
+            // A presence rule nested in a `When` applies only when the condition
+            // holds for this caller — the request-aware conditional-required seam.
+            if ($constraint instanceof When && ($constraint->condition)($value, $request) === true) {
+                foreach ($constraint->constraints as $inner) {
+                    if ($inner instanceof $ruleClass && $inner->context()->appliesTo($creating)) {
+                        return true;
+                    }
+                }
             }
         }
 

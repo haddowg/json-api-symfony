@@ -935,7 +935,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             ? $body->getRelationshipDataToMany($relationshipName)
             : $body->getRelationshipDataToOne($relationshipName);
 
-        $this->guardMutability($relation, $relationshipName, $linkage, $mode);
+        $this->guardMutability($relation, $relationshipName, $linkage, $mode, $body, $parent);
 
         // A linkage id at a relationship-mutation endpoint is format-validated against
         // the related type's id format exactly as the identical linkage inside a
@@ -969,12 +969,20 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
     /**
      * Enforces the relation's mutability flags for the requested mutation, throwing
      * core's typed `403`s:
-     *  - a to-one clear (`data: null`) is a removal — gated by `allowsRemove()`;
-     *    a non-null to-one `PATCH` is a replacement — gated by `allowsReplace()`;
-     *  - a to-many `PATCH` is a replacement — gated by `allowsReplace()`; a to-many
-     *    `POST` add is gated by the relation's per-relation `allowsAdd()`
+     *  - a to-one clear (`data: null`) is a removal — gated by `allowsRemoveFor()`;
+     *    a non-null to-one `PATCH` is a replacement — gated by `allowsReplaceFor()`;
+     *  - a to-many `PATCH` is a replacement — gated by `allowsReplaceFor()`; a to-many
+     *    `POST` add is gated by the relation's per-relation `allowsAddFor()`
      *    endpoint-exposure flag (`cannotAdd()` → `403`, ADR 0027); a to-many
-     *    `DELETE` is a removal — gated by `allowsRemove()`.
+     *    `DELETE` is a removal — gated by `allowsRemoveFor()`.
+     *
+     * Each gate is **request-aware** (core ADR 0079): a relation the author declared
+     * `cannotReplace/cannotAdd/cannotRemove(fn)` resolves its decision against the
+     * inbound `$body` request and the loaded `$parent` — so "only admins may replace
+     * this relationship" is enforced *here*, on the relationship-mutation endpoint
+     * (without this switch the predicates would be silently ignored). An
+     * unconditional `cannotX()` still bars every caller; a closure-declared one bars
+     * only callers the predicate matches.
      *
      * @param ToOneRelationship|ToManyRelationship $linkage
      *
@@ -987,32 +995,34 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         string $relationshipName,
         ToOneRelationship|ToManyRelationship $linkage,
         Mode $mode,
+        JsonApiRequestInterface $body,
+        object $parent,
     ): void {
         if ($linkage instanceof ToOneRelationship) {
             if ($linkage->isEmpty()) {
-                if ($relation->allowsRemove() === false) {
+                if ($relation->allowsRemoveFor($body, $parent) === false) {
                     throw new RemovalProhibited($relationshipName);
                 }
 
                 return;
             }
 
-            if ($relation->allowsReplace() === false) {
+            if ($relation->allowsReplaceFor($body, $parent) === false) {
                 throw new FullReplacementProhibited($relationshipName);
             }
 
             return;
         }
 
-        if ($mode === Mode::Replace && $relation->allowsReplace() === false) {
+        if ($mode === Mode::Replace && $relation->allowsReplaceFor($body, $parent) === false) {
             throw new FullReplacementProhibited($relationshipName);
         }
 
-        if ($mode === Mode::Add && $relation->allowsAdd() === false) {
+        if ($mode === Mode::Add && $relation->allowsAddFor($body, $parent) === false) {
             throw new AdditionProhibited($relationshipName);
         }
 
-        if ($mode === Mode::Remove && $relation->allowsRemove() === false) {
+        if ($mode === Mode::Remove && $relation->allowsRemoveFor($body, $parent) === false) {
             throw new RemovalProhibited($relationshipName);
         }
     }
@@ -1179,7 +1189,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $entity = $server->hydratorFor($type)->hydrate($this->withoutRelationships($body), $persister->instantiate($type));
         \assert(\is_object($entity));
 
-        $this->applyRelationships($persister, $type, $entity, $relationships);
+        $this->applyRelationships($persister, $type, $entity, $relationships, $body, creating: true);
 
         $this->validateEntity($server, $type, $entity, creating: true);
 
@@ -1254,7 +1264,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $entity = $server->hydratorFor($type)->hydrate($this->withoutRelationships($body), $entity);
         \assert(\is_object($entity));
 
-        $this->applyRelationships($persister, $type, $entity, $relationships);
+        $this->applyRelationships($persister, $type, $entity, $relationships, $body, creating: false);
 
         $this->validateEntity($server, $type, $entity, creating: false);
 
@@ -1308,8 +1318,11 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             }
 
             // Reapply core's read-only relationship gate: a relation the author marked
-            // readOnly() must not be writable through a whole-resource body.
-            if ($relation->isReadOnly($creating)) {
+            // readOnly() must not be writable through a whole-resource body. The gate
+            // is request-aware (core ADR 0079) — a `readOnly(fn)` relation is writable
+            // for a caller it is *not* read-only for — and consults the inbound
+            // request, mirroring core's own request-aware `hydrateRelationships()`.
+            if ($relation->isReadOnlyFor($creating, $body)) {
                 continue;
             }
 
@@ -1338,6 +1351,18 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * owns the single flush and a not-yet-persisted create target is never flushed
      * mid-association (ADR 0018).
      *
+     * An embedded relationship in a whole-resource write is a FULL replacement of the
+     * named association (never an incremental add/remove), so on an UPDATE each one is
+     * gated by {@see guardMutability()} in {@see Mode::Replace} — the same gate the
+     * dedicated `/relationships/{rel}` endpoint applies — before the persister runs, so
+     * a `cannotReplace(fn)` relation embedded in a `PATCH` raises core's typed `403`
+     * exactly as a `PATCH …/relationships/{rel}` would (an empty to-one linkage maps to
+     * the `allowsRemove*` check inside the gate, so `Mode::Replace` is correct for both
+     * cardinalities). The gate is **skipped on a CREATE**: the `cannot*` gates govern
+     * mutation of an EXISTING relationship, but a create sets the initial state (there
+     * is nothing to replace), and gating it would make a `cannotReplace` relation
+     * impossible to ever set, since such a relation also has no relationship endpoint.
+     *
      * @param list<array{relation: RelationInterface, linkage: ToOneRelationship|ToManyRelationship}> $relationships
      */
     private function applyRelationships(
@@ -1345,8 +1370,21 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         string $type,
         object $entity,
         array $relationships,
+        JsonApiRequestInterface $body,
+        bool $creating,
     ): void {
         foreach ($relationships as $relationship) {
+            if ($creating === false) {
+                $this->guardMutability(
+                    $relationship['relation'],
+                    $relationship['relation']->name(),
+                    $relationship['linkage'],
+                    Mode::Replace,
+                    $body,
+                    $entity,
+                );
+            }
+
             $persister->mutateRelationship(
                 $type,
                 $entity,
