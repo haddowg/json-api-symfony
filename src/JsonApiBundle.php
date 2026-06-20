@@ -13,6 +13,8 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiSerializer;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineExtensionInterface;
+use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineFilterArmInterface;
+use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineSortArmInterface;
 use haddowg\JsonApiBundle\DependencyInjection\Compiler\DoctrineEntityMapPass;
 use haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceLocatorPass;
 use haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceSecurityPass;
@@ -88,6 +90,22 @@ final class JsonApiBundle extends AbstractBundle
      * criteria.
      */
     public const string DOCTRINE_EXTENSION_TAG = 'haddowg.json_api.doctrine_extension';
+
+    /**
+     * Tag applied to every {@see \haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineFilterArmInterface}.
+     * The Doctrine filter handler consults each registered arm (first
+     * {@see \haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineFilterArmInterface::supports()}
+     * match wins) to push a custom `FilterInterface` down to DQL before raising
+     * `UnsupportedFilter` — the extensible-handler seam (core ADR 0078).
+     */
+    public const string DOCTRINE_FILTER_ARM_TAG = 'haddowg.json_api.doctrine_filter_arm';
+
+    /**
+     * Tag applied to every {@see \haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineSortArmInterface}.
+     * The Doctrine sort handler consults each registered arm to append the
+     * `ORDER BY` for a custom `SortInterface` before raising `UnsupportedSort`.
+     */
+    public const string DOCTRINE_SORT_ARM_TAG = 'haddowg.json_api.doctrine_sort_arm';
 
     /**
      * Tag applied to every {@see \haddowg\JsonApiBundle\EventListener\ExceptionMapperInterface}.
@@ -567,6 +585,15 @@ final class JsonApiBundle extends AbstractBundle
 
         $builder->registerForAutoconfiguration(DoctrineExtensionInterface::class)
             ->addTag(self::DOCTRINE_EXTENSION_TAG);
+
+        // Any app service implementing a custom-filter / custom-sort arm is auto-tagged,
+        // so the Doctrine handlers consult it to push down a custom FilterInterface /
+        // SortInterface the built-ins don't recognise (the extensible-handler seam).
+        $builder->registerForAutoconfiguration(DoctrineFilterArmInterface::class)
+            ->addTag(self::DOCTRINE_FILTER_ARM_TAG);
+
+        $builder->registerForAutoconfiguration(DoctrineSortArmInterface::class)
+            ->addTag(self::DOCTRINE_SORT_ARM_TAG);
 
         // Any app service implementing the exception-mapper seam is auto-tagged, so
         // it is consulted by the ExceptionListener (before the config map) for a

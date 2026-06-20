@@ -80,11 +80,30 @@ use haddowg\JsonApiBundle\DataProvider\Doctrine\Filter\WhereHasMatching;
  * the one builder — bundle ADR 0059). `apply()` is `applyOn()` on the query root, so
  * every non-pivot path stays byte-identical.
  *
+ * A custom {@see FilterInterface} the built-ins do not recognise is delegated to a
+ * registered {@see DoctrineFilterArmInterface} (constructor-injected from the
+ * autoconfigured tag, first {@see DoctrineFilterArmInterface::supports()} match wins)
+ * before {@see UnsupportedFilter} is raised — the Doctrine half of the framework's
+ * extensible-handler seam.
+ *
  * @implements FilterHandlerInterface<QueryBuilder>
  * @implements AliasAwareFilterHandler<QueryBuilder>
  */
 final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareFilterHandler
 {
+    /**
+     * @var list<DoctrineFilterArmInterface>
+     */
+    private readonly array $arms;
+
+    /**
+     * @param iterable<DoctrineFilterArmInterface> $arms author arms for custom filter types, consulted in order
+     */
+    public function __construct(iterable $arms = [])
+    {
+        $this->arms = \is_array($arms) ? \array_values($arms) : \iterator_to_array($arms, false);
+    }
+
     public function apply(FilterInterface $filter, mixed $query, mixed $value): mixed
     {
         if (!$query instanceof QueryBuilder) {
@@ -125,8 +144,27 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
             // Range (and DateRange, which extends it) is a structured min/max filter:
             // two push-down andWhere predicates on the SAME builder, no subquery.
             $filter instanceof Range => $this->range($query, $filter, $value, $alias),
-            default => throw new UnsupportedFilter($filter),
+            default => $this->applyArm($filter, $query, $value, $alias),
         };
+    }
+
+    /**
+     * Delegates a custom {@see FilterInterface} to the first registered
+     * {@see DoctrineFilterArmInterface} that {@see DoctrineFilterArmInterface::supports()}
+     * it; {@see UnsupportedFilter} when none does (the same signal the built-in
+     * default arm gave).
+     */
+    private function applyArm(FilterInterface $filter, QueryBuilder $query, mixed $value, string $alias): QueryBuilder
+    {
+        foreach ($this->arms as $arm) {
+            if ($arm->supports($filter)) {
+                $arm->apply($filter, $query, $value, $alias);
+
+                return $query;
+            }
+        }
+
+        throw new UnsupportedFilter($filter);
     }
 
     /**

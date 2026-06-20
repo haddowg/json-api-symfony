@@ -331,6 +331,11 @@ return static function (ContainerConfigurator $container): void {
                 // 0065). Defaulted true so a provider wired outside the extension
                 // (a plain service test) keeps the native path.
                 '$windowFunctions' => '%haddowg_json_api.doctrine.window_functions%',
+                // Author arms for custom FilterInterface / SortInterface types: each
+                // autoconfigured arm pushes one custom value object down to DQL before
+                // the handler raises UnsupportedFilter/UnsupportedSort (core ADR 0078).
+                '$filterArms' => \Symfony\Component\DependencyInjection\Loader\Configurator\tagged_iterator(JsonApiBundle::DOCTRINE_FILTER_ARM_TAG),
+                '$sortArms' => \Symfony\Component\DependencyInjection\Loader\Configurator\tagged_iterator(JsonApiBundle::DOCTRINE_SORT_ARM_TAG),
             ])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG, ['priority' => -128]);
 

@@ -717,7 +717,7 @@ final class WindowedRelationBatch
         foreach ($directives as $directive) {
             if (!$directive->sort instanceof SortByField) {
                 throw new \LogicException(\sprintf(
-                    'The %s can only natively window a SortByField order; got %s. Supply a custom DataProvider or set json_api.doctrine.window_functions: false.',
+                    'The %s can only natively window a SortByField order; got %s. A custom sort arm (DoctrineSortArmInterface) is NOT consulted on the windowed related-collection path. Supply a custom DataProvider or set json_api.doctrine.window_functions: false.',
                     self::class,
                     $directive->sort::class,
                 ));
