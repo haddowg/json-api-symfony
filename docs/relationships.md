@@ -651,6 +651,36 @@ See [ADR 0045](adr/0045-belongs-to-many-pivot-data-over-an-association-entity.md
 [doctrine.md](doctrine.md#belongstomany-pivot-data) for the query, resolver and
 association-entity-diff detail.
 
+## Parent-aware identifier meta
+
+`meta.pivot` is one automatic form of resource-identifier `meta` — the pivot columns
+of a `belongsToMany`. For any other per-link metadata, declare `identifierMeta()` on
+the relation: a resolver receiving `(parent, related, request)` whose result is merged
+onto each linkage identifier the relation renders — on a to-many member, a to-one's
+identifier, and the `/{type}/{id}/relationships/{rel}` endpoint. It is parent-aware
+(the pivot's far member sees only itself; this sees the owning model too) and so can
+describe the link rather than the resource:
+
+```php
+HasMany::make('members')->type('users')
+    ->identifierMeta(fn(Team $team, User $member, $request): array => [
+        'role' => $team->roleOf($member),
+    ]),
+```
+
+```
+GET /teams/1/relationships/members
+  → data: [ { "type": "users", "id": "7", "meta": { "role": "captain" } }, … ]
+```
+
+The resolver runs identically on the in-memory and Doctrine providers — it reads the
+related objects the provider already loaded for the linkage, so it needs no data-layer
+support. It composes with `meta.pivot` (both ride the identifier's `meta`, the resolver
+winning on a key collision) and is linkage-only — the resource expanded into `included`
+is untouched. The hook itself is core; see
+[core `relations.md`](https://github.com/haddowg/json-api/blob/main/docs/relations.md)
+for the full reference.
+
 ## Relationship mutation
 
 The bundle serves `PATCH`/`POST`/`DELETE …/relationships/{rel}` over the
