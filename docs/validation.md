@@ -442,6 +442,67 @@ non-match, or a Doctrine PDO `500` on a strict driver) into a deliberate client
 error with `source.parameter`. See
 [data-layer → Validating filter values](data-layer.md#validating-filter-values).
 
+## Beyond the declarative bridge: imperative checks, custom pointers, localisation
+
+The declarative bridge covers the common cases; three things it deliberately does
+**not** expose declaratively, and how to reach each:
+
+**Imperative validation.** For a rule no constraint VO expresses — a multi-field
+invariant, a check against another aggregate, a `409` instead of a `422` — use a
+[lifecycle before-hook](lifecycle-hooks.md) (`beforeCreate`/`beforeUpdate`/`beforeSave`,
+or the matching event). Each receives the **hydrated entity** and a `HookContext`
+carrying the live request (`beforeUpdate` also gets the pre-change `$original`
+snapshot), so you can run arbitrary logic and throw. To emit a multi-violation `422`
+with pointers, build the `Error`s yourself and throw a
+[`ValidationFailed`](../src/Validation/ValidationFailed.php) — the same exception the
+bridge throws, so it renders identically:
+
+```php
+use haddowg\JsonApi\Schema\Error\Error;
+use haddowg\JsonApi\Schema\Error\ErrorSource;
+use haddowg\JsonApiBundle\Hook\HookContext;
+use haddowg\JsonApiBundle\Validation\ValidationFailed;
+
+public function beforeUpdate(object $entity, object $original, HookContext $context): void
+{
+    if ($entity->getDiscount() > $entity->getPrice()) {
+        throw new ValidationFailed([
+            new Error(
+                status: '422',
+                code: 'VALIDATION_FAILED',
+                title: 'Unprocessable Entity',
+                detail: 'Discount cannot exceed price.',
+                source: ErrorSource::fromPointer('/data/attributes/discount'),
+            ),
+        ]);
+    }
+}
+```
+
+This runs **after** hydration (Symfony's `withValidator` equivalent runs
+pre-hydration — for a pre-hydration gate the only seam is the request-wide
+`ServingEvent`).
+
+**Custom pointer / `source.parameter`.** The bridge's pointer is derived
+deterministically from the property path and is **not** overridable on a declared
+constraint. When you need a different `source.pointer`, or a `source.parameter`
+instead, build the `Error` yourself — in a before-hook as above, or by mapping the
+exception with an [`ExceptionMapperInterface`](errors.md) — and set
+`ErrorSource::fromPointer(...)` / `fromParameter(...)` to whatever you like.
+
+**Localising messages.** A violation's `detail` is the Symfony constraint message,
+which flows through Symfony's translator (domain `validators`). So enabling
+`framework.translator` and shipping a `translations/validators.<locale>.xlf`
+catalogue **localises the `422` `detail` for free** — including the closure-built
+date-bound and `Between` messages. Two caveats: the error **`title`** is the fixed
+reason phrase (`"Unprocessable Entity"`) and is *not* translated, and **native**
+(non-validation) error objects — a `404`, a negotiation `415`, a mapped domain
+exception — carry core's own English `title`/`detail` with no translation seam (to
+localise those, set translated strings yourself in an `ExceptionMapperInterface`). A
+custom per-constraint **message** is likewise not declaratively reachable (only
+`UniqueEntity` carries a `message` option) — localise via the catalogue, or override
+imperatively.
+
 ## Next / see also
 
 - [data-layer](data-layer.md) — where the two validation passes sit in the
