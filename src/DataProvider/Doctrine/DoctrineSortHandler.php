@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\DataProvider\Doctrine;
 use Doctrine\ORM\QueryBuilder;
 use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApi\Resource\Sort\SortHandlerInterface;
+use haddowg\JsonApi\Resource\Sort\SortInterface;
 use haddowg\JsonApi\Resource\Sort\UnsupportedSort;
 
 /**
@@ -25,11 +26,30 @@ use haddowg\JsonApi\Resource\Sort\UnsupportedSort;
  * on the `pivot` join, a related key on the root — bundle ADR 0059). `apply()` is
  * `applyOn()` on the query root, so every non-pivot path stays byte-identical.
  *
+ * A directive whose sort is not a {@see SortByField} is delegated to a registered
+ * {@see DoctrineSortArmInterface} (constructor-injected from the autoconfigured tag,
+ * first {@see DoctrineSortArmInterface::supports()} match wins) before
+ * {@see UnsupportedSort} is raised — the Doctrine half of the framework's
+ * extensible-handler seam.
+ *
  * @implements SortHandlerInterface<QueryBuilder>
  * @implements AliasAwareSortHandler<QueryBuilder>
  */
 final class DoctrineSortHandler implements SortHandlerInterface, AliasAwareSortHandler
 {
+    /**
+     * @var list<DoctrineSortArmInterface>
+     */
+    private readonly array $arms;
+
+    /**
+     * @param iterable<DoctrineSortArmInterface> $arms author arms for custom sort types, consulted in order
+     */
+    public function __construct(iterable $arms = [])
+    {
+        $this->arms = \is_array($arms) ? \array_values($arms) : \iterator_to_array($arms, false);
+    }
+
     public function apply(array $sorts, mixed $query): mixed
     {
         if (!$query instanceof QueryBuilder) {
@@ -57,14 +77,34 @@ final class DoctrineSortHandler implements SortHandlerInterface, AliasAwareSortH
 
         foreach ($directives as $directive) {
             $sort = $directive->sort;
-            if (!$sort instanceof SortByField) {
-                throw new UnsupportedSort($sort);
+            if ($sort instanceof SortByField) {
+                $query->addOrderBy($this->path($sort->column, $alias), $directive->descending ? 'DESC' : 'ASC');
+
+                continue;
             }
 
-            $query->addOrderBy($this->path($sort->column, $alias), $directive->descending ? 'DESC' : 'ASC');
+            $this->applyArm($sort, $query, $directive->descending, $alias);
         }
 
         return $query;
+    }
+
+    /**
+     * Delegates a custom {@see SortInterface} to the first registered
+     * {@see DoctrineSortArmInterface} that {@see DoctrineSortArmInterface::supports()}
+     * it; {@see UnsupportedSort} when none does (the same signal the built-in gave).
+     */
+    private function applyArm(SortInterface $sort, QueryBuilder $query, bool $descending, string $alias): void
+    {
+        foreach ($this->arms as $arm) {
+            if ($arm->supports($sort)) {
+                $arm->apply($sort, $query, $descending, $alias);
+
+                return;
+            }
+        }
+
+        throw new UnsupportedSort($sort);
     }
 
     /**

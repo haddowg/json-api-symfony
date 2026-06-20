@@ -314,6 +314,24 @@ for *large* to-many re-points; a handful of ids is negligible. If you need O(1) 
 re-pointing, supply a [custom `DataPersister`](custom-data-providers.md) that issues
 the bulk update. `DoctrineWriteQueryBudgetTest` pins both behaviours.
 
+### Owned aggregates: orphan removal on detach
+
+Replacing or removing a to-many relationship (`PATCH`/`DELETE
+…/relationships/{rel}`, or a `relationships` member in a whole-resource write)
+mutates the **managed** owning collection in place — `clear()` then rebuild on a
+replace, `removeElement()` on a remove. So Doctrine's own
+[`orphanRemoval: true`](https://www.doctrine-project.org/projects/doctrine-orm/en/current/reference/working-with-associations.html#orphan-removal)
+is honoured for free: a child dropped from a collection whose association declares it
+is **deleted** at flush, not merely detached (its FK nulled). Model a composition —
+an `Album` *owns* its `Track`s — with `orphanRemoval: true` on the inverse
+`OneToMany`, and a relationship replace that omits a track deletes the orphaned row.
+Nothing in the bundle toggles this; it follows entirely from the entity mapping (a
+plain detach when the association does *not* declare `orphanRemoval`). The persister
+never bypasses the collection (it issues no bulk FK `UPDATE`), which is exactly the
+precondition the unit of work needs to schedule the orphan delete. This is the
+Doctrine-native equivalent of Laravel's `deleteDetached` — declared on the mapping,
+not a resource flag.
+
 ### Constructor-less instantiation
 
 On create, the persister builds a blank instance via
@@ -367,7 +385,7 @@ so the same spec test passes on both providers.
 | `WhereHas` / `WhereDoesntHave` | correlated `EXISTS` / `NOT EXISTS` subquery |
 | `WhereThrough` | dotted-traversal correlated `EXISTS` (the related entity narrowed by the leaf comparison) |
 | `WhereHasMatching` | correlated `EXISTS` whose related entity is narrowed by an author-supplied `Criteria`/closure (Doctrine-only) |
-| anything else | core `UnsupportedFilter` |
+| a custom `FilterInterface` | a registered [`DoctrineFilterArmInterface`](#custom-filters-and-sorts-the-arm-seam) that supports it; else core `UnsupportedFilter` |
 
 A few translations carry nuance:
 
@@ -514,11 +532,75 @@ so the request's first `sort` field is the primary key, as the spec requires. Th
 `-` descending prefix is resolved by the shared `CriteriaApplier` and arrives as a
 per-directive `descending` flag.
 
-Anything computed or multi-column has no generic DQL translation and raises core's
-`UnsupportedSort` — a resource that needs one declares its own handler or a custom
-provider.
+Anything computed or multi-column has no generic DQL translation. A directive whose
+sort is not a `SortByField` is delegated to a registered
+[`DoctrineSortArmInterface`](#custom-filters-and-sorts-the-arm-seam); if none supports
+it, core's `UnsupportedSort` is raised.
 
 Source: [`DoctrineSortHandler`](../src/DataProvider/Doctrine/DoctrineSortHandler.php).
+
+## Custom filters and sorts (the arm seam)
+
+The built-in handlers cover the core vocabulary; for a **custom** `FilterInterface`
+or `SortInterface` of your own, register an **arm** — a small service the handler
+consults for value objects it does not recognise, before raising
+`UnsupportedFilter`/`UnsupportedSort` (bundle ADR 0083, core ADR 0078). No need to
+replace the whole provider.
+
+- A [`DoctrineFilterArmInterface`](../src/DataProvider/Doctrine/DoctrineFilterArmInterface.php)
+  is `supports(FilterInterface): bool` plus
+  `apply(FilterInterface $filter, QueryBuilder $query, mixed $value, string $alias): void`
+  — push your predicate down with `andWhere`, parameter-bound, on `$alias`.
+- A [`DoctrineSortArmInterface`](../src/DataProvider/Doctrine/DoctrineSortArmInterface.php)
+  is `supports(SortInterface): bool` plus
+  `apply(SortInterface $sort, QueryBuilder $query, bool $descending, string $alias): void`
+  — append your term with `addOrderBy` (never `orderBy`, which would discard earlier
+  directives).
+
+Both interfaces are **autoconfigured** — register the service and the handler picks
+it up, exactly like a [`DoctrineExtension`](custom-data-providers.md). The built-ins
+always win; an arm is a fallthrough, so it never shadows `Where`/`SortByField`.
+
+```php
+// Order by a to-many's size: `sort=byCount` → ORDER BY SIZE(resource.<relation>).
+final class OrderByRelationCountArm implements DoctrineSortArmInterface
+{
+    public function supports(SortInterface $sort): bool
+    {
+        return $sort instanceof OrderByRelationCount;
+    }
+
+    public function apply(SortInterface $sort, QueryBuilder $query, bool $descending, string $alias): void
+    {
+        \assert($sort instanceof OrderByRelationCount);
+        // SIZE() can't sit directly in DQL ORDER BY — select it HIDDEN and order by that.
+        // Derive a DISTINCT alias per relation, so several count sorts in one request
+        // don't collide — the sort twin of how the built-in handler derives unique
+        // parameter names (`$sort->relation` is a validated identifier).
+        $variable = 'count_' . $sort->relation;
+        $query->addSelect(\sprintf('SIZE(%s.%s) AS HIDDEN %s', $alias, $sort->relation, $variable))
+            ->addOrderBy($variable, $descending ? 'DESC' : 'ASC');
+    }
+}
+```
+
+> **A custom sort arm orders the primary collection and a non-windowed related
+> collection, but NOT a natively-windowed/paginated related to-many.** That path
+> (`GET /{type}/{id}/{rel}` with the default window-function batch) can only window a
+> `SortByField` — a custom sort there raises a `LogicException`. If a relation must be
+> ordered by a custom sort, set `json_api.doctrine.window_functions: false` (the
+> per-parent bounded fallback) or supply a custom provider. A custom **filter** arm
+> has no such limit — it composes on every path.
+
+For a **portable** custom filter/sort that must also run on the in-memory provider
+(the conformance witness), ship the in-memory twin too — an
+[`ArrayFilterArmInterface`](https://github.com/haddowg/json-api/blob/main/src/Resource/Filter/InMemory/ArrayFilterArmInterface.php)
+(a row predicate) or
+[`ArraySortArmInterface`](https://github.com/haddowg/json-api/blob/main/src/Resource/Sort/InMemory/ArraySortArmInterface.php)
+(a per-row sort key) — passed to the `InMemoryDataProvider` constructor (it is
+hand-built, so its arms are not DI-tagged). An inherently Doctrine-specific filter (a
+raw-DQL scope) ships only the Doctrine arm; it is simply not declared on an in-memory
+resource.
 
 ## Column safety
 

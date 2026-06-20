@@ -14,7 +14,9 @@ use haddowg\JsonApi\Pagination\OffsetWindow;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\Accessor;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\Filter\InMemory\ArrayFilterArmInterface;
 use haddowg\JsonApi\Resource\Filter\InMemory\ArrayFilterHandler;
+use haddowg\JsonApi\Resource\Sort\InMemory\ArraySortArmInterface;
 use haddowg\JsonApi\Resource\Sort\InMemory\ArraySortHandler;
 use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApi\Resource\Sort\SortDirective;
@@ -71,6 +73,9 @@ final class InMemoryDataProvider implements DataProviderInterface
      *                                                       (auto-increment) ids on an id-less create
      * @param string                               $idColumn the model member the cursor (keyset) page reads as the
      *                                                       primary-key tiebreaker (via core's `Accessor`); defaults to `id`
+     * @param iterable<ArrayFilterArmInterface>    $filterArms author arms for custom `FilterInterface` types (this provider is
+     *                                                         hand-constructed, so arms are passed here rather than DI-tagged)
+     * @param iterable<ArraySortArmInterface>      $sortArms   author arms for custom `SortInterface` types
      */
     public function __construct(
         private readonly string $type,
@@ -78,12 +83,14 @@ final class InMemoryDataProvider implements DataProviderInterface
         ?\Closure $identify = null,
         ?\Closure $assignId = null,
         private readonly string $idColumn = 'id',
+        iterable $filterArms = [],
+        iterable $sortArms = [],
     ) {
         $this->store = new InMemoryStore($items, $identify, $assignId);
         $this->applier = new CriteriaApplier();
         $this->windowExecutor = new WindowExecutor();
-        $this->filterHandler = new ArrayFilterHandler();
-        $this->sortHandler = new ArraySortHandler();
+        $this->filterHandler = new ArrayFilterHandler($filterArms);
+        $this->sortHandler = new ArraySortHandler($sortArms);
         $this->keysetResolver = new KeysetResolver();
         $this->keyset = new InMemoryKeyset();
         $this->minter = new CursorTokenMinter(new CursorCodec());

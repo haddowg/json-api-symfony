@@ -107,11 +107,13 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
     private readonly WindowedRelationBatch $windowedBatch;
 
     /**
-     * @param array<string, class-string>          $entityClassByType a `type → entity FQCN` map
-     * @param IdEncoderResolver                    $idEncoders        resolves a type's id encoder (route `{id}` decode)
-     * @param iterable<DoctrineExtensionInterface> $extensions        in descending tag-priority order
-     * @param ?PivotAssociationResolver            $pivotAssociations resolves a `belongsToMany` pivot relation's association entity (always wired under Doctrine)
-     * @param bool                                 $windowFunctions   whether the windowed-include batch runs the bounded ROW_NUMBER/COUNT OVER native query (`json_api.doctrine.window_functions`, default true) or the per-parent bounded fallback (bundle ADR 0065)
+     * @param array<string, class-string>            $entityClassByType a `type → entity FQCN` map
+     * @param IdEncoderResolver                      $idEncoders        resolves a type's id encoder (route `{id}` decode)
+     * @param iterable<DoctrineExtensionInterface>   $extensions        in descending tag-priority order
+     * @param ?PivotAssociationResolver              $pivotAssociations resolves a `belongsToMany` pivot relation's association entity (always wired under Doctrine)
+     * @param bool                                   $windowFunctions   whether the windowed-include batch runs the bounded ROW_NUMBER/COUNT OVER native query (`json_api.doctrine.window_functions`, default true) or the per-parent bounded fallback (bundle ADR 0065)
+     * @param iterable<DoctrineFilterArmInterface>   $filterArms        author arms for custom `FilterInterface` types (autoconfigured tag)
+     * @param iterable<DoctrineSortArmInterface>     $sortArms          author arms for custom `SortInterface` types (autoconfigured tag)
      */
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
@@ -120,12 +122,14 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         iterable $extensions = [],
         private readonly ?PivotAssociationResolver $pivotAssociations = null,
         private readonly bool $windowFunctions = true,
+        iterable $filterArms = [],
+        iterable $sortArms = [],
     ) {
         $this->extensions = \is_array($extensions) ? \array_values($extensions) : \iterator_to_array($extensions, false);
         $this->applier = new CriteriaApplier();
         $this->windowExecutor = new WindowExecutor();
-        $this->filterHandler = new DoctrineFilterHandler();
-        $this->sortHandler = new DoctrineSortHandler();
+        $this->filterHandler = new DoctrineFilterHandler($filterArms);
+        $this->sortHandler = new DoctrineSortHandler($sortArms);
         $this->relationScope = new RelationScope($this->entityManager);
         $this->keysetResolver = new KeysetResolver();
         $this->minter = new CursorTokenMinter(new CursorCodec());

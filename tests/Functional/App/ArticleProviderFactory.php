@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Functional\App;
 
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
+use haddowg\JsonApiBundle\Tests\Functional\App\Query\InMemoryRelationCountFilterArm;
+use haddowg\JsonApiBundle\Tests\Functional\App\Query\InMemoryRelationCountSortArm;
 
 /**
  * A factory that seeds the in-memory providers for `articles` and its related
@@ -32,6 +34,24 @@ final class ArticleProviderFactory
     public static function createComments(): InMemoryDataProvider
     {
         return new InMemoryDataProvider('comments', self::graph()['comments']);
+    }
+
+    /**
+     * The `articles` provider wired with the relation-count demonstrator arms, so a
+     * custom {@see \haddowg\JsonApiBundle\Tests\Functional\App\Query\RelationCountAtLeast}
+     * filter and {@see \haddowg\JsonApiBundle\Tests\Functional\App\Query\OrderByRelationCount}
+     * sort execute in memory (the conformance witness for the Doctrine push-down). The
+     * in-memory provider is hand-constructed, so the arms are passed here rather than
+     * autoconfigured as services (the Doctrine half tags them).
+     */
+    public static function createArticlesWithCountArms(): InMemoryDataProvider
+    {
+        return new InMemoryDataProvider(
+            'articles',
+            self::graph()['articles'],
+            filterArms: [new InMemoryRelationCountFilterArm()],
+            sortArms: [new InMemoryRelationCountSortArm()],
+        );
     }
 
     /**
