@@ -864,6 +864,74 @@ discriminates each by its own type. `PolymorphicTest` witnesses
 linkage endpoint, and `?include=items` yielding the three mixed `included`
 resources.
 
+## Flattened (`on()`) attributes and eager loading
+
+A scalar attribute can be **flattened** from a chain of declared, to-one relations'
+related model with `->on('path')` — the value reads from / writes onto the **final**
+related object in the chain, not the owning one. `$path` is a `.`-separated chain:
+`'author'` (single hop) or `'publisher.country'` (multi-hop). A backing relation may be
+`hidden()` (the idiomatic "internal association"), so the flattened attribute appears on
+the wire but the relation never renders as a relationship:
+
+```php
+public function fields(): array
+{
+    return [
+        Id::make(),
+        Str::make('title')->sortable(),
+        // `authorName` flattens the author's `name`: read renders author.name, write
+        // mutates the loaded author's name. storedAs('name') maps the field's backing
+        // member; on('author') names the to-one relation (honouring its column()/storedAs()).
+        Str::make('authorName')->storedAs('name')->on('author'),
+        // Multi-hop: `authorCountry` flattens author.country.name — the chain walks two
+        // to-one hops. Any intermediate null short-circuits the read to null (and 422s a
+        // write). Each hop is a declared to-one relation, validated at boot.
+        Str::make('authorCountry')->storedAs('name')->on('author.country'),
+        // A computed, read-only attribute (read-only on create AND update): the closure
+        // owns the output, no serialize cast.
+        Str::make('display')->computedUsing(
+            static fn(mixed $model, JsonApiRequestInterface $request, string $name): string
+                => 'Book: ' . $model->title,
+        ),
+        // The hidden backing relation: never a rendered relationship, but eager-loaded
+        // for the flattened read/write (it backs `authorName` and the first hop of
+        // `authorCountry`).
+        BelongsTo::make('author')->type('authors')->hidden(),
+    ];
+}
+```
+
+The trio is orthogonal: a plain attribute (`Str::make('title')`), a flattened one
+(`->on('path')`), and a computed one (`->computedUsing($closure)`) — `on()` and
+`computedUsing()` are mutually exclusive. The vocabulary is **core's**; see the core
+[field-types](https://github.com/haddowg/json-api/blob/main/docs/field-types.md) page.
+
+**Read** flattens `model.seg1.…segN.member` (any intermediate null yields a null attribute
+value, lenient). **Write** mutates the loaded **final** related model in place — Doctrine's
+unit of work auto-persists the dirty entity on flush, the in-memory store shares the
+reference, **no related-persister change**. A write where **any hop** is null is a `422`
+(`RELATED_ATTRIBUTE_OWNER_MISSING`, at `/data/attributes/<name>`) — a flattened attribute
+never auto-instantiates a missing related model.
+
+**Eager loading.** The bundle eager-loads every `on()` attribute's backing relation chain
+so the flattened read does not N+1 — one batched load per hop per page (a multi-hop chain
+loads in `O(depth)`, a shared prefix loads once), the same batch as `?include` (see
+[doctrine.md → eager-loaded flattened attributes](doctrine.md#eager-loaded-flattened-on-attributes)).
+The eager set (the dedup set of every `on()` chain) is **never** rendered as a relationship
+or in `included` unless *also* `?include`'d, and **bypasses** the client-include safeguards
+(depth cap / allowed-paths / `cannotBeIncluded`) — it is author-declared and trusted, not
+client input.
+
+> **Fail-loud, validated at boot.** A malformed `on()` chain fails the **build** — at
+> `cache:clear` / deploy, never as a runtime 500. Every segment must be a declared
+> **to-one** relation: a **to-many** segment at any depth throws a `LogicException` at
+> container warm-up (`on()` flattens a scalar from a to-one chain — a to-many is not
+> flattenable; use `?include` to materialise a collection), and the rule applies to every
+> segment of a multi-hop chain, not just the leaf. A chain naming an **unknown relation** (a
+> typo) also throws, so it never silently no-ops. A segment may be `hidden()` or visible —
+> both are valid, because the chain is to-one. See
+> [ADR 0085](adr/0085-eager-loading-multi-hop-flattened-on-attributes.md).
+
 ## Relations without a resource
 
 Relations are a standalone capability: you can declare a type's relations with no

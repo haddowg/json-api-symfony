@@ -34,11 +34,16 @@ final class DoctrineRelationshipReadTest extends RelationshipReadConformanceTest
         // PersistentCollection: the Doctrine load-state predicate reports it
         // not-loaded, so `data` is OMITTED (no lazy load triggered) while the
         // convention links are still emitted.
+        //
+        // `lazyComments` is NOT eager-pinned (a visible lazy to-many can no longer be —
+        // pinning one is a hard build-time throw under bundle ADR 0085, exercised by the
+        // `EagerLoadValidation` suite), so this witnesses the natural load-state default:
+        // an uninitialised collection renders links-only on its own.
         $relationships = $this->relationshipsOf('/articles/1');
 
         $lazyComments = $relationships['lazyComments'] ?? null;
         self::assertIsArray($lazyComments);
-        self::assertArrayNotHasKey('data', $lazyComments);
+        self::assertArrayNotHasKey('data', $lazyComments, 'a lazy to-many over an uninitialised collection must not leak its linkage data');
         self::assertSame(
             [
                 'self' => 'https://example.test/articles/1/relationships/lazyComments',

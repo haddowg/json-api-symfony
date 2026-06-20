@@ -1006,6 +1006,20 @@ final class JsonApiBundle extends AbstractBundle
 
         $services->set(ServerProvider::class)
             ->args(['$factories' => service_locator($factoryRefs)]);
+
+        // The fail-loud eager-load warmer (bundle ADR 0085): at cache:warmup it walks every
+        // server's registered types and runs core's EagerLoadValidator over each, so a
+        // malformed `on()` declaration (an unknown segment, or a to-many segment at any depth)
+        // throws a developer-facing \LogicException at cache:clear / deploy rather than as a
+        // runtime 500. Unlike the OpenAPI warmer it is NOT optional — the throw must abort the
+        // build.
+        $services->set(\haddowg\JsonApiBundle\Serializer\EagerLoadWarmer::class)
+            ->args([
+                '$servers' => service(ServerProvider::class),
+                '$descriptors' => service(\haddowg\JsonApiBundle\Server\RouteDescriptorRegistry::class),
+                '$serverNames' => \array_keys($servers),
+            ])
+            ->tag('kernel.cache_warmer');
     }
 
     /**

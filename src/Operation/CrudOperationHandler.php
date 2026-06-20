@@ -1186,10 +1186,17 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // never has a scalar id assigned to an association property (ADR 0018).
         $relationships = $this->extractRelationships($server, $type, $body, creating: true);
 
-        $entity = $server->hydratorFor($type)->hydrate($this->withoutRelationships($body), $persister->instantiate($type));
-        \assert(\is_object($entity));
+        $entity = $persister->instantiate($type);
 
+        // Apply the embedded associations BEFORE core hydrates, so a flattened `on()`
+        // attribute (which hydrates AFTER relationships and reads its owner off the
+        // parent) sees a related model associated in the SAME request body (ADR 0085).
+        // Relationships are still stripped from the hydrate body, so core's
+        // hydrateRelationships() stays a no-op (no scalar-id assignment, ADR 0018).
         $this->applyRelationships($persister, $type, $entity, $relationships, $body, creating: true);
+
+        $entity = $server->hydratorFor($type)->hydrate($this->withoutRelationships($body), $entity);
+        \assert(\is_object($entity));
 
         $this->validateEntity($server, $type, $entity, creating: true);
 
@@ -1257,14 +1264,18 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $serializer = $server->serializerFor($type);
         $persister = $this->persisters->forType($type);
 
-        // As for create: hydrate attributes via core, then replace the associations
-        // named in `data.relationships` through the persister seam (ADR 0018).
+        // As for create: replace the associations named in `data.relationships`
+        // through the persister seam (ADR 0018) BEFORE core hydrates, so a flattened
+        // `on()` attribute (hydrated AFTER relationships, reading its owner off the
+        // parent) writes onto a related model switched in the SAME request body — not
+        // the previously-associated owner (ADR 0085). Relationships are still stripped
+        // from the hydrate body, so core's hydrateRelationships() stays a no-op.
         $relationships = $this->extractRelationships($server, $type, $body, creating: false);
+
+        $this->applyRelationships($persister, $type, $entity, $relationships, $body, creating: false);
 
         $entity = $server->hydratorFor($type)->hydrate($this->withoutRelationships($body), $entity);
         \assert(\is_object($entity));
-
-        $this->applyRelationships($persister, $type, $entity, $relationships, $body, creating: false);
 
         $this->validateEntity($server, $type, $entity, creating: false);
 

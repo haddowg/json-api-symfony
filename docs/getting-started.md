@@ -123,6 +123,12 @@ The full example resource layers more on top — a `Map`, a directional
 [`AlbumResource`](../examples/music-catalog-symfony/src/Resource/AlbumResource.php).
 The minimal version above is enough to get endpoints.
 
+> An attribute can also be **flattened** from a related model
+> (`Str::make('authorName')->on('author')`) or **computed** read-only
+> (`->computedUsing($closure)`). The flattened relation is eager-loaded by the bundle so
+> the read does not N+1 — see
+> [relationships → flattened attributes](relationships.md#flattened-on-attributes-and-eager-loading).
+
 ## Step 3 — register it as a service
 
 This is where the Symfony integration begins. **Autoconfiguration tags any service
