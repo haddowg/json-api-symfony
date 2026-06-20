@@ -68,6 +68,7 @@ use haddowg\JsonApiBundle\Event\BeforeUpdateEvent;
 use haddowg\JsonApiBundle\Serializer\PivotMetaSerializer;
 use haddowg\JsonApiBundle\Serializer\PivotParentSerializer;
 use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipCount;
+use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipLinkage;
 use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipPagination;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
@@ -166,6 +167,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         private readonly ?RequestScopedRelationshipPagination $relationshipPagination = null,
         private readonly ?RelatedIncludeBatcher $includeBatcher = null,
         private readonly ?ActionInvoker $actions = null,
+        private readonly ?RequestScopedRelationshipLinkage $relationshipLinkage = null,
     ) {}
 
     public function handle(\haddowg\JsonApi\Operation\JsonApiOperationInterface $operation): DataResponse|RelatedResponse|IdentifierResponse|MetaResponse|NoContentResponse|ErrorResponse
@@ -1083,14 +1085,16 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * Installs the per-render relationship-window seam for a read of `$type` over
      * its fetched `$items` under the Relationship Queries profile (bundle ADR 0053):
      * the {@see RelationshipWindowBatcher} windows each rendered to-many relation to
-     * page 1 of its `relatedQuery`-ordered/filtered set (writing that page back onto
-     * each parent so the linkage `data` IS page 1), and the windowed map is swapped
-     * into the request-scoped holder the memoized Server renders through, so core
-     * emits the relationship object's pagination links in plain form.
+     * page 1 of its `relatedQuery`-ordered/filtered set and supplies that page-1 LINKAGE
+     * + relationship-object PAGINATION out-of-band — WITHOUT writing the page back onto
+     * each parent (bundle ADR 0086) — and both maps are swapped into their request-scoped
+     * holders the memoized Server renders through, so core emits the windowed linkage and
+     * the relationship object's pagination links in plain form while a column-sharing
+     * bystander relation still renders its own membership.
      *
-     * Called on every read so it also CLEARS the holder (installs `null`) when the
+     * Called on every read so it also CLEARS the holders (installs `null`) when the
      * request did not negotiate the profile — a prior profile request's pages never
-     * leak into this render. A no-op when the seam is not wired (the batcher/holder
+     * leak into this render. A no-op when the seam is not wired (the batcher/holders
      * are optional) or there is no request to read the profile/relatedQuery from.
      *
      * @param list<object> $items the fetched page whose rendered to-many relations to window
@@ -1101,9 +1105,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return;
         }
 
-        $this->relationshipPagination->set(
-            $request === null ? null : $this->windowBatcher->batch($server, $type, $items, $request),
-        );
+        $result = $request === null ? null : $this->windowBatcher->batch($server, $type, $items, $request);
+
+        $this->relationshipPagination->set($result?->pagination);
+        $this->relationshipLinkage?->set($result?->linkage);
     }
 
     /**

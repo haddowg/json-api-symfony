@@ -164,6 +164,11 @@ return static function (ContainerConfigurator $container): void {
         // always present (the profile parse is gated on negotiation per request).
         ->arg('$windowBatcher', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataProvider\RelationshipWindowBatcher::class))
         ->arg('$relationshipPagination', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipPagination::class))
+        // The per-request relationship-LINKAGE holder (bundle ADR 0086): the batcher
+        // supplies a windowed to-many's page-1 linkage out-of-band through this holder
+        // instead of writing it onto the parent property, so a column-sharing bystander
+        // relation renders its own membership.
+        ->arg('$relationshipLinkage', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipLinkage::class))
         // The provider-agnostic include batcher (bundle ADR 0062): batch eager-loads a
         // read's effective ?include tree one query per level through the
         // fetchRelatedCollectionBatch SPI, for every batching provider (Doctrine AND
@@ -191,6 +196,12 @@ return static function (ContainerConfigurator $container): void {
     // swappable indirection so the immutable Server can render this request's pages.
     // Both autowired.
     $services->set(\haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipPagination::class);
+    // The Relationship Queries profile LINKAGE seam (bundle ADR 0086): a stable
+    // per-request holder threaded into the memoized Server (in loadExtension), through
+    // which the batcher supplies a windowed to-many's page-1 linkage data WITHOUT
+    // writing it onto the parent property — so a relation sharing the backing column
+    // renders its own membership rather than the windowed sibling's filtered page.
+    $services->set(\haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipLinkage::class);
     $services->set(\haddowg\JsonApiBundle\DataProvider\RelationshipWindowBatcher::class)
         // The optional filter-value validator: resolves to the FilterValueValidator
         // only when the Symfony Validator bridge is wired, else null — so a mistyped

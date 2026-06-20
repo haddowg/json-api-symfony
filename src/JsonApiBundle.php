@@ -993,6 +993,12 @@ final class JsonApiBundle extends AbstractBundle
                     // profile read's windowed pages into the render. Always present
                     // (provider-agnostic — the batch fill is the provider's job).
                     '$relationshipPagination' => service(\haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipPagination::class),
+                    // The per-request relationship-LINKAGE seam holder (bundle ADR
+                    // 0086): threaded into the memoized Server once so the handler can
+                    // swap each profile read's windowed linkage into the render WITHOUT
+                    // the batcher writing it onto the parent property. Always present
+                    // (provider-agnostic — the batch fill is the provider's job).
+                    '$relationshipLinkage' => service(\haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipLinkage::class),
                     // This server's name + the dispatcher the serving bridge fires
                     // the bundle ServingEvent through (bundle ADR 0042); the
                     // dispatcher is optional (the lifecycle-hook seam is off when

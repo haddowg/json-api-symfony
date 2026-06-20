@@ -144,6 +144,49 @@ final class DoctrineWindowedIncludeBudgetTest extends JsonApiFunctionalTestCase
         );
     }
 
+    #[Test]
+    #[Group('spec:profiles')]
+    #[Group('spec:fetching-relationships')]
+    #[Group('spec:fetching-filtering')]
+    public function aRelatedQueryFilterOnANotIncludedLazyToManyIssuesNoWindowQuery(): void
+    {
+        $logger = $this->logger();
+        $logger->reset();
+
+        // GET /articles?relatedQuery[lazyComments][filter][body]=First! under the profile,
+        // WITHOUT including lazyComments. lazyComments is a lazy (links-only-by-default)
+        // to-many backed by the `featured_article` association — it does not render data
+        // this request, so it must NOT be windowed (bundle ADR 0086): no
+        // fetchRelatedCollectionBatch, and so ZERO queries against the `featured_article`
+        // column. Before the gate this filtered window ran ONE batch query per such
+        // relation AND leaked the filtered page onto the lazy property.
+        $response = $this->handle(
+            self::BASE_URI . '/articles?relatedQuery[lazyComments][filter][body]=First%21',
+            extraServer: ['HTTP_ACCEPT' => self::PROFILE_ACCEPT],
+        );
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        // The decisive witness: NO SQL statement SCOPES the `featured_article` association
+        // (the lazyComments backing FK) in a WHERE … IN predicate. The window's batch fetch
+        // is the only path that would root a fetch on `featured_article_id IN (…)`, so its
+        // absence proves the not-included lazy to-many was not windowed. (A `comments`-backed
+        // window SELECTs `featured_article_id` as a projected column but scopes on
+        // `article_id IN (…)`, so the predicate match avoids that false positive.)
+        $featuredWindowQueries = \array_values(\array_filter(
+            $logger->statements(),
+            static fn(string $sql): bool => \str_contains($sql, 'featured_article_id IN ('),
+        ));
+        self::assertCount(
+            0,
+            $featuredWindowQueries,
+            \sprintf(
+                "a not-included lazy to-many must issue ZERO window queries; matched:\n%s",
+                \implode("\n", $featuredWindowQueries),
+            ),
+        );
+    }
+
     private function logger(): QueryCountingLogger
     {
         $logger = static::getContainer()->get(QueryCountingLogger::class);

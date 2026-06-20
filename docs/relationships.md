@@ -338,6 +338,20 @@ GET /albums/1?include=tracks&rQ[tracks][sort]=duration
   behaviour, no profile advertised) — so a relationship literally named after a
   reserved query family is safe.
 
+The window only fires for a relationship whose linkage **`data` actually renders** in
+this document (bundle ADR 0086): a relation that is `?include`d at the primary level
+(default-includes honoured) **or** one that renders data unconditionally (`withData()`).
+A **lazy, links-only, not-included** to-many (the default — it renders convention links
+without forcing a fetch, see [Load-state-aware linkage](#load-state-aware-linkage)) is
+**not windowed**: addressing it with a `relatedQuery` sort/filter does **not** apply the
+criteria and does **not** force a fetch — it renders links-only exactly as the lazy
+default intends. To window and filter such a relation, `?include` it (or declare it
+`withData()`). An unknown sort/filter **key** still `400`s either way — addressing a
+relationship the request does not render is not a way to slip a typo through. The
+relationship **count** is unaffected: a `?withCount` of a not-included, filtered to-many
+still reports the **filtered** total (the count loads nothing and is independent of the
+window).
+
 Under `?include`, the included resources reflect exactly that page-1 set — the `sort`
 selects the page. On a **collection** include (`GET /albums?include=tracks`) each
 parent's relationship is windowed to its own page 1 independently. Each to-many maps

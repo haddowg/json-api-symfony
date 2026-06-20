@@ -14,6 +14,7 @@ use haddowg\JsonApi\Serializer\RelationshipLoadStateInterface;
 use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\Event\ServingEvent;
 use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipCount;
+use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipLinkage;
 use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipPagination;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
@@ -100,6 +101,7 @@ final class ServerFactory
         private readonly ?RelationshipLoadStateInterface $relationshipLoadState = null,
         private readonly ?RequestScopedRelationshipCount $relationshipCount = null,
         private readonly ?RequestScopedRelationshipPagination $relationshipPagination = null,
+        private readonly ?RequestScopedRelationshipLinkage $relationshipLinkage = null,
         private readonly array $resourceClasses = [],
         private readonly array $serializersByClass = [],
         private readonly array $hydratorsByClass = [],
@@ -135,6 +137,14 @@ final class ServerFactory
             // relationship-object pagination links for each rendered to-many; null
             // when the profile read did not negotiate, so no such links are emitted.
             ->withRelationshipPagination($this->relationshipPagination)
+            // The per-request relationship-LINKAGE seam (bundle ADR 0086): the same
+            // stable-holder indirection again, threaded in once. The handler swaps its
+            // windowed-linkage backing per profile read so core renders a windowed
+            // to-many's page-1 linkage WITHOUT the batcher writing it onto the parent
+            // property — leaving any column-sharing bystander relation to render its own
+            // membership. Null when the profile read did not negotiate, so core reads
+            // linkage off the model as before.
+            ->withRelationshipLinkage($this->relationshipLinkage)
             // Recognize the Relationship Queries profile (core ADR 0058) so the
             // response advertises it (Content-Type `profile` param + `jsonapi.profile`)
             // when a client negotiates it; the opt-in relatedQuery/rQ parse is gated

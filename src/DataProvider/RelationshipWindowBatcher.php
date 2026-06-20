@@ -13,19 +13,27 @@ use haddowg\JsonApi\Request\RelatedQuery;
 use haddowg\JsonApi\Resource\Field\Accessor;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
+use haddowg\JsonApi\Schema\Relationship\RelationshipLinkage;
 use haddowg\JsonApi\Schema\Relationship\RelationshipPagination;
 use haddowg\JsonApi\Server\Server;
+use haddowg\JsonApiBundle\Serializer\WindowedRelationshipLinkage;
 use haddowg\JsonApiBundle\Serializer\WindowedRelationshipPagination;
+use haddowg\JsonApiBundle\Serializer\WindowedRelationshipResult;
 use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
 
 /**
- * Windows every rendered to-many relation of a fetched page of parents to PAGE 1
- * of the set the Relationship Queries profile's per-relationship sort/filter
- * orders, under the negotiated profile (bundle ADR 0053). It is the include/linkage
- * twin of the related-collection ENDPOINT: where the endpoint reads the request's
- * plain `?sort`/`?filter`, this reads the `relatedQuery[<path>][sort|filter]` the
- * profile carries from the primary request, addressing the relationship by its
- * include path (its relation name at the top level).
+ * Windows every to-many relation whose linkage DATA renders for the request — a
+ * relation included at the primary level (default-includes honoured) or one that
+ * renders data unconditionally (`withData()`) — of a fetched page of parents to
+ * PAGE 1 of the set the Relationship Queries profile's per-relationship sort/filter
+ * orders, under the negotiated profile (bundle ADR 0053). A lazy, links-only,
+ * not-included to-many is left untouched: windowing it would waste a fetch and leak
+ * the filtered linkage the lazy default omits (bundle ADR 0086 — see
+ * {@see windowableRelations()}). It is the include/linkage twin of the
+ * related-collection ENDPOINT: where the endpoint reads the request's plain
+ * `?sort`/`?filter`, this reads the `relatedQuery[<path>][sort|filter]` the profile
+ * carries from the primary request, addressing the relationship by its include path
+ * (its relation name at the top level).
  *
  * For each rendered to-many relation it, ONCE over the whole page:
  *  - reads the relation's {@see RelatedQuery} (its sort + filter) from the request;
@@ -38,10 +46,13 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
  *    {@see DataProviderInterface::fetchRelatedCollectionBatch()} seam (so an unknown
  *    sort/filter key is the endpoint's same `400`, and the scoping/count-free vs
  *    countable distinction is reused verbatim) for the WHOLE page in one round-trip;
- *  - per parent, writes the page-1 items back onto the parent's relation property, so
- *    the linkage `data` the serializer reads off the parent IS page 1 of the
- *    profile-ordered set (the `sort` selects which members land on page 1 — page is
- *    out for includes);
+ *  - per parent, records the page-1 items as a {@see RelationshipLinkage} supplied to
+ *    core OUT-OF-BAND (the relationship-linkage seam, core ADR 0083) — NOT written onto
+ *    the parent's relation property — so the linkage `data` IS page 1 of the
+ *    profile-ordered set (the `sort` selects which members land on page 1 — page is out
+ *    for includes) WHILE any relation sharing the backing column still renders its own
+ *    membership (bundle ADR 0086 — a destructive property write would leak the filtered
+ *    page onto a column-sharing bystander, and on Doctrine flip its load-state);
  *  - per parent, builds a {@see RelationshipPagination} carrying the page + the
  *    plain-form (`sort=…&filter[…]=…`) query string, so core emits the relationship
  *    object's `first`/`prev`/`next` (+`last` when countable) links against the
@@ -57,11 +68,12 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
  * relation core does not render are left untouched (today's full-collection
  * behaviour).
  *
- * The result is keyed by the parent's object identity then relation name, mirroring
- * {@see RelationCountBatcher} / {@see WindowedRelationshipPagination}, so the render
- * seam resolves a page back to the very object the serializer holds. Returns `null`
- * when the profile was not negotiated, so the handler clears the seam and renders
- * exactly as before the profile existed.
+ * The result pairs a {@see WindowedRelationshipPagination} and a
+ * {@see WindowedRelationshipLinkage} in a {@see WindowedRelationshipResult}, each keyed
+ * by the parent's object identity then relation name, so the render seams resolve a page
+ * back to the very object the serializer holds. Returns `null` when the profile was not
+ * negotiated, so the handler clears the seams and renders exactly as before the profile
+ * existed.
  */
 final class RelationshipWindowBatcher
 {
@@ -86,14 +98,13 @@ final class RelationshipWindowBatcher
      *
      * @param list<object> $parents the already-fetched page of parents
      */
-    public function batch(Server $server, string $type, array $parents, JsonApiRequestInterface $request): ?WindowedRelationshipPagination
+    public function batch(Server $server, string $type, array $parents, JsonApiRequestInterface $request): ?WindowedRelationshipResult
     {
         if (!$request->isProfileRequested(RelationshipQueriesProfile::URI)) {
             return null;
         }
 
         $allRelations = $this->types->relationsFor($server, $type);
-        $relations = $this->windowableRelations($allRelations);
 
         // The monomorphic to-one relations addressed by a filter-only relatedQuery: a
         // relation filter that excludes a to-one's single target nulls the linkage (and
@@ -121,6 +132,27 @@ final class RelationshipWindowBatcher
         // with null (bundle ADR 0068). It produces no pagination entry (a to-one has none).
         $this->nullExcludedToOnes($server, $type, $parents, $toOneFiltered, $request);
 
+        // The to-many relations to window — restricted to those whose linkage DATA renders
+        // for THIS request (bundle ADR 0086): a relation that is included at the primary
+        // level (honouring default-includes) or renders data unconditionally (`withData()`).
+        // A lazy, links-only, not-included to-many is NOT windowed — windowing it would
+        // both waste a fetch AND leak, because writing page 1 onto the parent property flips
+        // the storage load-state predicate to "loaded" so core's shouldDeferLinkage() stops
+        // deferring and renders the filtered linkage the lazy default omits. Resolved off the
+        // non-empty page's first parent as the representative, mirroring RelatedIncludeBatcher.
+        $relations = $this->windowableRelations($server, $type, $allRelations, $parents[0], $request);
+
+        // A to-many that is addressed by a relatedQuery sort/filter but NOT windowed (it
+        // renders links-only this request) must STILL reject an unknown sort/filter KEY
+        // with the related-collection endpoint's same `400` (bundle ADR 0086): the path
+        // resolves and the key vocabulary is the same whether or not the linkage renders,
+        // so a typo'd key is a client error regardless. The window fetch normally surfaces
+        // that `400` as a side effect — but a gated relation never fetches, so the keys are
+        // validated here directly against the merged vocabulary, with NO query and NO
+        // property mutation (so no leak). The windowed relations validate their keys through
+        // the fetch as before, so this only covers the gated remainder.
+        $this->validateUnwindowedRelatedQueryKeys($server, $type, $allRelations, $relations, $request);
+
         if ($relations === []) {
             return null;
         }
@@ -129,10 +161,8 @@ final class RelationshipWindowBatcher
         // relation windows from the parent's ORIGINAL related set rather than a value a
         // sibling relation already trimmed in place. Two relations may share one column
         // (e.g. a default `comments` and a paginated `pagedComments` over the same
-        // association); each windows from the same original set, and the write-back of
-        // the windowed page is last-writer-wins on that shared column — distinct-column
-        // relations never collide. Keyed by object id then column so a relation restores
-        // its own column before its batch reads it.
+        // association); each windows from the same original set. Keyed by object id then
+        // column so a relation restores its own column before its batch reads it.
         $snapshots = [];
         foreach ($parents as $parent) {
             $snapshots[\spl_object_id($parent)] = $this->snapshotColumns($parent, $relations);
@@ -143,36 +173,55 @@ final class RelationshipWindowBatcher
         // relations over M parents is O(N) provider round-trips, not O(M*N). For each
         // relation, restore the page's snapshot for its column (so the in-memory witness
         // reads each parent's original set), fetch the page-1 windowed batch once, then
-        // write each parent's page back and build its relationship-object pagination.
+        // record each parent's page-1 linkage + relationship-object pagination — WITHOUT
+        // writing the page onto the parent property (bundle ADR 0086): the page is supplied
+        // to core OUT-OF-BAND through the relationship-linkage seam, so a relation sharing
+        // the column (a not-windowed lazy bystander, or another windowed relation) renders
+        // its OWN membership rather than this relation's filtered page (which a destructive
+        // column write would leak, and on Doctrine flip the load-state to "loaded").
         $pages = [];
+        $linkages = [];
         foreach ($relations as $relation) {
-            foreach ($this->windowRelationOverPage($server, $type, $parents, $relation, $request, $snapshots) as $objectId => $page) {
-                $pages[$objectId][$relation->name()] = $page;
+            foreach ($this->windowRelationOverPage($server, $type, $parents, $relation, $request, $snapshots) as $objectId => $window) {
+                if ($window['page'] !== null) {
+                    $pages[$objectId][$relation->name()] = $window['page'];
+                }
+                $linkages[$objectId][$relation->name()] = $window['linkage'];
             }
         }
 
-        return $pages === [] ? null : new WindowedRelationshipPagination($pages);
+        // After the window loop every column has been restored to its pre-window snapshot
+        // by windowRelationOverPage's per-relation restore (and never overwritten with a
+        // filtered page), so the parents are pristine and any bystander renders its true
+        // membership — the windowed relations read their pages from the linkage seam.
+        return $pages === [] && $linkages === []
+            ? null
+            : new WindowedRelationshipResult(
+                $pages === [] ? null : new WindowedRelationshipPagination($pages),
+                $linkages === [] ? null : new WindowedRelationshipLinkage($linkages),
+            );
     }
 
     /**
      * Windows ONE relation over the whole page of parents in a single
      * {@see DataProviderInterface::fetchRelatedCollectionBatch()} round-trip, then per
-     * parent writes the page-1 linkage back and builds its
+     * parent records the page-1 linkage ({@see RelationshipLinkage}, supplied to core
+     * out-of-band so the page is NOT written onto the parent property) and its
      * {@see RelationshipPagination} — the batched replacement for the retired
      * per-parent windowing loop (bundle ADR 0061).
      *
-     * Returns a `spl_object_id(parent) => RelationshipPagination` map of the parents
-     * whose relationship object carries pagination links; a relation that is not
-     * paginated for this request (no relatedQuery and no effective paginator) yields an
-     * empty map and its linkage is left as the full set, exactly as before. The
-     * criteria, paginator, and synthetic page-1 request are resolved ONCE for the
-     * relation (they do not depend on the parent), so only the per-parent write-back and
-     * link assembly run in the loop.
+     * Returns a `spl_object_id(parent) => ['page' => ?RelationshipPagination,
+     * 'linkage' => RelationshipLinkage]` map of the parents whose relation was windowed;
+     * a relation that is not paginated AND not re-ordered/filtered for this request (no
+     * relatedQuery and no effective paginator) yields an empty map and renders off its
+     * (untouched) property exactly as before. The criteria, paginator, and synthetic
+     * page-1 request are resolved ONCE for the relation (they do not depend on the
+     * parent), so only the per-parent linkage/pagination assembly runs in the loop.
      *
      * @param list<object>                $parents
      * @param array<int, array<string, mixed>> $snapshots `spl_object_id(parent) => [column => original value]`
      *
-     * @return array<int, RelationshipPagination> `spl_object_id(parent) => page`
+     * @return array<int, array{page: ?RelationshipPagination, linkage: RelationshipLinkage}>
      */
     private function windowRelationOverPage(
         Server $server,
@@ -259,70 +308,99 @@ final class RelationshipWindowBatcher
 
         $serializer = $server->serializerFor($type);
 
-        $pages = [];
+        $windows = [];
         foreach ($parents as $parent) {
             $result = $batch->for($serializer->getId($parent));
-            $page = $this->applyResult($paginator, $pageRequest, $relation, $parent, $result, $relatedQuery, $snapshots[\spl_object_id($parent)][$column] ?? null, $wantsCount);
-            if ($page !== null) {
-                $pages[\spl_object_id($parent)] = $page;
-            }
+            $windows[\spl_object_id($parent)] = $this->windowFor(
+                $paginator,
+                $pageRequest,
+                $result,
+                $relatedQuery,
+                $snapshots[\spl_object_id($parent)][$column] ?? null,
+                $wantsCount,
+            );
         }
 
-        return $pages;
+        return $windows;
     }
 
     /**
-     * Writes one parent's batched page-1 result back onto its relation column and
-     * returns the parent's {@see RelationshipPagination} — or `null` when the relation
-     * is not sliced (a relatedQuery present but no paginator), in which case the linkage
-     * is re-ordered/filtered in place but carries no pagination links.
+     * Builds one parent's windowed page-1 result: the {@see RelationshipLinkage} core
+     * renders out-of-band (so the page is NOT written onto the parent property, leaving
+     * any column-sharing sibling relation to render its own membership — bundle ADR
+     * 0086) paired with its {@see RelationshipPagination} — or a `null` page when the
+     * relation is not sliced (a relatedQuery present but no paginator), in which case the
+     * linkage is re-ordered/filtered but carries no pagination links.
      *
      * The page is wrapped to match the column's container (a Doctrine `Collection`
-     * property cannot take a raw array; `$snapshot` carries the container type), and a
-     * relation whose value is not a writable property (a computed `extractUsing` value)
-     * is left as-is; the pagination links still describe the page.
+     * property cannot take a raw array; `$snapshot` carries the container type), so the
+     * linkage the serializer reads is the same shape as the property it replaces.
      *
      * @param CollectionResult<object> $result
+     *
+     * @return array{page: ?RelationshipPagination, linkage: RelationshipLinkage}
      */
-    private function applyResult(
+    private function windowFor(
         ?PaginatorInterface $paginator,
         JsonApiRequestInterface $pageRequest,
-        RelationInterface $relation,
-        object $parent,
         CollectionResult $result,
         RelatedQuery $relatedQuery,
         mixed $snapshot,
         bool $wantsCount,
-    ): ?RelationshipPagination {
+    ): array {
         $items = \is_array($result->items) ? \array_values($result->items) : \iterator_to_array($result->items, false);
 
-        // Write page 1 back onto the parent so the rendered linkage IS this page — the
-        // `sort` selects which members land on page 1 (page is out for includes).
-        Accessor::set($parent, $relation->column() ?? $relation->name(), $this->asContainer($items, $snapshot));
+        // Supply page 1 as the relation's linkage out-of-band — the `sort` selects which
+        // members land on page 1 (page is out for includes). Wrapped to the column's
+        // container so the serializer reads the same shape it would off the property.
+        $linkage = new RelationshipLinkage($this->asContainer($items, $snapshot));
 
-        if ($paginator === null) {
-            // relatedQuery present but no paginator: re-ordered/filtered in place but not
-            // sliced, so there is no page to navigate and no pagination links to emit.
-            return null;
-        }
+        // No paginator: re-ordered/filtered but not sliced, so there is no page to
+        // navigate and no pagination links to emit — only the linkage override.
+        $page = $paginator === null
+            ? null
+            : $this->paginationFor($paginator, $pageRequest, $items, $result, $relatedQuery, $wantsCount);
 
-        return $this->paginationFor($paginator, $pageRequest, $items, $result, $relatedQuery, $wantsCount);
+        return ['page' => $page, 'linkage' => $linkage];
     }
 
     /**
      * The to-many relations among `$allRelations` that may be windowed under the
-     * profile: a monomorphic to-many that either carries a paginator
-     * (relation/related/server default) or is addressed by a `relatedQuery`/`rQ` param.
+     * profile: a monomorphic to-many whose linkage DATA renders for THIS request.
      * A polymorphic to-many (members span types — no single related provider or shared
      * vocabulary) and a to-one are excluded; the related/relationship endpoints still
      * serve them directly.
+     *
+     * A to-many's data renders for this request when it is INCLUDED at the primary
+     * level (`isIncludedRelationship('', name, defaults)` — honouring default-includes)
+     * OR it renders data UNCONDITIONALLY (`emitsDataOnlyWhenLoaded() === false`, the
+     * `withData()` opt-out). A lazy, links-only, not-included to-many is excluded
+     * (bundle ADR 0086): windowing it would write page 1 onto the parent property,
+     * flipping the storage load-state predicate to "loaded" — so core's
+     * {@see \haddowg\JsonApi\Resource\Field\AbstractRelation::shouldDeferLinkage()} stops
+     * deferring and the relationship leaks the filtered linkage the lazy default omits,
+     * for a relation the client never included; gating the window closes that leak (and
+     * the wasted fetch) while leaving links-only rendering intact. The COUNT path
+     * ({@see RelationCountBatcher}) is unaffected — a filtered `?withCount` on a
+     * not-included to-many still counts the filtered set without loading.
+     *
+     * Includes are resolved off `$representative` (the page's first parent), mirroring
+     * {@see RelatedIncludeBatcher}: `getDefaultIncludedRelationships()` is a type-level
+     * declaration, so the representative suffices for the per-type default cascade.
      *
      * @param list<RelationInterface> $allRelations
      *
      * @return list<RelationInterface>
      */
-    private function windowableRelations(array $allRelations): array
-    {
+    private function windowableRelations(
+        Server $server,
+        string $type,
+        array $allRelations,
+        object $representative,
+        JsonApiRequestInterface $request,
+    ): array {
+        $defaults = \array_flip($server->serializerFor($type)->getDefaultIncludedRelationships($representative));
+
         $relations = [];
         foreach ($allRelations as $relation) {
             if (!$relation->isToMany()) {
@@ -335,10 +413,165 @@ final class RelationshipWindowBatcher
                 continue;
             }
 
+            // Window only when this to-many's linkage data renders for the request:
+            // included at the primary level (default-includes honoured) or withData.
+            if (
+                $relation->emitsDataOnlyWhenLoaded()
+                && !$request->isIncludedRelationship('', $relation->name(), $defaults)
+            ) {
+                continue;
+            }
+
             $relations[] = $relation;
         }
 
         return $relations;
+    }
+
+    /**
+     * Validates the relatedQuery sort/filter KEYS of every monomorphic to-many that is
+     * addressed by a relatedQuery but is NOT being windowed this request (bundle ADR
+     * 0086): a links-only, not-included to-many that the rendered-data gate excluded
+     * from {@see windowableRelations()}. The window fetch normally surfaces an unknown
+     * key as the related-collection endpoint's `400` — but a gated relation never
+     * fetches, so the keys are validated here directly against the SAME merged
+     * vocabulary the fetch would have ({@see RelationCriteriaFactory::criteriaFor()}),
+     * with NO query and NO property mutation. So a typo'd `relatedQuery[<rel>][filter]`/
+     * `[sort]` key on a links-only relation is still the endpoint's same `400` (an
+     * unknown KEY is a client error regardless of whether the linkage renders), while a
+     * valid key on a links-only relation is a clean links-only render (no leak, no
+     * query). The windowed relations validate their keys through the fetch as before, so
+     * this covers only the gated remainder.
+     *
+     * @param list<RelationInterface> $allRelations every declared relation of the type
+     * @param list<RelationInterface> $windowed     the rendered-data relations being windowed (skipped here)
+     */
+    private function validateUnwindowedRelatedQueryKeys(
+        Server $server,
+        string $type,
+        array $allRelations,
+        array $windowed,
+        JsonApiRequestInterface $request,
+    ): void {
+        $windowedNames = [];
+        foreach ($windowed as $relation) {
+            $windowedNames[$relation->name()] = true;
+        }
+
+        foreach ($allRelations as $relation) {
+            // Only monomorphic to-many relations are windowable; a to-one is handled by
+            // the nulling path and a polymorphic to-many carries no shared vocabulary.
+            if (!$relation->isToMany() || \count($relation->relatedTypes()) > 1) {
+                continue;
+            }
+
+            // Skip the relations the fetch already validates (the windowed set).
+            if (isset($windowedNames[$relation->name()])) {
+                continue;
+            }
+
+            $relatedQuery = $request->getRelatedQuery($relation->name());
+            if ($relatedQuery->isEmpty()) {
+                continue;
+            }
+
+            $relatedType = $relation->relatedTypes()[0] ?? null;
+            $relatedResource = $relatedType !== null && $this->providers->supportsType($relatedType)
+                ? $this->types->resourceFor($server, $relatedType)
+                : null;
+
+            $criteria = $this->relationCriteria->criteriaFor(
+                new QueryParameters(
+                    fields: [],
+                    includes: [],
+                    sort: $relatedQuery->sortFields(),
+                    filter: $relatedQuery->filter,
+                    pagination: $request->getPagination(),
+                ),
+                $relatedResource,
+                $relation,
+                null,
+                includePivotFields: false,
+            );
+
+            $this->assertRelatedQueryKeysRecognised($relatedQuery, $criteria);
+
+            // The mistyped-VALUE check rides the same path as the windowed fetch (bundle
+            // ADR 0068 follow-up #2): a links-only relation validates its raw filter
+            // values too, so a bad value is the endpoint's same `400` here as well.
+            $this->filterValues?->validate($relatedQuery->filter, $criteria->filters);
+        }
+    }
+
+    /**
+     * Throws the related-collection endpoint's same `400` for an unrecognised relatedQuery
+     * filter/sort key, mirroring {@see CriteriaApplier}'s key recognition exactly (so the
+     * gated links-only path and the fetched windowed path agree): each requested filter key
+     * must name a declared {@see \haddowg\JsonApi\Resource\Filter\FilterInterface}; each
+     * requested sort field (with any leading `-` stripped) must name a declared
+     * {@see \haddowg\JsonApi\Resource\Sort\SortInterface}, and a sort requested against a
+     * relation that declares none is {@see \haddowg\JsonApi\Exception\SortingUnsupported}.
+     *
+     * @throws \haddowg\JsonApi\Exception\FilterParamUnrecognized on an unrecognised filter key
+     * @throws \haddowg\JsonApi\Exception\SortParamUnrecognized   on an unrecognised sort field
+     * @throws \haddowg\JsonApi\Exception\SortingUnsupported      when a sort is requested but none are declared
+     */
+    private function assertRelatedQueryKeysRecognised(RelatedQuery $relatedQuery, CollectionCriteria $criteria): void
+    {
+        foreach (\array_keys($relatedQuery->filter) as $key) {
+            $key = (string) $key;
+            if (!$this->declaresFilter($criteria->filters, $key)) {
+                throw new \haddowg\JsonApi\Exception\FilterParamUnrecognized($key);
+            }
+        }
+
+        $sortFields = $relatedQuery->sortFields();
+        if ($sortFields === []) {
+            return;
+        }
+
+        if ($criteria->sorts === []) {
+            throw new \haddowg\JsonApi\Exception\SortingUnsupported();
+        }
+
+        foreach ($sortFields as $field) {
+            $key = \str_starts_with($field, '-') ? \substr($field, 1) : $field;
+            if (!$this->declaresSort($criteria->sorts, $key)) {
+                throw new \haddowg\JsonApi\Exception\SortParamUnrecognized($key);
+            }
+        }
+    }
+
+    /**
+     * Whether the criteria's declared filters carry one keyed `$key`.
+     *
+     * @param list<\haddowg\JsonApi\Resource\Filter\FilterInterface> $filters
+     */
+    private function declaresFilter(array $filters, string $key): bool
+    {
+        foreach ($filters as $filter) {
+            if ($filter->key() === $key) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether the criteria's declared sorts carry one keyed `$key`.
+     *
+     * @param list<\haddowg\JsonApi\Resource\Sort\SortInterface> $sorts
+     */
+    private function declaresSort(array $sorts, string $key): bool
+    {
+        foreach ($sorts as $sort) {
+            if ($sort->key() === $key) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
