@@ -216,6 +216,51 @@ preloader) and ADRs [0035](adr/0035-doctrine-include-batch-preloading.md) /
 [0061](adr/0061-batch-windowed-related-collections-in-one-query-per-relation.md); the
 witness is [`IncludePreloadTest`](../examples/music-catalog-symfony/tests/IncludePreloadTest.php).
 
+### Eager-loaded flattened (`on()`) attributes
+
+The same batch also eager-loads the to-one chains a resource declares as **load-not-render**
+— so a [flattened attribute](relationships.md#flattened-on-attributes-and-eager-loading)
+(`->on('path')`) does not N+1. The eager set is the dedup set of every `on()` attribute's
+backing relation chain, declared by core's
+`DeclaresEagerLoadsInterface::eagerLoadRelationshipPaths()` (every `AbstractResource`
+satisfies it automatically) and executed by the bundle before the `?include` walk.
+
+Over `GET /books` flattening an `authorName` from a hidden `author` relation, the
+authors load in **one** `WHERE id IN (…)` query for the whole page — not one
+`SELECT … WHERE id = ?` per row (the per-row N+1 the flattened read would otherwise
+introduce, since the `author` association is lazy). An `on()` chain may be **multi-hop**
+(`->on('author.country')`): the bundle walks it hop by hop, so the second hop loads in
+**one** `WHERE id IN (…)` too — `O(depth)`, no per-row SELECT at any hop. It is the same
+batch as `?include`, with these eager-only properties:
+
+- **Never rendered.** An eager relation is loaded onto the parent's column exactly as a
+  lazy read would have materialised it, but rendering stays gated on core's
+  `isIncludedRelationship`, which the eager set never touches. So a hidden `on()` backing
+  relation (at any nesting depth) is loaded but **never** appears as a relationship or in
+  `included` unless *also* `?include`'d — eager-loading changes only the query plan, never
+  the document.
+- **Fail-loud at boot.** An `on()` chain is **validated at container warm-up**
+  (`cache:clear` / deploy), so a bad declaration fails the **build** — never a runtime 500.
+  Every segment must be a declared **to-one** relation: a **to-many** segment at any depth
+  throws a `LogicException` (`on()` flattens a scalar from a to-one chain — a to-many is
+  not flattenable; use `?include`), and the rule bites **every segment** of a multi-hop
+  chain, not just the leaf. An **unknown segment** (a typo) also throws (no silent no-op). A
+  segment may be `hidden()` or visible — both are valid, because the chain is to-one.
+- **Bypasses the client-include safeguards.** The eager set is author-declared and
+  trusted, so the include depth cap / allowed-paths whitelist / `cannotBeIncluded`
+  (which gate untrusted *client* input) do not apply to it.
+- **Resolved hidden-inclusive.** An `on()` attribute's backing relation is idiomatically
+  `hidden()` (the internal association), so the eager loader resolves it against the
+  hidden-inclusive declared-relation set — a hidden relation is found and loaded even
+  though it never renders.
+
+A flattened-attribute **write** (`PATCH` setting `authorName`, or a multi-hop
+`authorCountry`) mutates the loaded **final** related model in place; Doctrine's unit of
+work auto-persists the dirty loaded entity on flush (no related-persister change). A write
+over a **null** hop is a `422` (`RELATED_ATTRIBUTE_OWNER_MISSING`) — a flattened attribute
+never auto-instantiates a missing related model. See
+[ADR 0085](adr/0085-eager-loading-multi-hop-flattened-on-attributes.md).
+
 ### Windowed includes (`window_functions`)
 
 A *plain* include loads the whole related set (the fast-path above). Under the

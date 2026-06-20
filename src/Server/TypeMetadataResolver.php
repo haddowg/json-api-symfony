@@ -69,6 +69,38 @@ final class TypeMetadataResolver
     }
 
     /**
+     * The declared relation named `$name` on `$type` **including hidden relations**,
+     * resolved resource-first (an {@see AbstractResource}'s own field-inventory
+     * relations, hidden or not) then from the standalone {@see RelationsRegistry} —
+     * or `null` when neither declares a relation of that name.
+     *
+     * The hidden-inclusive twin of {@see relationNamed()} (and core's own
+     * {@see AbstractResource::relationNamed()}, which both filter hidden out): the
+     * eager-load executor resolves an `on()` attribute's backing relation here so a
+     * `hidden()` "internal association" — the idiomatic backing for a flattened
+     * attribute that never renders as a relationship — is still found and loaded.
+     */
+    public function relationNamedIncludingHidden(Server $server, string $type, string $name): ?RelationInterface
+    {
+        $resource = $this->resourceFor($server, $type);
+        if ($resource !== null) {
+            foreach ($resource->fields() as $field) {
+                if ($field instanceof RelationInterface && $field->name() === $name) {
+                    return $field;
+                }
+            }
+        }
+
+        foreach ($this->relations->relationsFor($type) ?? [] as $candidate) {
+            if ($candidate->name() === $name) {
+                return $candidate;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Every declared, non-hidden relation on `$type`, resolved resource-first (an
      * {@see AbstractResource}'s own field-inventory relations) then from the
      * standalone {@see RelationsRegistry} for a resource-less type — an empty list

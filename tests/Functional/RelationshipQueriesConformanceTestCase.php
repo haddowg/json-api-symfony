@@ -38,10 +38,14 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * The shared {@see App\Resource\BaseArticleResource} declares `editors` (a distinct
  * many-to-many to `authors`, sortable/filterable by `name`, `countable()`) and
- * `lazyComments` (a distinct non-countable to-many to `comments`) — distinct backing
- * columns, so a per-relation window never collides; the shared-column relations
- * (`comments`/`pagedComments`/`lockedComments` over one association) are the
- * documented last-writer-wins boundary and are not asserted on here.
+ * `lazyComments` (a distinct non-countable to-many to `comments`) on distinct backing
+ * columns. The shared-column relations (`comments`/`pagedComments`/`lockedComments` over
+ * one association) exercise the bystander-isolation guarantee: windowing one (the
+ * `withData` `comments`) supplies its page to core OUT-OF-BAND (the relationship-linkage
+ * seam) rather than writing it onto the shared property, so a sibling relation reading
+ * the same column renders its OWN membership — asserted by
+ * {@see windowingOneSharedColumnRelationDoesNotAlterASiblingBystandersLinkage()}
+ * (bundle ADR 0086).
  */
 abstract class RelationshipQueriesConformanceTestCase extends JsonApiFunctionalTestCase
 {
@@ -406,6 +410,180 @@ abstract class RelationshipQueriesConformanceTestCase extends JsonApiFunctionalT
         self::assertSame(['parameter' => 'relatedQuery'], $error['source'] ?? null);
     }
 
+    // --- rendered-data window gate (bundle ADR 0086) ---------------------------
+
+    #[Test]
+    #[Group('spec:profiles')]
+    #[Group('spec:fetching-filtering')]
+    public function aRelatedQueryFilterOnANotIncludedLazyToManyDoesNotApply(): void
+    {
+        // `lazyComments` is a lazy (links-only-by-default) to-many backed by
+        // `featuredComments` — article 1 features comments [1,2]. It is NOT included
+        // and NOT `withData()`, so its linkage does not render data this request: the
+        // window must NOT fire (bundle ADR 0086). A relatedQuery filter that would
+        // narrow it to comment 1 alone has NO effect on the rendered relationship —
+        // proving the filtered page was never windowed onto the parent.
+        //
+        // The wire is provider-shaped: on Doctrine the lazy default omits `data`
+        // entirely (links-only — the load-state predicate stays "not loaded" because
+        // no page was written onto the property), on the in-memory witness (no
+        // load-state predicate) the FULL unfiltered set [1,2] renders. Either way the
+        // filtered singleton [1] never leaks, and no window pagination link appears.
+        $document = $this->profileDocument(
+            '/articles/1?relatedQuery[lazyComments][filter][body]=' . \rawurlencode('First!'),
+        );
+
+        $relationshipObject = $this->relationshipObject($document['data'] ?? null, 'lazyComments');
+
+        // The window never fired, so the relationship carries no relatedQuery-mirroring
+        // pagination link (a windowed relation would emit a `first` carrying the filter).
+        self::assertWindowDidNotFire($relationshipObject, 'body=First');
+
+        // And the linkage is never the filtered singleton: either links-only (no data
+        // member at all) or the full unfiltered membership — but NOT [1] alone.
+        if (\array_key_exists('data', $relationshipObject)) {
+            self::assertNotSame(
+                ['1'],
+                $this->linkageIds($document, 'lazyComments'),
+                'a not-windowed lazy to-many must not render the filtered subset (no leak)',
+            );
+        }
+    }
+
+    #[Test]
+    #[Group('spec:profiles')]
+    #[Group('spec:fetching-filtering')]
+    public function aRelatedQueryFilterWindowsAnIncludedLazyToMany(): void
+    {
+        // The same lazy `lazyComments`, now INCLUDED: its linkage data renders, so the
+        // window fires and the relatedQuery filter applies — article 1's features [1,2]
+        // narrow to comment 1 ("First!"), and the included resource reflects that page.
+        // (Existing behaviour preserved: including a relation re-enables windowing.)
+        $document = $this->profileDocument(
+            '/articles/1?include=lazyComments&relatedQuery[lazyComments][filter][body]=' . \rawurlencode('First!'),
+        );
+
+        self::assertSame(['1'], $this->linkageIds($document, 'lazyComments'));
+        self::assertSame(['1'], $this->includedIds($document, 'comments'));
+    }
+
+    #[Test]
+    #[Group('spec:profiles')]
+    #[Group('spec:fetching-filtering')]
+    public function aRelatedQueryFilterWindowsAWithDataToManyEvenWhenNotIncluded(): void
+    {
+        // `comments` is a `withData()` to-many: its linkage data renders unconditionally
+        // (`emitsDataOnlyWhenLoaded() === false`), so it is windowed even when NOT
+        // included (bundle ADR 0086). Article 1 owns comments [1,2]; the relatedQuery
+        // filter `commentBody` (a contains-match on the comment body) narrows the
+        // rendered linkage to comment 1 ("First!"). The filter DOES apply because the
+        // data renders — windowing a withData relation is correct, never a leak.
+        $document = $this->profileDocument(
+            '/articles/1?relatedQuery[comments][filter][commentBody]=First',
+        );
+
+        self::assertSame(['1'], $this->linkageIds($document, 'comments'));
+    }
+
+    #[Test]
+    #[Group('spec:profiles')]
+    #[Group('spec:fetching-filtering')]
+    public function windowingOneSharedColumnRelationDoesNotAlterASiblingBystandersLinkage(): void
+    {
+        // REGRESSION (bundle ADR 0086): a windowed relation must not corrupt a SIBLING
+        // relation that shares its backing column. `comments` is a `withData()` to-many
+        // (windowed) and `lockedComments` is a lazy to-many over the SAME `comments`
+        // column (NEITHER addressed NOR included). Filtering `comments` to comment 1 must
+        // narrow ONLY `comments` — `lockedComments`, the bystander, renders its OWN
+        // membership untouched, because the windowed page is supplied to core out-of-band
+        // (the relationship-linkage seam) rather than written onto the shared property.
+        $document = $this->profileDocument(
+            '/articles/1?relatedQuery[comments][filter][commentBody]=First',
+        );
+
+        // The window applied to `comments`: its linkage is the filtered singleton.
+        self::assertSame(['1'], $this->linkageIds($document, 'comments'), 'the windowed relation is filtered');
+
+        // The bystander is unaffected. The wire is provider-shaped: on Doctrine the lazy
+        // default keeps `lockedComments` links-only (the column was never written, so the
+        // load-state predicate stays "not loaded"); the in-memory witness (no predicate)
+        // renders the FULL untouched membership [1,2]. Either way the filtered singleton
+        // [1] NEVER leaks onto the bystander.
+        $locked = $this->relationshipObject($document['data'] ?? null, 'lockedComments');
+        if (\array_key_exists('data', $locked)) {
+            self::assertSame(
+                ['1', '2'],
+                $this->linkageIds($document, 'lockedComments'),
+                'a column-sharing bystander renders its own full membership, never the windowed sibling\'s filtered page',
+            );
+        }
+
+        // And the bystander never inherits the windowed sibling's pagination link mirroring
+        // the relatedQuery filter (it was not windowed at all).
+        self::assertWindowDidNotFire($locked, 'commentBody=First');
+    }
+
+    #[Test]
+    #[Group('spec:profiles')]
+    #[Group('spec:fetching-filtering')]
+    public function twoCoWindowedRelationsOverOneColumnEachRenderTheirOwnFilteredPage(): void
+    {
+        // CO-WINDOWED SHARED COLUMN (bundle ADR 0086): `comments` and `flaggedComments`
+        // are BOTH `withData()` to-many relations over the SAME `comments` backing
+        // column, so both render data this request and both are windowed. The
+        // relationship-linkage seam is keyed per (parent, relation), so each carries
+        // its OWN filtered page — proving two co-windowed relations sharing one column
+        // do not cross-contaminate or leak into each other.
+        //
+        // Article 1 owns comments [1 "First!", 2 "Nice write-up."]. Each relation is
+        // addressed by a DIFFERENT relatedQuery filter on its own scoped vocabulary:
+        //  - `comments[filter][commentBody]=First` -> [1] (the `commentBody` scoped key);
+        //  - `flaggedComments[filter][flaggedBody]=Nice` -> [2] (the `flaggedBody` key).
+        $document = $this->profileDocument(
+            '/articles/1'
+                . '?relatedQuery[comments][filter][commentBody]=First'
+                . '&relatedQuery[flaggedComments][filter][flaggedBody]=Nice',
+        );
+
+        // Each co-windowed relation renders ITS OWN filtered singleton — no leak across
+        // the shared column, in either direction, on either provider.
+        self::assertSame(['1'], $this->linkageIds($document, 'comments'), 'comments is filtered to "First!"');
+        self::assertSame(['2'], $this->linkageIds($document, 'flaggedComments'), 'flaggedComments is filtered to "Nice write-up."');
+    }
+
+    #[Test]
+    #[Group('spec:profiles')]
+    #[Group('spec:fetching-filtering')]
+    public function aFilteredWithCountOnANotIncludedToManyStillCountsTheFilteredSet(): void
+    {
+        // REGRESSION (bundle ADR 0086): gating the WINDOW must not regress the COUNT.
+        // `editors` is a countable, lazy (links-only-by-default) many-to-many to
+        // `authors`; article 1 has editors Ada Lovelace (1) and Grace Hopper (2). It is
+        // NOT included, so the window does NOT fire — but a `?withCount` of its FILTERED
+        // set must still be reported (the count path loads nothing and is independent of
+        // the window). The `name` filter narrows the count to Grace Hopper alone: total 1.
+        $response = $this->handle(
+            self::BASE_URI . '/articles/1?withCount=editors'
+                . '&relatedQuery[editors][filter][name]=' . \rawurlencode('Grace Hopper'),
+            extraServer: ['HTTP_ACCEPT' => 'application/vnd.api+json;profile="'
+                . RelationshipQueriesProfile::URI . ' ' . CountableProfile::URI . '"'],
+        );
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $document = $this->decode($response);
+
+        $relationshipObject = $this->relationshipObject($document['data'] ?? null, 'editors');
+
+        // The filtered count is reported via meta.total (count path unaffected by the
+        // window gate) — one editor matches "Grace Hopper". The window did NOT fire, so
+        // the linkage is not the filtered page (links-only on Doctrine, full set in
+        // memory) — but the count is the FILTERED total regardless.
+        $meta = $relationshipObject['meta'] ?? null;
+        self::assertIsArray($meta, 'a counted relationship carries meta');
+        self::assertSame(1, $meta['total'] ?? null, 'the filtered count is reported even though the relation is not windowed');
+
+        self::assertWindowDidNotFire($relationshipObject, 'name=Grace');
+    }
+
     // --- request helpers -------------------------------------------------------
 
     /**
@@ -531,6 +709,51 @@ abstract class RelationshipQueriesConformanceTestCase extends JsonApiFunctionalT
 
         /** @var array<string, mixed> $links */
         return $links;
+    }
+
+    /**
+     * The whole relationship object of a resource's named relationship (links + any
+     * data/meta), so a test can assert across its members.
+     *
+     * @return array<string, mixed>
+     */
+    private function relationshipObject(mixed $resource, string $relationship): array
+    {
+        $relationships = $this->relationships($resource);
+        $relationshipObject = $relationships[$relationship] ?? null;
+        self::assertIsArray($relationshipObject, \sprintf('relationship "%s" is present', $relationship));
+
+        /** @var array<string, mixed> $relationshipObject */
+        return $relationshipObject;
+    }
+
+    /**
+     * Asserts a relationship object was NOT windowed by the profile (bundle ADR 0086):
+     * a windowed relation emits a pagination `first`/`prev`/`next` link carrying the
+     * relatedQuery sort/filter in plain form, so the absence of any link mentioning the
+     * given filter/sort fragment witnesses that the window never fired.
+     *
+     * @param array<string, mixed> $relationshipObject
+     */
+    private static function assertWindowDidNotFire(array $relationshipObject, string $fragment): void
+    {
+        $links = $relationshipObject['links'] ?? [];
+        self::assertIsArray($links);
+
+        foreach (['first', 'prev', 'next', 'last'] as $rel) {
+            $href = $links[$rel] ?? null;
+            if ($href === null) {
+                continue;
+            }
+
+            $value = \is_array($href) ? ($href['href'] ?? '') : $href;
+            self::assertIsString($value);
+            self::assertStringNotContainsString(
+                $fragment,
+                \rawurldecode($value),
+                \sprintf('a not-windowed relation must not emit a "%s" link mirroring the relatedQuery', $rel),
+            );
+        }
     }
 
     /**

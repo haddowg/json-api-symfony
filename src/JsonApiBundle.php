@@ -993,6 +993,12 @@ final class JsonApiBundle extends AbstractBundle
                     // profile read's windowed pages into the render. Always present
                     // (provider-agnostic — the batch fill is the provider's job).
                     '$relationshipPagination' => service(\haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipPagination::class),
+                    // The per-request relationship-LINKAGE seam holder (bundle ADR
+                    // 0086): threaded into the memoized Server once so the handler can
+                    // swap each profile read's windowed linkage into the render WITHOUT
+                    // the batcher writing it onto the parent property. Always present
+                    // (provider-agnostic — the batch fill is the provider's job).
+                    '$relationshipLinkage' => service(\haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipLinkage::class),
                     // This server's name + the dispatcher the serving bridge fires
                     // the bundle ServingEvent through (bundle ADR 0042); the
                     // dispatcher is optional (the lifecycle-hook seam is off when
@@ -1006,6 +1012,20 @@ final class JsonApiBundle extends AbstractBundle
 
         $services->set(ServerProvider::class)
             ->args(['$factories' => service_locator($factoryRefs)]);
+
+        // The fail-loud eager-load warmer (bundle ADR 0085): at cache:warmup it walks every
+        // server's registered types and runs core's EagerLoadValidator over each, so a
+        // malformed `on()` declaration (an unknown segment, or a to-many segment at any depth)
+        // throws a developer-facing \LogicException at cache:clear / deploy rather than as a
+        // runtime 500. Unlike the OpenAPI warmer it is NOT optional — the throw must abort the
+        // build.
+        $services->set(\haddowg\JsonApiBundle\Serializer\EagerLoadWarmer::class)
+            ->args([
+                '$servers' => service(ServerProvider::class),
+                '$descriptors' => service(\haddowg\JsonApiBundle\Server\RouteDescriptorRegistry::class),
+                '$serverNames' => \array_keys($servers),
+            ])
+            ->tag('kernel.cache_warmer');
     }
 
     /**

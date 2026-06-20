@@ -68,6 +68,7 @@ use haddowg\JsonApiBundle\Event\BeforeUpdateEvent;
 use haddowg\JsonApiBundle\Serializer\PivotMetaSerializer;
 use haddowg\JsonApiBundle\Serializer\PivotParentSerializer;
 use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipCount;
+use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipLinkage;
 use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipPagination;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
@@ -166,6 +167,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         private readonly ?RequestScopedRelationshipPagination $relationshipPagination = null,
         private readonly ?RelatedIncludeBatcher $includeBatcher = null,
         private readonly ?ActionInvoker $actions = null,
+        private readonly ?RequestScopedRelationshipLinkage $relationshipLinkage = null,
     ) {}
 
     public function handle(\haddowg\JsonApi\Operation\JsonApiOperationInterface $operation): DataResponse|RelatedResponse|IdentifierResponse|MetaResponse|NoContentResponse|ErrorResponse
@@ -1083,14 +1085,16 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * Installs the per-render relationship-window seam for a read of `$type` over
      * its fetched `$items` under the Relationship Queries profile (bundle ADR 0053):
      * the {@see RelationshipWindowBatcher} windows each rendered to-many relation to
-     * page 1 of its `relatedQuery`-ordered/filtered set (writing that page back onto
-     * each parent so the linkage `data` IS page 1), and the windowed map is swapped
-     * into the request-scoped holder the memoized Server renders through, so core
-     * emits the relationship object's pagination links in plain form.
+     * page 1 of its `relatedQuery`-ordered/filtered set and supplies that page-1 LINKAGE
+     * + relationship-object PAGINATION out-of-band — WITHOUT writing the page back onto
+     * each parent (bundle ADR 0086) — and both maps are swapped into their request-scoped
+     * holders the memoized Server renders through, so core emits the windowed linkage and
+     * the relationship object's pagination links in plain form while a column-sharing
+     * bystander relation still renders its own membership.
      *
-     * Called on every read so it also CLEARS the holder (installs `null`) when the
+     * Called on every read so it also CLEARS the holders (installs `null`) when the
      * request did not negotiate the profile — a prior profile request's pages never
-     * leak into this render. A no-op when the seam is not wired (the batcher/holder
+     * leak into this render. A no-op when the seam is not wired (the batcher/holders
      * are optional) or there is no request to read the profile/relatedQuery from.
      *
      * @param list<object> $items the fetched page whose rendered to-many relations to window
@@ -1101,9 +1105,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return;
         }
 
-        $this->relationshipPagination->set(
-            $request === null ? null : $this->windowBatcher->batch($server, $type, $items, $request),
-        );
+        $result = $request === null ? null : $this->windowBatcher->batch($server, $type, $items, $request);
+
+        $this->relationshipPagination->set($result?->pagination);
+        $this->relationshipLinkage?->set($result?->linkage);
     }
 
     /**
@@ -1186,10 +1191,17 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // never has a scalar id assigned to an association property (ADR 0018).
         $relationships = $this->extractRelationships($server, $type, $body, creating: true);
 
-        $entity = $server->hydratorFor($type)->hydrate($this->withoutRelationships($body), $persister->instantiate($type));
-        \assert(\is_object($entity));
+        $entity = $persister->instantiate($type);
 
+        // Apply the embedded associations BEFORE core hydrates, so a flattened `on()`
+        // attribute (which hydrates AFTER relationships and reads its owner off the
+        // parent) sees a related model associated in the SAME request body (ADR 0085).
+        // Relationships are still stripped from the hydrate body, so core's
+        // hydrateRelationships() stays a no-op (no scalar-id assignment, ADR 0018).
         $this->applyRelationships($persister, $type, $entity, $relationships, $body, creating: true);
+
+        $entity = $server->hydratorFor($type)->hydrate($this->withoutRelationships($body), $entity);
+        \assert(\is_object($entity));
 
         $this->validateEntity($server, $type, $entity, creating: true);
 
@@ -1206,6 +1218,18 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // as a fetch — so batch-preload the created resource's effective include
         // tree, keeping a nested include off the N+1 path (ADR 0035).
         $this->preloadIncludes($this->providers->forType($type), [$entity], $type, $request);
+
+        // A write response is the SAME DataResponse::fromResource VO a read renders,
+        // so it honours the Relationship Queries profile and ?withCount identically:
+        // window each rendered to-many relation to page 1 of its relatedQuery-ordered/
+        // filtered set, and install the ?withCount batched counts — mirroring the read
+        // arms exactly (the entity is already persisted/flushed here). Gated the same
+        // (only a relation whose data renders — included or withData — is windowed),
+        // and the window fills the out-of-band linkage seam, so writes inherit the
+        // no-parent-mutation behaviour for free. Both are no-ops when the profile is
+        // not negotiated / no ?withCount was named (bundle ADRs 0052, 0053, 0086).
+        $this->applyRelationshipWindows($server, $type, [$entity], $request);
+        $this->applyRelationshipCounts($server, $type, [$entity], $request);
 
         // The Location uses the resource's URI segment (its uriType), so it matches
         // the route the client will GET (ADR 0022); a bare pair has no resource, so
@@ -1257,14 +1281,18 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $serializer = $server->serializerFor($type);
         $persister = $this->persisters->forType($type);
 
-        // As for create: hydrate attributes via core, then replace the associations
-        // named in `data.relationships` through the persister seam (ADR 0018).
+        // As for create: replace the associations named in `data.relationships`
+        // through the persister seam (ADR 0018) BEFORE core hydrates, so a flattened
+        // `on()` attribute (hydrated AFTER relationships, reading its owner off the
+        // parent) writes onto a related model switched in the SAME request body — not
+        // the previously-associated owner (ADR 0085). Relationships are still stripped
+        // from the hydrate body, so core's hydrateRelationships() stays a no-op.
         $relationships = $this->extractRelationships($server, $type, $body, creating: false);
+
+        $this->applyRelationships($persister, $type, $entity, $relationships, $body, creating: false);
 
         $entity = $server->hydratorFor($type)->hydrate($this->withoutRelationships($body), $entity);
         \assert(\is_object($entity));
-
-        $this->applyRelationships($persister, $type, $entity, $relationships, $body, creating: false);
 
         $this->validateEntity($server, $type, $entity, creating: false);
 
@@ -1278,6 +1306,14 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // A PATCH response honours ?include as a fetch does — preload the updated
         // resource's effective include tree (ADR 0035).
         $this->preloadIncludes($provider, [$entity], $type, $request);
+
+        // As for create: the PATCH response is the SAME DataResponse::fromResource VO,
+        // so it honours the Relationship Queries profile and ?withCount identically —
+        // window each rendered to-many relation to page 1 of its relatedQuery set and
+        // install the ?withCount counts, mirroring the read arms (bundle ADRs 0052,
+        // 0053, 0086). No-ops without the profile / a ?withCount.
+        $this->applyRelationshipWindows($server, $type, [$entity], $request);
+        $this->applyRelationshipCounts($server, $type, [$entity], $request);
 
         $response = DataResponse::fromResource($entity, $serializer);
 

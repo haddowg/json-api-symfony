@@ -204,6 +204,16 @@ abstract class BaseArticleResource extends AbstractResource
             // only the mutation guards exercise them.
             BelongsTo::make('lockedAuthor')->type('authors')->storedAs('author')->cannotReplace(),
             HasMany::make('lockedComments')->type('comments')->storedAs('comments')->cannotRemove(),
+            // A SECOND `withData()` to-many over the SAME `comments` backing column as
+            // the `comments` relation above — so the two are CO-WINDOWED on one column,
+            // each addressed by its OWN relatedQuery filter and each rendering its own
+            // filtered page out-of-band (bundle ADR 0086). It carries a distinct scoped
+            // filter key (`flaggedBody`, a contains-match on the comment body) so the
+            // two co-windowed relations are filtered to DIFFERENT subsets of the shared
+            // membership, witnessing no cross-contamination on either provider.
+            HasMany::make('flaggedComments')->type('comments')->storedAs('comments')
+                ->withData()
+                ->withFilters(Where::make('flaggedBody', 'body', 'like')),
             // Read-only relationship (security): reuses the `author` association but
             // is declared readOnly(), so a whole-resource write that names it is
             // silently skipped — a server-assigned association can't be overwritten
