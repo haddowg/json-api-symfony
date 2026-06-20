@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Validation;
 
 use Egulias\EmailValidator\EmailValidator;
+use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Constraint\After;
 use haddowg\JsonApi\Resource\Constraint\AtLeastOneOf;
 use haddowg\JsonApi\Resource\Constraint\Before;
@@ -26,7 +27,9 @@ use haddowg\JsonApi\Resource\Constraint\MinLength;
 use haddowg\JsonApi\Resource\Constraint\MinProperties;
 use haddowg\JsonApi\Resource\Constraint\MultipleOf;
 use haddowg\JsonApi\Resource\Constraint\NotIn;
+use haddowg\JsonApi\Resource\Constraint\Nullable;
 use haddowg\JsonApi\Resource\Constraint\Pattern;
+use haddowg\JsonApi\Resource\Constraint\Required;
 use haddowg\JsonApi\Resource\Constraint\Sequentially;
 use haddowg\JsonApi\Resource\Constraint\SlugFormat;
 use haddowg\JsonApi\Resource\Constraint\UlidFormat;
@@ -104,11 +107,18 @@ final class ConstraintTranslator
     /**
      * The Symfony constraints enforcing one core constraint.
      *
+     * The optional `$request` is threaded only into the closure-carrying
+     * {@see When} (its condition is widened to `($value, ?$request)`, core ADR
+     * 0080); every other constraint is request-independent. A `null` request — the
+     * filter-side validator, the id-format check and the entity-level pass all pass
+     * none — invokes the condition with `null` as its second argument, so an
+     * existing `fn($value)` closure keeps binding unchanged.
+     *
      * @return list<Constraint>
      *
      * @throws \LogicException for a constraint the bridge does not yet translate
      */
-    public function translate(ConstraintInterface $constraint): array
+    public function translate(ConstraintInterface $constraint, ?JsonApiRequestInterface $request = null): array
     {
         return match (true) {
             $constraint instanceof In => [new Choice(choices: $this->scalarList($constraint->values))],
@@ -136,10 +146,10 @@ final class ConstraintTranslator
             })],
             $constraint instanceof Pattern => [new Regex(pattern: $this->delimit($constraint->regex))],
             $constraint instanceof SlugFormat => [new Regex(pattern: $this->delimit($constraint->regex))],
-            $constraint instanceof Each => [new All(constraints: $this->translateAll($constraint->constraints))],
-            $constraint instanceof Sequentially => [new SymfonySequentially(constraints: $this->translateAll($constraint->constraints))],
-            $constraint instanceof AtLeastOneOf => [new SymfonyAtLeastOneOf(constraints: $this->alternatives($constraint->constraints))],
-            $constraint instanceof When => [$this->conditional($constraint)],
+            $constraint instanceof Each => [new All(constraints: $this->translateAll($constraint->constraints, $request))],
+            $constraint instanceof Sequentially => [new SymfonySequentially(constraints: $this->translateAll($constraint->constraints, $request))],
+            $constraint instanceof AtLeastOneOf => [new SymfonyAtLeastOneOf(constraints: $this->alternatives($constraint->constraints, $request))],
+            $constraint instanceof When => [$this->conditional($constraint, $request)],
             $constraint instanceof After => [$this->dateBound($constraint->bound, true, 'This value should be after {{ limit }}.')],
             $constraint instanceof Before => [$this->dateBound($constraint->bound, false, 'This value should be before {{ limit }}.')],
             $constraint instanceof Between => [$this->dateRange($constraint->min, $constraint->max)],
@@ -159,11 +169,11 @@ final class ConstraintTranslator
      *
      * @return list<Constraint>
      */
-    private function translateAll(array $constraints): array
+    private function translateAll(array $constraints, ?JsonApiRequestInterface $request = null): array
     {
         $translated = [];
         foreach ($constraints as $constraint) {
-            foreach ($this->translate($constraint) as $symfonyConstraint) {
+            foreach ($this->translate($constraint, $request) as $symfonyConstraint) {
                 $translated[] = $symfonyConstraint;
             }
         }
@@ -181,11 +191,11 @@ final class ConstraintTranslator
      *
      * @return list<Constraint>
      */
-    private function alternatives(array $alternatives): array
+    private function alternatives(array $alternatives, ?JsonApiRequestInterface $request = null): array
     {
         $translated = [];
         foreach ($alternatives as $alternative) {
-            $constraints = $this->translate($alternative);
+            $constraints = $this->translate($alternative, $request);
             $translated[] = \count($constraints) === 1
                 ? $constraints[0]
                 : new SymfonySequentially(constraints: $constraints);
@@ -200,14 +210,34 @@ final class ConstraintTranslator
      * against the translated inner constraints. Core's condition is an arbitrary PHP
      * closure, which Symfony's own `When` (an ExpressionLanguage string) cannot
      * express — so the conditional logic runs in the callback.
+     *
+     * The condition is widened (core ADR 0080) to receive the request as its second
+     * argument, so an author can branch on the caller
+     * (`when(fn($v, $req) => $req?->getHeaderLine('X-Role') === 'admin', …)`); the
+     * `$request` captured here is whatever the validation context passed
+     * ({@see ResourceValidator} threads the inbound request, the filter/id/entity
+     * paths pass `null`). The value stays first so an existing `fn($value)` closure
+     * still binds.
      */
-    private function conditional(When $constraint): Callback
+    private function conditional(When $constraint, ?JsonApiRequestInterface $request = null): Callback
     {
         $condition = $constraint->condition;
-        $inner = $this->translateAll($constraint->constraints);
 
-        return new Callback(callback: static function (mixed $value, ExecutionContextInterface $context) use ($condition, $inner): void {
-            if ($condition($value) === true) {
+        // Presence rules ({@see Required}/{@see Nullable}) carry no Symfony *value*
+        // constraint — they are resolved by the {@see ResourceValidator} into the
+        // field's Required/Optional wrapper, request-aware even inside a `When`
+        // (ADR 0084). So a `when(…, fn($f) => $f->required())` is realised by
+        // presence resolution, not here; the When-callback only validates the inner
+        // *value* rules, skipping the presence markers (translating them would fail
+        // loud — they have no value-constraint translation).
+        $valueRules = \array_values(\array_filter(
+            $constraint->constraints,
+            static fn(ConstraintInterface $inner): bool => !$inner instanceof Required && !$inner instanceof Nullable,
+        ));
+        $inner = $this->translateAll($valueRules, $request);
+
+        return new Callback(callback: static function (mixed $value, ExecutionContextInterface $context) use ($condition, $inner, $request): void {
+            if ($condition($value, $request) === true) {
                 $context->getValidator()->inContext($context)->validate($value, $inner);
             }
         });

@@ -177,8 +177,22 @@ final class RelatedIncludeBatcher
         foreach ($relations as $relation) {
             // Capability A: a non-includable relation can never be part of the rendered
             // tree (core 400s a request that names it, and excludes it from the default
-            // cascade), so it is never batched.
-            if (!$relation->isIncludable()) {
+            // cascade), so it is never batched. Includability is request-aware (core
+            // ADR 0079): a relation declared `cannotBeIncluded(fn)` resolves against
+            // the inbound request and the representative entity, so a relation that is
+            // non-includable for *this* caller isn't eagerly batched for it (matching
+            // the 400 the transformer raises if the caller names it).
+            //
+            // Includability is resolved ONCE PER BATCH off the first entity as the
+            // representative — this is an eager-load optimisation over a whole page, not
+            // the rendering authority. The transformer remains the per-OBJECT authority,
+            // so a model-VARYING includability predicate (includable for one entity in
+            // the page but not another) is rendered correctly regardless: the batch
+            // either skips the eager load (the relation degrades to a per-entity lazy
+            // load at render) or eager-loads members the transformer then omits for the
+            // entities that gate it. The wire document is identical either way; only the
+            // query plan differs.
+            if (!$relation->isIncludableFor($request, $entities[0])) {
                 continue;
             }
 

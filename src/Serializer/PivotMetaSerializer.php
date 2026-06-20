@@ -83,10 +83,10 @@ final class PivotMetaSerializer implements SerializerInterface, IncludeControlsI
         return $this->inner->getRelationships($object, $request);
     }
 
-    public function getNonIncludableRelationships(mixed $object): array
+    public function getNonIncludableRelationships(JsonApiRequestInterface $request, mixed $object): array
     {
         return $this->inner instanceof IncludeControlsInterface
-            ? $this->inner->getNonIncludableRelationships($object)
+            ? $this->inner->getNonIncludableRelationships($request, $object)
             : [];
     }
 

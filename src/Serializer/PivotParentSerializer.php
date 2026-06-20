@@ -93,10 +93,10 @@ final class PivotParentSerializer implements SerializerInterface, IncludeControl
         return $relationships;
     }
 
-    public function getNonIncludableRelationships(mixed $object): array
+    public function getNonIncludableRelationships(JsonApiRequestInterface $request, mixed $object): array
     {
         return $this->inner instanceof IncludeControlsInterface
-            ? $this->inner->getNonIncludableRelationships($object)
+            ? $this->inner->getNonIncludableRelationships($request, $object)
             : [];
     }
 
