@@ -62,6 +62,39 @@ securityDelete: "is_granted('ROLE_ADMIN')"` gates only delete.
   rows simply never appear (a `404` for a hidden id, not a `403`). A single
   all-or-nothing gate on a collection would be the wrong tool.
 
+## Narrowing the query surface per request
+
+A resource is an ordinary container service (it can take constructor dependencies —
+see [resources](resources.md)), and its `filters()`, `sorts()` and per-relation
+include allow-list are read **fresh on every request**. So you can make the
+*queryable surface itself* depend on the caller: inject `Security` (or `RequestStack`)
+and return a narrower vocabulary for an unprivileged client.
+
+```php
+final class AlbumResource extends AbstractResource
+{
+    public function __construct(private readonly Security $security) {}
+
+    public function filters(): array
+    {
+        $filters = [Where::make('title'), Where::make('releasedAt')];
+        if ($this->security->isGranted('ROLE_ADMIN')) {
+            $filters[] = Where::make('internalNotes'); // admins only
+        }
+
+        return $filters;
+    }
+}
+```
+
+A filter or sort key not in the returned set is rejected with a `400` exactly as an
+unknown key would be — so dropping `internalNotes` for a non-admin means their
+`filter[internalNotes]=…` is *refused*, not silently ignored. The same technique
+narrows `sorts()` and the include allow-list. This is request-time **vocabulary**
+narrowing — the Laravel `forget`/`notSupported` equivalent — and it composes with
+row-level scoping (a [Doctrine extension](custom-data-providers.md) that hides
+forbidden *rows*) and with the declarative `security` gate above.
+
 ## Per-object authorization with a Voter
 
 Because the operation's entity is passed as `object`, an expression like

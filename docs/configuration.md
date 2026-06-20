@@ -60,6 +60,15 @@ witness).
 a core `Server` does with them. A single-API app sets just `base_uri` (and usually
 nothing else) and never touches `servers:`.
 
+> **Empty `base_uri` (the default) emits host-relative links** — `/albums/1`, with no
+> scheme or host — which a client resolves against whatever host it reached the API on.
+> That is the **multi-tenant / multi-host recipe**: one deployment served under several
+> hostnames emits links that follow the incoming request's host automatically, with no
+> per-request configuration. Set a non-empty `base_uri` only when every link must carry
+> a single fixed absolute host (e.g. a canonical public host regardless of the request);
+> it is a compile-time constant applied to every request and is **not** request-host
+> aware — there is no per-request `baseUri()` override today.
+
 ### Container parameters
 
 Two of the keys surface as container parameters you can read elsewhere:
