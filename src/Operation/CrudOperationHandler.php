@@ -1219,6 +1219,18 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // tree, keeping a nested include off the N+1 path (ADR 0035).
         $this->preloadIncludes($this->providers->forType($type), [$entity], $type, $request);
 
+        // A write response is the SAME DataResponse::fromResource VO a read renders,
+        // so it honours the Relationship Queries profile and ?withCount identically:
+        // window each rendered to-many relation to page 1 of its relatedQuery-ordered/
+        // filtered set, and install the ?withCount batched counts — mirroring the read
+        // arms exactly (the entity is already persisted/flushed here). Gated the same
+        // (only a relation whose data renders — included or withData — is windowed),
+        // and the window fills the out-of-band linkage seam, so writes inherit the
+        // no-parent-mutation behaviour for free. Both are no-ops when the profile is
+        // not negotiated / no ?withCount was named (bundle ADRs 0052, 0053, 0086).
+        $this->applyRelationshipWindows($server, $type, [$entity], $request);
+        $this->applyRelationshipCounts($server, $type, [$entity], $request);
+
         // The Location uses the resource's URI segment (its uriType), so it matches
         // the route the client will GET (ADR 0022); a bare pair has no resource, so
         // it falls back to the type.
@@ -1294,6 +1306,14 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // A PATCH response honours ?include as a fetch does — preload the updated
         // resource's effective include tree (ADR 0035).
         $this->preloadIncludes($provider, [$entity], $type, $request);
+
+        // As for create: the PATCH response is the SAME DataResponse::fromResource VO,
+        // so it honours the Relationship Queries profile and ?withCount identically —
+        // window each rendered to-many relation to page 1 of its relatedQuery set and
+        // install the ?withCount counts, mirroring the read arms (bundle ADRs 0052,
+        // 0053, 0086). No-ops without the profile / a ?withCount.
+        $this->applyRelationshipWindows($server, $type, [$entity], $request);
+        $this->applyRelationshipCounts($server, $type, [$entity], $request);
 
         $response = DataResponse::fromResource($entity, $serializer);
 
