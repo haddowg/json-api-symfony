@@ -60,7 +60,8 @@ controller, no template — the same render seam the
 `JsonApiExceptionInterface` already knows its status and its error objects, so the
 listener hands it straight to `ErrorResponse::fromException()`. This is the common
 case on a JSON:API route: an unknown filter (`FILTERING_UNRECOGNIZED`, 400), an
-unrecognized query-parameter family (`QUERY_PARAM_UNRECOGNIZED`, 400 — strict
+unrecognized query-parameter family or an unknown `fields[type]` sparse-fieldset
+member (`QUERY_PARAM_UNRECOGNIZED` / `FIELDSET_MEMBER_UNRECOGNIZED`, 400 — strict
 query-parameter validation, on by default, see
 [configuration](configuration.md#strict_query_parameters)), a missing resource
 (`RESOURCE_NOT_FOUND`, 404), an unknown relationship (`RELATIONSHIP_NOT_EXISTS`,
