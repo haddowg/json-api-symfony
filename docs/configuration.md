@@ -47,7 +47,7 @@ witness).
 | `base_uri` | scalar | `''` | The absolute base URI the implicit `default` server prepends to every generated link. |
 | `version` | scalar | `'1.1'` | The JSON:API version the implicit `default` server advertises. |
 | `max_include_depth` | int | `3` | The cap on `?include` nesting depth (relationship hops from the primary resource). `0` is unlimited. A resource's own `maxIncludeDepth()` overrides it. |
-| `strict_query_parameters` | bool | `true` | Reject an unrecognized top-level query-parameter family with a `400` (ADR 0055). `false` restores the old silent-ignore behaviour. |
+| `strict_query_parameters` | bool | `true` | Reject an unrecognized top-level query-parameter family — and an unknown [`fields[type]` sparse-fieldset member](#unknown-sparse-fieldset-members) — with a `400` (ADR 0055). `false` restores the old silent-ignore behaviour. |
 | `pagination.max_per_page` | int | `100` | The page-size cap the built-in server default paginator clamps `page[size]`/`page[limit]` to. `0` installs no built-in default (those collections render unpaginated). |
 | `doctrine.window_functions` | bool | `true` | Use SQL window functions (`ROW_NUMBER`/`COUNT OVER`) for the bounded windowed-include batch (ADR 0065). Requires MySQL ≥ 8, MariaDB ≥ 10.2, SQLite ≥ 3.25, or any PostgreSQL. On an older engine the default `true` throws a `500` at the first windowed include — set `false` for the per-parent bounded fallback. |
 | `schema_validation` | bool | `false` | Registers the optional opis structural linter. Enabling it without `opis/json-schema` **fails the build**. |
@@ -257,6 +257,27 @@ custom param (one with no non-`a-z` character, like `?bogus`) regardless of this
 toggle — the spec requires it. The toggle governs the **strict superset**: a
 *well-named* unsupported custom param (one carrying an uppercase letter or other
 non-`a-z` character) is `400`'d when strict and ignored when relaxed.
+
+#### Unknown sparse-fieldset members
+
+The same gate also rejects an unknown **`fields[type]` member**. A sparse fieldset
+such as `?fields[articles]=title,bogus` previously dropped `bogus` silently and
+returned a wrong-but-`200` document; with `strict_query_parameters` on (the default)
+a member that names **no declared field** of a known resource type is now a `400`
+(`FIELDSET_MEMBER_UNRECOGNIZED`, `source.parameter` = `fields`, the message naming
+the offending member) — mirroring how an unknown `?include` path already `400`s. The
+check covers **every** named `fields[type]`, including the types of `?include`d
+related resources, so a typo in an included type's fieldset is caught too.
+
+The recognized member set is a resource's **full declared field namespace** — every
+attribute and relationship name it declares, *including* `id`, hidden, write-only and
+[non-sparse](resources.md) fields. So a member is "unknown" only when it names no
+declared field at all (a real typo): naming a hidden field is tolerated (a hidden
+name and a bogus name behave identically, so there is no information leak), as is `id`
+or a non-sparse field. A `fields[type]` for a type the server cannot resolve (an
+unregistered type) is left alone — only unknown *members* of *known* types are
+rejected. Setting `strict_query_parameters: false` stands this member check down too,
+restoring the silent-drop behaviour.
 
 ## Response headers (caching and deprecation)
 
