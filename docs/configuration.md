@@ -16,7 +16,7 @@ inline in the bundle's `configure()` (an `AbstractBundle`), and the extension al
 
 ## The config tree
 
-Nine keys, all optional:
+Ten top-level keys, all optional:
 
 ```yaml
 # config/packages/json_api.yaml
@@ -29,6 +29,8 @@ json_api:
         max_per_page: 50
     doctrine:
         window_functions: true
+    atomic_operations:
+        enabled: false
     defaults:
         cache_headers:
             max_age: 60
@@ -50,6 +52,8 @@ witness).
 | `strict_query_parameters` | bool | `true` | Reject an unrecognized top-level query-parameter family — and an unknown [`fields[type]` sparse-fieldset member](#unknown-sparse-fieldset-members) — with a `400` (ADR 0055). `false` restores the old silent-ignore behaviour. |
 | `pagination.max_per_page` | int | `100` | The page-size cap the built-in server default paginator clamps `page[size]`/`page[limit]` to. `0` installs no built-in default (those collections render unpaginated). |
 | `doctrine.window_functions` | bool | `true` | Use SQL window functions (`ROW_NUMBER`/`COUNT OVER`) for the bounded windowed-include batch (ADR 0065). Requires MySQL ≥ 8, MariaDB ≥ 10.2, SQLite ≥ 3.25, or any PostgreSQL. On an older engine the default `true` throws a `500` at the first windowed include — set `false` for the per-parent bounded fallback. |
+| `atomic_operations.enabled` | bool | `false` | Emit the [Atomic Operations](atomic-operations.md) endpoint (`POST {path}`) per server (ADR 0087/0088). |
+| `atomic_operations.path` | scalar | `/operations` | The path the Atomic Operations endpoint is served at. Must not equal a resource's collection path (the loader fails fast if it does). |
 | `schema_validation` | bool | `false` | Registers the optional opis structural linter. Enabling it without `opis/json-schema` **fails the build**. |
 | `defaults.cache_headers` | map | `{}` | Fleet-wide default HTTP cache directives for `GET` reads (ADR 0054). A resource's own `cacheHeaders` overrides these. |
 | `defaults.deprecation` / `sunset` / `sunset_link` | scalar | `null` | Fleet-wide default deprecation/sunset headers (ADR 0054). A resource's own `deprecation`/`sunset` overrides these. |

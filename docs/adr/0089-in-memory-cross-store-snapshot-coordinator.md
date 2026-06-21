@@ -20,3 +20,12 @@ the atomic path changes. It is proven by a dual-provider conformance case: a rel
 mutation inside a batch, a forced rollback, then an assertion that both the association *and* the
 related-object identity (a parent→related read traversing the restored graph) are back to the
 pre-batch state.
+
+The coordinator implements `ResetInterface` (auto-tagged `kernel.reset` when registered as a
+service), mirroring the `WriteTransactionContext`: a batch that left a session open undrained — an
+exception between `open()` and `restore()`/`commit()` — would otherwise carry its captured
+pre-image into the *next* batch in a long-lived worker (poisoning the next snapshot) and pin the
+captured object graph in memory. `reset()` discards the captured state between requests; it does
+not restore (a reset is not a rollback — a half-applied batch's live writes simply stand, as the
+live persisters' state would on the same leak). It is a test witness, so this closes the
+asymmetry with the production `WriteTransactionContext` rather than adding a wired service.

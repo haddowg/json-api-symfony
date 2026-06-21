@@ -50,3 +50,42 @@ attribute-less `add` carrying just `{type, lid}` is not mis-resolved as a forwar
 still rolls back at that index. The route carries no `_jsonapi_type` — the batch has no single
 primary resource — so the listener branches on a dedicated `_jsonapi_atomic` marker and
 negotiates the atomic `ext` on both `Content-Type` (415) and `Accept` (406).
+
+**Every error document for an atomic-route request advertises the atomic `ext`**, not only the
+in-loop rolled-back one. The `AtomicLoop` sets the ext on its own rolled-back error, but a
+failure raised *before* the loop — the empty-batch `400`, a parse error, the pre-flight `403`/
+`404` — renders through the route-scoped `ExceptionListener`, which now applies
+`withExtensions([AtomicExtension::URI])` to any error on the `_jsonapi_atomic` route. The sole
+exception is the content-negotiation failures: a `415`/`406` means the extension was NOT
+successfully negotiated, so its error document correctly omits the `ext` parameter.
+
+**Post-commit hooks run after the batch is durably committed, best-effort.** The deferred `After*`
+hooks drain *after* `commit()` has made the batch's writes durable, so a hook that throws must
+not turn a successful, durably-committed batch into a failure (and there is nothing to roll back
+— the data stands). `commit()` therefore drains with a handler that logs each hook exception (an
+injected PSR `LoggerInterface`, defaulting to `NullLogger`) and lets the remaining hooks run; the
+context is always deactivated afterwards. Were the throw left to propagate it would reach the
+`AtomicLoop`'s commit `try/catch`, which would call `rollback()` (a no-op on already-committed
+data) and re-raise as a `500` — failing a batch that actually succeeded. A hook with a hard
+post-commit invariant should perform its own error handling; it cannot abort the committed batch.
+
+**`begin()` is finally-safe.** The `AtomicLoop` calls `begin()` *outside* its `try/catch`, so a
+persister's `beginTransaction()` that throws must not leave anything open or the context active.
+`begin()` opens every participating transaction *first*; if one throws it rolls back the ones
+already opened and rethrows, and it activates the deferred-hook context only after every begin
+succeeds — so a begin failure leaves nothing open and the context inactive (defense-in-depth
+alongside the `kernel.reset`).
+
+**Two deliberate scope declines, documented for the wire contract:**
+
+- **No `204` when every result is empty.** A batch always renders `200` with `atomic:results`,
+  where a no-data operation (a `remove`, or an `update`/relationship op with nothing to return) is
+  an empty result object `{}`. A `204` for an all-empty batch is a spec MAY we decline: one
+  consistent success shape (always `200` + `atomic:results`) is cleaner than a status that varies
+  by the batch's content.
+- **`?include` / sparse `?fields` are not part of the atomic flow.** A result object is `{data,
+  meta}` only — no compound document, no `included`, no sparse-fieldset narrowing. Those params are
+  recognized JSON:API query-param names, so an `?include`/`?fields` on `/operations` is neither
+  honoured nor spuriously rejected — it is simply not processed (an *unrecognized* param is still
+  the endpoint's normal `400`, the standard strict-query-param behaviour). Per-op `include` is out
+  of scope.
