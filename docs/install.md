@@ -4,14 +4,6 @@ This page covers installing `haddowg/json-api-symfony`, registering the bundle,
 and the one step that surprises everyone: **routes are not auto-mounted**. The
 rest of the docs assume the steps here are done.
 
-> [!IMPORTANT]
-> The bundle depends on the core library
-> [`haddowg/json-api`](https://github.com/haddowg/json-api/blob/main/docs/index.md)
-> on `dev-main`, resolved through a Composer **path** or **VCS** repository. Add
-> one of the repositories below, then require the bundle on `dev-main`. This setup
-> lives here and in [index](index.md); every other page assumes the bundle is
-> installed.
-
 ## Requirements
 
 | Requirement | Constraint |
@@ -26,44 +18,14 @@ listeners use: `nyholm/psr7` (the PSR-7 implementation) and
 direct `require` entries in the bundle's `composer.json`, so installing the bundle
 pulls them in — you do not require them by hand.
 
-## Resolving the core dependency
-
-Pick one of the two recipes depending on whether you have a local sibling checkout
-of core.
-
-### Local development — a path repository
-
-If you have core checked out as a sibling (e.g. `../json-api`), register a
-**global** Composer path repository that symlinks it:
+## Install
 
 ```bash
-composer config -g repositories.haddowg-json-api \
-  '{"type":"path","url":"/abs/path/to/json-api","options":{"symlink":true}}'
+composer require haddowg/json-api-symfony
 ```
 
-A path repository reports the package version as `dev-<branch>` of whatever branch
-the checkout is on, and the bundle requires exactly `dev-main` — so **keep the core
-checkout on its `main` branch**, or the constraint will not be satisfied. Because
-the repository is global, it is not committed anywhere and does not shadow CI's
-resolution.
-
-### CI / no sibling checkout — a VCS repository
-
-Without a local checkout, point Composer at the core GitHub repository instead so
-`dev-main` resolves from source:
-
-```bash
-composer config -g repositories.haddowg-json-api \
-  '{"type":"vcs","url":"https://github.com/haddowg/json-api"}'
-```
-
-### Then require the bundle
-
-With a repository in place, require the bundle on `dev-main`:
-
-```bash
-composer require haddowg/json-api-symfony:dev-main
-```
+Composer pulls the core library (`haddowg/json-api`) transitively, along with the
+PSR-7 bridge described in the requirements above — you do not require them by hand.
 
 ## Register the bundle
 
