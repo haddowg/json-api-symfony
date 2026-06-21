@@ -1299,9 +1299,15 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // it falls back to the type.
         $uriType = $this->types->resourceFor($server, $type)?->uriType() ?? $type;
 
+        // The Location prefix is resolved from the request the SAME way the body's
+        // links are (an empty base_uri yields the request-host-absolute origin, a
+        // configured base is used verbatim), so the Location and the created
+        // resource's own `links.self` stay equal under either base (core ADR 0054).
+        $baseUri = \haddowg\JsonApi\Server\RequestBaseUri::resolve($server->baseUri(), $request->getUri());
+
         $response = DataResponse::fromResource($entity, $serializer)
             ->withStatus(201)
-            ->withHeader('Location', $server->baseUri() . '/' . $uriType . '/' . $serializer->getId($entity));
+            ->withHeader('Location', $baseUri . '/' . $uriType . '/' . $serializer->getId($entity));
 
         // After-create then after-save hooks (post-commit) may replace the 201;
         // after-save fires last, so it has the final word. Under an active Atomic
