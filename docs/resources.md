@@ -218,9 +218,10 @@ Two spec-recommended `self` links render by convention with no configuration:
   (carrying the resolved page params) wins, with `first`/`prev`/`next`/`last`
   preserved alongside.
 
-Both links are storage-agnostic — they derive from the configured `base_uri`, the
-`uriType`/type, the id and the request URI — so they are identical on every
-provider. The behaviour lives in core (core ADR 0054); the bundle witnesses it
+Both links are storage-agnostic — they derive from the base URI (your configured
+`base_uri`, or the request's own scheme+host when it is empty, the default — see
+[configuration](configuration.md)), the `uriType`/type, the id and the request URI —
+so they are identical on every provider. The behaviour lives in core (core ADR 0054); the bundle witnesses it
 across the dual-provider conformance suites (bundle ADR 0047).
 
 ## Sourcing the resource id

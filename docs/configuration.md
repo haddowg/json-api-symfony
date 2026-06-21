@@ -46,7 +46,7 @@ witness).
 
 | Key | Type | Default | What it does |
 | --- | --- | --- | --- |
-| `base_uri` | scalar | `''` | The absolute base URI the implicit `default` server prepends to every generated link. |
+| `base_uri` | scalar | `''` | The base prepended to every generated link. **Empty (the default): links are absolute, built from the request's scheme + host** — each tenant/host gets correct self-links with no hardcoded host. Set a value to pin a fixed canonical base regardless of the request. Trailing slashes are tolerated. |
 | `version` | scalar | `'1.1'` | The JSON:API version the implicit `default` server advertises. |
 | `max_include_depth` | int | `3` | The cap on `?include` nesting depth (relationship hops from the primary resource). `0` is unlimited. A resource's own `maxIncludeDepth()` overrides it. |
 | `strict_query_parameters` | bool | `true` | Reject an unrecognized top-level query-parameter family — and an unknown [`fields[type]` sparse-fieldset member](#unknown-sparse-fieldset-members) — with a `400` (ADR 0055). `false` restores the old silent-ignore behaviour. |
@@ -64,14 +64,18 @@ witness).
 a core `Server` does with them. A single-API app sets just `base_uri` (and usually
 nothing else) and never touches `servers:`.
 
-> **Empty `base_uri` (the default) emits host-relative links** — `/albums/1`, with no
-> scheme or host — which a client resolves against whatever host it reached the API on.
-> That is the **multi-tenant / multi-host recipe**: one deployment served under several
-> hostnames emits links that follow the incoming request's host automatically, with no
-> per-request configuration. Set a non-empty `base_uri` only when every link must carry
-> a single fixed absolute host (e.g. a canonical public host regardless of the request);
-> it is a compile-time constant applied to every request and is **not** request-host
-> aware — there is no per-request `baseUri()` override today.
+> **Empty `base_uri` (the default) emits request-host-absolute links** — a request to
+> `https://albums.example/albums/1` renders `"self": "https://albums.example/albums/1"`,
+> scheme and host taken from the incoming request's origin. That is the **multi-tenant /
+> multi-host recipe**: one deployment served under several hostnames emits correct
+> absolute self-links per host with no per-request configuration. Behind a TLS-terminating
+> proxy this works as long as the request is proxy-aware — configure Symfony's
+> [trusted proxies](https://symfony.com/doc/current/deployment/proxies.html) so the public
+> scheme/host (`X-Forwarded-Proto`/`X-Forwarded-Host`) flow into the request the bundle
+> reads. Set a non-empty `base_uri` only when every link must carry a single fixed
+> canonical host regardless of the request; it is a compile-time constant applied to every
+> request and is **not** request-host aware. Trailing slashes on a configured base are
+> tolerated (`https://api.example/` and `https://api.example` are equivalent).
 
 ### Container parameters
 

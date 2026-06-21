@@ -181,12 +181,12 @@ final class DoctrineResourceSecurityTest extends JsonApiFunctionalTestCase
                     'parent' => [
                         'data' => null,
                         'links' => [
-                            'related' => '/ownedWidgets/1/parent',
-                            'self' => '/ownedWidgets/1/relationships/parent',
+                            'related' => 'http://localhost/ownedWidgets/1/parent',
+                            'self' => 'http://localhost/ownedWidgets/1/relationships/parent',
                         ],
                     ],
                 ],
-                'links' => ['self' => '/ownedWidgets/1'],
+                'links' => ['self' => 'http://localhost/ownedWidgets/1'],
             ]);
     }
 

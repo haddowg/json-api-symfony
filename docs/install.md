@@ -96,8 +96,9 @@ set, the operation gating, and the per-server import are covered on
 ## Minimal `json_api` configuration
 
 The configuration tree is tiny. For a single-API app, only `base_uri` matters — it
-defines the implicit `default` server (and the absolute self-links in rendered
-documents). The example app:
+defines the implicit `default` server. Leave it empty (the default) and links are
+absolute, built from the request's scheme and host; set it to pin a fixed canonical
+host regardless of the request. The example app:
 
 ```yaml
 # config/packages/json_api.yaml
