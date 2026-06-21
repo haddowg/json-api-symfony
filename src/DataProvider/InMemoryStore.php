@@ -55,6 +55,15 @@ final class InMemoryStore
     private int $nextId;
 
     /**
+     * The pre-transaction state captured by {@see snapshot()} — a deep clone of
+     * the items map plus the id counter — restored verbatim by {@see restore()}.
+     * `null` when no snapshot is held.
+     *
+     * @var array{items: array<string, object>, nextId: int}|null
+     */
+    private ?array $snapshot = null;
+
+    /**
      * @param iterable<int|string, object>         $items    seed objects keyed by id
      * @param (\Closure(object): string)|null      $identify reads an item's id; required only for writes
      * @param (\Closure(object, string): void)|null $assignId writes a minted id onto an item; enables
@@ -140,5 +149,86 @@ final class InMemoryStore
     public function remove(object $item): void
     {
         unset($this->itemsById[($this->identify)($item)]);
+    }
+
+    /**
+     * Captures the current state — for the in-memory analogue of opening a
+     * transaction ({@see \haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister::beginTransaction()}).
+     *
+     * Each stored object is **deep-cloned** (not merely copied into a fresh array),
+     * because the persister's {@see \haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister::update()}
+     * mutates the SAME object reference in place and re-saves it under the same key:
+     * a shallow array copy would still point at the now-mutated object, so a
+     * {@see restore()} could not undo an in-place update. Deep-cloning the values
+     * preserves each object's pre-transaction field values. The id counter is
+     * captured too, so a {@see restore()} also rewinds any ids minted in the batch.
+     */
+    public function snapshot(): void
+    {
+        $items = [];
+        foreach ($this->itemsById as $id => $item) {
+            $items[$id] = $this->deepClone($item);
+        }
+
+        $this->snapshot = ['items' => $items, 'nextId' => $this->nextId];
+    }
+
+    /**
+     * Reinstates the state captured by the last {@see snapshot()} — both the items
+     * map (each object back to its pre-transaction field values) and the id counter
+     * — discarding every write made since, then clears the snapshot. A no-op when no
+     * snapshot is held.
+     */
+    public function restore(): void
+    {
+        if ($this->snapshot === null) {
+            return;
+        }
+
+        $this->itemsById = $this->snapshot['items'];
+        $this->nextId = $this->snapshot['nextId'];
+        $this->snapshot = null;
+    }
+
+    /**
+     * Discards the held snapshot without restoring it — the in-memory analogue of
+     * committing the transaction (the writes made since {@see snapshot()} stand). A
+     * no-op when no snapshot is held.
+     */
+    public function discardSnapshot(): void
+    {
+        $this->snapshot = null;
+    }
+
+    /**
+     * A deep clone of a stored object so the snapshot is independent of subsequent
+     * in-place mutations. Uses PHP's recursive `unserialize(serialize())` round-trip
+     * when the object is serializable (the common case — the witness's POJOs are),
+     * falling back to a shallow `clone` for an object that cannot be serialized (a
+     * closure-bearing object); the witness never stores such objects, so the
+     * fallback is a safety net, not a normal path.
+     *
+     * Single-store limitation: the round-trip follows every reference, so a stored
+     * object that points at a related object held in ANOTHER {@see InMemoryStore}
+     * (as a {@see \haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister::mutateRelationship()}
+     * wires it) is snapshotted with a CLONE of that related object — on
+     * {@see restore()} the parent would no longer be identity-equal to the live
+     * related object. This is invisible to the current single-store begin/rollback
+     * (each store snapshots/restores itself in isolation), but the atomic executor's
+     * cross-store rollback must reckon with it: either snapshot/restore all stores
+     * atomically with cross-store refs re-resolved, or scope rollback per store.
+     * Decide before the cross-store executor lands; do not silently rely on
+     * cross-store identity surviving a restore.
+     */
+    private function deepClone(object $item): object
+    {
+        try {
+            /** @var object $copy */
+            $copy = \unserialize(\serialize($item));
+
+            return $copy;
+        } catch (\Throwable) {
+            return clone $item;
+        }
     }
 }
