@@ -29,6 +29,12 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
  * Cycle safety: a path that revisits a type already on the current branch is not
  * descended again (so a mutual `author`/`articles` cycle yields the finite prefix
  * set, not an infinite walk), independent of the depth cap.
+ *
+ * (Post-1.0 opportunity: core could expose a shared includable-path enumerator that
+ * both this and core's `?include` validation consult. Kept bundle-side for 1.0 so no
+ * reactive core surface is frozen at the tag — this walk is correct and self-contained.)
+ *
+ * @internal
  */
 final class IncludePathResolver
 {

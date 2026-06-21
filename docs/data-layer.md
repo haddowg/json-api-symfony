@@ -435,7 +435,7 @@ public function filters(): array
 | `numeric()`          | `Pattern('^-?[0-9]+(?:\.[0-9]+)?$')` (int/decimal) |
 | `integer()`          | `Pattern('^-?[0-9]+$')`                            |
 | `uuid(?int $v)`      | `UuidFormat($v)` (any version, or pin one)         |
-| `boolean()`          | `Pattern('^(?:true\|false\|1\|0)$')`               |
+| `boolean()`          | `Pattern('^\s*(?i:true\|false\|1\|0\|on\|off\|yes\|no)\s*$\|^\s*$')` (case-insensitive, surrounding whitespace allowed; truthy `1`/`true`/`on`/`yes`, falsy `0`/`false`/`off`/`no`/`''` via `FILTER_VALIDATE_BOOLEAN`) |
 | `pattern($regex)`    | `Pattern($regex)` (an ECMA-262 source)            |
 | `constrain(...$c)`   | any core `ConstraintInterface`                     |
 

@@ -595,7 +595,13 @@ replace the whole provider.
 - A [`DoctrineFilterArmInterface`](../src/DataProvider/Doctrine/DoctrineFilterArmInterface.php)
   is `supports(FilterInterface): bool` plus
   `apply(FilterInterface $filter, QueryBuilder $query, mixed $value, string $alias): void`
-  — push your predicate down with `andWhere`, parameter-bound, on `$alias`.
+  — push your predicate down with `andWhere`, parameter-bound, on `$alias`. The arm is
+  handed the live `$query` rather than a pre-allocated placeholder name, so **you own
+  placeholder uniqueness**: a fixed name like `:value` collides — silently overwriting
+  an earlier binding — when the filter runs more than once in a request or binds more
+  than one parameter. Derive the name off the running parameter count, the same way the
+  built-ins do, and stay clear of the reserved `jsonapi_` prefix (see
+  [Column safety](#column-safety)).
 - A [`DoctrineSortArmInterface`](../src/DataProvider/Doctrine/DoctrineSortArmInterface.php)
   is `supports(SortInterface): bool` plus
   `apply(SortInterface $sort, QueryBuilder $query, bool $descending, string $alias): void`
@@ -605,6 +611,29 @@ replace the whole provider.
 Both interfaces are **autoconfigured** — register the service and the handler picks
 it up, exactly like a [`DoctrineExtension`](custom-data-providers.md). The built-ins
 always win; an arm is a fallthrough, so it never shadows `Where`/`SortByField`.
+
+```php
+// A custom filter: `filter[titleContains]=…` → WHERE LOWER(resource.title) LIKE …
+final class TitleContainsArm implements DoctrineFilterArmInterface
+{
+    public function supports(FilterInterface $filter): bool
+    {
+        return $filter instanceof TitleContains;
+    }
+
+    public function apply(FilterInterface $filter, QueryBuilder $query, mixed $value, string $alias): void
+    {
+        // Derive a collision-free placeholder off the running parameter count — the
+        // SAME mechanism the built-in handler uses — so this filter can run more than
+        // once in a request without one binding clobbering another. The `arm_` prefix
+        // keeps clear of the handler's reserved `jsonapi_` parameters.
+        $name = 'arm_' . \count($query->getParameters());
+        $query
+            ->andWhere(\sprintf('LOWER(%s.title) LIKE :%s', $alias, $name))
+            ->setParameter($name, '%' . \mb_strtolower((string) $value) . '%');
+    }
+}
+```
 
 ```php
 // Order by a to-many's size: `sort=byCount` → ORDER BY SIZE(resource.<relation>).

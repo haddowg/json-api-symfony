@@ -82,13 +82,9 @@ final class TypeMetadataResolver
      */
     public function relationNamedIncludingHidden(Server $server, string $type, string $name): ?RelationInterface
     {
-        $resource = $this->resourceFor($server, $type);
-        if ($resource !== null) {
-            foreach ($resource->fields() as $field) {
-                if ($field instanceof RelationInterface && $field->name() === $name) {
-                    return $field;
-                }
-            }
+        $relation = $this->resourceFor($server, $type)?->relationNamedIncludingHidden($name);
+        if ($relation !== null) {
+            return $relation;
         }
 
         foreach ($this->relations->relationsFor($type) ?? [] as $candidate) {

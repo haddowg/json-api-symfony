@@ -154,18 +154,18 @@ applies**, and the family is consistent across reading, writing and relationship
 
 | Builder | Signature | Restriction when the closure returns `true` |
 | --- | --- | --- |
-| `hidden(fn)` | `fn($request, $model)` | the attribute is omitted from the response |
+| `hidden(fn)` | `fn($model, $request)` | the attribute is omitted from the response |
 | `writeOnly(fn)` | `fn($request)` | accepted on write, never rendered |
 | `readOnly(fn)` / `readOnlyOnCreate(fn)` / `readOnlyOnUpdate(fn)` | `fn($request)` | ignored on write (never hydrated, never validated) |
-| `cannotReplace(fn)` / `cannotAdd(fn)` / `cannotRemove(fn)` | `fn($request, $model)` | the relationship verb is `403` |
-| `cannotBeIncluded(fn)` | `fn($request, $model)` | `?include` naming it is `400` |
+| `cannotReplace(fn)` / `cannotAdd(fn)` / `cannotRemove(fn)` | `fn($model, $request)` | the relationship verb is `403` |
+| `cannotBeIncluded(fn)` | `fn($model, $request)` | `?include` naming it is `400` |
 | `when(fn, …)` | `fn($value, $request)` | the wrapped validation rules apply (e.g. `required()` per caller) |
 
 ```php
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 
 Str::make('secret')->hidden(
-    static fn(JsonApiRequestInterface $request, mixed $model): bool
+    static fn(mixed $model, JsonApiRequestInterface $request): bool
         => $request->getHeaderLine('X-Role') !== 'admin',
 )
 ```

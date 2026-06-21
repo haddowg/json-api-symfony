@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Tests\OpenApi\Metadata;
 
 use haddowg\JsonApi\OpenApi\Metadata\PaginatorKind;
 use haddowg\JsonApi\Pagination\CursorPaginator;
+use haddowg\JsonApi\Pagination\DescribesPaginatorKindInterface;
 use haddowg\JsonApi\Pagination\FixedPagePaginator;
 use haddowg\JsonApi\Pagination\OffsetPaginator;
 use haddowg\JsonApi\Pagination\PagePaginator;
@@ -18,8 +19,9 @@ use PHPUnit\Framework\TestCase;
 /**
  * Characterizes the {@see PaginatorKindResolver} (design §4): it discriminates a
  * resolved core paginator to the OpenAPI {@see PaginatorKind} the projector reads —
- * the `instanceof` map the contract pushes to the metadata source because core's
- * paginators carry no self-description.
+ * trusting a paginator that self-describes via
+ * {@see \haddowg\JsonApi\Pagination\DescribesPaginatorKindInterface}, else the built-in
+ * `instanceof` map, else the Page default for an unrecognized strategy.
  */
 #[Group('spec:openapi')]
 final class PaginatorKindResolverTest extends TestCase
@@ -80,5 +82,41 @@ final class PaginatorKindResolverTest extends TestCase
         };
 
         self::assertSame(PaginatorKind::Page, (new PaginatorKindResolver())->resolve($custom));
+    }
+
+    #[Test]
+    public function aSelfDescribingPaginatorReportsItsOwnKind(): void
+    {
+        // A custom paginator matching none of the built-in classes but declaring its
+        // kind via the optional interface: the resolver trusts the self-description
+        // instead of the Page default. Deleting the interface-first arm fails this.
+        $custom = new class implements PaginatorInterface, DescribesPaginatorKindInterface {
+            public function paginatorKind(): PaginatorKind
+            {
+                return PaginatorKind::Cursor;
+            }
+
+            public function window(\haddowg\JsonApi\Request\JsonApiRequestInterface $request): \haddowg\JsonApi\Pagination\WindowInterface
+            {
+                throw new \LogicException('never called');
+            }
+
+            public function paginate(\haddowg\JsonApi\Request\JsonApiRequestInterface $request, iterable $items, int $totalItems): \haddowg\JsonApi\Pagination\PageInterface
+            {
+                throw new \LogicException('never called');
+            }
+
+            public function paginateWithoutCount(\haddowg\JsonApi\Request\JsonApiRequestInterface $request, iterable $items, bool $hasMore): \haddowg\JsonApi\Pagination\PageInterface
+            {
+                throw new \LogicException('never called');
+            }
+
+            public function wantsCount(): bool
+            {
+                return false;
+            }
+        };
+
+        self::assertSame(PaginatorKind::Cursor, (new PaginatorKindResolver())->resolve($custom));
     }
 }

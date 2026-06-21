@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\DataProvider\Keyset;
 
+use haddowg\JsonApi\Exception\CursorStale;
 use haddowg\JsonApi\Exception\SortingUnsupported;
 use haddowg\JsonApi\Exception\SortParamUnrecognized;
-use haddowg\JsonApi\Exception\StaleCursor;
 use haddowg\JsonApi\Pagination\CursorBoundary;
 use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApi\Resource\Sort\SortDirective;
@@ -103,28 +103,28 @@ final class KeysetResolver
      * check (the client changed `?sort` while holding a cursor). The boundary's
      * value-keys (each active-sort column + the PK) must equal the resolved keyset
      * column names, in order, and each column's minted direction must match the
-     * resolved one; either mismatch is a {@see StaleCursor} on the offending
+     * resolved one; either mismatch is a {@see CursorStale} on the offending
      * `page[…]` parameter.
      *
      * The direction comparison catches a same-columns flip (`?sort=name` →
      * `?sort=-name`) a column-set comparison alone cannot — the cursor would
      * otherwise be silently reused under the opposite order (bundle ADR 0064). The
      * codec guarantees `$boundary->descending` is a clean string-keyed bool map
-     * (a token lacking it → MalformedCursor upstream), so it compares directly.
+     * (a token lacking it → CursorMalformed upstream), so it compares directly.
      *
      * @param list<KeysetColumn> $columns   the resolved keyset columns
      * @param string             $parameter the cursor parameter being applied, e.g. `page[after]`
      *
-     * @throws StaleCursor when the boundary's columns or their directions do not match the resolved keyset
+     * @throws CursorStale when the boundary's columns or their directions do not match the resolved keyset
      */
     public function assertFresh(CursorBoundary $boundary, array $columns, string $parameter): void
     {
         if (\array_keys($boundary->values) !== $this->columnNames($columns)) {
-            throw new StaleCursor($parameter);
+            throw new CursorStale($parameter);
         }
 
         if ($boundary->descending !== $this->columnDirections($columns)) {
-            throw new StaleCursor($parameter);
+            throw new CursorStale($parameter);
         }
     }
 

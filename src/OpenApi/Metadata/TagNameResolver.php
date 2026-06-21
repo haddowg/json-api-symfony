@@ -18,6 +18,8 @@ use function Symfony\Component\String\u;
  * each word title-cased; the **last** word is pluralized via Symfony's
  * {@see EnglishInflector} (a noun phrase pluralizes its head noun) — `pluralize()`
  * returns one or more candidates, the first is used.
+ *
+ * @internal
  */
 final class TagNameResolver
 {

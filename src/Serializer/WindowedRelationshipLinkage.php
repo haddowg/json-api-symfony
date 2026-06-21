@@ -44,7 +44,7 @@ final class WindowedRelationshipLinkage implements RelationshipLinkageInterface
      */
     public function __construct(private readonly array $linkages) {}
 
-    public function linkageFor(
+    public function linkageForRelationship(
         mixed $model,
         RelationInterface $relation,
         JsonApiRequestInterface $request,

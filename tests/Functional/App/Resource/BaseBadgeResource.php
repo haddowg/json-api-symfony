@@ -55,7 +55,7 @@ abstract class BaseBadgeResource extends AbstractResource
             // Hidden for a non-admin caller — present in an admin read, absent
             // otherwise.
             Str::make('secret')->hidden(
-                static fn(JsonApiRequestInterface $request, mixed $model): bool => $request->getHeaderLine('X-Role') !== 'admin',
+                static fn(mixed $model, JsonApiRequestInterface $request): bool => $request->getHeaderLine('X-Role') !== 'admin',
             ),
             // Unconditionally write-only, declared via the closure path so the
             // *resolver* (not just the static flag) is the thing under test: accepted
@@ -82,20 +82,20 @@ abstract class BaseBadgeResource extends AbstractResource
             // endpoint is a 403 for a non-admin, allowed for an admin.
             HasMany::make('medals')->type('medals')->withData()
                 ->cannotReplace(
-                    static fn(JsonApiRequestInterface $request, mixed $model): bool => $request->getHeaderLine('X-Role') !== 'admin',
+                    static fn(mixed $model, JsonApiRequestInterface $request): bool => $request->getHeaderLine('X-Role') !== 'admin',
                 )
                 ->cannotAdd(
-                    static fn(JsonApiRequestInterface $request, mixed $model): bool => $request->getHeaderLine('X-Role') !== 'admin',
+                    static fn(mixed $model, JsonApiRequestInterface $request): bool => $request->getHeaderLine('X-Role') !== 'admin',
                 )
                 ->cannotRemove(
-                    static fn(JsonApiRequestInterface $request, mixed $model): bool => $request->getHeaderLine('X-Role') !== 'admin',
+                    static fn(mixed $model, JsonApiRequestInterface $request): bool => $request->getHeaderLine('X-Role') !== 'admin',
                 ),
             // The same association, exposed as a separate relation whose INCLUDABILITY
             // is gated for a non-admin: `?include=secretMedals` 400s for a non-admin
             // and expands for an admin.
             HasMany::make('secretMedals')->type('medals')->storedAs('medals')->withData()
                 ->cannotBeIncluded(
-                    static fn(JsonApiRequestInterface $request, mixed $model): bool => $request->getHeaderLine('X-Role') !== 'admin',
+                    static fn(mixed $model, JsonApiRequestInterface $request): bool => $request->getHeaderLine('X-Role') !== 'admin',
                 ),
         ];
     }
