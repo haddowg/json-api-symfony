@@ -23,6 +23,22 @@ use haddowg\JsonApi\Resource\Sort\SortInterface;
  * core's in-memory
  * {@see \haddowg\JsonApi\Resource\Sort\InMemory\ArraySortArmInterface}; a portable
  * custom sort ships both.
+ *
+ * As with the filter arm, the author owns the uniqueness of any name the arm
+ * introduces: ordering by a computed expression (`SIZE(...)`, a subselect) means
+ * selecting it `AS HIDDEN <alias>` and ordering by that alias, and several custom
+ * sorts may run in one request — so derive the alias distinctively (e.g. from a
+ * validated identifier on the sort value object) rather than reusing a fixed name:
+ *
+ * ```php
+ * public function apply(SortInterface $sort, QueryBuilder $query, bool $descending, string $alias): void
+ * {
+ *     \assert($sort instanceof OrderByRelationCount);
+ *     $name = 'count_' . $sort->relation; // distinct per relation, `$sort->relation` is a validated identifier
+ *     $query->addSelect(\sprintf('SIZE(%s.%s) AS HIDDEN %s', $alias, $sort->relation, $name))
+ *         ->addOrderBy($name, $descending ? 'DESC' : 'ASC');
+ * }
+ * ```
  */
 interface DoctrineSortArmInterface
 {

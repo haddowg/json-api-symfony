@@ -39,8 +39,8 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
  * definitions / security schemes, wired from `json_api.openapi.*` in stage B).
  *
  * **Operation enum mapping**: the bundle's {@see Operation} (route allow-list) and
- * core's {@see OperationType} share the same five case names with different backing
- * values, so they are mapped by case name.
+ * core's {@see OperationType} share the same five case names AND backing values, so a
+ * value maps directly via {@see OperationType::tryFrom()}.
  *
  * **Security** (design §4.6/D8): `securedOperations()` reports only *which*
  * operations carry a security expression (never the expression). The mapping follows
@@ -275,7 +275,7 @@ final class MetadataSource
 
     /**
      * Maps the descriptor's bundle {@see Operation} value strings to core
-     * {@see OperationType} (by case name), dropping any unknown value.
+     * {@see OperationType} (the two enums share backing values), dropping any unknown value.
      *
      * @param list<string> $operations
      *
@@ -290,7 +290,7 @@ final class MetadataSource
                 continue;
             }
 
-            $type = OperationType::tryFrom(self::operationValue($operation));
+            $type = OperationType::tryFrom($operation->value);
             if ($type !== null && !\in_array($type, $mapped, true)) {
                 $mapped[] = $type;
             }
@@ -474,16 +474,5 @@ final class MetadataSource
         return $serverName === ServerProvider::DEFAULT_SERVER
             ? 'JSON:API'
             : \sprintf('JSON:API (%s)', $serverName);
-    }
-
-    /**
-     * The bundle {@see Operation}'s case name — the shared identity with core's
-     * {@see OperationType}, whose backing value is the camelCased case name. The
-     * bundle case value equals its case name (e.g. `FetchCollection`), so the core
-     * value is the lcfirst of it (`fetchCollection`).
-     */
-    private static function operationValue(Operation $operation): string
-    {
-        return \lcfirst($operation->name);
     }
 }

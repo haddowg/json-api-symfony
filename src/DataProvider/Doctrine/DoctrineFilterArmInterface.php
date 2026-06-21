@@ -24,10 +24,25 @@ use haddowg\JsonApi\Resource\Filter\FilterInterface;
  * filter (a raw-DQL scope) ships only this one.
  *
  * The arm receives the same `$alias` the built-in path uses, so a filter applied on
- * a non-root alias (the pivot related-collection path) targets the right alias. Bind
- * every value as a parameter (never interpolate the request value) and prefix any
- * placeholder distinctively to avoid colliding with the handler's own `jsonapi_`
- * parameters.
+ * a non-root alias (the pivot related-collection path) targets the right alias.
+ *
+ * Always bind the request value as a query parameter — never interpolate it into the
+ * DQL. The arm receives the live `$query`, NOT a pre-allocated placeholder name or
+ * index, so the author owns placeholder uniqueness: a filter may run several times in
+ * one request (each declared `filter[...]` key) and may bind more than one parameter,
+ * so a fixed name (`:value`) collides and silently overwrites an earlier binding.
+ * Derive a collision-free name the same way the built-ins do — off the running
+ * parameter count — and keep clear of the reserved `jsonapi_` prefix the handler uses
+ * for its own bindings:
+ *
+ * ```php
+ * public function apply(FilterInterface $filter, QueryBuilder $query, mixed $value, string $alias): void
+ * {
+ *     $name = 'arm_' . \count($query->getParameters()); // unique per binding, no `jsonapi_` clash
+ *     $query->andWhere(\sprintf('%s.title LIKE :%s', $alias, $name))
+ *         ->setParameter($name, '%' . $value . '%');
+ * }
+ * ```
  */
 interface DoctrineFilterArmInterface
 {

@@ -49,12 +49,12 @@ final class RequestScopedRelationshipLinkage implements RelationshipLinkageInter
         $this->delegate = $delegate;
     }
 
-    public function linkageFor(
+    public function linkageForRelationship(
         mixed $model,
         RelationInterface $relation,
         JsonApiRequestInterface $request,
     ): ?RelationshipLinkage {
-        return $this->delegate?->linkageFor($model, $relation, $request);
+        return $this->delegate?->linkageForRelationship($model, $relation, $request);
     }
 
     /**

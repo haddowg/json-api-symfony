@@ -728,7 +728,7 @@ making the 403 a per-caller decision rather than a blanket lock:
 
 ```php
 HasMany::make('medals')->type('medals')
-    ->cannotReplace(static fn(JsonApiRequestInterface $request, mixed $model): bool
+    ->cannotReplace(static fn(mixed $model, JsonApiRequestInterface $request): bool
         => $request->getHeaderLine('X-Role') !== 'admin')
 ```
 
