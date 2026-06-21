@@ -25,13 +25,15 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
  * own server's types and base URI.
  *
  * The `$combined` constructor flag flips `multi_server: combined` so the suite can
- * assert the combined-mode single-document behaviour from the same fixtures.
+ * assert the combined-mode single-document behaviour from the same fixtures. The
+ * `$atomic` flag enables the (global) Atomic Operations extension so the suite can
+ * assert each server's document gains the atomic `POST /operations` endpoint.
  */
 final class OpenApiMultiServerTestKernel extends Kernel
 {
     use MicroKernelTrait;
 
-    public function __construct(string $environment, bool $debug, private readonly bool $combined = false)
+    public function __construct(string $environment, bool $debug, private readonly bool $combined = false, private readonly bool $atomic = false)
     {
         parent::__construct($environment, $debug);
     }
@@ -57,7 +59,7 @@ final class OpenApiMultiServerTestKernel extends Kernel
 
     public function getCacheDir(): string
     {
-        return \sys_get_temp_dir() . '/json-api-symfony-tests/openapi-multi-cache/' . ($this->combined ? 'combined-' : '') . $this->environment;
+        return \sys_get_temp_dir() . '/json-api-symfony-tests/openapi-multi-cache/' . ($this->combined ? 'combined-' : '') . ($this->atomic ? 'atomic-' : '') . $this->environment;
     }
 
     public function getLogDir(): string
@@ -76,7 +78,7 @@ final class OpenApiMultiServerTestKernel extends Kernel
             'router' => ['utf8' => true],
         ]);
 
-        $container->extension('json_api', [
+        $jsonApi = [
             'base_uri' => 'https://public.test',
             'version' => '1.1',
             'servers' => [
@@ -86,7 +88,15 @@ final class OpenApiMultiServerTestKernel extends Kernel
                 'expose_in_prod' => true,
                 'multi_server' => $this->combined ? 'combined' : 'per_server',
             ],
-        ]);
+        ];
+
+        // The Atomic Operations extension is a single GLOBAL flag, but the endpoint
+        // (and therefore the OpenAPI path/components) exists per server.
+        if ($this->atomic) {
+            $jsonApi['atomic_operations'] = ['enabled' => true];
+        }
+
+        $container->extension('json_api', $jsonApi);
 
         $services = $container->services()
             ->defaults()

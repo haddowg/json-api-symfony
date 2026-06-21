@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\OpenApi\Metadata;
 use haddowg\JsonApi\OpenApi\Contact;
 use haddowg\JsonApi\OpenApi\ExternalDocumentation;
 use haddowg\JsonApi\OpenApi\License;
+use haddowg\JsonApi\OpenApi\Metadata\AtomicOperationsMetadataInterface;
 use haddowg\JsonApi\OpenApi\Metadata\ServerMetadataInterface;
 use haddowg\JsonApi\OpenApi\Metadata\TypeMetadataInterface;
 use haddowg\JsonApi\OpenApi\SecurityRequirement;
@@ -45,6 +46,7 @@ final readonly class ServerMetadata implements ServerMetadataInterface
         private array $defaultSecurity,
         private ?ExternalDocumentation $externalDocs,
         private array $types,
+        private ?AtomicOperationsMetadataInterface $atomicOperations = null,
     ) {}
 
     public function title(): string
@@ -105,5 +107,10 @@ final readonly class ServerMetadata implements ServerMetadataInterface
     public function types(): array
     {
         return $this->types;
+    }
+
+    public function atomicOperations(): ?AtomicOperationsMetadataInterface
+    {
+        return $this->atomicOperations;
     }
 }

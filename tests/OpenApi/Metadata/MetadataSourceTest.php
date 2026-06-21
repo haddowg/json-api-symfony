@@ -252,9 +252,39 @@ final class MetadataSourceTest extends TestCase
         self::assertSame([], $articles->securedOperations());
     }
 
+    #[Test]
+    public function atomicOperationsAreNullWhenTheExtensionIsDisabled(): void
+    {
+        self::assertNull($this->source(atomicEnabled: false)->forServer()->atomicOperations());
+        self::assertNull($this->source(atomicEnabled: false)->combined()->atomicOperations());
+    }
+
+    #[Test]
+    public function atomicOperationsCarryTheConfiguredPathAndDefaultTagWhenEnabled(): void
+    {
+        $atomic = $this->source(atomicEnabled: true, atomicPath: '/batch')->forServer()->atomicOperations();
+
+        self::assertNotNull($atomic);
+        self::assertSame('/batch', $atomic->path());
+        self::assertSame('Atomic Operations', $atomic->tag());
+        // No per-endpoint security: the atomic endpoint inherits the document-level
+        // default (core's projector falls back when security() is empty).
+        self::assertSame([], $atomic->security());
+    }
+
+    #[Test]
+    public function combinedCarriesTheAtomicMetadataWhenEnabled(): void
+    {
+        // The extension is global, so the combined document carries it too.
+        $atomic = $this->source(atomicEnabled: true)->combined()->atomicOperations();
+
+        self::assertNotNull($atomic);
+        self::assertSame('/operations', $atomic->path());
+    }
+
     // --- harness --------------------------------------------------------------
 
-    private function source(?ResourceSecurityRegistry $security = null, ?ServerDocumentConfig $config = null): MetadataSource
+    private function source(?ResourceSecurityRegistry $security = null, ?ServerDocumentConfig $config = null, bool $atomicEnabled = false, string $atomicPath = '/operations'): MetadataSource
     {
         $article = new ArticleResource();
         $person = new PersonResource();
@@ -303,6 +333,8 @@ final class MetadataSourceTest extends TestCase
             new IncludePathResolver($types),
             $security,
             $config !== null ? [ServerProvider::DEFAULT_SERVER => $config] : [],
+            $atomicEnabled,
+            $atomicPath,
         );
     }
 

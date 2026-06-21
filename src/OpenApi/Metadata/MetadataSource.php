@@ -60,6 +60,8 @@ final class MetadataSource
 {
     /**
      * @param array<string, ServerDocumentConfig> $configByServer the per-server document config (info / servers / tags / security), keyed by server name; a server with no entry uses defaults
+     * @param bool                                 $atomicEnabled  whether the global Atomic Operations extension is enabled (`json_api.atomic_operations.enabled`); when true every server's document gains the atomic endpoint, mirroring the route loader
+     * @param string                               $atomicPath     the path the per-server atomic endpoint is served at (`json_api.atomic_operations.path`, default `/operations`)
      */
     public function __construct(
         private readonly ServerProvider $servers,
@@ -72,6 +74,8 @@ final class MetadataSource
         private readonly IncludePathResolver $includePaths,
         private readonly ?ResourceSecurityRegistry $security = null,
         private readonly array $configByServer = [],
+        private readonly bool $atomicEnabled = false,
+        private readonly string $atomicPath = '/operations',
     ) {}
 
     /**
@@ -99,6 +103,7 @@ final class MetadataSource
             defaultSecurity: $config->defaultSecurity,
             externalDocs: $config->externalDocs,
             types: $types,
+            atomicOperations: $this->atomicOperations(),
         );
     }
 
@@ -165,7 +170,29 @@ final class MetadataSource
             defaultSecurity: $defaultConfig->defaultSecurity,
             externalDocs: $defaultConfig->externalDocs,
             types: $types,
+            atomicOperations: $this->atomicOperations(),
         );
+    }
+
+    /**
+     * The Atomic Operations extension endpoint metadata, or `null` when the extension
+     * is globally disabled (`json_api.atomic_operations.enabled`). The extension is a
+     * single global flag but the endpoint exists per server, so every server's
+     * document (and the combined document) carries the same metadata when enabled —
+     * mirroring the {@see \haddowg\JsonApiBundle\Routing\JsonApiRouteLoader}, which
+     * emits one `POST {path}` per server.
+     *
+     * The atomic operation carries no per-endpoint security of its own (empty
+     * `security()`), so core's projector falls back to the document-level default —
+     * the same default-security modelling the rest of the document uses.
+     */
+    private function atomicOperations(): ?AtomicOperationsMetadata
+    {
+        if (!$this->atomicEnabled) {
+            return null;
+        }
+
+        return new AtomicOperationsMetadata($this->atomicPath);
     }
 
     /**
