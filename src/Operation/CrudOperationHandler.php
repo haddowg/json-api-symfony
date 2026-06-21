@@ -175,6 +175,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         private readonly ?RequestScopedRelationshipLinkage $relationshipLinkage = null,
         private readonly ?WriteTransactionContext $txContext = null,
         private readonly ?\Symfony\Component\Routing\RouterInterface $router = null,
+        // Optional PSR logger, handed to the AtomicLoopBackend so a deferred After*
+        // hook that throws AFTER an atomic batch commits is logged (best-effort) rather
+        // than failing the committed batch. Null on the single-op path (no batch).
+        private readonly ?\Psr\Log\LoggerInterface $logger = null,
     ) {}
 
     public function handle(\haddowg\JsonApi\Operation\JsonApiOperationInterface $operation): DataResponse|RelatedResponse|IdentifierResponse|MetaResponse|NoContentResponse|AtomicResultsResponse|ErrorResponse
@@ -235,6 +239,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $this->persisters,
             $this->txContext,
             $this->router,
+            $this->logger,
         );
 
         return (new AtomicLoop())->run($operation->descriptors(), $backend);

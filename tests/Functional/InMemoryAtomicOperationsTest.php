@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional;
 
 use haddowg\JsonApiBundle\Tests\Functional\App\Atomic\AtomicInMemoryFactory;
 use haddowg\JsonApiBundle\Tests\Functional\App\Atomic\AtomicInMemoryTestKernel;
+use haddowg\JsonApiBundle\Tests\Functional\App\Atomic\ThrowingAfterCreateCommentResource;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
@@ -105,5 +106,47 @@ final class InMemoryAtomicOperationsTest extends AtomicOperationsConformanceTest
 
         // Persisted: the re-read author carries the later-supplied name.
         self::assertSame('Filled in later', $this->attributesOf($this->handle('/authors/' . $id))['name'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:atomic')]
+    public function aThrowingPostCommitHookDoesNotFailACommittedBatch(): void
+    {
+        // The batch creates a `BOOM` comment, whose post-commit `afterCreate` hook
+        // throws (the ThrowingAfterCreateCommentResource). Under atomic, that After* hook
+        // is DEFERRED to the post-commit drain — by which point the batch has already
+        // durably committed. A throwing post-commit hook must NOT turn the successful
+        // batch into a 500: the executor logs it (best-effort) and still returns the
+        // 200 atomic:results, and the comment IS persisted (bundle ADR 0088).
+        //
+        // In-memory-only: the throwing-hook `comments` resource is wired on this kernel
+        // (the Doctrine kernel keeps the plain comment resource).
+        $response = $this->atomic([
+            [
+                'op' => 'add',
+                'data' => [
+                    'type' => 'comments',
+                    'attributes' => ['body' => ThrowingAfterCreateCommentResource::BOOM],
+                ],
+            ],
+        ]);
+
+        // The committed batch succeeds despite the throwing post-commit hook.
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        $results = $this->results($response);
+        self::assertCount(1, $results);
+        $created = $results[0]['data'] ?? null;
+        self::assertIsArray($created);
+        self::assertSame('comments', $created['type'] ?? null);
+        $id = $created['id'] ?? null;
+        self::assertIsString($id);
+
+        // The comment was durably committed — the hook threw AFTER the commit, so it
+        // rolled nothing back.
+        self::assertSame(
+            ThrowingAfterCreateCommentResource::BOOM,
+            $this->attributesOf($this->handle('/comments/' . $id))['body'] ?? null,
+        );
     }
 }

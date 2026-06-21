@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\EventListener;
 
+use haddowg\JsonApi\Atomic\AtomicExtension;
 use haddowg\JsonApi\Exception\JsonApiExceptionInterface;
+use haddowg\JsonApi\Exception\MediaTypeUnacceptable;
+use haddowg\JsonApi\Exception\MediaTypeUnsupported;
 use haddowg\JsonApi\Response\ErrorResponse;
 use haddowg\JsonApi\Schema\Error\Error;
 use haddowg\JsonApi\Schema\Error\InternalServerError;
+use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Log\LoggerInterface;
@@ -48,6 +52,19 @@ use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
  * The throwable→500 mapping delegates to core's public, stateless
  * {@see InternalServerError::for()} seam, so this listener and core's
  * `ErrorHandlerMiddleware` produce a byte-identical generic-500 error object.
+ *
+ * **Atomic Operations.** On the Atomic Operations route (the one carrying the
+ * {@see JsonApiRouteLoader::ATOMIC_ATTRIBUTE} marker) every error document this
+ * listener produces advertises the atomic extension on its `Content-Type` `ext`
+ * media-type parameter — the empty-batch `400`, a parse error, the pre-flight
+ * `403`/`404` — so a failure raised BEFORE the loop runs declares the extension
+ * just as the rolled-back in-loop error already does (the
+ * {@see \haddowg\JsonApi\Atomic\AtomicLoop} sets it via
+ * {@see \haddowg\JsonApi\Response\AbstractResponse::withExtensions()}). The sole
+ * exception is the content-negotiation failures: a `415`
+ * ({@see MediaTypeUnsupported}) or `406` ({@see MediaTypeUnacceptable}) means the
+ * atomic extension was NOT successfully negotiated, so its error document correctly
+ * omits the `ext` parameter.
  */
 final class ExceptionListener
 {
@@ -100,6 +117,19 @@ final class ExceptionListener
         }
 
         $errorResponse = $this->toErrorResponse($throwable);
+
+        // On the Atomic Operations route, an error document is produced under the
+        // (successfully negotiated) atomic extension, so it must declare the ext on
+        // its Content-Type — EXCEPT the content-negotiation failures (415/406), where
+        // the extension was NOT negotiated and the error correctly omits it. The
+        // in-loop rolled-back error already carries the ext (the AtomicLoop sets it);
+        // this covers every pre-loop error (empty batch, parse, pre-flight 403/404).
+        if ($request->attributes->get(JsonApiRouteLoader::ATOMIC_ATTRIBUTE) === true
+            && !$throwable instanceof MediaTypeUnsupported
+            && !$throwable instanceof MediaTypeUnacceptable
+        ) {
+            $errorResponse = $errorResponse->withExtensions([AtomicExtension::URI]);
+        }
 
         $psrResponse = $errorResponse->toPsrResponse($server, $psrRequest);
 

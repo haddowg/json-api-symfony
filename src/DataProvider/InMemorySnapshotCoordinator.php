@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\DataProvider;
 
+use Symfony\Contracts\Service\ResetInterface;
+
 /**
  * Coordinates a snapshot/restore across **every** registered {@see InMemoryStore} as
  * ONE serialize pass, so cross-store object identity survives a rollback (the Slice C
@@ -33,8 +35,16 @@ namespace haddowg\JsonApiBundle\DataProvider;
  * was not part of the captured graph, so it restores to nothing captured (treated as an
  * empty pre-image); in practice every store is registered at container build, before any
  * request.
+ *
+ * It implements {@see ResetInterface} (auto-tagged `kernel.reset` when registered as a
+ * service), mirroring the {@see \haddowg\JsonApiBundle\DataPersister\WriteTransactionContext}:
+ * a batch that left a session open undrained (an exception between {@see open()} and
+ * {@see restore()}/{@see commit()}) would otherwise carry its captured pre-image into the
+ * NEXT batch in a long-lived container (a worker reusing the kernel), poisoning it — and a
+ * stale capture also pins the captured object graph in memory. {@see reset()} discards the
+ * captured state between requests so no batch inherits a previous one's open session.
  */
-final class InMemorySnapshotCoordinator
+final class InMemorySnapshotCoordinator implements ResetInterface
 {
     /**
      * @var list<InMemoryStore>
@@ -134,5 +144,21 @@ final class InMemorySnapshotCoordinator
     public function isOpen(): bool
     {
         return $this->captured !== null;
+    }
+
+    /**
+     * Discards any open snapshot session between requests in a long-lived container
+     * (the `kernel.reset` hook), mirroring the
+     * {@see \haddowg\JsonApiBundle\DataPersister\WriteTransactionContext}: a batch that
+     * left a session open (an exception between {@see open()} and {@see restore()}/
+     * {@see commit()}) never poisons the next batch with its captured pre-image, and the
+     * captured graph is released. It does NOT restore — a reset is not a rollback; a
+     * half-applied in-memory batch's live writes simply stand (the data store is the
+     * authority), exactly as the live persisters' state would on the same leak.
+     */
+    public function reset(): void
+    {
+        $this->captured = null;
+        $this->capturedNextIds = [];
     }
 }

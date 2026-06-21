@@ -85,6 +85,58 @@ final class WriteTransactionContextTest extends TestCase
     }
 
     #[Test]
+    public function drainWithAnErrorHandlerCatchesAThrowingHookAndRunsTheRest(): void
+    {
+        // The best-effort post-commit drain (Slice D, bundle ADR 0088): the batch has
+        // already durably committed by the time the drain runs, so a hook that throws
+        // must NOT abort the drain — the error is handed to the $onError handler and the
+        // remaining hooks still run. (With no handler the first exception propagates,
+        // covered by the inline single-op path which never drains.)
+        $context = new WriteTransactionContext();
+
+        $log = [];
+        $context->enqueuePostCommit(static function () use (&$log): void {
+            $log[] = 'first';
+        });
+        $context->enqueuePostCommit(static function (): void {
+            throw new \RuntimeException('hook boom');
+        });
+        $context->enqueuePostCommit(static function () use (&$log): void {
+            $log[] = 'third';
+        });
+
+        $caught = [];
+        $context->drain(static function (\Throwable $throwable) use (&$caught): void {
+            $caught[] = $throwable->getMessage();
+        });
+
+        // The throwing hook did not stop the drain: the first and third hooks ran, and
+        // the exception was handed to the handler rather than propagating.
+        self::assertSame(['first', 'third'], $log);
+        self::assertSame(['hook boom'], $caught);
+
+        // The queue is cleared.
+        $context->drain();
+        self::assertSame(['first', 'third'], $log);
+    }
+
+    #[Test]
+    public function drainWithoutAnErrorHandlerPropagatesAThrowingHook(): void
+    {
+        // The legacy (single-op) path: with no $onError handler the first exception
+        // propagates, exactly as before — the seam is opt-in to the executor's drain.
+        $context = new WriteTransactionContext();
+        $context->enqueuePostCommit(static function (): void {
+            throw new \RuntimeException('inline boom');
+        });
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('inline boom');
+
+        $context->drain();
+    }
+
+    #[Test]
     public function resetClearsTheFlagAndTheQueue(): void
     {
         $context = new WriteTransactionContext();

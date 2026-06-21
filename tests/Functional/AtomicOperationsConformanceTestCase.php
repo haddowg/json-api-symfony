@@ -163,6 +163,11 @@ abstract class AtomicOperationsConformanceTestCase extends JsonApiFunctionalTest
         self::assertSame('Edited in a batch', $this->member($results[1], 'data', 'attributes', 'title'));
         self::assertSame([], $results[2]);
 
+        // Pin the wire JSON type: the remove's empty result must serialize as the
+        // result object `{}`, not the JSON array `[]` an associative decode collapses
+        // it to. The batch ends `...},{}]`, so the trailing `{}` is unambiguous.
+        self::assertStringEndsWith('{}]', $this->resultsLiteral($response));
+
         // All three committed.
         self::assertSame('Edited in a batch', $this->attributesOf($this->handle('/articles/1'))['title'] ?? null);
         self::assertSame(404, $this->handle('/articles/2')->getStatusCode());
@@ -468,17 +473,151 @@ abstract class AtomicOperationsConformanceTestCase extends JsonApiFunctionalTest
         self::assertSame('ATOMIC_TARGET_TYPE_UNKNOWN', $this->errors($response)[0]['code'] ?? null);
     }
 
+    #[Test]
+    #[Group('spec:atomic')]
+    public function aPlainContentTypeWithoutTheAtomicExtIs415(): void
+    {
+        // The Atomic Operations endpoint REQUIRES the atomic `ext` media-type parameter
+        // on the request `Content-Type`; a plain `application/vnd.api+json` is a
+        // 415 (the extension was not applied). The 415 document does NOT advertise the
+        // ext — the extension was never successfully negotiated.
+        $response = $this->atomic(
+            [['op' => 'add', 'data' => ['type' => 'authors', 'attributes' => ['name' => 'Nope']]]],
+            contentType: 'application/vnd.api+json',
+        );
+
+        self::assertSame(415, $response->getStatusCode(), (string) $response->getContent());
+        self::assertStringNotContainsString('ext=', (string) $response->headers->get('Content-Type'));
+    }
+
+    #[Test]
+    #[Group('spec:atomic')]
+    public function aPlainAcceptWithoutTheAtomicExtIs406(): void
+    {
+        // The endpoint also REQUIRES the atomic `ext` on `Accept`; a plain
+        // `application/vnd.api+json` Accept is a 406. The 406 document does NOT advertise
+        // the ext — content negotiation failed, so the extension was not applied.
+        $response = $this->atomic(
+            [['op' => 'add', 'data' => ['type' => 'authors', 'attributes' => ['name' => 'Nope']]]],
+            accept: 'application/vnd.api+json',
+        );
+
+        self::assertSame(406, $response->getStatusCode(), (string) $response->getContent());
+        self::assertStringNotContainsString('ext=', (string) $response->headers->get('Content-Type'));
+    }
+
+    #[Test]
+    #[Group('spec:atomic')]
+    public function aSuccessfulBatchAdvertisesTheAtomicExtOnContentType(): void
+    {
+        $response = $this->atomic([
+            [
+                'op' => 'update',
+                'ref' => ['type' => 'articles', 'id' => '1'],
+                'data' => ['type' => 'articles', 'id' => '1', 'attributes' => ['title' => 'With ext']],
+            ],
+        ]);
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertStringContainsString(
+            'ext="https://jsonapi.org/ext/atomic"',
+            (string) $response->headers->get('Content-Type'),
+        );
+    }
+
+    #[Test]
+    #[Group('spec:atomic')]
+    public function aPreFlightErrorAdvertisesTheAtomicExtOnContentType(): void
+    {
+        // A pre-flight refusal (an unknown target type → 404) is raised BEFORE the loop,
+        // so it renders through the ExceptionListener rather than the AtomicLoop. It must
+        // still advertise the atomic ext — the extension WAS successfully negotiated, so
+        // the error document is produced under it (Slice D fix).
+        $response = $this->atomic([
+            ['op' => 'add', 'data' => ['type' => 'nonexistent', 'attributes' => ['name' => 'Nobody']]],
+        ]);
+
+        self::assertSame(404, $response->getStatusCode(), (string) $response->getContent());
+        self::assertStringContainsString(
+            'ext="https://jsonapi.org/ext/atomic"',
+            (string) $response->headers->get('Content-Type'),
+        );
+    }
+
+    #[Test]
+    #[Group('spec:atomic')]
+    public function aParseErrorAdvertisesTheAtomicExtOnContentType(): void
+    {
+        // An empty batch is a parse-time 400 raised BEFORE the loop (the parser rejects
+        // an empty `atomic:operations`), rendered through the ExceptionListener. The
+        // extension was negotiated, so the error advertises the atomic ext (Slice D fix).
+        $response = $this->atomic([]);
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+        self::assertStringContainsString(
+            'ext="https://jsonapi.org/ext/atomic"',
+            (string) $response->headers->get('Content-Type'),
+        );
+    }
+
+    #[Test]
+    #[Group('spec:atomic')]
+    public function includeAndFieldsQueryParamsAreNeitherHonouredNorRejected(): void
+    {
+        // The atomic endpoint does NOT honour ?include or sparse ?fields — a result
+        // object is `{data, meta}` only (no compound document, no `included`). An
+        // ?include/?fields param on /operations is a recognized JSON:API query-param
+        // name, so it is NOT rejected (no spurious 400); it is simply not processed —
+        // the batch succeeds and the response carries no top-level `included` (bundle
+        // ADR 0088, the deliberate "not part of the atomic flow" choice).
+        $response = $this->atomic(
+            [
+                [
+                    'op' => 'update',
+                    'ref' => ['type' => 'articles', 'id' => '1'],
+                    'data' => ['type' => 'articles', 'id' => '1', 'attributes' => ['title' => 'Ignoring include']],
+                ],
+            ],
+            query: 'include=author&fields[articles]=title',
+        );
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        // The batch ran (the update applied) and the document has no `included` member —
+        // the query params were not processed.
+        self::assertSame('Ignoring include', $this->member($this->results($response)[0], 'data', 'attributes', 'title'));
+        self::assertArrayNotHasKey('included', $this->decode($response));
+
+        // An UNRECOGNIZED query param is still the endpoint's normal 400 (the existing
+        // strict-query-param behaviour applies to /operations like any JSON:API route).
+        $rejected = $this->atomic(
+            [
+                [
+                    'op' => 'update',
+                    'ref' => ['type' => 'articles', 'id' => '1'],
+                    'data' => ['type' => 'articles', 'id' => '1', 'attributes' => ['title' => 'Bad param']],
+                ],
+            ],
+            query: 'bogus=1',
+        );
+
+        self::assertSame(400, $rejected->getStatusCode(), (string) $rejected->getContent());
+    }
+
     // ---------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------
 
     /**
      * Issues a `POST /operations` atomic batch, carrying the atomic `ext` media-type
-     * parameter on both `Content-Type` and `Accept` as the extension requires.
+     * parameter on both `Content-Type` and `Accept` as the extension requires. An
+     * optional `$query` appends a query string to the endpoint (e.g. `include=author`)
+     * to characterize that the atomic flow does not honour — nor spuriously reject —
+     * `?include`/`?fields`.
      *
      * @param list<array<string, mixed>> $operations
      */
-    protected function atomic(array $operations, ?string $contentType = null, ?string $accept = null): Response
+    protected function atomic(array $operations, ?string $contentType = null, ?string $accept = null, ?string $query = null): Response
     {
         $kernel = static::$kernel;
         self::assertNotNull($kernel);
@@ -492,7 +631,8 @@ abstract class AtomicOperationsConformanceTestCase extends JsonApiFunctionalTest
 
         $content = \json_encode(['atomic:operations' => $operations], \JSON_THROW_ON_ERROR);
 
-        $request = Request::create('/operations', 'POST', server: $server, content: $content);
+        $uri = '/operations' . ($query !== null ? '?' . $query : '');
+        $request = Request::create($uri, 'POST', server: $server, content: $content);
         $response = $kernel->handle($request, HttpKernelInterface::MAIN_REQUEST, true);
 
         // Rebalance the global error/exception-handler stack the kernel pushed, the
@@ -514,6 +654,34 @@ abstract class AtomicOperationsConformanceTestCase extends JsonApiFunctionalTest
 
         /** @var list<array<string, mixed>> $results */
         return \array_values($results);
+    }
+
+    /**
+     * The raw `atomic:results` array literal as it appears on the wire — used to pin
+     * the JSON type of each result (an empty result is a JSON object `{}`, never the
+     * array `[]` an associative decode collapses it to). Returns the substring from
+     * the opening `[` after `"atomic:results":` to its matching `]`.
+     */
+    protected function resultsLiteral(Response $response): string
+    {
+        $body = (string) $response->getContent();
+
+        $start = \strpos($body, '"atomic:results":');
+        self::assertNotFalse($start, $body);
+        $open = \strpos($body, '[', $start);
+        self::assertNotFalse($open, $body);
+
+        $depth = 0;
+        for ($i = $open, $len = \strlen($body); $i < $len; ++$i) {
+            $char = $body[$i];
+            if ($char === '[') {
+                ++$depth;
+            } elseif ($char === ']' && --$depth === 0) {
+                return \substr($body, $open, $i - $open + 1);
+            }
+        }
+
+        self::fail('Unterminated atomic:results array in: ' . $body);
     }
 
     /**

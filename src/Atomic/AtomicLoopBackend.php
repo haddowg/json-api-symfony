@@ -28,6 +28,8 @@ use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataPersister\TransactionalDataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\WriteTransactionContext;
 use haddowg\JsonApiBundle\Operation\CrudOperationHandler;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\Component\Routing\Exception\MethodNotAllowedException;
 use Symfony\Component\Routing\Exception\ResourceNotFoundException;
 use Symfony\Component\Routing\RouterInterface;
@@ -91,10 +93,13 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
      */
     private bool $opened = false;
 
+    private readonly LoggerInterface $logger;
+
     /**
      * @param list<OperationDescriptor> $descriptors the parsed batch, in request order
      * @param Server                    $server      the resolved server the batch dispatched on
      * @param JsonApiRequestInterface   $request     the batch request, the synthetic per-op requests are derived from
+     * @param ?LoggerInterface          $logger      logs a post-commit hook that throws after the batch committed (best-effort; defaults to {@see NullLogger})
      */
     public function __construct(
         private readonly array $descriptors,
@@ -104,7 +109,10 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
         private readonly DataPersisterRegistry $persisters,
         private readonly WriteTransactionContext $context,
         private readonly RouterInterface $router,
+        ?LoggerInterface $logger = null,
     ) {
+        $this->logger = $logger ?? new NullLogger();
+
         // Pre-flight: resolve every participating type's persister up front and refuse
         // the batch if ANY is not transactional — before begin() opens anything.
         $this->transactional = $this->collectTransactionalPersisters();
@@ -112,14 +120,32 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
 
     public function begin(): void
     {
-        // Activate the deferred-hook context first, so each sub-operation's After*
-        // dispatch is enqueued (not fired) for the life of the batch.
-        $this->context->activate();
+        // Open EVERY participating transaction FIRST — before activating the
+        // deferred-hook context. Core's AtomicLoop::run() calls begin() OUTSIDE its
+        // try/catch, so a persister's beginTransaction() that throws here would
+        // otherwise leave the context active and an earlier transaction open, relying
+        // solely on kernel.reset to clean up. Instead, if any begin throws, roll back
+        // the ones already opened and rethrow — so a begin failure leaves nothing open
+        // and the context inactive (defense-in-depth alongside the kernel.reset).
+        $opened = [];
+        try {
+            foreach ($this->transactional as $hash => $persister) {
+                $persister->beginTransaction();
+                $opened[$hash] = $persister;
+            }
+        } catch (\Throwable $throwable) {
+            foreach ($opened as $persister) {
+                // A persister's own rollback() is a safe no-op when already closed.
+                $persister->rollback();
+            }
 
-        foreach ($this->transactional as $persister) {
-            $persister->beginTransaction();
+            throw $throwable;
         }
 
+        // Every transaction is open: activate the context so each sub-operation's
+        // After* dispatch is enqueued (not fired) for the life of the batch, and mark
+        // the batch opened so a later rollback() unwinds it.
+        $this->context->activate();
         $this->opened = true;
     }
 
@@ -212,9 +238,24 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
             throw $throwable;
         }
 
-        // The data is durable: drain the deferred After* hooks (FIFO), then end the batch.
-        $this->context->drain();
-        $this->context->deactivate();
+        // The data is durable: drain the deferred After* hooks (FIFO). The batch has
+        // ALREADY committed, so a hook that throws must NOT turn a successful, durably
+        // committed batch into a failure (and there is nothing to roll back — the data
+        // stands). Each hook exception is therefore caught + LOGGED and the remaining
+        // hooks still run; the batch's response is unaffected. The context is ALWAYS
+        // deactivated, even if a hook threw, so it never stays active for the next
+        // request (a finally belt alongside kernel.reset).
+        try {
+            $this->context->drain(function (\Throwable $throwable): void {
+                $this->logger->error(
+                    'A deferred After* lifecycle hook threw after an Atomic Operations batch committed; '
+                    . 'the batch already succeeded, so the error is logged and ignored.',
+                    ['exception' => $throwable],
+                );
+            });
+        } finally {
+            $this->context->deactivate();
+        }
     }
 
     public function rollback(): void

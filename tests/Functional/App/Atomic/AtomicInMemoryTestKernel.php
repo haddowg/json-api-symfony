@@ -10,7 +10,6 @@ use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\ArticleResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\AuthorResource;
-use haddowg\JsonApiBundle\Tests\Functional\App\Resource\CommentResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\TagResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\WritableTagFactory;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
@@ -28,6 +27,10 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
  * whose persister is deliberately NON-transactional ({@see NonTransactionalTagPersister})
  * — the pre-flight-refusal witness. `atomic_operations` is enabled, so the kernel
  * serves `POST /operations`.
+ *
+ * The `comments` resource is the {@see ThrowingAfterCreateCommentResource}: its
+ * post-commit `afterCreate` hook throws for the sentinel `BOOM` body, the witness that
+ * a committed batch is NOT failed by a throwing After* hook (Slice D, bundle ADR 0088).
  */
 final class AtomicInMemoryTestKernel extends Kernel
 {
@@ -78,6 +81,12 @@ final class AtomicInMemoryTestKernel extends Kernel
             'atomic_operations' => ['enabled' => true],
         ]);
 
+        // The throwing post-commit-hook witness deliberately logs a hook exception
+        // through the `logger` service (best-effort; the batch still succeeds), which by
+        // default writes to stdout via error_log. Pre-register a NullLogger so Symfony's
+        // LoggerPass stands down and the deliberate error does not leak into test output.
+        $builder->register('logger', \Psr\Log\NullLogger::class);
+
         $services = $container->services()
             ->defaults()
             ->autowire()
@@ -85,7 +94,10 @@ final class AtomicInMemoryTestKernel extends Kernel
 
         $services->set(ArticleResource::class);
         $services->set(AuthorResource::class);
-        $services->set(CommentResource::class);
+        // The `comments` resource here carries a throwing post-commit `afterCreate` hook
+        // (gated on the BOOM sentinel body) — the witness that a committed batch is not
+        // failed by a throwing After* hook (Slice D, bundle ADR 0088).
+        $services->set(ThrowingAfterCreateCommentResource::class);
         $services->set(TagResource::class);
 
         $services->set('test.articles_provider', InMemoryDataProvider::class)

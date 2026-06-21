@@ -186,7 +186,11 @@ return static function (ContainerConfigurator $container): void {
         // The router the Atomic Operations executor matches an `href`-targeted
         // operation against (the same defaults the TargetResolver reads on a direct
         // call). Optional — a programmatic handler without it refuses atomic batches.
-        ->arg('$router', \Symfony\Component\DependencyInjection\Loader\Configurator\service('router')->nullOnInvalid());
+        ->arg('$router', \Symfony\Component\DependencyInjection\Loader\Configurator\service('router')->nullOnInvalid())
+        // Optional PSR logger, threaded into the per-batch AtomicLoopBackend: a
+        // deferred After* hook that throws AFTER an atomic batch durably commits is
+        // logged (best-effort) instead of failing the committed batch (bundle ADR 0088).
+        ->arg('$logger', \Symfony\Component\DependencyInjection\Loader\Configurator\service('logger')->nullOnInvalid());
 
     // The per-request write-transaction context + post-commit-hook queue the Atomic
     // Operations executor drives (the next slice). It is DORMANT on the single-op

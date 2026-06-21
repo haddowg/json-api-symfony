@@ -69,6 +69,13 @@ final class AtomicMultiPersisterCommitBoundaryTest extends JsonApiFunctionalTest
         // persister threw an application error during commit).
         self::assertSame(500, $response->getStatusCode(), (string) $response->getContent());
 
+        // A commit-time failure is still a document produced under the applied extension,
+        // so it advertises the atomic ext on its Content-Type (as every atomic error does).
+        self::assertStringContainsString(
+            'ext="https://jsonapi.org/ext/atomic"',
+            (string) $response->headers->get('Content-Type'),
+        );
+
         // The not-yet-committed persister rolled back: no new article was kept (the
         // article store is restored to its 5 seeded rows, so id 6 does not exist).
         self::assertSame(404, $this->handle('/articles/6')->getStatusCode());

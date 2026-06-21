@@ -23,6 +23,13 @@ use Symfony\Contracts\Service\ResetInterface;
  * batch's aggregate result is authoritative, so a deferred After* hook's response
  * replacement is intentionally inert under atomic.
  *
+ * **Post-commit hooks run after the batch is durably committed, best-effort.** By
+ * the time the queue {@see drain()}s, the batch's writes are already durable — so a
+ * hook that throws does NOT fail the response and rolls nothing back (there is
+ * nothing to undo). The executor drains with an error handler that logs each such
+ * exception and lets the remaining hooks run; the batch still succeeds (bundle ADR
+ * 0088).
+ *
  * It is a stateful, **request-scoped** service: one instance per request, holding
  * the active flag and the FIFO queue of deferred callables for the in-flight
  * batch. It implements {@see ResetInterface} (auto-tagged `kernel.reset`) so a
@@ -91,14 +98,36 @@ final class WriteTransactionContext implements ResetInterface
      * so the deferred After* hooks observe the durably-persisted state. On a
      * rollback the executor never drains (it {@see deactivate()}s instead), so the
      * hooks of a rolled-back batch never run.
+     *
+     * The drain is **best-effort**: the batch is already durably committed by the
+     * time it runs, so a throwing post-commit hook must NOT turn a successful batch
+     * into a failure (and there is nothing to roll back — the data stands). When an
+     * `$onError` handler is given, each hook's exception is passed to it and the
+     * remaining hooks still run; with no handler the legacy behaviour holds (the
+     * exception propagates), so the single-op write path — which never drains — is
+     * unaffected. The executor supplies a handler that logs each exception.
+     *
+     * @param ?callable(\Throwable): void $onError invoked with each hook's exception
+     *                                             (the remaining hooks then run); null
+     *                                             lets the first exception propagate
      */
-    public function drain(): void
+    public function drain(?callable $onError = null): void
     {
         $callbacks = $this->postCommit;
         $this->postCommit = [];
 
         foreach ($callbacks as $callback) {
-            $callback();
+            if ($onError === null) {
+                $callback();
+
+                continue;
+            }
+
+            try {
+                $callback();
+            } catch (\Throwable $throwable) {
+                $onError($throwable);
+            }
         }
     }
 

@@ -138,6 +138,13 @@ final class JsonApiRouteLoader extends Loader
 
         $server = $this->serverName($resource);
 
+        // Fail fast on a configuration collision: an atomic path equal to a resource's
+        // collection path (`/{uriType}`) on this server would silently shadow that
+        // type's `POST` Create — both are `POST {path}`, and the atomic route is emitted
+        // first. Detect it at route-loading time and refuse with a clear, named error
+        // rather than letting the shadow ship.
+        $this->guardAtomicPathCollision($server);
+
         // The Atomic Operations endpoint (opt-in) is emitted FIRST: it is a single
         // literal path (`POST /operations` by default) carrying no `_jsonapi_type`, so
         // it neither shadows nor is shadowed by the concrete per-type literal paths
@@ -313,6 +320,46 @@ final class JsonApiRouteLoader extends Loader
             $namePrefix . 'atomic_operations',
             new Route($this->atomicPath, $defaults, methods: ['POST']),
         );
+    }
+
+    /**
+     * Refuses, at route-loading time, an Atomic Operations path that would silently
+     * shadow a resource's collection-`POST` Create on the same server.
+     *
+     * The atomic route is `POST {atomicPath}` and a resource's Create is
+     * `POST /{uriType}`; the atomic route is emitted first, so if the two paths are
+     * identical the resource's Create is unreachable (the atomic route wins the verb).
+     * A silent shadow is a latent bug, so this throws a clear configuration error
+     * naming the colliding type and path instead — change `json_api.atomic_operations.path`
+     * (or the type's `uriType`) to resolve it. A no-op when the extension is disabled.
+     */
+    private function guardAtomicPathCollision(string $server): void
+    {
+        if (!$this->atomicEnabled) {
+            return;
+        }
+
+        foreach ($this->routeDescriptorsByServer[$server] ?? [] as $resourceType => $descriptor) {
+            if ($resourceType === '') {
+                continue;
+            }
+
+            $collectionPath = '/' . $descriptor['uriType'];
+            if ($collectionPath !== $this->atomicPath) {
+                continue;
+            }
+
+            throw new \LogicException(\sprintf(
+                'The Atomic Operations path "%s" collides with the collection path of the JSON:API type "%s" '
+                . '(uriType "%s") on server "%s": both are served at "POST %s", so the type\'s Create would be '
+                . 'silently shadowed. Change json_api.atomic_operations.path or the type\'s uriType so the two differ.',
+                $this->atomicPath,
+                $resourceType,
+                $descriptor['uriType'],
+                $server,
+                $this->atomicPath,
+            ));
+        }
     }
 
     /**
