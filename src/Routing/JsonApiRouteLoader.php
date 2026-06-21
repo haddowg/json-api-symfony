@@ -90,6 +90,16 @@ final class JsonApiRouteLoader extends Loader
     public const string ACTION_SCOPE_ATTRIBUTE = '_jsonapi_action_scope';
 
     /**
+     * The route default marking the per-server Atomic Operations endpoint
+     * (`POST {path}`), read by the {@see \haddowg\JsonApiBundle\EventListener\RequestListener}
+     * to branch into the atomic-batch dispatch path. The route carries NO
+     * `_jsonapi_type` — the batch has no single primary resource — so the
+     * {@see TargetResolver} returns null for it and the listener must key on this
+     * marker instead.
+     */
+    public const string ATOMIC_ATTRIBUTE = '_jsonapi_atomic';
+
+    /**
      * The reserved path segment custom actions hang off (design §1/§7). It is a
      * **literal** in every action path and must never be captured as a resource
      * `{id}`: a collection-scope action `/{uriType}/-actions/{name}` is three
@@ -112,6 +122,8 @@ final class JsonApiRouteLoader extends Loader
         private readonly array $routeDescriptorsByServer = [],
         private readonly array $actionRouteDescriptorsByServer = [],
         private readonly ?IdEncoderResolver $idEncoders = null,
+        private readonly bool $atomicEnabled = false,
+        private readonly string $atomicPath = '/operations',
     ) {
         parent::__construct();
     }
@@ -125,6 +137,14 @@ final class JsonApiRouteLoader extends Loader
         $routes = new RouteCollection();
 
         $server = $this->serverName($resource);
+
+        // The Atomic Operations endpoint (opt-in) is emitted FIRST: it is a single
+        // literal path (`POST /operations` by default) carrying no `_jsonapi_type`, so
+        // it neither shadows nor is shadowed by the concrete per-type literal paths
+        // (`/{uriType}`...). The RequestListener branches on its `_jsonapi_atomic`
+        // marker. Emitted before the action + generic routes so the literal path wins
+        // its own verb cleanly.
+        $this->addAtomicRoute($routes, $server);
 
         // Custom action routes (bundle ADR 0076) are emitted FIRST so the literal
         // `-actions` segment is never captured as an `{id}` (a collection-scope
@@ -256,6 +276,43 @@ final class JsonApiRouteLoader extends Loader
         }
 
         return $routes;
+    }
+
+    /**
+     * Emits the per-server Atomic Operations endpoint (`POST {path}`, opt-in) when
+     * the extension is enabled. The route carries the standard JSON:API defaults plus
+     * {@see self::ATOMIC_ATTRIBUTE} (`true`) and — deliberately — NO `_jsonapi_type`,
+     * so the {@see TargetResolver} returns null and the
+     * {@see \haddowg\JsonApiBundle\EventListener\RequestListener} branches on the
+     * marker to negotiate the atomic ext, parse `atomic:operations`, and run the batch.
+     *
+     * The path is a single literal (`/operations` by default), distinct from every
+     * concrete per-type literal (`/{uriType}`...), so it neither shadows nor is
+     * shadowed by the CRUD/action routes; its single `POST` method keeps it from
+     * colliding with a same-path GET a host might add. The route name is
+     * `jsonapi[.{server}].atomic_operations`.
+     */
+    private function addAtomicRoute(RouteCollection $routes, string $server): void
+    {
+        if (!$this->atomicEnabled) {
+            return;
+        }
+
+        $namePrefix = $server === ServerProvider::DEFAULT_SERVER
+            ? 'jsonapi.'
+            : \sprintf('jsonapi.%s.', $server);
+
+        $defaults = [
+            '_controller' => JsonApiController::class,
+            '_jsonapi_server' => $server,
+            ExceptionListener::ROUTE_MARKER => true,
+            self::ATOMIC_ATTRIBUTE => true,
+        ];
+
+        $routes->add(
+            $namePrefix . 'atomic_operations',
+            new Route($this->atomicPath, $defaults, methods: ['POST']),
+        );
     }
 
     /**

@@ -150,9 +150,11 @@ abstract class JsonApiFunctionalTestCase extends KernelTestCase
 
     /**
      * Pops every error/exception handler the kernel pushed, back to the snapshot
-     * taken in setUp, so the global handler stack is balanced.
+     * taken in setUp, so the global handler stack is balanced. Protected so a
+     * subclass that issues its own `$kernel->handle()` (e.g. the atomic suite's
+     * `POST /operations`) can rebalance the stack the same way.
      */
-    private function restoreHandlers(): void
+    protected function restoreHandlers(): void
     {
         while (true) {
             $current = \set_error_handler(static fn(): bool => false);

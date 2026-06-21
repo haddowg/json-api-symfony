@@ -262,6 +262,20 @@ final class JsonApiBundle extends AbstractBundle
                         ->end()
                     ->end()
                 ->end()
+                ->arrayNode('atomic_operations')
+                    ->info('The JSON:API Atomic Operations extension (https://jsonapi.org/ext/atomic): a batch of write operations applied in order, all-or-nothing, within one request. Opt-in (default off): when enabled, each server gains a POST {path} endpoint that negotiates the atomic ext, parses atomic:operations, and runs them transactionally with local-id (lid) cross-references.')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->booleanNode('enabled')
+                            ->info('Emit the Atomic Operations endpoint per server. Default false.')
+                            ->defaultFalse()
+                        ->end()
+                        ->scalarNode('path')
+                            ->info('The path the per-server Atomic Operations endpoint is served at (POST). Default /operations.')
+                            ->defaultValue('/operations')
+                        ->end()
+                    ->end()
+                ->end()
                 ->append($this->openApiNode())
             ->end();
     }
@@ -469,11 +483,17 @@ final class JsonApiBundle extends AbstractBundle
         $strictQueryParameters = $this->strictQueryParametersConfig($config);
         $windowFunctions = $this->windowFunctionsConfig($config);
 
+        [$atomicEnabled, $atomicPath] = $this->atomicOperationsConfig($config);
+
         $builder->setParameter('haddowg_json_api.base_uri', $baseUri);
         $builder->setParameter('haddowg_json_api.version', $version);
         $builder->setParameter('haddowg_json_api.pagination.max_per_page', $maxPerPage);
         $builder->setParameter('haddowg_json_api.max_include_depth', $maxIncludeDepth);
         $builder->setParameter('haddowg_json_api.doctrine.window_functions', $windowFunctions);
+        // The Atomic Operations endpoint config (opt-in, default off): the route loader
+        // reads these to emit one POST {path} route per server when enabled.
+        $builder->setParameter('haddowg_json_api.atomic_operations.enabled', $atomicEnabled);
+        $builder->setParameter('haddowg_json_api.atomic_operations.path', $atomicPath);
         // The exception-class => HTTP-status map (bundle ADR 0073) the config-driven
         // ConfiguredExceptionMapper reads to map a thrown app/third-party exception
         // to a JSON:API error. Default empty (no config mappings).
@@ -1218,6 +1238,28 @@ final class JsonApiBundle extends AbstractBundle
         }
 
         return $map;
+    }
+
+    /**
+     * The resolved `json_api.atomic_operations` config: a tuple of `enabled` (bool,
+     * default false) and `path` (string, default `/operations`). The route loader
+     * reads these to emit one `POST {path}` route per server when enabled.
+     *
+     * @param array<string, mixed> $config
+     *
+     * @return array{0: bool, 1: string}
+     */
+    private function atomicOperationsConfig(array $config): array
+    {
+        $atomic = $config['atomic_operations'] ?? [];
+        $atomic = \is_array($atomic) ? $atomic : [];
+
+        $enabled = ($atomic['enabled'] ?? false) === true;
+
+        $path = $atomic['path'] ?? '/operations';
+        $path = \is_string($path) && $path !== '' ? $path : '/operations';
+
+        return [$enabled, $path];
     }
 
     /**

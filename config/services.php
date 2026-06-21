@@ -180,9 +180,13 @@ return static function (ContainerConfigurator $container): void {
         ->arg('$actions', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Action\ActionInvoker::class))
         // The per-request write-transaction context (the Atomic Operations seam):
         // on the single-op path it stays inactive, so each After* hook fires inline
-        // exactly as today; the Atomic Operations executor (next slice) activates it
-        // for a batch so the After* hooks defer to post-commit. Always wired.
-        ->arg('$txContext', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataPersister\WriteTransactionContext::class));
+        // exactly as today; the Atomic Operations executor activates it for a batch so
+        // the After* hooks defer to post-commit. Always wired.
+        ->arg('$txContext', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataPersister\WriteTransactionContext::class))
+        // The router the Atomic Operations executor matches an `href`-targeted
+        // operation against (the same defaults the TargetResolver reads on a direct
+        // call). Optional — a programmatic handler without it refuses atomic batches.
+        ->arg('$router', \Symfony\Component\DependencyInjection\Loader\Configurator\service('router')->nullOnInvalid());
 
     // The per-request write-transaction context + post-commit-hook queue the Atomic
     // Operations executor drives (the next slice). It is DORMANT on the single-op
@@ -257,6 +261,11 @@ return static function (ContainerConfigurator $container): void {
 
     $services->set(JsonApiRouteLoader::class)
         ->arg('$idEncoders', \Symfony\Component\DependencyInjection\Loader\Configurator\service(IdEncoderResolver::class))
+        // The Atomic Operations endpoint (opt-in, default off): when enabled the loader
+        // emits one POST {path} route per server carrying _jsonapi_atomic=true (and NO
+        // _jsonapi_type), which the RequestListener branches on to run the batch.
+        ->arg('$atomicEnabled', '%haddowg_json_api.atomic_operations.enabled%')
+        ->arg('$atomicPath', '%haddowg_json_api.atomic_operations.path%')
         ->tag('routing.loader');
 
     // The pass-through controller every generated route resolves to; the

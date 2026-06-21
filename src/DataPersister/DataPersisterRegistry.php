@@ -52,4 +52,21 @@ final class DataPersisterRegistry
 
         throw new \LogicException(\sprintf('No JSON:API data persister is registered for type "%s".', $type));
     }
+
+    /**
+     * Whether any registered persister supports `$type` — so a caller (e.g. the
+     * Atomic Operations pre-flight scan) can distinguish an unknown type, a client
+     * error, from a wiring error before {@see forType()} would throw a
+     * {@see \LogicException}.
+     */
+    public function supportsType(string $type): bool
+    {
+        foreach ($this->persisters as $persister) {
+            if ($persister->supports($type)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

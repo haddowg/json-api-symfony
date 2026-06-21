@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Operation;
 
+use haddowg\JsonApi\Atomic\AtomicLoop;
 use haddowg\JsonApi\Collection\CursorCollectionResult;
 use haddowg\JsonApi\Exception\AdditionProhibited;
 use haddowg\JsonApi\Exception\FullReplacementProhibited;
@@ -14,6 +15,7 @@ use haddowg\JsonApi\Exception\ResourceNotFound;
 use haddowg\JsonApi\Hydrator\Relationship\ToManyRelationship;
 use haddowg\JsonApi\Hydrator\Relationship\ToOneRelationship;
 use haddowg\JsonApi\Operation\AddToRelationshipOperation;
+use haddowg\JsonApi\Operation\AtomicOperationsOperation;
 use haddowg\JsonApi\Operation\CreateResourceOperation;
 use haddowg\JsonApi\Operation\CustomActionOperation;
 use haddowg\JsonApi\Operation\DeleteResourceOperation;
@@ -33,6 +35,7 @@ use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\SupportsSingular;
+use haddowg\JsonApi\Response\AtomicResultsResponse;
 use haddowg\JsonApi\Response\DataResponse;
 use haddowg\JsonApi\Response\ErrorResponse;
 use haddowg\JsonApi\Response\IdentifierResponse;
@@ -43,6 +46,7 @@ use haddowg\JsonApi\Serializer\PolymorphicSerializer;
 use haddowg\JsonApi\Serializer\SerializerInterface;
 use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\Action\ActionInvoker;
+use haddowg\JsonApiBundle\Atomic\AtomicLoopBackend;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataPersister\WriteTransactionContext;
@@ -170,9 +174,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         private readonly ?ActionInvoker $actions = null,
         private readonly ?RequestScopedRelationshipLinkage $relationshipLinkage = null,
         private readonly ?WriteTransactionContext $txContext = null,
+        private readonly ?\Symfony\Component\Routing\RouterInterface $router = null,
     ) {}
 
-    public function handle(\haddowg\JsonApi\Operation\JsonApiOperationInterface $operation): DataResponse|RelatedResponse|IdentifierResponse|MetaResponse|NoContentResponse|ErrorResponse
+    public function handle(\haddowg\JsonApi\Operation\JsonApiOperationInterface $operation): DataResponse|RelatedResponse|IdentifierResponse|MetaResponse|NoContentResponse|AtomicResultsResponse|ErrorResponse
     {
         return match (true) {
             $operation instanceof FetchResourceOperation => $this->fetch($operation),
@@ -185,8 +190,54 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $operation instanceof AddToRelationshipOperation => $this->mutateRelationship($operation, $operation->body(), Mode::Add),
             $operation instanceof RemoveFromRelationshipOperation => $this->mutateRelationship($operation, $operation->body(), Mode::Remove),
             $operation instanceof CustomActionOperation => $this->actions?->invoke($operation) ?? ErrorResponse::fromException(new ResourceNotFound()),
+            $operation instanceof AtomicOperationsOperation => $this->atomic($operation),
             default => ErrorResponse::fromException(new ResourceNotFound()),
         };
+    }
+
+    /**
+     * `POST /operations` — the Atomic Operations batch (the headline executor, Slice
+     * C). The single global handler grows this one arm so an
+     * {@see AtomicOperationsOperation} dispatches through the SAME handler as every
+     * CRUD operation: it builds a per-batch {@see AtomicLoopBackend} (which resolves
+     * each sub-operation's target, applies it through THIS handler's own per-op CRUD
+     * arms in-process, threads the shared local-id registry, and renders each result
+     * fragment) and runs it through core's framework-agnostic {@see AtomicLoop} — which
+     * owns the ordering, the all-or-nothing commit/rollback, and the failing-operation
+     * pointer prefixing.
+     *
+     * **Decoration wraps the batch, not each sub-op.** A handler decorator sees this
+     * one {@see AtomicOperationsOperation}; the sub-operations re-enter `$this`
+     * directly (bypassing the decorator chain), so per-sub-op decoration is out of
+     * scope — the batch is the unit of decoration.
+     *
+     * The {@see WriteTransactionContext} (always wired) is what makes the sub-operations'
+     * After* lifecycle hooks defer to post-commit; the router (optional — present in the
+     * bundle wiring) resolves an `href`-targeted operation. Absent the context the
+     * batch cannot be run transactionally, so it is refused as unsupported.
+     */
+    private function atomic(AtomicOperationsOperation $operation): AtomicResultsResponse|ErrorResponse
+    {
+        $server = $this->server($operation->context());
+        $request = $this->jsonApiRequest($operation->context());
+
+        if ($this->txContext === null || $this->router === null) {
+            return ErrorResponse::fromException(
+                new \haddowg\JsonApiBundle\Atomic\AtomicOperationsUnavailable(),
+            );
+        }
+
+        $backend = new AtomicLoopBackend(
+            $operation->descriptors(),
+            $server,
+            $request,
+            $this,
+            $this->persisters,
+            $this->txContext,
+            $this->router,
+        );
+
+        return (new AtomicLoop())->run($operation->descriptors(), $backend);
     }
 
     private function fetch(FetchResourceOperation $operation): DataResponse|ErrorResponse

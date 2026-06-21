@@ -64,12 +64,21 @@ final class InMemoryStore
     private ?array $snapshot = null;
 
     /**
+     * The cross-store snapshot coordinator, when wired: snapshot/restore then run as
+     * ONE serialize pass across every registered store, so cross-store object identity
+     * survives an atomic rollback. Null = the legacy per-store deep-clone (a store used
+     * in isolation, with no shared object graph to preserve).
+     */
+    private readonly ?InMemorySnapshotCoordinator $coordinator;
+
+    /**
      * @param iterable<int|string, object>         $items    seed objects keyed by id
      * @param (\Closure(object): string)|null      $identify reads an item's id; required only for writes
      * @param (\Closure(object, string): void)|null $assignId writes a minted id onto an item; enables
      *                                                       store-provided (auto-increment) ids when set
+     * @param ?InMemorySnapshotCoordinator         $coordinator coordinates a cross-store single-pass snapshot
      */
-    public function __construct(iterable $items = [], ?\Closure $identify = null, ?\Closure $assignId = null)
+    public function __construct(iterable $items = [], ?\Closure $identify = null, ?\Closure $assignId = null, ?InMemorySnapshotCoordinator $coordinator = null)
     {
         $highestNumericId = 0;
         foreach ($items as $id => $item) {
@@ -92,6 +101,11 @@ final class InMemoryStore
         // The sequence continues past the seeded rows, mirroring a database
         // auto-increment that restarts at 1 against a freshly recreated schema.
         $this->nextId = $highestNumericId + 1;
+
+        // Register with the cross-store coordinator (when wired) so a coordinated
+        // snapshot captures THIS store's graph in the shared single serialize pass.
+        $this->coordinator = $coordinator;
+        $coordinator?->register($this);
     }
 
     /**
@@ -155,16 +169,29 @@ final class InMemoryStore
      * Captures the current state — for the in-memory analogue of opening a
      * transaction ({@see \haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister::beginTransaction()}).
      *
-     * Each stored object is **deep-cloned** (not merely copied into a fresh array),
-     * because the persister's {@see \haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister::update()}
-     * mutates the SAME object reference in place and re-saves it under the same key:
-     * a shallow array copy would still point at the now-mutated object, so a
-     * {@see restore()} could not undo an in-place update. Deep-cloning the values
-     * preserves each object's pre-transaction field values. The id counter is
-     * captured too, so a {@see restore()} also rewinds any ids minted in the batch.
+     * **Coordinated path (the atomic executor).** When a
+     * {@see InMemorySnapshotCoordinator} is wired, this delegates to it: the first
+     * store to snapshot in a batch captures the item maps of EVERY registered store in
+     * ONE serialize pass, so a parent in this store that references a related object in
+     * another store is encoded once and restored as a SINGLE shared instance —
+     * cross-store object identity survives a {@see restore()} (the Slice C carry-forward).
+     *
+     * **Isolated path (a store used alone).** With no coordinator each stored object is
+     * **deep-cloned** (a `serialize(unserialize())` round-trip), because the persister's
+     * {@see \haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister::update()} mutates
+     * the SAME object reference in place and re-saves it under the same key: a shallow
+     * array copy would still point at the now-mutated object, so a {@see restore()}
+     * could not undo an in-place update. The id counter is captured too, so a
+     * {@see restore()} also rewinds any ids minted in the batch.
      */
     public function snapshot(): void
     {
+        if ($this->coordinator !== null) {
+            $this->coordinator->open();
+
+            return;
+        }
+
         $items = [];
         foreach ($this->itemsById as $id => $item) {
             $items[$id] = $this->deepClone($item);
@@ -177,10 +204,17 @@ final class InMemoryStore
      * Reinstates the state captured by the last {@see snapshot()} — both the items
      * map (each object back to its pre-transaction field values) and the id counter
      * — discarding every write made since, then clears the snapshot. A no-op when no
-     * snapshot is held.
+     * snapshot is held. Delegates to the {@see InMemorySnapshotCoordinator} (which
+     * restores the whole cross-store graph in one pass) when wired.
      */
     public function restore(): void
     {
+        if ($this->coordinator !== null) {
+            $this->coordinator->restore();
+
+            return;
+        }
+
         if ($this->snapshot === null) {
             return;
         }
@@ -193,11 +227,59 @@ final class InMemoryStore
     /**
      * Discards the held snapshot without restoring it — the in-memory analogue of
      * committing the transaction (the writes made since {@see snapshot()} stand). A
-     * no-op when no snapshot is held.
+     * no-op when no snapshot is held. Delegates to the
+     * {@see InMemorySnapshotCoordinator} (which discards the captured cross-store
+     * graph) when wired.
      */
     public function discardSnapshot(): void
     {
+        if ($this->coordinator !== null) {
+            $this->coordinator->commit();
+
+            return;
+        }
+
         $this->snapshot = null;
+    }
+
+    /**
+     * The current items map (id → object), for the {@see InMemorySnapshotCoordinator}'s
+     * single-pass capture. The references are the live objects — the coordinator
+     * serializes the union of every store's export together, so a shared reference is
+     * preserved across the encoded graph.
+     *
+     * @internal coordinator use only
+     *
+     * @return array<string, object>
+     */
+    public function exportItems(): array
+    {
+        return $this->itemsById;
+    }
+
+    /**
+     * The current id counter, captured by the coordinator alongside the items so a
+     * coordinated {@see restore()} rewinds any ids minted in the batch.
+     *
+     * @internal coordinator use only
+     */
+    public function exportNextId(): int
+    {
+        return $this->nextId;
+    }
+
+    /**
+     * Replaces this store's items map + id counter from the coordinator's restored
+     * cross-store graph (the reconstructed objects, cross-store identity intact).
+     *
+     * @internal coordinator use only
+     *
+     * @param array<string, object> $items
+     */
+    public function importItems(array $items, int $nextId): void
+    {
+        $this->itemsById = $items;
+        $this->nextId = $nextId;
     }
 
     /**
@@ -206,19 +288,9 @@ final class InMemoryStore
      * when the object is serializable (the common case — the witness's POJOs are),
      * falling back to a shallow `clone` for an object that cannot be serialized (a
      * closure-bearing object); the witness never stores such objects, so the
-     * fallback is a safety net, not a normal path.
-     *
-     * Single-store limitation: the round-trip follows every reference, so a stored
-     * object that points at a related object held in ANOTHER {@see InMemoryStore}
-     * (as a {@see \haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister::mutateRelationship()}
-     * wires it) is snapshotted with a CLONE of that related object — on
-     * {@see restore()} the parent would no longer be identity-equal to the live
-     * related object. This is invisible to the current single-store begin/rollback
-     * (each store snapshots/restores itself in isolation), but the atomic executor's
-     * cross-store rollback must reckon with it: either snapshot/restore all stores
-     * atomically with cross-store refs re-resolved, or scope rollback per store.
-     * Decide before the cross-store executor lands; do not silently rely on
-     * cross-store identity surviving a restore.
+     * fallback is a safety net, not a normal path. Used only on the isolated
+     * (no-coordinator) path — the coordinated path preserves cross-store identity by
+     * serializing every store together.
      */
     private function deepClone(object $item): object
     {
