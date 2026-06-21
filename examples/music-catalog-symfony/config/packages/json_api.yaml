@@ -37,6 +37,20 @@ json_api:
         admin:
             base_uri: 'https://admin.music.example'
 
+    # The JSON:API Atomic Operations extension (https://jsonapi.org/ext/atomic):
+    # a batch of write operations applied in order, all-or-nothing, within one
+    # request, with local-id (`lid`) cross-references. It is OFF by default; the
+    # example opts in so the worked example in docs/atomic-operations.md is
+    # exercisable. When enabled, each server gains a `POST {path}` endpoint
+    # (here `POST /operations`, and `POST /admin/operations` for the admin
+    # server). The path must not equal any resource's collection path (`/{uriType}`)
+    # — the route loader fails fast at boot if it does. Every entity-mapped type is
+    # served by the one shared Doctrine persister, which is transactional, so a
+    # batch over these types is fully atomic.
+    atomic_operations:
+        enabled: true
+        path: /operations
+
     # OpenAPI 3.1 generation (G1–G6). The document is projected from the live
     # registry and served at /docs.json (+ /admin/docs.json for the named server),
     # with a Swagger UI viewer at /docs. `expose_in_prod: true` registers the HTTP

@@ -17,6 +17,7 @@ use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Schema\ResourceIdentifier;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
+use haddowg\JsonApiBundle\DataPersister\TransactionalDataPersisterInterface;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\PivotAssociation;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\PivotAssociationResolver;
 use haddowg\JsonApiBundle\Server\IdEncoderResolver;
@@ -58,7 +59,7 @@ use haddowg\JsonApiBundle\Server\IdEncoderResolver;
  * (`404`), rather than passing the raw wire string to `getReference` (which would
  * build a proxy that errors on initialization, surfacing as a `500`).
  */
-final class DoctrineDataPersister implements DataPersisterInterface
+final class DoctrineDataPersister implements DataPersisterInterface, TransactionalDataPersisterInterface
 {
     /**
      * @param array<string, class-string>    $entityClassByType a `type → entity FQCN` map
@@ -71,6 +72,57 @@ final class DoctrineDataPersister implements DataPersisterInterface
         private readonly IdEncoderResolver $idEncoders,
         private readonly ?PivotAssociationResolver $pivotAssociations = null,
     ) {}
+
+    /**
+     * Opens the `EntityManager`'s transaction. The existing per-operation flushes
+     * in {@see create()}/{@see update()}/{@see delete()}/{@see mutateRelationship()}
+     * then run INSIDE it: they are non-durable until {@see commit()} (or discarded by
+     * {@see rollback()}), yet still materialise a store-generated id on the entity
+     * immediately, so a later operation in the same batch can reference a
+     * just-created resource's id (empirically confirmed against Doctrine + sqlite).
+     */
+    public function beginTransaction(): void
+    {
+        $this->entityManager->beginTransaction();
+    }
+
+    /**
+     * Flushes any still-pending changes, then commits the transaction — durably
+     * persisting every write the batch made since {@see beginTransaction()}.
+     */
+    public function commit(): void
+    {
+        $this->entityManager->flush();
+        $this->entityManager->commit();
+    }
+
+    /**
+     * Rolls the transaction back (discarding every buffered write) and clears the unit
+     * of work, so the entities the rolled-back batch flushed are detached rather than
+     * lingering in the identity map as phantom managed state. The manager is left
+     * **open and reusable** — the request still has to render the error document, and a
+     * long-running worker reuses the manager on its next message; closing it would
+     * strand both (and forces a fragile reopen that breaks under older Doctrine ORM).
+     *
+     * GUARDED (Slice C carry-forward): a no-op when the manager is already closed or
+     * has no active transaction. The atomic executor's commit-failure path rolls back
+     * AFTER a failed commit (whose flush exception itself rolls back and closes the
+     * manager), so an unconditional `rollback()` here would throw a secondary
+     * `ConnectionException`/`EntityManagerClosed` that masks the original failure. The
+     * guard makes the rollback idempotent so the real error surfaces.
+     */
+    public function rollback(): void
+    {
+        if (!$this->entityManager->isOpen()) {
+            return;
+        }
+
+        if ($this->entityManager->getConnection()->isTransactionActive()) {
+            $this->entityManager->rollback();
+        }
+
+        $this->entityManager->clear();
+    }
 
     public function supports(string $type): bool
     {

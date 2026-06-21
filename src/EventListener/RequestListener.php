@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\EventListener;
 
+use haddowg\JsonApi\Atomic\AtomicExtension;
+use haddowg\JsonApi\Atomic\AtomicOperationsParser;
 use haddowg\JsonApi\Negotiation\RequestValidator;
+use haddowg\JsonApi\Operation\AtomicOperationsOperation;
 use haddowg\JsonApi\Operation\CustomActionOperation;
 use haddowg\JsonApi\Operation\OperationContext;
 use haddowg\JsonApi\Operation\OperationFactory;
@@ -70,6 +73,16 @@ final class RequestListener
 
         $request = $event->getRequest();
 
+        // An Atomic Operations batch route (`POST /operations`) carries no
+        // `_jsonapi_type` — the batch has no single primary resource — so the target
+        // resolver returns null for it; the dedicated `_jsonapi_atomic` marker
+        // branches it into the batch path BEFORE the CRUD/action branches.
+        if ($request->attributes->get(JsonApiRouteLoader::ATOMIC_ATTRIBUTE) === true) {
+            $this->handleAtomic($request);
+
+            return;
+        }
+
         $target = $this->targetResolver->resolveFromRequest($request);
         if ($target === null) {
             return;
@@ -133,6 +146,87 @@ final class RequestListener
         $request->attributes->set(self::RESPONSE_ATTRIBUTE, $response);
         $request->attributes->set(self::SERVER_ATTRIBUTE, $server);
         $request->attributes->set(self::PSR_REQUEST_ATTRIBUTE, $jsonApiRequest);
+    }
+
+    /**
+     * Runs an Atomic Operations batch (`POST /operations`, bundle ADR 0087): it
+     *  1. picks the server by the route's `_jsonapi_server` default;
+     *  2. converts the Symfony request to PSR-7 and wraps it in core's
+     *     {@see JsonApiRequest};
+     *  3. negotiates the **atomic extension** — a {@see RequestValidator} configured
+     *     with {@see AtomicExtension::URI} as the one supported extension, then a
+     *     REQUIRE check that the `ext` media-type parameter is present on BOTH
+     *     `Content-Type` (else `415`) and `Accept` (else `406`), per the extension's
+     *     base-spec media-type rules;
+     *  4. validates the JSON body is well-formed;
+     *  5. parses it via core's {@see AtomicOperationsParser} into
+     *     {@see \haddowg\JsonApi\Atomic\OperationDescriptor}s (structural failures → a
+     *     `400` {@see \haddowg\JsonApi\Exception\AtomicOperationsInvalid});
+     *  6. builds the {@see AtomicOperationsOperation} and dispatches it through
+     *     `Server::dispatch()` — which fires serving once for the whole batch and runs
+     *     the single handler's atomic arm (the {@see \haddowg\JsonApiBundle\Atomic\AtomicLoopBackend});
+     *  7. stashes the response for the {@see ViewListener}.
+     *
+     * The exception listener renders any thrown error; errors produced under the
+     * negotiated extension advertise it on their `Content-Type` (the
+     * {@see \haddowg\JsonApi\Atomic\AtomicLoop} does this for the rolled-back error
+     * document via {@see \haddowg\JsonApi\Response\AbstractResponse::withExtensions()}).
+     */
+    private function handleAtomic(\Symfony\Component\HttpFoundation\Request $request): void
+    {
+        $serverName = $request->attributes->get('_jsonapi_server');
+        $server = $this->servers->get(\is_string($serverName) ? $serverName : null);
+
+        $psrRequest = $this->psrHttpFactory->createRequest($request);
+        $jsonApiRequest = $psrRequest instanceof JsonApiRequestInterface
+            ? $psrRequest
+            : new JsonApiRequest($psrRequest);
+
+        // Negotiate with the atomic extension as the sole supported ext: a non-JSON:API
+        // media type still 415/406s via the base rules, and a present-but-unsupported
+        // ext is rejected. Then REQUIRE the atomic ext on both headers — the extension's
+        // media-type contract (an atomic request MUST carry ext on Content-Type AND Accept).
+        $validator = new RequestValidator(AtomicExtension::URI);
+        $validator->negotiate($jsonApiRequest);
+        $this->requireAtomicExtension($jsonApiRequest);
+
+        $validator->validateQueryParams($jsonApiRequest);
+        $validator->validateJsonBody($jsonApiRequest);
+
+        $descriptors = (new AtomicOperationsParser())->parse($jsonApiRequest->getParsedBody());
+
+        $operation = new AtomicOperationsOperation(
+            $descriptors,
+            QueryParameters::fromRequest($jsonApiRequest),
+            new OperationContext($server, $jsonApiRequest),
+        );
+
+        $response = $server->dispatch($operation);
+
+        $request->attributes->set(self::RESPONSE_ATTRIBUTE, $response);
+        $request->attributes->set(self::SERVER_ATTRIBUTE, $server);
+        $request->attributes->set(self::PSR_REQUEST_ATTRIBUTE, $jsonApiRequest);
+    }
+
+    /**
+     * Enforces the extension's media-type contract: the atomic `ext` parameter MUST
+     * be present on both the request `Content-Type` (else `415`) and the `Accept`
+     * (else `406`). The base {@see RequestValidator::negotiate()} only rejects an
+     * *unsupported* ext; it does not require the atomic ext to be present, so a plain
+     * `application/vnd.api+json` request to `/operations` would otherwise be accepted.
+     *
+     * @throws \haddowg\JsonApi\Exception\MediaTypeUnsupported  when Content-Type omits the atomic ext
+     * @throws \haddowg\JsonApi\Exception\MediaTypeUnacceptable when Accept omits the atomic ext
+     */
+    private function requireAtomicExtension(JsonApiRequestInterface $request): void
+    {
+        if (!\in_array(AtomicExtension::URI, $request->getAppliedExtensions(), true)) {
+            throw new \haddowg\JsonApi\Exception\MediaTypeUnsupported($request->getHeaderLine('content-type'));
+        }
+
+        if (!\in_array(AtomicExtension::URI, $request->getRequestedExtensions(), true)) {
+            throw new \haddowg\JsonApi\Exception\MediaTypeUnacceptable($request->getHeaderLine('accept'));
+        }
     }
 
     /**

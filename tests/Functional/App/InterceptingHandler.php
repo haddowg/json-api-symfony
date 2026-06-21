@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App;
 use haddowg\JsonApi\Operation\FetchResourceOperation;
 use haddowg\JsonApi\Operation\JsonApiOperationInterface;
 use haddowg\JsonApi\Operation\OperationHandlerInterface;
+use haddowg\JsonApi\Response\AtomicResultsResponse;
 use haddowg\JsonApi\Response\DataResponse;
 use haddowg\JsonApi\Response\ErrorResponse;
 use haddowg\JsonApi\Response\IdentifierResponse;
@@ -43,7 +44,7 @@ final class InterceptingHandler implements OperationHandlerInterface
         private readonly OperationHandlerInterface $inner,
     ) {}
 
-    public function handle(JsonApiOperationInterface $operation): DataResponse|MetaResponse|RelatedResponse|IdentifierResponse|NoContentResponse|ErrorResponse
+    public function handle(JsonApiOperationInterface $operation): DataResponse|MetaResponse|RelatedResponse|IdentifierResponse|NoContentResponse|AtomicResultsResponse|ErrorResponse
     {
         $response = $this->inner->handle($operation);
 

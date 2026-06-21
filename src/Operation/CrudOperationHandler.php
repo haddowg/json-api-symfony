@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Operation;
 
+use haddowg\JsonApi\Atomic\AtomicLoop;
 use haddowg\JsonApi\Collection\CursorCollectionResult;
 use haddowg\JsonApi\Exception\AdditionProhibited;
 use haddowg\JsonApi\Exception\FullReplacementProhibited;
@@ -14,6 +15,7 @@ use haddowg\JsonApi\Exception\ResourceNotFound;
 use haddowg\JsonApi\Hydrator\Relationship\ToManyRelationship;
 use haddowg\JsonApi\Hydrator\Relationship\ToOneRelationship;
 use haddowg\JsonApi\Operation\AddToRelationshipOperation;
+use haddowg\JsonApi\Operation\AtomicOperationsOperation;
 use haddowg\JsonApi\Operation\CreateResourceOperation;
 use haddowg\JsonApi\Operation\CustomActionOperation;
 use haddowg\JsonApi\Operation\DeleteResourceOperation;
@@ -33,6 +35,7 @@ use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\SupportsSingular;
+use haddowg\JsonApi\Response\AtomicResultsResponse;
 use haddowg\JsonApi\Response\DataResponse;
 use haddowg\JsonApi\Response\ErrorResponse;
 use haddowg\JsonApi\Response\IdentifierResponse;
@@ -43,8 +46,10 @@ use haddowg\JsonApi\Serializer\PolymorphicSerializer;
 use haddowg\JsonApi\Serializer\SerializerInterface;
 use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\Action\ActionInvoker;
+use haddowg\JsonApiBundle\Atomic\AtomicLoopBackend;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
+use haddowg\JsonApiBundle\DataPersister\WriteTransactionContext;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
@@ -168,9 +173,15 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         private readonly ?RelatedIncludeBatcher $includeBatcher = null,
         private readonly ?ActionInvoker $actions = null,
         private readonly ?RequestScopedRelationshipLinkage $relationshipLinkage = null,
+        private readonly ?WriteTransactionContext $txContext = null,
+        private readonly ?\Symfony\Component\Routing\RouterInterface $router = null,
+        // Optional PSR logger, handed to the AtomicLoopBackend so a deferred After*
+        // hook that throws AFTER an atomic batch commits is logged (best-effort) rather
+        // than failing the committed batch. Null on the single-op path (no batch).
+        private readonly ?\Psr\Log\LoggerInterface $logger = null,
     ) {}
 
-    public function handle(\haddowg\JsonApi\Operation\JsonApiOperationInterface $operation): DataResponse|RelatedResponse|IdentifierResponse|MetaResponse|NoContentResponse|ErrorResponse
+    public function handle(\haddowg\JsonApi\Operation\JsonApiOperationInterface $operation): DataResponse|RelatedResponse|IdentifierResponse|MetaResponse|NoContentResponse|AtomicResultsResponse|ErrorResponse
     {
         return match (true) {
             $operation instanceof FetchResourceOperation => $this->fetch($operation),
@@ -183,8 +194,55 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $operation instanceof AddToRelationshipOperation => $this->mutateRelationship($operation, $operation->body(), Mode::Add),
             $operation instanceof RemoveFromRelationshipOperation => $this->mutateRelationship($operation, $operation->body(), Mode::Remove),
             $operation instanceof CustomActionOperation => $this->actions?->invoke($operation) ?? ErrorResponse::fromException(new ResourceNotFound()),
+            $operation instanceof AtomicOperationsOperation => $this->atomic($operation),
             default => ErrorResponse::fromException(new ResourceNotFound()),
         };
+    }
+
+    /**
+     * `POST /operations` — the Atomic Operations batch (the headline executor, Slice
+     * C). The single global handler grows this one arm so an
+     * {@see AtomicOperationsOperation} dispatches through the SAME handler as every
+     * CRUD operation: it builds a per-batch {@see AtomicLoopBackend} (which resolves
+     * each sub-operation's target, applies it through THIS handler's own per-op CRUD
+     * arms in-process, threads the shared local-id registry, and renders each result
+     * fragment) and runs it through core's framework-agnostic {@see AtomicLoop} — which
+     * owns the ordering, the all-or-nothing commit/rollback, and the failing-operation
+     * pointer prefixing.
+     *
+     * **Decoration wraps the batch, not each sub-op.** A handler decorator sees this
+     * one {@see AtomicOperationsOperation}; the sub-operations re-enter `$this`
+     * directly (bypassing the decorator chain), so per-sub-op decoration is out of
+     * scope — the batch is the unit of decoration.
+     *
+     * The {@see WriteTransactionContext} (always wired) is what makes the sub-operations'
+     * After* lifecycle hooks defer to post-commit; the router (optional — present in the
+     * bundle wiring) resolves an `href`-targeted operation. Absent the context the
+     * batch cannot be run transactionally, so it is refused as unsupported.
+     */
+    private function atomic(AtomicOperationsOperation $operation): AtomicResultsResponse|ErrorResponse
+    {
+        $server = $this->server($operation->context());
+        $request = $this->jsonApiRequest($operation->context());
+
+        if ($this->txContext === null || $this->router === null) {
+            return ErrorResponse::fromException(
+                new \haddowg\JsonApiBundle\Atomic\AtomicOperationsUnavailable(),
+            );
+        }
+
+        $backend = new AtomicLoopBackend(
+            $operation->descriptors(),
+            $server,
+            $request,
+            $this,
+            $this->persisters,
+            $this->txContext,
+            $this->router,
+            $this->logger,
+        );
+
+        return (new AtomicLoop())->run($operation->descriptors(), $backend);
     }
 
     private function fetch(FetchResourceOperation $operation): DataResponse|ErrorResponse
@@ -962,10 +1020,15 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         $response = IdentifierResponse::forRelationship($parent, $server->serializerFor($type), $relationshipName);
 
-        $afterMutate = new AfterRelationshipMutateEvent($type, $request, $parent, $relation, $linkage, $mode, $this->serverName($request));
-        $this->dispatch($afterMutate);
+        // The after-relationship-mutate hook (post-commit) may replace the linkage
+        // response. Deferred to post-commit under an active Atomic Operations batch
+        // (replacement inert); fired inline on the single-op path, unchanged.
+        return $this->deferOrFire(function () use ($type, $request, $parent, $relation, $linkage, $mode, $response): IdentifierResponse {
+            $afterMutate = new AfterRelationshipMutateEvent($type, $request, $parent, $relation, $linkage, $mode, $this->serverName($request));
+            $this->dispatch($afterMutate);
 
-        return $afterMutate->response() ?? $response;
+            return $afterMutate->response() ?? $response;
+        }, $response);
     }
 
     /**
@@ -1241,15 +1304,20 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             ->withHeader('Location', $server->baseUri() . '/' . $uriType . '/' . $serializer->getId($entity));
 
         // After-create then after-save hooks (post-commit) may replace the 201;
-        // after-save fires last, so it has the final word.
-        $afterCreate = new AfterCreateEvent($type, $request, $entity, $this->serverName($request));
-        $this->dispatch($afterCreate);
-        $response = $afterCreate->response() ?? $response;
+        // after-save fires last, so it has the final word. Under an active Atomic
+        // Operations batch the dispatch is deferred to post-commit (and the
+        // replacement is inert — the aggregate result wins); on the single-op path
+        // (inactive/absent context) it fires inline, unchanged.
+        return $this->deferOrFire(function () use ($type, $request, $entity, $response): DataResponse {
+            $afterCreate = new AfterCreateEvent($type, $request, $entity, $this->serverName($request));
+            $this->dispatch($afterCreate);
+            $response = $afterCreate->response() ?? $response;
 
-        $afterSave = new AfterSaveEvent($type, $request, $entity, true, $this->serverName($request));
-        $this->dispatch($afterSave);
+            $afterSave = new AfterSaveEvent($type, $request, $entity, true, $this->serverName($request));
+            $this->dispatch($afterSave);
 
-        return $afterSave->response() ?? $response;
+            return $afterSave->response() ?? $response;
+        }, $response);
     }
 
     private function update(UpdateResourceOperation $operation): DataResponse|ErrorResponse
@@ -1318,15 +1386,19 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $response = DataResponse::fromResource($entity, $serializer);
 
         // After-update then after-save hooks (post-commit) may replace the 200;
-        // after-save fires last, so it has the final word.
-        $afterUpdate = new AfterUpdateEvent($type, $request, $entity, $this->serverName($request));
-        $this->dispatch($afterUpdate);
-        $response = $afterUpdate->response() ?? $response;
+        // after-save fires last, so it has the final word. Deferred to post-commit
+        // under an active Atomic Operations batch (replacement inert); fired inline
+        // on the single-op path, unchanged.
+        return $this->deferOrFire(function () use ($type, $request, $entity, $response): DataResponse {
+            $afterUpdate = new AfterUpdateEvent($type, $request, $entity, $this->serverName($request));
+            $this->dispatch($afterUpdate);
+            $response = $afterUpdate->response() ?? $response;
 
-        $afterSave = new AfterSaveEvent($type, $request, $entity, false, $this->serverName($request));
-        $this->dispatch($afterSave);
+            $afterSave = new AfterSaveEvent($type, $request, $entity, false, $this->serverName($request));
+            $this->dispatch($afterSave);
 
-        return $afterSave->response() ?? $response;
+            return $afterSave->response() ?? $response;
+        }, $response);
     }
 
     /**
@@ -1500,11 +1572,15 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $response = NoContentResponse::create();
 
         // The after-delete hook (post-commit) may replace the 204 — e.g. a
-        // soft-delete that renders the now-flagged resource instead.
-        $afterDelete = new AfterDeleteEvent($type, $request, $entity, $this->serverName($request));
-        $this->dispatch($afterDelete);
+        // soft-delete that renders the now-flagged resource instead. Deferred to
+        // post-commit under an active Atomic Operations batch (replacement inert);
+        // fired inline on the single-op path, unchanged.
+        return $this->deferOrFire(function () use ($type, $request, $entity, $response): DataResponse|NoContentResponse {
+            $afterDelete = new AfterDeleteEvent($type, $request, $entity, $this->serverName($request));
+            $this->dispatch($afterDelete);
 
-        return $afterDelete->response() ?? $response;
+            return $afterDelete->response() ?? $response;
+        }, $response);
     }
 
     /**
@@ -1629,6 +1705,43 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
     private function dispatch(object $event): void
     {
         $this->dispatcher?->dispatch($event);
+    }
+
+    /**
+     * Fires an After* lifecycle dispatch either inline (the single-op path) or
+     * deferred to post-commit (an active Atomic Operations batch) — the ONLY
+     * behavioural edit Slice B makes to the write arms.
+     *
+     * On the single-op path the {@see WriteTransactionContext} is inactive (or
+     * absent), so this runs `$fire` immediately and honours its response
+     * replacement exactly as today — byte-for-byte unchanged behaviour.
+     *
+     * Under an active batch (exercised by the executor in the next slice) the
+     * dispatch is enqueued to run after the batch's transaction commits, and the
+     * pre-After* `$response` is returned unchanged: the After* response replacement
+     * is intentionally inert under atomic, because the aggregate batch result is
+     * authoritative. A rolled-back batch never drains the queue, so its hooks never
+     * fire.
+     *
+     * @template TResponse of object
+     *
+     * @param callable(): TResponse $fire runs the After* dispatch and returns the
+     *                                    (possibly replaced) response
+     * @param TResponse             $response the pre-After* response, returned verbatim when deferred
+     *
+     * @return TResponse
+     */
+    private function deferOrFire(callable $fire, object $response): object
+    {
+        if ($this->txContext !== null && $this->txContext->isActive()) {
+            $this->txContext->enqueuePostCommit(static function () use ($fire): void {
+                $fire();
+            });
+
+            return $response;
+        }
+
+        return $fire();
     }
 
     /**

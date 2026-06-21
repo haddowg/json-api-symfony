@@ -103,6 +103,7 @@ nav:
       - lifecycle.md
       - lifecycle-hooks.md
       - actions.md
+      - atomic-operations.md
   - Routing, errors & operations:
       - routing.md
       - errors.md

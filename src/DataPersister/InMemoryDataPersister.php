@@ -28,7 +28,7 @@ use haddowg\JsonApiBundle\DataProvider\InMemoryStore;
  * association property to that object (or list of objects). A persister with no
  * resolver supports only whole-resource writes.
  */
-final class InMemoryDataPersister implements DataPersisterInterface
+final class InMemoryDataPersister implements DataPersisterInterface, TransactionalDataPersisterInterface
 {
     /**
      * @param InMemoryStore                          $store           the store shared with the read provider
@@ -46,6 +46,35 @@ final class InMemoryDataPersister implements DataPersisterInterface
     public function supports(string $type): bool
     {
         return $type === $this->type;
+    }
+
+    /**
+     * Snapshots the shared store, so the subsequent in-memory writes
+     * ({@see create()}/{@see update()}/{@see delete()}/{@see mutateRelationship()})
+     * can be discarded by {@see rollback()} or kept by {@see commit()} — the
+     * in-memory analogue of opening a database transaction.
+     */
+    public function beginTransaction(): void
+    {
+        $this->store->snapshot();
+    }
+
+    /**
+     * Keeps every write made since {@see beginTransaction()} (discarding the
+     * snapshot), the in-memory analogue of committing.
+     */
+    public function commit(): void
+    {
+        $this->store->discardSnapshot();
+    }
+
+    /**
+     * Restores the store to its snapshot, discarding every write made since
+     * {@see beginTransaction()} — the in-memory analogue of a rollback.
+     */
+    public function rollback(): void
+    {
+        $this->store->restore();
     }
 
     public function instantiate(string $type): object

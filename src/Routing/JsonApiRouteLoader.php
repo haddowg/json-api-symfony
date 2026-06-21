@@ -90,6 +90,16 @@ final class JsonApiRouteLoader extends Loader
     public const string ACTION_SCOPE_ATTRIBUTE = '_jsonapi_action_scope';
 
     /**
+     * The route default marking the per-server Atomic Operations endpoint
+     * (`POST {path}`), read by the {@see \haddowg\JsonApiBundle\EventListener\RequestListener}
+     * to branch into the atomic-batch dispatch path. The route carries NO
+     * `_jsonapi_type` — the batch has no single primary resource — so the
+     * {@see TargetResolver} returns null for it and the listener must key on this
+     * marker instead.
+     */
+    public const string ATOMIC_ATTRIBUTE = '_jsonapi_atomic';
+
+    /**
      * The reserved path segment custom actions hang off (design §1/§7). It is a
      * **literal** in every action path and must never be captured as a resource
      * `{id}`: a collection-scope action `/{uriType}/-actions/{name}` is three
@@ -112,6 +122,8 @@ final class JsonApiRouteLoader extends Loader
         private readonly array $routeDescriptorsByServer = [],
         private readonly array $actionRouteDescriptorsByServer = [],
         private readonly ?IdEncoderResolver $idEncoders = null,
+        private readonly bool $atomicEnabled = false,
+        private readonly string $atomicPath = '/operations',
     ) {
         parent::__construct();
     }
@@ -125,6 +137,21 @@ final class JsonApiRouteLoader extends Loader
         $routes = new RouteCollection();
 
         $server = $this->serverName($resource);
+
+        // Fail fast on a configuration collision: an atomic path equal to a resource's
+        // collection path (`/{uriType}`) on this server would silently shadow that
+        // type's `POST` Create — both are `POST {path}`, and the atomic route is emitted
+        // first. Detect it at route-loading time and refuse with a clear, named error
+        // rather than letting the shadow ship.
+        $this->guardAtomicPathCollision($server);
+
+        // The Atomic Operations endpoint (opt-in) is emitted FIRST: it is a single
+        // literal path (`POST /operations` by default) carrying no `_jsonapi_type`, so
+        // it neither shadows nor is shadowed by the concrete per-type literal paths
+        // (`/{uriType}`...). The RequestListener branches on its `_jsonapi_atomic`
+        // marker. Emitted before the action + generic routes so the literal path wins
+        // its own verb cleanly.
+        $this->addAtomicRoute($routes, $server);
 
         // Custom action routes (bundle ADR 0076) are emitted FIRST so the literal
         // `-actions` segment is never captured as an `{id}` (a collection-scope
@@ -256,6 +283,83 @@ final class JsonApiRouteLoader extends Loader
         }
 
         return $routes;
+    }
+
+    /**
+     * Emits the per-server Atomic Operations endpoint (`POST {path}`, opt-in) when
+     * the extension is enabled. The route carries the standard JSON:API defaults plus
+     * {@see self::ATOMIC_ATTRIBUTE} (`true`) and — deliberately — NO `_jsonapi_type`,
+     * so the {@see TargetResolver} returns null and the
+     * {@see \haddowg\JsonApiBundle\EventListener\RequestListener} branches on the
+     * marker to negotiate the atomic ext, parse `atomic:operations`, and run the batch.
+     *
+     * The path is a single literal (`/operations` by default), distinct from every
+     * concrete per-type literal (`/{uriType}`...), so it neither shadows nor is
+     * shadowed by the CRUD/action routes; its single `POST` method keeps it from
+     * colliding with a same-path GET a host might add. The route name is
+     * `jsonapi[.{server}].atomic_operations`.
+     */
+    private function addAtomicRoute(RouteCollection $routes, string $server): void
+    {
+        if (!$this->atomicEnabled) {
+            return;
+        }
+
+        $namePrefix = $server === ServerProvider::DEFAULT_SERVER
+            ? 'jsonapi.'
+            : \sprintf('jsonapi.%s.', $server);
+
+        $defaults = [
+            '_controller' => JsonApiController::class,
+            '_jsonapi_server' => $server,
+            ExceptionListener::ROUTE_MARKER => true,
+            self::ATOMIC_ATTRIBUTE => true,
+        ];
+
+        $routes->add(
+            $namePrefix . 'atomic_operations',
+            new Route($this->atomicPath, $defaults, methods: ['POST']),
+        );
+    }
+
+    /**
+     * Refuses, at route-loading time, an Atomic Operations path that would silently
+     * shadow a resource's collection-`POST` Create on the same server.
+     *
+     * The atomic route is `POST {atomicPath}` and a resource's Create is
+     * `POST /{uriType}`; the atomic route is emitted first, so if the two paths are
+     * identical the resource's Create is unreachable (the atomic route wins the verb).
+     * A silent shadow is a latent bug, so this throws a clear configuration error
+     * naming the colliding type and path instead — change `json_api.atomic_operations.path`
+     * (or the type's `uriType`) to resolve it. A no-op when the extension is disabled.
+     */
+    private function guardAtomicPathCollision(string $server): void
+    {
+        if (!$this->atomicEnabled) {
+            return;
+        }
+
+        foreach ($this->routeDescriptorsByServer[$server] ?? [] as $resourceType => $descriptor) {
+            if ($resourceType === '') {
+                continue;
+            }
+
+            $collectionPath = '/' . $descriptor['uriType'];
+            if ($collectionPath !== $this->atomicPath) {
+                continue;
+            }
+
+            throw new \LogicException(\sprintf(
+                'The Atomic Operations path "%s" collides with the collection path of the JSON:API type "%s" '
+                . '(uriType "%s") on server "%s": both are served at "POST %s", so the type\'s Create would be '
+                . 'silently shadowed. Change json_api.atomic_operations.path or the type\'s uriType so the two differ.',
+                $this->atomicPath,
+                $resourceType,
+                $descriptor['uriType'],
+                $server,
+                $this->atomicPath,
+            ));
+        }
     }
 
     /**

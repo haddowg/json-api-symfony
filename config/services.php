@@ -177,7 +177,27 @@ return static function (ContainerConfigurator $container): void {
         // The custom-action invoker (bundle ADR 0076): the optional collaborator the
         // CustomActionOperation arm delegates to. Always wired in the bundle (a null
         // would 404 every action); an app with no actions simply registers none.
-        ->arg('$actions', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Action\ActionInvoker::class));
+        ->arg('$actions', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Action\ActionInvoker::class))
+        // The per-request write-transaction context (the Atomic Operations seam):
+        // on the single-op path it stays inactive, so each After* hook fires inline
+        // exactly as today; the Atomic Operations executor activates it for a batch so
+        // the After* hooks defer to post-commit. Always wired.
+        ->arg('$txContext', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataPersister\WriteTransactionContext::class))
+        // The router the Atomic Operations executor matches an `href`-targeted
+        // operation against (the same defaults the TargetResolver reads on a direct
+        // call). Optional — a programmatic handler without it refuses atomic batches.
+        ->arg('$router', \Symfony\Component\DependencyInjection\Loader\Configurator\service('router')->nullOnInvalid())
+        // Optional PSR logger, threaded into the per-batch AtomicLoopBackend: a
+        // deferred After* hook that throws AFTER an atomic batch durably commits is
+        // logged (best-effort) instead of failing the committed batch (bundle ADR 0088).
+        ->arg('$logger', \Symfony\Component\DependencyInjection\Loader\Configurator\service('logger')->nullOnInvalid());
+
+    // The per-request write-transaction context + post-commit-hook queue the Atomic
+    // Operations executor drives (the next slice). It is DORMANT on the single-op
+    // write path — inactive by default, so the CrudOperationHandler fires its After*
+    // hooks inline — and is reset between requests in a long-lived container
+    // (ResetInterface, auto-tagged kernel.reset). Shared (one instance per request).
+    $services->set(\haddowg\JsonApiBundle\DataPersister\WriteTransactionContext::class);
 
     // The ?withCount count seam (bundle ADR 0052): a stable per-request holder
     // threaded into the memoized Server (in loadExtension) and a batcher that fills
@@ -245,6 +265,11 @@ return static function (ContainerConfigurator $container): void {
 
     $services->set(JsonApiRouteLoader::class)
         ->arg('$idEncoders', \Symfony\Component\DependencyInjection\Loader\Configurator\service(IdEncoderResolver::class))
+        // The Atomic Operations endpoint (opt-in, default off): when enabled the loader
+        // emits one POST {path} route per server carrying _jsonapi_atomic=true (and NO
+        // _jsonapi_type), which the RequestListener branches on to run the batch.
+        ->arg('$atomicEnabled', '%haddowg_json_api.atomic_operations.enabled%')
+        ->arg('$atomicPath', '%haddowg_json_api.atomic_operations.path%')
         ->tag('routing.loader');
 
     // The pass-through controller every generated route resolves to; the

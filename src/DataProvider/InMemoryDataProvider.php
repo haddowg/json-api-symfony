@@ -76,6 +76,9 @@ final class InMemoryDataProvider implements DataProviderInterface
      * @param iterable<ArrayFilterArmInterface>    $filterArms author arms for custom `FilterInterface` types (this provider is
      *                                                         hand-constructed, so arms are passed here rather than DI-tagged)
      * @param iterable<ArraySortArmInterface>      $sortArms   author arms for custom `SortInterface` types
+     * @param ?InMemorySnapshotCoordinator         $coordinator coordinates a cross-store single-pass snapshot for atomic
+     *                                                          rollback; pass the SAME instance to every related store so
+     *                                                          a rollback preserves cross-store object identity
      */
     public function __construct(
         private readonly string $type,
@@ -85,8 +88,9 @@ final class InMemoryDataProvider implements DataProviderInterface
         private readonly string $idColumn = 'id',
         iterable $filterArms = [],
         iterable $sortArms = [],
+        ?InMemorySnapshotCoordinator $coordinator = null,
     ) {
-        $this->store = new InMemoryStore($items, $identify, $assignId);
+        $this->store = new InMemoryStore($items, $identify, $assignId, $coordinator);
         $this->applier = new CriteriaApplier();
         $this->windowExecutor = new WindowExecutor();
         $this->filterHandler = new ArrayFilterHandler($filterArms);
