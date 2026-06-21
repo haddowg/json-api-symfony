@@ -109,7 +109,12 @@ return static function (ContainerConfigurator $container): void {
     // empty here and wired from json_api.openapi.* config in Slice 4 stage B.
     $services->set(\haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource::class)
         ->arg('$security', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Security\ResourceSecurityRegistry::class)->nullOnInvalid())
-        ->arg('$configByServer', []);
+        ->arg('$configByServer', [])
+        // The global Atomic Operations config (opt-in, default off): the same params
+        // the JsonApiRouteLoader reads. When enabled, every server's OpenAPI document
+        // gains the atomic POST {path} endpoint (mirroring the per-server route).
+        ->arg('$atomicEnabled', '%haddowg_json_api.atomic_operations.enabled%')
+        ->arg('$atomicPath', '%haddowg_json_api.atomic_operations.path%');
 
     // Custom, non-CRUD actions (bundle ADR 0076). The ActionRegistry resolves an
     // ActionDescriptor + its ActionHandlerInterface by the composite key
