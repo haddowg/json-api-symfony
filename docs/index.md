@@ -49,14 +49,12 @@ Everything else — Doctrine, the validator, strict email, the opis linter — i
 
 ## Install
 
-Require the bundle and its core dependency, both on `dev-main`:
-
 ```bash
-composer require haddowg/json-api-symfony:dev-main
+composer require haddowg/json-api-symfony
 ```
 
-The full recipe — adding core through a Composer path or VCS repository, and
-registering the bundle — lives in [install](install.md).
+Composer pulls the core library transitively. Registering the bundle and importing
+its routes lives in [install](install.md).
 
 ## A taste
 

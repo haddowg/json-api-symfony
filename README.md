@@ -8,13 +8,6 @@ content negotiation, spec-compliant error documents, constraint validation, and 
 reference Doctrine data layer — with **no controller, no operation handler, and no
 serializer wired by hand**.
 
-> [!NOTE]
-> **Pre-1.0, feature-complete, API not yet frozen.** Built alongside
-> `haddowg/json-api` (itself pre-1.0) to validate the library's integration surface
-> before its 1.0. The feature set below is complete and CI-tested; breaking changes
-> may still land between `0.x` minors (release-please drives the changelog). Pin a
-> minor and read the changelog before you upgrade.
-
 ## What it does
 
 - **Discovers** your JSON:API Resource services automatically (autoconfiguration,
@@ -60,27 +53,14 @@ simply absent. See the [optional-dependency matrix](https://haddowg.github.io/js
 
 ## Installation
 
-`haddowg/json-api` is not yet on Packagist, so this bundle requires it as
-`dev-main`. For local development, clone it as a sibling checkout (kept on its
-`main` branch) and register it as a **global** Composer path repository — that
-keeps the committed `composer.json` clean while symlinking your local core:
-
-```
-Sites/
-├── json-api/            # the core library (checked out on `main`)
-└── json-api-symfony/    # this bundle
-```
-
 ```bash
-composer config -g repositories.haddowg-json-api \
-  '{"type":"path","url":"/absolute/path/to/json-api","options":{"symlink":true}}'
-composer install
+composer require haddowg/json-api-symfony
 ```
 
-CI resolves `dev-main` straight from GitHub (a VCS repository) with no extra
-checkout. Once core is published to Packagist this becomes a normal `composer
-require haddowg/json-api-symfony` with a `^1.0` core pin. The full recipe — and
-registering the bundle — is in [docs/install.md](https://haddowg.github.io/json-api-symfony/install/).
+Composer pulls the core library and the PSR-7 bridge it needs. Registering the
+bundle and importing its routes — the one step that surprises everyone, since the
+bundle mounts **no** routes until you ask it to — is covered in
+[docs/install.md](https://haddowg.github.io/json-api-symfony/install/).
 
 ## Quickstart
 
@@ -152,7 +132,7 @@ It then serves on **http://localhost:8080**.
 The full documentation is published at **[haddowg.github.io/json-api-symfony](https://haddowg.github.io/json-api-symfony/)**.
 Start at the [documentation index](https://haddowg.github.io/json-api-symfony/), then:
 
-- [install](https://haddowg.github.io/json-api-symfony/install/) — the `dev-main` install recipe and bundle registration.
+- [install](https://haddowg.github.io/json-api-symfony/install/) — installation and bundle registration.
 - [getting-started](https://haddowg.github.io/json-api-symfony/getting-started/) — build your first endpoint end to end.
 - [resources](https://haddowg.github.io/json-api-symfony/resources/) — discovery, `#[AsJsonApiResource]`, and id strategies.
 - [routing](https://haddowg.github.io/json-api-symfony/routing/) and [lifecycle](https://haddowg.github.io/json-api-symfony/lifecycle/) — the request flow.
