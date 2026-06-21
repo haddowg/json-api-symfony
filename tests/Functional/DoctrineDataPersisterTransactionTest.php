@@ -81,13 +81,13 @@ final class DoctrineDataPersisterTransactionTest extends JsonApiFunctionalTestCa
 
         $persister->rollback();
 
-        // The transaction is closed and the EntityManager is closed (a rolled-back
-        // unit of work is tainted; the request is ending).
+        // The transaction is rolled back and the unit of work cleared, but the
+        // EntityManager is left OPEN and reusable (the request still renders the error,
+        // and a worker reuses the manager on its next message).
         self::assertFalse($connection->isTransactionActive());
-        self::assertFalse($entityManager->isOpen());
+        self::assertTrue($entityManager->isOpen());
 
-        // The INSERT was NOT durable: a raw query on the same connection finds no
-        // row (the EM is closed, so query through the connection directly).
+        // The INSERT was NOT durable: a fresh query finds no row.
         $count = $connection->fetchOne('SELECT COUNT(*) FROM tag');
         self::assertSame(0, \is_numeric($count) ? (int) $count : -1);
     }

@@ -5,8 +5,8 @@ bundle had no transaction boundary — each write flushed autonomously. Rather t
 the frozen `DataPersisterInterface`, transactionality is a **segregated**
 `TransactionalDataPersisterInterface` (`beginTransaction`/`commit`/`rollback`): the
 Doctrine implementation wraps the connection (commit flushes-then-commits, rollback rolls
-back and closes the now-tainted EntityManager) and the in-memory implementation
-snapshots/restores its store. The existing per-operation `flush()` calls are left
+back and clears the unit of work, leaving the manager open and reusable) and the in-memory
+implementation snapshots/restores its store. The existing per-operation `flush()` calls are left
 untouched, because a Doctrine `flush()` inside an already-open transaction is non-durable
 until commit yet still materialises auto-increment ids immediately — empirically verified
 against the Doctrine+sqlite kernel — which is exactly what cross-operation `lid`

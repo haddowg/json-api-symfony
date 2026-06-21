@@ -97,14 +97,17 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
     }
 
     /**
-     * Rolls the transaction back (discarding every buffered write) and closes the
-     * `EntityManager`: a rolled-back unit of work is tainted, and the request is
-     * ending, so the closed manager must not be reused.
+     * Rolls the transaction back (discarding every buffered write) and clears the unit
+     * of work, so the entities the rolled-back batch flushed are detached rather than
+     * lingering in the identity map as phantom managed state. The manager is left
+     * **open and reusable** — the request still has to render the error document, and a
+     * long-running worker reuses the manager on its next message; closing it would
+     * strand both (and forces a fragile reopen that breaks under older Doctrine ORM).
      *
      * GUARDED (Slice C carry-forward): a no-op when the manager is already closed or
      * has no active transaction. The atomic executor's commit-failure path rolls back
-     * AFTER a failed commit may itself have rolled back and closed the manager, so an
-     * unconditional `rollback()` here would throw a secondary
+     * AFTER a failed commit (whose flush exception itself rolls back and closes the
+     * manager), so an unconditional `rollback()` here would throw a secondary
      * `ConnectionException`/`EntityManagerClosed` that masks the original failure. The
      * guard makes the rollback idempotent so the real error surfaces.
      */
@@ -118,7 +121,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
             $this->entityManager->rollback();
         }
 
-        $this->entityManager->close();
+        $this->entityManager->clear();
     }
 
     public function supports(string $type): bool
