@@ -132,7 +132,7 @@ cross-field rule (`compareWith`) or a conditional rule (`when`) needs to see the
 patch. So on update the validator **folds the stored resource's wire-form attributes
 under the incoming partial** before validating: it reads the current attribute map
 off the loaded entity, `array_merge`es the incoming attributes on top, and validates
-the **merged** map (ADR 0049). Two consequences:
+the **merged** map. Two consequences:
 
 - a cross-field or conditional rule evaluates against the full merged state — e.g.
   `availableUntil > availableFrom` still fires when the patch sends only
@@ -210,7 +210,7 @@ id `422`s on either surface. The work lives in `ResourceValidator::ownIdError()`
 A **pivot `belongsToMany`** validates each linkage member's pivot `meta` against the
 relation's *writable* pivot fields' constraints, reusing the same `Required` /
 `Nullable` / `Collection` machinery as attributes — a violation points at the linkage
-meta. The validation **context is resolved per member** (ADR 0050): a member already
+meta. The validation **context is resolved per member**: a member already
 in the relationship merges its stored pivot row under the incoming `meta` and
 validates in **update** context, while a genuinely-new member validates the incoming
 `meta` in **create** context. A member is "existing" when its related id is in the
@@ -227,8 +227,7 @@ is the live witness: `Integer::make('position')->required()->min(1)` (a new memb
 must carry it; an existing member need not re-send it) and
 `Integer::make('weight')->compareWith('position', …)` (compared against the *merged*
 pivot, so `weight` may be set without re-sending `position`). See
-[relationships.md](relationships.md#writing-pivot-data) for the write convention and
-[ADR 0046](adr/0046-writable-belongs-to-many-pivot-fields.md).
+[relationships.md](relationships.md#writing-pivot-data) for the write convention.
 
 ## The constraint-translation map
 
@@ -389,7 +388,7 @@ resolution by context), so a child violation nests cleanly:
 violation arises there — add a constraint to a Map child (the cascade itself is
 exercised by the bundle's own conformance suite) to see the nested pointer.
 
-> The cascade is **one level deep, by design** (ADR 0020): a `Map` child that is
+> The cascade is **one level deep, by design**: a `Map` child that is
 > itself a `Map`, or a list-of-objects, is *not* descended into. See core's
 > [field-types](https://github.com/haddowg/json-api/blob/main/docs/field-types.md)
 > doc for the `Map` field itself.

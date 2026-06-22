@@ -151,7 +151,7 @@ be the literal `default`); referencing an undeclared server is a build-time
 `LogicException`. Declaring the servers, mounting their routes, and the end-to-end
 resolution are covered in [configuration](configuration.md),
 [routing](routing.md), and [multi-server & testing](multi-server-and-testing.md)
-respectively. This decision is bundle ADR 0034.
+respectively.
 
 ### The serializer / hydrator overrides
 
@@ -221,8 +221,8 @@ Two spec-recommended `self` links render by convention with no configuration:
 Both links are storage-agnostic — they derive from the base URI (your configured
 `base_uri`, or the request's own scheme+host when it is empty, the default — see
 [configuration](configuration.md)), the `uriType`/type, the id and the request URI —
-so they are identical on every provider. The behaviour lives in core (core ADR 0054); the bundle witnesses it
-across the dual-provider conformance suites (bundle ADR 0047).
+so they are identical on every provider. The behaviour lives in core; the bundle witnesses it
+across the dual-provider conformance suites.
 
 ## Sourcing the resource id
 

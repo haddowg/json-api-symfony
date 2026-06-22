@@ -1,7 +1,7 @@
 # Multi-server & functional testing
 
 Two cross-cutting topics live on this page. The first is the bundle's
-**config-declared multi-server** feature (ADR 0034): how you expose one Symfony app
+**config-declared multi-server** feature: how you expose one Symfony app
 as several JSON:API servers — for API versioning, an admin surface, or a
 public/internal split — and how a request resolves to the right one. The second is
 the **functional-testing harness** the example app uses and an integrating app

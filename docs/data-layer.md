@@ -75,7 +75,7 @@ interface DataProviderInterface
   the parent then filtered/sorted/windowed per the **related** type's vocabulary
   ([relationships](relationships.md) covers the endpoint; [doctrine](doctrine.md)
   covers the push-down). It also threads `relation->isCountable()`: a non-countable
-  relation paginates **count-free** (bundle ADR 0052) — a `null` total with
+  relation paginates **count-free** — a `null` total with
   `windowed: true` and a `hasMore` probe on the `CollectionResult`.
 - `countRelated()` is the count-only batch seam for `?withCount` and countable
   relations: the cardinality of `$relation` for a whole page of `$parents` as a
@@ -97,13 +97,13 @@ interface DataProviderInterface
   is `false` the handler nulls the to-one — `data: null` on
   `GET /{type}/{id}/{toOneRel}?filter[…]`, null linkage on
   `…/relationships/{toOneRel}?filter[…]`, dropped from `included` on
-  `relatedQuery[<toOneRel>][filter]` (bundle ADR 0068, covered on
+  `relatedQuery[<toOneRel>][filter]` (covered on
   [relationships](relationships.md)). A `[filter]` is the only `relatedQuery` member a
   to-one accepts — a `[sort]`/`[page]` on a to-one path is a `400`. A provider with no
   to-one filter support returns `false`/an empty map (nulling nothing extra).
 - `fetchRelationshipPivot()` returns the stored pivot meta for a pivot relation's
   current members (`relatedId => [pivotField => wire value]`), so the validator folds
-  a stored row under an incoming partial pivot update (ADR 0050). A non-pivot relation,
+  a stored row under an incoming partial pivot update. A non-pivot relation,
   or any provider that cannot store pivot data (the in-memory witness), returns `[]`.
 
 The interface is `@template-covariant TEntity of object`. A single-type provider
@@ -144,8 +144,8 @@ interface DataPersisterInterface
 ```
 
 - `instantiate()` hands the handler a blank instance for the hydrator to populate
-  on create. The persister owns the storage mapping, so it owns instantiation
-  (ADR 0010) — this is why the [Doctrine persister](doctrine.md) can build
+  on create. The persister owns the storage mapping, so it owns instantiation —
+  this is why the [Doctrine persister](doctrine.md) can build
   constructor-less entities (`ClassMetadata::newInstance()`).
 - `create()`/`update()` commit and return the entity; `delete()` returns nothing.
   Entities flow as plain `object` — the handler resolves the persister by type and
@@ -174,7 +174,7 @@ interface DataPersisterInterface
 commit per mutation (`$flush = true`). But a **whole-resource write** that embeds
 relationships in `data.relationships` applies each one with `$flush = false`, so
 the single `create()`/`update()` owns the commit — a not-yet-persisted create
-target is never flushed mid-association (ADR 0018). You only need this distinction
+target is never flushed mid-association. You only need this distinction
 when writing a custom persister; the handler sets it for you.
 
 Tagged `haddowg.json_api.data_persister`
@@ -281,7 +281,7 @@ count-based provider narrows to the `OffsetWindow` it can execute. `$aliasOf` is
 non-root query alias the `CriteriaApplier` applies it on — populated **only** on the
 Doctrine pivot related-collection path (pivot keys → the `pivot` join alias) and
 empty (so provably inert) on every other Doctrine path and **every** in-memory path,
-where each key resolves to the query root (bundle ADR 0059).
+where each key resolves to the query root.
 
 ### `CriteriaApplier` — spec semantics, decided once
 
@@ -482,8 +482,7 @@ Mechanics, all decided in the handler before the `CollectionCriteria` is built:
   delimited string per `delimiter()` — and **each scalar member** is validated, so
   `integer()` applies to every id in `filter[id]=1,banana,3`;
 - it covers the **related-collection** endpoint too: a relation-scoped or
-  related-resource constrained filter (see [relationships](relationships.md) /
-  [ADR 0044](adr/0044-relation-scoped-filters-and-sorts-on-related-collections.md))
+  related-resource constrained filter (see [relationships](relationships.md))
   validates its value the same way on `GET /{type}/{id}/{rel}`;
 - the [convenience filters](#convenience-filters) **preset** their constraint, so a
   `Numeric`/`Range` rejects a non-numeric value and a `DateRange` a non-ISO-8601 bound
@@ -494,8 +493,7 @@ Mechanics, all decided in the handler before the `CollectionCriteria` is built:
   99 — which a regex cannot reject) is a clean `400`, so a calendar-invalid bound never
   reaches the data layer where it would compare divergently across providers.
 
-See [ADR 0048](adr/0048-filter-values-are-validated-against-declared-constraints.md)
-and core's filter docs for the full decision.
+See core's filter docs for the full decision.
 
 ### `CollectionResult`
 
@@ -521,7 +519,7 @@ class CollectionResult
   `count($items)`. The handler needs it to build a count-based page
   (`links.last`/`meta.page.total` derive from it).
 - `$windowed` distinguishes a **count-free** windowed page (a non-countable related
-  to-many, core ADR 0057) from a plain unpaginated fetch — both carry a `null`
+  to-many) from a plain unpaginated fetch — both carry a `null`
   total, but a count-free page was sliced to a page and must render
   `meta.page`/`links` *without* `total`/`last`. The handler reads it only when
   `$total` is `null`.
@@ -588,7 +586,7 @@ install no built-in default (those collections render unpaginated), or
 The **singular-filter collapse**: if the client applied a filter the resource
 declares [singular](https://github.com/haddowg/json-api/blob/main/docs/filters.md)
 (`SupportsSingular`), the collection collapses to a zero-to-one response — the
-first match or `null`, never an array, never paginated (core ADR 0039). The
+first match or `null`, never an array, never paginated. The
 example app's `artists` declares a singular `slug` filter; `GET
 /artists?filter[slug]=radiohead` renders a single resource, and a no-match renders
 `data: null` ([`ReadQueryTest`](../examples/music-catalog-symfony/tests/ReadQueryTest.php)).
@@ -623,7 +621,7 @@ So the handler:
 3. after hydration, sets each named association through
    `mutateRelationship(… Mode::Replace, flush: false)` so the persister resolves
    the linkage ids to managed references / stored objects;
-4. lets the single `create()`/`update()` own the commit (ADR 0018).
+4. lets the single `create()`/`update()` own the commit.
 
 A whole-resource write that embeds relationships is exercised in
 [`RelationshipMutationTest`](../examples/music-catalog-symfony/tests/RelationshipMutationTest.php).
@@ -655,7 +653,7 @@ off the `Server`. This is the capstone seam that lets the engine stay generic ov
 **both** a full `AbstractResource` and a **bare serializer/hydrator pair** — the
 resource-less [standalone capabilities](capability-composition.md#the-three-standalone-attributes)
 registered with just a serializer and hydrator and no field inventory — without
-per-type branching (ADR 0021).
+per-type branching.
 
 ```php
 public function resourceFor(Server $server, string $type): ?AbstractResource

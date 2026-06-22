@@ -44,7 +44,7 @@ GET /{type}/{id}:  serving → AfterFetchOne
 GET /{type}:       serving → AfterFetchCollection
 ```
 
-`serving` is a **server-level** gate (core ADR 0050) fired once per request inside
+`serving` is a **server-level** gate fired once per request inside
 `Server::dispatch()`, *before* the operation runs — the natural place for a
 request-wide authorization gate. The aggregate `BeforeSave` / `AfterSave` pair
 wraps **both** create and update (a `creating` flag distinguishes them), so a

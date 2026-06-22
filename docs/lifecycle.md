@@ -32,7 +32,7 @@ The priorities matter. `RequestListener` runs at **4**, *after* Symfony's
 the route defaults (`_jsonapi_type`, `_jsonapi_server`, …) are populated on the
 request — *and after the Security Firewall* (priority 8), so an authenticated token
 is already in the token storage when the listener dispatches the operation. That
-ordering is load-bearing: the declarative-authorization layer (ADR 0043) evaluates
+ordering is load-bearing: the declarative-authorization layer evaluates
 `is_granted()` at the lifecycle hooks the dispatch fires, so the firewall must have
 authenticated first. `ExceptionListener` runs at **128**, high enough to win over
 Symfony's own error handling on a JSON:API route. The error listener is the subject
