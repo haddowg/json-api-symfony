@@ -110,7 +110,24 @@ final class PlaylistResource extends AbstractResource implements ResourceLifecyc
             // ManyToMany straight off the entity associations. `tracks` is a PLAIN
             // join table, so it carries no pivot data (see `orderedTracks` below for
             // the pivot-bearing variant).
+            //
+            // `owner` targets the admin-only `users` type — the full record. The
+            // `users` resource lives on the `admin` server, so this linkage points at
+            // a type a default-server client cannot dereference; it is the
+            // privileged-surface owner reference.
             BelongsTo::make('owner')->type('users'),
+            // The **one-entity-two-types** witness: a SECOND relation reading the SAME
+            // `owner` ManyToOne column (`storedAs('owner')`) but declaring its target as
+            // the curated `public-profiles` type ({@see PublicProfileResource}, the same
+            // User entity exposed as a public view). A monomorphic relation renders its
+            // targets as the declared type regardless of what else the entity could be,
+            // so `publicOwner` linkage is `{type: public-profiles, id}` and
+            // `?include=publicOwner` expands the User as a public profile (display name
+            // only) — on the default server, where `users` is not exposed. This is the
+            // public-facing owner reference; `owner` above is the admin one. Choosing a
+            // relationship's target type is exactly `->type('…')`. See
+            // `docs/resources.md` ("One entity, two resource types").
+            BelongsTo::make('publicOwner')->type('public-profiles')->storedAs('owner'),
             BelongsToMany::make('tracks')
                 ->type('tracks')
                 ->paginate(PagePaginator::make()->withDefaultPerPage(2))

@@ -186,6 +186,95 @@ becomes a route, the per-capability defaults — is owned by [routing](routing.m
 and [capability-composition](capability-composition.md); the attribute here is just
 where you declare it.
 
+## One entity, two resource types
+
+A resource type and the entity behind it are **not** one-to-one. The same entity (or
+in-memory domain object) can back **two or more** resource types, each with its own
+`type`, fields, and serializer — the same record presented as different *views*. The
+classic case is a curated public profile alongside a full admin record:
+
+```php
+// The full view — admin-only, every field.
+#[AsJsonApiResource(entity: User::class, server: 'admin')]
+final class UserResource extends AbstractResource
+{
+    public static string $type = 'users';
+
+    public function fields(): array
+    {
+        return [
+            Id::make(),
+            Str::make('displayName')->required(),
+            Email::make('email')->required(),   // private
+            Date::make('birthDate')->nullable(), // private
+            // …
+        ];
+    }
+}
+
+// The curated view — same entity, public, display name only.
+#[AsJsonApiResource(
+    entity: User::class,
+    operations: [Operation::FetchCollection, Operation::FetchOne], // read-only
+)]
+final class PublicProfileResource extends AbstractResource
+{
+    public static string $type = 'public-profiles';
+
+    public function fields(): array
+    {
+        return [
+            Id::make(),
+            Str::make('displayName')->required(),
+            // email / birthDate / … are simply NOT declared here
+        ];
+    }
+}
+```
+
+Both resources name `User::class`. The bundle's `type → entity` map is keyed by
+**type**, so two types mapping to one entity is fine — the compile-time guard only
+rejects one *type* mapping to two different entities (see
+[doctrine § Activation: the entity map](doctrine.md#activation-the-entity-map)). A type is always supplied by
+**context**: the route resolves it for primary data (`/public-profiles/1` is a
+`public-profiles`, `/admin/users/1` is a `users`), and a relation's declaration
+resolves it for linkage (below). There is no reverse `entity → type` map, so the same
+`User` row renders as `public-profiles` under one route and `users` under another,
+each its own serializer and field inventory.
+
+The curation is the **field inventory**, not a runtime filter: a field the curated
+view does not declare cannot be resurfaced by a sparse fieldset, an `?include`, or a
+relationship — `fields[public-profiles]=email` is rejected (the member is unknown to
+that type), and `email` simply never renders. Pair the narrower view with an
+[operation allow-list](#the-operation-allow-list) (e.g. read-only) and a
+[server assignment](#server-assignment) (the public view on the default server, the
+full view admin-only) to keep the privileged surface separate.
+
+### Choosing a relationship's target type
+
+A relation declares the resource type it points at with `->type('…')`. A monomorphic
+relation (one declared type) renders its targets as **that** type, regardless of what
+else the entity could be. So a relation can deliberately point at the *curated* view
+of an entity that is also exposed in full:
+
+```php
+// On the playlist: its owner, as the public profile (not the admin `users` type).
+BelongsTo::make('publicOwner')->type('public-profiles')->storedAs('owner'),
+```
+
+`storedAs('owner')` reads the same `owner` association the entity already has, but the
+linkage, the `relationships`/`related` endpoints, and `?include=publicOwner` all render
+the owner as `public-profiles` — the curated view — while a sibling
+`BelongsTo::make('owner')->type('users')` off the same column points at the full type.
+You choose the view per relation; the declared type wins.
+
+The worked case lives in the example app: `PublicProfileResource` is the
+`public-profiles` view of the `User` entity (admin-only `UserResource` is the full
+`users` view), and `PlaylistResource` declares `publicOwner → public-profiles` beside
+`owner → users` — exercised end-to-end in
+[`MultiTypeEntityTest`](../examples/music-catalog-symfony/tests/MultiTypeEntityTest.php)
+and as dual-provider conformance in `tests/Functional/MultiTypeEntityConformanceTestCase.php`.
+
 ## `$type` vs `$uriType`
 
 A resource's JSON:API **type** (the `type` member in every document) and its **URL

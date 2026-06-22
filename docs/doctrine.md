@@ -70,6 +70,15 @@ These are all `\LogicException` at container build, never request-time errors:
 
 Source: [`DoctrineEntityMapPass`](../src/DependencyInjection/Compiler/DoctrineEntityMapPass.php).
 
+The map is keyed by **type**, so **two (or more) resource types may map to the one
+entity** — a full view and a curated view of the same record, for instance. The only
+mapping fault is the *reverse*: one type mapping to two different entities (the last
+row above). With two types over one entity, the Doctrine provider resolves each type
+to the same entity class and reads the same row by id — the type is supplied by the
+route (primary data) or the relation's declared `->type('…')` (linkage), never derived
+from the entity. See [resources § One entity, two resource types](resources.md#one-entity-two-resource-types)
+for the worked `users` / `public-profiles` pair and choosing a relation's target view.
+
 ## The read pipeline
 
 `DoctrineDataProvider` answers `fetchOne` and `fetchCollection` over the
