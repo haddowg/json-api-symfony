@@ -125,7 +125,9 @@ docker compose up   # from examples/music-catalog-symfony/
 curl -H 'Accept: application/vnd.api+json' http://localhost:8080/albums
 ```
 
-It then serves on **http://localhost:8080**.
+It then serves on **http://localhost:8080**, including **interactive OpenAPI docs
+(Swagger UI) at <http://localhost:8080/docs>** — the raw OpenAPI 3.1 document is at
+`/docs.json`.
 
 ## Documentation
 

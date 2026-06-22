@@ -775,3 +775,20 @@ composer test     # PHPUnit — includes the example suite
 composer phpstan  # PHPStan level 9 over src + tests + examples
 composer cs-check # PHP-CS-Fixer, PER-CS 2.0
 ```
+
+## Serving it live
+
+The app ships a [FrankenPHP](https://frankenphp.dev/) container with a seeded SQLite
+database, so you can drive the real API — and browse its generated **OpenAPI docs** —
+from a browser or `curl`. From this directory:
+
+```bash
+docker compose up
+```
+
+| URL | What it serves |
+| --- | --- |
+| <http://localhost:8080/docs> | **Interactive OpenAPI docs** (Swagger UI) for the `default` server |
+| `http://localhost:8080/docs.json` | the raw OpenAPI 3.1 document |
+| `http://localhost:8080/admin/docs.json` | the `admin` server's document (a second JSON:API server) |
+| `http://localhost:8080/albums` | the JSON:API endpoints — e.g. `curl -H 'Accept: application/vnd.api+json' http://localhost:8080/albums` |
