@@ -159,7 +159,7 @@ route loader stamps that requirement on every route carrying `{id}`, so a **malf
 id `404`s at routing** before any handler runs. A type with **no** encoder is
 unchanged (wire == storage), and the **in-memory** provider has no encoder at all, so
 encoding is a Doctrine-only concern — encoders are entirely user-supplied (no encoder
-dependency is added to the bundle). See [ADR 0038](adr/0038-doctrine-layer-decodes-encoded-resource-ids.md).
+dependency is added to the bundle).
 
 ## Eager-loading includes (no N+1)
 
@@ -209,11 +209,7 @@ rename is honoured.
 The batching runs through the same provider-agnostic
 [`fetchRelatedCollectionBatch()`](../src/DataProvider/DataProviderInterface.php) seam
 that windowed related collections use, so it works on the in-memory provider too (an idempotent
-re-assignment that changes no rendered bytes). See
-[ADR 0062](adr/0062-load-plain-includes-through-the-batched-related-fetch.md) (which
-folded plain-include loading onto the batched related-fetch and removed the external
-preloader) and ADRs [0035](adr/0035-doctrine-include-batch-preloading.md) /
-[0061](adr/0061-batch-windowed-related-collections-in-one-query-per-relation.md); the
+re-assignment that changes no rendered bytes). The
 witness is [`IncludePreloadTest`](../examples/music-catalog-symfony/tests/IncludePreloadTest.php).
 
 ### Eager-loaded flattened (`on()`) attributes
@@ -258,8 +254,7 @@ A flattened-attribute **write** (`PATCH` setting `authorName`, or a multi-hop
 `authorCountry`) mutates the loaded **final** related model in place; Doctrine's unit of
 work auto-persists the dirty loaded entity on flush (no related-persister change). A write
 over a **null** hop is a `422` (`RELATED_ATTRIBUTE_OWNER_MISSING`) — a flattened attribute
-never auto-instantiates a missing related model. See
-[ADR 0085](adr/0085-eager-loading-multi-hop-flattened-on-attributes.md).
+never auto-instantiates a missing related model.
 
 ### Windowed includes (`window_functions`)
 
@@ -268,8 +263,8 @@ A *plain* include loads the whole related set (the fast-path above). Under the
 parent's included to-many relation to page 1 (e.g. the 5 newest comments per post). The
 provider runs that as ONE bounded native `ROW_NUMBER() OVER (PARTITION BY parent
 ORDER BY …)` query per relation — fetching only ~one page **per parent** plus the
-**real** per-parent total (`COUNT(*) OVER`), never the parent's whole set (bundle ADR
-0065). The result is bounded even though the engine scans the partition, and the total
+**real** per-parent total (`COUNT(*) OVER`), never the parent's whole set. The result
+is bounded even though the engine scans the partition, and the total
 is the true cardinality — so the relationship-pagination total (and any `?withCount`
 overlap) is correct, not the page size.
 
@@ -301,11 +296,9 @@ A **filtered** windowed include (`relatedQuery[<rel>][filter][…]`) runs as ONE
 native query too: the inner scoped query carries the relatedQuery filter through the same
 DQL filter executor the related-collection endpoint runs, then is wrapped with the window
 functions — so a filtered windowed include is also one bounded query on `on`, with the
-**filtered** per-parent total (bundle ADR 0066). Only a related type with a **query
+**filtered** per-parent total. Only a related type with a **query
 extension** (or `window_functions: false`) takes the per-parent bounded fallback. See
-[pagination → windowed includes](pagination.md#windowed-includes-are-bounded-window_functions),
-[ADR 0065](adr/0065-bound-windowed-includes-with-a-row-number-batch-query.md), and
-[ADR 0066](adr/0066-fold-filtered-windowed-includes-onto-the-native-batch.md).
+[pagination → windowed includes](pagination.md#windowed-includes-are-bounded-window_functions).
 
 ## The write pipeline
 
@@ -351,7 +344,7 @@ the linkage costs depends on the relation's *owning side*:
   initialises it. So a create / replace / add / remove of an inverse one-to-many is
   O(linkage size).
 
-This is an **accepted limitation** (bundle ADR 0072), not a bug: re-pointing N managed
+This is an **accepted limitation**, not a bug: re-pointing N managed
 children through the ORM inherently needs them managed (the unit of work tracks each
 FK change), and the only O(1) alternative — a bulk `UPDATE … WHERE id IN (...)` —
 bypasses the unit of work and the children's lifecycle/cascade events. It only matters
@@ -381,7 +374,7 @@ not a resource flag.
 
 On create, the persister builds a blank instance via
 `ClassMetadata::newInstance()` — the same constructor-less mechanism the ORM uses
-to hydrate entities on read (ADR 0029). So entities with **required constructor
+to hydrate entities on read. So entities with **required constructor
 arguments** work under the generic engine without a custom persister:
 
 ```php
@@ -406,8 +399,6 @@ property to an empty `ArrayCollection` before applying embedded relationships, s
 whole-resource create that sets a to-many does not hit an "accessed before
 initialization" `\Error`.) An app that needs the constructor to run overrides
 `instantiate()` via a custom persister.
-
-See [ADR 0029](adr/0029-doctrine-constructor-less-instantiation.md).
 
 ## Filter translation to DQL
 
@@ -501,7 +492,7 @@ Source: [`DoctrineFilterHandler`](../src/DataProvider/Doctrine/DoctrineFilterHan
 
 Three filters keep a row by what its *relationships* contain, never by a column on
 the row itself. All three execute as the single correlated `EXISTS` subquery
-described above (ADR 0069 generalised the one builder), so they share its
+described above, so they share its
 properties: no fetch-join, no row multiplication, and free composition with linkage
 / `?include` / the relationQuery profile.
 
@@ -509,8 +500,8 @@ properties: no fetch-join, no row multiplication, and free composition with link
   and match rows whose named association has (`WhereHas`) or lacks
   (`WhereDoesntHave`) at least one related row.
 
-- **`WhereThrough`** — **dotted-path traversal**, the constrained-existence filter
-  (core ADR 0063, bundle ADR 0069). `WhereThrough::make('artist.name')` responds to
+- **`WhereThrough`** — **dotted-path traversal**, the constrained-existence filter.
+  `WhereThrough::make('artist.name')` responds to
   `filter[artist.name]` and keeps a row whose `artist`'s `name` matches — an
   **EXISTS-ANY** semi-join. Every intermediate segment is a relationship (to-one or
   to-many, both translate identically as "there exists a … whose …") and the final
@@ -565,8 +556,7 @@ properties: no fetch-join, no row multiplication, and free composition with link
   is consumed by the closure, not compared by a declared operator, so `constraints()`
   returns `[]`). Reach for it only when `WhereThrough` cannot express the predicate.
 
-See [ADR 0069](adr/0069-generalise-the-exists-builder-and-add-wherehasmatching.md) for
-the full decision and [relationships.md](relationships.md) for relationship-endpoint
+See [relationships.md](relationships.md) for relationship-endpoint
 context.
 
 ## Sort translation to DQL
@@ -589,7 +579,7 @@ Source: [`DoctrineSortHandler`](../src/DataProvider/Doctrine/DoctrineSortHandler
 The built-in handlers cover the core vocabulary; for a **custom** `FilterInterface`
 or `SortInterface` of your own, register an **arm** — a small service the handler
 consults for value objects it does not recognise, before raising
-`UnsupportedFilter`/`UnsupportedSort` (bundle ADR 0083, core ADR 0078). No need to
+`UnsupportedFilter`/`UnsupportedSort`. No need to
 replace the whole provider.
 
 - A [`DoctrineFilterArmInterface`](../src/DataProvider/Doctrine/DoctrineFilterArmInterface.php)
@@ -693,7 +683,7 @@ For a related to-many endpoint (`GET /{type}/{id}/{rel}`), the provider's
 `fetchRelatedCollection` scopes the **related** entity's query to the parent
 *without loading the whole collection* — so `?filter`/`?sort`/`?page` apply against
 the related type's vocabulary, and pagination windows in SQL. There are two
-branches (ADR 0031):
+branches:
 
 - **FK fast-path** — a single-valued *inverse* association (the OneToMany case,
   where the related entity carries the owning foreign key). Scoped directly by that
@@ -740,10 +730,10 @@ When a `belongsToMany` relation declares pivot fields — as real field definiti
 Doctrine provider reads those join-table values and exposes them: rendered as
 per-member `meta.pivot`, **sortable** as a zero-config `?sort` vocabulary on the
 related endpoint (`?sort=position` auto-derives from the field), and — writable by
-default — **settable from the linkage `meta`** (ADR 0046).
+default — **settable from the linkage `meta`**.
 
 A pivot **filter**, by contrast, is **author-declared**, not auto-derived (a
-behaviour change from ADR 0045 — bundle ADR 0067, a minor bump). To filter on a pivot
+behaviour change, a minor bump). To filter on a pivot
 column, add a `Where` (or any value filter) to the relation's `withFilters()` whose
 target column is **`pivot.`-prefixed**:
 
@@ -835,9 +825,9 @@ declaration, the rendered shape and the write convention.
 
 ## The load-state seam
 
-`DoctrineRelationshipLoadState` powers a relation's lazy-linkage policy (ADR 0015 —
-wired into core through `Server::withRelationshipLoadState()`). A to-many and a
-`HasOne` are **lazy by default** (core ADR 0067); it answers, **without triggering a
+`DoctrineRelationshipLoadState` powers a relation's lazy-linkage policy (wired into
+core through `Server::withRelationshipLoadState()`). A to-many and a
+`HasOne` are **lazy by default**; it answers, **without triggering a
 load**, whether such a relation's linkage is already in memory, so a lazy relation
 can omit its `data` member rather than force a lazy round-trip just to render
 identifiers:
@@ -864,8 +854,7 @@ a non-entity model the `EntityManager` does not manage) is treated as loaded, so
 the predicate never changes behaviour for a relation it cannot reason about. In
 non-Doctrine apps the seam is absent and core treats every relation as loaded.
 
-Source: [`DoctrineRelationshipLoadState`](../src/Serializer/Doctrine/DoctrineRelationshipLoadState.php),
-[ADR 0015](adr/0015-relationship-linkage-load-state-is-a-storage-aware-predicate.md).
+Source: [`DoctrineRelationshipLoadState`](../src/Serializer/Doctrine/DoctrineRelationshipLoadState.php).
 The lazy-linkage rendering convention (and the `withData()` eager opt-in) is core's —
 link [relations](https://github.com/haddowg/json-api/blob/main/docs/relations.md).
 

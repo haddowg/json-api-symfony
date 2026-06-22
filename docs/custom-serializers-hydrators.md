@@ -39,7 +39,7 @@ writes still hydrate from the fields), while
 overrides only its hydrator (writes run through
 [`PlaylistHydrator`](../examples/music-catalog-symfony/src/Hydrator/PlaylistHydrator.php),
 reads still serialize from the fields). The two compose per type — the override is
-never global (bundle [ADR 0023](adr/0023-custom-serializer-hydrator-per-resource.md)).
+never global.
 
 When you override, the resource's declared fields become **inert for that direction**:
 the override owns the I/O, and the generic engine drives reads/writes through it
@@ -155,7 +155,7 @@ where you are choosing between an override and a standalone pair:
 A standalone serializer with no resource has no static `$uriType` to read, so its URL
 segment falls back to its `getType()` unless it implements core's
 `UriTypeAwareInterface` — `ChartSerializer` does, returning `'charts'` from
-`uriType()` (bundle [ADR 0024](adr/0024-standalone-serializer-hydrator-capability.md)).
+`uriType()`.
 
 ## `uriType` — a URL segment distinct from the type
 
@@ -163,8 +163,7 @@ A type's JSON:API `type` member and its **URL path segment** are separate. By de
 they are identical; `uriType` lets them differ — a plural URL for a singular type
 (`/books` for type `book`), or a kebab-cased path. `uriType` is a **core** static on
 `AbstractResource` (`public static string $uriType`); this page owns its
-**route/Location consequences in the bundle** (bundle
-[ADR 0022](adr/0022-per-resource-uri-type-segment.md), referencing core ADR 0031).
+**route/Location consequences in the bundle**.
 
 ```php
 final class BookResource extends AbstractResource
@@ -232,8 +231,7 @@ final class AuditingOperationHandler implements OperationHandlerInterface
 This works because the [`ServerFactory`](../src/Server/ServerFactory.php) injects the
 handler **by service id** (`service(CrudOperationHandler::class)`) and calls
 `withHandler()` with it; Symfony's decoration swaps that id transparently, so every
-server picks up the decorator with no extra wiring (bundle
-[ADR 0028](adr/0028-handler-override-via-service-decoration.md)). Reproduce core's
+server picks up the decorator with no extra wiring. Reproduce core's
 `OperationHandlerInterface::handle()` exactly: a single `JsonApiOperationInterface`
 argument and the closed union of six response value objects above (dispatch on the
 operation type with `instanceof`, as [`CrudOperationHandler`](../src/Operation/CrudOperationHandler.php)

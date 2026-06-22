@@ -69,7 +69,7 @@ asserts:
 
 ### Load-state-aware linkage
 
-A to-many (and a `HasOne`) is **lazy by default** (core ADR 0067), rendering the
+A to-many (and a `HasOne`) is **lazy by default**, rendering the
 convention links **without** forcing a fetch; `withData()` opts one back to eager.
 On the Doctrine path the bundle backs the lazy default with a storage-aware
 load-state seam (`DoctrineRelationshipLoadState`, owned by
@@ -117,7 +117,7 @@ A to-one is not a collection, so it does not paginate or sort — but it can car
 relation-scoped `?filter` that decides whether its target is **rendered at all**. Give
 a to-one relation a `withFilters(...)` over a column on its related type, and the
 filter applies as a predicate on the target: when it **excludes** the target, the
-to-one renders `data: null` instead of the resource (bundle ADR 0068). A `200` with
+to-one renders `data: null` instead of the resource. A `200` with
 `data: null`, never a `404` — the relationship exists, the filter just matched nothing.
 
 [`AlbumResource`](../examples/music-catalog-symfony/src/Resource/AlbumResource.php)
@@ -161,15 +161,15 @@ The custom-provider seams behind this are `relatedToOneMatches()` /
 [`DataProviderInterface`](../src/DataProvider/DataProviderInterface.php) (returning
 `false` nulls the target; the batched twin answers a whole page of parents at once so
 an include does not N+1); the feature is monomorphic — a `MorphTo` to-one is out of
-scope (ADR 0068). The
+scope. The
 [`RelationshipReadTest`](../examples/music-catalog-symfony/tests/RelationshipReadTest.php)
 and [`RelationshipQueriesProfileTest`](../examples/music-catalog-symfony/tests/RelationshipQueriesProfileTest.php)
 witness all three surfaces on Doctrine.
 
 ### Counting relations (`countable()` and `?withCount`)
 
-Mark a to-many relation `countable()` to opt it into counting (off by default,
-core ADR 0057; bundle ADR 0052). The count is pushed down (never materialising the
+Mark a to-many relation `countable()` to opt it into counting (off by default). The
+count is pushed down (never materialising the
 collection) and **batched** across a page of parents (one grouped count per
 relation, no N+1):
 
@@ -215,10 +215,10 @@ Counting is exposed two ways, both on the `total` meta key:
 > with `withCount()` on the relation's paginator. The related-endpoint `_self_` count is
 > gated by the **relation's** `countable()` (not the related-type resource's): core's
 > document gate is relation-aware on a related render via the relation's countability
-> threaded through `RelatedResponse` (core ADR 0068 / bundle ADR 0075).
+> threaded through `RelatedResponse`.
 
 **`?withCount` counts the relation's filtered set.** The count reflects the SAME
-filters the related-collection endpoint applies (bundle ADR 0060): a relation's own
+filters the related-collection endpoint applies: a relation's own
 `filters()`, the related resource's filter **defaults**, and any
 `relatedQuery[<rel>][filter]` the request carries through the Relationship Queries
 profile. So `?withCount=tracks` of a relation whose related resource defaults
@@ -339,7 +339,7 @@ GET /albums/1?include=tracks&rQ[tracks][sort]=duration
   reserved query family is safe.
 
 The window only fires for a relationship whose linkage **`data` actually renders** in
-this document (bundle ADR 0086): a relation that is `?include`d at the primary level
+this document: a relation that is `?include`d at the primary level
 (default-includes honoured) **or** one that renders data unconditionally (`withData()`).
 A **lazy, links-only, not-included** to-many (the default — it renders convention links
 without forcing a fetch, see [Load-state-aware linkage](#load-state-aware-linkage)) is
@@ -357,7 +357,7 @@ selects the page. On a **collection** include (`GET /albums?include=tracks`) eac
 parent's relationship is windowed to its own page 1 independently. Each to-many maps
 to a distinct association, so this is unambiguous; if two relations alias one storage
 column with different pagination, the rendered linkage is last-writer-wins on that
-column (bundle ADR 0053).
+column.
 
 Includes are **batch-loaded built in** — no extra dependency. The effective include
 tree is loaded one query per relation per level (no `1 + N`) on both providers,
@@ -463,7 +463,6 @@ Two boundaries set it apart from `WhereThrough`:
 
 Both `WhereThrough` and `WhereHasMatching` share the one `EXISTS` builder in
 [`DoctrineFilterHandler`](../src/DataProvider/Doctrine/DoctrineFilterHandler.php); see
-[ADR 0069](adr/0069-generalise-the-exists-builder-and-add-wherehasmatching.md) and
 [doctrine.md](doctrine.md) for the DQL detail.
 
 ## Pivot (`belongsToMany`) data
@@ -540,8 +539,7 @@ Use it for a join column you want to query by but not expose.
 > **Filter / sort asymmetry.** A pivot **sort** auto-derives from `fields()` —
 > `?sort=position` works with no further declaration. A pivot **filter** must be
 > declared explicitly via `withFilters()` (a sort is a single well-defined ordering; a
-> filter spans operators, sets and null checks the author must choose). See
-> [ADR 0067](adr/0067-author-declared-pivot-filters-via-a-pivot-column-prefix.md).
+> filter spans operators, sets and null checks the author must choose).
 
 > **Migration (breaking change).** Declaring a pivot field no longer
 > auto-exposes a zero-config `filter[<field>]` equality. An app that relied on it must
@@ -646,8 +644,7 @@ relationship-endpoint `POST`/`PATCH` and the whole-resource `POST`/`PATCH` alike
   are a representative membership row. To render every membership, model the
   membership as its own resource instead.
 
-See [ADR 0045](adr/0045-belongs-to-many-pivot-data-over-an-association-entity.md)
-(read) and [ADR 0046](adr/0046-writable-belongs-to-many-pivot-fields.md) (write), and
+See
 [doctrine.md](doctrine.md#belongstomany-pivot-data) for the query, resolver and
 association-entity-diff detail.
 
@@ -759,7 +756,7 @@ existing relationship is gated.
 
 `cannotAdd()`/`cannotRemove()` have **no embedded analogue**: an embedded write is always
 a full set, never an incremental `POST`-add or `DELETE`-remove, so those two gates apply
-only at the `…/relationships/{rel}` endpoint (bundle ADR 0084).
+only at the `…/relationships/{rel}` endpoint.
 
 ## Per-relation endpoint exposure
 
@@ -768,7 +765,7 @@ A relation can suppress individual endpoints. The exposure flags themselves are
 the relationship routes stay parametric (one route per shape, emitted once per
 type), so suppression cannot live in routing. The handler maps each flag to a
 JSON:API error, and core already omits the convention link to a suppressed
-endpoint, so a rendered `self`/`related` link never points at a 404 (ADR 0027):
+endpoint, so a rendered `self`/`related` link never points at a 404:
 
 | Flag (core, on the relation) | Request affected | Bundle result |
 |------------------------------|------------------|---------------|
@@ -793,7 +790,7 @@ mismatch (a `POST`/`DELETE` against a to-one) is a separate `400`
 `?include` is a compound-document amplifier — a deeply nested path or a
 default-include cascade can walk the relationship graph without bound, and a
 default-include pointing back at its own type (or a mutual pair) loops the renderer
-forever. Three composing **include safeguards** (bundle ADR 0037) bound it. All three
+forever. Three composing **include safeguards** bound it. All three
 live in **core** (an opt-in `IncludeControlsInterface` the transformer reads via
 `instanceof`, plus a relation-level wither); the bundle supplies the opinionated depth
 default and makes the built-in include batcher respect them.
@@ -855,7 +852,7 @@ single declared type. Core's `PolymorphicSerializer` and per-object resolution
 own the rendering
 ([core related-endpoints](https://github.com/haddowg/json-api/blob/main/docs/related-endpoints.md));
 the bundle wires the data path and splits responsibility between the two
-providers (ADR 0032).
+providers.
 
 ### Polymorphic to-one (`MorphTo`)
 
@@ -973,13 +970,12 @@ client input.
 > flattenable; use `?include` to materialise a collection), and the rule applies to every
 > segment of a multi-hop chain, not just the leaf. A chain naming an **unknown relation** (a
 > typo) also throws, so it never silently no-ops. A segment may be `hidden()` or visible —
-> both are valid, because the chain is to-one. See
-> [ADR 0085](adr/0085-eager-loading-multi-hop-flattened-on-attributes.md).
+> both are valid, because the chain is to-one.
 
 ## Relations without a resource
 
 Relations are a standalone capability: you can declare a type's relations with no
-`AbstractResource` (ADR 0026). Put `#[AsJsonApiRelations(type: …)]` on a class
+`AbstractResource`. Put `#[AsJsonApiRelations(type: …)]` on a class
 implementing [`RelationsProviderInterface`](../src/Server/RelationsProviderInterface.php) —
 its `relations(): array` returns the type's `RelationInterface` list:
 

@@ -31,7 +31,7 @@ is the constant `JsonApiRouteLoader::ROUTE_TYPE === 'jsonapi'`.
 The `resource:` argument is **not a path or glob** — the types come from the
 compiled descriptors built at container-build time by `ResourceLocatorPass`, not by
 scanning a directory. But the argument is not ignored either: it **names the
-server** (bundle ADR 0034). The bare `.` (or empty, or the literal `default`) import
+server**. The bare `.` (or empty, or the literal `default`) import
 emits the **`default`** server's routes; any other non-empty string names a
 configured server and emits that server's routes:
 
@@ -162,7 +162,7 @@ two never drift.
 ## The per-server route-name scheme
 
 When you run more than one server, the same type may be exposed on several of them,
-so route names must not collide. The scheme (bundle ADR 0034):
+so route names must not collide. The scheme:
 
 - The **`default`** server keeps the unprefixed names from the tables above —
   `jsonapi.{type}.{action}`.

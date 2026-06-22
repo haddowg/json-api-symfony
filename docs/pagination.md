@@ -92,7 +92,7 @@ window **each parent's** included to-many relation to page 1 (e.g. the 5 newest
 comments per post). The Doctrine provider runs this as ONE bounded native
 `ROW_NUMBER() OVER (PARTITION BY parent …)` query per relation — fetching only ~one
 page **per parent** and the **real** per-parent total (not the page size), instead of
-loading every parent's whole related set and slicing in PHP (bundle ADR 0065).
+loading every parent's whole related set and slicing in PHP.
 
 > [!IMPORTANT]
 > The default (`json_api.doctrine.window_functions: true`) requires SQL window
@@ -114,7 +114,7 @@ loading every parent's whole related set and slicing in PHP (bundle ADR 0065).
 
 A **filtered** windowed include (`relatedQuery[<rel>][filter][…]`) runs as ONE bounded
 native query as well, carrying the relatedQuery filter through the same DQL filter
-executor the related endpoint uses (bundle ADR 0066). Only a related type with a query
+executor the related endpoint uses. Only a related type with a query
 extension (soft-delete / tenant / published-only) — or `window_functions: false` — takes
 the per-parent bounded fallback. Either way the fetch is bounded; plain (un-windowed)
 includes use the `WHERE fk IN (…)` fast-path and are unaffected. See
@@ -125,7 +125,7 @@ includes use the `WHERE fk IN (…)` fast-path and are unaffected. See
 The fourth strategy,
 [`CursorPaginator`](https://github.com/haddowg/json-api/blob/main/docs/pagination.md#the-four-strategies),
 pages by an opaque **cursor** rather than a page number or offset, executed as a
-real **keyset (seek) window** on both providers (bundle ADR 0063). It is the
+real **keyset (seek) window** on both providers. It is the
 strategy to reach for on a large, deep, or live collection: a cursor page never
 computes a total (so there is no `COUNT`), and it does not skip-and-scan rows the
 way an `OFFSET` does, so a deep page costs the same as a shallow one and a row
@@ -310,7 +310,7 @@ columns, so it is the only place the mismatch is visible) and are byte-identical
 both providers. The fix for a stale cursor is to restart paging from the first page
 under the new sort. Note the staleness check pins **direction**, not just the column
 set: flipping `?sort=category` to `?sort=-category` while reusing a cursor is stale,
-because the cursor was minted under the opposite order (bundle ADR 0064).
+because the cursor was minted under the opposite order.
 
 ## No pagination (fetch-all)
 

@@ -275,8 +275,7 @@ what is rendered (requested `?include` **or** a resource's
 `getDefaultIncludedRelationships()` fallback when none is sent). It degrades to a
 lazy load for any relation it cannot batch (polymorphic, computed, composite-key).
 See [Eager-loading includes](doctrine.md#eager-loading-includes-no-n1) on the
-Doctrine page and
-[ADR 0062](adr/0062-load-plain-includes-through-the-batched-related-fetch.md).
+Doctrine page.
 
 Reach for an extension's eager-load join only for a relation you always want loaded
 **regardless of `?include`** (a join the serializer or your own code needs on every

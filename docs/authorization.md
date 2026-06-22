@@ -1,6 +1,6 @@
 # Declarative authorization: security expressions on a resource
 
-The bundle ships an optional **declarative authorization** layer (bundle ADR 0043):
+The bundle ships an optional **declarative authorization** layer:
 a resource declares Symfony Security
 [expressions](https://symfony.com/doc/current/security/expressions.html) on its
 `#[AsJsonApiResource]` attribute, and the bundle evaluates them at the right
@@ -147,7 +147,7 @@ Both render as `application/vnd.api+json` with the standard `errors[].status` /
 ## Request-aware predicates: lightweight per-caller authz
 
 Separate from the firewall/voter path, the **field and relation builders** carry a
-family of request-aware predicates (core ADRs 0079/0080) — a learnable, uniform way
+family of request-aware predicates — a learnable, uniform way
 to say "this field/verb is restricted *for this caller*" without writing a voter or
 an expression. Each predicate is a closure that returns **`true` when the restriction
 applies**, and the family is consistent across reading, writing and relationships:
@@ -186,8 +186,7 @@ the predicates for per-field visibility and per-caller verb gating, and the
 >
 > **Scope.** The predicates run on the write-document and read/render/include paths.
 > Filter-side and entity-level `when()` conditions, pivot-field visibility and
-> Map-child visibility are out of scope (they pass a `null` request / stay static) —
-> see [bundle ADR 0084](adr/0084-request-aware-predicates-executing-the-core-resolvers.md).
+> Map-child visibility are out of scope (they pass a `null` request / stay static).
 
 ## Two equivalent layers
 

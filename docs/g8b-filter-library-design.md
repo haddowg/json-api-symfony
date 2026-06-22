@@ -1,7 +1,7 @@
 # G8b — ready-made filter library — design spec
 
 > Scratch design doc (untracked, like the OpenAPI/g13/g21 ones). Committed record =
-> ADRs (core 0075+, bundle 0082+) + a docs/filtering section. Status: **agreed with
+> a docs/filtering section. Status: **agreed with
 > Greg 2026-06-19**, pending build.
 
 ## 1. Goal
@@ -113,13 +113,11 @@ arm to emit the deepObject param.
 
 - **Slice 1 — core.** All convenience filter VOs + coercion + value schemas; `starts`/`ends`
   operators + `Range`/`DateRange` in-memory apply; dual-direction + footgun-coercion tests
-  (prove `'18' > '5'` is numeric). *Core ADR 0075 (convenience filter library), 0076
-  (Range structured-value filter) if split.*
+  (prove `'18' > '5'` is numeric).
 - **Slice 2 — bundle.** Doctrine arms for the new operators + `Range`; the OpenAPI deepObject
   param projection + per-strategy descriptions; example-app filters (a `Contains` search, a
   `Range` price, a `DateRange`) + dual-provider functional + an N+1/query-budget check on
-  `Range` (two predicates, one query); docs/filtering section. *Bundle ADR 0082 (Doctrine
-  filter strategies + OpenAPI), 0083 if split.*
+  `Range` (two predicates, one query); docs/filtering section.
 
 ## 9. Acceptance
 
