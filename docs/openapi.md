@@ -57,6 +57,11 @@ All paths are configurable (`json_api.openapi.json.path`, `…ui.path`). The doc
 served as `application/json`; it is **not** a JSON:API route, so it carries no
 `application/vnd.api+json` negotiation.
 
+> **Try it live.** The `examples/music-catalog-symfony` app serves these routes. Run
+> `docker compose up` in that directory, then open **<http://localhost:8080/docs>** for
+> the Swagger UI (raw document at `/docs.json`; the `admin` server's document at
+> `/admin/docs.json`).
+
 ### Exposure: the docs routes
 
 The HTTP routes are **auto-exposed when `kernel.debug`** is true (your dev environment)
