@@ -196,6 +196,14 @@ final class ResourceValidator
             }
         }
 
+        // Before any per-field format checking, reject a relationship linkage whose
+        // resource `type` is not among the relation's declared related types — a
+        // resource-type conflict, the linkage twin of core's create-path
+        // ResourceTypeUnacceptable (a `409`). A wrong type pre-empts the `422` format
+        // bag below (reporting an id-format violation against a type the relation
+        // cannot accept is incoherent — the type is the conflict), so it throws here.
+        $this->guardRelationshipTypes($resource, $data);
+
         // A client-supplied `data.id` is validated against the owning resource's id
         // format (the same constraints `uuid()`/`ulid()`/`numeric()`/`pattern()`
         // declare) — the create-direction of the format helper, before core decodes
@@ -286,6 +294,12 @@ final class ResourceValidator
         Mode $mode = Mode::Replace,
         array $existingPivot = [],
     ): void {
+        // Before the id-format bag, reject a linkage whose resource `type` is not an
+        // accepted related type of the relation — a `409` resource-type conflict (the
+        // linkage twin of core's create-path ResourceTypeUnacceptable). A wrong type
+        // pre-empts the format check, so it throws here.
+        $this->guardEndpointRelationshipTypes($relation, $linkage);
+
         $errors = [];
 
         $isPivot = $mode !== Mode::Remove && $relation instanceof BelongsToMany && $relation->pivotFields() !== [];
@@ -429,6 +443,175 @@ final class ResourceValidator
             title: 'Unprocessable Entity',
             detail: (string) $violations->get(0)->getMessage(),
             source: ErrorSource::fromPointer($this->pointers->forRelationshipEndpointLinkageId($index)),
+        );
+    }
+
+    /**
+     * Rejects any relationship linkage in a **whole-resource write** body whose
+     * resource `type` is not an accepted related type of its relation, raising a
+     * `409` {@see RelationshipTypeUnacceptable} carrying one pointer-bearing
+     * {@see Error} per offending linkage (`/data/relationships/<rel>/data[/<n>]/type`).
+     *
+     * The accepted set is the relation's declared {@see RelationInterface::relatedTypes()}:
+     * a monomorphic relation declares one type, a polymorphic ({@see \haddowg\JsonApi\Resource\Field\MorphTo})
+     * one its full inverse set — so a polymorphic linkage matching *any* declared type
+     * is accepted. A relation that declares **no** related type accepts any type (the
+     * set is open), so it is left unchecked. An absent or non-string `type` is core's
+     * concern (presence/shape is the hydrator's), not this conflict guard's; a `null`
+     * to-one linkage (clearing) carries no identifier to check.
+     *
+     * @param array<string, mixed> $data the write body's `data` member
+     *
+     * @throws RelationshipTypeUnacceptable when a linkage names an unacceptable type
+     */
+    private function guardRelationshipTypes(AbstractResource $resource, array $data): void
+    {
+        $relationships = $data['relationships'] ?? null;
+        if (!\is_array($relationships) || $relationships === []) {
+            return;
+        }
+
+        $errors = [];
+        foreach ($resource->fields() as $field) {
+            if (!$field instanceof RelationInterface || $field->relatedTypes() === []) {
+                continue; // a relation with no declared related type accepts any type
+            }
+
+            $name = $field->name();
+            $relationship = $relationships[$name] ?? null;
+            if (!\is_array($relationship) || !\array_key_exists('data', $relationship)) {
+                continue;
+            }
+
+            $linkage = $relationship['data'];
+            if ($field->isToMany()) {
+                if (!\is_array($linkage)) {
+                    continue;
+                }
+                foreach (\array_values($linkage) as $index => $member) {
+                    $error = $this->linkageTypeError($field, $member, $this->pointers->forLinkageType($name, $index));
+                    if ($error !== null) {
+                        $errors[] = $error;
+                    }
+                }
+
+                continue;
+            }
+
+            // A null to-one linkage clears the relationship — there is no type to check.
+            if ($linkage === null) {
+                continue;
+            }
+            $error = $this->linkageTypeError($field, $linkage, $this->pointers->forLinkageType($name, null));
+            if ($error !== null) {
+                $errors[] = $error;
+            }
+        }
+
+        if ($errors === []) {
+            return;
+        }
+
+        throw new RelationshipTypeUnacceptable($errors);
+    }
+
+    /**
+     * Rejects a **relationship-mutation endpoint** linkage
+     * (`PATCH`/`POST`/`DELETE …/relationships/<rel>`) whose resource `type` is not an
+     * accepted related type of the relation — the endpoint twin of
+     * {@see guardRelationshipTypes()}. The body root *is* the relationship here, so a
+     * violation points at `/data/type` (to-one) or `/data/<n>/type` (to-many). A
+     * relation with no declared related type accepts any type (left unchecked); an
+     * empty (clearing) linkage carries no identifier.
+     *
+     * @throws RelationshipTypeUnacceptable when a linkage names an unacceptable type
+     */
+    private function guardEndpointRelationshipTypes(RelationInterface $relation, ToOneRelationship|ToManyRelationship $linkage): void
+    {
+        if ($relation->relatedTypes() === []) {
+            return; // a relation with no declared related type accepts any type
+        }
+
+        $errors = [];
+        if ($linkage instanceof ToOneRelationship) {
+            $identifier = $linkage->resourceIdentifier;
+            if ($identifier !== null) {
+                $error = $this->endpointLinkageTypeError($relation, $identifier->type, $this->pointers->forRelationshipEndpointLinkageType(null));
+                if ($error !== null) {
+                    $errors[] = $error;
+                }
+            }
+        } else {
+            foreach ($linkage->resourceIdentifiers as $index => $identifier) {
+                $error = $this->endpointLinkageTypeError($relation, $identifier->type, $this->pointers->forRelationshipEndpointLinkageType($index));
+                if ($error !== null) {
+                    $errors[] = $error;
+                }
+            }
+        }
+
+        if ($errors === []) {
+            return;
+        }
+
+        throw new RelationshipTypeUnacceptable($errors);
+    }
+
+    /**
+     * The `409` {@see Error} for a whole-resource-write linkage member whose resource
+     * `type` is not in the relation's declared related types, or `null` when the type
+     * is acceptable / there is nothing to check. The member must be an array carrying a
+     * non-empty string `type`; presence/shape otherwise is core's concern.
+     *
+     * @param array<mixed, mixed>|mixed $member the raw linkage member (`{type, id, meta?}`)
+     */
+    private function linkageTypeError(RelationInterface $relation, mixed $member, string $pointer): ?Error
+    {
+        if (!\is_array($member)) {
+            return null;
+        }
+
+        $type = $member['type'] ?? null;
+        if (!\is_string($type) || $type === '') {
+            return null; // presence/shape is core's concern, not this conflict guard's
+        }
+
+        return $this->typeConflictError($relation, $type, $pointer);
+    }
+
+    /**
+     * The `409` {@see Error} for a relationship-endpoint linkage whose resource `type`
+     * is not in the relation's declared related types, or `null` when the type is
+     * acceptable / absent (an empty `type` is left to core).
+     */
+    private function endpointLinkageTypeError(RelationInterface $relation, string $type, string $pointer): ?Error
+    {
+        if ($type === '') {
+            return null; // presence/shape is core's concern, not this conflict guard's
+        }
+
+        return $this->typeConflictError($relation, $type, $pointer);
+    }
+
+    /**
+     * The `409` resource-type-conflict {@see Error} for a linkage `type` that is not in
+     * the relation's accepted related types, or `null` when it is. Mirrors core's
+     * create-path {@see \haddowg\JsonApi\Exception\ResourceTypeUnacceptable} status and
+     * code (`409` / `RESOURCE_TYPE_UNACCEPTABLE`) for consistency, with the pointer
+     * locating the offending relationship linkage.
+     */
+    private function typeConflictError(RelationInterface $relation, string $type, string $pointer): ?Error
+    {
+        if (\in_array($type, $relation->relatedTypes(), true)) {
+            return null;
+        }
+
+        return new Error(
+            status: '409',
+            code: 'RESOURCE_TYPE_UNACCEPTABLE',
+            title: 'Resource type is unacceptable',
+            detail: \sprintf("Resource type '%s' is unacceptable for relationship '%s'!", $type, $relation->name()),
+            source: ErrorSource::fromPointer($pointer),
         );
     }
 

@@ -52,6 +52,23 @@ final class JsonPointerBuilder
     }
 
     /**
+     * The pointer for a violation on a relationship **linkage** `type`: the to-one
+     * linkage points at `/data/relationships/<rel>/data/type`, and a to-many member
+     * at `/data/relationships/<rel>/data/<index>/type` (the index supplied for a
+     * to-many element, omitted for a to-one). Locates the offending linkage when its
+     * resource `type` is not an accepted related type of the relation.
+     */
+    public function forLinkageType(string $relation, ?int $index = null): string
+    {
+        $base = '/data/relationships/' . $this->encodeSegment($relation) . '/data';
+        if ($index !== null) {
+            $base .= '/' . $index;
+        }
+
+        return $base . '/type';
+    }
+
+    /**
      * The pointer for a violation on a linkage id at a **relationship-mutation
      * endpoint** (`PATCH`/`POST`/`DELETE …/relationships/<rel>`), where the request
      * body root *is* the relationship object: a to-one points at `/data/id`, a
@@ -60,6 +77,17 @@ final class JsonPointerBuilder
     public function forRelationshipEndpointLinkageId(?int $index = null): string
     {
         return $index === null ? '/data/id' : '/data/' . $index . '/id';
+    }
+
+    /**
+     * The pointer for a violation on a linkage `type` at a **relationship-mutation
+     * endpoint** (`PATCH`/`POST`/`DELETE …/relationships/<rel>`), where the request
+     * body root *is* the relationship object: a to-one points at `/data/type`, a
+     * to-many member at `/data/<index>/type` (the index omitted for a to-one).
+     */
+    public function forRelationshipEndpointLinkageType(?int $index = null): string
+    {
+        return $index === null ? '/data/type' : '/data/' . $index . '/type';
     }
 
     /**

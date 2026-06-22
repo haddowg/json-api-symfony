@@ -690,6 +690,19 @@ named relation, guards mutability, parses the linkage with core's body parser,
 then calls the persister's `DataPersister::mutateRelationship()` seam (the
 six-arg signature lives in [data-layer.md](data-layer.md)).
 
+Before the persister runs, the linkage's resource **type** is checked against the
+relation's declared related type(s). A `{ "type": T, "id": X }` whose `T` is not an
+accepted inverse type — a `BelongsTo('author')->type('authors')` sent a
+`{ "type": "comments" }` linkage — is a **`409 Conflict`**
+(`RESOURCE_TYPE_UNACCEPTABLE`), the linkage twin of the resource-type conflict core
+already returns for a `POST /{type}` whose `data.type` does not match the endpoint.
+A polymorphic relation (`->types('notes', 'images')`) accepts any of its declared
+types; a relation that declares **no** related type accepts any type. The same check
+covers a relationship embedded in a whole-resource write (the error then points at
+`/data/relationships/{rel}/data/type`). This is distinct from the **cardinality**
+guard (a to-one sent an array → `400`), which is about the linkage *shape*, not the
+resource type of its identifiers.
+
 The persister resolves the linkage's identifier ids to the actual related
 objects/references — the Doctrine reference to a managed reference + FK write, the
 in-memory provider to the stored object via its `$relatedResolver`. An empty
