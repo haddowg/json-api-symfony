@@ -46,7 +46,7 @@ class ConstrainedFilterArticleResource extends BaseArticleResource
             // constrained `commentId` filter so the related-collection endpoint has a
             // constrained relation filter to validate.
             if ($field instanceof HasMany && $field->name() === 'comments') {
-                $field = HasMany::make('comments')->type('comments')
+                $field = HasMany::make('comments', 'comments')
                     ->withFilters(Where::make('commentId', 'id')->integer());
             }
 
@@ -57,7 +57,7 @@ class ConstrainedFilterArticleResource extends BaseArticleResource
             // #2). A mistyped value (via `?filter[authorId]`, `relatedQuery[author][filter]`,
             // or the include path) is the endpoint's same 400.
             if ($field instanceof BelongsTo && $field->name() === 'author') {
-                $field = BelongsTo::make('author')->type('authors')
+                $field = BelongsTo::make('author', 'authors')
                     ->withFilters(Where::make('authorId', 'id')->integer());
             }
 

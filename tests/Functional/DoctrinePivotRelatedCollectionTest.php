@@ -225,8 +225,7 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
         // typed pivot column (a DateTime/bool would bind the raw request string; an int
         // survives only via DQL's type coercion). The filter KEY is independent of the
         // column: `addedAfter` filters `pivot.addedAt`, resolved by column.
-        $relation = BelongsToMany::make('tracks')
-            ->type('tracks')
+        $relation = BelongsToMany::make('tracks', 'tracks')
             ->fields(
                 Integer::make('position')->required()->min(1),
                 DateTime::make('addedAt')->readOnly(),

@@ -44,8 +44,8 @@ final class ProductResource extends AbstractResource
             Id::make(),
             Str::make('name')->sortable()->required()->minLength(2)->maxLength(120),
             Str::make('status')->sortable()->enum(CatalogStatus::class),
-            BelongsTo::make('category')->type('categories'),
-            HasMany::make('tags')->type('categories')->storedAs('tagIds'),
+            BelongsTo::make('category', 'categories'),
+            HasMany::make('tags', 'categories')->storedAs('tagIds'),
         ];
     }
 

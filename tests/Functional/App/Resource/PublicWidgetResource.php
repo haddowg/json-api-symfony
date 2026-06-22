@@ -26,7 +26,7 @@ final class PublicWidgetResource extends AbstractResource
         return [
             Id::make(),
             Str::make('name'),
-            BelongsTo::make('related')->type('public-widgets'),
+            BelongsTo::make('related', 'public-widgets'),
         ];
     }
 }

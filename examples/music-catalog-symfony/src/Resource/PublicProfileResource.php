@@ -22,7 +22,7 @@ use haddowg\JsonApiBundle\Operation\Operation;
  * one entity, so both `users` and `public-profiles` resolve the same row through
  * the same provider (the Doctrine reference here, the in-memory witness in the
  * bundle's dual-provider conformance suite). A type is always supplied by context —
- * the route for primary data, a relation's `->type('…')` declaration for linkage —
+ * the route for primary data, a relation's `make()` type declaration for linkage —
  * so the same `User` is rendered as `users` under `/admin/users/1` and as
  * `public-profiles` under `/public-profiles/1`, each its own fields and serializer.
  *

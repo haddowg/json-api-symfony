@@ -8,7 +8,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\MultiType;
  * A plain domain model fed to the in-memory provider for the
  * multi-type-per-entity conformance suite. Its to-one `author` points at a
  * {@see Member}, but the `posts` resource declares the relation's target as the
- * CURATED `public-members` type (`->type('public-members')`) — so the linkage and
+ * CURATED `public-members` type (the `make()` type `'public-members'`) — so the linkage and
  * any include render the author as the public view, not the full `members` type.
  *
  * `posts` is writable, so a relationship mutation (`PATCH …/relationships/author`)

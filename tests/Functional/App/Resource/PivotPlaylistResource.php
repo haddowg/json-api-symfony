@@ -27,8 +27,7 @@ final class PivotPlaylistResource extends AbstractResource
         return [
             Id::make(),
             Str::make('name'),
-            BelongsToMany::make('tracks')
-                ->type('tracks')
+            BelongsToMany::make('tracks', 'tracks')
                 ->fields(Integer::make('position')),
         ];
     }

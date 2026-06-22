@@ -25,7 +25,7 @@ final class ArticleResource extends BaseArticleResource
     {
         return [
             ...parent::fields(),
-            BelongsTo::make('editor')->type('authors')->storedAs('author')->withoutLinks(),
+            BelongsTo::make('editor', 'authors')->storedAs('author')->withoutLinks(),
         ];
     }
 }

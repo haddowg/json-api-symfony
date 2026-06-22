@@ -48,11 +48,11 @@ final class GizmoResource extends AbstractResource
         return [
             Id::make(),
             Str::make('name'),
-            BelongsTo::make('author')->type('authors'),
-            BelongsTo::make('secretAuthor')->type('authors')->storedAs('author')->withoutRelatedEndpoint(),
-            BelongsTo::make('hiddenAuthor')->type('authors')->storedAs('author')->withoutRelationshipEndpoint(),
-            HasMany::make('comments')->type('comments'),
-            HasMany::make('lockedComments')->type('comments')->storedAs('comments')->cannotAdd(),
+            BelongsTo::make('author', 'authors'),
+            BelongsTo::make('secretAuthor', 'authors')->storedAs('author')->withoutRelatedEndpoint(),
+            BelongsTo::make('hiddenAuthor', 'authors')->storedAs('author')->withoutRelationshipEndpoint(),
+            HasMany::make('comments', 'comments'),
+            HasMany::make('lockedComments', 'comments')->storedAs('comments')->cannotAdd(),
         ];
     }
 }

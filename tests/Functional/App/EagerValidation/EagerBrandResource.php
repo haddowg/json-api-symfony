@@ -26,7 +26,7 @@ final class EagerBrandResource extends AbstractResource
         return [
             Id::make(),
             Str::make('name'),
-            BelongsTo::make('region')->type('regions'),
+            BelongsTo::make('region', 'regions'),
         ];
     }
 }

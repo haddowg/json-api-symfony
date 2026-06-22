@@ -17,7 +17,7 @@ use Doctrine\ORM\Mapping as ORM;
  * `OneToMany` to this entity, this entity carries the pivot columns plus a
  * `ManyToOne` back to the parent and a `ManyToOne` to the far {@see Track}, and the
  * resource declares the relation as
- * `BelongsToMany::make('orderedTracks')->fields(Integer::make('position')->required()->min(1), Integer::make('weight')->compareWith('position', Comparison::GreaterThanOrEqual), DateTime::make('addedAt')->readOnly())`.
+ * `BelongsToMany::make('orderedTracks', 'tracks')->fields(Integer::make('position')->required()->min(1), Integer::make('weight')->compareWith('position', Comparison::GreaterThanOrEqual), DateTime::make('addedAt')->readOnly())`.
  *
  * `position` is a **required-on-create** writable field and `weight` a second
  * writable field constrained `weight >= position` — together they back the

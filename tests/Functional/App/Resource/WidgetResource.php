@@ -24,7 +24,7 @@ final class WidgetResource extends AbstractResource
         return [
             Id::make(),
             Str::make('name'),
-            BelongsTo::make('color')->type('colors'),
+            BelongsTo::make('color', 'colors'),
         ];
     }
 }

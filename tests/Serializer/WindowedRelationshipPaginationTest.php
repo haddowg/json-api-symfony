@@ -64,7 +64,7 @@ final class WindowedRelationshipPaginationTest extends TestCase
 
     private function relation(string $name): RelationInterface
     {
-        return HasMany::make($name)->type($name);
+        return HasMany::make($name, $name);
     }
 
     private function request(): JsonApiRequestInterface

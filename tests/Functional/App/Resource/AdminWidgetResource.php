@@ -25,7 +25,7 @@ final class AdminWidgetResource extends AbstractResource
         return [
             Id::make(),
             Str::make('name'),
-            BelongsTo::make('related')->type('admin-widgets'),
+            BelongsTo::make('related', 'admin-widgets'),
         ];
     }
 }

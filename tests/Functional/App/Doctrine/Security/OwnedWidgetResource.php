@@ -32,7 +32,7 @@ final class OwnedWidgetResource extends AbstractResource
             Id::make(),
             Str::make('name'),
             Str::make('owner'),
-            BelongsTo::make('parent')->type('ownedWidgets')->nullable(),
+            BelongsTo::make('parent', 'ownedWidgets')->nullable(),
         ];
     }
 }

@@ -75,11 +75,11 @@ abstract class BaseFlattenBookResource extends AbstractResource
             // Hidden backing relation: the idiomatic "internal association" — never a
             // rendered relationship, but eager-loaded for the flattened read. It backs
             // both `authorName` and the first hop of the multi-hop `authorCountry`.
-            BelongsTo::make('author')->type('authors')->hidden(),
+            BelongsTo::make('author', 'authors')->hidden(),
             // The VISIBLE backing relation for the flattened `editorName`: it renders as
             // a relationship and can be associated in a write body, so a same-body write
             // exercises the relationship-before-flatten hydration order.
-            BelongsTo::make('editor')->type('authors'),
+            BelongsTo::make('editor', 'authors'),
         ];
     }
 }

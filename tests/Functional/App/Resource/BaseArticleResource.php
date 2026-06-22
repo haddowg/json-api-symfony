@@ -137,7 +137,7 @@ abstract class BaseArticleResource extends AbstractResource
             // to-many `comments`. Core reads the related objects off the model
             // (`$model->author` / `$model->comments`) and emits resource-identifier
             // linkage via the serializer registered for each related type.
-            BelongsTo::make('author')->type('authors'),
+            BelongsTo::make('author', 'authors'),
             // The to-many `comments` relation also declares its OWN scoped filter
             // and sort (core ADR 0051), available ONLY on
             // `GET /articles/{id}/comments` — never the primary `/comments`
@@ -150,7 +150,7 @@ abstract class BaseArticleResource extends AbstractResource
             // the flip to per-type defaults, core ADR 0067): it is the always-emitting
             // regression baseline its data-presence assertions rely on, distinct from
             // the lazy `lazyComments`/`pinnedComments` witnesses below.
-            HasMany::make('comments')->type('comments')
+            HasMany::make('comments', 'comments')
                 ->withData()
                 ->withFilters(Where::make('commentBody', 'body', 'like'))
                 ->withSorts(SortByField::make('recent', 'id')),
@@ -162,7 +162,7 @@ abstract class BaseArticleResource extends AbstractResource
             // Marked countable() (bundle ADR 0052) so its related-collection endpoint
             // computes the total and emits `meta.page.total` + a `last` link, and
             // `?withCount=pagedComments` activates the relationship-object `meta.total`.
-            HasMany::make('pagedComments')->type('comments')->storedAs('comments')->paginate(PagePaginator::make())->countable(),
+            HasMany::make('pagedComments', 'comments')->storedAs('comments')->paginate(PagePaginator::make())->countable(),
             // A unidirectional many-to-many to `authors` (the `editors` property),
             // exercising the Doctrine subquery-scoped related collection: the
             // parent association is owning-side with no single-valued inverse, so
@@ -170,13 +170,13 @@ abstract class BaseArticleResource extends AbstractResource
             // Paginated, so the endpoint witnesses page/filter/sort over the
             // subquery. Countable so its endpoint still emits a total over the
             // subquery scope (bundle ADR 0052).
-            HasMany::make('editors')->type('authors')->storedAs('editors')->paginate(PagePaginator::make())->countable(),
+            HasMany::make('editors', 'authors')->storedAs('editors')->paginate(PagePaginator::make())->countable(),
             // A countable, paginated inverse-FK to-many over the UNIQUE `pinnedComments`
             // column (no other relation shares it), so the windowed-include batch (bundle
             // ADR 0065) asserts per-parent order + the REAL total on the inverse-FK shape
             // without the shared-column last-writer-wins boundary the `comments`-backed
             // relations carry.
-            HasMany::make('pinnedComments')->type('comments')->storedAs('pinnedComments')->paginate(PagePaginator::make())->countable()
+            HasMany::make('pinnedComments', 'comments')->storedAs('pinnedComments')->paginate(PagePaginator::make())->countable()
                 ->withFilters(Where::make('bodyContains', 'body', 'like')),
             // Load-aware relationships under the lazy default (core ADR 0067) so the
             // storage-aware load-state predicate decides whether `data` is emitted.
@@ -193,8 +193,8 @@ abstract class BaseArticleResource extends AbstractResource
             // plain fetch and the lazy default omits its `data` (links only) unless
             // the relationship is included (include-wins). In-memory has no
             // predicate, so it always emits.
-            BelongsTo::make('lazyAuthor')->type('authors')->storedAs('author'),
-            HasMany::make('lazyComments')->type('comments')->storedAs('featuredComments'),
+            BelongsTo::make('lazyAuthor', 'authors')->storedAs('author'),
+            HasMany::make('lazyComments', 'comments')->storedAs('featuredComments'),
             // Mutability variants (Phase 3 S3): relationship-endpoint mutation
             // guards. `lockedAuthor` reuses the `author` property but forbids
             // replacement (a PATCH to its endpoint is FullReplacementProhibited);
@@ -202,8 +202,8 @@ abstract class BaseArticleResource extends AbstractResource
             // (a DELETE to its endpoint is RemovalProhibited). They read identically
             // to `author`/`comments`, so they don't perturb the read assertions —
             // only the mutation guards exercise them.
-            BelongsTo::make('lockedAuthor')->type('authors')->storedAs('author')->cannotReplace(),
-            HasMany::make('lockedComments')->type('comments')->storedAs('comments')->cannotRemove(),
+            BelongsTo::make('lockedAuthor', 'authors')->storedAs('author')->cannotReplace(),
+            HasMany::make('lockedComments', 'comments')->storedAs('comments')->cannotRemove(),
             // A SECOND `withData()` to-many over the SAME `comments` backing column as
             // the `comments` relation above — so the two are CO-WINDOWED on one column,
             // each addressed by its OWN relatedQuery filter and each rendering its own
@@ -211,14 +211,14 @@ abstract class BaseArticleResource extends AbstractResource
             // filter key (`flaggedBody`, a contains-match on the comment body) so the
             // two co-windowed relations are filtered to DIFFERENT subsets of the shared
             // membership, witnessing no cross-contamination on either provider.
-            HasMany::make('flaggedComments')->type('comments')->storedAs('comments')
+            HasMany::make('flaggedComments', 'comments')->storedAs('comments')
                 ->withData()
                 ->withFilters(Where::make('flaggedBody', 'body', 'like')),
             // Read-only relationship (security): reuses the `author` association but
             // is declared readOnly(), so a whole-resource write that names it is
             // silently skipped — a server-assigned association can't be overwritten
             // through the write body (the gate core enforces, reapplied bundle-side).
-            BelongsTo::make('readOnlyAuthor')->type('authors')->storedAs('author')->readOnly(),
+            BelongsTo::make('readOnlyAuthor', 'authors')->storedAs('author')->readOnly(),
         ];
     }
 

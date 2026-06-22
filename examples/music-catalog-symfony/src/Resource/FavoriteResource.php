@@ -43,13 +43,12 @@ final class FavoriteResource extends AbstractResource
 
             // Default relation reader: `user` reads the ManyToOne straight off the
             // entity.
-            BelongsTo::make('user')->type('users'),
+            BelongsTo::make('user', 'users'),
             // The polymorphic to-one: a custom relation resolver reads the resolved
             // `favoritable` member off the entity (the provider fills it from the
             // targetType/targetId pair). This is the one and only extractUsing in the
             // example — the natural place a polymorphic to-one needs a custom resolver.
-            MorphTo::make('favoritable')
-                ->types('tracks', 'albums', 'artists')
+            MorphTo::make('favoritable', ['tracks', 'albums', 'artists'])
                 ->extractUsing(static fn(mixed $favorite): ?object => $favorite instanceof Favorite ? $favorite->favoritable : null),
         ];
     }

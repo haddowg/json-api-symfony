@@ -42,7 +42,7 @@ final class CogResource extends AbstractResource
                 ->encodeUsing(new HexIdEncoder())
                 ->matchAs('cog-[0-9a-f]+'),
             Str::make('name')->required(),
-            BelongsTo::make('parent')->type('cogs')->nullable(),
+            BelongsTo::make('parent', 'cogs')->nullable(),
         ];
     }
 

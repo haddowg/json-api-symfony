@@ -17,7 +17,7 @@ use haddowg\JsonApi\Resource\Field\Str;
  * fieldset or include can resurface them; the curation IS the field inventory.
  *
  * This is the second resource type backed by the one entity. It is also the relation
- * target the `posts` resource declares (`BelongsTo author ->type('public-members')`):
+ * target the `posts` resource declares (`BelongsTo::make('author', 'public-members')`):
  * a monomorphic relation renders its targets as the declared type, so a post's author
  * is identified as `public-members` even though the same Member is also a `members`.
  */
