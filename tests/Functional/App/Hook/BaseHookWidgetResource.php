@@ -24,7 +24,7 @@ abstract class BaseHookWidgetResource extends AbstractResource
             Id::make(),
             Str::make('name'),
             Str::make('stamp'),
-            BelongsTo::make('owner')->type('hookOwners'),
+            BelongsTo::make('owner', 'hookOwners'),
         ];
     }
 }

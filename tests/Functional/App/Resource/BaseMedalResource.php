@@ -29,7 +29,7 @@ abstract class BaseMedalResource extends AbstractResource
         return [
             Id::make(),
             Str::make('title'),
-            HasMany::make('badges')->type('badges')->withData()->readOnly(),
+            HasMany::make('badges', 'badges')->withData()->readOnly(),
         ];
     }
 }

@@ -69,9 +69,8 @@ final class TrackResource extends AbstractResource
             // the ManyToMany straight off the entity associations. `playlists` is a
             // PLAIN join table — it carries no pivot data; the pivot-bearing variant
             // is the playlists resource's `orderedTracks` relation.
-            BelongsTo::make('album')->type('albums'),
-            BelongsToMany::make('playlists')
-                ->type('playlists')
+            BelongsTo::make('album', 'albums'),
+            BelongsToMany::make('playlists', 'playlists')
                 ->cannotReplace()
                 // Countable (bundle ADR 0052) so the server-default-fallback related
                 // endpoint still emits a total — the existing example asserts one.

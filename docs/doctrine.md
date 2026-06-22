@@ -75,7 +75,7 @@ entity** — a full view and a curated view of the same record, for instance. Th
 mapping fault is the *reverse*: one type mapping to two different entities (the last
 row above). With two types over one entity, the Doctrine provider resolves each type
 to the same entity class and reads the same row by id — the type is supplied by the
-route (primary data) or the relation's declared `->type('…')` (linkage), never derived
+route (primary data) or the relation's declared `make()` type (linkage), never derived
 from the entity. See [resources § One entity, two resource types](resources.md#one-entity-two-resource-types)
 for the worked `users` / `public-profiles` pair and choosing a relation's target view.
 
@@ -747,8 +747,7 @@ column, add a `Where` (or any value filter) to the relation's `withFilters()` wh
 target column is **`pivot.`-prefixed**:
 
 ```php
-BelongsToMany::make('orderedTracks')
-    ->type('tracks')
+BelongsToMany::make('orderedTracks', 'tracks')
     ->fields(Integer::make('position'), Integer::make('weight'))
     ->withFilters(
         Where::make('position', 'pivot.position'),   // filter[position] on the join column
@@ -853,8 +852,7 @@ identifiers:
 The example's albums→tracks relation relies on the lazy default — no opt-in needed:
 
 ```php
-HasMany::make('tracks')
-    ->type('tracks')
+HasMany::make('tracks', 'tracks')
     ->paginate(PagePaginator::make()->withDefaultPerPage(2)),
 ```
 

@@ -54,7 +54,7 @@ final class ProductResource extends AbstractResource
             // A self-referential to-one: its linkage id is itself an encoded
             // `products` wire id, so a relationship write decodes it (keyed by the
             // related type, `products`) before resolving the reference.
-            BelongsTo::make('parent')->type('products')->nullable(),
+            BelongsTo::make('parent', 'products')->nullable(),
         ];
     }
 }

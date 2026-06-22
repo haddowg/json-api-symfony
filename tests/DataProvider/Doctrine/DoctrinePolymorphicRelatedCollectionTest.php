@@ -30,7 +30,7 @@ final class DoctrinePolymorphicRelatedCollectionTest extends TestCase
     {
         // A real MorphToMany over two types: its relatedTypes() is ['notes','images'],
         // so the guard fires before any EntityManager use.
-        $relation = MorphToMany::make('items')->types('notes', 'images');
+        $relation = MorphToMany::make('items', ['notes', 'images']);
 
         // Stubs, not mocks: the guard throws before touching either collaborator,
         // so there is nothing to configure or verify (and a mock without
@@ -64,7 +64,7 @@ final class DoctrinePolymorphicRelatedCollectionTest extends TestCase
         // to-many's members span entity classes, so they cannot be one grouped
         // COUNT — the guard fires before any EntityManager use, so a host supplies a
         // custom provider to count across types.
-        $relation = MorphToMany::make('items')->types('notes', 'images');
+        $relation = MorphToMany::make('items', ['notes', 'images']);
 
         $provider = new DoctrineDataProvider(
             $this->createStub(EntityManagerInterface::class),

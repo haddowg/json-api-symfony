@@ -48,8 +48,7 @@ final class DoctrinePlaylistResource extends AbstractResource
         return [
             Id::make(),
             Str::make('name'),
-            BelongsToMany::make('tracks')
-                ->type('tracks')
+            BelongsToMany::make('tracks', 'tracks')
                 ->through(PlaylistTrackEntity::class)
                 // `position` is a WRITABLE pivot field (settable from the linkage
                 // meta, with a min(1) constraint); `weight` is a second WRITABLE int
@@ -94,8 +93,7 @@ final class DoctrinePlaylistResource extends AbstractResource
             // entity, left NON-countable. Its related collection paginates with no
             // COUNT — no meta.page.total, no `last` — exactly as the plain non-countable
             // path does, proving the universal countable() gate reaches the pivot path.
-            BelongsToMany::make('orderedTracks')
-                ->type('tracks')
+            BelongsToMany::make('orderedTracks', 'tracks')
                 ->through(PlaylistTrackEntity::class)
                 ->fields(
                     Integer::make('position')->required()->min(1),

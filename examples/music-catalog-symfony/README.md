@@ -270,7 +270,7 @@ related-collection endpoint `GET /{type}/{id}/{rel}` — never the primary
 `/{relatedType}` collection. `AlbumResource`'s `tracks` relation is the witness:
 
 ```php
-HasMany::make('tracks')->type('tracks')
+HasMany::make('tracks', 'tracks')
     ->withFilters(Where::make('longerThan', 'length_seconds', '>'))
     ->withSorts(SortByField::make('duration', 'length_seconds'));
 ```
@@ -311,7 +311,7 @@ Counting is **off by default**; this example marks `albums.tracks`,
 
 ```php
 // AlbumResource
-HasMany::make('tracks')->type('tracks')->countable();
+HasMany::make('tracks', 'tracks')->countable();
 ```
 
 A countable relation surfaces a total two ways, both keyed `total`
@@ -497,7 +497,7 @@ Doctrine provider**:
 Where::make('explicit')->asBoolean()->default(false)->boolean(),
 
 // related collection — AlbumResource's relation-scoped tracks filter (an int column)
-HasMany::make('tracks')->type('tracks')
+HasMany::make('tracks', 'tracks')
     ->withFilters(Where::make('longerThan', 'length_seconds', '>')->integer()),
 ```
 
@@ -617,7 +617,7 @@ bare `playlist_track` join table, **no** pivot columns), it declares a second
 [`PlaylistEntry`](src/Entity/PlaylistEntry.php) association entity:
 
 ```php
-BelongsToMany::make('orderedTracks')->type('tracks')
+BelongsToMany::make('orderedTracks', 'tracks')
     ->fields(
         Integer::make('position')->required()->min(1),               // writable, required-on-create
         Integer::make('weight')->compareWith('position', Comparison::GreaterThanOrEqual), // cross-pivot rule

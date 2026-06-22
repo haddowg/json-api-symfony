@@ -22,8 +22,8 @@ final class PostRelations implements RelationsProviderInterface
     public function relations(): array
     {
         return [
-            BelongsTo::make('author')->type('authors'),
-            HasMany::make('comments')->type('comments'),
+            BelongsTo::make('author', 'authors'),
+            HasMany::make('comments', 'comments'),
         ];
     }
 }

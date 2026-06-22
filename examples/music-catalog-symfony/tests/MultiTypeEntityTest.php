@@ -24,7 +24,7 @@ use Symfony\Component\Routing\RouterInterface;
  * row through the same Doctrine provider. The seeded "Morning Mix" playlist (owned
  * by Ada) declares two relations off its single `owner` column — `owner` → `users`
  * and `publicOwner` → `public-profiles` — proving a relation chooses its target type
- * with `->type('…')`.
+ * with the `make()` type `'…'`.
  */
 #[Group('spec:fetching')]
 final class MultiTypeEntityTest extends MusicCatalogKernelTestCase
@@ -115,7 +115,7 @@ final class MultiTypeEntityTest extends MusicCatalogKernelTestCase
     #[Group('spec:fetching-relationships')]
     public function aRelationshipTargetingTheCuratedTypeRendersThatTypesLinkage(): void
     {
-        // The playlist's `publicOwner` relation declares `->type('public-profiles')`,
+        // The playlist's `publicOwner` relation declares the `make()` type `'public-profiles'`,
         // so its linkage identifies the curated type — even though the same `owner`
         // column also backs the `owner` → `users` relation.
         $relationships = $this->relationshipsOf($this->fetchResource('/playlists/' . self::PLAYLIST));

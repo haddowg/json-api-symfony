@@ -60,7 +60,7 @@ final class ArtistResource extends AbstractResource
             Id::make(),
             Str::make('name')->required()->maxLength(120)->sortable(),
             // …
-            HasMany::make('albums')->type('albums'), // lazy by default
+            HasMany::make('albums', 'albums'), // lazy by default
         ];
     }
 }
@@ -252,20 +252,21 @@ full view admin-only) to keep the privileged surface separate.
 
 ### Choosing a relationship's target type
 
-A relation declares the resource type it points at with `->type('…')`. A monomorphic
+A relation declares the resource type it points at as the mandatory second argument
+to `make()`. A monomorphic
 relation (one declared type) renders its targets as **that** type, regardless of what
 else the entity could be. So a relation can deliberately point at the *curated* view
 of an entity that is also exposed in full:
 
 ```php
 // On the playlist: its owner, as the public profile (not the admin `users` type).
-BelongsTo::make('publicOwner')->type('public-profiles')->storedAs('owner'),
+BelongsTo::make('publicOwner', 'public-profiles')->storedAs('owner'),
 ```
 
 `storedAs('owner')` reads the same `owner` association the entity already has, but the
 linkage, the `relationships`/`related` endpoints, and `?include=publicOwner` all render
 the owner as `public-profiles` — the curated view — while a sibling
-`BelongsTo::make('owner')->type('users')` off the same column points at the full type.
+`BelongsTo::make('owner', 'users')` off the same column points at the full type.
 You choose the view per relation; the declared type wins.
 
 The worked case lives in the example app: `PublicProfileResource` is the

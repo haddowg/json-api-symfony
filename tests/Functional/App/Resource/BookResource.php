@@ -30,7 +30,7 @@ final class BookResource extends AbstractResource
             // on an id-less create, mirroring a database auto-increment (core ADR 0048).
             Id::make(),
             Str::make('title')->required(),
-            BelongsTo::make('related')->type('book'),
+            BelongsTo::make('related', 'book'),
         ];
     }
 }

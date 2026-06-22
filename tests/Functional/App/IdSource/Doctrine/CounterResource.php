@@ -28,7 +28,7 @@ final class CounterResource extends AbstractResource
         return [
             Id::make(),
             Str::make('label')->required(),
-            BelongsTo::make('marker')->type('markers')->nullable(),
+            BelongsTo::make('marker', 'markers')->nullable(),
         ];
     }
 }

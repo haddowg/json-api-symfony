@@ -477,8 +477,8 @@ final class ArticleResource extends AbstractResource
         return [
             Id::make(),
             Str::make('title'),
-            BelongsTo::make('author')->type('people')->description('The article author'),
-            HasMany::make('comments')->type('comments')->countable(),
+            BelongsTo::make('author', 'people')->description('The article author'),
+            HasMany::make('comments', 'comments')->countable(),
         ];
     }
 

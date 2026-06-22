@@ -43,7 +43,7 @@ final class RelationshipLinkageTypeGuardTest extends TestCase
     #[Group('spec:updating-relationships')]
     public function aWrongTypeToOneLinkageIsAFourOhNineConflict(): void
     {
-        $relation = BelongsTo::make('author')->type('authors');
+        $relation = BelongsTo::make('author', 'authors');
 
         try {
             $this->validator()->validateRelationshipLinkage(
@@ -68,7 +68,7 @@ final class RelationshipLinkageTypeGuardTest extends TestCase
         $this->expectNotToPerformAssertions();
 
         $this->validator()->validateRelationshipLinkage(
-            BelongsTo::make('author')->type('authors'),
+            BelongsTo::make('author', 'authors'),
             new ToOneRelationship(new ResourceIdentifier('authors', '1')),
         );
     }
@@ -77,7 +77,7 @@ final class RelationshipLinkageTypeGuardTest extends TestCase
     #[Group('spec:updating-relationships')]
     public function aWrongTypeToManyMemberIsAFourOhNineConflictPointingAtThatMember(): void
     {
-        $relation = HasMany::make('comments')->type('comments');
+        $relation = HasMany::make('comments', 'comments');
 
         try {
             $this->validator()->validateRelationshipLinkage(
@@ -103,7 +103,7 @@ final class RelationshipLinkageTypeGuardTest extends TestCase
     {
         $this->expectNotToPerformAssertions();
 
-        $relation = MorphTo::make('pinned')->types('notes', 'images');
+        $relation = MorphTo::make('pinned', ['notes', 'images']);
 
         // Each declared type is accepted — a polymorphic relation must NOT false-reject
         // a member matching ANY of its inverse types.
@@ -121,7 +121,7 @@ final class RelationshipLinkageTypeGuardTest extends TestCase
     #[Group('spec:updating-relationships')]
     public function aPolymorphicRelationStillRejectsATypeOutsideItsDeclaredSet(): void
     {
-        $relation = MorphTo::make('pinned')->types('notes', 'images');
+        $relation = MorphTo::make('pinned', ['notes', 'images']);
 
         try {
             $this->validator()->validateRelationshipLinkage(
@@ -132,22 +132,6 @@ final class RelationshipLinkageTypeGuardTest extends TestCase
         } catch (RelationshipTypeUnacceptable $exception) {
             self::assertSame(409, $exception->getStatusCode());
         }
-    }
-
-    #[Test]
-    #[Group('spec:updating-relationships')]
-    public function aRelationWithNoDeclaredTypeAcceptsAnyType(): void
-    {
-        // No ->type(): relatedTypes() is empty, so the type set is OPEN — any linkage
-        // type passes (no regression for a relation that declares no inverse type).
-        $relation = BelongsTo::make('anything');
-        self::assertSame([], $relation->relatedTypes());
-
-        // No exception: the open type set accepts an arbitrary linkage type.
-        $this->validator()->validateRelationshipLinkage(
-            $relation,
-            new ToOneRelationship(new ResourceIdentifier('whatever', '1')),
-        );
     }
 
     private function validator(): ResourceValidator

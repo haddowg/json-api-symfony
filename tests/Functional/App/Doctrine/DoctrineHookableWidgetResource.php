@@ -41,7 +41,7 @@ final class DoctrineHookableWidgetResource extends AbstractResource implements R
             Id::make(),
             Str::make('name'),
             Str::make('stamp'),
-            BelongsTo::make('owner')->type('hookOwners'),
+            BelongsTo::make('owner', 'hookOwners'),
         ];
     }
 

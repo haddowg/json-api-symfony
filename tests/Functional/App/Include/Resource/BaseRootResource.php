@@ -31,7 +31,7 @@ abstract class BaseRootResource extends AbstractResource
         return [
             Id::make(),
             Str::make('label'),
-            BelongsTo::make('node')->type('nodes'),
+            BelongsTo::make('node', 'nodes'),
         ];
     }
 

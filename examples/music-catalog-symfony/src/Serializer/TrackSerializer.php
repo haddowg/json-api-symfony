@@ -130,9 +130,8 @@ final class TrackSerializer extends AbstractSerializer implements SerializerReso
     private function relations(): array
     {
         return [
-            BelongsTo::make('album')->type('albums'),
-            BelongsToMany::make('playlists')
-                ->type('playlists')
+            BelongsTo::make('album', 'albums'),
+            BelongsToMany::make('playlists', 'playlists')
                 ->fields(
                     Integer::make('position')->min(1),
                     DateTime::make('addedAt')->readOnly(),

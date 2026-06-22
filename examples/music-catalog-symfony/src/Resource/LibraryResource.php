@@ -37,8 +37,8 @@ final class LibraryResource extends AbstractResource
             // Default relation reader: `owner` reads the OneToOne inverse straight off
             // the entity; `items` reads the resolved mixed list (filled by the custom
             // provider) — each member renders through its own per-type serializer.
-            BelongsTo::make('owner')->type('users'),
-            MorphToMany::make('items')->types('tracks', 'albums', 'artists'),
+            BelongsTo::make('owner', 'users'),
+            MorphToMany::make('items', ['tracks', 'albums', 'artists']),
         ];
     }
 }

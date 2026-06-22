@@ -11,7 +11,7 @@ use haddowg\JsonApi\Resource\Field\Str;
 
 /**
  * The shared `posts` declaration both multi-type kernels serve. Its to-one `author`
- * relation targets the CURATED `public-members` type — `->type('public-members')` —
+ * relation targets the CURATED `public-members` type — the `make()` type `'public-members'` —
  * so a post's author renders `{type: public-members, id}` linkage and `?include=author`
  * expands the curated view, even though the underlying
  * {@see \haddowg\JsonApiBundle\Tests\Functional\App\MultiType\Member} is also exposed
@@ -34,8 +34,8 @@ abstract class BasePostResource extends AbstractResource
             Id::make(),
             Str::make('title')->required(),
             // The relation's target TYPE is the curated `public-members`, not the full
-            // `members` — choosing a relationship's target type is exactly `->type('…')`.
-            BelongsTo::make('author')->type('public-members'),
+            // `members` — choosing a relationship's target type is exactly the `make()` type `'…'`.
+            BelongsTo::make('author', 'public-members'),
         ];
     }
 }

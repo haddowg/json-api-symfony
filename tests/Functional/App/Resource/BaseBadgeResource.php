@@ -80,7 +80,7 @@ abstract class BaseBadgeResource extends AbstractResource
             // The to-many relation whose MUTATION is gated for a non-admin: a
             // PATCH (replace) / POST (add) / DELETE (remove) to its relationship
             // endpoint is a 403 for a non-admin, allowed for an admin.
-            HasMany::make('medals')->type('medals')->withData()
+            HasMany::make('medals', 'medals')->withData()
                 ->cannotReplace(
                     static fn(mixed $model, JsonApiRequestInterface $request): bool => $request->getHeaderLine('X-Role') !== 'admin',
                 )
@@ -93,7 +93,7 @@ abstract class BaseBadgeResource extends AbstractResource
             // The same association, exposed as a separate relation whose INCLUDABILITY
             // is gated for a non-admin: `?include=secretMedals` 400s for a non-admin
             // and expands for an admin.
-            HasMany::make('secretMedals')->type('medals')->storedAs('medals')->withData()
+            HasMany::make('secretMedals', 'medals')->storedAs('medals')->withData()
                 ->cannotBeIncluded(
                     static fn(mixed $model, JsonApiRequestInterface $request): bool => $request->getHeaderLine('X-Role') !== 'admin',
                 ),

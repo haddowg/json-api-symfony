@@ -136,8 +136,8 @@ final class IncArticle extends AbstractResource
         return [
             Id::make(),
             Str::make('title'),
-            BelongsTo::make('author')->type('people'),
-            HasMany::make('comments')->type('comments'),
+            BelongsTo::make('author', 'people'),
+            HasMany::make('comments', 'comments'),
         ];
     }
 }
@@ -150,9 +150,9 @@ final class IncPerson extends AbstractResource
     {
         return [
             Id::make(),
-            BelongsTo::make('company')->type('companies'),
+            BelongsTo::make('company', 'companies'),
             // Not includable: never advertised, never descended.
-            BelongsTo::make('manager')->type('people')->cannotBeIncluded(),
+            BelongsTo::make('manager', 'people')->cannotBeIncluded(),
         ];
     }
 }
@@ -175,7 +175,7 @@ final class IncSelfReferentialPerson extends AbstractResource
     {
         return [
             Id::make(),
-            HasMany::make('friends')->type('cyclists'),
+            HasMany::make('friends', 'cyclists'),
         ];
     }
 }

@@ -43,9 +43,8 @@ variant lives on the playlists resource's `orderedTracks` — see
 [Pivot (`belongsToMany`) data](#pivot-belongstomany-data)):
 
 ```php
-BelongsTo::make('album')->type('albums'),
-BelongsToMany::make('playlists')
-    ->type('playlists')
+BelongsTo::make('album', 'albums'),
+BelongsToMany::make('playlists', 'playlists')
     ->cannotReplace()
     ->countable(),
 ```
@@ -124,8 +123,7 @@ to-one renders `data: null` instead of the resource. A `200` with
 scopes `filter[name]` (the related `artists.name` column) onto its `artist` to-one:
 
 ```php
-BelongsTo::make('artist')
-    ->type('artists')
+BelongsTo::make('artist', 'artists')
     ->withFilters(Where::make('name', 'name')),
 ```
 
@@ -174,7 +172,7 @@ collection) and **batched** across a page of parents (one grouped count per
 relation, no N+1):
 
 ```php
-HasMany::make('tracks')->type('tracks')->countable();
+HasMany::make('tracks', 'tracks')->countable();
 ```
 
 Counting is exposed two ways, both on the `total` meta key:
@@ -254,7 +252,7 @@ related-collection endpoint `GET /{type}/{id}/{rel}` — never the primary
 `withFilters(...)`/`withSorts(...)`:
 
 ```php
-HasMany::make('tracks')->type('tracks')
+HasMany::make('tracks', 'tracks')
     // Available ONLY on GET /playlists/{id}/tracks, not on GET /tracks:
     ->withFilters(Where::make('titleContains', 'title', 'like'))
     ->withSorts(SortByField::make('recent', 'id'));
@@ -474,7 +472,7 @@ same field DSL you use for attributes (`Integer`, `Str`, `DateTime`, …) with t
 constraints, casts and read-only / context behaviour:
 
 ```php
-BelongsToMany::make('tracks')->type('tracks')
+BelongsToMany::make('tracks', 'tracks')
     ->fields(
         Integer::make('position')->required()->min(1),
         DateTime::make('addedAt')->readOnly(),   // server-owned, never written from meta
@@ -508,7 +506,7 @@ to the real pivot column (`position`) and routes the filter to the pivot alias. 
 filter **key is independent of the column**, so a pivot filter can be named anything:
 
 ```php
-BelongsToMany::make('tracks')->type('tracks')
+BelongsToMany::make('tracks', 'tracks')
     ->fields(
         Integer::make('position')->required()->min(1),
         DateTime::make('addedAt')->readOnly(),
@@ -578,7 +576,7 @@ auto-detection is ambiguous (two candidate association entities) or finds none, 
 throws a clear error pointing you at the override:
 
 ```php
-BelongsToMany::make('tracks')->type('tracks')
+BelongsToMany::make('tracks', 'tracks')
     ->fields(Integer::make('position'))
     ->through(PlaylistTrack::class); // name the association entity explicitly
 ```
@@ -659,7 +657,7 @@ identifier, and the `/{type}/{id}/relationships/{rel}` endpoint. It is parent-aw
 describe the link rather than the resource:
 
 ```php
-HasMany::make('members')->type('users')
+HasMany::make('members', 'users')
     ->identifierMeta(fn(Team $team, User $member, $request): array => [
         'role' => $team->roleOf($member),
     ]),
@@ -692,12 +690,12 @@ six-arg signature lives in [data-layer.md](data-layer.md)).
 
 Before the persister runs, the linkage's resource **type** is checked against the
 relation's declared related type(s). A `{ "type": T, "id": X }` whose `T` is not an
-accepted inverse type — a `BelongsTo('author')->type('authors')` sent a
+accepted inverse type — a `BelongsTo::make('author', 'authors')` sent a
 `{ "type": "comments" }` linkage — is a **`409 Conflict`**
 (`RESOURCE_TYPE_UNACCEPTABLE`), the linkage twin of the resource-type conflict core
 already returns for a `POST /{type}` whose `data.type` does not match the endpoint.
-A polymorphic relation (`->types('notes', 'images')`) accepts any of its declared
-types; a relation that declares **no** related type accepts any type. The same check
+A polymorphic relation (`MorphTo::make('pinned', ['notes', 'images'])`) accepts any
+of its declared types. The same check
 covers a relationship embedded in a whole-resource write (the error then points at
 `/data/relationships/{rel}/data/type`). This is distinct from the **cardinality**
 guard (a to-one sent an array → `400`), which is about the linkage *shape*, not the
@@ -737,7 +735,7 @@ The `cannotReplace()`/`cannotAdd()`/`cannotRemove()` flags also accept a **closu
 making the 403 a per-caller decision rather than a blanket lock:
 
 ```php
-HasMany::make('medals')->type('medals')
+HasMany::make('medals', 'medals')
     ->cannotReplace(static fn(mixed $model, JsonApiRequestInterface $request): bool
         => $request->getHeaderLine('X-Role') !== 'admin')
 ```
@@ -822,7 +820,7 @@ A relation marks itself non-includable like any other flag:
 
 ```php
 // A back-reference whose only purpose is reverse navigation, not compounding:
-BelongsTo::make('parent')->type('categories')->cannotBeIncluded();
+BelongsTo::make('parent', 'categories')->cannotBeIncluded();
 ```
 
 Capability A is **all-or-nothing for a relation at its own level** — it cannot say
@@ -873,8 +871,7 @@ providers.
 declares `favoritable` over three types:
 
 ```php
-MorphTo::make('favoritable')
-    ->types('tracks', 'albums', 'artists')
+MorphTo::make('favoritable', ['tracks', 'albums', 'artists'])
     ->extractUsing(static fn(mixed $favorite): ?object => $favorite instanceof Favorite ? $favorite->favoritable : null),
 ```
 
@@ -894,7 +891,7 @@ an `albums` member, `/favorites/3/…` → an `artists` member.
 ### Polymorphic to-many (`MorphToMany`)
 
 [`LibraryResource`](../examples/music-catalog-symfony/src/Resource/LibraryResource.php)
-declares `MorphToMany::make('items')->types('tracks', 'albums', 'artists')` — a
+declares `MorphToMany::make('items', ['tracks', 'albums', 'artists'])` — a
 mixed collection. The provider responsibilities differ by storage:
 
 - **The in-memory provider supports it**: it reads the mixed collection off the
@@ -950,7 +947,7 @@ public function fields(): array
         // The hidden backing relation: never a rendered relationship, but eager-loaded
         // for the flattened read/write (it backs `authorName` and the first hop of
         // `authorCountry`).
-        BelongsTo::make('author')->type('authors')->hidden(),
+        BelongsTo::make('author', 'authors')->hidden(),
     ];
 }
 ```
@@ -999,8 +996,8 @@ final class LibraryRelations implements RelationsProviderInterface
     public function relations(): array
     {
         return [
-            BelongsTo::make('owner')->type('users'),
-            MorphToMany::make('items')->types('tracks', 'albums', 'artists'),
+            BelongsTo::make('owner', 'users'),
+            MorphToMany::make('items', ['tracks', 'albums', 'artists']),
         ];
     }
 }

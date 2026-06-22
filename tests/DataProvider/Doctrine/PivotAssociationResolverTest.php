@@ -84,7 +84,7 @@ final class PivotAssociationResolverTest extends KernelTestCase
     public function itAutoDetectsTheAssociationEntityForAnUnambiguousParent(): void
     {
         $resolver = $this->resolver();
-        $relation = BelongsToMany::make('tracks')->type('tracks')->fields(Integer::make('position'));
+        $relation = BelongsToMany::make('tracks', 'tracks')->fields(Integer::make('position'));
 
         self::assertTrue($resolver->isPivotRelation($relation));
 
@@ -99,8 +99,7 @@ final class PivotAssociationResolverTest extends KernelTestCase
     public function itHonoursTheThroughOverrideForAnAmbiguousParent(): void
     {
         $resolver = $this->resolver();
-        $relation = BelongsToMany::make('tracks')
-            ->type('tracks')
+        $relation = BelongsToMany::make('tracks', 'tracks')
             ->fields(Integer::make('position'))
             ->through(AlbumTrackEntity::class);
 
@@ -115,7 +114,7 @@ final class PivotAssociationResolverTest extends KernelTestCase
     public function itThrowsWhenAutoDetectionIsAmbiguousAndNoThroughIsDeclared(): void
     {
         $resolver = $this->resolver();
-        $relation = BelongsToMany::make('tracks')->type('tracks')->fields(Integer::make('position'));
+        $relation = BelongsToMany::make('tracks', 'tracks')->fields(Integer::make('position'));
 
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('ambiguous');
@@ -128,8 +127,8 @@ final class PivotAssociationResolverTest extends KernelTestCase
     {
         $resolver = $this->resolver();
 
-        self::assertFalse($resolver->isPivotRelation(BelongsToMany::make('tracks')->type('tracks')));
-        self::assertFalse($resolver->isPivotRelation(HasMany::make('tracks')->type('tracks')));
+        self::assertFalse($resolver->isPivotRelation(BelongsToMany::make('tracks', 'tracks')));
+        self::assertFalse($resolver->isPivotRelation(HasMany::make('tracks', 'tracks')));
     }
 
     private function resolver(): PivotAssociationResolver

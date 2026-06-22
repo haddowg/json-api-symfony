@@ -35,7 +35,7 @@ final class InMemorySecuredWidgetResource extends AbstractResource
         return [
             Id::make(),
             Str::make('name'),
-            BelongsTo::make('partner')->type('securedWidgets')->storedAs('partnerId'),
+            BelongsTo::make('partner', 'securedWidgets')->storedAs('partnerId'),
         ];
     }
 }

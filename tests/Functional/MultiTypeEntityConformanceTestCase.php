@@ -20,7 +20,7 @@ use Symfony\Component\HttpFoundation\Response;
  * `#[AsJsonApiResource(entity: MemberEntity::class)]`, which the bundle's type→entity
  * map accepts (it rejects only one type → two entities); in the in-memory kernel two
  * providers read the SAME Member objects. A type is always supplied by context (the
- * route for primary data, the relation's declared `->type('…')` for linkage), so the
+ * route for primary data, the relation's declared `make()` type for linkage), so the
  * same record renders under either type.
  *
  * The `posts` resource's to-one `author` relation declares its target as the curated
@@ -120,7 +120,7 @@ abstract class MultiTypeEntityConformanceTestCase extends JsonApiFunctionalTestC
 
         $author = $relationships['author'] ?? null;
         self::assertIsArray($author);
-        // The relation declares ->type('public-members'), so the linkage identifies the
+        // The relation declares the make() type 'public-members', so the linkage identifies the
         // curated type for the SAME Member that is also a `members` record.
         self::assertSame(['type' => 'public-members', 'id' => '1'], $author['data'] ?? null);
     }

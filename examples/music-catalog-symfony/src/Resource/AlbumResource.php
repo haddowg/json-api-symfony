@@ -119,8 +119,7 @@ final class AlbumResource extends AbstractResource
             // [name]=…` on a primary request. When the filter EXCLUDES the album's
             // artist the to-one renders `data: null` (and drops from `included[]`); a
             // `[sort]`/`[page]` on a to-one path stays a 400. Dual-provider.
-            BelongsTo::make('artist')
-                ->type('artists')
+            BelongsTo::make('artist', 'artists')
                 ->withFilters(Where::make('name', 'name')),
             // Relation-scoped filters/sorts (bundle ADR 0044): `withFilters`/
             // `withSorts` augment the related-collection endpoint
@@ -150,8 +149,7 @@ final class AlbumResource extends AbstractResource
             // `position` on `tracks.playlists`) is NOT auto-wired — that needs a
             // custom FilterHandler/SortHandler supplied through the provider seam; the
             // relation's `withFilters`/`withSorts` only names the key.
-            HasMany::make('tracks')
-                ->type('tracks')
+            HasMany::make('tracks', 'tracks')
                 ->paginate(PagePaginator::make()->withDefaultPerPage(2))
                 ->withFilters(Where::make('longerThan', 'length_seconds', '>')->integer())
                 ->withSorts(SortByField::make('duration', 'length_seconds'))

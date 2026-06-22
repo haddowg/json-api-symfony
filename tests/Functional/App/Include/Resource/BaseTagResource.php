@@ -25,7 +25,7 @@ abstract class BaseTagResource extends AbstractResource
         return [
             Id::make(),
             Str::make('name'),
-            BelongsTo::make('node')->type('nodes'),
+            BelongsTo::make('node', 'nodes'),
         ];
     }
 }

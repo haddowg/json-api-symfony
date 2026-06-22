@@ -455,10 +455,11 @@ final class ResourceValidator
      * The accepted set is the relation's declared {@see RelationInterface::relatedTypes()}:
      * a monomorphic relation declares one type, a polymorphic ({@see \haddowg\JsonApi\Resource\Field\MorphTo})
      * one its full inverse set — so a polymorphic linkage matching *any* declared type
-     * is accepted. A relation that declares **no** related type accepts any type (the
-     * set is open), so it is left unchecked. An absent or non-string `type` is core's
-     * concern (presence/shape is the hydrator's), not this conflict guard's; a `null`
-     * to-one linkage (clearing) carries no identifier to check.
+     * is accepted. Every relation declares at least one related type (the type is a
+     * mandatory factory argument); the empty-set skip below is defensive only. An
+     * absent or non-string `type` is core's concern (presence/shape is the hydrator's),
+     * not this conflict guard's; a `null` to-one linkage (clearing) carries no
+     * identifier to check.
      *
      * @param array<string, mixed> $data the write body's `data` member
      *
@@ -474,7 +475,7 @@ final class ResourceValidator
         $errors = [];
         foreach ($resource->fields() as $field) {
             if (!$field instanceof RelationInterface || $field->relatedTypes() === []) {
-                continue; // a relation with no declared related type accepts any type
+                continue; // defensive: every relation declares at least one type via make()
             }
 
             $name = $field->name();
@@ -520,8 +521,7 @@ final class ResourceValidator
      * (`PATCH`/`POST`/`DELETE …/relationships/<rel>`) whose resource `type` is not an
      * accepted related type of the relation — the endpoint twin of
      * {@see guardRelationshipTypes()}. The body root *is* the relationship here, so a
-     * violation points at `/data/type` (to-one) or `/data/<n>/type` (to-many). A
-     * relation with no declared related type accepts any type (left unchecked); an
+     * violation points at `/data/type` (to-one) or `/data/<n>/type` (to-many). An
      * empty (clearing) linkage carries no identifier.
      *
      * @throws RelationshipTypeUnacceptable when a linkage names an unacceptable type
@@ -529,7 +529,7 @@ final class ResourceValidator
     private function guardEndpointRelationshipTypes(RelationInterface $relation, ToOneRelationship|ToManyRelationship $linkage): void
     {
         if ($relation->relatedTypes() === []) {
-            return; // a relation with no declared related type accepts any type
+            return; // defensive: every relation declares at least one type via make()
         }
 
         $errors = [];

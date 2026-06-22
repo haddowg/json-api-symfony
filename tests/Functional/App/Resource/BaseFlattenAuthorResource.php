@@ -33,7 +33,7 @@ abstract class BaseFlattenAuthorResource extends AbstractResource
             Str::make('name'),
             // The hidden second-hop backing relation the multi-hop on('author.country')
             // walks to.
-            BelongsTo::make('country')->type('countries')->hidden(),
+            BelongsTo::make('country', 'countries')->hidden(),
         ];
     }
 }

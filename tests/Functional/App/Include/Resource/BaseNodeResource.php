@@ -33,11 +33,11 @@ abstract class BaseNodeResource extends AbstractResource
             Str::make('label'),
             // The circular forward chain, default-included so an uncapped render
             // would recurse n1 → n2 → n3 → n1 → … forever.
-            BelongsTo::make('next')->type('nodes'),
+            BelongsTo::make('next', 'nodes'),
             // The back-reference: opted out of inclusion (Capability A).
-            BelongsTo::make('prev')->type('nodes')->cannotBeIncluded(),
+            BelongsTo::make('prev', 'nodes')->cannotBeIncluded(),
             // A to-one into `tags`, includable from `nodes`' own root.
-            BelongsTo::make('tag')->type('tags'),
+            BelongsTo::make('tag', 'tags'),
         ];
     }
 

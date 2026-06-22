@@ -48,7 +48,7 @@ abstract class BaseLeafletResource extends AbstractResource
             // Non-sparse: always present whatever the sparse set, but still a declared
             // field name — so naming it is tolerated.
             Str::make('internalRef')->notSparseField(),
-            BelongsTo::make('sticker')->type('stickers'),
+            BelongsTo::make('sticker', 'stickers'),
         ];
     }
 }

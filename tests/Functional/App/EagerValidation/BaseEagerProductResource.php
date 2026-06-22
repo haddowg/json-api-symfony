@@ -45,11 +45,11 @@ abstract class BaseEagerProductResource extends AbstractResource
             Str::make('flat')->storedAs('name')->on($this->flattenPath()),
             // A hidden to-one to `brands` (which declares its own to-one `region`), so
             // `region.region` is a valid two-hop to-one chain — the SAFE shape.
-            BelongsTo::make('region')->type('brands')->hidden(),
+            BelongsTo::make('region', 'brands')->hidden(),
             // A to-many: a to-many segment at any depth is not flattenable. `brands`
             // declares relations, so `tags.region` is walkable to a second level — the
             // ANCESTOR-to-many case.
-            HasMany::make('tags')->type('brands')->hidden(),
+            HasMany::make('tags', 'brands')->hidden(),
         ];
     }
 }

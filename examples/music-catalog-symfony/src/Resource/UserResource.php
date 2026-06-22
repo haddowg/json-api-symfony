@@ -85,8 +85,8 @@ final class UserResource extends AbstractResource
 
             // Default relation reader: `playlists` reads the OneToMany and `library`
             // the OneToOne straight off the entity associations.
-            HasMany::make('playlists')->type('playlists'),
-            HasOne::make('library')->type('libraries'),
+            HasMany::make('playlists', 'playlists'),
+            HasOne::make('library', 'libraries'),
         ];
     }
 

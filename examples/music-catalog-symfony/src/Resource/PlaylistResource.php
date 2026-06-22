@@ -115,7 +115,7 @@ final class PlaylistResource extends AbstractResource implements ResourceLifecyc
             // `users` resource lives on the `admin` server, so this linkage points at
             // a type a default-server client cannot dereference; it is the
             // privileged-surface owner reference.
-            BelongsTo::make('owner')->type('users'),
+            BelongsTo::make('owner', 'users'),
             // The **one-entity-two-types** witness: a SECOND relation reading the SAME
             // `owner` ManyToOne column (`storedAs('owner')`) but declaring its target as
             // the curated `public-profiles` type ({@see PublicProfileResource}, the same
@@ -125,11 +125,10 @@ final class PlaylistResource extends AbstractResource implements ResourceLifecyc
             // `?include=publicOwner` expands the User as a public profile (display name
             // only) — on the default server, where `users` is not exposed. This is the
             // public-facing owner reference; `owner` above is the admin one. Choosing a
-            // relationship's target type is exactly `->type('…')`. See
+            // relationship's target type is exactly the `make()` type `'…'`. See
             // `docs/resources.md` ("One entity, two resource types").
-            BelongsTo::make('publicOwner')->type('public-profiles')->storedAs('owner'),
-            BelongsToMany::make('tracks')
-                ->type('tracks')
+            BelongsTo::make('publicOwner', 'public-profiles')->storedAs('owner'),
+            BelongsToMany::make('tracks', 'tracks')
                 ->paginate(PagePaginator::make()->withDefaultPerPage(2))
                 // Countable (bundle ADR 0052): the related-collection endpoint emits
                 // a total over the many-to-many scope, and ?withCount=tracks activates
@@ -148,8 +147,7 @@ final class PlaylistResource extends AbstractResource implements ResourceLifecyc
             // writable (set/reordered via meta); `addedAt` is readOnly (server-owned).
             // `extractUsing` maps the parent's entries to their far tracks for the
             // relationship-linkage endpoint.
-            BelongsToMany::make('orderedTracks')
-                ->type('tracks')
+            BelongsToMany::make('orderedTracks', 'tracks')
                 ->fields(
                     // `position` is REQUIRED-on-create: a genuinely-new member must
                     // carry it (an absent position on a new row is a 422, never a DB
