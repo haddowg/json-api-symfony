@@ -21,6 +21,11 @@ final class Widget implements MutableWidget
         public string $name = '',
         public bool $published = false,
         public ?string $uploadedArtwork = null,
+        // A self-referential to-one the in-memory WidgetResource exposes as a `related`
+        // relation, so `?include=related` renders another widget as an INCLUDED member
+        // — the witness that the asLink contributor runs for every rendered resource of
+        // the type, not only the primary one (bundle ADR 0091).
+        public ?Widget $related = null,
     ) {}
 
     public function widgetName(): string

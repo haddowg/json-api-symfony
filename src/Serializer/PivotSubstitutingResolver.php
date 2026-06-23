@@ -9,6 +9,7 @@ use haddowg\JsonApi\Serializer\RelationshipCountInterface;
 use haddowg\JsonApi\Serializer\RelationshipLinkageInterface;
 use haddowg\JsonApi\Serializer\RelationshipLoadStateInterface;
 use haddowg\JsonApi\Serializer\RelationshipPaginationInterface;
+use haddowg\JsonApi\Serializer\ResourceLinkContributorInterface;
 use haddowg\JsonApi\Serializer\SerializerInterface;
 
 /**
@@ -61,5 +62,10 @@ final class PivotSubstitutingResolver implements SerializerResolverInterface
     public function relationshipLinkage(): ?RelationshipLinkageInterface
     {
         return $this->inner->relationshipLinkage();
+    }
+
+    public function resourceLinkContributor(): ?ResourceLinkContributorInterface
+    {
+        return $this->inner->resourceLinkContributor();
     }
 }

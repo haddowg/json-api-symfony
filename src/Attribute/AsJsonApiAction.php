@@ -60,6 +60,18 @@ use haddowg\JsonApiBundle\Action\ActionScope;
  * in the generated OpenAPI document (design §4.7, D15). An empty array means the
  * default: inherit the resource tag(s) of the action's mount `type`, so actions
  * group with their resource. Tags carry no JSON:API meaning.
+ *
+ * `asLink` exposes the action as a `links` member on every rendered resource of its
+ * mount `type` — a host-owned, router-generated link the resource's own
+ * serializer knows nothing about, merged out-of-band through core's
+ * {@see \haddowg\JsonApi\Serializer\ResourceLinkContributorInterface} seam (the
+ * link is keyed by the action's `path`). It is **security-aware**: when the action
+ * declares a `security` expression, the link renders only when the requester would
+ * pass that same gate (the same {@see \Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface}
+ * evaluation the per-action `BeforeActionEvent` gate uses), so a client never sees a
+ * link to an action it cannot invoke. It is **resource-scope only** — a
+ * {@see ActionScope::Collection} action has no resource to hang a link on, so
+ * `asLink: true` with a collection scope is a build-time error.
  */
 #[\Attribute(\Attribute::TARGET_CLASS)]
 final readonly class AsJsonApiAction
@@ -68,6 +80,7 @@ final readonly class AsJsonApiAction
      * @param list<string> $methods    the author-declared HTTP method allow-list (default `['POST']`)
      * @param bool         $returns204 the action returns no response body (the document advertises `204` instead of a `200` body); mutually exclusive with `outputType`
      * @param list<string> $tags       the OpenAPI tag names this action is grouped under (empty = inherit the mount type's resource tags)
+     * @param bool         $asLink     expose the action as a security-aware `links` member on the mount type's resources (resource scope only)
      */
     public function __construct(
         public string $type,
@@ -82,5 +95,17 @@ final readonly class AsJsonApiAction
         public ?string $security = null,
         public ?string $name = null,
         public array $tags = [],
-    ) {}
+        public bool $asLink = false,
+    ) {
+        // A collection-scope action has no resource to hang a link on, so exposing
+        // it as a resource link is incoherent — reject it at declaration time.
+        if ($asLink && $scope === ActionScope::Collection) {
+            throw new \LogicException(\sprintf(
+                'The JSON:API action "%s" on type "%s" declares asLink with a Collection scope; a resource link '
+                . 'requires a resource to hang off, so asLink is supported only for a Resource-scope action.',
+                $path,
+                $type,
+            ));
+        }
+    }
 }

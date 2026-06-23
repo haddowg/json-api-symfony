@@ -10,6 +10,7 @@ use haddowg\JsonApi\Serializer\SerializerInterface;
 use haddowg\JsonApiBundle\Action\ActionDescriptor;
 use haddowg\JsonApiBundle\Action\ActionHandlerInterface;
 use haddowg\JsonApiBundle\Action\ActionInput;
+use haddowg\JsonApiBundle\Action\ActionLinkContributor;
 use haddowg\JsonApiBundle\Action\ActionRegistry;
 use haddowg\JsonApiBundle\Action\ActionScope;
 use haddowg\JsonApiBundle\JsonApiBundle;
@@ -365,10 +366,16 @@ final class ResourceLocatorPass implements CompilerPassInterface
         }
 
         $handlerReferences = [];
-        /** @var array<string, array{type: string, path: string, methods: list<string>, scope: string, input: string, inputType: string, outputType: string, security: ?string, handlerServiceId: string, server: string, tags: string}> $actionDescriptors */
+        /** @var array<string, array{type: string, path: string, methods: list<string>, scope: string, input: string, inputType: string, outputType: string, security: ?string, handlerServiceId: string, server: string, tags: string, asLink: bool}> $actionDescriptors */
         $actionDescriptors = [];
         /** @var array<string, list<array{uriType: string, type: string, path: string, methods: list<string>, scope: string, name: string}>> $routeDescriptorsByServer */
         $routeDescriptorsByServer = [];
+        // The asLink action link descriptors the ActionLinkContributor renders, keyed by
+        // server then by mount type: each is the link key (the action path), the route
+        // name the URL generates from, and the action's optional security expression
+        // (so the link renders only when the requester may invoke the action).
+        /** @var array<string, array<string, list<array{path: string, routeName: string, security: ?string}>>> $linksByServerType */
+        $linksByServerType = [];
 
         foreach ($container->findTaggedServiceIds(JsonApiBundle::ACTION_TAG) as $id => $tags) {
             $definition = $container->findDefinition($id);
@@ -431,6 +438,20 @@ final class ResourceLocatorPass implements CompilerPassInterface
                     default => $type,
                 };
                 $security = \is_string($tag['security'] ?? null) && $tag['security'] !== '' ? $tag['security'] : null;
+                $asLink = ($tag['asLink'] ?? false) === true;
+
+                // A resource link needs a resource to hang off — a collection-scope
+                // action has none. The attribute constructor already rejects this, but
+                // the compiled descriptor map is the source of truth, so re-assert it
+                // here so a malformed tag never ships a meaningless link descriptor.
+                if ($asLink && $scope === ActionScope::Collection) {
+                    throw new \LogicException(\sprintf(
+                        'The JSON:API action "%s" on service "%s" declares asLink with a Collection scope; a resource '
+                        . 'link requires a resource to hang off, so asLink is supported only for a Resource-scope action.',
+                        $path,
+                        $id,
+                    ));
+                }
 
                 $servers = $this->validateServers(
                     $this->parseServers($tag['server'] ?? null),
@@ -488,6 +509,9 @@ final class ResourceLocatorPass implements CompilerPassInterface
                         // value stays a flat scalar shape; the ActionRegistry splits
                         // it back into a list on rehydration.
                         'tags' => \implode(',', $actionTags),
+                        // Whether the action is exposed as a `links` member on the mount
+                        // type's resources (resource scope only; guarded above).
+                        'asLink' => $asLink,
                     ];
 
                     $routeDescriptorsByServer[$server][] = [
@@ -498,6 +522,18 @@ final class ResourceLocatorPass implements CompilerPassInterface
                         'scope' => $scope->name,
                         'name' => $name ?? '',
                     ];
+
+                    // An asLink action contributes a security-aware link on every
+                    // rendered resource of its mount type: record the link key (the
+                    // action path), the route name the URL generates from (mirroring the
+                    // JsonApiRouteLoader's naming exactly), and the security expression.
+                    if ($asLink) {
+                        $linksByServerType[$server][$type][] = [
+                            'path' => $path,
+                            'routeName' => $this->actionRouteName($server, $type, $scope, $path, $name),
+                            'security' => $security,
+                        ];
+                    }
                 }
             }
         }
@@ -511,6 +547,34 @@ final class ResourceLocatorPass implements CompilerPassInterface
             $container->getDefinition(JsonApiRouteLoader::class)
                 ->setArgument('$actionRouteDescriptorsByServer', $routeDescriptorsByServer);
         }
+
+        // Hand the asLink link descriptors to the ActionLinkContributor (bundle ADR
+        // 0091) so it can render each action's URL as a `links` member on its mount
+        // type's resources. A no-op when no asLink action is declared (the default map).
+        if ($container->hasDefinition(ActionLinkContributor::class)) {
+            $container->getDefinition(ActionLinkContributor::class)
+                ->setArgument('$linksByServerType', $linksByServerType);
+        }
+    }
+
+    /**
+     * The route name the {@see JsonApiRouteLoader} emits for an action, replicated here
+     * so the {@see ActionLinkContributor} generates the action's URL from the exact same
+     * route: the default server keeps the unprefixed `jsonapi.` namespace, a named
+     * server uses `jsonapi.{server}.`; an explicit `name` override wins, else the name
+     * is `{prefix}{type}.action.{scope-lowercased}.{path}`.
+     */
+    private function actionRouteName(string $server, string $type, ActionScope $scope, string $path, ?string $name): string
+    {
+        $namePrefix = $server === ServerProvider::DEFAULT_SERVER
+            ? 'jsonapi.'
+            : \sprintf('jsonapi.%s.', $server);
+
+        if ($name !== null && $name !== '') {
+            return $namePrefix . $name;
+        }
+
+        return \sprintf('%s%s.action.%s.%s', $namePrefix, $type, \strtolower($scope->name), $path);
     }
 
     /**

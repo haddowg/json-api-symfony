@@ -745,6 +745,10 @@ final class JsonApiBundle extends AbstractBundle
                     // The OpenAPI tag refs (design §4.7); empty = inherit the mount
                     // type's resource tags, resolved by the MetadataSource.
                     'tags' => self::tagsTag($attribute->tags),
+                    // Only carried when set: expose the action as a security-aware
+                    // `links` member on the mount type's resources (resource scope
+                    // only; the attribute constructor rejects a collection scope).
+                    'asLink' => $attribute->asLink ? true : null,
                 ], static fn(mixed $value): bool => $value !== null));
             },
         );
@@ -1021,6 +1025,12 @@ final class JsonApiBundle extends AbstractBundle
                     // the batcher writing it onto the parent property. Always present
                     // (provider-agnostic — the batch fill is the provider's job).
                     '$relationshipLinkage' => service(\haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipLinkage::class),
+                    // The out-of-band resource-link contributor (bundle ADR 0091): a
+                    // single shared service threaded onto every server's memoized Server,
+                    // contributing a security-aware link for each #[AsJsonApiAction(asLink:
+                    // true)] action of the type being rendered, scoped to the request's
+                    // server. Its per-server link map is filled by the ResourceLocatorPass.
+                    '$resourceLinkContributor' => service(\haddowg\JsonApiBundle\Action\ActionLinkContributor::class),
                     // This server's name + the dispatcher the serving bridge fires
                     // the bundle ServingEvent through (bundle ADR 0042); the
                     // dispatcher is optional (the lifecycle-hook seam is off when

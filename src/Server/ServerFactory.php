@@ -11,6 +11,7 @@ use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Schema\Profile\CountableProfile;
 use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
 use haddowg\JsonApi\Serializer\RelationshipLoadStateInterface;
+use haddowg\JsonApi\Serializer\ResourceLinkContributorInterface;
 use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\Event\ServingEvent;
 use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipCount;
@@ -102,6 +103,7 @@ final class ServerFactory
         private readonly ?RequestScopedRelationshipCount $relationshipCount = null,
         private readonly ?RequestScopedRelationshipPagination $relationshipPagination = null,
         private readonly ?RequestScopedRelationshipLinkage $relationshipLinkage = null,
+        private readonly ?ResourceLinkContributorInterface $resourceLinkContributor = null,
         private readonly array $resourceClasses = [],
         private readonly array $serializersByClass = [],
         private readonly array $hydratorsByClass = [],
@@ -145,6 +147,14 @@ final class ServerFactory
             // membership. Null when the profile read did not negotiate, so core reads
             // linkage off the model as before.
             ->withRelationshipLinkage($this->relationshipLinkage)
+            // The out-of-band resource-link contributor (bundle ADR 0091): merges
+            // host-owned, router-generated links onto a rendered resource alongside its
+            // author getLinks() (author keys win) — here, a custom action exposed via
+            // #[AsJsonApiAction(asLink: true)], security-aware so the link renders only
+            // when the requester may invoke the action. Per server (only this server's
+            // asLink actions); null when no asLink action is declared on this server, so
+            // core renders links exactly as before this seam existed.
+            ->withResourceLinkContributor($this->resourceLinkContributor)
             // Recognize the Relationship Queries profile (core ADR 0058) so the
             // response advertises it (Content-Type `profile` param + `jsonapi.profile`)
             // when a client negotiates it; the opt-in relatedQuery/rQ parse is gated
