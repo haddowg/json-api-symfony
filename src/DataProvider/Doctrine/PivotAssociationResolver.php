@@ -65,6 +65,26 @@ final class PivotAssociationResolver
         \assert($relation instanceof BelongsToMany);
 
         $parentClass = $this->entityManager->getClassMetadata($parent::class)->getName();
+
+        return $this->discover($relation, $parentClass, $farClass);
+    }
+
+    /**
+     * Resolves the association entity backing `$relation` from metadata alone —
+     * the parent-instance-free twin of {@see resolve()}. The build-time servability
+     * warmer ({@see DoctrineServableWarmer}) drives this at `cache:warmup` so an
+     * unresolvable pivot (no `through()` override and no, or an ambiguous,
+     * auto-detected association entity) fails the BUILD with the same
+     * {@see \LogicException} the first write would otherwise throw, rather than a
+     * runtime 500.
+     *
+     * @param class-string $parentClass the parent (owning) entity class
+     * @param class-string $farClass    the related (far) entity class
+     *
+     * @throws \LogicException when auto-detection finds no, or an ambiguous, association entity and no `through()` override is declared
+     */
+    public function discover(BelongsToMany $relation, string $parentClass, string $farClass): PivotAssociation
+    {
         $cacheKey = $relation->name() . "\0" . $parentClass . "\0" . $farClass;
 
         return $this->cache[$cacheKey] ??= $this->detect($relation, $parentClass, $farClass);

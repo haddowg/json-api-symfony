@@ -1057,6 +1057,7 @@ final class JsonApiBundle extends AbstractBundle
                 '$descriptors' => service(\haddowg\JsonApiBundle\Server\RouteDescriptorRegistry::class),
                 '$providers' => service(\haddowg\JsonApiBundle\DataProvider\DataProviderRegistry::class),
                 '$persisters' => service(\haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry::class),
+                '$typeMetadata' => service(\haddowg\JsonApiBundle\Server\TypeMetadataResolver::class),
                 '$serverNames' => \array_keys($servers),
             ])
             ->tag('kernel.cache_warmer');

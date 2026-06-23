@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\DependencyInjection\Compiler;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApiBundle\DataPersister\Doctrine\DoctrineDataPersister;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineDataProvider;
+use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineServableWarmer;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Serializer\Doctrine\DoctrineRelationshipLoadState;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
@@ -14,8 +15,10 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 
 /**
  * Builds the `type → Doctrine entity class` map for the reference Doctrine
- * adapter — the {@see DoctrineDataProvider} (reads) and the
- * {@see DoctrineDataPersister} (writes) — from the discovered Resource services:
+ * adapter — the {@see DoctrineDataProvider} (reads), the
+ * {@see DoctrineDataPersister} (writes) and the build-time
+ * {@see DoctrineServableWarmer} (the storage-aware servability guard) — from the
+ * discovered Resource services:
  * every `#[AsJsonApiResource(entity: …)]` contributes one entry, keyed by the
  * attribute's `type` override or the class's `static $type` (the same precedence
  * the runtime registry applies). Compile-time validation — a missing entity
@@ -42,6 +45,7 @@ final class DoctrineEntityMapPass implements CompilerPassInterface
     private const array MAPPED_DEFINITIONS = [
         DoctrineDataProvider::class,
         DoctrineDataPersister::class,
+        DoctrineServableWarmer::class,
     ];
 
     /**
