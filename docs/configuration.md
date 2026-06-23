@@ -47,7 +47,7 @@ witness).
 | Key | Type | Default | What it does |
 | --- | --- | --- | --- |
 | `base_uri` | scalar | `''` | The base prepended to every generated link. **Empty (the default): links are absolute, built from the request's scheme + host** — each tenant/host gets correct self-links with no hardcoded host. Set a value to pin a fixed canonical base regardless of the request. Trailing slashes are tolerated. |
-| `version` | scalar | `'1.1'` | The JSON:API version the implicit `default` server advertises. |
+| `version` | scalar | `'1.1'` | The JSON:API version the implicit `default` server advertises. Defaults to `'1.1'`, so set it **only** to pin a non-default version — most apps omit it (the example app's `'1.1'` above is just the explicit-version witness). |
 | `max_include_depth` | int | `3` | The cap on `?include` nesting depth (relationship hops from the primary resource). `0` is unlimited. A resource's own `maxIncludeDepth()` overrides it. |
 | `strict_query_parameters` | bool | `true` | Reject an unrecognized top-level query-parameter family — and an unknown [`fields[type]` sparse-fieldset member](#unknown-sparse-fieldset-members) — with a `400`. `false` restores the old silent-ignore behaviour. |
 | `pagination.max_per_page` | int | `100` | The page-size cap the built-in server default paginator clamps `page[size]`/`page[limit]` to. `0` installs no built-in default (those collections render unpaginated). |

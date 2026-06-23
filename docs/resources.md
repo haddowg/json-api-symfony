@@ -103,6 +103,7 @@ final readonly class AsJsonApiResource
         public ?string $serializer = null,
         public ?string $hydrator = null,
         public array $operations = [],
+        public bool $readOnly = false,
     ) {}
 }
 ```
@@ -114,7 +115,8 @@ final readonly class AsJsonApiResource
 | `entity` | `?class-string` | The Doctrine entity the reference data layer reads and writes for this type. Inert unless `doctrine/orm` is installed (see [doctrine](doctrine.md)). |
 | `serializer` | `?class-string` | A per-type serializer override — a registered service implementing core's `SerializerInterface` (see [custom serializers & hydrators](custom-serializers-hydrators.md)). |
 | `hydrator` | `?class-string` | A per-type hydrator override — a registered service implementing core's `HydratorInterface`. |
-| `operations` | `list<Operation>` | The exposed operation allow-list (empty = all five). |
+| `operations` | `list<Operation>` | The exposed operation allow-list (empty = all five). Mutually exclusive with `readOnly`. |
+| `readOnly` | `bool` | Shorthand for "suppress every write": restricts the type to the two fetch operations. Mutually exclusive with a non-empty `operations`. |
 
 > The constructor also carries the declarative-authorization arguments (`security`,
 > `securityCreate`, …) documented in [authorization](authorization.md), and the
@@ -186,6 +188,31 @@ becomes a route, the per-capability defaults — is owned by [routing](routing.m
 and [capability-composition](capability-composition.md); the attribute here is just
 where you declare it.
 
+#### `readOnly`: the suppress-every-write shorthand
+
+The most common trim is "reads only, no writes". `operations` can spell that out, but
+it forces an import and a two-element list:
+
+```php
+use haddowg\JsonApiBundle\Operation\Operation;
+
+#[AsJsonApiResource(operations: [Operation::FetchCollection, Operation::FetchOne])]
+```
+
+`readOnly: true` is the intent-named equivalent — it restricts the type to exactly
+those two fetch operations without importing the enum:
+
+```php
+#[AsJsonApiResource(readOnly: true)] // GET /{type} and GET /{type}/{id} only
+```
+
+`operations` stays the precise escape hatch for any other subset (a create-only ingest
+endpoint, say). The two are **mutually exclusive**: declaring `readOnly: true`
+*and* a non-empty `operations` list is a constructor `\LogicException`, so an
+ambiguous declaration never compiles — pick the shorthand or the explicit list, not
+both. A read-only type exposes no writes, so it needs only a
+[`DataProvider`](data-layer.md) (no persister, no hydrator) to be servable.
+
 ## One entity, two resource types
 
 A resource type and the entity behind it are **not** one-to-one. The same entity (or
@@ -215,7 +242,7 @@ final class UserResource extends AbstractResource
 // The curated view — same entity, public, display name only.
 #[AsJsonApiResource(
     entity: User::class,
-    operations: [Operation::FetchCollection, Operation::FetchOne], // read-only
+    readOnly: true, // GET only — the shorthand for the two fetch operations
 )]
 final class PublicProfileResource extends AbstractResource
 {

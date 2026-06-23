@@ -123,6 +123,17 @@ The full example resource layers more on top — a `Map`, a directional
 [`AlbumResource`](../examples/music-catalog-symfony/src/Resource/AlbumResource.php).
 The minimal version above is enough to get endpoints.
 
+> **A to-many relation is lazy by default — "where's my `data`?"** When you add a
+> relation (`HasMany::make('tracks', 'tracks')`), the album document renders the
+> relationship's `self`/`related` **links** but **no `data` linkage** until the client
+> asks for it — via `?include=tracks` or the `GET /albums/{id}/relationships/tracks`
+> endpoint. This is deliberate: emitting linkage for a lazy to-many would force a query
+> per parent (an N+1 across a collection). A to-one whose key sits on the owner (e.g.
+> `BelongsTo`) is eager by default — its identifier is free. To make a to-many emit its
+> linkage `data` eagerly, opt in with `->withData()`:
+> `HasMany::make('tracks', 'tracks')->withData()`. Relations, the lazy/eager defaults,
+> and `?include` are owned by [relationships](relationships.md).
+
 > An attribute can also be **flattened** from a related model
 > (`Str::make('authorName')->on('author')`) or **computed** read-only
 > (`->computedUsing($closure)`). The flattened relation is eager-loaded by the bundle so
@@ -166,15 +177,17 @@ server assignment) — see [resources](resources.md) for every argument.
 ## Step 4 — configure and import the routes
 
 Two config touches. First, the bundle configuration — at minimum a `base_uri`
-(it seeds the links the documents render). The example's
-[`json_api.yaml`](../examples/music-catalog-symfony/config/packages/json_api.yaml):
+(it seeds the links the documents render):
 
 ```yaml
 # config/packages/json_api.yaml
 json_api:
     base_uri: 'https://music.example'
-    version: '1.1'
 ```
+
+(`version:` defaults to `'1.1'`, so set it only for a non-default JSON:API version —
+the [example's `json_api.yaml`](../examples/music-catalog-symfony/config/packages/json_api.yaml)
+pins it just as the explicit-version witness; most apps omit it.)
 
 Second — and this is the step many first-time users miss — **routes are not
 auto-mounted**. You import the bundle's custom route type, which emits one literal
@@ -188,11 +201,12 @@ json_api_default:
     type: jsonapi
 ```
 
-Or, in PHP routing config, `$routes->import('.', 'jsonapi')`. The `resource: '.'`
-argument is **not** a path or glob — types come from the compiled resource
-descriptors. (It names a *server*; the bare `.` selects the implicit `default`
-server. That only matters once you run more than one server — see
-[routing](routing.md) and [configuration](configuration.md).)
+Or, in PHP routing config, `$routes->import('.', 'jsonapi')`. The `resource:`
+argument **names a server**, not a path or glob — types come from the compiled
+resource descriptors. The bare `.` (equivalently `resource: 'default'`, the
+self-describing form) selects the implicit `default` server; naming other servers
+only matters once you run more than one — see [routing](routing.md) and
+[configuration](configuration.md).
 
 There is no `Configuration.php` or `Extension` class to write — the config tree is
 tiny and declared inline by the bundle. The full reference (every key, the container

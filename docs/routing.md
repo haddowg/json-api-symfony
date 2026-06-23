@@ -28,12 +28,12 @@ json_api_default:
 In PHP config that is `$routes->import('.', 'jsonapi')`. The loader's type selector
 is the constant `JsonApiRouteLoader::ROUTE_TYPE === 'jsonapi'`.
 
-The `resource:` argument is **not a path or glob** — the types come from the
-compiled descriptors built at container-build time by `ResourceLocatorPass`, not by
-scanning a directory. But the argument is not ignored either: it **names the
-server**. The bare `.` (or empty, or the literal `default`) import
-emits the **`default`** server's routes; any other non-empty string names a
-configured server and emits that server's routes:
+The `resource:` argument **names the server** whose routes to emit — it is not a path
+or glob (the types come from the compiled descriptors `ResourceLocatorPass` builds at
+container-build time, not from scanning a directory). For the single-API case you can
+spell the implicit server out — `resource: 'default'` is the self-describing form — and
+the bare `.` (or empty) is a back-compat alias for it. Any other non-empty string names
+a configured server and emits that server's routes:
 
 ```yaml
 # config/routes/json_api.yaml — the example app mounts a second, named server
