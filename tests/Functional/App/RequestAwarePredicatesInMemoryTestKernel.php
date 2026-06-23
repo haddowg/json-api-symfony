@@ -94,6 +94,10 @@ final class RequestAwarePredicatesInMemoryTestKernel extends Kernel
         $services->set('test.badges_persister', InMemoryDataPersister::class)
             ->factory([RequestAwarePredicatesFactory::class, 'createBadgesPersister'])
             ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
+
+        $services->set('test.medals_persister', InMemoryDataPersister::class)
+            ->factory([RequestAwarePredicatesFactory::class, 'createMedalsPersister'])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

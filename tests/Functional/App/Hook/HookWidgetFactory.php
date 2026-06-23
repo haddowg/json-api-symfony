@@ -55,6 +55,11 @@ final class HookWidgetFactory
         return self::persister('hookableWidgets', self::hookableWidgets());
     }
 
+    public static function createOwnersPersister(): InMemoryDataPersister
+    {
+        return new InMemoryDataPersister('hookOwners', self::owners()->store(), static fn(): HookOwner => new HookOwner());
+    }
+
     private static function persister(string $type, InMemoryDataProvider $provider): InMemoryDataPersister
     {
         $owners = self::owners();

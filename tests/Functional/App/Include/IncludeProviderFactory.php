@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App\Include;
 
+use haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 
 /**
@@ -33,6 +34,26 @@ final class IncludeProviderFactory
     public static function createCaps(): InMemoryDataProvider
     {
         return new InMemoryDataProvider('caps', self::graph()['caps']);
+    }
+
+    public static function createNodesPersister(InMemoryDataProvider $provider): InMemoryDataPersister
+    {
+        return new InMemoryDataPersister('nodes', $provider->store(), static fn(): Node => new Node());
+    }
+
+    public static function createTagsPersister(InMemoryDataProvider $provider): InMemoryDataPersister
+    {
+        return new InMemoryDataPersister('tags', $provider->store(), static fn(): Tag => new Tag());
+    }
+
+    public static function createRootsPersister(InMemoryDataProvider $provider): InMemoryDataPersister
+    {
+        return new InMemoryDataPersister('roots', $provider->store(), static fn(): Holder => new Holder());
+    }
+
+    public static function createCapsPersister(InMemoryDataProvider $provider): InMemoryDataPersister
+    {
+        return new InMemoryDataPersister('caps', $provider->store(), static fn(): Holder => new Holder());
     }
 
     /**

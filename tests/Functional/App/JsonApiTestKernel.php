@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App;
 
+use haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
@@ -18,6 +19,8 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
+
+use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 /**
  * A minimal Symfony test kernel: it registers FrameworkBundle + the JsonApiBundle,
@@ -94,6 +97,11 @@ final class JsonApiTestKernel extends Kernel
             ->factory([CursorWidgetProviderFactory::class, 'create'])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
 
+        $services->set('test.cursor_widgets_persister', InMemoryDataPersister::class)
+            ->factory([CursorWidgetProviderFactory::class, 'createPersister'])
+            ->args([service('test.cursor_widgets_provider')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
+
         $services->set('test.articles_provider', InMemoryDataProvider::class)
             ->factory([ArticleProviderFactory::class, 'createArticles'])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
@@ -105,6 +113,21 @@ final class JsonApiTestKernel extends Kernel
         $services->set('test.comments_provider', InMemoryDataProvider::class)
             ->factory([ArticleProviderFactory::class, 'createComments'])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+
+        $services->set('test.articles_persister', InMemoryDataPersister::class)
+            ->factory([ArticleProviderFactory::class, 'articlesPersister'])
+            ->args([service('test.articles_provider')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
+
+        $services->set('test.authors_persister', InMemoryDataPersister::class)
+            ->factory([ArticleProviderFactory::class, 'authorsPersister'])
+            ->args([service('test.authors_provider')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
+
+        $services->set('test.comments_persister', InMemoryDataPersister::class)
+            ->factory([ArticleProviderFactory::class, 'commentsPersister'])
+            ->args([service('test.comments_provider')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

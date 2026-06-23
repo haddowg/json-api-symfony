@@ -4,15 +4,21 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App\OpenApi\MultiServer;
 
+use haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 
 /**
- * Builds the in-memory providers backing the multi-server OpenAPI witness — one per
- * type. The SPI resolves by type, so each server's resource reads from its own
- * provider.
+ * Builds the in-memory providers (and matching persisters) backing the multi-server
+ * OpenAPI witness — one per type. The SPI resolves by type, so each server's resource
+ * reads from its own provider.
  */
 final class MultiServerItemFactory
 {
+    public static function persister(string $type, InMemoryDataProvider $provider): InMemoryDataPersister
+    {
+        return new InMemoryDataPersister($type, $provider->store(), static fn(): Item => new Item());
+    }
+
     public static function publicItems(): InMemoryDataProvider
     {
         return self::provider('public-items', new Item('1', 'Public item'));

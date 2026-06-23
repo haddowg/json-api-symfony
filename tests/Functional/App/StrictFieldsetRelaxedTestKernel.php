@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App;
 
+use haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
@@ -88,6 +89,14 @@ final class StrictFieldsetRelaxedTestKernel extends Kernel
         $services->set('test.stickers_provider', InMemoryDataProvider::class)
             ->factory([StrictFieldsetFactory::class, 'createStickers'])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+
+        $services->set('test.leaflets_persister', InMemoryDataPersister::class)
+            ->factory([StrictFieldsetFactory::class, 'createLeafletsPersister'])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
+
+        $services->set('test.stickers_persister', InMemoryDataPersister::class)
+            ->factory([StrictFieldsetFactory::class, 'createStickersPersister'])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

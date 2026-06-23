@@ -17,6 +17,8 @@ use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigura
 use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
+use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
+
 /**
  * The multi-server OpenAPI witness (design D5): a `default` server (a `public-items`
  * resource) and a named `admin` server (an `admin-items` resource). With
@@ -114,6 +116,16 @@ final class OpenApiMultiServerTestKernel extends Kernel
         $services->set('test.openapi.admin_items', \haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider::class)
             ->factory([MultiServer\MultiServerItemFactory::class, 'adminItems'])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+
+        $services->set('test.openapi.public_items_persister', \haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister::class)
+            ->factory([MultiServer\MultiServerItemFactory::class, 'persister'])
+            ->args(['public-items', service('test.openapi.public_items')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
+
+        $services->set('test.openapi.admin_items_persister', \haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister::class)
+            ->factory([MultiServer\MultiServerItemFactory::class, 'persister'])
+            ->args(['admin-items', service('test.openapi.admin_items')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

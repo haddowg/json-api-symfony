@@ -110,6 +110,10 @@ final class LifecycleHooksTestKernel extends Kernel
         $services->set('test.hook_owners_provider', InMemoryDataProvider::class)
             ->factory([HookWidgetFactory::class, 'createOwners'])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+
+        $services->set('test.hook_owners_persister', InMemoryDataPersister::class)
+            ->factory([HookWidgetFactory::class, 'createOwnersPersister'])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

@@ -104,6 +104,14 @@ final class MultiTypeInMemoryTestKernel extends Kernel
         $services->set('test.posts_persister', InMemoryDataPersister::class)
             ->factory([MultiTypeFactory::class, 'createPostsPersister'])
             ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
+
+        $services->set('test.members_persister', InMemoryDataPersister::class)
+            ->factory([MultiTypeFactory::class, 'createMembersPersister'])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
+
+        $services->set('test.public_members_persister', InMemoryDataPersister::class)
+            ->factory([MultiTypeFactory::class, 'createPublicMembersPersister'])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

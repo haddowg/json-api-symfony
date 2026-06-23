@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App;
 
+use haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 
 /**
@@ -37,6 +38,21 @@ final class PolymorphicBoardFactory
     public static function createImages(): InMemoryDataProvider
     {
         return new InMemoryDataProvider('images', self::graph()['images']);
+    }
+
+    public static function createBoardsPersister(InMemoryDataProvider $provider): InMemoryDataPersister
+    {
+        return new InMemoryDataPersister('boards', $provider->store(), static fn(): Board => new Board());
+    }
+
+    public static function createNotesPersister(InMemoryDataProvider $provider): InMemoryDataPersister
+    {
+        return new InMemoryDataPersister('notes', $provider->store(), static fn(): Note => new Note());
+    }
+
+    public static function createImagesPersister(InMemoryDataProvider $provider): InMemoryDataPersister
+    {
+        return new InMemoryDataPersister('images', $provider->store(), static fn(): Image => new Image());
     }
 
     /**

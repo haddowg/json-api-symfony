@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App;
 
+use haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
@@ -17,6 +18,8 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
+
+use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 /**
  * The polymorphic witness kernel: a minimal Symfony app that declares BOTH a
@@ -97,6 +100,21 @@ final class PolymorphicRelationTestKernel extends Kernel
         $services->set('test.images_provider', InMemoryDataProvider::class)
             ->factory([PolymorphicBoardFactory::class, 'createImages'])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+
+        $services->set('test.boards_persister', InMemoryDataPersister::class)
+            ->factory([PolymorphicBoardFactory::class, 'createBoardsPersister'])
+            ->args([service('test.boards_provider')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
+
+        $services->set('test.notes_persister', InMemoryDataPersister::class)
+            ->factory([PolymorphicBoardFactory::class, 'createNotesPersister'])
+            ->args([service('test.notes_provider')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
+
+        $services->set('test.images_persister', InMemoryDataPersister::class)
+            ->factory([PolymorphicBoardFactory::class, 'createImagesPersister'])
+            ->args([service('test.images_provider')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

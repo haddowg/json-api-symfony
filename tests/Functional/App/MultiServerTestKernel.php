@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App;
 
+use haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
@@ -17,6 +18,8 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
+
+use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 /**
  * The multi-server witness kernel (ADR 0034): a `default` server (top-level
@@ -102,6 +105,21 @@ final class MultiServerTestKernel extends Kernel
         $services->set('test.shared_provider', InMemoryDataProvider::class)
             ->factory([MultiServerWidgetFactory::class, 'createShared'])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+
+        $services->set('test.public_persister', InMemoryDataPersister::class)
+            ->factory([MultiServerWidgetFactory::class, 'persister'])
+            ->args(['public-widgets', service('test.public_provider')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
+
+        $services->set('test.admin_persister', InMemoryDataPersister::class)
+            ->factory([MultiServerWidgetFactory::class, 'persister'])
+            ->args(['admin-widgets', service('test.admin_provider')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
+
+        $services->set('test.shared_persister', InMemoryDataPersister::class)
+            ->factory([MultiServerWidgetFactory::class, 'persister'])
+            ->args(['shared-widgets', service('test.shared_provider')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

@@ -66,6 +66,16 @@ final class MultiTypeFactory
         );
     }
 
+    public static function createMembersPersister(): InMemoryDataPersister
+    {
+        return new InMemoryDataPersister('members', self::members()->store(), static fn(): Member => new Member());
+    }
+
+    public static function createPublicMembersPersister(): InMemoryDataPersister
+    {
+        return new InMemoryDataPersister('public-members', self::publicMembers()->store(), static fn(): Member => new Member());
+    }
+
     /**
      * Resets the per-kernel singletons so each test boots a fresh, unmutated graph.
      */

@@ -15,6 +15,8 @@ use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigura
 use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
+use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
+
 /**
  * The `ui.enabled: false` witness (design D6): exposure is on (`expose_in_prod`) so the
  * `/docs.json` document route IS registered, but the viewer is disabled, so **no** UI
@@ -84,6 +86,11 @@ final class OpenApiUiDisabledTestKernel extends Kernel
         $services->set('test.openapi.categories_provider', \haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider::class)
             ->factory([OpenApiProviderFactory::class, 'categories'])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+
+        $services->set('test.openapi.categories_persister', \haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister::class)
+            ->factory([OpenApiProviderFactory::class, 'categoriesPersister'])
+            ->args([service('test.openapi.categories_provider')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

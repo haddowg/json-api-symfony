@@ -15,6 +15,8 @@ use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigura
 use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
+use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
+
 /**
  * A prefixed-mount witness for the documentation viewer (design D6): identical to
  * {@see OpenApiTestKernel} but it imports the OpenAPI routes under a `->prefix('/api')`
@@ -92,9 +94,19 @@ final class OpenApiPrefixedUiTestKernel extends Kernel
             ->factory([OpenApiProviderFactory::class, 'products'])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
 
+        $services->set('test.openapi.prefixed.products_persister', \haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister::class)
+            ->factory([OpenApiProviderFactory::class, 'productsPersister'])
+            ->args([service('test.openapi.prefixed.products_provider')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
+
         $services->set('test.openapi.prefixed.categories_provider', \haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider::class)
             ->factory([OpenApiProviderFactory::class, 'categories'])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+
+        $services->set('test.openapi.prefixed.categories_persister', \haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister::class)
+            ->factory([OpenApiProviderFactory::class, 'categoriesPersister'])
+            ->args([service('test.openapi.prefixed.categories_provider')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

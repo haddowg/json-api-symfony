@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App;
 
+use haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
@@ -17,6 +18,8 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
+
+use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 /**
  * The in-memory GROUND-TRUTH kernel for the windowed-include-batch conformance (bundle
@@ -94,6 +97,21 @@ final class WindowedIncludeWitnessKernel extends Kernel
         $services->set('test.windowed_comments_provider', InMemoryDataProvider::class)
             ->factory([WindowedProviderFactory::class, 'createComments'])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+
+        $services->set('test.windowed_articles_persister', InMemoryDataPersister::class)
+            ->factory([WindowedProviderFactory::class, 'createArticlesPersister'])
+            ->args([service('test.windowed_articles_provider')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
+
+        $services->set('test.windowed_authors_persister', InMemoryDataPersister::class)
+            ->factory([WindowedProviderFactory::class, 'createAuthorsPersister'])
+            ->args([service('test.windowed_authors_provider')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
+
+        $services->set('test.windowed_comments_persister', InMemoryDataPersister::class)
+            ->factory([WindowedProviderFactory::class, 'createCommentsPersister'])
+            ->args([service('test.windowed_comments_provider')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

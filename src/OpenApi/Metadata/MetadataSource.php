@@ -270,10 +270,19 @@ final class MetadataSource
             operations: $operations,
             securedOperations: $this->securedOperations($type, $operations),
             allowsClientId: $this->idEncoders->allowsClientIdFor($type),
+            // Slice 3 (#157) wires the real id-pattern derivation onto the {id}
+            // route requirement; until then this stays the documented neutral
+            // (null = any non-empty string accepted).
+            idPattern: null,
             paginatorKind: $paginatorKind,
             countable: $resource?->isCountable() ?? false,
             filters: $resource !== null ? \array_values($resource->filters()) : [],
-            sorts: $resource !== null ? \array_values($resource->sorts()) : [],
+            // allSorts(), not sorts(): the runtime accepts the field-derived sortables
+            // (every `->sortable()` field) UNION the explicit sorts() overrides, so the
+            // document must enumerate the same full set — otherwise a resource that
+            // relies on `->sortable()` fields (the common case, no sorts() override)
+            // would emit no `sort` parameter while `?sort=field` works.
+            sorts: $resource !== null ? \array_values($resource->allSorts()) : [],
             actions: $actions,
             tags: $this->typeTags($descriptor['tags'], $type),
             description: null,
