@@ -17,6 +17,8 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 /**
  * The OpenAPI document witness's primary resource: a `products` resource carrying the
  * full breadth the projection exercises —
+ *  - a **constrained id** (`matchAs('[0-9]+')`) so the `{id}` path parameter advertises
+ *    the anchored `^(?:[0-9]+)$` pattern — the idPattern-derivation witness;
  *  - **explicit OpenAPI tags** (`Catalog`) so its operations group under a config-
  *    defined tag (design §4.7);
  *  - a **backed-enum** attribute (`status`) so the document emits the reusable named
@@ -41,7 +43,11 @@ final class ProductResource extends AbstractResource
     public function fields(): array
     {
         return [
-            Id::make(),
+            // A constrained id (matchAs sets the {id} route requirement) so the served
+            // OpenAPI document advertises the anchored pattern on the {id} parameter —
+            // the idPattern-derivation witness. The seeded products id is numeric, so
+            // a numeric fragment keeps the read routes matchable.
+            Id::make()->matchAs('[0-9]+'),
             Str::make('name')->sortable()->required()->minLength(2)->maxLength(120),
             Str::make('status')->sortable()->enum(CatalogStatus::class),
             BelongsTo::make('category', 'categories'),
