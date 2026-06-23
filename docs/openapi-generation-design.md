@@ -27,7 +27,7 @@ actions** (G13, shipped after the original G1–G6 framing).
 | D4 | Document model | **Typed VO model authored in core** — no third-party runtime dep (the clean builder `oooas` is OAS-3.0-only/abandoned; the only live 3.1 lib `DEVizzent/cebe-php-openapi` is reader-shaped, magic-property, fights PHPStan L9 and 2020-12 keyword fidelity). Validate emitted docs against the **official OAS 3.1 meta-schema** via the existing `opis/json-schema` dev-dep |
 | D5 | Multi-server | **One document per server by default**, a **combined-document mode available via config** |
 | D6 | UI delivery | **CDN-linked, app-overridable** Twig template; a **single config-driven UI route** rendering **Swagger UI _or_ ReDoc (not both)**; plus **CLI export to JSON/YAML** |
-| D7 | Descriptions/examples (G4) | **Inline core authoring** — add `->description()`/`->example()` to core field/relation/filter builders — **plus a bundle decorator seam** for wholesale overrides |
+| D7 | Descriptions/examples (G4) | **Inline core authoring** — add `->describedAs()`/`->example()` to core field/relation/filter builders — **plus a bundle decorator seam** for wholesale overrides |
 | D8 | Security (G5) | App declares named **security schemes in bundle config** → `components.securitySchemes`; operations/actions carrying a `security` expression get a **configurable per-operation security requirement** (optional global default); per-op override. We never infer scheme semantics from the authz expression |
 | D9 | HTTP exposure | Doc JSON + UI routes **auto-exposed when `kernel.debug`**, **explicit config opt-in to expose in prod**. CLI export always available |
 | D10 | Query params (G3) | **Enumerate concrete params** per operation — each `filter[<key>]`, `fields[<type>]`, `sort` (enum of sortable keys ±desc), `include` (known includable paths), paginator-specific `page[...]` — value schemas from the declared constraints |
@@ -287,7 +287,7 @@ Configurable: `enum_value_descriptions: both | extensions | description` (defaul
 
 ## 5. Customisation (D7)
 
-- **Inline (core)**: `->description(string)` and `->example(mixed)` on
+- **Inline (core)**: `->describedAs(string)` and `->example(mixed)` on
   `AbstractField`, `AbstractRelation`, and the filter builders; resource-level
   `description`/external-docs via `#[AsJsonApiResource]` or a method. Core ADR.
 - **Wholesale (bundle)**: `OpenApiFactoryInterface` decorator(s) — receive the
@@ -361,7 +361,7 @@ per slice, verifies the gates itself, then proceeds autonomously.
 
 - **Slice 1 — core: JSON Schema projection + inline authoring + backed enums.**
   Typed JSON Schema VO + `SchemaProjector` (4.1/4.2, Map cascade);
-  `->description()`/`->example()` on core builders. **Backed-enum support (4.8)**:
+  `->describedAs()`/`->example()` on core builders. **Backed-enum support (4.8)**:
   `->enum()`/`->in()` enum-awareness + `In` class-string retention + the
   `EnumCaseDescription` attribute / `DescribedEnum` interface / `DescribesEnumCases`
   trait; projector emits the **inline** enum schema (enum, type, `x-enum-varnames`,

@@ -1,6 +1,6 @@
 # Wholesale OpenAPI customisation runs through a priority-ordered decorator seam applied inside the DocumentFactory
 
-Inline authoring (`->description()`/`->example()`) and config (`info`/`servers`/
+Inline authoring (`->describedAs()`/`->example()`) and config (`info`/`servers`/
 `security`/`tags`) cover the common customisation cases, but some mutations the
 projection cannot express declaratively — a server variable, an extra security scheme,
 per-individual-CRUD-operation tags, vendor extensions, hand-written examples, or

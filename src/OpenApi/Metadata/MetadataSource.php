@@ -10,6 +10,7 @@ use haddowg\JsonApi\OpenApi\Metadata\ServerMetadataInterface;
 use haddowg\JsonApi\OpenApi\Metadata\TypeMetadataInterface;
 use haddowg\JsonApi\OpenApi\Tag;
 use haddowg\JsonApi\Pagination\PaginatorInterface;
+use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\Action\ActionDescriptor;
@@ -73,6 +74,7 @@ final class MetadataSource
         private readonly TagNameResolver $tagNames,
         private readonly IncludePathResolver $includePaths,
         private readonly ?ResourceSecurityRegistry $security = null,
+        private readonly ?ResourceDescriptionRegistry $descriptions = null,
         private readonly array $configByServer = [],
         private readonly bool $atomicEnabled = false,
         private readonly string $atomicPath = '/operations',
@@ -286,9 +288,40 @@ final class MetadataSource
             sorts: $resource !== null ? \array_values($resource->allSorts()) : [],
             actions: $actions,
             tags: $this->typeTags($descriptor['tags'], $type),
-            description: null,
+            // The OpenAPI description overrides (bundle ADR 0092), each resolved with
+            // precedence resource method hook -> attribute override -> null (the
+            // projector then supplies the generated default). A standalone serializer
+            // has no resource and serves no CRUD operations, so both are naturally
+            // empty for it.
+            description: $resource?->getDescription() ?? $this->descriptions?->descriptionFor($type),
+            operationDescriptions: $this->operationDescriptions($resource, $type),
             includablePaths: $resource !== null ? $this->includePaths->pathsFor($server, $type) : [],
         );
+    }
+
+    /**
+     * The per-CRUD-operation OpenAPI description overrides for `$type`, keyed by
+     * {@see OperationType::value}, each resolved with precedence: the resource's
+     * {@see \haddowg\JsonApi\Resource\AbstractResource::describeOperation()} method hook,
+     * then the `#[AsJsonApiResource(operationDescriptions:)]` attribute override, then
+     * `null` (the projector emits the generated default). Only the five CRUD operations
+     * carry a description; relationship/related operations are described via the
+     * relation's own `describedAs()`.
+     *
+     * @return array<string, ?string>
+     */
+    private function operationDescriptions(?AbstractResource $resource, string $type): array
+    {
+        $descriptions = [];
+        foreach (OperationType::cases() as $operation) {
+            $value = $resource?->describeOperation($operation)
+                ?? $this->descriptions?->operationDescriptionFor($type, $operation);
+            if ($value !== null) {
+                $descriptions[$operation->value] = $value;
+            }
+        }
+
+        return $descriptions;
     }
 
     private function buildRelation(Server $server, RelationInterface $relation, ?PaginatorInterface $serverDefault): RelationMetadata

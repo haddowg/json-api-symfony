@@ -22,6 +22,7 @@ use haddowg\JsonApiBundle\Action\ActionScope as BundleActionScope;
 use haddowg\JsonApiBundle\OpenApi\Metadata\IncludePathResolver;
 use haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource;
 use haddowg\JsonApiBundle\OpenApi\Metadata\PaginatorKindResolver;
+use haddowg\JsonApiBundle\OpenApi\Metadata\ResourceDescriptionRegistry;
 use haddowg\JsonApiBundle\OpenApi\Metadata\ServerDocumentConfig;
 use haddowg\JsonApiBundle\OpenApi\Metadata\TagNameResolver;
 use haddowg\JsonApiBundle\Security\ResourceSecurityRegistry;
@@ -282,11 +283,87 @@ final class MetadataSourceTest extends TestCase
         self::assertSame('/operations', $atomic->path());
     }
 
+    // --- description overrides (bundle ADR 0092) -------------------------------
+
+    #[Test]
+    public function aTypeWithoutAnyDeclaredDescriptionLeavesTheOverridesNullForTheGeneratedDefault(): void
+    {
+        $articles = $this->typeNamed($this->source()->forServer(), 'articles');
+
+        // No override declared -> null on every surface; core's projector then
+        // supplies the generated default.
+        self::assertNull($articles->description());
+        foreach (OperationType::cases() as $operation) {
+            self::assertNull($articles->operationDescription($operation));
+        }
+    }
+
+    #[Test]
+    public function theAttributeDescriptionRegistryOverridesTheResourceObjectAndPerOperationDescriptions(): void
+    {
+        $descriptions = new ResourceDescriptionRegistry([
+            'articles' => [
+                'description' => 'The published articles of the blog.',
+                'operations' => [
+                    OperationType::FetchCollection->value => 'Browse every article.',
+                    OperationType::Delete->value => 'Retire an article.',
+                ],
+            ],
+        ]);
+
+        $articles = $this->typeNamed($this->source(descriptions: $descriptions)->forServer(), 'articles');
+
+        self::assertSame('The published articles of the blog.', $articles->description());
+        self::assertSame('Browse every article.', $articles->operationDescription(OperationType::FetchCollection));
+        self::assertSame('Retire an article.', $articles->operationDescription(OperationType::Delete));
+        // An operation without an override stays null (generated default applies).
+        self::assertNull($articles->operationDescription(OperationType::Create));
+    }
+
+    #[Test]
+    public function aResourceMethodHookWinsOverTheAttributeRegistry(): void
+    {
+        // The DescribedArticleResource overrides getDescription()/describeOperation();
+        // the registry also carries values for the same type — the method hook wins.
+        $descriptions = new ResourceDescriptionRegistry([
+            'articles' => [
+                'description' => 'Attribute description (should lose).',
+                'operations' => [OperationType::FetchOne->value => 'Attribute operation (should lose).'],
+            ],
+        ]);
+
+        $articles = $this->typeNamed(
+            $this->source(descriptions: $descriptions, describedArticle: true)->forServer(),
+            'articles',
+        );
+
+        self::assertSame('Method-hook resource description.', $articles->description());
+        self::assertSame('Method-hook fetch-one description.', $articles->operationDescription(OperationType::FetchOne));
+        // An operation the method hook does not describe falls through to the registry.
+        self::assertNull($articles->operationDescription(OperationType::Create));
+    }
+
+    #[Test]
+    public function aRelationCarriesItsDescribedAsAsTheRelationDescription(): void
+    {
+        $articles = $this->typeNamed($this->source()->forServer(), 'articles');
+
+        $author = null;
+        foreach ($articles->relations() as $relation) {
+            if ($relation->name() === 'author') {
+                $author = $relation;
+            }
+        }
+
+        self::assertNotNull($author);
+        self::assertSame('The article author', $author->description());
+    }
+
     // --- harness --------------------------------------------------------------
 
-    private function source(?ResourceSecurityRegistry $security = null, ?ServerDocumentConfig $config = null, bool $atomicEnabled = false, string $atomicPath = '/operations'): MetadataSource
+    private function source(?ResourceSecurityRegistry $security = null, ?ServerDocumentConfig $config = null, bool $atomicEnabled = false, string $atomicPath = '/operations', ?ResourceDescriptionRegistry $descriptions = null, bool $describedArticle = false): MetadataSource
     {
-        $article = new ArticleResource();
+        $article = $describedArticle ? new DescribedArticleResource() : new ArticleResource();
         $person = new PersonResource();
         $snippetSerializer = new SnippetSerializer();
 
@@ -332,6 +409,7 @@ final class MetadataSourceTest extends TestCase
             new TagNameResolver(),
             new IncludePathResolver($types),
             $security,
+            $descriptions,
             $config !== null ? [ServerProvider::DEFAULT_SERVER => $config] : [],
             $atomicEnabled,
             $atomicPath,
@@ -466,9 +544,10 @@ final class MetadataSourceTest extends TestCase
 
 /**
  * A resource exposing two relations (one to-one with a description, one to-many
- * countable to-many), countable, no client id.
+ * countable to-many), countable, no client id. Non-final so the description-override
+ * fixture {@see DescribedArticleResource} can reuse its field set (bundle ADR 0092).
  */
-final class ArticleResource extends AbstractResource
+class ArticleResource extends AbstractResource
 {
     public static string $type = 'articles';
 
@@ -477,7 +556,7 @@ final class ArticleResource extends AbstractResource
         return [
             Id::make(),
             Str::make('title'),
-            BelongsTo::make('author', 'people')->description('The article author'),
+            BelongsTo::make('author', 'people')->describedAs('The article author'),
             HasMany::make('comments', 'comments')->countable(),
         ];
     }
@@ -485,6 +564,32 @@ final class ArticleResource extends AbstractResource
     public function isCountable(): bool
     {
         return true;
+    }
+}
+
+/**
+ * The `articles` type, but with the author method hooks overriding the OpenAPI
+ * resource-object + fetch-one descriptions (bundle ADR 0092) — proves the method hook
+ * wins over the attribute registry, and that an undescribed operation falls through.
+ * The hook results are held as nullable properties so each override is genuinely a
+ * `?string` (an author may return null to fall through to the registry / default).
+ */
+final class DescribedArticleResource extends ArticleResource
+{
+    /** @phpstan-ignore property.unusedType (a hook may legitimately return null to fall through) */
+    private ?string $resourceDescription = 'Method-hook resource description.';
+
+    /** @phpstan-ignore property.unusedType (a hook may legitimately return null to fall through) */
+    private ?string $fetchOneDescription = 'Method-hook fetch-one description.';
+
+    public function getDescription(): ?string
+    {
+        return $this->resourceDescription;
+    }
+
+    public function describeOperation(OperationType $op): ?string
+    {
+        return $op === OperationType::FetchOne ? $this->fetchOneDescription : null;
     }
 }
 

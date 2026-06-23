@@ -35,6 +35,7 @@ final readonly class TypeMetadata implements TypeMetadataInterface
      * @param list<SortInterface>             $sorts
      * @param list<ActionMetadataInterface>   $actions
      * @param list<string>                    $tags
+     * @param array<string, ?string>          $operationDescriptions per-CRUD-operation description overrides, keyed by {@see OperationType::value}; a missing key (and a null value) means "no override" — the projector emits the generated default
      * @param list<string>                    $includablePaths
      */
     public function __construct(
@@ -54,6 +55,7 @@ final readonly class TypeMetadata implements TypeMetadataInterface
         private array $actions,
         private array $tags,
         private ?string $description,
+        private array $operationDescriptions,
         private array $includablePaths,
     ) {}
 
@@ -135,6 +137,11 @@ final readonly class TypeMetadata implements TypeMetadataInterface
     public function description(): ?string
     {
         return $this->description;
+    }
+
+    public function operationDescription(OperationType $op): ?string
+    {
+        return $this->operationDescriptions[$op->value] ?? null;
     }
 
     public function includablePaths(): array
