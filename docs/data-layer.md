@@ -30,12 +30,22 @@ endpoints exist falls out of which capabilities you wire — see
 
 ### `DataProviderInterface` — the read SPI
 
-The interface has **eight** methods. The first five answer the read endpoints; the
-last three are batch/match/pivot seams a custom provider must also satisfy (each has
-a documented no-op default — an empty batch / `[]` / `false` — so a provider that
-cannot serve one degrades gracefully). The signatures are elided here for
-readability; the [full interface](../src/DataProvider/DataProviderInterface.php) is
-the authority:
+The interface has **nine** methods, and all nine are **mandatory** on the bare
+interface — a PHP interface carries no bodies, so implementing
+`DataProviderInterface` directly means stubbing every one. The first three answer
+the read endpoints (`supports`, `fetchOne`, `fetchCollection`); the other six are
+the relationship / batch / match / pivot seams.
+
+Rather than hand-stub the six, extend the
+[`AbstractDataProvider`](../src/DataProvider/AbstractDataProvider.php) base class:
+it leaves the three read methods abstract and supplies a **neutral default** for the
+other six — each the value the caller treats as "this capability is absent". So a
+thin provider writes only `supports` / `fetchOne` / `fetchCollection`. A type whose
+relations are actually served overrides the relevant seam (see the per-method notes
+below — in particular a **filtered to-one** type must override the two
+`relatedToOneMatches*` methods). The signatures are elided here for readability;
+the [full interface](../src/DataProvider/DataProviderInterface.php) is the
+authority:
 
 ```php
 interface DataProviderInterface
@@ -51,7 +61,8 @@ interface DataProviderInterface
     /** @return array<int|string, int> parentWireId => count */
     public function countRelated(/* type, parents, relation, criteria, request */): array;
 
-    // --- batch / to-one-match / pivot seams (no-op defaults documented below) ---
+    // --- relationship / batch / to-one-match / pivot seams ---
+    // (AbstractDataProvider supplies neutral defaults; documented below) ---
 
     public function fetchRelatedCollectionBatch(/* parentType, parents, relation, criteria, request */): RelatedBatch;
 
@@ -77,12 +88,16 @@ interface DataProviderInterface
   covers the push-down). It also threads `relation->isCountable()`: a non-countable
   relation paginates **count-free** — a `null` total with
   `windowed: true` and a `hasMore` probe on the `CollectionResult`.
+  `fetchRelatedCollection()`'s `AbstractDataProvider` default is an **empty,
+  unwindowed `CollectionResult`** (no members, no pagination meta) — override it to
+  serve a to-many related endpoint.
 - `countRelated()` is the count-only batch seam for `?withCount` and countable
   relations: the cardinality of `$relation` for a whole page of `$parents` as a
   `wireId => count` map — ONE grouped, pushed-down count, no N+1. A pivot relation
   counts its association rows; a polymorphic to-many is counted in memory but
   throws on the Doctrine reference ([relationships](relationships.md) covers
-  `countable()`/`?withCount`).
+  `countable()`/`?withCount`). The `AbstractDataProvider` default is the **empty
+  count map** `[]` (the type reports no cardinalities).
 - `fetchRelatedCollectionBatch()` is the page-at-a-time twin of
   `fetchRelatedCollection()`: it answers a whole page of `$parents` for one relation
   in a single store round-trip, returning a `RelatedBatch` keyed by parent wire id.
@@ -90,7 +105,8 @@ interface DataProviderInterface
   drive — so it serves the same automatic include batching the Doctrine layer does
   ([doctrine → eager-loading includes](doctrine.md#eager-loading-includes-no-n1)). A
   relation a provider cannot batch returns an **empty `RelatedBatch`**, and the
-  caller renders that relation's includes lazily.
+  caller renders that relation's includes lazily — which is also the
+  `AbstractDataProvider` default.
 - `relatedToOneMatches()` / `relatedToOneMatchesBatch()` answer "does this to-one's
   target survive the relation's `?filter`?" for the single-resource (`relatedToOneMatches`)
   and the batched include/primary (`relatedToOneMatchesBatch`) paths. When the answer
@@ -99,12 +115,19 @@ interface DataProviderInterface
   `…/relationships/{toOneRel}?filter[…]`, dropped from `included` on
   `relatedQuery[<toOneRel>][filter]` (covered on
   [relationships](relationships.md)). A `[filter]` is the only `relatedQuery` member a
-  to-one accepts — a `[sort]`/`[page]` on a to-one path is a `400`. A provider with no
-  to-one filter support returns `false`/an empty map (nulling nothing extra).
+  to-one accepts — a `[sort]`/`[page]` on a to-one path is a `400`. The
+  `AbstractDataProvider` defaults are **all-match** — `relatedToOneMatches()` returns
+  `true`, and `relatedToOneMatchesBatch()` returns the full `wireId => true` map —
+  because a base provider that does not filter its to-ones must *never* null one:
+  `false` (or an empty `[]` map, which the caller reads as no-match for every parent)
+  would null a *matching* to-one. **A type whose to-one relations are filtered must
+  override both** to probe the target (and, for the batch, to key the map by the
+  serializer's wire id rather than the conventional `id` member the default reads).
 - `fetchRelationshipPivot()` returns the stored pivot meta for a pivot relation's
   current members (`relatedId => [pivotField => wire value]`), so the validator folds
   a stored row under an incoming partial pivot update. A non-pivot relation,
-  or any provider that cannot store pivot data (the in-memory witness), returns `[]`.
+  or any provider that cannot store pivot data (the in-memory witness), returns `[]` —
+  the `AbstractDataProvider` default.
 
 The interface is `@template-covariant TEntity of object`. A single-type provider
 is `DataProviderInterface<Album>`; a multi-type provider (like the Doctrine one)
@@ -176,6 +199,15 @@ relationships in `data.relationships` applies each one with `$flush = false`, so
 the single `create()`/`update()` owns the commit — a not-yet-persisted create
 target is never flushed mid-association. You only need this distinction
 when writing a custom persister; the handler sets it for you.
+
+A persister that never serves the `…/relationships/{rel}` write endpoints (nor
+embeds relationships in whole-resource writes) can extend the
+[`AbstractDataPersister`](../src/DataPersister/AbstractDataPersister.php) base class:
+it leaves the five write methods abstract and supplies a default
+`mutateRelationship()` that **throws** a clear `\LogicException`. The handler calls
+`mutateRelationship()` only for a relationship write, so a persister that never
+mutates relationships simply never triggers it; one that exposes a writable
+relationship overrides it.
 
 Tagged `haddowg.json_api.data_persister`
 ([`JsonApiBundle::DATA_PERSISTER_TAG`](../src/JsonApiBundle.php)).

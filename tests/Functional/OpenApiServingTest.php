@@ -197,6 +197,49 @@ final class OpenApiServingTest extends JsonApiFunctionalTestCase
         self::assertContains('page[size]', $names);
     }
 
+    #[Test]
+    #[Group('spec:openapi')]
+    public function theIdPathParameterCarriesTheAnchoredIdPatternForAConstrainedIdType(): void
+    {
+        // products declares Id::make()->matchAs('[0-9]+'); the served document must
+        // advertise that fragment anchored onto the {id} path parameter's schema. The
+        // {id} parameter is shared at the path-item level (not per-operation).
+        $parameters = $this->nested($this->fetchDocument(), 'paths', '/products/{id}', 'parameters');
+
+        self::assertSame('^(?:[0-9]+)$', $this->idParameterPattern($parameters));
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    public function theIdPathParameterCarriesNoPatternForAnUnconstrainedIdType(): void
+    {
+        // categories declares a plain Id::make() (no route requirement), so its {id}
+        // parameter schema must carry no pattern at all.
+        $parameters = $this->nested($this->fetchDocument(), 'paths', '/categories/{id}', 'parameters');
+
+        self::assertNull($this->idParameterPattern($parameters));
+    }
+
+    /**
+     * The `pattern` of the `{id}` path parameter's schema in a path's parameter list,
+     * or `null` when the schema declares none.
+     *
+     * @param array<array-key, mixed> $parameters
+     */
+    private function idParameterPattern(array $parameters): ?string
+    {
+        foreach ($parameters as $parameter) {
+            if (\is_array($parameter) && ($parameter['name'] ?? null) === 'id' && ($parameter['in'] ?? null) === 'path') {
+                $schema = $parameter['schema'] ?? [];
+                $pattern = \is_array($schema) ? ($schema['pattern'] ?? null) : null;
+
+                return \is_string($pattern) ? $pattern : null;
+            }
+        }
+
+        self::fail('No {id} path parameter found.');
+    }
+
     /**
      * @return array<string, mixed>
      */

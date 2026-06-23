@@ -7,16 +7,14 @@ namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Provider;
 use haddowg\JsonApi\Collection\CollectionResult;
 use haddowg\JsonApi\Operation\QueryParameters;
 use haddowg\JsonApi\Pagination\OffsetWindow;
-use haddowg\JsonApi\Request\JsonApiRequestInterface;
-use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\InMemory\ArrayFilterHandler;
 use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Sort\InMemory\ArraySortHandler;
 use haddowg\JsonApi\Resource\Sort\SortByField;
+use haddowg\JsonApiBundle\DataProvider\AbstractDataProvider;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\CriteriaApplier;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
-use haddowg\JsonApiBundle\DataProvider\RelatedBatch;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Model\Country;
 use Symfony\Component\Intl\Countries;
 
@@ -38,9 +36,17 @@ use Symfony\Component\Intl\Countries;
  * `page[number]`/`page[size]` and executed as an {@see OffsetWindow} array slice,
  * since a resource-less type has no server-default paginator.
  *
- * @implements DataProviderInterface<object>
+ * Countries are reference data — never the target of a relationship — so the
+ * relationship / batch / pivot seams of {@see DataProviderInterface} are all the
+ * neutral "no relationships" default. Rather than hand-stub all six, it extends
+ * {@see AbstractDataProvider} and implements only the three read abstracts
+ * ({@see supports()} / {@see fetchOne()} / {@see fetchCollection()}); the inherited
+ * defaults serve the empty related collection / batch, the empty count map, the
+ * all-match to-one, and the empty pivot.
+ *
+ * @extends AbstractDataProvider<object>
  */
-final class CountryProvider implements DataProviderInterface
+final class CountryProvider extends AbstractDataProvider
 {
     private const string LOCALE = 'en';
 
@@ -96,65 +102,10 @@ final class CountryProvider implements DataProviderInterface
         return $this->window($items, $criteria->queryParameters);
     }
 
-    public function fetchRelatedCollection(
-        string $relatedType,
-        object $parent,
-        RelationInterface $relation,
-        CollectionCriteria $criteria,
-        JsonApiRequestInterface $request,
-    ): CollectionResult {
-        // Countries are reference data: they are never the target of a relationship.
-        return new CollectionResult([]);
-    }
-
-    public function fetchRelatedCollectionBatch(
-        string $parentType,
-        array $parents,
-        RelationInterface $relation,
-        CollectionCriteria $criteria,
-        JsonApiRequestInterface $request,
-    ): RelatedBatch {
-        // Countries are reference data: they are never the target of a relationship.
-        return new RelatedBatch([]);
-    }
-
-    public function fetchRelationshipPivot(string $type, object $parent, RelationInterface $relation): array
-    {
-        // Countries are reference data with no pivot relationships.
-        return [];
-    }
-
-    public function countRelated(
-        string $type,
-        array $parents,
-        RelationInterface $relation,
-        CollectionCriteria $criteria,
-        JsonApiRequestInterface $request,
-    ): array {
-        // Countries are reference data: they are never counted as a relationship.
-        return [];
-    }
-
-    public function relatedToOneMatches(
-        string $relatedType,
-        object $related,
-        RelationInterface $relation,
-        CollectionCriteria $criteria,
-        JsonApiRequestInterface $request,
-    ): bool {
-        // Countries are reference data with no filterable to-one relationships.
-        return true;
-    }
-
-    public function relatedToOneMatchesBatch(
-        string $parentType,
-        array $parents,
-        RelationInterface $relation,
-        CollectionCriteria $criteria,
-        JsonApiRequestInterface $request,
-    ): array {
-        return [];
-    }
+    // The relationship / batch / pivot seams use the neutral defaults inherited
+    // from AbstractDataProvider: countries are reference data, never the target of
+    // a relationship, so an empty related collection / batch, an empty count map,
+    // an all-match to-one and an empty pivot are exactly right here.
 
     /**
      * Every country as a {@see Country}, ordered by ISO code for a deterministic
