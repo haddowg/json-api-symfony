@@ -376,6 +376,12 @@ Id::make()->requireClientId()                       // a natural key the client 
 Id::make()->uuid()->allowClientId()->generated()    // client UUID if given, else minted
 ```
 
+> **Validate the ids you accept.** `allowClientId()` / `requireClientId()` *without* a
+> declared id format (`uuid()`, `ulid()`, `matchAs('…')`, …) accepts **any** non-empty
+> client-supplied string unvalidated — the same format pins both client-supplied ids and
+> the ids carried in relationship linkage. Declare a format unless free-form natural keys
+> are intentional.
+
 > Migrating from the old auto-UUID? A non-`GeneratedValue` string-id entity that
 > must keep minting an id needs `generated()` (or `generateUsing()`); otherwise it
 > will persist a blank id. Use `generateUsing(fn() => Id::generateUuid())` rather
