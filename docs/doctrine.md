@@ -689,6 +689,14 @@ hand-built, so its arms are not DI-tagged). An inherently Doctrine-specific filt
 raw-DQL scope) ships only the Doctrine arm; it is simply not declared on an in-memory
 resource.
 
+> **Describe a custom filter in the OpenAPI document.** A custom `FilterInterface` with
+> no value constraints projects an opaque, permissive `filter[…]` parameter with a
+> generic description. Implement
+> [`DescribedFilter`](https://github.com/haddowg/json-api/blob/main/src/Resource/Filter/DescribedFilter.php)
+> (`getDescription(): ?string`) on the filter VO to give that parameter its own prose —
+> the same hook the convenience filter library uses. (Built-in and `Where`/`Range`-derived
+> filters already self-describe.)
+
 ## Column safety
 
 Filter and sort columns come from the **server-side resource declaration**, never
