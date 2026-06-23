@@ -37,6 +37,11 @@ final class PostSerializer implements SerializerInterface, SerializerResolverAwa
         $this->resolver = $resolver;
     }
 
+    public function serializerResolver(): ?SerializerResolverInterface
+    {
+        return $this->resolver;
+    }
+
     public function getType(mixed $object): string
     {
         return 'posts';

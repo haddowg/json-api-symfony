@@ -246,6 +246,37 @@ abstract class CustomActionConformanceTestCase extends JsonApiFunctionalTestCase
         self::assertSame(200, $post->getStatusCode(), (string) $post->getContent());
     }
 
+    #[Test]
+    #[Group('spec:actions')]
+    public function anUngatedAsLinkActionRendersAsAResourceLink(): void
+    {
+        // The `pin` action declares asLink: true with NO security, so its `links.pin`
+        // member renders on every rendered actionWidgets resource and resolves to the
+        // action's own route URL (bundle ADR 0091).
+        $links = $this->linksOf($this->action('/actionWidgets/1', 'GET'));
+
+        self::assertArrayHasKey('pin', $links);
+        self::assertStringEndsWith('/actionWidgets/1/-actions/pin', $this->href($links['pin']));
+    }
+
+    #[Test]
+    #[Group('spec:actions')]
+    public function aSecurityGatedAsLinkActionRendersOnlyForAnAdmittedRequester(): void
+    {
+        // The `archive` action declares asLink: true AND security: ROLE_ADMIN. The link
+        // renders ONLY for a requester who would pass the same gate the BeforeActionEvent
+        // uses — present for `admin`, absent for `user` (bundle ADR 0091).
+        $adminLinks = $this->linksOf($this->action('/actionWidgets/1', 'GET', null, ['HTTP_AUTHORIZATION' => 'Bearer admin']));
+        self::assertArrayHasKey('archive', $adminLinks);
+        self::assertStringEndsWith('/actionWidgets/1/-actions/archive', $this->href($adminLinks['archive']));
+
+        $userLinks = $this->linksOf($this->action('/actionWidgets/1', 'GET', null, ['HTTP_AUTHORIZATION' => 'Bearer user']));
+        self::assertArrayNotHasKey('archive', $userLinks);
+
+        // The ungated link is unaffected by the security gate — it shows for `user` too.
+        self::assertArrayHasKey('pin', $userLinks);
+    }
+
     /**
      * Issues an action request: an authenticated (default `user`) JSON:API request.
      * A JSON `$body` array is sent as an `application/vnd.api+json` document (Document
@@ -298,5 +329,38 @@ abstract class CustomActionConformanceTestCase extends JsonApiFunctionalTestCase
 
         /** @var array<string, mixed> $attributes */
         return $attributes;
+    }
+
+    /**
+     * The decoded document's primary `data.links`, narrowed for offset access.
+     *
+     * @return array<string, mixed>
+     */
+    protected function linksOf(Response $response): array
+    {
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        $links = $this->dataOf($response)['links'] ?? null;
+        self::assertIsArray($links);
+
+        /** @var array<string, mixed> $links */
+        return $links;
+    }
+
+    /**
+     * The href of a JSON:API link member, which serializes either as a bare URL string
+     * or as a `{href, meta}` link object.
+     */
+    protected function href(mixed $link): string
+    {
+        if (\is_string($link)) {
+            return $link;
+        }
+
+        self::assertIsArray($link);
+        $href = $link['href'] ?? null;
+        self::assertIsString($href);
+
+        return $href;
     }
 }

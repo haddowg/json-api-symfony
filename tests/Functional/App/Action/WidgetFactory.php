@@ -18,9 +18,13 @@ final class WidgetFactory
 {
     public static function createProvider(): InMemoryDataProvider
     {
+        // Widget 1's `related` to-one points at widget 2, so `?include=related` renders
+        // widget 2 as an included member — the asLink-link-on-an-included-resource
+        // witness (bundle ADR 0091). Widget 2's `related` is null (an empty to-one).
+        $second = new Widget(2, 'Second widget');
         $widgets = [
-            '1' => new Widget(1, 'First widget'),
-            '2' => new Widget(2, 'Second widget'),
+            '1' => new Widget(1, 'First widget', related: $second),
+            '2' => $second,
         ];
 
         return new InMemoryDataProvider(

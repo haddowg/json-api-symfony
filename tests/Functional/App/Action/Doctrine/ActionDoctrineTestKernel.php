@@ -10,6 +10,7 @@ use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Tests\Functional\App\Action\ArchiveWidget;
 use haddowg\JsonApiBundle\Tests\Functional\App\Action\DenyingServingSubscriber;
 use haddowg\JsonApiBundle\Tests\Functional\App\Action\ImportWidgets;
+use haddowg\JsonApiBundle\Tests\Functional\App\Action\PinWidget;
 use haddowg\JsonApiBundle\Tests\Functional\App\Action\PublishWidget;
 use haddowg\JsonApiBundle\Tests\Functional\App\Action\RecalculateWidgets;
 use haddowg\JsonApiBundle\Tests\Functional\App\Action\ReceiptSerializer;
@@ -167,6 +168,7 @@ final class ActionDoctrineTestKernel extends Kernel
         $services->set(RenameWidget::class);
         $services->set(ArchiveWidget::class);
         $services->set(RecalculateWidgets::class);
+        $services->set(PinWidget::class);
 
         $services->set(DenyingServingSubscriber::class);
     }

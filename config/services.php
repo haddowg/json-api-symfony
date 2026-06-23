@@ -133,6 +133,17 @@ return static function (ContainerConfigurator $container): void {
         ->arg('$validator', \Symfony\Component\DependencyInjection\Loader\Configurator\service(ResourceValidator::class)->nullOnInvalid())
         ->arg('$dispatcher', \Symfony\Component\DependencyInjection\Loader\Configurator\service('event_dispatcher')->nullOnInvalid());
 
+    // Exposes an #[AsJsonApiAction(asLink: true)] action as a security-aware `links`
+    // member on its mount type's resources (bundle ADR 0091): a single shared
+    // ResourceLinkContributor threaded onto EVERY server's memoized Server (in
+    // registerServers), resolving the server per request from `_jsonapi_server` so each
+    // server contributes only its own asLink actions. The link map (server → type →
+    // action link descriptors) is filled by the ResourceLocatorPass; the authorization
+    // checker is optional (no firewall → a `security`-gated action's link is suppressed).
+    $services->set(\haddowg\JsonApiBundle\Action\ActionLinkContributor::class)
+        ->arg('$authorizationChecker', \Symfony\Component\DependencyInjection\Loader\Configurator\service('security.authorization_checker')->nullOnInvalid())
+        ->arg('$linksByServerType', []);
+
     // Resolves a type's id encoder + route {id} pattern from its resource's Id
     // field (ADR 0038). The Doctrine provider/persister decode wire ids through it
     // (the SPI stays wire-id; the in-memory provider has no encoder so wire ==

@@ -61,6 +61,7 @@ use haddowg\JsonApi\Response\NoContentResponse;
     server: null,                   // multi-server assignment; defaults to the implicit `default`
     security: "is_granted('PUBLISH', subject)",   // optional authz expression (see Authorization)
     name: null,                     // optional route-name override
+    asLink: false,                  // expose as a security-aware `links` member (resource scope only)
 )]
 final class PublishArticle implements ActionHandlerInterface
 {
@@ -305,6 +306,57 @@ resource-level registration.
 For authorization an expression can't capture — a multi-entity rule, a
 data-dependent check — subscribe to the `BeforeActionEvent` directly and throw a
 `JsonApiExceptionInterface` (see [lifecycle hooks](lifecycle-hooks.md)).
+
+## Exposing an action as a resource link (`asLink`)
+
+Set `asLink: true` and the action's URL is published as a `links` member on every
+rendered resource of its mount type — keyed by the action's `path` — so a client
+discovers the action straight from the resource it acts on, with no out-of-band
+knowledge of the URL structure:
+
+```php
+#[AsJsonApiAction(
+    type: 'articles',
+    path: 'publish',
+    security: "is_granted('PUBLISH', subject)",
+    asLink: true,
+)]
+```
+
+```jsonc
+// GET /articles/42
+{
+  "data": {
+    "type": "articles",
+    "id": "42",
+    "attributes": { "...": "..." },
+    "links": {
+      "self": "https://example.com/articles/42",
+      "publish": "https://example.com/articles/42/-actions/publish"
+    }
+  }
+}
+```
+
+The link is **security-aware**. When the action declares a `security` expression,
+its link is rendered **only when the current requester would pass that same gate** —
+evaluated exactly as the `BeforeActionEvent` gate evaluates it at invocation — so a
+client never sees a link to an action it cannot invoke (the `publish` link above is
+absent for a user who lacks `PUBLISH` on article 42). An action with no `security`
+always renders its link. The link is added without the resource's own
+`getLinks()` having to know about it, and an author-supplied link of the same name
+always wins.
+
+The contribution applies to **every** rendered resource of the type, primary or
+included — so `GET /comments/1?include=article` carries the `publish` link on the
+included `articles` member too.
+
+> `asLink` is **resource scope only**: a collection-scope action has no resource to
+> hang a link on, so `asLink: true` on a `ActionScope::Collection` action is a
+> build-time error. The security-aware visibility uses the same `symfony/security-core`
+> + firewall wiring as the `security` gate; with no firewall configured, a
+> `security`-gated action's link is suppressed (fail-closed — the gate would deny at
+> invocation too).
 
 ## Lifecycle events
 

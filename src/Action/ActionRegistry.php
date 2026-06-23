@@ -35,6 +35,7 @@ use Psr\Container\ContainerInterface;
  *     handlerServiceId: string,
  *     server: string,
  *     tags?: string,
+ *     asLink?: bool,
  * }
  */
 final class ActionRegistry
@@ -105,6 +106,7 @@ final class ActionRegistry
             $descriptor['handlerServiceId'],
             $descriptor['server'],
             $this->splitTags($descriptor['tags'] ?? ''),
+            $descriptor['asLink'] ?? false,
         );
     }
 
