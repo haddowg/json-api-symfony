@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App;
 
+use haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 use haddowg\JsonApiBundle\Tests\Functional\WindowedSeedData;
 
@@ -36,6 +37,21 @@ final class WindowedProviderFactory
     public static function createComments(): InMemoryDataProvider
     {
         return new InMemoryDataProvider('comments', self::graph()['comments']);
+    }
+
+    public static function createArticlesPersister(InMemoryDataProvider $provider): InMemoryDataPersister
+    {
+        return new InMemoryDataPersister('articles', $provider->store(), static fn(): Article => new Article());
+    }
+
+    public static function createAuthorsPersister(InMemoryDataProvider $provider): InMemoryDataPersister
+    {
+        return new InMemoryDataPersister('authors', $provider->store(), static fn(): Author => new Author());
+    }
+
+    public static function createCommentsPersister(InMemoryDataProvider $provider): InMemoryDataPersister
+    {
+        return new InMemoryDataPersister('comments', $provider->store(), static fn(): Comment => new Comment());
     }
 
     /**

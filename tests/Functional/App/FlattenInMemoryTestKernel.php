@@ -108,6 +108,18 @@ final class FlattenInMemoryTestKernel extends Kernel
         $services->set('test.flatten_books_persister', InMemoryDataPersister::class)
             ->factory([FlattenProviderFactory::class, 'createBooksPersister'])
             ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
+
+        $services->set('test.flatten_authors_persister', InMemoryDataPersister::class)
+            ->factory([FlattenProviderFactory::class, 'createAuthorsPersister'])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
+
+        $services->set('test.flatten_publishers_persister', InMemoryDataPersister::class)
+            ->factory([FlattenProviderFactory::class, 'createPublishersPersister'])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
+
+        $services->set('test.flatten_countries_persister', InMemoryDataPersister::class)
+            ->factory([FlattenProviderFactory::class, 'createCountriesPersister'])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

@@ -52,6 +52,11 @@ final class RequestAwarePredicatesFactory
         );
     }
 
+    public static function createMedalsPersister(): InMemoryDataPersister
+    {
+        return new InMemoryDataPersister('medals', self::medals()->store(), static fn(): Medal => new Medal());
+    }
+
     /**
      * Resets the per-kernel singletons so each test boots a fresh, unmutated graph.
      */

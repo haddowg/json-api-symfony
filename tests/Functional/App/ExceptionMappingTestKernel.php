@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App;
 
+use haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
@@ -21,6 +22,8 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
+
+use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 /**
  * The exception-mapping harness kernel (gap G15 / bundle ADR 0073). It serves a
@@ -128,6 +131,11 @@ final class ExceptionMappingTestKernel extends Kernel
             ->factory([self::class, 'createThrowingWidgetsProvider'])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
 
+        $services->set('test.throwing_widgets_persister', InMemoryDataPersister::class)
+            ->factory([self::class, 'createThrowingWidgetsPersister'])
+            ->args([service('test.throwing_widgets_provider')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
+
         // Facet 2: the tagged ExceptionMapperInterface. autoconfigure() lets the
         // bundle's registerForAutoconfiguration tag it as a json_api.exception_mapper.
         $services->set(TestExceptionMapper::class);
@@ -142,6 +150,11 @@ final class ExceptionMappingTestKernel extends Kernel
 
             return $item->id;
         });
+    }
+
+    public static function createThrowingWidgetsPersister(InMemoryDataProvider $provider): InMemoryDataPersister
+    {
+        return new InMemoryDataPersister('throwingWidgets', $provider->store(), static fn(): ThrowingWidget => new ThrowingWidget());
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

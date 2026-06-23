@@ -15,6 +15,8 @@ use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigura
 use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
+use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
+
 /**
  * The single-server OpenAPI document witness kernel (Slice 4 stage B): two resources
  * (`products` — explicitly `Catalog`-tagged, enum attribute, filters/sorts, a to-one
@@ -131,9 +133,19 @@ final class OpenApiTestKernel extends Kernel
             ->factory([OpenApiProviderFactory::class, 'products'])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
 
+        $services->set('test.openapi.products_persister', \haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister::class)
+            ->factory([OpenApiProviderFactory::class, 'productsPersister'])
+            ->args([service('test.openapi.products_provider')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
+
         $services->set('test.openapi.categories_provider', \haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider::class)
             ->factory([OpenApiProviderFactory::class, 'categories'])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+
+        $services->set('test.openapi.categories_persister', \haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister::class)
+            ->factory([OpenApiProviderFactory::class, 'categoriesPersister'])
+            ->args([service('test.openapi.categories_provider')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

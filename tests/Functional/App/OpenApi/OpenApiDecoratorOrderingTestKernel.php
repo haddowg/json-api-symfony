@@ -15,6 +15,8 @@ use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigura
 use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
+use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
+
 /**
  * Ordering witness for the decorator seam (design §5, D7 — bundle ADR 0080): registers
  * two {@see PriorityDecorator}s at different priorities, both overwriting the document
@@ -109,9 +111,19 @@ final class OpenApiDecoratorOrderingTestKernel extends Kernel
             ->factory([OpenApiProviderFactory::class, 'products'])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
 
+        $services->set('test.openapi.ordering.products_persister', \haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister::class)
+            ->factory([OpenApiProviderFactory::class, 'productsPersister'])
+            ->args([service('test.openapi.ordering.products_provider')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
+
         $services->set('test.openapi.ordering.categories_provider', \haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider::class)
             ->factory([OpenApiProviderFactory::class, 'categories'])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+
+        $services->set('test.openapi.ordering.categories_persister', \haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister::class)
+            ->factory([OpenApiProviderFactory::class, 'categoriesPersister'])
+            ->args([service('test.openapi.ordering.categories_provider')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

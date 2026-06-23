@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App\Include;
 
+use haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
@@ -18,6 +19,8 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
+
+use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 /**
  * The in-memory include-safeguards kernel (bundle ADR 0037). It leaves
@@ -104,6 +107,26 @@ final class IncludeSafeguardsTestKernel extends Kernel
         $services->set('test.caps_provider', InMemoryDataProvider::class)
             ->factory([IncludeProviderFactory::class, 'createCaps'])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+
+        $services->set('test.nodes_persister', InMemoryDataPersister::class)
+            ->factory([IncludeProviderFactory::class, 'createNodesPersister'])
+            ->args([service('test.nodes_provider')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
+
+        $services->set('test.tags_persister', InMemoryDataPersister::class)
+            ->factory([IncludeProviderFactory::class, 'createTagsPersister'])
+            ->args([service('test.tags_provider')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
+
+        $services->set('test.roots_persister', InMemoryDataPersister::class)
+            ->factory([IncludeProviderFactory::class, 'createRootsPersister'])
+            ->args([service('test.roots_provider')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
+
+        $services->set('test.caps_persister', InMemoryDataPersister::class)
+            ->factory([IncludeProviderFactory::class, 'createCapsPersister'])
+            ->args([service('test.caps_provider')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

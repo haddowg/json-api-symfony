@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Functional\App\EagerValidation;
 
 use Doctrine\Bundle\DoctrineBundle\DoctrineBundle;
+use haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister;
+use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
@@ -15,6 +17,8 @@ use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigura
 use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
+use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
+
 /**
  * The Doctrine half of the fail-loud eager-load validation pair (bundle ADR 0085):
  * the same subject `products` + related `brands` / `regions` resources as the
@@ -23,9 +27,10 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
  * proven to throw / accept identically on BOTH providers.
  *
  * The eager-load validation is pure metadata (`isToMany` + cross-type resolution), so it
- * is provider-independent — the resources need no entity mapping, and no Doctrine
- * provider is wired for them. The cache dir is keyed by the subject class so each
- * scenario compiles its own container.
+ * is provider-independent — the resources need no entity mapping. They still get an
+ * (empty) in-memory provider + persister per type so the servability warm-up guard passes
+ * (the validation under test is provider-agnostic). The cache dir is keyed by the subject
+ * class so each scenario compiles its own container.
  */
 final class EagerValidationDoctrineKernel extends Kernel
 {
@@ -100,6 +105,23 @@ final class EagerValidationDoctrineKernel extends Kernel
         $services->set(static::$subjectResource);
         $services->set(EagerBrandResource::class);
         $services->set(EagerRegionResource::class);
+
+        // The resources declare the full operation set, so the servability warm-up
+        // guard requires a provider + persister per type — even though these
+        // metadata-only fixtures never serve a real request (the suite invokes the
+        // eager-load warmer against their metadata). In-memory stores stay empty; the
+        // eager-load validation is provider-agnostic metadata.
+        foreach (['products', 'brands', 'regions'] as $type) {
+            $services->set('test.eager.' . $type . '_provider', InMemoryDataProvider::class)
+                ->factory([EagerValidationDataFactory::class, 'provider'])
+                ->args([$type])
+                ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+
+            $services->set('test.eager.' . $type . '_persister', InMemoryDataPersister::class)
+                ->factory([EagerValidationDataFactory::class, 'persister'])
+                ->args([$type, service('test.eager.' . $type . '_provider')])
+                ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
+        }
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App;
 
+use haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
@@ -16,6 +17,8 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
+
+use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 /**
  * The in-memory pivot boundary witness kernel: a `playlists` type whose `tracks`
@@ -88,6 +91,16 @@ final class PivotBoundaryTestKernel extends Kernel
         $services->set('test.pivot_tracks_provider', InMemoryDataProvider::class)
             ->factory([PivotPlaylistFactory::class, 'createTracksProvider'])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+
+        $services->set('test.pivot_playlists_persister', InMemoryDataPersister::class)
+            ->factory([PivotPlaylistFactory::class, 'createPersister'])
+            ->args([service('test.pivot_playlists_provider')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
+
+        $services->set('test.pivot_tracks_persister', InMemoryDataPersister::class)
+            ->factory([PivotPlaylistFactory::class, 'createTracksPersister'])
+            ->args([service('test.pivot_tracks_provider')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

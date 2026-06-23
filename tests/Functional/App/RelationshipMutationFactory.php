@@ -61,6 +61,16 @@ final class RelationshipMutationFactory
         );
     }
 
+    public static function createAuthorsPersister(): InMemoryDataPersister
+    {
+        return new InMemoryDataPersister('authors', self::authors()->store(), static fn(): Author => new Author());
+    }
+
+    public static function createCommentsPersister(): InMemoryDataPersister
+    {
+        return new InMemoryDataPersister('comments', self::comments()->store(), static fn(): Comment => new Comment());
+    }
+
     /**
      * Resets the per-kernel singletons so each test boots a fresh, unmutated
      * object graph.

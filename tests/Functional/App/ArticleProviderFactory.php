@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App;
 
+use haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 use haddowg\JsonApiBundle\Tests\Functional\App\Query\InMemoryRelationCountFilterArm;
 use haddowg\JsonApiBundle\Tests\Functional\App\Query\InMemoryRelationCountSortArm;
@@ -52,6 +53,27 @@ final class ArticleProviderFactory
             filterArms: [new InMemoryRelationCountFilterArm()],
             sortArms: [new InMemoryRelationCountSortArm()],
         );
+    }
+
+    /**
+     * Persisters sharing each provider's store, so the write-capable `articles` /
+     * `authors` / `comments` resources are servable (the warm-up guard requires a
+     * persister per write-exposing type). Each shares the store of the provider it
+     * is handed, mirroring how the Doctrine pair shares one EntityManager.
+     */
+    public static function articlesPersister(InMemoryDataProvider $provider): InMemoryDataPersister
+    {
+        return new InMemoryDataPersister('articles', $provider->store(), static fn(): Article => new Article());
+    }
+
+    public static function authorsPersister(InMemoryDataProvider $provider): InMemoryDataPersister
+    {
+        return new InMemoryDataPersister('authors', $provider->store(), static fn(): Author => new Author());
+    }
+
+    public static function commentsPersister(InMemoryDataProvider $provider): InMemoryDataPersister
+    {
+        return new InMemoryDataPersister('comments', $provider->store(), static fn(): Comment => new Comment());
     }
 
     /**

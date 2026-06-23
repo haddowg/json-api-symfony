@@ -100,6 +100,14 @@ final class RelationshipMutationInMemoryTestKernel extends Kernel
         $services->set('test.articles_persister', InMemoryDataPersister::class)
             ->factory([RelationshipMutationFactory::class, 'createArticlesPersister'])
             ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
+
+        $services->set('test.authors_persister', InMemoryDataPersister::class)
+            ->factory([RelationshipMutationFactory::class, 'createAuthorsPersister'])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
+
+        $services->set('test.comments_persister', InMemoryDataPersister::class)
+            ->factory([RelationshipMutationFactory::class, 'createCommentsPersister'])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

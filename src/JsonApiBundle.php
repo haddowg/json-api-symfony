@@ -1046,6 +1046,20 @@ final class JsonApiBundle extends AbstractBundle
                 '$serverNames' => \array_keys($servers),
             ])
             ->tag('kernel.cache_warmer');
+
+        // The symmetric build-time guard: every routed type must be SERVABLE — a read
+        // operation needs a DataProvider, a write operation a DataPersister, and an
+        // AbstractResource exactly one Id field — else the misconfiguration would only
+        // surface as a runtime 500 (or a silent `id: ""`). Also NOT optional.
+        $services->set(\haddowg\JsonApiBundle\Server\ServableResourceWarmer::class)
+            ->args([
+                '$servers' => service(ServerProvider::class),
+                '$descriptors' => service(\haddowg\JsonApiBundle\Server\RouteDescriptorRegistry::class),
+                '$providers' => service(\haddowg\JsonApiBundle\DataProvider\DataProviderRegistry::class),
+                '$persisters' => service(\haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry::class),
+                '$serverNames' => \array_keys($servers),
+            ])
+            ->tag('kernel.cache_warmer');
     }
 
     /**

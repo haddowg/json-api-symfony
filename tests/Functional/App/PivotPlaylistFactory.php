@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App;
 
+use haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 
 /**
@@ -45,5 +46,15 @@ final class PivotPlaylistFactory
 
             return $item->id;
         });
+    }
+
+    public static function createPersister(InMemoryDataProvider $provider): InMemoryDataPersister
+    {
+        return new InMemoryDataPersister('playlists', $provider->store(), static fn(): PivotPlaylist => new PivotPlaylist('', '', []));
+    }
+
+    public static function createTracksPersister(InMemoryDataProvider $provider): InMemoryDataPersister
+    {
+        return new InMemoryDataPersister('tracks', $provider->store(), static fn(): PivotTrack => new PivotTrack('', ''));
     }
 }

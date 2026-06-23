@@ -4,16 +4,22 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App;
 
+use haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 
 /**
  * Builds the in-memory `gizmos` provider for the endpoint-exposure witness, seeded
- * with one gizmo carrying an {@see Author} and two {@see Comment}s. No persister is
- * needed — every P4 endpoint-exposure assertion fires before any write reaches the
- * persister.
+ * with one gizmo carrying an {@see Author} and two {@see Comment}s. A persister is
+ * wired so the full-CRUD resource is servable; every P4 endpoint-exposure assertion
+ * still fires before any write reaches it.
  */
 final class GizmoFactory
 {
+    public static function createPersister(InMemoryDataProvider $provider): InMemoryDataPersister
+    {
+        return new InMemoryDataPersister('gizmos', $provider->store(), static fn(): Gizmo => new Gizmo());
+    }
+
     public static function createProvider(): InMemoryDataProvider
     {
         $gizmos = [

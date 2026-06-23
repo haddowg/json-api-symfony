@@ -180,6 +180,18 @@ final class ResourceLocatorPass implements CompilerPassInterface
             // autoconfig tag must not erase the attribute's value.
             $type = $this->resourceTypeFromTags($tags, $class);
             if ($type === '') {
+                // A resource that resolves to no type would otherwise be silently
+                // dropped (no routes, no registration). Fail the build instead — but
+                // only for an actual AbstractResource; a bare #[AsJsonApiResource] on a
+                // non-resource class is handled by the standalone serializer/hydrator
+                // paths.
+                if (\is_a($class, AbstractResource::class, true)) {
+                    throw new \LogicException(\sprintf(
+                        'The JSON:API resource "%s" must declare a non-empty static $type.',
+                        $class,
+                    ));
+                }
+
                 continue;
             }
 

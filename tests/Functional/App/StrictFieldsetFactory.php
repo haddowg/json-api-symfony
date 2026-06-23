@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App;
 
+use haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 
 /**
- * Builds the read-only in-memory `leaflets` / `stickers` graph for the
+ * Builds the in-memory `leaflets` / `stickers` graph for the
  * strict-sparse-fieldset-member conformance suite: two providers over one seeded
  * object graph, so a leaflet fetch returns the related sticker (and `?include=sticker`
  * expands it). The providers are built once and shared via the static graph so the
@@ -31,6 +32,16 @@ final class StrictFieldsetFactory
     public static function createStickers(): InMemoryDataProvider
     {
         return self::stickers();
+    }
+
+    public static function createLeafletsPersister(): InMemoryDataPersister
+    {
+        return new InMemoryDataPersister('leaflets', self::leaflets()->store(), static fn(): Leaflet => new Leaflet());
+    }
+
+    public static function createStickersPersister(): InMemoryDataPersister
+    {
+        return new InMemoryDataPersister('stickers', self::stickers()->store(), static fn(): Sticker => new Sticker());
     }
 
     /**

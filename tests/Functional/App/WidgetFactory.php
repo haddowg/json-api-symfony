@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App;
 
+use haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 
 /**
@@ -22,5 +23,10 @@ final class WidgetFactory
 
             return $item->id;
         });
+    }
+
+    public static function createPersister(InMemoryDataProvider $provider): InMemoryDataPersister
+    {
+        return new InMemoryDataPersister('widgets', $provider->store(), static fn(): Widget => new Widget());
     }
 }

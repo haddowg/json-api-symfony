@@ -78,6 +78,21 @@ final class FlattenProviderFactory
         );
     }
 
+    public static function createAuthorsPersister(): InMemoryDataPersister
+    {
+        return new InMemoryDataPersister('authors', self::authors()->store(), static fn(): FlattenAuthor => new FlattenAuthor());
+    }
+
+    public static function createPublishersPersister(): InMemoryDataPersister
+    {
+        return new InMemoryDataPersister('publishers', self::publishers()->store(), static fn(): FlattenPublisher => new FlattenPublisher());
+    }
+
+    public static function createCountriesPersister(): InMemoryDataPersister
+    {
+        return new InMemoryDataPersister('countries', self::countries()->store(), static fn(): FlattenCountry => new FlattenCountry());
+    }
+
     /**
      * Resets the per-kernel singletons so each test boots a fresh, unmutated graph
      * (a flattened write in one test must not bleed into the next).
