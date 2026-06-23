@@ -217,7 +217,7 @@ final class AuditingOperationHandler implements OperationHandlerInterface
 
     public function handle(
         JsonApiOperationInterface $operation,
-    ): DataResponse|MetaResponse|RelatedResponse|IdentifierResponse|NoContentResponse|ErrorResponse {
+    ): DataResponse|MetaResponse|RelatedResponse|IdentifierResponse|NoContentResponse|AtomicResultsResponse|ErrorResponse {
         // intercept the operations you care about; delegate the rest:
         if ($operation instanceof CreateResourceOperation) {
             // … audit the write …
@@ -231,11 +231,20 @@ final class AuditingOperationHandler implements OperationHandlerInterface
 This works because the [`ServerFactory`](../src/Server/ServerFactory.php) injects the
 handler **by service id** (`service(CrudOperationHandler::class)`) and calls
 `withHandler()` with it; Symfony's decoration swaps that id transparently, so every
-server picks up the decorator with no extra wiring. Reproduce core's
-`OperationHandlerInterface::handle()` exactly: a single `JsonApiOperationInterface`
-argument and the closed union of six response value objects above (dispatch on the
-operation type with `instanceof`, as [`CrudOperationHandler`](../src/Operation/CrudOperationHandler.php)
-does) — see core
+server picks up the decorator with no extra wiring.
+
+Reproduce core's `OperationHandlerInterface::handle()` exactly — a single
+`JsonApiOperationInterface` argument and **the full return-type union**. Copy that
+union **verbatim** from
+[`OperationHandlerInterface`](https://github.com/haddowg/json-api/blob/main/src/Operation/OperationHandlerInterface.php)
+rather than hand-retyping it: the set of response value objects grows as core gains
+response shapes (the `AtomicResultsResponse` above arrived with
+[atomic operations](atomic-operations.md)), and a decorator that narrows the union —
+omitting a member core can still return — breaks that operation with a `TypeError` the
+moment it fires, even though the rest works. Dispatch on the operation type with
+`instanceof`, as [`CrudOperationHandler`](../src/Operation/CrudOperationHandler.php)
+does, and delegate everything you do not intercept to the inner handler so every
+member flows through untouched — see core
 [operations](https://github.com/haddowg/json-api/blob/main/docs/operations.md).
 
 **Reach for decoration last.** Per-type customization should normally compose through

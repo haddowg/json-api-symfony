@@ -15,11 +15,18 @@ wires on its own:
 | **persister** | writes — create / update / delete / relationship mutation | a `DataPersisterInterface` service ([data layer](data-layer.md)) |
 
 `AbstractResource` is pure Symfony-side sugar that bundles the first three from one
-declaration. **Nothing is coupled to it.** Which endpoints a type serves falls out
-of which capabilities it declares — no provider means no reads, no hydrator/persister
-means no writes, a serializer alone means a serialize-only embedded type. The core
-library owns the *thesis* (a type composed of independent capabilities); this page
-documents the *Symfony wiring* of it. For the model itself, read core's
+declaration. **Nothing is coupled to it.** Which endpoints a type serves is governed
+by its [operation allow-list](#the-default-operations-asymmetry) (and the
+[`readOnly`](resources.md#readonly-the-suppress-every-write-shorthand) shorthand): you
+remove a read or a write by *not declaring its operation*, not by omitting a
+capability. The capabilities you *do* declare must then back the operations you
+*did* expose — a routed read needs a provider, a routed write needs a
+hydrator/persister, and a missing one is a **build-time error**, not silent
+degradation (see [the servability guard](#routed-operations-must-have-a-data-layer-the-servability-guard)
+below). A serializer alone, with no operations opened, is a serialize-only embedded
+type that serves no routes at all. The core library owns the *thesis* (a type composed
+of independent capabilities); this page documents the *Symfony wiring* of it. For the
+model itself, read core's
 [capability-composition](https://github.com/haddowg/json-api/blob/main/docs/capability-composition.md).
 
 ## The three standalone attributes
@@ -166,6 +173,33 @@ register #[AsJsonApiHydrator(type: "charts")] or use an AbstractResource.
 This is a compile-time fault, not a request-time one — you find it the moment you build
 the container, with a fix hint, never as a runtime surprise. (An `AbstractResource`
 always carries a hydrator, so it never trips this.)
+
+## Routed operations must have a data layer: the servability guard
+
+The composition model is "declare the capabilities you need" — but the operations you
+*expose* are a promise the bundle holds you to. A type that routes a read but has **no
+`DataProvider`** supporting it, or routes a write with **no `DataPersister`**, is not
+gracefully degraded into a smaller surface — it is a **build-time error**. The
+non-optional [`ServableResourceWarmer`](../src/Server/ServableResourceWarmer.php) runs
+at `cache:warmup` and, per `(server, type)`, asserts every exposed operation has the
+data layer it needs, throwing a `\LogicException` that aborts the build:
+
+```
+The JSON:API type "albums" exposes a read operation but no DataProvider supports it.
+Map an entity with #[AsJsonApiResource(entity: ...)], register a DataProviderInterface
+service for it, or remove its read operations from the allow-list.
+```
+
+The way to *not* serve a read or a write is therefore to **not expose its operation** —
+trim the [operation allow-list](#the-default-operations-asymmetry) (or reach for the
+[`readOnly`](resources.md#readonly-the-suppress-every-write-shorthand) shorthand to drop
+every write at once). Omitting the provider/persister while leaving the operation routed
+does not silently disable the endpoint; it fails the deploy. Gating is on the per-type
+allow-list, so an embedded-only standalone serializer (no operations) and a
+relationship-only target (served through its parent's provider) are correctly *not*
+flagged. This is the same fail-fast posture as the write-capability guard above — the
+two together mean a routed operation always has both the capability that shapes it and
+the data layer that backs it, checked before any request runs.
 
 ## How relations differ in wiring
 

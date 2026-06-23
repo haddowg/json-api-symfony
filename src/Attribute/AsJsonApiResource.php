@@ -36,6 +36,14 @@ namespace haddowg\JsonApiBundle\Attribute;
  * cases this type serves, one route emitted per case (bundle ADR 0025). An empty
  * array means the default — for a resource, all five operations.
  *
+ * `readOnly` is an intent-named shorthand for the common "suppress every write"
+ * case: `readOnly: true` restricts the type to the two fetch operations
+ * ({@see \haddowg\JsonApiBundle\Operation\Operation::FetchCollection} and
+ * {@see \haddowg\JsonApiBundle\Operation\Operation::FetchOne}) without importing the
+ * enum or spelling them out. It is mutually exclusive with a non-empty `operations`
+ * list (the precise escape hatch): declaring both is a constructor `\LogicException`,
+ * so an ambiguous declaration never compiles.
+ *
  * `cacheHeaders` declares **declarative HTTP cache headers** for the type's safe
  * (`GET`) reads (bundle ADR 0054, API-Platform gap G7): a map of `max_age`,
  * `s_maxage` (shared/CDN), `public`/`private`, `no_cache`, `must_revalidate` and
@@ -85,7 +93,8 @@ final readonly class AsJsonApiResource
      * @param class-string|null                                                    $entity         the Doctrine entity backing this resource type
      * @param class-string<\haddowg\JsonApi\Serializer\SerializerInterface>|null    $serializer     a custom serializer for this type
      * @param class-string<\haddowg\JsonApi\Hydrator\HydratorInterface>|null        $hydrator       a custom hydrator for this type
-     * @param list<\haddowg\JsonApiBundle\Operation\Operation>                      $operations     the exposed operation allow-list (empty = all five)
+     * @param list<\haddowg\JsonApiBundle\Operation\Operation>                      $operations     the exposed operation allow-list (empty = all five); mutually exclusive with `readOnly`
+     * @param bool                                                                 $readOnly       shorthand restricting the type to the two fetch operations; mutually exclusive with a non-empty `operations`
      * @param string|null                                                          $security       the default security expression applied to every gated operation (null = ungated)
      * @param string|null                                                          $securityCreate the security expression for create (falls back to `security`)
      * @param string|null                                                          $securityUpdate the security expression for update and relationship mutation (falls back to `security`)
@@ -104,6 +113,7 @@ final readonly class AsJsonApiResource
         public ?string $serializer = null,
         public ?string $hydrator = null,
         public array $operations = [],
+        public bool $readOnly = false,
         public ?string $security = null,
         public ?string $securityCreate = null,
         public ?string $securityUpdate = null,
@@ -114,5 +124,13 @@ final readonly class AsJsonApiResource
         public ?string $sunset = null,
         public ?string $sunsetLink = null,
         public array $tags = [],
-    ) {}
+    ) {
+        if ($readOnly && $operations !== []) {
+            throw new \LogicException(
+                'AsJsonApiResource declares both readOnly: true and a non-empty operations list; '
+                . 'they are mutually exclusive — drop one. Use readOnly for the two fetch operations, '
+                . 'or operations for a precise allow-list.',
+            );
+        }
+    }
 }

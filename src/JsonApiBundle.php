@@ -648,9 +648,11 @@ final class JsonApiBundle extends AbstractBundle
                     'entity' => $attribute->entity,
                     'serializer' => $attribute->serializer,
                     'hydrator' => $attribute->hydrator,
-                    'operations' => $attribute->operations !== []
-                        ? \implode(',', \array_map(static fn(Operation $op): string => $op->value, $attribute->operations))
-                        : null,
+                    // The exposed operation allow-list: an explicit `operations` list,
+                    // or the `readOnly` shorthand restricting the type to the two fetch
+                    // operations. The attribute constructor forbids declaring both, so
+                    // at most one of these branches contributes a non-null value.
+                    'operations' => self::operationsTag($attribute),
                     // The declarative authorization expressions (bundle ADR 0043),
                     // recorded as scalar tag attributes the ResourceSecurityPass reads
                     // into the type-keyed ResourceSecurityRegistry. Inert (never read)
@@ -1082,6 +1084,26 @@ final class JsonApiBundle extends AbstractBundle
     public static function defaultPaginatorId(?string $server = null): string
     {
         return 'haddowg.json_api.default_paginator' . ($server !== null ? '.' . $server : '');
+    }
+
+    /**
+     * The comma-joined operation allow-list for the `operations` tag attribute: the
+     * resource's explicit `operations` list, or — when `readOnly` is set — the two
+     * fetch operations ({@see Operation::FetchCollection}, {@see Operation::FetchOne}).
+     * Returns `null` when neither is declared (so the tag attribute is filtered out and
+     * the per-capability default — all five for a resource — applies). The attribute
+     * constructor forbids declaring both, so this never has to reconcile a conflict.
+     */
+    private static function operationsTag(AsJsonApiResource $attribute): ?string
+    {
+        $operations = $attribute->operations;
+        if ($operations === [] && $attribute->readOnly) {
+            $operations = [Operation::FetchCollection, Operation::FetchOne];
+        }
+
+        return $operations === []
+            ? null
+            : \implode(',', \array_map(static fn(Operation $op): string => $op->value, $operations));
     }
 
     /**

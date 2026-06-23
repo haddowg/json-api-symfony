@@ -87,28 +87,30 @@ Source:
 Symfony's default config-routes loading picks this file up automatically; if your
 app does not scan the `config/routes/` directory, import it explicitly from your
 main routes config so the endpoints actually mount.
-The `resource:` argument is **not** a path or glob — the bundle emits one route per
-discovered type/operation from its compiled descriptors, and `resource:` names the
-*server* whose routes to emit (`.` is the implicit `default` server). The full route
-set, the operation gating, and the per-server import are covered on
-[routing](routing.md).
+The `resource:` argument **names the server** whose routes to emit — not a path or glob
+(the bundle emits one route per discovered type/operation from its compiled
+descriptors). `resource: 'default'` is the self-describing form for the single-API case;
+the bare `.` above is a back-compat alias for it. The full route set, the operation
+gating, and the per-server import are covered on [routing](routing.md).
 
 ## Minimal `json_api` configuration
 
 The configuration tree is tiny. For a single-API app, only `base_uri` matters — it
 defines the implicit `default` server. Leave it empty (the default) and links are
 absolute, built from the request's scheme and host; set it to pin a fixed canonical
-host regardless of the request. The example app:
+host regardless of the request:
 
 ```yaml
 # config/packages/json_api.yaml
 json_api:
     base_uri: 'https://music.example'
-    version: '1.1'
 ```
 
 Source:
-[`config/packages/json_api.yaml`](../examples/music-catalog-symfony/config/packages/json_api.yaml).
+[`config/packages/json_api.yaml`](../examples/music-catalog-symfony/config/packages/json_api.yaml)
+(the example app sets a `version:` too, but only because it pins the explicit `'1.1'`
+witness — `version:` defaults to `'1.1'`, so you set it only for a non-default JSON:API
+version; most apps omit it).
 The full config tree (`base_uri`, `version`, `max_include_depth`,
 `strict_query_parameters`, `pagination`, `doctrine`, `schema_validation`,
 `defaults`, and the `servers:` map) and the container parameters it surfaces are
