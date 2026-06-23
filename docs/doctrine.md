@@ -70,6 +70,20 @@ These are all `\LogicException` at container build, never request-time errors:
 
 Source: [`DoctrineEntityMapPass`](../src/DependencyInjection/Compiler/DoctrineEntityMapPass.php).
 
+Two more checks run a little later — at **cache warm-up** (still `cache:clear` / deploy,
+so still the **build**, never a request) in the non-optional `DoctrineServableWarmer`, so a
+declaration that would only break at request time fails the build instead:
+
+| Fault | Message gist |
+|---|---|
+| A `sortable()` / `filterable` column does not resolve to a real field/association (commonly a `computed()` field marked sortable, whose sort column defaults to the field name) | *The sort/filter "…" on JSON:API type "…" targets column "…", which is not a field or association on …* |
+| A pivot `belongsToMany` (declaring `pivotFields()`) whose association entity cannot be discovered | *Could not auto-detect a Doctrine association entity for the pivot relation "…" … Declare it explicitly with ->through(PivotEntity::class).* |
+
+The sort check validates the **resolved** column, so a `computed()` field marked
+`sortable()` that ALSO has a matching [`sorts()`](resources.md) override supplying a real
+column passes. The pivot check runs the exact same discovery the first write would — only
+the timing moves. Source: [`DoctrineServableWarmer`](../src/DataProvider/Doctrine/DoctrineServableWarmer.php).
+
 The map is keyed by **type**, so **two (or more) resource types may map to the one
 entity** — a full view and a curated view of the same record, for instance. The only
 mapping fault is the *reverse*: one type mapping to two different entities (the last

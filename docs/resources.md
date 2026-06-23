@@ -398,10 +398,17 @@ resource declaration:
 | Write without a hydrator | the type exposes `Create`/`Update` but has no hydrator | Add a hydrator (the resource's own, an override, or a standalone [`#[AsJsonApiHydrator]`](capability-composition.md#the-three-standalone-attributes)), or drop the write operations. |
 | Unknown server | `server` references a name not declared under `json_api.servers` | Declare the server, or remove the reference. |
 | Entity-mapping faults | `entity` is missing, undeterminable, or two types map to one entity | See [doctrine](doctrine.md), which owns the entity-map guards. |
+| Read/write without a data layer | a read operation has no `DataProvider`, or a write has no `DataPersister`, supporting the type | Map an `entity`, register the SPI service, or drop the operation. |
+| Missing/duplicate Id | a resource does not declare exactly one `Id` field | Add `Id::make()` (or remove the duplicate). |
+| Non-discriminating polymorphic candidate | a polymorphic relation lists a candidate resource that does not override `getType()` (so it would silently claim siblings' members) | Override `getType()` on that resource to discriminate the member by class (e.g. with `instanceof`). |
 
 The write-without-hydrator guard lives in `ResourceLocatorPass::validateWriteCapability()`;
-the override and server guards alongside it in the same pass. Because they run at
-build time, CI catches them before deployment.
+the override and server guards alongside it in the same pass. The last three run at
+**cache warm-up** in the non-optional `ServableResourceWarmer` (the provider/persister/Id
+and polymorphic-discrimination checks). Doctrine adds its own warm-up guards — sortable /
+filterable columns must resolve to a real field/association, and a pivot `belongsToMany`
+must resolve its association entity (see [doctrine § Build-time faults](doctrine.md#build-time-faults)).
+Because they all run at build time, CI catches them before deployment.
 
 ## Beyond a resource
 

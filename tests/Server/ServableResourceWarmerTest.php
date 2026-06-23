@@ -8,9 +8,11 @@ use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 use haddowg\JsonApiBundle\Operation\Operation;
+use haddowg\JsonApiBundle\Server\RelationsRegistry;
 use haddowg\JsonApiBundle\Server\RouteDescriptorRegistry;
 use haddowg\JsonApiBundle\Server\ServableResourceWarmer;
 use haddowg\JsonApiBundle\Server\ServerProvider;
+use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -81,6 +83,7 @@ final class ServableResourceWarmerTest extends TestCase
             $descriptors,
             $providers,
             new DataPersisterRegistry([]),
+            new TypeMetadataResolver(new RelationsRegistry($this->throwingLocator())),
             ['default'],
         );
     }

@@ -407,6 +407,27 @@ return static function (ContainerConfigurator $container): void {
             ->args([
                 '$entityManager' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\Doctrine\ORM\EntityManagerInterface::class),
             ]);
+
+        // The Doctrine half of the build-time servability guard family (the
+        // storage-aware twin of the ServableResourceWarmer / EagerLoadWarmer): at
+        // cache:warmup it asserts every entity-mapped type's sortable/filterable
+        // columns resolve to a real Doctrine field/association, and every pivot
+        // belongsToMany resolves its association entity — so a computed() sortable
+        // field or an unresolvable pivot fails the BUILD, not a runtime 500 / first
+        // write. NOT optional. The $entityClassByType argument is filled by the
+        // DoctrineEntityMapPass, which also removes this definition when the map is
+        // empty (no resource maps an entity).
+        $services->set(\haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineServableWarmer::class)
+            ->args([
+                '$entityManager' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\Doctrine\ORM\EntityManagerInterface::class),
+                '$entityClassByType' => [],
+                '$servers' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(ServerProvider::class),
+                '$descriptors' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Server\RouteDescriptorRegistry::class),
+                '$typeMetadata' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(TypeMetadataResolver::class),
+                '$pivotAssociations' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataProvider\Doctrine\PivotAssociationResolver::class),
+                '$serverNames' => '%haddowg_json_api.servers%',
+            ])
+            ->tag('kernel.cache_warmer');
     }
 
     // --- Symfony Validator bridge (only when symfony/validator is installed) ---
