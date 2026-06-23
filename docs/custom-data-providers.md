@@ -95,6 +95,13 @@ fixed list, a dataset from a library, or a backed enum's cases. Pair a tiny
 wire shape — see [custom-serializers-hydrators.md](custom-serializers-hydrators.md))
 and you have a **read-only** type with no entity, no hydrator, no persister.
 
+Such a provider serves no relationships, so it extends
+[`AbstractDataProvider`](../src/DataProvider/AbstractDataProvider.php) and implements
+only the three read methods (`supports` / `fetchOne` / `fetchCollection`) — the base
+class supplies the neutral defaults for the six relationship / batch / pivot seams
+(see [data-layer.md](data-layer.md#dataproviderinterface--the-read-spi)), so there
+are no methods to hand-stub.
+
 The example app's `countries` type does exactly this.
 [`CountryProvider`](../examples/music-catalog-symfony/src/Provider/CountryProvider.php)
 sources its rows from `symfony/intl`'s `Countries` (id = ISO 3166-1 alpha-2 code,

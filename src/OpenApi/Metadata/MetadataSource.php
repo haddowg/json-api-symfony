@@ -270,10 +270,11 @@ final class MetadataSource
             operations: $operations,
             securedOperations: $this->securedOperations($type, $operations),
             allowsClientId: $this->idEncoders->allowsClientIdFor($type),
-            // Slice 3 (#157) wires the real id-pattern derivation onto the {id}
-            // route requirement; until then this stays the documented neutral
-            // (null = any non-empty string accepted).
-            idPattern: null,
+            // The type's {id} route requirement (the un-anchored regex fragment a
+            // uuid()/ulid()/numeric()/pattern()/matchAs() id declares), or null for an
+            // unconstrained id (any non-empty string). Core's OperationProjector anchors
+            // it onto the OAS {id} parameter as `^(?:<fragment>)$`.
+            idPattern: $this->idEncoders->routePatternFor($type),
             paginatorKind: $paginatorKind,
             countable: $resource?->isCountable() ?? false,
             filters: $resource !== null ? \array_values($resource->filters()) : [],
