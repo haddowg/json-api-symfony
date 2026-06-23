@@ -16,6 +16,7 @@ use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineExtensionInterface;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineFilterArmInterface;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineSortArmInterface;
 use haddowg\JsonApiBundle\DependencyInjection\Compiler\DoctrineEntityMapPass;
+use haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceDescriptionPass;
 use haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceLocatorPass;
 use haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceSecurityPass;
 use haddowg\JsonApiBundle\DependencyInjection\Compiler\ResponseHeadersPass;
@@ -673,6 +674,15 @@ final class JsonApiBundle extends AbstractBundle
                     // the container as a plain scalar (mirroring `operations`); the
                     // ResourceLocatorPass parses them back for the OpenAPI MetadataSource.
                     'tags' => self::tagsTag($attribute->tags),
+                    // The OpenAPI description overrides (bundle ADR 0092): the
+                    // resource-object schema description as a scalar, and the
+                    // per-operation overrides JSON-encoded into a single scalar (a
+                    // nested map does not survive as a flat tag attribute, like
+                    // `response_headers`). The ResourceDescriptionPass reads both into
+                    // the type-keyed ResourceDescriptionRegistry the MetadataSource layers
+                    // beneath the resource's own method hooks.
+                    'description' => $attribute->description,
+                    'operation_descriptions' => self::operationDescriptionsTag($attribute),
                 ], static fn(mixed $value): bool => $value !== null));
             },
         );
@@ -770,6 +780,7 @@ final class JsonApiBundle extends AbstractBundle
         $container->addCompilerPass(new DoctrineEntityMapPass());
         $container->addCompilerPass(new ResourceSecurityPass());
         $container->addCompilerPass(new ResponseHeadersPass());
+        $container->addCompilerPass(new ResourceDescriptionPass());
     }
 
     /**
@@ -1141,6 +1152,23 @@ final class JsonApiBundle extends AbstractBundle
         }
 
         return $config === [] ? null : \json_encode($config, \JSON_THROW_ON_ERROR);
+    }
+
+    /**
+     * Normalises the OpenAPI per-operation description overrides
+     * (`#[AsJsonApiResource(operationDescriptions:)]`, bundle ADR 0092) into a single
+     * JSON-encoded scalar keyed by the {@see Operation} case-name string (a nested map
+     * does not survive as a flat tag attribute, like `response_headers`); `null` when
+     * none are declared. The attribute constructor has already validated every key
+     * (each a valid Operation case name), so the map is encoded as-is.
+     */
+    private static function operationDescriptionsTag(AsJsonApiResource $attribute): ?string
+    {
+        if ($attribute->operationDescriptions === []) {
+            return null;
+        }
+
+        return \json_encode($attribute->operationDescriptions, \JSON_THROW_ON_ERROR);
     }
 
     /**

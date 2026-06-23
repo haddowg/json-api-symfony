@@ -13,6 +13,7 @@ use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Filter\WhereIdIn;
 use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
+use haddowg\JsonApiBundle\Operation\Operation;
 
 /**
  * The OpenAPI document witness's primary resource: a `products` resource carrying the
@@ -35,6 +36,14 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
     tags: ['Catalog'],
     securityRead: 'true',
     securityCreate: 'true',
+    // OpenAPI description overrides via the attribute (bundle ADR 0092): the
+    // resource-object schema description, and a per-operation override on the
+    // collection read (keyed by the Operation case name). Operations without an
+    // override (FetchOne/Create/Update/Delete) keep the generated default.
+    description: 'A sellable product in the catalog.',
+    operationDescriptions: [
+        Operation::FetchCollection->name => 'Browse the product catalog.',
+    ],
 )]
 final class ProductResource extends AbstractResource
 {
@@ -50,7 +59,9 @@ final class ProductResource extends AbstractResource
             Id::make()->matchAs('[0-9]+'),
             Str::make('name')->sortable()->required()->minLength(2)->maxLength(120),
             Str::make('status')->sortable()->enum(CatalogStatus::class),
-            BelongsTo::make('category', 'categories'),
+            // A relation description (->describedAs()) flows onto the related +
+            // relationship operation descriptions for this relation (bundle ADR 0092).
+            BelongsTo::make('category', 'categories')->describedAs('The catalog category this product belongs to.'),
             HasMany::make('tags', 'categories')->storedAs('tagIds'),
         ];
     }

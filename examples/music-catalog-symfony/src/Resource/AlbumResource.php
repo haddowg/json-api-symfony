@@ -75,7 +75,7 @@ final class AlbumResource extends AbstractResource
             Str::make('status')
                 ->enum(AlbumStatus::class)
                 ->sortable()
-                ->description('Where the album sits in its release lifecycle.'),
+                ->describedAs('Where the album sits in its release lifecycle.'),
             Date::make('availableFrom')->nullable(),
             // Directional CompareField: the operator reads `availableUntil >
             // availableFrom` — this field is the LEFT operand.

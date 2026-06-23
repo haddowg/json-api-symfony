@@ -220,6 +220,73 @@ final class OpenApiServingTest extends JsonApiFunctionalTestCase
         self::assertNull($this->idParameterPattern($parameters));
     }
 
+    #[Test]
+    #[Group('spec:openapi')]
+    public function theResourceObjectSchemaCarriesTheDeclaredOrGeneratedDescription(): void
+    {
+        $schemas = $this->nested($this->fetchDocument(), 'components', 'schemas');
+
+        // products declares #[AsJsonApiResource(description:)] — the attribute override.
+        self::assertSame(
+            'A sellable product in the catalog.',
+            $this->nested($schemas, 'ProductsResource')['description'] ?? null,
+        );
+        // categories overrides getDescription() — the method-hook path.
+        self::assertSame(
+            'A grouping of related products.',
+            $this->nested($schemas, 'CategoriesResource')['description'] ?? null,
+        );
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    public function aCrudOperationCarriesTheDeclaredOverrideOrTheGeneratedDefault(): void
+    {
+        $document = $this->fetchDocument();
+
+        // products: the FetchCollection override from the attribute map.
+        self::assertSame(
+            'Browse the product catalog.',
+            $this->nested($document, 'paths', '/products', 'get')['description'] ?? null,
+        );
+        // products: an operation WITHOUT an override falls back to the generated default
+        // (core's projector — fuller than the terse summary).
+        self::assertSame(
+            'Creates a new `products` resource from the supplied attributes and relationships.',
+            $this->nested($document, 'paths', '/products', 'post')['description'] ?? null,
+        );
+
+        // categories: the Delete override from the describeOperation() method hook.
+        self::assertSame(
+            'Permanently removes a category.',
+            $this->nested($document, 'paths', '/categories/{id}', 'delete')['description'] ?? null,
+        );
+        // categories: an un-overridden operation keeps the generated default.
+        self::assertSame(
+            'Returns a single `categories` resource by its `id`.',
+            $this->nested($document, 'paths', '/categories/{id}', 'get')['description'] ?? null,
+        );
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    public function aRelationDescriptionFlowsOntoItsRelatedAndRelationshipOperations(): void
+    {
+        $document = $this->fetchDocument();
+
+        // products' category relation declares ->describedAs(); that description applies
+        // to BOTH the related (GET /products/{id}/category) and the relationship
+        // (GET /products/{id}/relationships/category) read operations.
+        self::assertSame(
+            'The catalog category this product belongs to.',
+            $this->nested($document, 'paths', '/products/{id}/category', 'get')['description'] ?? null,
+        );
+        self::assertSame(
+            'The catalog category this product belongs to.',
+            $this->nested($document, 'paths', '/products/{id}/relationships/category', 'get')['description'] ?? null,
+        );
+    }
+
     /**
      * The `pattern` of the `{id}` path parameter's schema in a path's parameter list,
      * or `null` when the schema declares none.

@@ -101,6 +101,14 @@ return static function (ContainerConfigurator $container): void {
     $services->set(\haddowg\JsonApiBundle\OpenApi\Metadata\TagNameResolver::class);
     $services->set(\haddowg\JsonApiBundle\OpenApi\Metadata\IncludePathResolver::class);
 
+    // The type-keyed registry of declarative OpenAPI description overrides
+    // (#[AsJsonApiResource(description:, operationDescriptions:)], bundle ADR 0092);
+    // its argument is filled by the ResourceDescriptionPass. Layered by the
+    // MetadataSource beneath each resource's getDescription()/describeOperation()
+    // method hooks.
+    $services->set(\haddowg\JsonApiBundle\OpenApi\Metadata\ResourceDescriptionRegistry::class)
+        ->args(['$descriptions' => []]);
+
     // The bundle implementation of core's OpenAPI metadata contract: it builds a
     // ServerMetadataInterface (+ its TypeMetadataInterface family) per server from
     // the live registry. The ResourceSecurityRegistry is optional (present only
@@ -109,6 +117,7 @@ return static function (ContainerConfigurator $container): void {
     // empty here and wired from json_api.openapi.* config in Slice 4 stage B.
     $services->set(\haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource::class)
         ->arg('$security', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Security\ResourceSecurityRegistry::class)->nullOnInvalid())
+        ->arg('$descriptions', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\OpenApi\Metadata\ResourceDescriptionRegistry::class))
         ->arg('$configByServer', [])
         // The global Atomic Operations config (opt-in, default off): the same params
         // the JsonApiRouteLoader reads. When enabled, every server's OpenAPI document

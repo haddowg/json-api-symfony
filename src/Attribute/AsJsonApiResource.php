@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Attribute;
 
+use haddowg\JsonApiBundle\Operation\Operation;
+
 /**
  * Optional metadata for a JSON:API Resource service. Discovery is zero-config by
  * default (any {@see \haddowg\JsonApi\Resource\AbstractResource} is auto-registered);
@@ -63,6 +65,20 @@ namespace haddowg\JsonApiBundle\Attribute;
  * (description / externalDocs / ordering) are config-authoritative; a
  * referenced-but-undefined tag is auto-synthesized name-only.
  *
+ * `description` and `operationDescriptions` declare **OpenAPI description overrides**
+ * (bundle ADR 0092): `description` replaces the generated default on the type's
+ * **resource-object** component schema; `operationDescriptions` is a map keyed by the
+ * {@see \haddowg\JsonApiBundle\Operation\Operation} case name (e.g.
+ * `Operation::Create->name`, since an enum cannot be a PHP array key) overriding the
+ * generated default on that one CRUD operation. An unknown key is a constructor
+ * `\LogicException`. Both default to the generator's sensible generated
+ * default when absent. They are the declaration-site equivalent of overriding the
+ * resource's {@see \haddowg\JsonApi\Resource\AbstractResource::getDescription()} /
+ * {@see \haddowg\JsonApi\Resource\AbstractResource::describeOperation()} method hooks
+ * — when both are present the **method hook wins** (it is the more specific, runtime
+ * surface). To describe a *relationship*'s related/relationship operations, call
+ * `->describedAs('…')` on the relation field itself.
+ *
  * `deprecation` and `sunset` declare **deprecation signalling** — the IETF
  * Deprecation header field (`draft-ietf-httpapi-deprecation-header`) plus the
  * RFC 8594 `Sunset` header (bundle ADR 0054, API-Platform gap G16), emitted on
@@ -105,6 +121,8 @@ final readonly class AsJsonApiResource
      * @param string|null                                                          $sunset         RFC 8594 sunset HTTP-date (`Sunset: <date>`), or null
      * @param string|null                                                          $sunsetLink     a URI for the companion `Link: <uri>; rel="sunset"` (emitted only when `sunset` is set)
      * @param list<string>                                                         $tags           the OpenAPI tag names every operation of this type is grouped under (empty = the humanized-type default)
+     * @param string|null                                                          $description    the OpenAPI description override for this type's resource-object schema (null = the generated default)
+     * @param array<string, string>                                                $operationDescriptions per-CRUD-operation OpenAPI description overrides, keyed by the {@see \haddowg\JsonApiBundle\Operation\Operation} case name (e.g. `Operation::Create->name`); an unknown key is a constructor error
      */
     public function __construct(
         public ?string $type = null,
@@ -124,6 +142,8 @@ final readonly class AsJsonApiResource
         public ?string $sunset = null,
         public ?string $sunsetLink = null,
         public array $tags = [],
+        public ?string $description = null,
+        public array $operationDescriptions = [],
     ) {
         if ($readOnly && $operations !== []) {
             throw new \LogicException(
@@ -131,6 +151,18 @@ final readonly class AsJsonApiResource
                 . 'they are mutually exclusive — drop one. Use readOnly for the two fetch operations, '
                 . 'or operations for a precise allow-list.',
             );
+        }
+
+        foreach (\array_keys($operationDescriptions) as $key) {
+            if (!\is_string($key) || Operation::tryFrom($key) === null) {
+                throw new \LogicException(\sprintf(
+                    'AsJsonApiResource operationDescriptions has an unknown operation key "%s"; '
+                    . 'keys must be a %s case name: %s.',
+                    (string) $key,
+                    Operation::class,
+                    \implode(', ', \array_map(static fn(Operation $op): string => $op->name, Operation::cases())),
+                ));
+            }
         }
     }
 }

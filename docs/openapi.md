@@ -144,7 +144,7 @@ component agree.
 
 ### Inline authoring (descriptions & examples)
 
-Add `->description()` and `->example()` to any field, relation or filter builder; the
+Add `->describedAs()` and `->example()` to any field, relation or filter builder; the
 projection surfaces them on the corresponding schema / parameter.
 
 ```php
@@ -152,7 +152,7 @@ use haddowg\JsonApi\Resource\Field\Str;
 
 Str::make('title')
     ->required()->minLength(3)->maxLength(120)
-    ->description('The article headline, shown in listings.')
+    ->describedAs('The article headline, shown in listings.')
     ->example('JSON:API in PHP');
 ```
 
@@ -161,6 +161,63 @@ The constraints you already declare (`minLength`, `pattern`, `in`, `min`/`max`, 
 3.1. The few constraints with no lossless keyword (`When` with a dynamic condition,
 `CompareField`, the `After`/`Before`/`Between` date bounds) degrade to a human-readable
 note in the schema `description` rather than emitting a wrong schema.
+
+### Describing types, operations & relationships
+
+Every documentable element has a **generated default description**, and every one of
+them is **overridable** declaratively (never by reaching into the document with a
+decorator). There are three override surfaces:
+
+- a **type's resource-object schema** — `#[AsJsonApiResource(description: …)]`, or the
+  resource's `getDescription(): ?string` method hook;
+- a **CRUD operation** (collection / fetch-one / create / update / delete) —
+  `#[AsJsonApiResource(operationDescriptions: […])]` keyed by the `Operation` case name,
+  or the resource's `describeOperation(OperationType $op): ?string` method hook;
+- a **relationship**'s related + relationship operations — `->describedAs(…)` on the
+  relation field (the one description applies to every endpoint of that relationship).
+
+```php
+use haddowg\JsonApi\OpenApi\Metadata\OperationType;
+use haddowg\JsonApi\Resource\AbstractResource;
+use haddowg\JsonApi\Resource\Field\BelongsTo;
+use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
+use haddowg\JsonApiBundle\Operation\Operation;
+
+#[AsJsonApiResource(
+    description: 'A sellable product in the catalog.',
+    operationDescriptions: [
+        Operation::FetchCollection->name => 'Browse the product catalog.',
+    ],
+)]
+final class ProductResource extends AbstractResource
+{
+    public function fields(): array
+    {
+        return [
+            // … the relation description flows onto GET /products/{id}/category
+            //    and GET /products/{id}/relationships/category.
+            BelongsTo::make('category', 'categories')
+                ->describedAs('The catalog category this product belongs to.'),
+        ];
+    }
+
+    // Equivalent to the attribute fields above; useful when the text is computed.
+    public function getDescription(): ?string
+    {
+        return 'A sellable product in the catalog.';
+    }
+
+    public function describeOperation(OperationType $op): ?string
+    {
+        return $op === OperationType::Delete ? 'Permanently retires a product.' : null;
+    }
+}
+```
+
+Precedence is **method hook → attribute → generated default**: when a resource declares
+both, the method hook wins (it is the more specific, runtime surface). Returning `null`
+(the method default) or omitting the attribute key leaves the generated default in place.
+An unknown `operationDescriptions` key fails the build with a clear error.
 
 ### Tagging (grouping operations)
 
