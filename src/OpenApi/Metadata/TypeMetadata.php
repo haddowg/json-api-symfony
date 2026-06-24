@@ -31,6 +31,7 @@ final readonly class TypeMetadata implements TypeMetadataInterface
      * @param list<RelationMetadataInterface> $relations
      * @param list<OperationType>             $operations
      * @param list<OperationType>             $securedOperations
+     * @param list<OperationType>             $publicOperations
      * @param list<FilterInterface>           $filters
      * @param list<SortInterface>             $sorts
      * @param list<ActionMetadataInterface>   $actions
@@ -46,6 +47,7 @@ final readonly class TypeMetadata implements TypeMetadataInterface
         private array $relations,
         private array $operations,
         private array $securedOperations,
+        private array $publicOperations,
         private bool $allowsClientId,
         private bool $requiresClientId,
         private ?string $idPattern,
@@ -93,6 +95,11 @@ final readonly class TypeMetadata implements TypeMetadataInterface
     public function securedOperations(): array
     {
         return $this->securedOperations;
+    }
+
+    public function publicOperations(): array
+    {
+        return $this->publicOperations;
     }
 
     public function allowsClientId(): bool

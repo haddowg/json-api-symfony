@@ -27,8 +27,15 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Artist;
  * shapes with load-aware to-many linkage. (Core additionally registers a custom
  * `TrackCountSort`; that computed sort needs a hand-written sort handler — not a
  * Doctrine push-down — so it is reintroduced in a later slice, not the Foundation.)
+ *
+ * `securityRead: false` declares a **public** single-resource read: the artist
+ * catalogue is open even though the API configures a document-level default
+ * (`bearer`). The boolean is documentation-only — it emits the OpenAPI operation
+ * override `security: []` (no `401`) on `GET /artists/{id}`, overriding that default,
+ * and is not a runtime gate (the example's `access_token` firewall already allows the
+ * anonymous read). Contrast the expression-gated writes on `PlaylistResource`.
  */
-#[AsJsonApiResource(entity: Artist::class)]
+#[AsJsonApiResource(entity: Artist::class, securityRead: false)]
 final class ArtistResource extends AbstractResource
 {
     public static string $type = 'artists';

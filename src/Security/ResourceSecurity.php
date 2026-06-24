@@ -5,24 +5,27 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Security;
 
 /**
- * The resolved authorization expressions declared for one JSON:API type via
- * `#[AsJsonApiResource(security: …)]` (bundle ADR 0043): the default expression
- * plus the per-operation overrides. Each is a Symfony Security ExpressionLanguage
- * string; `null` means that operation is not gated by this layer.
+ * The resolved authorization declarations for one JSON:API type via
+ * `#[AsJsonApiResource(security: …)]` (bundle ADR 0043): the default plus the
+ * per-operation overrides. Each is a Symfony Security ExpressionLanguage **string**
+ * (enforced + documented secured), the bool **`true`** (documented secured only — an
+ * external firewall enforces it), the bool **`false`** (documented public), or `null`
+ * (inherit / ungated by this layer).
  *
  * Resolution per operation falls back to the {@see $default} when the override is
- * `null`, so `security: "is_granted('ROLE_ADMIN')"` gates every write/read unless a
- * `securityCreate`/… overrides it. The result is what the
- * {@see ResourceSecuritySubscriber} feeds to the AuthorizationChecker.
+ * `null` (a bool is terminal — it does not fall back), so
+ * `security: "is_granted('ROLE_ADMIN')"` gates every write/read unless a
+ * `securityCreate`/… overrides it. Only a string is fed to the AuthorizationChecker by
+ * the {@see ResourceSecuritySubscriber}; a bool is documentation-only.
  */
 final readonly class ResourceSecurity
 {
     public function __construct(
-        public ?string $default = null,
-        public ?string $create = null,
-        public ?string $update = null,
-        public ?string $delete = null,
-        public ?string $read = null,
+        public string|bool|null $default = null,
+        public string|bool|null $create = null,
+        public string|bool|null $update = null,
+        public string|bool|null $delete = null,
+        public string|bool|null $read = null,
     ) {}
 
     /**
@@ -39,34 +42,35 @@ final readonly class ResourceSecurity
     }
 
     /**
-     * The expression gating create, falling back to {@see $default}.
+     * The security for create (expression / `true` / `false`), falling back to
+     * {@see $default} when unset.
      */
-    public function forCreate(): ?string
+    public function forCreate(): string|bool|null
     {
         return $this->create ?? $this->default;
     }
 
     /**
-     * The expression gating update **and** relationship mutation, falling back to
-     * {@see $default}.
+     * The security for update **and** relationship mutation, falling back to
+     * {@see $default} when unset.
      */
-    public function forUpdate(): ?string
+    public function forUpdate(): string|bool|null
     {
         return $this->update ?? $this->default;
     }
 
     /**
-     * The expression gating delete, falling back to {@see $default}.
+     * The security for delete, falling back to {@see $default} when unset.
      */
-    public function forDelete(): ?string
+    public function forDelete(): string|bool|null
     {
         return $this->delete ?? $this->default;
     }
 
     /**
-     * The expression gating a single-resource read, falling back to {@see $default}.
+     * The security for a single-resource read, falling back to {@see $default} when unset.
      */
-    public function forRead(): ?string
+    public function forRead(): string|bool|null
     {
         return $this->read ?? $this->default;
     }

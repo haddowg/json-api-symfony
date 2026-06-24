@@ -118,13 +118,15 @@ final class ResourceSecuritySubscriber implements EventSubscriberInterface
     }
 
     /**
-     * Evaluates `$expression` (when the operation is gated) against `$subject`,
-     * throwing {@see AccessDeniedException} when it is false. A `null` expression
-     * leaves the operation ungated.
+     * Evaluates `$expression` (when the operation is gated by a string expression)
+     * against `$subject`, throwing {@see AccessDeniedException} when it is false. A
+     * `null` leaves the operation ungated; a **bool** is a documentation-only
+     * declaration (`true` = an external firewall enforces it, `false` = public) and is
+     * never enforced here.
      */
-    private function authorize(string $type, ?string $expression, object $subject): void
+    private function authorize(string $type, string|bool|null $expression, object $subject): void
     {
-        if ($expression === null || $this->authorizationChecker === null) {
+        if (!\is_string($expression) || $this->authorizationChecker === null) {
             return;
         }
 

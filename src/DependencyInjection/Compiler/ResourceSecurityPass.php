@@ -35,7 +35,7 @@ final class ResourceSecurityPass implements CompilerPassInterface
             return;
         }
 
-        /** @var array<string, array{default?: string, create?: string, update?: string, delete?: string, read?: string}> $expressions */
+        /** @var array<string, array{default?: string|bool, create?: string|bool, update?: string|bool, delete?: string|bool, read?: string|bool}> $expressions */
         $expressions = [];
 
         foreach ($container->findTaggedServiceIds(JsonApiBundle::RESOURCE_TAG) as $id => $tags) {
@@ -84,16 +84,21 @@ final class ResourceSecurityPass implements CompilerPassInterface
     }
 
     /**
-     * The security expression recorded under the `security_<key>` tag attribute
-     * across a resource's tags, or `null` when no tag carries it.
+     * The security declaration recorded under the `security_<key>` tag attribute across
+     * a resource's tags — a non-empty expression string, a bool (`true`/`false`), or
+     * `null` when no tag carries one. A bool is a documentation-only declaration
+     * (true = secured, false = public); a string is an enforced expression.
      *
      * @param array<array<string, mixed>> $tags
      */
-    private function securityFromTags(array $tags, string $key): ?string
+    private function securityFromTags(array $tags, string $key): string|bool|null
     {
         $attribute = 'security_' . $key;
         foreach ($tags as $tag) {
             $value = $tag[$attribute] ?? null;
+            if (\is_bool($value)) {
+                return $value;
+            }
             if (\is_string($value) && $value !== '') {
                 return $value;
             }
