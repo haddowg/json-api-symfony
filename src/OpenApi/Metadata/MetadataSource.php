@@ -271,6 +271,7 @@ final class MetadataSource
             relations: $relations,
             operations: $operations,
             securedOperations: $this->securedOperations($type, $operations),
+            publicOperations: $this->publicOperations($type, $operations),
             allowsClientId: $this->idEncoders->allowsClientIdFor($type),
             requiresClientId: $this->idEncoders->requiresClientIdFor($type),
             // The type's {id} route requirement (the un-anchored regex fragment a
@@ -383,46 +384,58 @@ final class MetadataSource
      */
     private function securedOperations(string $type, array $operations): array
     {
+        // Secured (documented with `security` + 401): an enforced expression OR the
+        // documentation-only `true` (an external firewall enforces it).
+        return $this->securityOperations($type, $operations, static fn(string|bool|null $value): bool => \is_string($value) || $value === true);
+    }
+
+    /**
+     * The operations the type declared **public** (`security*: false`) — documented with
+     * an operation-level `security: []` and no 401, overriding the document default.
+     *
+     * @param list<OperationType> $operations
+     *
+     * @return list<OperationType>
+     */
+    private function publicOperations(string $type, array $operations): array
+    {
+        return $this->securityOperations($type, $operations, static fn(string|bool|null $value): bool => $value === false);
+    }
+
+    /**
+     * The exposed operations whose resolved {@see ResourceSecurity} declaration matches
+     * `$matches`, in operation order — the projection of the per-operation declarations
+     * onto {@see OperationType}. Read security maps to the single-resource read only
+     * (`AfterFetchOneEvent`); there is no collection-read hook, so `FetchCollection` is
+     * never classified here (it inherits the document default).
+     *
+     * @param list<OperationType>            $operations
+     * @param \Closure(string|bool|null): bool $matches
+     *
+     * @return list<OperationType>
+     */
+    private function securityOperations(string $type, array $operations, \Closure $matches): array
+    {
         $security = $this->security?->securityFor($type);
         if ($security === null) {
             return [];
         }
 
-        $secured = [];
-        foreach ($this->securedMap($security) as $operationType) {
-            if (\in_array($operationType, $operations, true) && !\in_array($operationType, $secured, true)) {
-                $secured[] = $operationType;
+        $resolved = [
+            [OperationType::Create, $security->forCreate()],
+            [OperationType::Update, $security->forUpdate()],
+            [OperationType::Delete, $security->forDelete()],
+            [OperationType::FetchOne, $security->forRead()],
+        ];
+
+        $result = [];
+        foreach ($resolved as [$operationType, $value]) {
+            if ($matches($value) && \in_array($operationType, $operations, true) && !\in_array($operationType, $result, true)) {
+                $result[] = $operationType;
             }
         }
 
-        return $secured;
-    }
-
-    /**
-     * The operations a resolved {@see ResourceSecurity} gates, in operation order —
-     * the projection of the per-operation expressions onto {@see OperationType}.
-     *
-     * @return list<OperationType>
-     */
-    private function securedMap(ResourceSecurity $security): array
-    {
-        $secured = [];
-        if ($security->forCreate() !== null) {
-            $secured[] = OperationType::Create;
-        }
-        if ($security->forUpdate() !== null) {
-            $secured[] = OperationType::Update;
-        }
-        if ($security->forDelete() !== null) {
-            $secured[] = OperationType::Delete;
-        }
-        // Read security gates the single-resource read only (AfterFetchOneEvent);
-        // there is no collection-read hook, so FetchCollection is never secured here.
-        if ($security->forRead() !== null) {
-            $secured[] = OperationType::FetchOne;
-        }
-
-        return $secured;
+        return $result;
     }
 
     /**

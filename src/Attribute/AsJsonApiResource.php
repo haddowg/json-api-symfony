@@ -89,17 +89,26 @@ use haddowg\JsonApiBundle\Operation\Operation;
  * `sunsetLink` is set — a companion `Link: <uri>; rel="sunset"`.
  *
  * `security` (and the per-operation overrides) declare **declarative authorization**
- * for the type (bundle ADR 0043): each is a Symfony Security
- * {@see https://symfony.com/doc/current/security/expressions.html ExpressionLanguage}
- * string evaluated at the matching lifecycle hook against the subject entity. The
- * expression sees the standard security variables (`user`, `object`, `request`,
- * `token`, `roles`) and functions (`is_granted()`, `is_authenticated_fully()`, …);
- * when it evaluates to false the operation is denied with a `403`. `security` is the
- * default applied to every gated operation; `securityCreate`/`securityUpdate`/
+ * for the type (bundle ADR 0043). Each accepts an **expression**, a **bool**, or null:
+ *  - a Symfony Security
+ *    {@see https://symfony.com/doc/current/security/expressions.html ExpressionLanguage}
+ *    string is evaluated at the matching lifecycle hook against the subject entity (it
+ *    sees `user`/`object`/`request`/`token`/`roles` and `is_granted()` etc.); a false
+ *    result denies the operation with a `403`. The operation is also documented as
+ *    secured (OpenAPI `security` + a `401` response).
+ *  - **`true`** documents the operation as secured (OpenAPI `security` + `401`) **without**
+ *    a bundle-evaluated expression — for an operation an external firewall protects, so
+ *    the document reflects the auth the firewall enforces.
+ *  - **`false`** documents the operation as **public** (OpenAPI `security: []`, no `401`),
+ *    overriding the document-level default security regardless of what it is.
+ *  - **null** leaves the operation to inherit: ungated by this layer, and documented
+ *    against the document-level default.
+ *
+ * `security` is the default applied to every operation; `securityCreate`/`securityUpdate`/
  * `securityDelete`/`securityRead` override it for one operation (each falling back to
- * `security` when null). `securityUpdate` also gates relationship mutation. A `null`
- * expression (after the fallback) leaves that operation **ungated** by this layer.
- * Authorization is inert unless `symfony/security-core` is installed.
+ * `security` when null). `securityUpdate` also gates relationship mutation. A bool is a
+ * **documentation-only** declaration — only an expression is enforced at runtime, and
+ * only when `symfony/security-core` is installed.
  */
 #[\Attribute(\Attribute::TARGET_CLASS)]
 final readonly class AsJsonApiResource
@@ -111,11 +120,11 @@ final readonly class AsJsonApiResource
      * @param class-string<\haddowg\JsonApi\Hydrator\HydratorInterface>|null        $hydrator       a custom hydrator for this type
      * @param list<\haddowg\JsonApiBundle\Operation\Operation>                      $operations     the exposed operation allow-list (empty = all five); mutually exclusive with `readOnly`
      * @param bool                                                                 $readOnly       shorthand restricting the type to the two fetch operations; mutually exclusive with a non-empty `operations`
-     * @param string|null                                                          $security       the default security expression applied to every gated operation (null = ungated)
-     * @param string|null                                                          $securityCreate the security expression for create (falls back to `security`)
-     * @param string|null                                                          $securityUpdate the security expression for update and relationship mutation (falls back to `security`)
-     * @param string|null                                                          $securityDelete the security expression for delete (falls back to `security`)
-     * @param string|null                                                          $securityRead   the security expression for a single-resource read (falls back to `security`)
+     * @param string|bool|null                                                     $security       the default security for every operation: an expression (enforced + documented secured), `true` (documented secured only), `false` (documented public), or null (inherit)
+     * @param string|bool|null                                                     $securityCreate security for create (expression/`true`/`false`; falls back to `security`)
+     * @param string|bool|null                                                     $securityUpdate security for update and relationship mutation (expression/`true`/`false`; falls back to `security`)
+     * @param string|bool|null                                                     $securityDelete security for delete (expression/`true`/`false`; falls back to `security`)
+     * @param string|bool|null                                                     $securityRead   security for a single-resource read (expression/`true`/`false`; falls back to `security`)
      * @param array<string, mixed>                                                 $cacheHeaders   declarative HTTP cache directives for GET reads (`max_age`/`s_maxage`/`public`/`private`/`no_cache`/`must_revalidate`/`vary`), with an optional nested `operations` per-read-shape override map; empty = none
      * @param bool|string|null                                                     $deprecation    IETF Deprecation-header deprecation: `true` (bare header), a date string (`Deprecation: <date>`), or null (none)
      * @param string|null                                                          $sunset         RFC 8594 sunset HTTP-date (`Sunset: <date>`), or null
@@ -132,11 +141,11 @@ final readonly class AsJsonApiResource
         public ?string $hydrator = null,
         public array $operations = [],
         public bool $readOnly = false,
-        public ?string $security = null,
-        public ?string $securityCreate = null,
-        public ?string $securityUpdate = null,
-        public ?string $securityDelete = null,
-        public ?string $securityRead = null,
+        public string|bool|null $security = null,
+        public string|bool|null $securityCreate = null,
+        public string|bool|null $securityUpdate = null,
+        public string|bool|null $securityDelete = null,
+        public string|bool|null $securityRead = null,
         public array $cacheHeaders = [],
         public bool|string|null $deprecation = null,
         public ?string $sunset = null,

@@ -49,6 +49,39 @@ A parameter that resolves to `null` (no override **and** no `security` default)
 leaves that operation **ungated** by this layer. So `security: null,
 securityDelete: "is_granted('ROLE_ADMIN')"` gates only delete.
 
+### Documentation-only `true` / `false`
+
+Each of the five parameters also accepts a **bool** instead of an expression — a
+*documentation-only* declaration that shapes the OpenAPI document without adding a
+runtime gate (only an expression is enforced):
+
+- **`true`** — the operation is documented as **secured** (OpenAPI `security` + a
+  `401` response) **without** a bundle-evaluated expression. Use it when an external
+  Symfony **firewall** (not this layer) enforces the auth, so the document still
+  reflects it.
+- **`false`** — the operation is documented as **public** (an operation-level
+  `security: []` and **no** `401`), overriding the document-level default security
+  regardless of what it is. Use it for a genuinely open operation under an otherwise
+  authenticated API.
+
+```php
+#[AsJsonApiResource(
+    entity: Artist::class,
+    securityRead: false,             // GET /artists/{id} is public — overrides the default
+    securityCreate: true,            // documented secured (the firewall enforces it)
+    securityUpdate: "is_granted('EDIT', object)", // enforced AND documented secured
+)]
+```
+
+A bool is terminal — it does **not** fall back to the `security` default. The OpenAPI
+`401`/`security` for an operation reflect its *effective* security: its own
+declaration, or the document-level default (`json_api.openapi.security
+.default_requirement`) when it inherits — so an API behind a firewall, configured with
+only that default, advertises `security` + `401` on every operation, and `false` is
+how you carve out the public ones. (The **collection** read has no per-operation
+security hook, so it always follows the document default; an individual `securityRead`
+governs only `GET /{type}/{id}`.)
+
 ## What is — and is not — gated
 
 - **Writes are gated at the *before* hook**, so a denial throws before the persister

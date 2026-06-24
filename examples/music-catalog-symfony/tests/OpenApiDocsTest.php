@@ -152,6 +152,27 @@ final class OpenApiDocsTest extends MusicCatalogKernelTestCase
     }
 
     #[Test]
+    public function aPublicSecurityBooleanOverridesTheDocumentDefault(): void
+    {
+        $document = $this->decode($this->handle('/docs.json'));
+
+        // ArtistResource declares `securityRead: false`: its single-resource read is
+        // documented PUBLIC — an operation-level `security: []` overriding the
+        // document-level `bearer` default, and NO 401 (contrast a write, which inherits
+        // the default and carries 401).
+        $read = $this->nested($document, 'paths', '/artists/{id}', 'get');
+        self::assertSame([], $read['security'] ?? null, 'a public read carries security: [] (no auth)');
+        self::assertArrayNotHasKey('401', $this->nested($read, 'responses'));
+
+        // A write on the same type carries no public override, so it INHERITS the
+        // document-level bearer default and advertises 401 (Tier 1) — the contrast that
+        // shows the read was deliberately opted out.
+        $create = $this->nested($document, 'paths', '/artists', 'post');
+        self::assertArrayNotHasKey('security', $create, 'a write has no per-op override — it inherits the document default');
+        self::assertArrayHasKey('401', $this->nested($create, 'responses'));
+    }
+
+    #[Test]
     public function theUiViewerServes(): void
     {
         $response = $this->handle('/docs');
