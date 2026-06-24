@@ -918,6 +918,16 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             }
         }
 
+        // A to-MANY relationship (linkage) endpoint renders the WHOLE association, so it
+        // honours no `filter` — reject a requested one as a `400` rather than silently
+        // ignoring it (the same FilterParamUnrecognized a to-one or the related endpoint
+        // surfaces for an unsupported filter key).
+        if ($relation->isToMany() && $operation->queryParameters()->filter !== []) {
+            throw new \haddowg\JsonApi\Exception\FilterParamUnrecognized(
+                \array_key_first($operation->queryParameters()->filter),
+            );
+        }
+
         // A pivot-backed belongsToMany renders its per-member pivot values as
         // identifier meta here too: the relationship endpoint renders the WHOLE
         // association off the parent (no window), so the pivot-aware provider
