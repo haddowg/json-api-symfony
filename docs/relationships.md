@@ -118,8 +118,7 @@ resource → server-default chain). It renders the windowed page-1 **linkage**
 its *own* `links` object, not the document `meta` — its `first`/`prev`/`next`(/`last`)
 links ride the relationship document's `links` (the convention `self` stays the bare
 endpoint URL). The [`RelationshipReadTest`](../examples/music-catalog-symfony/tests/RelationshipReadTest.php)
-witnesses it (monomorphic, non-pivot to-many; a pivot or polymorphic to-many keeps
-the whole-association linkage render):
+witnesses it:
 
 ```
 GET /albums/1/relationships/tracks                  → ids 1, 3 (track 2 is explicit, filtered out)
@@ -127,6 +126,15 @@ GET /albums/1/relationships/tracks?sort=-title      → ids 3, 1
 GET /albums/1/relationships/tracks?filter[explicit]=true → id 2
 GET /albums/1/relationships/tracks?page[size]=1     → id 1, with a `next` link to page 2
 ```
+
+A **pivot** (`belongsToMany`) to-many relationship endpoint is queryable too: it windows
+the linkage, scopes the related + pivot vocabulary, and still renders each member's
+`meta.pivot` (the [`PivotTest`](../examples/music-catalog-symfony/tests/PivotTest.php)
+witnesses `GET /playlists/{id}/relationships/orderedTracks?sort=position&filter[position]=…&page[size]=…`).
+A **polymorphic** (`MorphToMany`) to-many relationship endpoint, whose members span
+types, cannot window mixed linkage — querying it is unsupported, so a `?filter`/`?sort`/
+`?page` there is a clean `400` (its OpenAPI operation advertises no query parameters),
+while a bare `GET …/relationships/{morphMany}` still renders the whole mixed linkage.
 
 ### Filtering a to-one relationship
 

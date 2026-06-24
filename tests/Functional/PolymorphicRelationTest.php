@@ -148,6 +148,46 @@ final class PolymorphicRelationTest extends JsonApiFunctionalTestCase
     }
 
     #[Test]
+    #[Group('spec:fetching-relationships')]
+    #[Group('spec:fetching-filtering')]
+    #[Group('spec:errors')]
+    public function aFilterOnAPolymorphicToManyRelationshipEndpointIs400(): void
+    {
+        // A polymorphic to-many's members span types, so there is no single related
+        // provider or shared vocabulary to window its linkage through — querying it is
+        // unsupported. A requested filter is a clean 400, not a silent no-op (bundle ADR
+        // 0096; the projector advertises no query parameters for it).
+        $response = $this->handle(self::BASE_URI . '/boards/1/relationships/items?filter[name]=x');
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['parameter' => 'filter[name]'], $this->firstError($response)['source'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    #[Group('spec:fetching-sorting')]
+    #[Group('spec:errors')]
+    public function aSortOnAPolymorphicToManyRelationshipEndpointIs400(): void
+    {
+        $response = $this->handle(self::BASE_URI . '/boards/1/relationships/items?sort=name');
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['parameter' => 'sort'], $this->firstError($response)['source'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    #[Group('spec:fetching-pagination')]
+    #[Group('spec:errors')]
+    public function aPageOnAPolymorphicToManyRelationshipEndpointIs400(): void
+    {
+        $response = $this->handle(self::BASE_URI . '/boards/1/relationships/items?page[size]=1');
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['parameter' => 'page'], $this->firstError($response)['source'] ?? null);
+    }
+
+    #[Test]
     #[Group('spec:fetching-includes')]
     #[Group('spec:fetching-relationships')]
     public function aPolymorphicToManyIncludeRendersMixedIncludedResources(): void
