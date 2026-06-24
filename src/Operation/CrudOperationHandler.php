@@ -29,6 +29,7 @@ use haddowg\JsonApi\Operation\UpdateRelationshipOperation;
 use haddowg\JsonApi\Operation\UpdateResourceOperation;
 use haddowg\JsonApi\Pagination\CursorPaginator;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Request\RelatedQuery;
 use haddowg\JsonApi\Resource\Field\Accessor;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\Mode;
@@ -42,6 +43,8 @@ use haddowg\JsonApi\Response\IdentifierResponse;
 use haddowg\JsonApi\Response\MetaResponse;
 use haddowg\JsonApi\Response\NoContentResponse;
 use haddowg\JsonApi\Response\RelatedResponse;
+use haddowg\JsonApi\Schema\Relationship\RelationshipLinkage;
+use haddowg\JsonApi\Schema\Relationship\RelationshipPagination;
 use haddowg\JsonApi\Serializer\PolymorphicSerializer;
 use haddowg\JsonApi\Serializer\SerializerInterface;
 use haddowg\JsonApi\Server\Server;
@@ -75,6 +78,8 @@ use haddowg\JsonApiBundle\Serializer\PivotParentSerializer;
 use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipCount;
 use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipLinkage;
 use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipPagination;
+use haddowg\JsonApiBundle\Serializer\WindowedRelationshipLinkage;
+use haddowg\JsonApiBundle\Serializer\WindowedRelationshipPagination;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
 use haddowg\JsonApiBundle\Validation\FilterValueValidator;
@@ -874,6 +879,13 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return ErrorResponse::fromException(new RelationshipNotExists($relationshipName));
         }
 
+        // The relationship-linkage/pagination seams are request-scoped singletons
+        // (reset between messages). Clear any backing a prior render left so this
+        // endpoint reads only what the to-many windowing below installs — nothing for a
+        // to-one, pivot, polymorphic, or whole-association render.
+        $this->relationshipLinkage?->set(null);
+        $this->relationshipPagination?->set(null);
+
         // A relation filter that excludes a to-one's single related object nulls the
         // linkage: resolve the merged filter vocabulary, match the one related object,
         // and on a no-match write `null` onto the parent's to-one property BEFORE the
@@ -918,22 +930,13 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             }
         }
 
-        // A to-MANY relationship (linkage) endpoint renders the WHOLE association, so it
-        // honours no `filter` — reject a requested one as a `400` rather than silently
-        // ignoring it (the same FilterParamUnrecognized a to-one or the related endpoint
-        // surfaces for an unsupported filter key).
-        if ($relation->isToMany() && $operation->queryParameters()->filter !== []) {
-            throw new \haddowg\JsonApi\Exception\FilterParamUnrecognized(
-                \array_key_first($operation->queryParameters()->filter),
-            );
-        }
-
         // A pivot-backed belongsToMany renders its per-member pivot values as
         // identifier meta here too: the relationship endpoint renders the WHOLE
         // association off the parent (no window), so the pivot-aware provider
         // supplies the full pivot map, and a PivotParentSerializer rebinds this one
         // relationship's linkage to a PivotMetaSerializer — riding core's existing
-        // identifier-meta render path with no core change.
+        // identifier-meta render path with no core change. A pivot relation keeps the
+        // whole-association render (a queryable pivot linkage is a fast-follow).
         $relatedType = $relation->relatedTypes()[0] ?? $type;
         $relatedProvider = $this->providers->supportsType($relatedType) ? $this->providers->forType($relatedType) : null;
         if ($relatedProvider instanceof PivotAwareProviderInterface && $relatedProvider->supportsPivot($relatedType, $relation)) {
@@ -948,6 +951,91 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             );
 
             return IdentifierResponse::forRelationship($parent, $parentSerializer, $relationshipName);
+        }
+
+        // A monomorphic, non-pivot to-many relationship (linkage) endpoint is a real
+        // queryable, paginated collection at parity with its related-resource twin
+        // (`GET /{type}/{id}/{rel}`): `?filter`/`?sort` scope against the same merged
+        // vocabulary, and pagination is on by default (the relation's paginator). It
+        // mirrors fetchRelated()'s to-many fetch, then supplies the page-1 linkage and
+        // its pagination OUT-OF-BAND through the relationship-linkage/pagination seams —
+        // NOT a destructive write onto the parent property (which would corrupt a sibling
+        // relation sharing the backing column, bundle ADR 0086). The result is the same
+        // windowed linkage `data` core renders for an included to-many, plus the
+        // relationship object's first/prev/next(/last) links. A polymorphic to-many
+        // (members span types — no single related provider or shared vocabulary) keeps
+        // the whole-association render below, a fast-follow.
+        if ($relation->isToMany() && \count($relation->relatedTypes()) === 1 && $relatedProvider !== null) {
+            $request = $this->jsonApiRequest($operation->context());
+            $relatedResource = $this->types->resourceFor($server, $relatedType);
+            $paginator = $this->relationCriteria->paginatorFor($relation, $relatedResource, $server);
+            $window = $paginator?->window($request);
+
+            // The linkage collection honours the same `?withCount=_self_` gate as the
+            // related endpoint: `_self_` names THIS relationship's collection, so it is a
+            // 400 on a non-countable relation (the to-many twin of fetchRelated's gate).
+            if ($request->countsRelationship('_self_') && !$relation->isCountable()) {
+                return ErrorResponse::fromException(
+                    new \haddowg\JsonApi\Exception\RelationshipCountNotAllowed(['_self_']),
+                );
+            }
+
+            // The single COUNT decision (G21), mirroring fetchRelated: the paginator
+            // counts when its own withCount() opt-in flipped it OR the client asked
+            // `?withCount=_self_` (gated above); the cursor strategy is count-free.
+            $relWantsCount = $paginator !== null
+                && !($paginator instanceof CursorPaginator)
+                && ($paginator->wantsCount() || $request->countsRelationship('_self_'));
+
+            // The merged filter/sort vocabulary (related resource ⊕ relation-scoped) and
+            // the 3-tier paginator chain are owned by the shared RelationCriteriaFactory —
+            // identical to the related endpoint, so an unknown key is the same 400.
+            $criteria = $this->relationCriteria->criteriaFor(
+                $operation->queryParameters(),
+                $relatedResource,
+                $relation,
+                $window,
+                includePivotFields: false,
+                wantsCount: $relWantsCount,
+            );
+            $this->validateFilterValues($operation->queryParameters()->filter, $criteria->filters);
+
+            $result = $relatedProvider->fetchRelatedCollection($relatedType, $parent, $relation, $criteria, $request);
+            $items = \is_array($result->items) ? \array_values($result->items) : \iterator_to_array($result->items, false);
+
+            // Compound `?include` on a relationship endpoint resolves the linkage members'
+            // own include tree (a no-op when none was requested) so it does not N+1.
+            $this->preloadIncludes($relatedProvider, $items, $relatedType, $request);
+
+            // Supply page 1 as this (parent, relation)'s linkage out-of-band — a single
+            // entry map keyed by the rendered parent's identity, exactly as the include
+            // window batcher builds for a page of parents.
+            $objectId = \spl_object_id($parent);
+            $this->relationshipLinkage?->set(new WindowedRelationshipLinkage(
+                [$objectId => [$relationshipName => new RelationshipLinkage($items)]],
+            ));
+
+            // A paginated relation also supplies its page so core emits the relationship
+            // object's first/prev/next(/last) links in the spec's plain form (the query
+            // string mirrors the client's sort/filter; the page strategy appends `page[]`).
+            // A relation with no paginator (`pagination(null)`) is filtered/sorted but not
+            // sliced — no pagination entry, so no links (the holder was cleared above).
+            if ($paginator !== null && ($result->total !== null || $result->windowed)) {
+                $queryString = (new RelatedQuery(
+                    $request->getSorting() === [] ? null : \implode(',', $request->getSorting()),
+                    $operation->queryParameters()->filter,
+                ))->toPlainQueryString();
+
+                $page = $relWantsCount && $result->total !== null
+                    ? $paginator->paginate($request, $items, $result->total)
+                    : $paginator->paginateWithoutCount($request, $items, $result->hasMore);
+
+                $this->relationshipPagination?->set(new WindowedRelationshipPagination(
+                    [$objectId => [$relationshipName => new RelationshipPagination($page, $queryString)]],
+                ));
+            }
+
+            return IdentifierResponse::forRelationship($parent, $server->serializerFor($type), $relationshipName);
         }
 
         return IdentifierResponse::forRelationship($parent, $server->serializerFor($type), $relationshipName);

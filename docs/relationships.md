@@ -110,6 +110,24 @@ GET /tracks/1/playlists               → unpaginated (the relation declares no 
 A relation that declares no paginator renders its related collection without page
 meta — that is the unpaginated baseline.
 
+The to-many **relationship (linkage) endpoint** `GET /{type}/{id}/relationships/{rel}`
+is queryable at the **same parity**: `?filter`/`?sort`/`?page` scope against the same
+merged vocabulary and pagination is on by default (the same relation → related
+resource → server-default chain). It renders the windowed page-1 **linkage**
+(resource identifiers), and — because the spec puts a relationship's pagination in
+its *own* `links` object, not the document `meta` — its `first`/`prev`/`next`(/`last`)
+links ride the relationship document's `links` (the convention `self` stays the bare
+endpoint URL). The [`RelationshipReadTest`](../examples/music-catalog-symfony/tests/RelationshipReadTest.php)
+witnesses it (monomorphic, non-pivot to-many; a pivot or polymorphic to-many keeps
+the whole-association linkage render):
+
+```
+GET /albums/1/relationships/tracks                  → ids 1, 3 (track 2 is explicit, filtered out)
+GET /albums/1/relationships/tracks?sort=-title      → ids 3, 1
+GET /albums/1/relationships/tracks?filter[explicit]=true → id 2
+GET /albums/1/relationships/tracks?page[size]=1     → id 1, with a `next` link to page 2
+```
+
 ### Filtering a to-one relationship
 
 A to-one is not a collection, so it does not paginate or sort — but it can carry a

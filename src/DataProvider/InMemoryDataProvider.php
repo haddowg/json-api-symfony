@@ -154,10 +154,15 @@ final class InMemoryDataProvider implements DataProviderInterface
         // (`$criteria->wantsCount` — the relation paginator's withCount() author
         // opt-in, or ?withCount=_self_ under a countable() relation); otherwise it
         // paginates count-free (no total, the page driven by a limit+1 probe).
+        // A to-many whose related value is null/absent (an unset association) is an
+        // empty collection here: the whole-association linkage render handled a null
+        // to-many gracefully, so the queryable related/relationship fetch path that
+        // now routes through here must too — normalise via asIterator() (null/scalar →
+        // empty), mirroring countRelated() rather than asserting is_iterable.
         $related = $relation->readValue($parent, $request);
-        \assert(\is_iterable($related));
-
-        $items = \is_array($related) ? \array_values($related) : \iterator_to_array($related, false);
+        $items = \is_array($related)
+            ? \array_values($related)
+            : \iterator_to_array($this->asIterator($related), false);
 
         return $this->applyAndWindow($criteria, $items, $criteria->wantsCount);
     }
