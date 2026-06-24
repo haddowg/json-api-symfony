@@ -47,6 +47,7 @@ final readonly class TypeMetadata implements TypeMetadataInterface
         private array $operations,
         private array $securedOperations,
         private bool $allowsClientId,
+        private bool $requiresClientId,
         private ?string $idPattern,
         private PaginatorKind $paginatorKind,
         private bool $countable,
@@ -97,6 +98,11 @@ final readonly class TypeMetadata implements TypeMetadataInterface
     public function allowsClientId(): bool
     {
         return $this->allowsClientId;
+    }
+
+    public function requiresClientId(): bool
+    {
+        return $this->requiresClientId;
     }
 
     public function idPattern(): ?string

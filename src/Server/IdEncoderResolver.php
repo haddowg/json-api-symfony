@@ -55,6 +55,11 @@ final class IdEncoderResolver
      */
     private array $allowsClientIdCache = [];
 
+    /**
+     * @var array<string, bool>
+     */
+    private array $requiresClientIdCache = [];
+
     public function __construct(private readonly ResourceLocator $resources) {}
 
     /**
@@ -119,6 +124,21 @@ final class IdEncoderResolver
         }
 
         return $this->allowsClientIdCache[$type];
+    }
+
+    /**
+     * Whether `$type`'s resource id field REQUIRES a client-supplied `data.id`
+     * ({@see Id::requiresClientId()} — `requireClientId()`). A type with no resource /
+     * no id field defaults to `false`. The OpenAPI metadata reads this so the create
+     * request schema marks `id` as required (a create without it is core's `403`).
+     */
+    public function requiresClientIdFor(string $type): bool
+    {
+        if (!\array_key_exists($type, $this->requiresClientIdCache)) {
+            $this->requiresClientIdCache[$type] = $this->idFieldFor($type)?->requiresClientId() ?? false;
+        }
+
+        return $this->requiresClientIdCache[$type];
     }
 
     /**
