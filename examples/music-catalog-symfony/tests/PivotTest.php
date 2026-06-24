@@ -78,29 +78,52 @@ final class PivotTest extends MusicCatalogKernelTestCase
     }
 
     #[Test]
-    public function aPivotRelationshipEndpointRendersPerMemberLinkageMeta(): void
+    #[Group('spec:fetching-sorting')]
+    #[Group('spec:fetching-pagination')]
+    public function aPivotRelationshipEndpointWindowsAndSortsWithPivotMeta(): void
     {
-        // The relationship-linkage endpoint renders ALL members off the parent (the
-        // explicit filter does not apply to raw linkage), each identifier carrying
-        // meta.pivot — no attributes (linkage only).
-        $document = $this->fetch('/playlists/' . self::PLAYLIST_ID . '/relationships/orderedTracks');
+        // The pivot relationship (linkage) endpoint is queryable/paginated at FULL parity
+        // with the related endpoint AND carries each member's meta.pivot — sort=position
+        // orders the linkage by the pivot column, page[size] windows it, and the related
+        // type's `explicit` DEFAULT filter applies just as it does on the related endpoint
+        // (hiding the explicit track 2). The visible members are track 3 (@ pos 1) and
+        // track 1 (@ pos 2); page 1 of size 1 is track 3, with a `next` to track 1.
+        $document = $this->fetch('/playlists/' . self::PLAYLIST_ID . '/relationships/orderedTracks?sort=position&page%5Bsize%5D=1');
 
         $data = $document['data'] ?? null;
         self::assertIsArray($data);
 
-        $byIdPosition = [];
+        $ordered = [];
         foreach ($data as $identifier) {
             self::assertIsArray($identifier);
-            self::assertArrayNotHasKey('attributes', $identifier);
-            $id = $identifier['id'] ?? null;
-            self::assertIsString($id);
-            $byIdPosition[$id] = $this->pivotField($identifier, 'position');
+            self::assertArrayNotHasKey('attributes', $identifier); // linkage only
+            $ordered[] = [$identifier['id'] ?? null, $this->pivotField($identifier, 'position')];
         }
+        self::assertSame([['3', 1]], $ordered);
 
-        \ksort($byIdPosition);
+        // A further page exists (two visible members, size 1), signalled on the
+        // relationship object's own links (pivot meta and pagination compose).
+        $links = $document['links'] ?? null;
+        self::assertIsArray($links);
+        self::assertNotNull($links['next'] ?? null, 'a further page is signalled via next');
+    }
 
-        // track 1 (Airbag) @ 2, track 2 (Paranoid Android) @ 3, track 3 (Exit Music) @ 1.
-        self::assertSame(['1' => 2, '2' => 3, '3' => 1], $byIdPosition);
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    public function aPivotRelationshipEndpointFiltersByThePivotColumn(): void
+    {
+        // filter[position]=2 keeps only the member at pivot position 2 (Airbag, id 1) —
+        // the pivot vocabulary scopes the linkage just as it does the related endpoint.
+        $document = $this->fetch('/playlists/' . self::PLAYLIST_ID . '/relationships/orderedTracks?filter%5Bposition%5D=2');
+
+        $data = $document['data'] ?? null;
+        self::assertIsArray($data);
+        self::assertCount(1, $data);
+
+        $only = $data[0];
+        self::assertIsArray($only);
+        self::assertSame('1', $only['id'] ?? null);
+        self::assertSame(2, $this->pivotField($only, 'position'));
     }
 
     #[Test]

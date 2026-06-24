@@ -30,15 +30,28 @@ relationship object's `first`/`prev`/`next`(/`last`) links in the spec's plain f
 against the relationship-linkage endpoint — pagination lives in the relationship's own
 `links`, not a document `meta.page`; the convention `self` stays the bare endpoint URL.
 
-A **pivot** (`belongsToMany`) or **polymorphic** (`MorphToMany`) to-many keeps the
-whole-association linkage render (a pivot/polymorphic queryable linkage is a
-fast-follow). The in-memory provider's `fetchRelatedCollection` now treats a null/absent
-to-many as `[]` (via `asIterator()`, mirroring `countRelated`) so routing every to-many
+A **pivot** (`belongsToMany`) to-many is queryable too: its relationship endpoint
+windows the pivot collection (`fetchRelatedPivotCollection`, the windowed twin of the
+whole-association map), supplies the page-1 linkage + pagination through the same seams,
+and renders each member's `meta.pivot` through a `PivotParentSerializer` over the
+WINDOWED pivot map — the two compose because `PivotSubstitutingResolver` delegates the
+linkage/pagination seams to the Server. A **polymorphic** (`MorphToMany`) to-many's
+members span types — no single related provider or shared vocabulary to window mixed
+linkage through — so querying it is a fast-follow: a requested `filter`/`sort`/`page` on
+its relationship endpoint is rejected with the related endpoint's same `400` (rather than
+silently ignored), and the projector advertises no query parameters for it (core ADR
+0096 gates the param projection on a monomorphic relation).
+
+The in-memory provider's `fetchRelatedCollection` now treats a null/absent to-many as
+`[]` (via `asIterator()`, mirroring `countRelated`) so routing every to-many
 relationship GET through the fetch path no longer asserts on an unset association. The
-OpenAPI projector projects the merged `filter[]`/`sort`/`page` parameters on the
-to-many relationship GET (core ADR 0096); the linkage-document response schema already
-permits arbitrary further links, so no schema change was needed. Dual-provider
-conformance (`RelationshipCollectionParamsConformanceTestCase`): filter/sort/page
-applied to the linkage on both the in-memory and Doctrine-sqlite kernels, the
-relationship-object pagination links, the countable `?withCount=_self_` gate, and the
-unknown-key `400` — the linkage twin of `RelatedCollectionParamsConformanceTestCase`.
+OpenAPI projector projects the merged `filter[]`/`sort`/`page` parameters on a
+**monomorphic** to-many relationship GET (pivot included; polymorphic excluded); the
+linkage-document response schema already permits arbitrary further links, so no schema
+change was needed. Dual-provider conformance
+(`RelationshipCollectionParamsConformanceTestCase`): filter/sort/page applied to the
+linkage on both the in-memory and Doctrine-sqlite kernels, the relationship-object
+pagination links, the countable `?withCount=_self_` gate, and the unknown-key `400` — the
+linkage twin of `RelatedCollectionParamsConformanceTestCase`; the pivot windowing +
+`meta.pivot` and the polymorphic `400` are witnessed by the example `PivotTest` /
+`PolymorphicRelationTest`.
