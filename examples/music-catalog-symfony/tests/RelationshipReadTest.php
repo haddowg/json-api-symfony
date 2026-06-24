@@ -212,20 +212,66 @@ final class RelationshipReadTest extends MusicCatalogKernelTestCase
     }
 
     #[Test]
-    public function aRelationshipToManyEndpointRendersAListOfIdentifiers(): void
+    #[Group('spec:fetching-pagination')]
+    public function aRelationshipToManyEndpointRendersAPaginatedFilteredListOfIdentifiers(): void
     {
-        // The relationship endpoint materialises the to-many even under the
-        // load-state policy: album 1 owns tracks 1, 2, 3.
+        // The to-many relationship (linkage) endpoint is a queryable, paginated
+        // collection at FULL parity with the related endpoint: it materialises the
+        // to-many even under the lazy load-state policy, applies the related (`tracks`)
+        // vocabulary — including the `explicit` DEFAULT filter that hides the explicit
+        // track 2 — and windows it to the relation's paginator. Album 1 owns tracks 1,
+        // 2, 3; the default filter leaves the non-explicit 1 and 3, which fit one page
+        // of 2.
         $document = $this->fetchDocument('/albums/1/relationships/tracks');
 
         self::assertSame(
             [
                 ['type' => 'tracks', 'id' => '1'],
-                ['type' => 'tracks', 'id' => '2'],
                 ['type' => 'tracks', 'id' => '3'],
             ],
             $this->normaliseIdentifiers($document['data'] ?? null),
         );
+
+        // Pagination rides the relationship object's own `links` (the spec's home for
+        // relationship pagination), not a document `meta.page`; the convention `self`
+        // stays the bare endpoint URL.
+        $links = $document['links'] ?? null;
+        self::assertIsArray($links);
+        self::assertSame(self::BASE_URI . '/albums/1/relationships/tracks', $links['self'] ?? null);
+        self::assertArrayHasKey('first', $links);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    #[Group('spec:fetching-sorting')]
+    #[Group('spec:fetching-pagination')]
+    public function aRelationshipToManyEndpointAppliesFilterSortAndPage(): void
+    {
+        // filter[explicit]=true surfaces the otherwise-hidden explicit track 2 —
+        // the merged vocabulary scopes the linkage just as it does the related endpoint.
+        $explicit = $this->fetchDocument('/albums/1/relationships/tracks?filter[explicit]=true');
+        self::assertSame(
+            [['type' => 'tracks', 'id' => '2']],
+            $this->normaliseIdentifiers($explicit['data'] ?? null),
+        );
+
+        // sort=-title orders the linkage by the related vocabulary (Exit Music > Airbag).
+        $sorted = $this->fetchDocument('/albums/1/relationships/tracks?sort=-title');
+        self::assertSame(
+            [['type' => 'tracks', 'id' => '3'], ['type' => 'tracks', 'id' => '1']],
+            $this->normaliseIdentifiers($sorted['data'] ?? null),
+        );
+
+        // page[size]=1 windows the linkage to the first member, with a `next` link to
+        // page 2 on the relationship object's links.
+        $paged = $this->fetchDocument('/albums/1/relationships/tracks?page[size]=1');
+        self::assertSame(
+            [['type' => 'tracks', 'id' => '1']],
+            $this->normaliseIdentifiers($paged['data'] ?? null),
+        );
+        $links = $paged['links'] ?? null;
+        self::assertIsArray($links);
+        self::assertNotNull($links['next'] ?? null, 'a further page is signalled via next');
     }
 
     // --- 404 paths -----------------------------------------------------------

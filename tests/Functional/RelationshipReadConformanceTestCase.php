@@ -126,23 +126,6 @@ abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTest
 
     #[Test]
     #[Group('spec:fetching-relationships')]
-    #[Group('spec:errors')]
-    public function aFilterOnAToManyRelationshipEndpointIs400(): void
-    {
-        // The to-many relationship (linkage) endpoint returns the WHOLE association and
-        // honours no `filter` — a requested filter is a clean `400`, not a silently
-        // ignored `200`.
-        $response = $this->handle('/articles/1/relationships/comments?filter%5Bbogus%5D=x');
-
-        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
-        $errors = $this->decode($response)['errors'] ?? null;
-        self::assertIsArray($errors);
-        self::assertIsArray($errors[0] ?? null);
-        self::assertSame(['parameter' => 'filter[bogus]'], $errors[0]['source'] ?? null);
-    }
-
-    #[Test]
-    #[Group('spec:fetching-relationships')]
     public function aRelationshipWithoutTheLoadStatePolicyAlwaysEmitsData(): void
     {
         // Regression: the `comments` to-many opts into eager linkage with
