@@ -145,10 +145,10 @@ final class OpenApiAtomicServingTest extends \Symfony\Bundle\FrameworkBundle\Tes
      * no-id create (the only valid create body for a type with `allowsClientId=false`,
      * such as the default server's `public-items`), a local-id (`lid`) create, and a
      * single to-one relationship identifier referenced by `lid` — while still rejecting
-     * a body with no `type`. (Before the `<Type>AtomicWrite` component existed the
-     * served schema referenced the id-requiring read shape, so it advertised that every
-     * id-less create was invalid — the documented, asserted-passing example batch
-     * included.)
+     * a body with no `type`. (Before the discrete `<Type>AtomicAdd` / `<Type>AtomicUpdate`
+     * shapes the served schema referenced the id-requiring read shape, so it advertised
+     * that every id-less create was invalid — the documented, asserted-passing example
+     * batch included.)
      */
     #[Test]
     #[Group('spec:openapi')]
