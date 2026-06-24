@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\OpenApi\Metadata;
 use haddowg\JsonApi\OpenApi\Metadata\PaginatorKind;
 use haddowg\JsonApi\OpenApi\Metadata\RelationMetadataInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApiBundle\DataProvider\PivotFields;
 
 /**
  * Adapts a core {@see RelationInterface} (a resource's relation field, or a
@@ -98,7 +99,14 @@ final readonly class RelationMetadata implements RelationMetadataInterface
 
     public function sorts(): array
     {
-        return $this->relation->sorts();
+        // A belongsToMany's pivot fields contribute an auto-derived `?sort=<field>`
+        // vocabulary the runtime honours on this relation's related/relationship
+        // endpoints (RelationCriteriaFactory merges PivotFields::sortsFor when the
+        // pivot-aware provider sets includePivotFields). Surface them here so the
+        // OpenAPI `sort` enum advertises them too — mirroring how the pivot FILTERS,
+        // being author-declared in filters(), are already advertised. Empty for a
+        // non-pivot relation (bundle ADR 0097).
+        return [...$this->relation->sorts(), ...PivotFields::sortsFor($this->relation)];
     }
 
     public function relatedIncludablePaths(): array

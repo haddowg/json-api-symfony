@@ -120,6 +120,38 @@ final class OpenApiDocsTest extends MusicCatalogKernelTestCase
     }
 
     #[Test]
+    #[Group('spec:fetching-sorting')]
+    public function aPivotRelationAdvertisesItsAutoDerivedPivotSortTokens(): void
+    {
+        $document = $this->decode($this->handle('/docs.json'));
+
+        // orderedTracks is a belongsToMany with `position`/`weight` pivot fields. The
+        // auto-derived pivot sort vocabulary (honoured at runtime via the pivot-aware
+        // provider) is advertised on BOTH the related and relationship endpoints, just as
+        // the author-declared pivot FILTERS are.
+        foreach (['/playlists/{id}/orderedTracks', '/playlists/{id}/relationships/orderedTracks'] as $path) {
+            $parameters = $this->nested($document, 'paths', $path, 'get', 'parameters');
+            $enum = $this->nested($this->parameterNamed($parameters, 'sort'), 'schema', 'items')['enum'] ?? [];
+            self::assertIsArray($enum);
+            self::assertContains('position', $enum, $path);
+            self::assertContains('weight', $enum, $path);
+        }
+    }
+
+    #[Test]
+    public function aRequireClientIdTypeMarksTheCreateIdRequired(): void
+    {
+        $document = $this->decode($this->handle('/docs.json'));
+
+        // genres declares Id::make()->requireClientId(): the create body makes `data.id`
+        // present AND required (a create without it is a 403 at runtime), so a client
+        // generated against the document sends the id the runtime demands.
+        $data = $this->nested($document, 'components', 'schemas', 'GenresCreateRequest', 'properties', 'data');
+        self::assertSame('string', $this->nested($data, 'properties', 'id')['type'] ?? null);
+        self::assertContains('id', $this->nested($data, 'required'));
+    }
+
+    #[Test]
     public function theUiViewerServes(): void
     {
         $response = $this->handle('/docs');

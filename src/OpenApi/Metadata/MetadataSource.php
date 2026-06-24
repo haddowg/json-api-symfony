@@ -272,6 +272,7 @@ final class MetadataSource
             operations: $operations,
             securedOperations: $this->securedOperations($type, $operations),
             allowsClientId: $this->idEncoders->allowsClientIdFor($type),
+            requiresClientId: $this->idEncoders->requiresClientIdFor($type),
             // The type's {id} route requirement (the un-anchored regex fragment a
             // uuid()/ulid()/numeric()/pattern()/matchAs() id declares), or null for an
             // unconstrained id (any non-empty string). Core's OperationProjector anchors
