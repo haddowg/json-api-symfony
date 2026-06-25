@@ -22,7 +22,7 @@ final class ResourceSecurityRegistry
     private array $byType;
 
     /**
-     * @param array<string, array{default?: string|bool|null, create?: string|bool|null, update?: string|bool|null, delete?: string|bool|null, read?: string|bool|null}> $expressions
+     * @param array<string, array{default?: string|bool|null, create?: string|bool|null, update?: string|bool|null, delete?: string|bool|null, read?: string|bool|null, list?: string|bool|null}> $expressions
      */
     public function __construct(array $expressions = [])
     {
@@ -34,6 +34,7 @@ final class ResourceSecurityRegistry
                 update: $set['update'] ?? null,
                 delete: $set['delete'] ?? null,
                 read: $set['read'] ?? null,
+                list: $set['list'] ?? null,
             );
 
             if (!$security->isEmpty()) {

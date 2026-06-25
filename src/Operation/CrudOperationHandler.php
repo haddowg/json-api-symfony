@@ -72,6 +72,7 @@ use haddowg\JsonApiBundle\Event\AfterSaveEvent;
 use haddowg\JsonApiBundle\Event\AfterUpdateEvent;
 use haddowg\JsonApiBundle\Event\BeforeCreateEvent;
 use haddowg\JsonApiBundle\Event\BeforeDeleteEvent;
+use haddowg\JsonApiBundle\Event\BeforeFetchCollectionEvent;
 use haddowg\JsonApiBundle\Event\BeforeRelationshipMutateEvent;
 use haddowg\JsonApiBundle\Event\BeforeSaveEvent;
 use haddowg\JsonApiBundle\Event\BeforeUpdateEvent;
@@ -297,6 +298,16 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             }
 
             return $response;
+        }
+
+        // An all-or-nothing collection gate runs BEFORE the query: a subscriber (the
+        // built-in `securityList` gate, or an app's own) may deny the whole
+        // `GET /{type}` read (AccessDenied → 403) so a blocked caller never triggers a
+        // collection query. Skipped for a programmatic dispatch with no request (no
+        // security context to gate against). Row-level read authorization still belongs
+        // in the query scope (a Doctrine extension hiding rows → 404).
+        if ($request !== null) {
+            $this->dispatch(new BeforeFetchCollectionEvent($type, $request, $this->serverName($request)));
         }
 
         // A bare serializer/hydrator pair declares no field inventory, so it has

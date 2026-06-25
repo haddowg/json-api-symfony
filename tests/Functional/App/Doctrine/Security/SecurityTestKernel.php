@@ -116,7 +116,11 @@ final class SecurityTestKernel extends Kernel
                 'in_memory' => [
                     'memory' => [
                         'users' => [
-                            'admin' => ['password' => 'pass', 'roles' => ['ROLE_ADMIN']],
+                            // An admin is also a user (the realistic role model): so the
+                            // `ROLE_USER` collection read inherited from a `security`
+                            // default (which now cascades to the collection) is reachable
+                            // by an admin too.
+                            'admin' => ['password' => 'pass', 'roles' => ['ROLE_ADMIN', 'ROLE_USER']],
                             'user' => ['password' => 'pass', 'roles' => ['ROLE_USER']],
                             'ada' => ['password' => 'pass', 'roles' => ['ROLE_USER']],
                             'grace' => ['password' => 'pass', 'roles' => ['ROLE_USER']],

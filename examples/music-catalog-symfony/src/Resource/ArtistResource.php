@@ -28,14 +28,15 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Artist;
  * `TrackCountSort`; that computed sort needs a hand-written sort handler — not a
  * Doctrine push-down — so it is reintroduced in a later slice, not the Foundation.)
  *
- * `securityRead: false` declares a **public** single-resource read: the artist
- * catalogue is open even though the API configures a document-level default
- * (`bearer`). The boolean is documentation-only — it emits the OpenAPI operation
- * override `security: []` (no `401`) on `GET /artists/{id}`, overriding that default,
- * and is not a runtime gate (the example's `access_token` firewall already allows the
- * anonymous read). Contrast the expression-gated writes on `PlaylistResource`.
+ * `securityRead: false` + `securityList: false` declare the artist catalogue
+ * **fully public** — both `GET /artists/{id}` and `GET /artists` — even though the API
+ * configures a document-level default (`bearer`). The booleans are documentation-only:
+ * they emit the OpenAPI operation override `security: []` (no `401`) on each read,
+ * overriding that default, and are not runtime gates (the example's `access_token`
+ * firewall already allows the anonymous reads). Contrast the expression-gated writes on
+ * `PlaylistResource` and the collection gate on the test suite's `ownedWidgets`.
  */
-#[AsJsonApiResource(entity: Artist::class, securityRead: false)]
+#[AsJsonApiResource(entity: Artist::class, securityRead: false, securityList: false)]
 final class ArtistResource extends AbstractResource
 {
     public static string $type = 'artists';

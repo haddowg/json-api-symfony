@@ -35,7 +35,7 @@ final class ResourceSecurityPass implements CompilerPassInterface
             return;
         }
 
-        /** @var array<string, array{default?: string|bool, create?: string|bool, update?: string|bool, delete?: string|bool, read?: string|bool}> $expressions */
+        /** @var array<string, array{default?: string|bool, create?: string|bool, update?: string|bool, delete?: string|bool, read?: string|bool, list?: string|bool}> $expressions */
         $expressions = [];
 
         foreach ($container->findTaggedServiceIds(JsonApiBundle::RESOURCE_TAG) as $id => $tags) {
@@ -54,7 +54,7 @@ final class ResourceSecurityPass implements CompilerPassInterface
                 continue;
             }
 
-            foreach (['default', 'create', 'update', 'delete', 'read'] as $key) {
+            foreach (['default', 'create', 'update', 'delete', 'read', 'list'] as $key) {
                 $value = $this->securityFromTags($tags, $key);
                 if ($value !== null) {
                     $expressions[$type][$key] = $value;

@@ -663,6 +663,7 @@ final class JsonApiBundle extends AbstractBundle
                     'security_update' => $attribute->securityUpdate,
                     'security_delete' => $attribute->securityDelete,
                     'security_read' => $attribute->securityRead,
+                    'security_list' => $attribute->securityList,
                     // The declarative response-header config (bundle ADR 0054) —
                     // cache directives + deprecation/sunset headers — JSON-encoded
                     // into a single scalar tag attribute the ResponseHeadersPass

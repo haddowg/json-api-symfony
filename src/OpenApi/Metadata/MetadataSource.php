@@ -405,9 +405,9 @@ final class MetadataSource
     /**
      * The exposed operations whose resolved {@see ResourceSecurity} declaration matches
      * `$matches`, in operation order — the projection of the per-operation declarations
-     * onto {@see OperationType}. Read security maps to the single-resource read only
-     * (`AfterFetchOneEvent`); there is no collection-read hook, so `FetchCollection` is
-     * never classified here (it inherits the document default).
+     * onto {@see OperationType}. `read` maps to the single-resource read
+     * (`AfterFetchOneEvent`) and `list` to the collection read
+     * (`BeforeFetchCollectionEvent`); both fall back to the `security` default.
      *
      * @param list<OperationType>            $operations
      * @param \Closure(string|bool|null): bool $matches
@@ -426,6 +426,10 @@ final class MetadataSource
             [OperationType::Update, $security->forUpdate()],
             [OperationType::Delete, $security->forDelete()],
             [OperationType::FetchOne, $security->forRead()],
+            // The collection read (`securityList`, falling back to the `security`
+            // default) — gated at runtime before the query by the BeforeFetchCollection
+            // hook, and projected here so the doc's `security`/`401` match.
+            [OperationType::FetchCollection, $security->forList()],
         ];
 
         $result = [];
