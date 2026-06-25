@@ -21,6 +21,16 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
  * (`/{id}/partner`) and relationship (`/{id}/relationships/partner`) endpoint, so the
  * suite can prove the read gate covers those endpoints too (a read-gated resource is
  * not reachable via its relationship endpoints).
+ *
+ * Two further self-relations witness **per-relation security** (core ADR 0099 / bundle
+ * ADR 0100) — a relation authorized independently of its parent. All three share the
+ * `partnerId` backing (the linkage is identical); only the gate differs:
+ *  - `publicPartner` declares `security(read: false)` — explicitly PUBLIC, so its read
+ *    endpoints are reachable even unauthenticated, MORE permissive than the
+ *    `ROLE_USER`-gated parent;
+ *  - `adminPartner` declares `security(read: "is_granted('ROLE_ADMIN')")` — its read
+ *    endpoints require an admin, MORE restrictive than the parent (a plain `ROLE_USER`
+ *    may read the resource but not this relation).
  */
 #[AsJsonApiResource(
     security: "is_granted('ROLE_USER')",
@@ -36,6 +46,8 @@ final class InMemorySecuredWidgetResource extends AbstractResource
             Id::make(),
             Str::make('name'),
             BelongsTo::make('partner', 'securedWidgets')->storedAs('partnerId'),
+            BelongsTo::make('publicPartner', 'securedWidgets')->storedAs('partnerId')->security(read: false),
+            BelongsTo::make('adminPartner', 'securedWidgets')->storedAs('partnerId')->security(read: "is_granted('ROLE_ADMIN')"),
         ];
     }
 }

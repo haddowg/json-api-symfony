@@ -63,6 +63,12 @@ use haddowg\JsonApiBundle\Hook\ResourceLifecycleHooksTrait;
  * route-scoped ExceptionListener renders a JSON:API `403` (or `401` when
  * unauthenticated). See `docs/authorization.md`.
  *
+ * The `owner` relation extends this to **per-relation security** (bundle ADR 0100):
+ * the playlist is publicly readable, but the full owner reference is privileged, so
+ * the relation declares `security(read: "is_granted('ROLE_ADMIN')")` — its
+ * related/relationship read endpoints become admin-only, OVERRIDING the parent's
+ * (ungated) read, while the curated `publicOwner` view of the same User stays open.
+ *
  * It is finally the **pivot witness** (bundle ADRs 0045/0046): alongside the plain
  * `belongsToMany` `tracks` (a bare join table, no pivot columns), it declares a
  * second `belongsToMany` `orderedTracks` to the same `tracks` type backed by the
@@ -115,7 +121,15 @@ final class PlaylistResource extends AbstractResource implements ResourceLifecyc
             // `users` resource lives on the `admin` server, so this linkage points at
             // a type a default-server client cannot dereference; it is the
             // privileged-surface owner reference.
-            BelongsTo::make('owner', 'users'),
+            //
+            // It is the **per-relation security** witness (bundle ADR 0100): the playlist
+            // itself is publicly readable, but WHO owns it (the full user reference) is
+            // privileged, so the relation declares its own read gate — `security(read:
+            // "is_granted('ROLE_ADMIN')")`. Its related/relationship read endpoints become
+            // admin-only, OVERRIDING the (ungated) parent, while `publicOwner` below — the
+            // curated public view of the same User — stays open. A relation thus authorizes
+            // independently of the resource it hangs off. See `docs/authorization.md`.
+            BelongsTo::make('owner', 'users')->security(read: "is_granted('ROLE_ADMIN')"),
             // The **one-entity-two-types** witness: a SECOND relation reading the SAME
             // `owner` ManyToOne column (`storedAs('owner')`) but declaring its target as
             // the curated `public-profiles` type ({@see PublicProfileResource}, the same

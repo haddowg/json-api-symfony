@@ -279,6 +279,65 @@ final class DoctrineResourceSecurityTest extends JsonApiFunctionalTestCase
             ->assertNoData();
     }
 
+    // --- per-relation security: override the parent gate ----------------------
+
+    #[Test]
+    public function a_public_relation_read_overrides_the_parent_gate_even_unauthenticated(): void
+    {
+        // `publicPartner` declares security(read: false) → its read endpoints are PUBLIC,
+        // reachable unauthenticated even though `securedWidgets` requires ROLE_USER. The
+        // relation is MORE permissive than the resource it hangs off.
+        $this->browser()->get('/securedWidgets/1/publicPartner')->assertStatus(200);
+        $this->browser()->get('/securedWidgets/1/relationships/publicPartner')->assertStatus(200);
+
+        // The baseline `partner` relation (declares no security) still inherits the
+        // parent's read gate: unauthenticated is 401.
+        $this->browser()->get('/securedWidgets/1/partner')->getErrors()->assertStatus(401)->assertHasError(status: '401');
+    }
+
+    #[Test]
+    public function an_admin_relation_read_overrides_the_parent_gate_to_be_more_restrictive(): void
+    {
+        // `adminPartner` declares security(read: ROLE_ADMIN) → a plain ROLE_USER may read
+        // the resource (and its inherited `partner`) but NOT this relation; only an admin
+        // may. The relation is MORE restrictive than its parent.
+        $this->browser()->actingAs('user')->get('/securedWidgets/1/partner')->assertStatus(200);
+        $this->browser()->actingAs('user')->get('/securedWidgets/1/adminPartner')->getErrors()->assertStatus(403)->assertHasError(status: '403');
+        $this->browser()->actingAs('user')->get('/securedWidgets/1/relationships/adminPartner')->getErrors()->assertStatus(403)->assertHasError(status: '403');
+
+        $this->browser()->actingAs('admin')->get('/securedWidgets/1/adminPartner')->assertStatus(200);
+        $this->browser()->actingAs('admin')->get('/securedWidgets/1/relationships/adminPartner')->assertStatus(200);
+    }
+
+    #[Test]
+    public function a_relation_mutate_override_requires_admin_where_the_parent_update_does_not(): void
+    {
+        // `lockedPartner` declares security(mutate: ROLE_ADMIN) → its read inherits the
+        // parent (a ROLE_USER may read it), but its MUTATION requires an admin, MORE
+        // restrictive than the `ROLE_USER` update default. A plain user is forbidden.
+        $this->browser()
+            ->actingAs('user')
+            ->patch('/securedWidgets/1/relationships/lockedPartner', ['data' => ['type' => 'securedWidgets', 'id' => '1']])
+            ->getErrors()
+            ->assertStatus(403)
+            ->assertHasError(status: '403');
+
+        // The same user MAY mutate the baseline `partner` (its mutation inherits the
+        // ROLE_USER update default) — proving the gate is the relation's, not the type's.
+        $this->browser()
+            ->actingAs('user')
+            ->patch('/securedWidgets/1/relationships/partner', ['data' => ['type' => 'securedWidgets', 'id' => '1']])
+            ->getDocument()
+            ->assertStatus(200);
+
+        // An admin may mutate the locked relation.
+        $this->browser()
+            ->actingAs('admin')
+            ->patch('/securedWidgets/1/relationships/lockedPartner', ['data' => ['type' => 'securedWidgets', 'id' => '1']])
+            ->getDocument()
+            ->assertStatus(200);
+    }
+
     // --- no security declared → ungated ---------------------------------------
 
     #[Test]
