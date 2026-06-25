@@ -87,6 +87,16 @@ final readonly class RelationMetadata implements RelationMetadataInterface
         return $this->relation->isCountable();
     }
 
+    public function securityRead(): string|bool|null
+    {
+        return $this->relation->securityRead();
+    }
+
+    public function securityMutate(): string|bool|null
+    {
+        return $this->relation->securityMutate();
+    }
+
     public function paginatorKind(): PaginatorKind
     {
         return $this->paginatorKind;

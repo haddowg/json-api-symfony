@@ -9,6 +9,8 @@ use haddowg\JsonApiBundle\Event\BeforeActionEvent;
 use haddowg\JsonApiBundle\Event\BeforeCreateEvent;
 use haddowg\JsonApiBundle\Event\BeforeDeleteEvent;
 use haddowg\JsonApiBundle\Event\BeforeFetchCollectionEvent;
+use haddowg\JsonApiBundle\Event\BeforeFetchRelatedEvent;
+use haddowg\JsonApiBundle\Event\BeforeFetchRelationshipEvent;
 use haddowg\JsonApiBundle\Event\BeforeRelationshipMutateEvent;
 use haddowg\JsonApiBundle\Event\BeforeUpdateEvent;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
@@ -32,9 +34,19 @@ use Symfony\Component\Security\Core\Exception\AccessDeniedException;
  * subject `$object` is:
  *  - {@see BeforeCreateEvent}             → the hydrated entity (post-denormalization);
  *  - {@see BeforeUpdateEvent}             → the loaded, changed entity;
- *  - {@see BeforeRelationshipMutateEvent} → the parent (gated by the update expression);
+ *  - {@see BeforeRelationshipMutateEvent} → the parent (gated by the relation's mutate
+ *                                           expression, overriding the type's update);
  *  - {@see BeforeDeleteEvent}             → the loaded entity;
- *  - {@see AfterFetchOneEvent}            → the loaded entity.
+ *  - {@see AfterFetchOneEvent}            → the loaded entity;
+ *  - {@see BeforeFetchRelatedEvent} / {@see BeforeFetchRelationshipEvent}
+ *                                         → the parent (gated by the relation's own read
+ *                                           expression, overriding the type's read; only
+ *                                           dispatched when the relation declares one).
+ *
+ * A relation may thus be authorized **independently** of its parent: its declared
+ * `security(read:, mutate:)` replaces the parent's gate for the relation's endpoints,
+ * so it can be more *or* less permissive than the resource it hangs off (a relation
+ * declaring nothing inherits the parent gate unchanged).
  *
  * Collection reads are intentionally **not** gated here: row-level read
  * authorization belongs in the query-scope (a Doctrine extension hiding rows → `404`),
@@ -64,6 +76,8 @@ final class ResourceSecuritySubscriber implements EventSubscriberInterface
             BeforeDeleteEvent::class => 'onBeforeDelete',
             AfterFetchOneEvent::class => 'onAfterFetchOne',
             BeforeFetchCollectionEvent::class => 'onBeforeFetchCollection',
+            BeforeFetchRelatedEvent::class => 'onBeforeFetchRelated',
+            BeforeFetchRelationshipEvent::class => 'onBeforeFetchRelationship',
             BeforeActionEvent::class => 'onBeforeAction',
         ];
     }
@@ -128,9 +142,11 @@ final class ResourceSecuritySubscriber implements EventSubscriberInterface
 
     public function onBeforeRelationshipMutate(BeforeRelationshipMutateEvent $event): void
     {
-        // Relationship mutation is gated by the update expression, with the parent
-        // resource as the subject.
-        $this->authorize($event->type, $this->registry->securityFor($event->type)?->forUpdate(), $event->parent);
+        // The relation's own mutate security OVERRIDES the parent's update gate (it may
+        // be more *or* less permissive); a relation declaring none falls back to the
+        // parent's update expression. The subject is the parent resource in both cases.
+        $expression = $event->relation->securityMutate() ?? $this->registry->securityFor($event->type)?->forUpdate();
+        $this->authorize($event->type, $expression, $event->parent);
     }
 
     public function onBeforeDelete(BeforeDeleteEvent $event): void
@@ -141,6 +157,28 @@ final class ResourceSecuritySubscriber implements EventSubscriberInterface
     public function onAfterFetchOne(AfterFetchOneEvent $event): void
     {
         $this->authorize($event->type, $this->registry->securityFor($event->type)?->forRead(), $event->entity);
+    }
+
+    /**
+     * Enforces a relation's own read security on the related read
+     * (`GET /{type}/{id}/{rel}`). The handler dispatches this event only when the
+     * relation declares {@see \haddowg\JsonApi\Resource\Field\RelationInterface::securityRead()},
+     * which OVERRIDES the parent's read gate; the subject is the parent resource. (A
+     * relation declaring no read security keeps the parent's {@see AfterFetchOneEvent}
+     * gate, so this is never dispatched for it.)
+     */
+    public function onBeforeFetchRelated(BeforeFetchRelatedEvent $event): void
+    {
+        $this->authorize($event->type, $event->relation->securityRead(), $event->parent);
+    }
+
+    /**
+     * The relationship-linkage twin of {@see onBeforeFetchRelated()}: enforces the
+     * relation's own read security on `GET /{type}/{id}/relationships/{rel}`.
+     */
+    public function onBeforeFetchRelationship(BeforeFetchRelationshipEvent $event): void
+    {
+        $this->authorize($event->type, $event->relation->securityRead(), $event->parent);
     }
 
     /**

@@ -167,6 +167,59 @@ final class AuthorizationTest extends MusicCatalogKernelTestCase
         return \array_values(\array_map(static fn(mixed $member): mixed => \is_array($member) ? ($member['id'] ?? null) : null, $data));
     }
 
+    // --- per-relation security: owner is admin-only on a public playlist ------
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    public function theOwnerRelationReadIsAdminOnlyEvenThoughThePlaylistIsPublic(): void
+    {
+        // The playlist itself is publicly readable — anyone may fetch it...
+        $this->browser()->get('/playlists/' . self::OWNED_PLAYLIST_ID)->assertFetchedOne();
+
+        // ...but the `owner` relation declares its OWN read gate
+        // (`security(read: "is_granted('ROLE_ADMIN')")`), so its relationship-linkage
+        // endpoint is admin-only. An unauthenticated caller is 401 (asserted first, while
+        // the shared browser still carries no token).
+        $this->browser()
+            ->get('/playlists/' . self::OWNED_PLAYLIST_ID . '/relationships/owner')
+            ->getErrors()
+            ->assertStatus(401)
+            ->assertHasError(status: '401');
+
+        // A plain ROLE_USER is forbidden (403).
+        $this->browser()
+            ->actingAs(self::NON_OWNER)
+            ->get('/playlists/' . self::OWNED_PLAYLIST_ID . '/relationships/owner')
+            ->getErrors()
+            ->assertStatus(403)
+            ->assertContentType()
+            ->assertHasError(status: '403');
+
+        // An admin passes the relation's gate (200). (The linkage itself renders
+        // data-less here because `owner` targets the admin-server `users` type, off the
+        // default surface — a separate multi-server concern; what matters is the gate
+        // opened for the admin where it denied everyone else.)
+        $this->browser()
+            ->actingAs('admin')
+            ->get('/playlists/' . self::OWNED_PLAYLIST_ID . '/relationships/owner')
+            ->getDocument()
+            ->assertStatus(200);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    public function thePublicOwnerRelationReadStaysOpen(): void
+    {
+        // The curated `publicOwner` view of the SAME User declares no security, so it
+        // inherits the (ungated) playlist read: anyone may read it, even unauthenticated.
+        // This is the contrast — two relations off one resource, gated independently.
+        $this->browser()
+            ->get('/playlists/' . self::OWNED_PLAYLIST_ID . '/relationships/publicOwner')
+            ->getDocument()
+            ->assertStatus(200)
+            ->assertHasType('public-profiles');
+    }
+
     // --- securityDelete: is_granted('ROLE_ADMIN') (a role gate) ----------------
 
     #[Test]

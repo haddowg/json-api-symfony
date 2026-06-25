@@ -73,6 +73,8 @@ use haddowg\JsonApiBundle\Event\AfterUpdateEvent;
 use haddowg\JsonApiBundle\Event\BeforeCreateEvent;
 use haddowg\JsonApiBundle\Event\BeforeDeleteEvent;
 use haddowg\JsonApiBundle\Event\BeforeFetchCollectionEvent;
+use haddowg\JsonApiBundle\Event\BeforeFetchRelatedEvent;
+use haddowg\JsonApiBundle\Event\BeforeFetchRelationshipEvent;
 use haddowg\JsonApiBundle\Event\BeforeRelationshipMutateEvent;
 use haddowg\JsonApiBundle\Event\BeforeSaveEvent;
 use haddowg\JsonApiBundle\Event\BeforeUpdateEvent;
@@ -534,13 +536,6 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return ErrorResponse::fromException(new ResourceNotFound());
         }
 
-        // The related read reaches the parent through a single fetch, so it carries the
-        // parent type's read-security gate exactly as the primary read does — a
-        // read-gated resource is not reachable via its related endpoints (and the
-        // served document, which reports this read secured iff FetchOne is, stays
-        // faithful).
-        $this->gateParentRead($type, $parent, $operation->context());
-
         $relation = $this->resolveRelation($server, $type, $relationshipName);
         if ($relation === null) {
             return ErrorResponse::fromException(new RelationshipNotExists($relationshipName));
@@ -552,6 +547,13 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         if (!$relation->exposesRelatedEndpoint()) {
             return ErrorResponse::fromException(new RelationshipNotExists($relationshipName));
         }
+
+        // The related read reaches the parent through a single fetch, so by default it
+        // carries the parent type's read-security gate exactly as the primary read does
+        // (a read-gated resource is not reachable via its related endpoints, and the
+        // served document — which reports this read secured iff FetchOne is — stays
+        // faithful). A relation declaring its own `security(read:)` OVERRIDES that gate.
+        $this->gateRelatedRead($type, $parent, $relation, $operation->context());
 
         // A polymorphic relation (MorphTo / MorphToMany) declares several related
         // types, so there is no single related type to resolve a serializer or a
@@ -873,13 +875,6 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return ErrorResponse::fromException(new ResourceNotFound());
         }
 
-        // The relationship read reaches the parent through a single fetch, so it carries
-        // the parent type's read-security gate exactly as the primary read does — a
-        // read-gated resource is not reachable via its relationship endpoints (and the
-        // served document, which reports this read secured iff FetchOne is, stays
-        // faithful).
-        $this->gateParentRead($type, $parent, $operation->context());
-
         $relation = $this->resolveRelation($server, $type, $relationshipName);
         if ($relation === null) {
             return ErrorResponse::fromException(new RelationshipNotExists($relationshipName));
@@ -891,6 +886,13 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         if (!$relation->exposesRelationshipEndpoint()) {
             return ErrorResponse::fromException(new RelationshipNotExists($relationshipName));
         }
+
+        // The relationship read reaches the parent through a single fetch, so by default
+        // it carries the parent type's read-security gate exactly as the primary read
+        // does (a read-gated resource is not reachable via its relationship endpoints,
+        // and the served document — which reports this read secured iff FetchOne is —
+        // stays faithful). A relation declaring its own `security(read:)` OVERRIDES it.
+        $this->gateRelationshipRead($type, $parent, $relation, $operation->context());
 
         // The relationship-linkage/pagination seams are request-scoped singletons
         // (reset between messages). Clear any backing a prior render left so this
@@ -1402,6 +1404,52 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         }
 
         $this->dispatch(new AfterFetchOneEvent($type, $request, $parent, $this->serverName($request)));
+    }
+
+    /**
+     * Gates a related read (`GET /{type}/{id}/{rel}`). A relation declaring its own
+     * read security ({@see RelationInterface::securityRead()}) OVERRIDES the parent's
+     * read gate — it may be more *or* less permissive than the resource it hangs off —
+     * by dispatching the relation-scoped {@see BeforeFetchRelatedEvent} (which the
+     * security subscriber evaluates against the relation's expression). A relation that
+     * declares none inherits the parent type's read gate unchanged ({@see gateParentRead()}).
+     */
+    private function gateRelatedRead(string $type, object $parent, RelationInterface $relation, OperationContext $context): void
+    {
+        if ($relation->securityRead() === null) {
+            $this->gateParentRead($type, $parent, $context);
+
+            return;
+        }
+
+        $request = $context->httpRequest();
+        if (!$request instanceof JsonApiRequestInterface) {
+            return;
+        }
+
+        $this->dispatch(new BeforeFetchRelatedEvent($type, $request, $parent, $relation, $this->serverName($request)));
+    }
+
+    /**
+     * Gates a relationship-linkage read (`GET /{type}/{id}/relationships/{rel}`). The
+     * read twin of {@see gateRelatedRead()}: a relation declaring its own read security
+     * overrides the parent's gate via {@see BeforeFetchRelationshipEvent}; otherwise the
+     * parent's read gate applies unchanged.
+     */
+    private function gateRelationshipRead(string $type, object $parent, RelationInterface $relation, OperationContext $context): void
+    {
+        if ($relation->securityRead() === null) {
+            $this->gateParentRead($type, $parent, $context);
+
+            return;
+        }
+
+        $request = $context->httpRequest();
+        if (!$request instanceof JsonApiRequestInterface) {
+            return;
+        }
+
+        $this->dispatch(new BeforeFetchRelationshipEvent($type, $request, $parent, $relation, $this->serverName($request)));
     }
 
     /**

@@ -60,6 +60,29 @@ final class InMemoryResourceSecurityTest extends JsonApiFunctionalTestCase
     }
 
     #[Test]
+    public function a_public_relation_read_overrides_the_parent_gate_even_unauthenticated(): void
+    {
+        // `publicPartner` declares security(read: false) → its read endpoints are PUBLIC,
+        // reachable without authentication even though the parent `securedWidgets` requires
+        // ROLE_USER. The relation is MORE permissive than the resource it hangs off.
+        $this->browser()->get('/securedWidgets/1/publicPartner')->assertStatus(200);
+        $this->browser()->get('/securedWidgets/1/relationships/publicPartner')->assertStatus(200);
+    }
+
+    #[Test]
+    public function an_admin_relation_read_overrides_the_parent_gate_to_be_more_restrictive(): void
+    {
+        // `adminPartner` declares security(read: is_granted('ROLE_ADMIN')) → a plain
+        // ROLE_USER may read the resource (and its inherited `partner`) but NOT this
+        // relation; only an admin may. The relation is MORE restrictive than its parent.
+        $this->browser()->actingAs('user')->get('/securedWidgets/1/adminPartner')->getErrors()->assertStatus(403)->assertHasError(status: '403');
+        $this->browser()->actingAs('user')->get('/securedWidgets/1/relationships/adminPartner')->getErrors()->assertStatus(403)->assertHasError(status: '403');
+
+        $this->browser()->actingAs('admin')->get('/securedWidgets/1/adminPartner')->assertStatus(200);
+        $this->browser()->actingAs('admin')->get('/securedWidgets/1/relationships/adminPartner')->assertStatus(200);
+    }
+
+    #[Test]
     public function create_is_forbidden_for_a_user_and_leaves_the_store_unchanged(): void
     {
         $this->browser()

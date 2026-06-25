@@ -173,6 +173,48 @@ album's owner update it — everyone else gets a `403`, an unauthenticated clien
 > parent, and admin-delete — is exercised by
 > [`AuthorizationTest`](../examples/music-catalog-symfony/tests/AuthorizationTest.php).
 
+## Per-relation security
+
+By default a relationship's endpoints are authorized by the **parent** resource: the
+related (`GET /{type}/{id}/{rel}`) and linkage (`GET …/relationships/{rel}`) reads ride
+the parent's `securityRead`, and a relationship mutation rides its `securityUpdate`. To
+authorize a single relationship **independently** — more *or* less permissive than the
+resource it hangs off — declare `security()` on the relation:
+
+```php
+use haddowg\JsonApi\Resource\Field\BelongsTo;
+
+public function fields(): array
+{
+    return [
+        Id::make(),
+        Str::make('name'),
+        // This relation's reads are public and its mutation is admin-only, regardless
+        // of how the owning resource is gated.
+        BelongsTo::make('billingAccount', 'billing-accounts')
+            ->security(
+                read: false,
+                mutate: "is_granted('MANAGE_BILLING', object)",
+            ),
+    ];
+}
+```
+
+- **`read`** governs the related and relationship read endpoints; **`mutate`** governs
+  relationship mutation (`PATCH`/`POST`/`DELETE …/relationships/{rel}`).
+- Each accepts the same `string|bool|null` as the resource-level keys: an expression is
+  **enforced** (against the **parent** resource as `object`) and documented secured;
+  `true`/`false` are [documentation-only](#documentation-only-true--false); `null`
+  (the default) **inherits** the parent's `securityRead` / `securityUpdate`.
+- A declared value **replaces** the parent's gate for that relation, so a public
+  resource can carry one privileged relationship, or a read-gated resource one
+  openly-readable one. The OpenAPI document reflects the override on the relation's
+  operations.
+
+> **Subject is the parent.** A relationship hangs off its owner, so the expression is
+> evaluated against the loaded **parent** entity as `object` — the same subject a
+> relationship mutation already uses.
+
 ## How a denial renders
 
 A denied expression throws `AccessDeniedException`; the route-scoped
