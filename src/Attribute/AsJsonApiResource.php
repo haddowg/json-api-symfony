@@ -104,11 +104,15 @@ use haddowg\JsonApiBundle\Operation\Operation;
  *  - **null** leaves the operation to inherit: ungated by this layer, and documented
  *    against the document-level default.
  *
- * `security` is the default applied to every operation; `securityCreate`/`securityUpdate`/
- * `securityDelete`/`securityRead` override it for one operation (each falling back to
- * `security` when null). `securityUpdate` also gates relationship mutation. A bool is a
- * **documentation-only** declaration — only an expression is enforced at runtime, and
- * only when `symfony/security-core` is installed.
+ * `security` is the default applied to **every** operation — including the collection
+ * read; `securityCreate`/`securityUpdate`/`securityDelete`/`securityRead`/`securityList`
+ * override it for one operation (each falling back to `security` when null).
+ * `securityUpdate` also gates relationship mutation. `securityRead` gates the single read
+ * (`GET /{type}/{id}`, against the loaded entity); `securityList` gates the collection
+ * read (`GET /{type}`) as an all-or-nothing blanket gate evaluated **before** the query
+ * with no subject (a role/attribute check) — row-level read filtering still belongs in
+ * the query scope. A bool is a **documentation-only** declaration — only an expression is
+ * enforced at runtime, and only when `symfony/security-core` is installed.
  */
 #[\Attribute(\Attribute::TARGET_CLASS)]
 final readonly class AsJsonApiResource
@@ -124,7 +128,8 @@ final readonly class AsJsonApiResource
      * @param string|bool|null                                                     $securityCreate security for create (expression/`true`/`false`; falls back to `security`)
      * @param string|bool|null                                                     $securityUpdate security for update and relationship mutation (expression/`true`/`false`; falls back to `security`)
      * @param string|bool|null                                                     $securityDelete security for delete (expression/`true`/`false`; falls back to `security`)
-     * @param string|bool|null                                                     $securityRead   security for a single-resource read (expression/`true`/`false`; falls back to `security`)
+     * @param string|bool|null                                                     $securityRead   security for a single-resource read `GET /{type}/{id}` (expression/`true`/`false`; falls back to `security`)
+     * @param string|bool|null                                                     $securityList   security for the collection read `GET /{type}` (expression/`true`/`false`; falls back to `security`). An expression is evaluated with no subject (use a role/attribute check) and gates the whole collection BEFORE the query
      * @param array<string, mixed>                                                 $cacheHeaders   declarative HTTP cache directives for GET reads (`max_age`/`s_maxage`/`public`/`private`/`no_cache`/`must_revalidate`/`vary`), with an optional nested `operations` per-read-shape override map; empty = none
      * @param bool|string|null                                                     $deprecation    IETF Deprecation-header deprecation: `true` (bare header), a date string (`Deprecation: <date>`), or null (none)
      * @param string|null                                                          $sunset         RFC 8594 sunset HTTP-date (`Sunset: <date>`), or null
@@ -146,6 +151,7 @@ final readonly class AsJsonApiResource
         public string|bool|null $securityUpdate = null,
         public string|bool|null $securityDelete = null,
         public string|bool|null $securityRead = null,
+        public string|bool|null $securityList = null,
         public array $cacheHeaders = [],
         public bool|string|null $deprecation = null,
         public ?string $sunset = null,

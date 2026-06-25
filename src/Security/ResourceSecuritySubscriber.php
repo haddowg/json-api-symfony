@@ -8,6 +8,7 @@ use haddowg\JsonApiBundle\Event\AfterFetchOneEvent;
 use haddowg\JsonApiBundle\Event\BeforeActionEvent;
 use haddowg\JsonApiBundle\Event\BeforeCreateEvent;
 use haddowg\JsonApiBundle\Event\BeforeDeleteEvent;
+use haddowg\JsonApiBundle\Event\BeforeFetchCollectionEvent;
 use haddowg\JsonApiBundle\Event\BeforeRelationshipMutateEvent;
 use haddowg\JsonApiBundle\Event\BeforeUpdateEvent;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
@@ -62,8 +63,33 @@ final class ResourceSecuritySubscriber implements EventSubscriberInterface
             BeforeRelationshipMutateEvent::class => 'onBeforeRelationshipMutate',
             BeforeDeleteEvent::class => 'onBeforeDelete',
             AfterFetchOneEvent::class => 'onAfterFetchOne',
+            BeforeFetchCollectionEvent::class => 'onBeforeFetchCollection',
             BeforeActionEvent::class => 'onBeforeAction',
         ];
+    }
+
+    /**
+     * Enforces the type's `securityList` declaration (the collection read,
+     * `GET /{type}`) BEFORE the query runs, so a denied caller never triggers a
+     * collection fetch. A collection has no single subject, so the expression is
+     * evaluated with a `null` `object` — use a role/attribute check
+     * (`is_granted('ROLE_ADMIN')`), not a per-object one. Only a string expression is
+     * enforced; a bool (`true`/`false`) is a documentation-only declaration. `null`
+     * (after the `security` fallback) leaves the collection ungated by this layer.
+     */
+    public function onBeforeFetchCollection(BeforeFetchCollectionEvent $event): void
+    {
+        $expression = $this->registry->securityFor($event->type)?->forList();
+        if (!\is_string($expression) || $this->authorizationChecker === null) {
+            return;
+        }
+
+        if (!$this->authorizationChecker->isGranted(new Expression($expression), null)) {
+            throw new AccessDeniedException(\sprintf(
+                'Access denied to the collection of the JSON:API type "%s".',
+                $event->type,
+            ));
+        }
     }
 
     /**

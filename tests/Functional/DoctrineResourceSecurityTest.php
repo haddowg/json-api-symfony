@@ -201,6 +201,33 @@ final class DoctrineResourceSecurityTest extends JsonApiFunctionalTestCase
             ->assertHasError(status: '403');
     }
 
+    // --- collection gate: securityList overrides the per-object default ---------
+
+    #[Test]
+    public function any_authenticated_user_may_list_owned_widgets(): void
+    {
+        // The read/list split: grace cannot read a single widget she does not own (the
+        // per-object EDIT default, asserted above), but `securityList:
+        // is_granted('ROLE_USER')` lets her LIST the collection. The gate is
+        // all-or-nothing (not row-level), so she sees every row.
+        $this->browser()
+            ->actingAs('grace')
+            ->get('/ownedWidgets')
+            ->assertFetchedMany();
+    }
+
+    #[Test]
+    public function an_anonymous_collection_read_is_forbidden_by_security_list(): void
+    {
+        // securityList gates the collection BEFORE the query: an unauthenticated caller
+        // (no ROLE_USER) is denied outright — a 401, not a row-filtered empty list.
+        $this->browser()
+            ->get('/ownedWidgets')
+            ->getErrors()
+            ->assertStatus(401)
+            ->assertHasError(status: '401');
+    }
+
     // --- relationship mutation: gated by the update expression (the parent) ----
 
     #[Test]

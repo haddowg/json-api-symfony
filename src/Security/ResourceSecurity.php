@@ -26,6 +26,7 @@ final readonly class ResourceSecurity
         public string|bool|null $update = null,
         public string|bool|null $delete = null,
         public string|bool|null $read = null,
+        public string|bool|null $list = null,
     ) {}
 
     /**
@@ -38,7 +39,8 @@ final readonly class ResourceSecurity
             && $this->create === null
             && $this->update === null
             && $this->delete === null
-            && $this->read === null;
+            && $this->read === null
+            && $this->list === null;
     }
 
     /**
@@ -73,5 +75,15 @@ final readonly class ResourceSecurity
     public function forRead(): string|bool|null
     {
         return $this->read ?? $this->default;
+    }
+
+    /**
+     * The security for the collection read (`GET /{type}`), falling back to
+     * {@see $default} when unset — so the catch-all `security` gates the collection too,
+     * and `securityList` overrides it for that one operation.
+     */
+    public function forList(): string|bool|null
+    {
+        return $this->list ?? $this->default;
     }
 }

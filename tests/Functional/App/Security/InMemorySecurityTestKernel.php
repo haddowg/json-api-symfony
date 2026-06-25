@@ -80,7 +80,10 @@ final class InMemorySecurityTestKernel extends Kernel
                 'in_memory' => [
                     'memory' => [
                         'users' => [
-                            'admin' => ['password' => 'pass', 'roles' => ['ROLE_ADMIN']],
+                            // An admin is also a user (the realistic role model), so a
+                            // `ROLE_USER` collection read (a `security` default now
+                            // cascades to the collection) is reachable by an admin too.
+                            'admin' => ['password' => 'pass', 'roles' => ['ROLE_ADMIN', 'ROLE_USER']],
                             'user' => ['password' => 'pass', 'roles' => ['ROLE_USER']],
                         ],
                     ],

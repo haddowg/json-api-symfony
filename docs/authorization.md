@@ -33,17 +33,19 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
     securityUpdate: "is_granted('EDIT', object)",
     securityDelete: "is_granted('ROLE_ADMIN')",
     securityRead:   "is_granted('VIEW', object)",
+    securityList:   "is_granted('ROLE_USER')",
 )]
 final class AlbumResource extends AbstractResource { /* … */ }
 ```
 
 | Parameter | Gates | Subject `object` | Default |
 | --- | --- | --- | --- |
-| `security` | every gated operation | (the operation's subject) | — |
+| `security` | every operation (incl. the collection) | (the operation's subject) | — |
 | `securityCreate` | `POST /{type}` | the **hydrated** entity (post-denormalization) | `security` |
 | `securityUpdate` | `PATCH /{type}/{id}` **and** relationship mutation | the loaded, changed entity (the **parent** for a relationship mutation) | `security` |
 | `securityDelete` | `DELETE /{type}/{id}` | the loaded entity | `security` |
-| `securityRead` | `GET /{type}/{id}` | the loaded entity | `security` |
+| `securityRead` | `GET /{type}/{id}` (single) | the loaded entity | `security` |
+| `securityList` | `GET /{type}` (collection) | **none** — evaluated before the query (use a role/attribute check) | `security` |
 
 A parameter that resolves to `null` (no override **and** no `security` default)
 leaves that operation **ungated** by this layer. So `security: null,
@@ -51,7 +53,7 @@ securityDelete: "is_granted('ROLE_ADMIN')"` gates only delete.
 
 ### Documentation-only `true` / `false`
 
-Each of the five parameters also accepts a **bool** instead of an expression — a
+Each of the six parameters also accepts a **bool** instead of an expression — a
 *documentation-only* declaration that shapes the OpenAPI document without adding a
 runtime gate (only an expression is enforced):
 
@@ -78,9 +80,8 @@ A bool is terminal — it does **not** fall back to the `security` default. The 
 declaration, or the document-level default (`json_api.openapi.security
 .default_requirement`) when it inherits — so an API behind a firewall, configured with
 only that default, advertises `security` + `401` on every operation, and `false` is
-how you carve out the public ones. (The **collection** read has no per-operation
-security hook, so it always follows the document default; an individual `securityRead`
-governs only `GET /{type}/{id}`.)
+how you carve out the public ones (`securityRead: false` for the single read,
+`securityList: false` for the collection).
 
 ## What is — and is not — gated
 
@@ -89,11 +90,19 @@ governs only `GET /{type}/{id}`.)
   store is left exactly as it was.
 - **A single read (`GET /{type}/{id}`) is gated** at `AfterFetchOne`, against the
   loaded entity — so `is_granted('VIEW', object)` can hide an individual resource.
-- **Collection reads are *not* gated** by this layer. Row-level read authorization
-  belongs in the query — scope the collection with a
-  [Doctrine extension](custom-data-providers.md) (or a custom provider) so forbidden
-  rows simply never appear (a `404` for a hidden id, not a `403`). A single
-  all-or-nothing gate on a collection would be the wrong tool.
+- **The collection read (`GET /{type}`) is gated** by `securityList`, **before** the
+  query (a `BeforeFetchCollection` hook), with **no** subject — an all-or-nothing
+  blanket gate (use a role/attribute check like `is_granted('ROLE_ADMIN')`). A denied
+  caller never triggers the query. Because the catch-all `security` cascades to it, a
+  resource that declares `security:` gates its collection too unless `securityList`
+  overrides it (e.g. `securityList: false` to keep the collection public, or a role
+  check where the default is a per-object `is_granted('EDIT', object)` that cannot
+  apply to a whole collection).
+- **Collection reads are *not* row-filtered** by this layer — the gate is
+  all-or-nothing. For row-level read authorization (each caller sees a different
+  subset), scope the collection with a [Doctrine extension](custom-data-providers.md)
+  (or a custom provider) so forbidden rows simply never appear (a `404` for a hidden
+  id, not a `403`). Use `securityList` to blanket-block; use a query scope to filter.
 
 ## Narrowing the query surface per request
 
