@@ -123,4 +123,13 @@ final readonly class RelationMetadata implements RelationMetadataInterface
     {
         return $this->relatedIncludablePaths;
     }
+
+    public function pivotFields(): array
+    {
+        // A belongsToMany relation's declared pivot fields (real FieldInterface
+        // definitions) — the same source PivotFields::sortsFor() derives the pivot
+        // sort vocabulary from. Empty for any non-pivot relation, so the projector
+        // types meta.pivot only where the runtime actually renders it.
+        return PivotFields::declaredFor($this->relation);
+    }
 }

@@ -139,6 +139,36 @@ final class OpenApiDocsTest extends MusicCatalogKernelTestCase
     }
 
     #[Test]
+    #[Group('spec:fetching-relationships')]
+    public function aPivotRelationTypesItsLinkageMetaPivot(): void
+    {
+        $document = $this->decode($this->handle('/docs.json'));
+
+        // orderedTracks (belongsToMany → tracks) renders its `position`/`weight`/`addedAt`
+        // pivot fields under each linkage identifier's `meta.pivot` at runtime; the
+        // projection types them — on BOTH the embedded relationship object and the
+        // relationship document (the latter shared by the read response and the
+        // relationship-mutation request body, so a generated client can read and write
+        // the pivot). The linkage is an `allOf` of the related identifier `$ref` plus the
+        // typed `meta.pivot`.
+        foreach (['PlaylistsOrderedTracksRelationship', 'PlaylistsOrderedTracksRelationshipDocument'] as $component) {
+            $identifier = $this->nested($document, 'components', 'schemas', $component, 'properties', 'data', 'items');
+            self::assertArrayHasKey('allOf', $identifier, $component);
+
+            $base = $this->nested($identifier, 'allOf', '0');
+            self::assertSame('#/components/schemas/TracksResourceIdentifier', $base['$ref'] ?? null, $component);
+
+            $props = $this->nested($identifier, 'allOf', '1', 'properties', 'meta', 'properties', 'pivot', 'properties');
+            self::assertSame('integer', $this->nested($props, 'position')['type'] ?? null, $component);
+            self::assertSame('integer', $this->nested($props, 'weight')['type'] ?? null, $component);
+
+            $addedAt = $this->nested($props, 'addedAt');
+            self::assertSame('string', $addedAt['type'] ?? null, $component);
+            self::assertSame('date-time', $addedAt['format'] ?? null, $component);
+        }
+    }
+
+    #[Test]
     public function aRequireClientIdTypeMarksTheCreateIdRequired(): void
     {
         $document = $this->decode($this->handle('/docs.json'));
