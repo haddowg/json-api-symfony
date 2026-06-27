@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Routing;
 
+use haddowg\JsonApiBundle\Controller\JsonSchemaController;
 use haddowg\JsonApiBundle\Controller\OpenApiController;
 use haddowg\JsonApiBundle\Controller\OpenApiUiController;
 use haddowg\JsonApiBundle\Server\ServerProvider;
@@ -29,6 +30,13 @@ use Symfony\Component\Routing\RouteCollection;
  * In **combined** multi-server mode (`json_api.openapi.multi_server: combined`) only
  * the single `{json.path}` route is emitted — it serves one document spanning every
  * server (D5); the per-server `{server}/docs.json` route is not registered.
+ *
+ * Alongside the document it emits, gated additionally on
+ * `json_api.openapi.json_schema.enabled`, the **aggregate JSON Schema** routes —
+ * `GET {json_schema.path}` (default `/schemas.json`) for the default server (or the
+ * combined aggregate in combined mode) and `GET /{server}/schemas.json` per named
+ * server — serving the per-type JSON Schemas keyed by type (the
+ * {@see JsonSchemaController}).
  *
  * It also emits the single config-driven **documentation viewer** route (design D6) at
  * `json_api.openapi.ui.path` (default `/docs`) — when `json_api.openapi.ui.enabled` is
@@ -56,6 +64,8 @@ final class OpenApiRouteLoader extends Loader
      * @param string       $jsonPath     `json_api.openapi.json.path` (default `/docs.json`)
      * @param bool         $uiEnabled    `json_api.openapi.ui.enabled` — register the viewer route
      * @param string       $uiPath       `json_api.openapi.ui.path` (default `/docs`)
+     * @param bool         $jsonSchemaEnabled `json_api.openapi.json_schema.enabled` — register the schema routes
+     * @param string       $jsonSchemaPath    `json_api.openapi.json_schema.path` (default `/schemas.json`)
      */
     public function __construct(
         private readonly array $servers,
@@ -66,6 +76,8 @@ final class OpenApiRouteLoader extends Loader
         private readonly string $jsonPath = '/docs.json',
         private readonly bool $uiEnabled = true,
         private readonly string $uiPath = '/docs',
+        private readonly bool $jsonSchemaEnabled = true,
+        private readonly string $jsonSchemaPath = '/schemas.json',
     ) {
         parent::__construct();
     }
@@ -99,6 +111,18 @@ final class OpenApiRouteLoader extends Loader
             ));
         }
 
+        // The aggregate JSON Schema document at the configured schema path (default
+        // /schemas.json) — the default server's schemas (or the combined aggregate in
+        // combined mode). Gated on json_schema.enabled in addition to the shared expose
+        // gate, served alongside the OpenAPI document.
+        if ($this->jsonSchemaEnabled) {
+            $routes->add('jsonapi.openapi.schemas.default', new Route(
+                $this->normaliseSchemaPath($this->jsonSchemaPath),
+                ['_controller' => JsonSchemaController::class, 'server' => ServerProvider::DEFAULT_SERVER],
+                methods: ['GET'],
+            ));
+        }
+
         // A combined document spans every server in one doc (D5), so no per-server
         // route is emitted in that mode.
         if ($this->combined) {
@@ -117,13 +141,26 @@ final class OpenApiRouteLoader extends Loader
         // One parametric route for every named server, its {server} constrained to the
         // declared names so an unknown server 404s and the default path is never
         // shadowed.
+        $serverConstraint = \implode('|', \array_map('preg_quote', $named));
+
         $route = new Route(
             '/{server}/docs.json',
             ['_controller' => OpenApiController::class],
-            ['server' => \implode('|', \array_map('preg_quote', $named))],
+            ['server' => $serverConstraint],
             methods: ['GET'],
         );
         $routes->add('jsonapi.openapi.server', $route);
+
+        // The per-server aggregate schema route, mirroring the per-server document route
+        // (same {server} constraint), when json_schema serving is enabled.
+        if ($this->jsonSchemaEnabled) {
+            $routes->add('jsonapi.openapi.schemas.server', new Route(
+                '/{server}/schemas.json',
+                ['_controller' => JsonSchemaController::class],
+                ['server' => $serverConstraint],
+                methods: ['GET'],
+            ));
+        }
 
         return $routes;
     }
@@ -145,5 +182,12 @@ final class OpenApiRouteLoader extends Loader
         $path = '/' . \ltrim(\trim($path), '/');
 
         return $path === '/' ? '/docs' : $path;
+    }
+
+    private function normaliseSchemaPath(string $path): string
+    {
+        $path = '/' . \ltrim(\trim($path), '/');
+
+        return $path === '/' ? '/schemas.json' : $path;
     }
 }

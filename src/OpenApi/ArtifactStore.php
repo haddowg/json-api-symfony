@@ -88,6 +88,42 @@ final class ArtifactStore
         $this->put($this->schemaPath($server, $type), $json);
     }
 
+    /**
+     * The absolute path of the aggregate JSON Schema artifact for `$server` — the one
+     * object keyed by type the {@see \haddowg\JsonApiBundle\Controller\JsonSchemaController}
+     * serves. It sits beside the per-type `<server>/` directory (`<server>.json` vs the
+     * `<server>` dir), so the two never collide.
+     */
+    public function schemaAggregatePath(string $server): string
+    {
+        return $this->baseDir() . '/json-schema/' . $this->safe($server) . '.json';
+    }
+
+    /**
+     * The pre-built aggregate JSON Schema document for `$server`, or null when the
+     * warmer has not (yet) written it — the controller's signal to lazy-build (in
+     * every environment; it persists the result only under `kernel.debug`).
+     */
+    public function readSchemaAggregate(string $server): ?string
+    {
+        $path = $this->schemaAggregatePath($server);
+        if (!\is_file($path)) {
+            return null;
+        }
+
+        $contents = \file_get_contents($path);
+
+        return $contents === false ? null : $contents;
+    }
+
+    /**
+     * Writes the aggregate JSON Schema document (one object keyed by type) for `$server`.
+     */
+    public function writeSchemaAggregate(string $server, string $json): void
+    {
+        $this->put($this->schemaAggregatePath($server), $json);
+    }
+
     private function baseDir(): string
     {
         return \rtrim($this->cacheDir, '/') . '/' . self::SUBDIR;

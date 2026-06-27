@@ -122,6 +122,18 @@ final class OpenApiExportAndWarmerTest extends JsonApiFunctionalTestCase
         $response = $kernel->handle(Request::create('/docs.json', 'GET'), HttpKernelInterface::MAIN_REQUEST, true);
         self::assertSame(200, $response->getStatusCode());
         self::assertSame($artifact, (string) $response->getContent());
+
+        // The warmer also wrote the aggregate JSON Schema artifact, and the
+        // JsonSchemaController serves that very artifact.
+        $schemaArtifact = $store->readSchemaAggregate('default');
+        self::assertIsString($schemaArtifact);
+        $schemas = \json_decode($schemaArtifact, true, 512, \JSON_THROW_ON_ERROR);
+        self::assertIsArray($schemas);
+        self::assertArrayHasKey('products', $schemas);
+
+        $schemaResponse = $kernel->handle(Request::create('/schemas.json', 'GET'), HttpKernelInterface::MAIN_REQUEST, true);
+        self::assertSame(200, $schemaResponse->getStatusCode());
+        self::assertSame($schemaArtifact, (string) $schemaResponse->getContent());
     }
 
     #[Test]
@@ -169,9 +181,17 @@ final class OpenApiExportAndWarmerTest extends JsonApiFunctionalTestCase
         self::assertIsArray($yaml);
         self::assertSame('3.1.0', $yaml['openapi'] ?? null);
 
+        // The aggregate JSON Schemas are emitted as a static file too.
+        $schemasFile = $publicPath . '/default.schemas.json';
+        self::assertFileExists($schemasFile);
+        $schemas = \json_decode((string) \file_get_contents($schemasFile), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertIsArray($schemas);
+        self::assertArrayHasKey('products', $schemas);
+
         // Cleanup the temp static artifacts.
         @\unlink($jsonFile);
         @\unlink($yamlFile);
+        @\unlink($schemasFile);
         @\rmdir($publicPath);
     }
 

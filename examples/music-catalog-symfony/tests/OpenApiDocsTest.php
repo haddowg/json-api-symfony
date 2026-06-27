@@ -169,6 +169,25 @@ final class OpenApiDocsTest extends MusicCatalogKernelTestCase
     }
 
     #[Test]
+    #[Group('spec:openapi')]
+    public function theJsonSchemasServeAsAnAggregateKeyedByType(): void
+    {
+        $response = $this->handle('/schemas.json');
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertStringStartsWith('application/json', (string) $response->headers->get('Content-Type'));
+
+        // The aggregate is the per-type standalone JSON Schema 2020-12 documents keyed by
+        // JSON:API type — a single fetch the client codegen consumes for its validation
+        // seam (bundle ADR 0101). Each is self-contained: a `$id` and a `type` const.
+        $aggregate = $this->decode($response);
+        foreach (['albums', 'tracks', 'playlists'] as $type) {
+            $schema = $this->nested($aggregate, $type);
+            self::assertSame('urn:jsonapi:schema:' . $type, $schema['$id'] ?? null, $type);
+            self::assertSame($type, $this->nested($schema, 'properties', 'type')['const'] ?? null, $type);
+        }
+    }
+
+    #[Test]
     public function aRequireClientIdTypeMarksTheCreateIdRequired(): void
     {
         $document = $this->decode($this->handle('/docs.json'));

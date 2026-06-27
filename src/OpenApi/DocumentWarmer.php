@@ -8,10 +8,11 @@ use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
 
 /**
- * Pre-builds the per-server OpenAPI documents (+ per-type JSON Schemas) at
- * `cache:warmup` — every prod deploy — into the cache dir, so the controller serves
- * an `O(file read)` artifact and never builds per request (design D17, the bundle
- * ADR 0077 warmer).
+ * Pre-builds the per-server OpenAPI documents (+ the per-type JSON Schemas and the
+ * aggregate schema document the {@see \haddowg\JsonApiBundle\Controller\JsonSchemaController}
+ * serves) at `cache:warmup` — every prod deploy — into the cache dir, so the
+ * controllers serve an `O(file read)` artifact and never build per request (design
+ * D17, the bundle ADR 0077 warmer).
  *
  * It is deliberately **optional** ({@see isOptional()} returns `true`): a docs build
  * failure (a misconfigured resource, an exotic paginator) must never break a deploy,
@@ -105,16 +106,17 @@ final class DocumentWarmer implements CacheWarmerInterface
         $json = $document->toJsonString(true);
         $store->write($server, $json);
 
-        foreach ($this->schemas->forServer($server) as $type => $schema) {
-            $store->writeSchema(
-                $server,
-                $type,
-                (string) \json_encode($schema, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE | \JSON_PRETTY_PRINT),
-            );
+        $schemas = $this->schemas->forServer($server);
+        foreach ($schemas as $type => $schema) {
+            $store->writeSchema($server, $type, $this->encodeSchemas($schema));
         }
+        // The aggregate the JsonSchemaController serves: one object keyed by type.
+        $aggregate = $this->encodeSchemas((object) $schemas);
+        $store->writeSchemaAggregate($server, $aggregate);
 
         if ($this->publicPath !== null) {
             $this->writeStatic($server, $document);
+            $this->writeStaticSchemas($server, $aggregate);
         }
     }
 
@@ -123,11 +125,30 @@ final class DocumentWarmer implements CacheWarmerInterface
         $document = $this->documents->combined();
         $store->write(\haddowg\JsonApiBundle\Controller\OpenApiController::COMBINED_KEY, $document->toJsonString(true));
 
+        $aggregate = $this->encodeSchemas((object) $this->schemas->combined());
+        $store->writeSchemaAggregate(\haddowg\JsonApiBundle\Controller\OpenApiController::COMBINED_KEY, $aggregate);
+
         if ($this->publicPath !== null) {
             // A stable static filename for the combined document (the combined key is a
             // bracketed token, so a fixed name keeps the static artifact CDN-friendly).
             $this->writeStatic('combined', $document);
+            $this->writeStaticSchemas('combined', $aggregate);
         }
+    }
+
+    private function encodeSchemas(\stdClass $schemas): string
+    {
+        return (string) \json_encode($schemas, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE | \JSON_PRETTY_PRINT);
+    }
+
+    private function writeStaticSchemas(string $server, string $json): void
+    {
+        $base = \rtrim((string) $this->publicPath, '/');
+        if (!\is_dir($base) && !@\mkdir($base, 0o777, true) && !\is_dir($base)) {
+            throw new \RuntimeException(\sprintf('Could not create the OpenAPI public_path directory "%s".', $base));
+        }
+
+        \file_put_contents($base . '/' . $this->safe($server) . '.schemas.json', $json);
     }
 
     private function writeStatic(string $server, \haddowg\JsonApi\OpenApi\OpenApi $document): void

@@ -79,6 +79,8 @@ final class OpenApiConfigResolver
             publicPath: $this->scalarOrNull($openapi, 'public_path'),
             ui: $this->ui($openapi),
             serverDocuments: $serverDocuments,
+            jsonSchemaEnabled: $this->jsonSchemaEnabled($openapi),
+            jsonSchemaPath: $this->jsonSchemaPath($openapi),
         );
     }
 
@@ -374,6 +376,27 @@ final class OpenApiConfigResolver
     {
         $json = \is_array($openapi['json'] ?? null) ? $openapi['json'] : [];
         $path = $this->scalarOrNull($json, 'path') ?? '/docs.json';
+
+        return '/' . \ltrim($path, '/');
+    }
+
+    /**
+     * @param array<string, mixed> $openapi
+     */
+    private function jsonSchemaEnabled(array $openapi): bool
+    {
+        $jsonSchema = \is_array($openapi['json_schema'] ?? null) ? $openapi['json_schema'] : [];
+
+        return ($jsonSchema['enabled'] ?? true) !== false;
+    }
+
+    /**
+     * @param array<string, mixed> $openapi
+     */
+    private function jsonSchemaPath(array $openapi): string
+    {
+        $jsonSchema = \is_array($openapi['json_schema'] ?? null) ? $openapi['json_schema'] : [];
+        $path = $this->scalarOrNull($jsonSchema, 'path') ?? '/schemas.json';
 
         return '/' . \ltrim($path, '/');
     }

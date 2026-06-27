@@ -328,6 +328,20 @@ final class JsonApiBundle extends AbstractBundle
                         ->end()
                     ->end()
                 ->end()
+                ->arrayNode('json_schema')
+                    ->info('Serve the standalone per-type JSON Schema 2020-12 documents over HTTP, aggregated into one object keyed by type, alongside the OpenAPI document (the source for a client codegen\'s opt-in validation seam). Behind the same expose gate as the document. The CLI export (json-api:json-schema:export) stays available regardless.')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->booleanNode('enabled')
+                            ->info('Register the JSON Schema HTTP routes. Default true (still subject to the expose gate). The route serves GET /schemas.json (+ /{server}/schemas.json per server).')
+                            ->defaultTrue()
+                        ->end()
+                        ->scalarNode('path')
+                            ->info('The path the default server\'s aggregate schema document is served at. Default /schemas.json.')
+                            ->defaultValue('/schemas.json')
+                        ->end()
+                    ->end()
+                ->end()
                 ->arrayNode('ui')
                     ->info('The Swagger UI / ReDoc documentation viewer (design D6, ADR 0079): a single config-driven route rendering plain CDN-linked HTML, behind the same expose gate as the document plus `ui.enabled`.')
                     ->addDefaultsIfNotSet()
@@ -905,6 +919,19 @@ final class JsonApiBundle extends AbstractBundle
             ->public()
             ->tag('controller.service_arguments');
 
+        // The JSON Schema serving controller: serves the pre-built aggregate artifact
+        // (the per-type JSON Schemas keyed by type), lazy-builds in dev — alongside the
+        // OpenAPI document, as the source for a client codegen's validation seam.
+        $services->set(\haddowg\JsonApiBundle\Controller\JsonSchemaController::class)
+            ->args([
+                '$schemas' => service(\haddowg\JsonApiBundle\OpenApi\JsonSchemaFactory::class),
+                '$store' => service(\haddowg\JsonApiBundle\OpenApi\ArtifactStore::class),
+                '$debug' => '%kernel.debug%',
+                '$combined' => $openApiConfig->combined,
+            ])
+            ->public()
+            ->tag('controller.service_arguments');
+
         // The docs route loader: emits the document routes only when generation is
         // enabled AND the expose gate passes (kernel.debug || expose_in_prod). The
         // gate is OR-ed inside load() because %kernel.debug% is a parameter resolved
@@ -919,6 +946,8 @@ final class JsonApiBundle extends AbstractBundle
                 '$jsonPath' => $openApiConfig->jsonPath,
                 '$uiEnabled' => $openApiConfig->ui->enabled,
                 '$uiPath' => $openApiConfig->ui->path,
+                '$jsonSchemaEnabled' => $openApiConfig->jsonSchemaEnabled,
+                '$jsonSchemaPath' => $openApiConfig->jsonSchemaPath,
             ])
             ->tag('routing.loader');
 
