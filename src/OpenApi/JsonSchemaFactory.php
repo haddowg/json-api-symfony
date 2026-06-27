@@ -107,6 +107,27 @@ final class JsonSchemaFactory
         return $documents;
     }
 
+    /**
+     * The standalone JSON Schema 2020-12 documents for **every** type across **every**
+     * server, keyed by JSON:API type — the combined-mode aggregate (`multi_server:
+     * combined`), the schema twin of {@see DocumentFactory::combined()}. Types are
+     * unique across servers (the combined document requires it), so the union carries
+     * no collision.
+     *
+     * @return array<string, \stdClass>
+     */
+    public function combined(): array
+    {
+        $documents = [];
+        foreach ($this->descriptors->serverNames() as $serverName) {
+            foreach ($this->forServer($serverName) as $type => $document) {
+                $documents[$type] = $document;
+            }
+        }
+
+        return $documents;
+    }
+
     private function schemaId(string $type): string
     {
         return \sprintf('urn:jsonapi:schema:%s', $type);

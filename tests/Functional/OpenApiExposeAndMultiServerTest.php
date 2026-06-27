@@ -53,10 +53,11 @@ final class OpenApiExposeAndMultiServerTest extends \Symfony\Bundle\FrameworkBun
         \assert($router instanceof RouterInterface);
         $paths = \array_map(static fn($r) => $r->getPath(), $router->getRouteCollection()->all());
 
-        // Neither the document nor the viewer route is emitted: the UI rides the same
-        // expose gate as the document (D6/D9).
+        // Neither the document, the viewer, nor the JSON Schema route is emitted: all
+        // ride the same expose gate as the document (D6/D9).
         self::assertNotContains('/docs.json', $paths);
         self::assertNotContains('/docs', $paths);
+        self::assertNotContains('/schemas.json', $paths);
 
         $kernel->shutdown();
     }
@@ -72,9 +73,11 @@ final class OpenApiExposeAndMultiServerTest extends \Symfony\Bundle\FrameworkBun
         \assert($router instanceof RouterInterface);
         $paths = \array_map(static fn($r) => $r->getPath(), $router->getRouteCollection()->all());
 
-        // Debug auto-exposes both the document and the viewer (ui.enabled default true).
+        // Debug auto-exposes the document, the viewer (ui.enabled default true) and the
+        // JSON Schema route (json_schema.enabled default true).
         self::assertContains('/docs.json', $paths);
         self::assertContains('/docs', $paths);
+        self::assertContains('/schemas.json', $paths);
 
         $kernel->shutdown();
     }
@@ -101,6 +104,16 @@ final class OpenApiExposeAndMultiServerTest extends \Symfony\Bundle\FrameworkBun
         self::assertArrayNotHasKey('/public-items', $adminPaths);
         self::assertSame('https://admin.test', $this->serverUrl($admin));
 
+        // The aggregate JSON Schemas serve per server too, each keyed by its server's
+        // type only (the schema twin of the per-server document).
+        $defaultSchemas = $this->document($kernel, '/schemas.json');
+        self::assertArrayHasKey('public-items', $defaultSchemas);
+        self::assertArrayNotHasKey('admin-items', $defaultSchemas);
+
+        $adminSchemas = $this->document($kernel, '/admin/schemas.json');
+        self::assertArrayHasKey('admin-items', $adminSchemas);
+        self::assertArrayNotHasKey('public-items', $adminSchemas);
+
         $kernel->shutdown();
     }
 
@@ -116,8 +129,12 @@ final class OpenApiExposeAndMultiServerTest extends \Symfony\Bundle\FrameworkBun
         $paths = \array_map(static fn($r) => $r->getPath(), $router->getRouteCollection()->all());
 
         // The json-path route is present; the per-server {server}/docs.json route is not.
+        // The JSON Schema route mirrors it: the schema path is present, the per-server
+        // {server}/schemas.json route is not.
         self::assertContains('/docs.json', $paths);
         self::assertNotContains('/{server}/docs.json', $paths);
+        self::assertContains('/schemas.json', $paths);
+        self::assertNotContains('/{server}/schemas.json', $paths);
 
         $kernel->shutdown();
     }
@@ -145,6 +162,11 @@ final class OpenApiExposeAndMultiServerTest extends \Symfony\Bundle\FrameworkBun
         }
         self::assertContains('https://public.test', $urls);
         self::assertContains('https://admin.test', $urls);
+
+        // The combined aggregate schemas at the schema path span BOTH servers' types.
+        $combinedSchemas = $this->document($kernel, '/schemas.json');
+        self::assertArrayHasKey('public-items', $combinedSchemas);
+        self::assertArrayHasKey('admin-items', $combinedSchemas);
 
         $kernel->shutdown();
     }

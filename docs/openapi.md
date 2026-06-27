@@ -52,10 +52,13 @@ json_api_openapi:
 | Document (default server) | `GET /docs.json` | the OpenAPI 3.1 JSON document |
 | Document (named server) | `GET /{server}/docs.json` | that server's document (per-server mode) |
 | Viewer | `GET /docs` | a Swagger UI **or** ReDoc page rendering the document |
+| JSON Schemas (default server) | `GET /schemas.json` | the per-type [JSON Schemas](#serving-the-json-schemas), keyed by type |
+| JSON Schemas (named server) | `GET /{server}/schemas.json` | that server's schemas (per-server mode) |
 
-All paths are configurable (`json_api.openapi.json.path`, `…ui.path`). The document is
-served as `application/json`; it is **not** a JSON:API route, so it carries no
-`application/vnd.api+json` negotiation.
+All paths are configurable (`json_api.openapi.json.path`, `…ui.path`,
+`…json_schema.path`). The document and the schemas are served as `application/json`;
+they are **not** JSON:API routes, so they carry no `application/vnd.api+json`
+negotiation.
 
 > **Try it live.** The `examples/music-catalog-symfony` app serves these routes. Run
 > `docker compose up` in that directory, then open **<http://localhost:8080/docs>** for
@@ -70,11 +73,12 @@ and **off in production** unless you opt in. The CLI export is always available.
 ```yaml
 json_api:
   openapi:
-    expose_in_prod: true   # serve /docs.json + /docs outside kernel.debug too
+    expose_in_prod: true   # serve /docs.json + /docs + /schemas.json outside kernel.debug too
 ```
 
-The viewer route additionally honours `ui.enabled`, so you can serve the raw document
-in prod while keeping the human viewer dev-only (or vice versa).
+The viewer route additionally honours `ui.enabled`, and the JSON Schema routes honour
+`json_schema.enabled`, so you can serve the raw document in prod while keeping the human
+viewer (or the schemas) dev-only — or any other combination.
 
 ## The viewer
 
@@ -105,10 +109,10 @@ app imports the docs route loader, your own `GET /docs` route wins by registrati
 ## Production: the cache warmer
 
 The document is **never built per request**. A `CacheWarmer` pre-builds each server's
-document (and the per-type JSON Schemas) at `cache:warmup` — i.e. on every deploy — into
-`%kernel.cache_dir%`; the controller then serves the pre-built artifact with an
-`O(file read)`. In dev (`kernel.debug`) the controller lazy-builds and caches on demand,
-since resources change between edits.
+document, the per-type JSON Schemas, and the aggregate schema document at `cache:warmup`
+— i.e. on every deploy — into `%kernel.cache_dir%`; the controllers then serve the
+pre-built artifacts with an `O(file read)`. In dev (`kernel.debug`) the controllers
+lazy-build and cache on demand, since resources change between edits.
 
 The warmer is **optional and non-fatal**: a documentation-generation failure never breaks
 a deploy (it logs and the controller's lazy build is the safety net). To also emit a
@@ -117,8 +121,38 @@ fully static file a web server / CDN can serve with zero PHP:
 ```yaml
 json_api:
   openapi:
-    public_path: '%kernel.project_dir%/public/openapi'   # writes <server>.json (+ .yaml) at cache:warmup
+    public_path: '%kernel.project_dir%/public/openapi'   # writes <server>.json (+ .yaml + <server>.schemas.json) at cache:warmup
 ```
+
+## Serving the JSON Schemas
+
+Each type's resource object is also published as a standalone **JSON Schema 2020-12**
+document — the same projection the OpenAPI components use, wrapped with the `$schema`
+dialect keyword and an addressable `$id` so it validates on its own. They are served
+over HTTP as a single **aggregate** keyed by JSON:API type at `GET /schemas.json`
+(and `GET /{server}/schemas.json` per named server) — one fetch a client generator
+consumes to drive an opt-in request/response validation seam:
+
+```json
+{
+  "albums":  { "$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "urn:jsonapi:schema:albums",  "type": "object", "properties": { "type": { "const": "albums" }, ... } },
+  "tracks":  { "$schema": "...", "$id": "urn:jsonapi:schema:tracks",  ... }
+}
+```
+
+The routes ride the same expose gate as the document, with their own toggle and path:
+
+```yaml
+json_api:
+  openapi:
+    json_schema:
+      enabled: true          # register GET /schemas.json (+ /{server}/schemas.json); default true
+      path: /schemas.json    # the default server's aggregate path
+```
+
+In **combined** multi-server mode `GET /schemas.json` serves one aggregate spanning
+every server. The same schemas are available without HTTP exposure from the
+[CLI](#exporting-from-the-cli) (`json-api:json-schema:export`).
 
 ## Exporting from the CLI
 
