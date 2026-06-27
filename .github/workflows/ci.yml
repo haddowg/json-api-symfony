@@ -44,7 +44,7 @@ jobs:
       - name: Configure Composer to resolve haddowg/json-api (dev-main)
         run: |
           composer config -g github-oauth.github.com "${{ secrets.GITHUB_TOKEN }}"
-          composer config -g repositories.haddowg-json-api '{"type":"vcs","url":"https://github.com/haddowg/json-api"}'
+          composer config -g repositories.haddowg-json-api '{"type":"vcs","url":"https://github.com/haddowg/json-api","no-api":true}'
 
       - name: Install dependencies
         uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
@@ -76,7 +76,7 @@ jobs:
       - name: Configure Composer to resolve haddowg/json-api (dev-main)
         run: |
           composer config -g github-oauth.github.com "${{ secrets.GITHUB_TOKEN }}"
-          composer config -g repositories.haddowg-json-api '{"type":"vcs","url":"https://github.com/haddowg/json-api"}'
+          composer config -g repositories.haddowg-json-api '{"type":"vcs","url":"https://github.com/haddowg/json-api","no-api":true}'
 
       - name: Install dependencies
         uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
@@ -106,7 +106,7 @@ jobs:
       - name: Configure Composer to resolve haddowg/json-api (dev-main)
         run: |
           composer config -g github-oauth.github.com "${{ secrets.GITHUB_TOKEN }}"
-          composer config -g repositories.haddowg-json-api '{"type":"vcs","url":"https://github.com/haddowg/json-api"}'
+          composer config -g repositories.haddowg-json-api '{"type":"vcs","url":"https://github.com/haddowg/json-api","no-api":true}'
 
       - name: Install dependencies
         uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
