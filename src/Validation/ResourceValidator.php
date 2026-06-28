@@ -312,7 +312,7 @@ final class ResourceValidator
                     $errors[] = $error;
                 }
                 if ($isPivot && $relation instanceof BelongsToMany) {
-                    foreach ($this->endpointMemberPivotErrors($relation, $identifier->id, $identifier->meta, null, $existingPivot) as $metaError) {
+                    foreach ($this->endpointMemberPivotErrors($relation, $identifier->id, $this->pivotMetaIn($identifier->meta), null, $existingPivot) as $metaError) {
                         $errors[] = $metaError;
                     }
                 }
@@ -324,7 +324,7 @@ final class ResourceValidator
                     $errors[] = $error;
                 }
                 if ($isPivot && $relation instanceof BelongsToMany) {
-                    foreach ($this->endpointMemberPivotErrors($relation, $identifier->id, $identifier->meta, $index, $existingPivot) as $metaError) {
+                    foreach ($this->endpointMemberPivotErrors($relation, $identifier->id, $this->pivotMetaIn($identifier->meta), $index, $existingPivot) as $metaError) {
                         $errors[] = $metaError;
                     }
                 }
@@ -336,6 +336,23 @@ final class ResourceValidator
         }
 
         throw new ValidationFailed($errors);
+    }
+
+    /**
+     * The writable pivot values from a linkage member's `meta`, read from the nested
+     * `meta.pivot` (symmetric with how pivot renders on reads and how the OpenAPI
+     * request schema types it; bundle ADR 0103). A missing or non-array `pivot` yields
+     * an empty map.
+     *
+     * @param array<array-key, mixed> $meta the linkage member's full meta
+     *
+     * @return array<array-key, mixed>
+     */
+    private function pivotMetaIn(array $meta): array
+    {
+        $pivot = $meta['pivot'] ?? [];
+
+        return \is_array($pivot) ? $pivot : [];
     }
 
     /**
@@ -765,10 +782,8 @@ final class ResourceValidator
             return [];
         }
 
-        $meta = $member['meta'] ?? [];
-        if (!\is_array($meta)) {
-            $meta = [];
-        }
+        $memberMeta = $member['meta'] ?? [];
+        $meta = \is_array($memberMeta) ? $this->pivotMetaIn($memberMeta) : [];
 
         // A member already in the relationship merges its stored pivot row under the
         // incoming meta and validates in the update context; a new member validates

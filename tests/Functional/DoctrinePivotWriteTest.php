@@ -43,7 +43,7 @@ final class DoctrinePivotWriteTest extends JsonApiFunctionalTestCase
         $response = $this->handle(
             self::BASE_URI . '/playlists/2/relationships/tracks',
             'POST',
-            ['data' => [['type' => 'tracks', 'id' => '3', 'meta' => ['position' => 5]]]],
+            ['data' => [['type' => 'tracks', 'id' => '3', 'meta' => ['pivot' => ['position' => 5]]]]],
         );
 
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
@@ -67,8 +67,8 @@ final class DoctrinePivotWriteTest extends JsonApiFunctionalTestCase
             self::BASE_URI . '/playlists/1/relationships/tracks',
             'PATCH',
             ['data' => [
-                ['type' => 'tracks', 'id' => '3', 'meta' => ['position' => 1]],
-                ['type' => 'tracks', 'id' => '1', 'meta' => ['position' => 3]],
+                ['type' => 'tracks', 'id' => '3', 'meta' => ['pivot' => ['position' => 1]]],
+                ['type' => 'tracks', 'id' => '1', 'meta' => ['pivot' => ['position' => 3]]],
             ]],
         );
 
@@ -100,7 +100,7 @@ final class DoctrinePivotWriteTest extends JsonApiFunctionalTestCase
         $response = $this->handle(
             self::BASE_URI . '/playlists/1/relationships/tracks',
             'POST',
-            ['data' => [['type' => 'tracks', 'id' => '1', 'meta' => ['position' => 9]]]],
+            ['data' => [['type' => 'tracks', 'id' => '1', 'meta' => ['pivot' => ['position' => 9]]]]],
         );
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
 
@@ -119,11 +119,11 @@ final class DoctrinePivotWriteTest extends JsonApiFunctionalTestCase
         $response = $this->handle(
             self::BASE_URI . '/playlists/1/relationships/tracks',
             'PATCH',
-            ['data' => [['type' => 'tracks', 'id' => '1', 'meta' => ['position' => 0]]]],
+            ['data' => [['type' => 'tracks', 'id' => '1', 'meta' => ['pivot' => ['position' => 0]]]]],
         );
 
         self::assertSame(422, $response->getStatusCode(), (string) $response->getContent());
-        self::assertSame('/data/0/meta/position', $this->firstErrorPointer($response));
+        self::assertSame('/data/0/meta/pivot/position', $this->firstErrorPointer($response));
 
         // The store is unchanged: playlist 1 still has its three members at 1, 2, 3.
         $document = $this->fetchDocument('/playlists/1/tracks?sort=position');
@@ -146,7 +146,7 @@ final class DoctrinePivotWriteTest extends JsonApiFunctionalTestCase
             ['data' => [[
                 'type' => 'tracks',
                 'id' => '3',
-                'meta' => ['position' => 4, 'addedAt' => '1999-12-31T00:00:00+00:00'],
+                'meta' => ['pivot' => ['position' => 4, 'addedAt' => '1999-12-31T00:00:00+00:00']],
             ]]],
         );
 
@@ -178,7 +178,7 @@ final class DoctrinePivotWriteTest extends JsonApiFunctionalTestCase
         );
 
         self::assertSame(422, $response->getStatusCode(), (string) $response->getContent());
-        self::assertSame('/data/relationships/tracks/data/0/meta/position', $this->firstErrorPointer($response));
+        self::assertSame('/data/relationships/tracks/data/0/meta/pivot/position', $this->firstErrorPointer($response));
     }
 
     #[Test]
@@ -195,7 +195,7 @@ final class DoctrinePivotWriteTest extends JsonApiFunctionalTestCase
         );
 
         self::assertSame(422, $response->getStatusCode(), (string) $response->getContent());
-        self::assertSame('/data/0/meta/position', $this->firstErrorPointer($response));
+        self::assertSame('/data/0/meta/pivot/position', $this->firstErrorPointer($response));
 
         // No write: playlist 2 still has only its pre-existing Intro member.
         self::assertSame(['1'], $this->ids($this->fetchDocument('/playlists/2/tracks?sort=position')));
@@ -217,7 +217,7 @@ final class DoctrinePivotWriteTest extends JsonApiFunctionalTestCase
                 'id' => '2',
                 'relationships' => [
                     'tracks' => ['data' => [
-                        ['type' => 'tracks', 'id' => '1', 'meta' => ['position' => 1]],
+                        ['type' => 'tracks', 'id' => '1', 'meta' => ['pivot' => ['position' => 1]]],
                         ['type' => 'tracks', 'id' => '3'],
                     ]],
                 ],
@@ -225,7 +225,7 @@ final class DoctrinePivotWriteTest extends JsonApiFunctionalTestCase
         );
 
         self::assertSame(422, $response->getStatusCode(), (string) $response->getContent());
-        self::assertSame('/data/relationships/tracks/data/1/meta/position', $this->firstErrorPointer($response));
+        self::assertSame('/data/relationships/tracks/data/1/meta/pivot/position', $this->firstErrorPointer($response));
 
         // No write: playlist 2 still has only its pre-existing Intro member at position 1.
         $document = $this->fetchDocument('/playlists/2/tracks?sort=position');
@@ -303,11 +303,11 @@ final class DoctrinePivotWriteTest extends JsonApiFunctionalTestCase
         $violation = $this->handle(
             self::BASE_URI . '/playlists/1/relationships/tracks',
             'POST',
-            ['data' => [['type' => 'tracks', 'id' => '1', 'meta' => ['weight' => 0]]]],
+            ['data' => [['type' => 'tracks', 'id' => '1', 'meta' => ['pivot' => ['weight' => 0]]]]],
         );
 
         self::assertSame(422, $violation->getStatusCode(), (string) $violation->getContent());
-        self::assertSame('/data/0/meta/weight', $this->firstErrorPointer($violation));
+        self::assertSame('/data/0/meta/pivot/weight', $this->firstErrorPointer($violation));
 
         // The store is unchanged — no write on a 422.
         $byId = $this->byId($this->fetchDocument('/playlists/1/tracks?sort=position'));
@@ -317,7 +317,7 @@ final class DoctrinePivotWriteTest extends JsonApiFunctionalTestCase
         $ok = $this->handle(
             self::BASE_URI . '/playlists/1/relationships/tracks',
             'POST',
-            ['data' => [['type' => 'tracks', 'id' => '1', 'meta' => ['weight' => 50]]]],
+            ['data' => [['type' => 'tracks', 'id' => '1', 'meta' => ['pivot' => ['weight' => 50]]]]],
         );
 
         self::assertSame(200, $ok->getStatusCode(), (string) $ok->getContent());
@@ -342,8 +342,8 @@ final class DoctrinePivotWriteTest extends JsonApiFunctionalTestCase
                 'attributes' => ['name' => 'Inline'],
                 'relationships' => [
                     'tracks' => ['data' => [
-                        ['type' => 'tracks', 'id' => '2', 'meta' => ['position' => 1]],
-                        ['type' => 'tracks', 'id' => '1', 'meta' => ['position' => 2]],
+                        ['type' => 'tracks', 'id' => '2', 'meta' => ['pivot' => ['position' => 1]]],
+                        ['type' => 'tracks', 'id' => '1', 'meta' => ['pivot' => ['position' => 2]]],
                     ]],
                 ],
             ]],

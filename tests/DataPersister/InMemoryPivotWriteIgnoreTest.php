@@ -64,8 +64,8 @@ final class InMemoryPivotWriteIgnoreTest extends TestCase
         // A to-many linkage whose members carry pivot meta (position) — exactly the
         // write convention. In-memory it is applied as a plain membership set.
         $linkage = new ToManyRelationship([
-            new ResourceIdentifier('tracks', '1', meta: ['position' => 3]),
-            new ResourceIdentifier('tracks', '2', meta: ['position' => 1]),
+            new ResourceIdentifier('tracks', '1', meta: ['pivot' => ['position' => 3]]),
+            new ResourceIdentifier('tracks', '2', meta: ['pivot' => ['position' => 1]]),
         ]);
 
         $persister->mutateRelationship('playlists', $parent, $relation, $linkage, Mode::Replace);

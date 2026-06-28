@@ -245,7 +245,7 @@ final class PivotTest extends MusicCatalogKernelTestCase
         $response = $this->writeAsOwner(
             '/playlists/' . self::PLAYLIST_ID . '/relationships/orderedTracks',
             'POST',
-            ['data' => [['type' => 'tracks', 'id' => '4', 'meta' => ['position' => 4]]]],
+            ['data' => [['type' => 'tracks', 'id' => '4', 'meta' => ['pivot' => ['position' => 4]]]]],
         );
 
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
@@ -269,8 +269,8 @@ final class PivotTest extends MusicCatalogKernelTestCase
             '/playlists/' . self::PLAYLIST_ID . '/relationships/orderedTracks',
             'PATCH',
             ['data' => [
-                ['type' => 'tracks', 'id' => '1', 'meta' => ['position' => 1]],
-                ['type' => 'tracks', 'id' => '3', 'meta' => ['position' => 2]],
+                ['type' => 'tracks', 'id' => '1', 'meta' => ['pivot' => ['position' => 1]]],
+                ['type' => 'tracks', 'id' => '3', 'meta' => ['pivot' => ['position' => 2]]],
             ]],
         );
 
@@ -298,11 +298,11 @@ final class PivotTest extends MusicCatalogKernelTestCase
         $response = $this->writeAsOwner(
             '/playlists/' . self::PLAYLIST_ID . '/relationships/orderedTracks',
             'PATCH',
-            ['data' => [['type' => 'tracks', 'id' => '1', 'meta' => ['position' => 0]]]],
+            ['data' => [['type' => 'tracks', 'id' => '1', 'meta' => ['pivot' => ['position' => 0]]]]],
         );
 
         self::assertSame(422, $response->getStatusCode(), (string) $response->getContent());
-        self::assertSame('/data/0/meta/position', $this->firstErrorPointer($response));
+        self::assertSame('/data/0/meta/pivot/position', $this->firstErrorPointer($response));
 
         // The store is unchanged: the seeded order [3, 1] (Exit Music @ 1, Airbag @ 2)
         // still stands, Airbag still at position 2.
@@ -323,7 +323,7 @@ final class PivotTest extends MusicCatalogKernelTestCase
             ['data' => [[
                 'type' => 'tracks',
                 'id' => '4',
-                'meta' => ['position' => 4, 'addedAt' => '1999-12-31T00:00:00+00:00'],
+                'meta' => ['pivot' => ['position' => 4, 'addedAt' => '1999-12-31T00:00:00+00:00']],
             ]]],
         );
 
@@ -351,8 +351,8 @@ final class PivotTest extends MusicCatalogKernelTestCase
                 'id' => self::PLAYLIST_ID,
                 'relationships' => [
                     'orderedTracks' => ['data' => [
-                        ['type' => 'tracks', 'id' => '1', 'meta' => ['position' => 1]],
-                        ['type' => 'tracks', 'id' => '3', 'meta' => ['position' => 2]],
+                        ['type' => 'tracks', 'id' => '1', 'meta' => ['pivot' => ['position' => 1]]],
+                        ['type' => 'tracks', 'id' => '3', 'meta' => ['pivot' => ['position' => 2]]],
                     ]],
                 ],
             ]],
@@ -408,11 +408,11 @@ final class PivotTest extends MusicCatalogKernelTestCase
         $violation = $this->writeAsOwner(
             '/playlists/' . self::PLAYLIST_ID . '/relationships/orderedTracks',
             'POST',
-            ['data' => [['type' => 'tracks', 'id' => '1', 'meta' => ['weight' => 1]]]],
+            ['data' => [['type' => 'tracks', 'id' => '1', 'meta' => ['pivot' => ['weight' => 1]]]]],
         );
 
         self::assertSame(422, $violation->getStatusCode(), (string) $violation->getContent());
-        self::assertSame('/data/0/meta/weight', $this->firstErrorPointer($violation));
+        self::assertSame('/data/0/meta/pivot/weight', $this->firstErrorPointer($violation));
 
         // The store is unchanged — no write on a 422.
         $byId = $this->byId($this->fetch('/playlists/' . self::PLAYLIST_ID . '/orderedTracks?sort=position'));
@@ -423,7 +423,7 @@ final class PivotTest extends MusicCatalogKernelTestCase
         $ok = $this->writeAsOwner(
             '/playlists/' . self::PLAYLIST_ID . '/relationships/orderedTracks',
             'POST',
-            ['data' => [['type' => 'tracks', 'id' => '1', 'meta' => ['weight' => 5]]]],
+            ['data' => [['type' => 'tracks', 'id' => '1', 'meta' => ['pivot' => ['weight' => 5]]]]],
         );
 
         self::assertSame(200, $ok->getStatusCode(), (string) $ok->getContent());
@@ -447,7 +447,7 @@ final class PivotTest extends MusicCatalogKernelTestCase
         );
 
         self::assertSame(422, $response->getStatusCode(), (string) $response->getContent());
-        self::assertSame('/data/0/meta/position', $this->firstErrorPointer($response));
+        self::assertSame('/data/0/meta/pivot/position', $this->firstErrorPointer($response));
     }
 
     // --- helpers -------------------------------------------------------------
