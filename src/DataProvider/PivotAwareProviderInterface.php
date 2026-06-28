@@ -67,4 +67,38 @@ interface PivotAwareProviderInterface
         object $parent,
         RelationInterface $relation,
     ): array;
+
+    /**
+     * The pivot map of EVERY member of `$relation` for a whole PAGE of `$parents`,
+     * in ONE DQL statement scoped to the parent set — the batched twin of
+     * {@see fetchRelatedPivotMap()} (no window, no filter) — so a primary-resource
+     * document whose pivot relation's linkage data renders carries `meta.pivot` on
+     * each identifier WITHOUT an N+1 of per-parent pivot reads (bundle ADR 0102).
+     *
+     * Returns `parentWireId => [farMemberId => [field => typed value]]`, where the
+     * outer key is the wire id the PARENT serializer's `getId()` produces for the
+     * SERVED `$parentType` (so the primary-document parent serializer can look up its
+     * own parent's map) and the inner map keys each member by its far wire id (so the
+     * {@see \haddowg\JsonApiBundle\Serializer\PivotMetaSerializer} looks up only the
+     * members it actually renders — the member-id keying composes with any windowing
+     * or filtering the linkage applies for free). A parent with no association rows
+     * yields no entry (its lookup defaults to an empty map).
+     *
+     * `$parentType` is the served JSON:API type whose document is being rendered (NOT
+     * reverse-resolved from the entity class): a Doctrine entity may back several
+     * types with different id encoders, so keying the outer map by the served type's
+     * encoder makes the key provably identical to the parent serializer's `getId()`
+     * by construction.
+     *
+     * @param string       $parentType the served parent type whose encoder keys the outer map
+     * @param list<object> $parents    the already-fetched page of parents
+     *
+     * @return array<string, array<string, array<string, mixed>>>
+     */
+    public function fetchRelatedPivotMapBatch(
+        string $parentType,
+        string $relatedType,
+        array $parents,
+        RelationInterface $relation,
+    ): array;
 }

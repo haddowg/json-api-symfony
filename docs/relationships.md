@@ -507,10 +507,13 @@ BelongsToMany::make('tracks', 'tracks')
 ```
 
 The `fields()` declaration drives pivot **render**, **write / validate** and **sort**.
-It renders each member's pivot values as `meta.pivot` on both the related endpoint
-(`GET /playlists/1/tracks`) and the relationship-linkage endpoint (`GET
-/playlists/1/relationships/tracks`), and makes `?sort=position` recognised on that
-related endpoint (routed to the pivot column) — sorting is zero-config:
+It renders each member's pivot values as `meta.pivot` on the related endpoint
+(`GET /playlists/1/tracks`), the relationship-linkage endpoint (`GET
+/playlists/1/relationships/tracks`), **and in a primary-resource document's
+relationships block** — wherever that relation's linkage data renders, i.e. when it is
+`?include`d (`GET /playlists/1?include=tracks`) or renders data by default
+(`withData()`). It also makes `?sort=position` recognised on that related endpoint
+(routed to the pivot column) — sorting is zero-config:
 
 ```jsonc
 "data": [
@@ -521,6 +524,15 @@ related endpoint (routed to the pivot column) — sorting is zero-config:
   }
 ]
 ```
+
+> **On a primary document, pivot rides the linkage where its data renders.** In a
+> primary-resource document (`GET /playlists/1`) a pivot relation's linkage carries
+> `meta.pivot` on each identifier **only where its linkage data renders** — when the
+> relation is `?include`d, or renders data by default (`withData()`). A lazy,
+> not-included relation renders links-only and carries no pivot, so opt it in with
+> `withData()` (or request it with `?include`) to surface pivot without an `?include`.
+> Pivot is Doctrine-only (it needs an association entity): the in-memory provider never
+> renders it, on any endpoint or document.
 
 ### Filtering by a pivot column
 

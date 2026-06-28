@@ -15,6 +15,10 @@ use PHPUnit\Framework\Attributes\Test;
  * (400) and no pivot meta renders — while the track's OWN `?filter[title]` works,
  * proving the related collection itself functions and only the PIVOT keys are
  * absent.
+ *
+ * The boundary extends to a PRIMARY document (bundle ADR 0102): a `withData()` pivot
+ * relation's default-rendered linkage on `GET /playlists/1` carries NO `meta.pivot`,
+ * because the in-memory provider is not pivot-aware — the wrap is a clean no-op.
  */
 final class InMemoryPivotBoundaryTest extends JsonApiFunctionalTestCase
 {
@@ -64,6 +68,39 @@ final class InMemoryPivotBoundaryTest extends JsonApiFunctionalTestCase
             $meta = $resource['meta'] ?? [];
             self::assertIsArray($meta);
             self::assertArrayNotHasKey('pivot', $meta);
+        }
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    public function aPrimaryDocumentDefaultLinkageCarriesNoPivotInMemory(): void
+    {
+        // `dataTracks` renders its linkage data by default (withData()). On a primary
+        // GET /playlists/1 over the in-memory provider the linkage identifiers carry NO
+        // meta.pivot — the documented boundary holds on a primary document too (bundle
+        // ADR 0102): the in-memory provider is not pivot-aware, so the wrap is a no-op.
+        $response = $this->handle(self::BASE_URI . '/playlists/1');
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        $document = $this->decode($response);
+        $data = $document['data'] ?? null;
+        self::assertIsArray($data);
+
+        $relationships = $data['relationships'] ?? null;
+        self::assertIsArray($relationships);
+        $dataTracks = $relationships['dataTracks'] ?? null;
+        self::assertIsArray($dataTracks);
+
+        $linkage = $dataTracks['data'] ?? null;
+        self::assertIsArray($linkage);
+        self::assertNotSame([], $linkage, 'the default-rendered linkage carries members');
+
+        foreach ($linkage as $identifier) {
+            self::assertIsArray($identifier);
+            $meta = $identifier['meta'] ?? [];
+            self::assertIsArray($meta);
+            self::assertArrayNotHasKey('pivot', $meta, 'no pivot on the in-memory primary linkage');
         }
     }
 }

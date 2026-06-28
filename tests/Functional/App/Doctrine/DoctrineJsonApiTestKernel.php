@@ -146,6 +146,13 @@ final class DoctrineJsonApiTestKernel extends Kernel
         // one query.
         $services->set(DoctrinePlaylistResource::class);
         $services->set(DoctrineTrackResource::class);
+
+        // A SECOND type over the SAME PlaylistEntity (one entity, two types), with a
+        // custom id encoder and a withData() pivot relation — registered AFTER
+        // `playlists` so a reverse-lookup from the entity class would pick the
+        // first-registered no-encoder type. The primary-document pivot map must key by
+        // the SERVED type's encoder instead (bundle ADR 0102).
+        $services->set(EncodedPlaylistResource::class);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

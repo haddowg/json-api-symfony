@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Functional\App\Doctrine;
 
 use haddowg\JsonApi\Pagination\PagePaginator;
+use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Constraint\Comparison;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
@@ -102,6 +103,39 @@ final class DoctrinePlaylistResource extends AbstractResource
                 ->withFilters(Where::make('position', 'pivot.position'))
                 ->extractUsing($this->extractTracks())
                 ->paginate(PagePaginator::make()),
+
+            // The DEFAULT-RENDERED-LINKAGE pivot witness (bundle ADR 0102): the SAME
+            // association entity, but `withData()` so its linkage data renders on a
+            // PRIMARY document with NO `?include`. It proves a primary-resource document
+            // carries each member's `meta.pivot` on the relationships block wherever the
+            // pivot relation's linkage data renders — closing the gap where pivot rode
+            // the related/relationship endpoints but not the primary document.
+            BelongsToMany::make('dataTracks', 'tracks')
+                ->through(PlaylistTrackEntity::class)
+                ->fields(
+                    Integer::make('position')->required()->min(1),
+                    DateTime::make('addedAt')->readOnly(),
+                )
+                ->extractUsing($this->extractTracks())
+                ->withData(),
+
+            // The CONDITIONALLY-HIDDEN pivot witness (bundle ADR 0102): the SAME
+            // association entity, `withData()` so its linkage WOULD render, but
+            // `hidden(fn …)` makes it hidden FOR THIS REQUEST. A per-request hidden
+            // relation is not UNCONDITIONALLY hidden, so it still flows to the render
+            // loop where core's getRelationships() excludes it (isHiddenFor); the pivot
+            // decorator must honour that exclusion rather than re-add the relation (and
+            // its pivot meta) the author hid. It is hidden for every request here, so a
+            // plain GET /playlists/1 must omit `hiddenDataTracks` entirely.
+            BelongsToMany::make('hiddenDataTracks', 'tracks')
+                ->through(PlaylistTrackEntity::class)
+                ->fields(
+                    Integer::make('position')->required()->min(1),
+                    DateTime::make('addedAt')->readOnly(),
+                )
+                ->extractUsing($this->extractTracks())
+                ->withData()
+                ->hidden(static fn(mixed $model, JsonApiRequestInterface $request): bool => true),
         ];
     }
 
