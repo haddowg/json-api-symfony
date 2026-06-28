@@ -1520,6 +1520,131 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
     }
 
     /**
+     * The whole-association pivot map for a PAGE of parents in ONE DQL statement — the
+     * batched twin of {@see fetchRelatedPivotMap()} (no window, no filter), so a
+     * primary-resource document whose pivot relation's linkage data renders carries
+     * `meta.pivot` without an N+1 of per-parent pivot reads (bundle ADR 0102).
+     *
+     * It scopes the join's parent-side `ManyToOne` to the parent SET (`WHERE
+     * pivot.<parentProperty> IN (:parents)`) and projects the parent FK, the far FK and
+     * the pivot columns as SCALARS, grouped by `(parentId, farId)` so it returns one row
+     * per distinct (parent, far member) pair — the per-parent equivalent of the
+     * single-parent query's per-far-member grouping (so duplicate membership renders one
+     * representative pivot row per member, exactly as the single-parent path does). It
+     * does NOT hydrate the far entity: an object result would dedup a far member shared
+     * across parents under Doctrine's identity map and lose one parent's row, and the map
+     * needs only ids + pivot values. Each row's pivot scalars are cast and keyed by the
+     * far member's wire id; the outer map is keyed by the parent's wire id (the SERVED
+     * `$parentType`'s encoder applied to its single id, matching the parent serializer's
+     * `getId()` — the served type is threaded in rather than reverse-resolved from the
+     * entity class, which would pick the first-registered type's encoder and diverge for
+     * a multi-type-backed entity whose served type carries a different encoder).
+     *
+     * @param list<object> $parents
+     *
+     * @return array<string, array<string, array<string, mixed>>>
+     */
+    public function fetchRelatedPivotMapBatch(
+        string $parentType,
+        string $relatedType,
+        array $parents,
+        RelationInterface $relation,
+    ): array {
+        if ($parents === []) {
+            return [];
+        }
+
+        $relatedClass = $this->entityClassFor($relatedType);
+        $association = $this->pivotAssociation($relation, $parents[0], $relatedClass);
+
+        // Select the parent FK and the far FK as SCALARS (not the far entity object):
+        // a "mixed" object result would DEDUP the far entity across rows under Doctrine's
+        // identity map, collapsing a far member shared by two parents to a single row and
+        // losing one parent's pivot. The map only needs the far member's id + pivot
+        // values, not the entity, so a pure scalar projection keeps one row per distinct
+        // (parent, far member) pair. Rooted on the association entity directly so both
+        // FKs are reachable.
+        $builder = $this->entityManager
+            ->getRepository($association->entityClass)
+            ->createQueryBuilder('pivot')
+            ->select(\sprintf('IDENTITY(pivot.%s) AS jsonapi_parent_id', $association->parentProperty))
+            ->addSelect(\sprintf('IDENTITY(pivot.%s) AS jsonapi_far_id', $association->farProperty))
+            ->andWhere(\sprintf('pivot.%s IN (:jsonapi_parents)', $association->parentProperty))
+            ->setParameter('jsonapi_parents', $parents)
+            // One row per distinct (parent, far member) — the per-parent twin of the
+            // single-parent query's per-far-member grouping (duplicate membership renders
+            // a representative pivot row per member, see {@see pivotQuery()}). DQL requires
+            // a GROUP BY to name a result/identification variable, so each FK is grouped
+            // by its SELECT alias.
+            ->groupBy('jsonapi_parent_id')
+            ->addGroupBy('jsonapi_far_id');
+
+        foreach (PivotFields::declaredFor($relation) as $field) {
+            // A hidden pivot field is filterable/sortable but never rendered, so it is
+            // not selected (mirrors {@see pivotQuery()}).
+            if ($field->isHidden()) {
+                continue;
+            }
+            $builder->addSelect(\sprintf('pivot.%s AS pivot_%s', $field->column() ?? $field->name(), $field->name()));
+        }
+
+        return $this->pivotMapByParent(
+            $this->pivotRows($builder),
+            $parentType,
+            $relatedType,
+            $relation,
+        );
+    }
+
+    /**
+     * Builds the per-parent pivot map from the batched scalar rows: each row is
+     * `['jsonapi_parent_id' => parentStorageId, 'jsonapi_far_id' => farStorageId,
+     * 'pivot_<field>' => value, …]`. Both FK scalars are encoded to their wire ids (the
+     * parent by the SERVED `$parentType`'s encoder so the outer key matches the parent
+     * serializer's `getId()`; the far by the related type's encoder so the inner key
+     * matches the linkage identifier), and each declared pivot field is cast exactly as
+     * {@see pivotResult()} does.
+     *
+     * @param list<array<int|string, mixed>> $rows
+     *
+     * @return array<string, array<string, array<string, mixed>>>
+     */
+    private function pivotMapByParent(
+        array $rows,
+        string $parentType,
+        string $relatedType,
+        RelationInterface $relation,
+    ): array {
+        $pivotFields = PivotFields::byName($relation);
+        $relatedEncoder = $this->idEncoders->encoderFor($relatedType);
+        $parentEncoder = $this->idEncoders->encoderFor($parentType);
+
+        $map = [];
+        foreach ($rows as $row) {
+            $parentStorageId = $row['jsonapi_parent_id'] ?? null;
+            $farStorageId = $row['jsonapi_far_id'] ?? null;
+            if (!\is_scalar($parentStorageId) || !\is_scalar($farStorageId)) {
+                continue;
+            }
+
+            $parentWireId = $parentEncoder !== null ? $parentEncoder->encode($parentStorageId) : (string) $parentStorageId;
+            $farWireId = $relatedEncoder !== null ? $relatedEncoder->encode($farStorageId) : (string) $farStorageId;
+
+            $values = [];
+            foreach ($pivotFields as $name => $field) {
+                if ($field->isHidden()) {
+                    continue;
+                }
+                $values[$name] = PivotFields::cast($row['pivot_' . $name] ?? null, $field);
+            }
+
+            $map[$parentWireId][$farWireId] = $values;
+        }
+
+        return $map;
+    }
+
+    /**
      * The EXISTING pivot meta for the parent's pivot relation — the validation
      * read-seam (ADR 0050). It reuses the same association-entity projection the
      * relationship-linkage endpoint reads ({@see fetchRelatedPivotMap()}): one DQL

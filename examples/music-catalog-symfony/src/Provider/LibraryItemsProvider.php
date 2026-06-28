@@ -297,6 +297,20 @@ final class LibraryItemsProvider implements DataProviderInterface, PivotAwarePro
     }
 
     /**
+     * @param list<object> $parents
+     *
+     * @return array<string, array<string, array<string, mixed>>>
+     */
+    public function fetchRelatedPivotMapBatch(
+        string $parentType,
+        string $relatedType,
+        array $parents,
+        RelationInterface $relation,
+    ): array {
+        return $this->doctrine->fetchRelatedPivotMapBatch($parentType, $relatedType, $parents, $relation);
+    }
+
+    /**
      * Resolves the library's mixed members across per-type repositories, sharing
      * the EntityManager so each row comes back *managed*. An unknown library has no
      * items.

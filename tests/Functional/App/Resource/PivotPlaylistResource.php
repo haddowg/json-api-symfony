@@ -17,6 +17,12 @@ use haddowg\JsonApi\Resource\Field\Str;
  * NOT merged on its related endpoint: a `?filter[position]`/`?sort=position` key is
  * unrecognised (400) and no pivot meta renders. The `tracks` read off the parent's
  * `tracks` property exactly as a plain to-many.
+ *
+ * It also declares a `dataTracks` pivot relation that renders its linkage data BY
+ * DEFAULT (`withData()`, reading the same `tracks` property) — the in-memory
+ * boundary witness for a PRIMARY document (bundle ADR 0102): because the in-memory
+ * provider is not pivot-aware, the default-rendered linkage carries NO `meta.pivot`,
+ * exactly as the related/relationship endpoints carry none here.
  */
 final class PivotPlaylistResource extends AbstractResource
 {
@@ -29,6 +35,10 @@ final class PivotPlaylistResource extends AbstractResource
             Str::make('name'),
             BelongsToMany::make('tracks', 'tracks')
                 ->fields(Integer::make('position')),
+            BelongsToMany::make('dataTracks', 'tracks')
+                ->storedAs('tracks')
+                ->fields(Integer::make('position'))
+                ->withData(),
         ];
     }
 }

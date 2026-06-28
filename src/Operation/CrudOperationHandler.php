@@ -78,6 +78,7 @@ use haddowg\JsonApiBundle\Event\BeforeFetchRelationshipEvent;
 use haddowg\JsonApiBundle\Event\BeforeRelationshipMutateEvent;
 use haddowg\JsonApiBundle\Event\BeforeSaveEvent;
 use haddowg\JsonApiBundle\Event\BeforeUpdateEvent;
+use haddowg\JsonApiBundle\Serializer\PivotLinkageParentSerializer;
 use haddowg\JsonApiBundle\Serializer\PivotMetaSerializer;
 use haddowg\JsonApiBundle\Serializer\PivotParentSerializer;
 use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipCount;
@@ -288,6 +289,13 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // relationship objects render meta.total (bundle ADR 0052).
             $this->applyRelationshipCounts($server, $type, [$model], $request);
 
+            // Render each rendered-data pivot relation's linkage with its per-member
+            // meta.pivot — the primary-document twin of the related/relationship
+            // endpoints, where pivot already rides core's identifier-meta path (bundle
+            // ADR 0102). A no-op (the plain serializer) for a type with no rendered-data
+            // pivot relation, so there is zero overhead off the pivot path.
+            $serializer = $this->withPivotLinkage($server, $type, [$model], $serializer, $request);
+
             $response = DataResponse::fromResource($model, $serializer);
 
             // The after-fetch-one hook (post-fetch) may replace the response — a
@@ -376,8 +384,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $this->applyRelationshipWindows($server, $type, $first === null ? [] : [$first], $request);
             $this->applyRelationshipCounts($server, $type, $first === null ? [] : [$first], $request);
 
+            $singularSerializer = $this->withPivotLinkage($server, $type, $first === null ? [] : [$first], $serializer, $request);
+
             return $this->afterFetchCollection(
-                DataResponse::fromResource($first, $serializer),
+                DataResponse::fromResource($first, $singularSerializer),
                 $type,
                 $request,
                 $items,
@@ -397,6 +407,12 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // count per relation (no N+1), so every parent's relationship objects render
         // meta.total (bundle ADR 0052).
         $this->applyRelationshipCounts($server, $type, $items, $request);
+
+        // Render each rendered-data pivot relation's linkage with its per-member
+        // meta.pivot across the whole page in ONE batched pivot-map read per relation
+        // (no N+1) — the collection twin of the fetch-one wrap (bundle ADR 0102). A
+        // no-op (the plain serializer) for a type with no rendered-data pivot relation.
+        $serializer = $this->withPivotLinkage($server, $type, $items, $serializer, $request);
 
         // A cursor (keyset) page: the provider minted the boundary tokens (it owns
         // the row → boundary-value reader), so render through the paginator's cursor
@@ -1364,6 +1380,93 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         $this->relationshipPagination->set($result?->pagination);
         $this->relationshipLinkage?->set($result?->linkage);
+    }
+
+    /**
+     * Wraps `$serializer` in a {@see PivotLinkageParentSerializer} so a primary-resource
+     * document renders each `belongsToMany` pivot relation's per-member `meta.pivot` on
+     * the linkage in its relationships block — wherever that relation's linkage DATA
+     * renders — closing the gap where pivot rode the related/relationship endpoints but
+     * NOT a primary document (bundle ADR 0102). Returns `$serializer` untouched (zero
+     * overhead) when the type has no such relation or no request is available.
+     *
+     * A pivot relation's linkage data renders for THIS request when it is INCLUDED at
+     * the primary level (`isIncludedRelationship('', name, defaults)` — honouring
+     * default-includes) OR it renders data UNCONDITIONALLY
+     * (`emitsDataOnlyWhenLoaded() === false`, the `withData()` opt-out) — the same
+     * rendered-data gate {@see RelationshipWindowBatcher} uses, so a lazy, links-only,
+     * not-included pivot relation is skipped (no map fetch, no wrap). Only the related
+     * provider that {@see PivotAwareProviderInterface::supportsPivot()} contributes a
+     * map (the Doctrine reference; the in-memory provider does not — the documented
+     * pivot boundary), so a non-pivot type is a clean no-op.
+     *
+     * For each qualifying relation it reads the BATCHED per-parent pivot map over the
+     * whole page in ONE statement (no N+1) and binds the relation + map into the
+     * decorator, which slices each relation's map to a parent's own entry (keyed by the
+     * member's id) at render time — so the map composes with any linkage windowing or
+     * filtering for free.
+     *
+     * Composes with the Relationship-Queries windowed-profile path
+     * ({@see applyRelationshipWindows()}, run just BEFORE this): that windows a pivot
+     * relation's linkage to page 1, and because the map is keyed by member id the
+     * {@see PivotMetaSerializer} looks up only the windowed members — pivot rides the
+     * windowed page unchanged. (A pre-existing, separate boundary of that path is that a
+     * relation the Doctrine batcher cannot window — a non-association/computed column or a
+     * composite-id target, {@see \haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineDataProvider::isBatchableAssociation()}
+     * — falls back to its own unwindowed linkage; the pivot map composes with whichever
+     * linkage renders either way. That fallback is unrelated to pivot.)
+     *
+     * @param list<object> $items the fetched page whose pivot relations to render
+     */
+    private function withPivotLinkage(Server $server, string $type, array $items, SerializerInterface $serializer, ?JsonApiRequestInterface $request): SerializerInterface
+    {
+        if ($request === null || $items === []) {
+            return $serializer;
+        }
+
+        $defaults = \array_flip($serializer->getDefaultIncludedRelationships($items[0]));
+
+        $relations = [];
+        $maps = [];
+        foreach ($this->types->relationsFor($server, $type) as $relation) {
+            // Only a belongsToMany carries pivot fields; a relation whose related type
+            // has no pivot-aware provider (or no pivot association) contributes nothing.
+            if (!$relation instanceof BelongsToMany) {
+                continue;
+            }
+
+            $relatedType = $relation->relatedTypes()[0] ?? null;
+            if ($relatedType === null || !$this->providers->supportsType($relatedType)) {
+                continue;
+            }
+
+            $relatedProvider = $this->providers->forType($relatedType);
+            if (!$relatedProvider instanceof PivotAwareProviderInterface || !$relatedProvider->supportsPivot($relatedType, $relation)) {
+                continue;
+            }
+
+            // Render the pivot meta only where this relation's linkage DATA renders:
+            // included at the primary level (default-includes honoured) or withData().
+            if (
+                $relation->emitsDataOnlyWhenLoaded()
+                && !$request->isIncludedRelationship('', $relation->name(), $defaults)
+            ) {
+                continue;
+            }
+
+            $relations[$relation->name()] = $relation;
+            // The served `$type` (the document being rendered) keys the batched map's
+            // outer key by the parent serializer's OWN encoder — never reverse-resolved
+            // from the entity class, which would diverge for a multi-type-backed entity
+            // whose served type carries a different id encoder (BLOCKER, bundle ADR 0102).
+            $maps[$relation->name()] = $relatedProvider->fetchRelatedPivotMapBatch($type, $relatedType, $items, $relation);
+        }
+
+        if ($relations === []) {
+            return $serializer;
+        }
+
+        return new PivotLinkageParentSerializer($serializer, $server, $relations, $maps);
     }
 
     /**
