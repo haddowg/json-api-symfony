@@ -93,10 +93,12 @@ final class JsonPointerBuilder
     /**
      * The pointer for a violation on a relationship linkage member's pivot `meta`
      * field in a **whole-resource write**: the to-one member points at
-     * `/data/relationships/<rel>/data/meta/<field>` and a to-many member at
-     * `/data/relationships/<rel>/data/<index>/meta/<field>` (the index supplied for a
-     * to-many element, omitted for a to-one). `$bracketedField` is the Symfony
-     * Collection property path of the offending meta key (`[position]`).
+     * `/data/relationships/<rel>/data/meta/pivot/<field>` and a to-many member at
+     * `/data/relationships/<rel>/data/<index>/meta/pivot/<field>` (the index supplied
+     * for a to-many element, omitted for a to-one). Pivot values nest under
+     * `meta.pivot` symmetric with reads + the OpenAPI request schema (bundle ADR 0103).
+     * `$bracketedField` is the Symfony Collection property path of the offending meta
+     * key (`[position]`).
      */
     public function forLinkageMeta(string $relation, string $bracketedField, ?int $index = null): string
     {
@@ -105,21 +107,23 @@ final class JsonPointerBuilder
             $base .= '/' . $index;
         }
 
-        return $base . '/meta' . $this->metaSuffix($bracketedField);
+        return $base . '/meta/pivot' . $this->metaSuffix($bracketedField);
     }
 
     /**
      * The pointer for a violation on a linkage member's pivot `meta` field at a
      * **relationship-mutation endpoint** (`PATCH`/`POST …/relationships/<rel>`),
      * where the request body root *is* the relationship object: a to-one member
-     * points at `/data/meta/<field>`, a to-many member at `/data/<index>/meta/<field>`
-     * (the index omitted for a to-one).
+     * points at `/data/meta/pivot/<field>`, a to-many member at
+     * `/data/<index>/meta/pivot/<field>` (the index omitted for a to-one). Pivot
+     * values nest under `meta.pivot` symmetric with reads + the OpenAPI request schema
+     * (bundle ADR 0103).
      */
     public function forRelationshipEndpointLinkageMeta(string $bracketedField, ?int $index = null): string
     {
         $base = $index === null ? '/data' : '/data/' . $index;
 
-        return $base . '/meta' . $this->metaSuffix($bracketedField);
+        return $base . '/meta/pivot' . $this->metaSuffix($bracketedField);
     }
 
     /**

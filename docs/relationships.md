@@ -630,17 +630,17 @@ inline in a whole-resource write:
 
 ```jsonc
 // POST /playlists/1/relationships/tracks   — add a member with its pivot data
-{ "data": [ { "type": "tracks", "id": "7", "meta": { "position": 3 } } ] }
+{ "data": [ { "type": "tracks", "id": "7", "meta": { "pivot": { "position": 3 } } } ] }
 
 // PATCH /playlists/1/relationships/tracks  — full replacement = REORDER + sync
 { "data": [
-  { "type": "tracks", "id": "9", "meta": { "position": 1 } },
-  { "type": "tracks", "id": "7", "meta": { "position": 2 } }
+  { "type": "tracks", "id": "9", "meta": { "pivot": { "position": 1 } } },
+  { "type": "tracks", "id": "7", "meta": { "pivot": { "position": 2 } } }
 ] }
 
 // PATCH /playlists  — the SAME linkage meta inline in a whole-resource write
 { "data": { "type": "playlists", "id": "1", "relationships": {
-  "tracks": { "data": [ { "type": "tracks", "id": "7", "meta": { "position": 3 } } ] }
+  "tracks": { "data": [ { "type": "tracks", "id": "7", "meta": { "pivot": { "position": 3 } } } ] }
 } } }
 ```
 
@@ -652,7 +652,7 @@ rows whose member is no longer in the set; a `POST` adds/upserts the incoming an
 leaves the rest; a `DELETE` removes the incoming members' rows (a remove carries no
 pivot). Each member's `meta` is **validated** against the writable pivot fields'
 constraints, with a violation rendered as a `422` pointed at the linkage meta
-(`/data/relationships/<rel>/data/<n>/meta/<field>`, or `/data/<n>/meta/<field>` on the
+(`/data/relationships/<rel>/data/<n>/meta/pivot/<field>`, or `/data/<n>/meta/pivot/<field>` on the
 relationship endpoint). Because an add/replace may **create a new association row** for
 any incoming member — even on a `PATCH` — the `meta` is validated in the **new-row
 (create) context**, matching the persister (a new row is written in create context); a

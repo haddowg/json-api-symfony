@@ -190,7 +190,7 @@ before any [encoder decode](resources.md#encoded-resource-ids) — in two direct
 | a client-supplied `data.id` | the **owning** resource's id format | `/data/id` |
 | a relationship linkage id (`{ "type": T, "id": X }`) in a whole-resource write | the **related** type `T`'s id format | `/data/relationships/<rel>/data[/<n>]/id` |
 | a linkage id at a relationship-mutation endpoint (`PATCH`/`POST`/`DELETE …/relationships/{rel}`) | the **related** type `T`'s id format | `/data/id` or `/data/<n>/id` |
-| a `belongsToMany` linkage member's pivot `meta` field | the relation's **writable** pivot fields' constraints (create context for a genuinely-new member, update context for one already in the relationship — see below) | `/data/relationships/<rel>/data[/<n>]/meta/<field>` or `/data[/<n>]/meta/<field>` |
+| a `belongsToMany` linkage member's pivot `meta` field | the relation's **writable** pivot fields' constraints (create context for a genuinely-new member, update context for one already in the relationship — see below) | `/data/relationships/<rel>/data[/<n>]/meta/pivot/<field>` or `/data[/<n>]/meta/pivot/<field>` |
 
 For a polymorphic relation the format is resolved from each linkage's own `type`
 member. The bridge resolves a type → its resource → `Id` field → declared format

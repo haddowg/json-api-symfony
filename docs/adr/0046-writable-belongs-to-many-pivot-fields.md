@@ -13,8 +13,8 @@ server-owned column out with `->readOnly()`. The bundle's read consumers
 member's `meta` against the relation's `writablePivotFields()` constraints — reusing
 the same `Required`/`Nullable` resolution and `Collection` machinery as attributes —
 rendering a violation as a `422` pointed at the linkage meta
-(`/data/relationships/<rel>/data/<n>/meta/<field>` for a whole-resource write,
-`/data/<n>/meta/<field>` on a relationship endpoint). Because an add/replace (a
+(`/data/relationships/<rel>/data/<n>/meta/pivot/<field>` for a whole-resource write,
+`/data/<n>/meta/pivot/<field>` on a relationship endpoint). Because an add/replace (a
 relationship-endpoint `POST`/`PATCH`, or a whole-resource `POST`/`PATCH` whose
 relationship apply runs in `Mode::Replace`) may **create a new association row** for
 any incoming member — even on a `PATCH` — the `meta` validates in the **new-row

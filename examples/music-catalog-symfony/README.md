@@ -661,25 +661,25 @@ rows whose member is not in the incoming set.
 ```jsonc
 // add Mysterons at position 4 (creates the PlaylistEntry row)
 POST  /playlists/{id}/relationships/orderedTracks
-{ "data": [ { "type": "tracks", "id": "4", "meta": { "position": 4 } } ] }
+{ "data": [ { "type": "tracks", "id": "4", "meta": { "pivot": { "position": 4 } } } ] }
 
 // full replace = reorder the existing rows IN PLACE + drop dropped members
 PATCH /playlists/{id}/relationships/orderedTracks
-{ "data": [ { "type": "tracks", "id": "1", "meta": { "position": 1 } },
-            { "type": "tracks", "id": "3", "meta": { "position": 2 } } ] }
+{ "data": [ { "type": "tracks", "id": "1", "meta": { "pivot": { "position": 1 } } },
+            { "type": "tracks", "id": "3", "meta": { "pivot": { "position": 2 } } } ] }
 
 // the SAME meta inline in a whole-resource write
 PATCH /playlists/{id}
 { "data": { "type": "playlists", "id": "{id}", "relationships": {
-    "orderedTracks": { "data": [ { "type": "tracks", "id": "1", "meta": { "position": 1 } } ] } } } }
+    "orderedTracks": { "data": [ { "type": "tracks", "id": "1", "meta": { "pivot": { "position": 1 } } } ] } } } }
 ```
 
 - a **reorder updates the existing row in place** — the server-owned `addedAt`
   survives (it is stamped by `PlaylistEntry`'s `#[ORM\PrePersist]` only on a
   *freshly-created* row);
 - a pivot value violating a field constraint (`position` `0` vs `min(1)`) is a
-  **`422`** pointed at `…/meta/position` (the relationship endpoint) or
-  `/data/relationships/orderedTracks/data/{n}/meta/position` (a whole-resource
+  **`422`** pointed at `…/meta/pivot/position` (the relationship endpoint) or
+  `/data/relationships/orderedTracks/data/{n}/meta/pivot/position` (a whole-resource
   write), with **no write** — the store is unchanged;
 - **merge-before-validate, per member** (bundle ADR 0050): an update validates each
   member against its **merged** pivot row (the stored values overlaid by the incoming

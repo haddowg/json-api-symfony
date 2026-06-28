@@ -445,7 +445,11 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
             if ($reference === null) {
                 continue;
             }
-            $members[] = [$storageKey, $reference, $identifier->meta];
+            // Writable pivot values are nested under the linkage member's `meta.pivot`
+            // (symmetric with how pivot RENDERS on reads, and how the OpenAPI request
+            // schema types it) — not directly under `meta` (bundle ADR 0103).
+            $pivotMeta = $identifier->meta['pivot'] ?? [];
+            $members[] = [$storageKey, $reference, \is_array($pivotMeta) ? $pivotMeta : []];
         }
 
         return $members;
