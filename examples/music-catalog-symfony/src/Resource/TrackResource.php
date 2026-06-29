@@ -18,6 +18,7 @@ use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Filter\WhereIn;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Track;
+use haddowg\JsonApiBundle\Examples\MusicCatalog\Query\FullTextSearch;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Serializer\TrackSerializer;
 
 /**
@@ -98,6 +99,8 @@ final class TrackResource extends AbstractResource
             Where::make('title', 'title', 'like'),
             Where::make('explicit')->asBoolean()->default(false)->boolean(),
             WhereIn::make('genres'),
+            // The shared `filter[q]` search key (see AlbumResource), here over the track title.
+            FullTextSearch::make('q', ['title']),
         ];
     }
 }

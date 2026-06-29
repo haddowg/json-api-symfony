@@ -27,6 +27,7 @@ use haddowg\JsonApi\Resource\Sort\SortDirective;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Album;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Model\AlbumStatus;
+use haddowg\JsonApiBundle\Examples\MusicCatalog\Query\FullTextSearch;
 
 /**
  * The `albums` resource type, mapped to its backing {@see Album} entity.
@@ -201,6 +202,10 @@ final class AlbumResource extends AbstractResource
             // so the comparison is temporal, a malformed bound is a clean 400, and the
             // bounds project as `string`/`date-time` in the deepObject value schema.
             DateRange::make('releasedAt'),
+            // FullTextSearch('q', ['title']): a custom multi-field search filter (the
+            // extensible-filter seam) — one `filter[q]` key a UI search box drives across
+            // every type, here over the album title. Runs via DoctrineFullTextSearchArm.
+            FullTextSearch::make('q', ['title']),
         ];
     }
 
