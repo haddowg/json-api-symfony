@@ -173,6 +173,29 @@ final class ReadQueryTest extends MusicCatalogKernelTestCase
 
     #[Test]
     #[Group('spec:fetching-filtering')]
+    public function aFullTextSearchFilterMatchesAcrossTheDeclaredFields(): void
+    {
+        // FullTextSearch('q', [...]) is a custom filter run by DoctrineFullTextSearchArm
+        // (the extensible-filter seam) — one `filter[q]` key the catalogue exposes on
+        // every type. On albums it searches the title: "comput" keeps OK Computer (1).
+        self::assertSame(['1'], $this->albumIds($this->fetch('/albums?filter[q]=comput')));
+
+        // On artists it searches BOTH `name` and `bio`: "abingdon" appears only in
+        // Radiohead's bio (not its name), proving the multi-field OR push-down...
+        self::assertSame(['1'], $this->idsOfType($this->fetch('/artists?filter[q]=abingdon'), 'artists'));
+        // ...while "port" matches Portishead by name.
+        self::assertSame(['2'], $this->idsOfType($this->fetch('/artists?filter[q]=port'), 'artists'));
+        // A term in neither field excludes every artist — an empty primary collection.
+        self::assertSame([], $this->idsOfType($this->fetch('/artists?filter[q]=zzznope'), 'artists'));
+
+        // LIKE metacharacters are escaped: `_` is a literal underscore, not a single-char
+        // wildcard — "_omput" would match "Computer" if `_` were a wildcard, but it matches
+        // nothing (the term is treated literally, as the built-in like filter guarantees).
+        self::assertSame([], $this->albumIds($this->fetch('/albums?filter[q]=_omput')));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
     #[Group('spec:errors')]
     public function anUnknownFilterKeyRendersA400ErrorDocument(): void
     {
@@ -396,6 +419,22 @@ final class ReadQueryTest extends MusicCatalogKernelTestCase
         $index = $this->includedIndex($included);
         self::assertArrayHasKey('artists:1', $index);
         self::assertArrayHasKey('artists:2', $index);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-includes')]
+    #[Group('spec:fetching-relationships')]
+    public function anArtistCompoundsItsAlbumsWhenIncluded(): void
+    {
+        // ArtistResource's `albums` relation is includable, so
+        // `GET /artists/{id}?include=albums` carries the artist's discography in the
+        // compound document. Radiohead (artist 1) owns OK Computer (album 1).
+        $included = $this->fetch('/artists/1?include=albums')['included'] ?? null;
+        self::assertIsArray($included);
+
+        $index = $this->includedIndex($included);
+        self::assertArrayHasKey('albums:1', $index);
+        self::assertSame('OK Computer', $this->attribute($index, 'albums:1', 'title'));
     }
 
     // --- page-size cap -------------------------------------------------------

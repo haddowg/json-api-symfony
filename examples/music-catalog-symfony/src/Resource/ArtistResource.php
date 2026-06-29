@@ -14,6 +14,7 @@ use haddowg\JsonApi\Resource\Field\Url;
 use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Artist;
+use haddowg\JsonApiBundle\Examples\MusicCatalog\Query\FullTextSearch;
 
 /**
  * The `artists` resource type, mapped to its backing {@see Artist} entity via
@@ -63,14 +64,12 @@ final class ArtistResource extends AbstractResource
             // artist with a single OneToMany `albums`, so — unlike core's in-memory
             // domain — there is no separate `featuredAlbum` to-one here.
             //
-            // Include safeguard A (bundle ADR 0037): `albums` is the back-reference of
-            // `albums.artist`, so leaving it includable would let a client loop
-            // artist → albums → artist → … through `?include`. cannotBeIncluded() opts
-            // the relation out — its linkage and endpoints still render, but a
-            // `?include=albums` naming it is a 400, and it is never auto-compounded by
-            // a default-include cascade. The forward `albums?include=artist` is a
-            // different relation and is unaffected.
-            HasMany::make('albums', 'albums')->cannotBeIncluded(),
+            // `albums` is includable (the back-reference of `albums.artist`): an
+            // artist's discography is a natural `GET /artists/{id}?include=albums`, and
+            // the include-path resolver bounds the depth of the enumerated paths, so the
+            // back-and-forth `albums.artist` cycle does not run away. (Contrast bundle
+            // ADR 0037's cannotBeIncluded() opt-out, demonstrated elsewhere.)
+            HasMany::make('albums', 'albums'),
         ];
     }
 
@@ -80,6 +79,10 @@ final class ArtistResource extends AbstractResource
         // to a single resource object (or null), not a collection.
         return [
             Where::make('slug')->singular(),
+            // The shared `filter[q]` search key (see AlbumResource) — here a multi-field
+            // search across the artist's name and bio, the richest demo of the custom
+            // FullTextSearch arm.
+            FullTextSearch::make('q', ['name', 'bio']),
         ];
     }
 

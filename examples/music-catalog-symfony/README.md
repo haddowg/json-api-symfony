@@ -26,12 +26,12 @@ reference-data type sourced from `symfony/intl`.
 
 | Type | Backing | Highlights |
 | --- | --- | --- |
-| `artists` | `Artist` entity | singular `filter[slug]`, computed `trackCount`, `hasMany albums` (`cannotBeIncluded` — include safeguard A) |
-| `albums` | `Album` entity | multi-server (default + `admin`), directional `CompareField` (**merge-before-validate** witness on update), `Map releaseInfo` (JSON column), default-include `artist`, `WhereHas tracks`, **relation-scoped `filter`/`sort`** on `tracks` |
-| `tracks` | `Track` entity | **serializer override** (`TrackSerializer`), `storedAs` rename, `ArrayList genres`, `like` filter, plain `belongsToMany playlists` (`cannotReplace`) |
+| `artists` | `Artist` entity | singular `filter[slug]`, shared full-text `filter[q]` (over `name` + `bio`), computed `trackCount`, includable `hasMany albums` (discography via `?include=albums`) |
+| `albums` | `Album` entity | multi-server (default + `admin`), directional `CompareField` (**merge-before-validate** witness on update), `Map releaseInfo` (JSON column), default-include `artist`, `WhereHas tracks`, shared full-text `filter[q]`, **relation-scoped `filter`/`sort`** on `tracks` |
+| `tracks` | `Track` entity | **serializer override** (`TrackSerializer`), `storedAs` rename, `ArrayList genres`, `like` filter, shared full-text `filter[q]`, plain `belongsToMany playlists` (`cannotReplace`) |
 | `playlists` | `Playlist` entity | **hydrator override** (`PlaylistHydrator`), **UUID id** (`uuid()->generated()`), derived `slug`, **lifecycle hooks** (`beforeCreate` stamp + `beforeDelete` 409 guard), **authorization** (`securityDelete` admin-only + `securityUpdate` owner Voter), **pivot** `belongsToMany orderedTracks` (`PlaylistEntry` association entity: required writable `position` + cross-pivot `weight >= position` + server-owned `addedAt` as `meta.pivot`, set/reordered via linkage `meta`, `?filter`/`?sort`, **merge-before-validate** per member) |
 | `users` | `User` entity | **admin-server-only**, `UniqueEntity` on `email`, write-only `password`, validation-composition trio, `getAllowedIncludePaths` whitelist (include safeguard C) |
-| `favorites` | `Favorite` entity | **polymorphic to-one** `MorphTo favoritable` (Track\|Album\|Artist) |
+| `favorites` | `Favorite` entity | **polymorphic to-one** `MorphTo favoritable` (Track\|Album\|Artist) (`cannotBeIncluded` — include safeguard A; reached via the related endpoint) |
 | `libraries` | `Library` entity | **polymorphic to-many** `MorphToMany items` (custom provider) |
 | `genres` | `Genre` entity | **client-supplied natural-key id** (`requireClientId()->pattern(slug)`), **declarative HTTP cache headers** (`cacheHeaders` + `collection` override) |
 | `devices` | `Device` entity | **app-generated ULID id** (`ulid()->generated()`), **self-link opt-out** (`emitsSelfLink()` false), **RFC 8594 deprecation** (`deprecation` + `sunset` + `sunsetLink`) |

@@ -14,9 +14,10 @@ use Symfony\Component\HttpFoundation\Response;
  * It witnesses the three composing safeguards (bundle ADR 0037) over the reference
  * Doctrine provider, each on the example's real relationship graph:
  *
- *  - Capability A — `ArtistResource::albums` (the back-reference of `albums.artist`)
- *    is `cannotBeIncluded()`, so `?include=albums` from an artist is a `400` while
- *    the forward `albums?include=artist` is unaffected;
+ *  - Capability A — `FavoriteResource::favoritable` (a polymorphic to-one whose
+ *    members share no include vocabulary) is `cannotBeIncluded()`, so
+ *    `?include=favoritable` is a `400` while the relation's own related/relationship
+ *    endpoints (`/favorites/{id}/favoritable`) keep serving it;
  *  - Capability B — `json_api.max_include_depth: 2`, so `?include=tracks.album`
  *    (depth 2) is allowed and a depth-3 path is a `400`;
  *  - Capability C — `UserResource::getAllowedIncludePaths()` permits `playlists`
@@ -31,23 +32,24 @@ final class IncludeSafeguardsTest extends MusicCatalogKernelTestCase
     // --- Capability A: per-relation cannotBeIncluded() opt-out -----------------
 
     #[Test]
-    public function includingTheCannotBeIncludedBackReferenceIs400(): void
+    public function includingACannotBeIncludedRelationIs400(): void
     {
-        // `artists.albums` opted out of inclusion to break the artist↔album loop.
-        $this->assertError($this->handle('/artists/1?include=albums'), 400, 'INCLUSION_NOT_ALLOWED');
+        // `favorites.favoritable` opted out of inclusion (a polymorphic to-one with no
+        // shared include vocabulary), so naming it in `?include` is a 400.
+        $this->assertError($this->handle('/favorites/1?include=favoritable'), 400, 'INCLUSION_NOT_ALLOWED');
     }
 
     #[Test]
-    public function theForwardRelationStaysIncludable(): void
+    public function theOptedOutRelationStillServesItsOwnEndpoints(): void
     {
-        // Opting `artists.albums` out does not touch the distinct forward relation
-        // `albums.artist` — `?include=artist` still compounds the artist.
-        $response = $this->handle('/albums/1?include=artist');
+        // Opting `favoritable` out of `?include` does not remove its related endpoint —
+        // `/favorites/{id}/favoritable` still resolves the polymorphic target.
+        $response = $this->handle('/favorites/1/favoritable');
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
 
-        $included = $this->decode($response)['included'] ?? null;
-        self::assertIsArray($included);
-        self::assertNotEmpty($included);
+        $data = $this->decode($response)['data'] ?? null;
+        self::assertIsArray($data);
+        self::assertNotEmpty($data);
     }
 
     // --- Capability B: max include depth (config default overridden to 2) ------
