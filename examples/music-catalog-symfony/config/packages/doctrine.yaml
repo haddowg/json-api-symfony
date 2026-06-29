@@ -1,14 +1,20 @@
-# The Doctrine configuration for the example app: an in-memory SQLite database
-# (so the example runs with zero external infrastructure, the schema created per
-# boot by the test case) and attribute mapping over src/Entity.
+# The Doctrine configuration for the example app: a SQLite database keyed off
+# DATABASE_URL, defaulting to in-memory — so tests + a plain `symfony serve` run with
+# zero external infrastructure (the schema created per boot by the test case / front
+# controller). The Docker image overrides DATABASE_URL to a file so writes PERSIST
+# across HTTP requests: an in-memory DB lives and dies with the connection, which in
+# FrankenPHP's per-request mode means each request would otherwise start fresh (see
+# public/index.php, which now seeds only when the schema is absent). Attribute mapping
+# over src/Entity.
 #
-# A production app would point `dbal` at a real connection (a DATABASE_URL env
-# var) and likely enable second-level cache / migrations; the in-memory SQLite +
-# create-schema-on-boot here is purely the example/test posture.
+# A production app would point DATABASE_URL at a real connection and likely enable
+# second-level cache / migrations; the SQLite default here is purely the example posture.
+parameters:
+    env(DATABASE_URL): 'sqlite:///:memory:'
+
 doctrine:
     dbal:
-        driver: pdo_sqlite
-        memory: true
+        url: '%env(resolve:DATABASE_URL)%'
     orm:
         auto_generate_proxy_classes: true
         report_fields_where_declared: true

@@ -12,10 +12,13 @@ use Symfony\Component\HttpFoundation\Request;
 // app), so the front controller boots from the repository-root vendor.
 require \dirname(__DIR__, 3) . '/vendor/autoload.php';
 
-// The example uses an in-memory SQLite database that lives and dies with the kernel,
-// so each request creates the schema and loads the deterministic seed before
-// handling — the same setup the test suite performs. Writes therefore do not
-// persist across requests: this is a live demo of the bundle, not a database app.
+// The example's SQLite database (DATABASE_URL, default in-memory) is created and
+// seeded ON FIRST USE: when the schema is absent the front controller builds it and
+// loads the deterministic seed — the same setup the test suite performs. With the
+// default in-memory DB each request starts fresh, so this runs every request (writes
+// don't survive). With the Docker image's file-backed DATABASE_URL the schema is
+// present after the first request, so the seed runs once and writes PERSIST across
+// requests (until the container is recreated).
 $kernel = new MusicCatalogKernel('test', true);
 $kernel->boot();
 
@@ -27,8 +30,20 @@ $services = $container->has('test.service_container')
 $entityManager = $services->get('doctrine.orm.entity_manager');
 \assert($entityManager instanceof EntityManagerInterface);
 
-(new SchemaTool($entityManager))->createSchema($entityManager->getMetadataFactory()->getAllMetadata());
-Seed::into($entityManager);
+// Probe for the schema (version-agnostic across DBAL): a failing query means the
+// tables don't exist yet, so build + seed. A persistent (file) DB skips this after
+// the first request, which is what lets writes persist.
+$needsSetup = true;
+try {
+    $entityManager->getConnection()->executeQuery('SELECT 1 FROM playlist LIMIT 1');
+    $needsSetup = false;
+} catch (\Throwable) {
+    // Schema absent — fall through to create + seed.
+}
+if ($needsSetup) {
+    (new SchemaTool($entityManager))->createSchema($entityManager->getMetadataFactory()->getAllMetadata());
+    Seed::into($entityManager);
+}
 
 $request = Request::createFromGlobals();
 $response = $kernel->handle($request);
