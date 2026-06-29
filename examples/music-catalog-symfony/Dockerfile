@@ -30,6 +30,14 @@ ENV COMPOSER_MAX_PARALLEL_HTTP=6
 RUN composer config repositories.haddowg-json-api '{"type":"vcs","url":"https://github.com/haddowg/json-api","no-api":true}' \
  && composer update --no-interaction --prefer-dist --no-progress
 
+# Back the example with a FILE-based SQLite (a writable dir for it) so writes PERSIST
+# across requests — FrankenPHP serves per-request, so an in-memory DB would be re-seeded
+# every request and writes would never survive. The front controller seeds it on first
+# use (when the schema is absent). The DB lives in the image's writable layer, so it
+# resets when the container is recreated (the demo's "reset" is `docker run` again).
+RUN mkdir -p /app/var && chmod 777 /app/var
+ENV DATABASE_URL=sqlite:////app/var/example.db
+
 ENV SERVER_NAME=:80
 ENV SERVER_ROOT=/app/examples/music-catalog-symfony/public
 
