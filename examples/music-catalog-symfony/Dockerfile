@@ -21,8 +21,13 @@ WORKDIR /app
 COPY . .
 # Resolve the unpublished core (dev-main) from GitHub, exactly as CI does, then
 # resolve the full tree fresh (the committed lock is path-repo based). The example
-# app's Symfony/Doctrine stack rides the bundle's require-dev.
-RUN composer config repositories.haddowg-json-api '{"type":"vcs","url":"https://github.com/haddowg/json-api"}' \
+# app's Symfony/Doctrine stack rides the bundle's require-dev. `"no-api":true` makes
+# Composer clone core over git rather than walking the GitHub commits API (which trips
+# GitHub's anonymous secondary rate limit — HTTP 429 — on dev-branch resolution; the
+# same fix the CI workflow carries). COMPOSER_MAX_PARALLEL_HTTP caps concurrent dist
+# downloads so anonymous codeload fetches don't trip GitHub's rate limit (HTTP 400).
+ENV COMPOSER_MAX_PARALLEL_HTTP=6
+RUN composer config repositories.haddowg-json-api '{"type":"vcs","url":"https://github.com/haddowg/json-api","no-api":true}' \
  && composer update --no-interaction --prefer-dist --no-progress
 
 ENV SERVER_NAME=:80
