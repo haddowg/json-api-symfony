@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
+use haddowg\JsonApiBundle\Examples\MusicCatalog\DataFixtures\DemoSeed;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\DataFixtures\Seed;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\MusicCatalogKernel;
 use Symfony\Component\HttpFoundation\Request;
@@ -43,6 +44,9 @@ try {
 if ($needsSetup) {
     (new SchemaTool($entityManager))->createSchema($entityManager->getMetadataFactory()->getAllMetadata());
     Seed::into($entityManager);
+    // Layer the richer DEMO-ONLY catalogue (more artists/albums/playlists) on top of
+    // the minimal test seed — served only, never seen by the test suite.
+    DemoSeed::into($entityManager);
 }
 
 $request = Request::createFromGlobals();
