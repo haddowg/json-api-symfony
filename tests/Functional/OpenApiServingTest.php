@@ -98,6 +98,16 @@ final class OpenApiServingTest extends JsonApiFunctionalTestCase
         self::assertArrayHasKey('204', $actionResponses);
         self::assertArrayNotHasKey('200', $actionResponses);
 
+        // The meta-output action (outputMeta: true) advertises a 200 referencing the
+        // shared MetaDocument component — not a products resource body and not a 204
+        // (core ADR 0102).
+        self::assertArrayHasKey('/products/-actions/summarize', $paths);
+        $summarizeResponses = $this->nested($paths, '/products/-actions/summarize', 'post', 'responses');
+        self::assertArrayHasKey('200', $summarizeResponses);
+        self::assertArrayNotHasKey('204', $summarizeResponses);
+        $summarizeSchema = $this->nested($summarizeResponses, '200', 'content', 'application/vnd.api+json', 'schema');
+        self::assertSame('#/components/schemas/MetaDocument', $summarizeSchema['$ref'] ?? null);
+
         // Categories registers its own CRUD surface.
         self::assertArrayHasKey('/categories', $paths);
         self::assertArrayHasKey('/categories/{id}', $paths);
@@ -120,6 +130,12 @@ final class OpenApiServingTest extends JsonApiFunctionalTestCase
         // The backed enum is hoisted into a reusable named component (§4.8).
         self::assertArrayHasKey('CatalogStatus', $schemas);
         self::assertSame(['draft', 'published', 'archived'], $this->nested($schemas, 'CatalogStatus')['enum'] ?? null);
+        // The meta-output action (SummarizeCatalog, outputMeta: true) causes the shared
+        // meta-document component to join the schema set: a meta-required object with no
+        // `data` (core ADR 0102).
+        self::assertArrayHasKey('MetaDocument', $schemas);
+        self::assertSame(['meta'], $this->nested($schemas, 'MetaDocument', 'required'));
+        self::assertArrayNotHasKey('data', $this->nested($schemas, 'MetaDocument', 'properties'));
     }
 
     #[Test]

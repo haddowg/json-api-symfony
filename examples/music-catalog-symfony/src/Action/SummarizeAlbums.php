@@ -17,9 +17,10 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Album;
  * ADR 0076, design §1): no `{id}`, so {@see ActionContext::entity()} is `null`. It
  * computes a catalogue-wide summary (the published / unpublished album counts) and
  * returns it as a meta-only JSON:API document — a non-CRUD report that has no natural
- * place in the CRUD verb set.
+ * place in the CRUD verb set. It declares `outputMeta: true` so the generated OpenAPI
+ * document advertises a `200` meta document rather than an albums resource body.
  */
-#[AsJsonApiAction(type: 'albums', path: 'summary', scope: ActionScope::Collection, tags: ['Catalog'])]
+#[AsJsonApiAction(type: 'albums', path: 'summary', scope: ActionScope::Collection, outputMeta: true, tags: ['Catalog'])]
 final class SummarizeAlbums implements ActionHandlerInterface
 {
     public function __construct(private readonly EntityManagerInterface $entityManager) {}

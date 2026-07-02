@@ -16,6 +16,11 @@ namespace haddowg\JsonApiBundle\Action;
  * {@see ActionRegistry}'s handler service-locator. `server` is the (already
  * resolved) server name the action is exposed on (the implicit `default` when the
  * attribute left it `null`).
+ *
+ * `output` is the declared success-response shape ({@see ActionOutput}) the OpenAPI
+ * projection advertises: a resource document (with `outputType`), a meta-only
+ * document, or a `204`. When it is not {@see ActionOutput::Document}, `outputType`
+ * carries the empty-string sentinel (there is no response resource).
  */
 final readonly class ActionDescriptor
 {
@@ -32,6 +37,7 @@ final readonly class ActionDescriptor
         public ActionInput $input,
         public string $inputType,
         public string $outputType,
+        public ActionOutput $output,
         public ?string $security,
         public string $handlerServiceId,
         public string $server,

@@ -45,6 +45,15 @@ use haddowg\JsonApiBundle\Action\ActionScope;
  * `outputType` (a `204` action describes no body). It affects only the generated
  * document — the runtime response is whatever the handler returns.
  *
+ * `outputMeta` declares the action returns a **meta-only document** — a JSON:API
+ * document whose primary content is its top-level `meta`, with no `data` (a handler
+ * returning `$context->meta([...])`): the generated document advertises a `200` with
+ * the shared meta-document schema instead of a resource-document body (core ADR
+ * 0102). Like `returns204` it suppresses the `outputType` default and is mutually
+ * exclusive with an explicit `outputType` (a meta document carries no resource) and
+ * with `returns204` (an action answers one way). It affects only the generated
+ * document — the runtime response is whatever the handler returns.
+ *
  * `server` names the server this action is exposed on (a single server name, or
  * `null` for the implicit `default` server).
  *
@@ -78,7 +87,8 @@ final readonly class AsJsonApiAction
 {
     /**
      * @param list<string> $methods    the author-declared HTTP method allow-list (default `['POST']`)
-     * @param bool         $returns204 the action returns no response body (the document advertises `204` instead of a `200` body); mutually exclusive with `outputType`
+     * @param bool         $returns204 the action returns no response body (the document advertises `204` instead of a `200` body); mutually exclusive with `outputType` and `outputMeta`
+     * @param bool         $outputMeta the action returns a meta-only document (the document advertises a `200` meta document instead of a resource body); mutually exclusive with `outputType` and `returns204`
      * @param list<string> $tags       the OpenAPI tag names this action is grouped under (empty = inherit the mount type's resource tags)
      * @param bool         $asLink     expose the action as a security-aware `links` member on the mount type's resources (resource scope only)
      */
@@ -91,12 +101,34 @@ final readonly class AsJsonApiAction
         public ?string $inputType = null,
         public ?string $outputType = null,
         public bool $returns204 = false,
+        public bool $outputMeta = false,
         public ?string $server = null,
         public ?string $security = null,
         public ?string $name = null,
         public array $tags = [],
         public bool $asLink = false,
     ) {
+        // An action answers exactly one way. A `204` and a meta-only document are both
+        // body-shape declarations that suppress the `outputType` default, so declaring
+        // both — or either alongside an explicit `outputType` — is contradictory.
+        if ($returns204 && $outputMeta) {
+            throw new \LogicException(\sprintf(
+                'The JSON:API action "%s" on type "%s" declares both returns204 and outputMeta; an action answers '
+                . 'exactly one way, so they are mutually exclusive.',
+                $path,
+                $type,
+            ));
+        }
+
+        if ($outputMeta && $outputType !== null) {
+            throw new \LogicException(\sprintf(
+                'The JSON:API action "%s" on type "%s" declares both outputMeta and an outputType; a meta-only '
+                . 'document carries no resource, so they are mutually exclusive.',
+                $path,
+                $type,
+            ));
+        }
+
         // A collection-scope action has no resource to hang a link on, so exposing
         // it as a resource link is incoherent — reject it at declaration time.
         if ($asLink && $scope === ActionScope::Collection) {

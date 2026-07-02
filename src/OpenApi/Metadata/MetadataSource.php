@@ -480,6 +480,7 @@ final class MetadataSource
             $action->input,
             $action->inputType,
             $action->outputType,
+            $action->output,
             $action->security,
             $action->handlerServiceId,
             $action->server,
