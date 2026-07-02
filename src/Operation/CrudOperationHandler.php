@@ -1005,8 +1005,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $pivotResult = $relatedProvider
                 ->fetchRelatedPivotCollection($relatedType, $parent, $relation, $criteria, $request);
             $items = \is_array($pivotResult->items) ? \array_values($pivotResult->items) : \iterator_to_array($pivotResult->items, false);
-            $this->preloadIncludes($relatedProvider, $items, $relatedType, $request);
 
+            // Linkage-only response (IdentifierResponse) — a relationship endpoint carries no
+            // compound `included` (core D16 / core ADR 0107); the pivot meta rides the windowed
+            // map below, so there is nothing to preload here.
             $this->supplyWindowedRelationship($parent, $relationshipName, $items, $paginator, $pivotResult, $relWantsCount, $request, $operation->queryParameters());
 
             // The pivot meta rides the WINDOWED page's map: a PivotMetaSerializer over the
@@ -1089,10 +1091,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $result = $relatedProvider->fetchRelatedCollection($relatedType, $parent, $relation, $criteria, $request);
             $items = \is_array($result->items) ? \array_values($result->items) : \iterator_to_array($result->items, false);
 
-            // Compound `?include` on a relationship endpoint resolves the linkage members'
-            // own include tree (a no-op when none was requested) so it does not N+1.
-            $this->preloadIncludes($relatedProvider, $items, $relatedType, $request);
-
+            // A relationship endpoint renders linkage only — an IdentifierResponse never
+            // carries a compound `included` (core D16 / core ADR 0107), so `?include` here is
+            // inert and there is nothing to preload (the old preload was mis-rooted and
+            // rendered nothing — a wasted fetch).
             $this->supplyWindowedRelationship($parent, $relationshipName, $items, $paginator, $result, $relWantsCount, $request, $operation->queryParameters());
 
             return IdentifierResponse::forRelationship($parent, $server->serializerFor($type), $relationshipName);

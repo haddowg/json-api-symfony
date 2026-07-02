@@ -58,6 +58,29 @@ abstract class RelationshipCollectionParamsConformanceTestCase extends JsonApiFu
 
     #[Test]
     #[Group('spec:fetching-relationships')]
+    public function aRelationshipEndpointRendersLinkageOnlyAndNeverACompoundIncluded(): void
+    {
+        // A relationship endpoint returns linkage only — never a compound `included`
+        // document (core D16 / core ADR 0107). `?include` is not part of its contract:
+        // it is tolerated (not a 400) but inert, and no `included` member is emitted.
+        // This locks the linkage-only contract on BOTH providers.
+        $response = $this->handle('/articles/1/relationships/comments?include=author');
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        $document = $this->decode($response);
+        self::assertArrayNotHasKey('included', $document);
+        self::assertSame(
+            [
+                ['type' => 'comments', 'id' => '1'],
+                ['type' => 'comments', 'id' => '2'],
+            ],
+            $this->identifiers($document),
+        );
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
     #[Group('spec:fetching-sorting')]
     public function aToManyRelationshipLinkageSortsByTheRelatedVocabulary(): void
     {
