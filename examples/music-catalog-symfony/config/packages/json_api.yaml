@@ -19,12 +19,14 @@ json_api:
     # user allow-list below), this also guarantees `?include` always terminates.
     max_include_depth: 2
     # The server default paginator caps a client's page[size]/page[limit] at this
-    # value, closing a page-size DoS (see core docs/pagination.md). Set explicitly
-    # to 50 here to witness the clamp; omit the key for core's default of 100, or
-    # set 0 to disable the cap. A resource's own pagination() sets its own cap via
-    # withMaxPerPage().
+    # value, closing a page-size DoS (see core docs/pagination.md). Set below core's
+    # default of 100 to witness the clamp; the value is the single-source-of-truth
+    # `SeedManifest::MAX_PER_PAGE`, read here via `!php/const` so the config, the demo
+    # catalogue sizing and the tests share one number. Omit the key for core's
+    # default, or set 0 to disable the cap. A resource's own pagination() sets its
+    # own cap via withMaxPerPage().
     pagination:
-        max_per_page: 50
+        max_per_page: !php/const haddowg\JsonApiBundle\Examples\MusicCatalog\DataFixtures\SeedManifest::MAX_PER_PAGE
     # Reject an unrecognized top-level query-parameter family with a 400 (bundle ADR
     # 0055) rather than silently dropping it — so a client typo (?bogus, a misspelled
     # ?pag[number]) surfaces as an error instead of a wrong-but-200 result. This is the

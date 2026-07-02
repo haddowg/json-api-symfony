@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Tests;
 
 use Doctrine\ORM\EntityManagerInterface;
+use haddowg\JsonApiBundle\Examples\MusicCatalog\DataFixtures\SeedManifest;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Favorite;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
@@ -27,7 +28,7 @@ use Symfony\Component\HttpFoundation\Response;
 #[Group('spec:updating-relationships')]
 final class RelationshipMutationTest extends MusicCatalogKernelTestCase
 {
-    private const string PLAYLIST_ID = '00000000-0000-4000-8000-000000000001';
+    private const string PLAYLIST_ID = SeedManifest::OWNED_PLAYLIST_ID;
 
     // --- to-one --------------------------------------------------------------
 

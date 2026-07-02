@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Tests;
 
+use haddowg\JsonApiBundle\Examples\MusicCatalog\DataFixtures\SeedManifest;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
@@ -33,14 +34,14 @@ use PHPUnit\Framework\Attributes\Test;
 #[Group('spec:crud')]
 final class AuthorizationTest extends MusicCatalogKernelTestCase
 {
-    /** The seeded "Morning Mix" playlist (owned by ada@example.com) — a UUID PK. */
-    private const string OWNED_PLAYLIST_ID = '00000000-0000-4000-8000-000000000001';
+    /** The seeded "Morning Mix" playlist (owned by {@see SeedManifest::OWNER}) — a UUID PK. */
+    private const string OWNED_PLAYLIST_ID = SeedManifest::OWNED_PLAYLIST_ID;
 
     /** The seeded owner of Morning Mix — the EDIT-gate subject. */
-    private const string OWNER = 'ada@example.com';
+    private const string OWNER = SeedManifest::OWNER;
 
     /** A ROLE_USER who is not the owner — the Voter refuses her EDIT. */
-    private const string NON_OWNER = 'mallory@example.com';
+    private const string NON_OWNER = SeedManifest::NON_OWNER;
 
     // --- securityUpdate: is_granted('EDIT', object) (the owner Voter) ----------
 
@@ -200,7 +201,7 @@ final class AuthorizationTest extends MusicCatalogKernelTestCase
         // default surface — a separate multi-server concern; what matters is the gate
         // opened for the admin where it denied everyone else.)
         $this->browser()
-            ->actingAs('admin')
+            ->actingAs(SeedManifest::ADMIN)
             ->get('/playlists/' . self::OWNED_PLAYLIST_ID . '/relationships/owner')
             ->getDocument()
             ->assertStatus(200);
@@ -227,8 +228,8 @@ final class AuthorizationTest extends MusicCatalogKernelTestCase
     {
         $id = $this->createEmptyPlaylist();
 
-        $this->browser()->actingAs('admin')->delete('/playlists/' . $id)->assertNoContent();
-        $this->browser()->actingAs('admin')->get('/playlists/' . $id)->getDocument()->assertStatus(404);
+        $this->browser()->actingAs(SeedManifest::ADMIN)->delete('/playlists/' . $id)->assertNoContent();
+        $this->browser()->actingAs(SeedManifest::ADMIN)->get('/playlists/' . $id)->getDocument()->assertStatus(404);
     }
 
     #[Test]

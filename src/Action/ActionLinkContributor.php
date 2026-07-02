@@ -32,7 +32,11 @@ use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
  * the rendered object as the subject — so a client never sees a link to an action it
  * cannot invoke. An action with no `security` always renders its link; with no
  * authorization checker wired (no firewall) a `security`-gated action's link is
- * suppressed (fail-closed: the gate would deny at invocation too).
+ * suppressed — the **conservative** choice, so the document never advertises an action
+ * behind an unevaluable gate. Note this is stricter than *invocation*: with no firewall
+ * the gate itself is inert, so the same action would actually be *allowed* if called
+ * (a declared `security` fails open when there is no firewall — see the bundle's
+ * authorization docs). Wiring a firewall makes link visibility and invocation agree.
  *
  * The URL is generated through the framework's {@see UrlGeneratorInterface} for the
  * action's route, with the rendered object's id (resolved through the same serializer
@@ -96,7 +100,10 @@ final readonly class ActionLinkContributor implements ResourceLinkContributorInt
      * SAME evaluation the per-action `BeforeActionEvent` gate uses (an `is_granted`
      * Expression against the rendered object as the subject). A `null` expression
      * always admits. With no authorization checker wired the link is suppressed for a
-     * gated action (fail-closed: the gate would deny at invocation too).
+     * gated action — the conservative choice (the document should not advertise a link
+     * behind an unevaluable gate), even though invocation of that same action would
+     * actually be *allowed* without a firewall (the gate is inert; the expression fails
+     * open). Wiring a firewall makes the two agree.
      */
     private function isVisible(?string $security, mixed $object): bool
     {
