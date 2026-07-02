@@ -46,11 +46,12 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
  * **Security** (design §4.6/D8): `securedOperations()` reports only *which*
  * operations carry a security expression (never the expression). The mapping follows
  * the runtime enforcement exactly (the {@see \haddowg\JsonApiBundle\Security\ResourceSecuritySubscriber}):
- * `forCreate`/`forUpdate`/`forDelete` gate Create/Update/Delete, and `forRead` gates
- * **only** FetchOne (read security is enforced at the single-read hook; there is no
- * collection-read gate, so FetchCollection is never secured by this layer). The
- * security *schemes* + *default requirement* are config — carried on the source's
- * config and surfaced on the {@see ServerMetadata}.
+ * `forCreate`/`forUpdate`/`forDelete` gate Create/Update/Delete, `forRead` gates
+ * FetchOne (the single-read hook), and `forList` (`securityList`, bundle ADR 0099)
+ * gates FetchCollection — enforced all-or-nothing before the query at the
+ * collection-read hook, so it too is projected here. The security *schemes* +
+ * *default requirement* are config — carried on the source's config and surfaced on
+ * the {@see ServerMetadata}.
  *
  * **Tags** (design §4.7/D15): a type's tag refs are the explicit descriptor `tags`,
  * else the humanized-type default; the document's tag definitions are the config
@@ -375,8 +376,9 @@ final class MetadataSource
      * The subset of `$operations` carrying a security expression (design §4.6/D8),
      * resolved from the {@see ResourceSecurityRegistry} exactly as the subscriber
      * enforces it: create/update/delete gate their like-named operation; read gates
-     * **only** FetchOne (there is no collection-read gate). Empty when the registry
-     * is absent (no `symfony/security-core`) or the type declared no security.
+     * FetchOne; and list (`securityList`) gates FetchCollection (the all-or-nothing
+     * collection-read gate). Empty when the registry is absent
+     * (no `symfony/security-core`) or the type declared no security.
      *
      * @param list<OperationType> $operations
      *

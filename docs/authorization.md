@@ -17,7 +17,7 @@ per-operation, per-object authorization without writing a subscriber or a handle
 
 ## Declaring expressions
 
-Add any of five expressions to the attribute. Each is an ExpressionLanguage string
+Add any of six expressions to the attribute. Each is an ExpressionLanguage string
 evaluated in Symfony's security context (the variables `user`, `object`, `request`,
 `token`, `roles` and the functions `is_granted()`, `is_authenticated_fully()`, …):
 
