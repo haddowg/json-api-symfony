@@ -26,7 +26,8 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\User;
  *
  * Everything is generated deterministically from fixed word pools (no randomness),
  * so a rebuilt image always serves the same catalogue. New playlists are owned by
- * the seeded `ada@example.com` so the live demo's Bearer token can manage them.
+ * the seeded {@see SeedManifest::OWNER} so the live demo's Bearer token can manage
+ * them.
  */
 final class DemoSeed
 {
@@ -76,7 +77,7 @@ final class DemoSeed
     public static function into(EntityManagerInterface $entityManager): void
     {
         // The base seed clears the EM, so re-load the playlist owner from the DB.
-        $ada = $entityManager->getRepository(User::class)->findOneBy(['email' => 'ada@example.com']);
+        $ada = $entityManager->getRepository(User::class)->findOneBy(['email' => SeedManifest::OWNER]);
         \assert($ada instanceof User);
 
         $base = new \DateTimeImmutable('2018-01-01T09:00:00+00:00');
@@ -94,8 +95,9 @@ final class DemoSeed
             );
             $entityManager->persist($artist);
 
-            // Two albums each (a couple of dozen artists × 2 keeps the catalogue under the
-            // 50-per-page cap, so the demo's `page[size]=50` shows every album in one go).
+            // Two albums each (a couple of dozen artists × 2 keeps the catalogue under
+            // the SeedManifest::MAX_PER_PAGE cap, so the demo's `page[size]=<cap>` shows
+            // every album in one go).
             for ($a = 0; $a < 2; $a++) {
                 $titleIndex = $artistIndex * 2 + $a;
                 $album = new Album(

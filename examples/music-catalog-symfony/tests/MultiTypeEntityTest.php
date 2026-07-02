@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Tests;
 
+use haddowg\JsonApiBundle\Examples\MusicCatalog\DataFixtures\SeedManifest;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\Routing\RouterInterface;
@@ -29,8 +30,8 @@ use Symfony\Component\Routing\RouterInterface;
 #[Group('spec:fetching')]
 final class MultiTypeEntityTest extends MusicCatalogKernelTestCase
 {
-    /** Ada's UUID-keyed playlist (owned by ada@example.com). */
-    private const string PLAYLIST = '00000000-0000-4000-8000-000000000001';
+    /** Ada's UUID-keyed playlist (owned by {@see SeedManifest::OWNER}). */
+    private const string PLAYLIST = SeedManifest::OWNED_PLAYLIST_ID;
 
     #[Test]
     public function theAdminUsersTypeRendersTheFullRecord(): void
