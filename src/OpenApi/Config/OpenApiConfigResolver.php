@@ -81,6 +81,7 @@ final class OpenApiConfigResolver
             serverDocuments: $serverDocuments,
             jsonSchemaEnabled: $this->jsonSchemaEnabled($openapi),
             jsonSchemaPath: $this->jsonSchemaPath($openapi),
+            describedby: ($openapi['describedby'] ?? true) !== false,
         );
     }
 

@@ -39,6 +39,26 @@ final class OpenApiServingTest extends JsonApiFunctionalTestCase
 
     #[Test]
     #[Group('spec:openapi')]
+    public function aJsonApiResponseCarriesADescribedbyLinkToTheServedDocument(): void
+    {
+        // With OpenAPI serving enabled and the doc routes exposed, every JSON:API
+        // response carries a top-level links.describedby pointing at the served document
+        // for the request's server (D14). The link is request-host absolute.
+        $response = $this->handle('/products/1');
+
+        self::assertSame(200, $response->getStatusCode());
+        $body = \json_decode((string) $response->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertIsArray($body);
+        self::assertIsArray($body['links'] ?? null);
+        $describedby = $body['links']['describedby'] ?? null;
+        self::assertIsString($describedby);
+        self::assertStringEndsWith('/docs.json', $describedby);
+        // Absolute (request-host), so a client can dereference it directly.
+        self::assertStringStartsWith('http', $describedby);
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
     public function theServedDocumentValidatesAgainstTheOas31MetaSchema(): void
     {
         // Decode the RAW wire JSON to the stdClass form (not the assoc array): an
