@@ -88,6 +88,22 @@ final class OpenApiDocsTest extends MusicCatalogKernelTestCase
     }
 
     #[Test]
+    #[Group('spec:inclusion-of-related-resources')]
+    public function theDefaultServerPrunesIncludePathsToTypesItCannotSerialize(): void
+    {
+        // `playlists.owner` targets the `users` type, which is admin-only
+        // (`server: 'admin'`). On the default server `users` is unserializable, so
+        // `?include=owner` could hydrate nothing — the projection prunes it (D45),
+        // while include paths to default-serializable types remain.
+        $document = $this->decode($this->handle('/docs.json'));
+        $include = $this->parameterNamed($this->nested($document, 'paths', '/playlists', 'get', 'parameters'), 'include');
+        $enum = $this->nested($include, 'schema', 'items', 'enum');
+
+        self::assertNotContains('owner', $enum, 'include=owner reaches the admin-only users type and must be pruned on the default server');
+        self::assertContains('tracks', $enum);
+    }
+
+    #[Test]
     #[Group('spec:fetching-filtering')]
     public function theConvenienceFiltersProjectTheirParametersAndDescriptions(): void
     {

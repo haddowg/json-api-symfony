@@ -196,8 +196,11 @@ final class MetadataSourceTest extends TestCase
     {
         $articles = $this->typeNamed($this->source()->forServer(), 'articles');
 
-        // author (-> people, which has no includable relations) + comments.
-        self::assertEqualsCanonicalizing(['author', 'comments'], $articles->includablePaths());
+        // `author` -> people (registered, no includable relations of its own). The
+        // `comments` relation is includable but its `comments` type has no serializer on
+        // this server (it renders links-only), so `?include=comments` could hydrate
+        // nothing and the path is pruned from the advertised set (D45).
+        self::assertEqualsCanonicalizing(['author'], $articles->includablePaths());
     }
 
     #[Test]

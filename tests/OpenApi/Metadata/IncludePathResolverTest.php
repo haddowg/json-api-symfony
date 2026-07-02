@@ -34,8 +34,10 @@ final class IncludePathResolverTest extends TestCase
     public function itWalksTheRelationGraphToTheDepthCap(): void
     {
         // articles -> author (people) -> company (companies); depth cap 3 allows the
-        // two-hop path. A non-includable relation contributes nothing.
-        [$resolver, $server] = $this->resolver(3, new IncArticle(), new IncPerson(), new IncCompany());
+        // two-hop path. A non-includable relation contributes nothing. Every reachable
+        // type (people, companies, comments) is registered, so all survive the
+        // serializability gate.
+        [$resolver, $server] = $this->resolver(3, new IncArticle(), new IncPerson(), new IncCompany(), new IncComment());
 
         self::assertEqualsCanonicalizing(
             ['author', 'author.company', 'comments'],
@@ -46,9 +48,23 @@ final class IncludePathResolverTest extends TestCase
     #[Test]
     public function aDepthCapOfOneStopsAtTheFirstHop(): void
     {
-        [$resolver, $server] = $this->resolver(1, new IncArticle(), new IncPerson(), new IncCompany());
+        [$resolver, $server] = $this->resolver(1, new IncArticle(), new IncPerson(), new IncCompany(), new IncComment());
 
         self::assertEqualsCanonicalizing(['author', 'comments'], $resolver->pathsFor($server, 'articles'));
+    }
+
+    #[Test]
+    public function aRelationToATypeNotSerializableOnTheServerIsPruned(): void
+    {
+        // Same graph, but the `comments` type is NOT registered on this server — so an
+        // `?include=comments` could hydrate nothing. The path is pruned even though the
+        // relation is includable (D45); `author`/`author.company` (registered) remain.
+        [$resolver, $server] = $this->resolver(3, new IncArticle(), new IncPerson(), new IncCompany());
+
+        self::assertEqualsCanonicalizing(
+            ['author', 'author.company'],
+            $resolver->pathsFor($server, 'articles'),
+        );
     }
 
     #[Test]
@@ -164,6 +180,16 @@ final class IncCompany extends AbstractResource
     public function fields(): array
     {
         return [Id::make(), Str::make('name')];
+    }
+}
+
+final class IncComment extends AbstractResource
+{
+    public static string $type = 'comments';
+
+    public function fields(): array
+    {
+        return [Id::make(), Str::make('body')];
     }
 }
 
