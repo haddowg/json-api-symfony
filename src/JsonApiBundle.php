@@ -764,6 +764,9 @@ final class JsonApiBundle extends AbstractBundle
                     // Only carried when set: a no-output (204) action suppresses the
                     // outputType default so the document advertises 204 (design §4.5).
                     'returns204' => $attribute->returns204 ? true : null,
+                    // Only carried when set: a meta-only action suppresses the outputType
+                    // default so the document advertises a meta document (core ADR 0102).
+                    'outputMeta' => $attribute->outputMeta ? true : null,
                     'security' => $attribute->security,
                     'methods' => $attribute->methods !== [] ? \implode(',', $attribute->methods) : null,
                     'name' => $attribute->name,

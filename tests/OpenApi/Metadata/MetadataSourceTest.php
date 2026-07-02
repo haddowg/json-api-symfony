@@ -17,6 +17,7 @@ use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\Action\ActionInput;
+use haddowg\JsonApiBundle\Action\ActionOutput;
 use haddowg\JsonApiBundle\Action\ActionRegistry;
 use haddowg\JsonApiBundle\Action\ActionScope as BundleActionScope;
 use haddowg\JsonApiBundle\OpenApi\Metadata\IncludePathResolver;
@@ -391,6 +392,7 @@ final class MetadataSourceTest extends TestCase
                 'input' => ActionInput::None->name,
                 'inputType' => 'articles',
                 'outputType' => 'articles',
+                'output' => ActionOutput::Document->name,
                 'security' => "is_granted('PUBLISH')",
                 'handlerServiceId' => 'app.publish_handler',
                 'server' => ServerProvider::DEFAULT_SERVER,

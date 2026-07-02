@@ -58,6 +58,8 @@ use haddowg\JsonApi\Response\NoContentResponse;
     input: ActionInput::None,       // None (default) | Document | Raw
     inputType: null,                // Document mode only: hydrator type for the request doc; defaults to `type`
     outputType: null,               // serializer type for the response doc; defaults to `type`
+    returns204: false,              // handler returns no body (advertise 204); excludes outputType/outputMeta
+    outputMeta: false,              // handler returns a meta-only document (advertise a meta 200); excludes outputType/returns204
     server: null,                   // multi-server assignment; defaults to the implicit `default`
     security: "is_granted('PUBLISH', subject)",   // optional authz expression (see Authorization)
     name: null,                     // optional route-name override
@@ -105,7 +107,7 @@ The simplest action. A resource-scope `None` action is the classic "do a thing t
 this entity" verb:
 
 ```php
-#[AsJsonApiAction(type: 'playlists', path: 'archive')]
+#[AsJsonApiAction(type: 'playlists', path: 'archive', returns204: true)]
 final class ArchivePlaylist implements ActionHandlerInterface
 {
     public function handle(ActionContext $context): NoContentResponse
@@ -118,6 +120,10 @@ final class ArchivePlaylist implements ActionHandlerInterface
     }
 }
 ```
+
+The handler returns a `204`, so it declares `returns204: true` — the generated
+OpenAPI document then advertises a `204` response instead of a `200` body (see
+[The response contract](#the-response-contract) below).
 
 ```http
 POST /playlists/42/-actions/archive
@@ -175,6 +181,7 @@ parsed or validated; the handler reads the request directly:
     type: 'tracks',
     path: 'waveform',
     input: ActionInput::Raw,
+    returns204: true,
 )]
 final class UploadWaveform implements ActionHandlerInterface
 {
@@ -247,6 +254,28 @@ Because the response flows through the existing [`ViewListener`](lifecycle.md),
 links, the `jsonapi` object, content negotiation, and error rendering are all
 reused unchanged — an action document is indistinguishable from a CRUD document on
 the wire.
+
+### Advertising the output in OpenAPI
+
+The runtime response is whatever the handler returns; the **generated OpenAPI
+document** advertises one success response, declared on the attribute so it matches:
+
+| Declaration | Advertised success response |
+|-------------|-----------------------------|
+| (default) | a `200` with the `outputType`'s document schema (`outputType` defaults to the mount `type`) |
+| `outputMeta: true` | a `200` referencing the shared `MetaDocument` component (a meta-only document, no `data`) |
+| `returns204: true` | a `204 No Content` |
+
+`outputMeta` and `returns204` are mutually exclusive with each other and with an
+explicit `outputType` — an action answers exactly one way.
+
+These flags exist because the projector cannot read the handler's body. To stop the
+declaration drifting from the handler, the bundle **guards at compile time**: a
+handler whose `handle()` return type is narrowed to exactly `NoContentResponse` must
+declare `returns204: true`, and one narrowed to exactly `MetaResponse` must declare
+`outputMeta: true` — otherwise the container fails to compile with an explanatory
+error. A handler that keeps the interface's union return type opts out of the guard
+(it declares no single shape), and the flags then govern the projection alone.
 
 ### The `ActionContext`
 

@@ -13,10 +13,10 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiAction;
 /**
  * `POST /actionWidgets/-actions/import` — the **collection-scope** witness (bundle
  * ADR 0076, design §10): no `{id}`, so {@see ActionContext::entity()} is `null`. The
- * handler returns a meta-only document, proving a collection-scope action dispatches
- * and renders without resolving an entity.
+ * handler returns a meta-only document (so it declares `outputMeta: true`), proving a
+ * collection-scope action dispatches and renders without resolving an entity.
  */
-#[AsJsonApiAction(type: 'actionWidgets', path: 'import', scope: ActionScope::Collection)]
+#[AsJsonApiAction(type: 'actionWidgets', path: 'import', scope: ActionScope::Collection, outputMeta: true)]
 final class ImportWidgets implements ActionHandlerInterface
 {
     public function handle(ActionContext $context): MetaResponse

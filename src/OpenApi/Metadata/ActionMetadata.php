@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\OpenApi\Metadata;
 
 use haddowg\JsonApi\OpenApi\Metadata\ActionInputMode;
 use haddowg\JsonApi\OpenApi\Metadata\ActionMetadataInterface;
+use haddowg\JsonApi\OpenApi\Metadata\ActionOutputMode;
 use haddowg\JsonApi\OpenApi\Metadata\ActionScope;
 use haddowg\JsonApiBundle\Action\ActionDescriptor;
 
@@ -20,14 +21,18 @@ use haddowg\JsonApiBundle\Action\ActionDescriptor;
  * they are mapped **by case name**.
  *
  * `isSecured()` reads the descriptor's resolved `security` expression presence (the
- * expression itself is never surfaced — design §4.6/D8). `outputType()` maps an
- * empty `outputType` (the "no response body" sentinel) to `null` (the contract's
- * `204 No Content` case) and otherwise returns the named type. An action declares the
- * sentinel by setting `#[AsJsonApiAction(returns204: true)]`, which suppresses the
- * mount-type default in the {@see \haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceLocatorPass}
- * so a body-less (`204`) action advertises a `204` response instead of a `200`
- * document body (design §4.5); an action that omits `returns204` defaults its
- * `outputType` to the mount type as before.
+ * expression itself is never surfaced — design §4.6/D8). `outputMode()` maps the
+ * descriptor's resolved {@see \haddowg\JsonApiBundle\Action\ActionOutput} to core's
+ * {@see ActionOutputMode} by case name — the discriminator the projector switches on
+ * (a resource document / a meta-only document / a `204`). `outputType()` maps an
+ * empty `outputType` (the "no response resource" sentinel a `returns204`/`outputMeta`
+ * action carries) to `null` and otherwise returns the named type; it is read only in
+ * {@see ActionOutputMode::Document}. An action declares the sentinel by setting
+ * `#[AsJsonApiAction(returns204: true)]` (a `204`) or `outputMeta: true` (a meta
+ * document), which suppresses the mount-type default in the
+ * {@see \haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceLocatorPass}
+ * (design §4.5, core ADR 0102); an action that omits both defaults its `outputType`
+ * to the mount type as before.
  */
 final readonly class ActionMetadata implements ActionMetadataInterface
 {
@@ -59,6 +64,11 @@ final readonly class ActionMetadata implements ActionMetadataInterface
         // JSON:API request schema); the descriptor still stores the mount-type default
         // for every mode, so it is surfaced only when the input is a Document.
         return $this->inputMode() === ActionInputMode::Document ? $this->descriptor->inputType : null;
+    }
+
+    public function outputMode(): ActionOutputMode
+    {
+        return ActionOutputMode::{$this->descriptor->output->name};
     }
 
     public function outputType(): ?string

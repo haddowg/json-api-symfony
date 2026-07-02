@@ -123,6 +123,7 @@ final class OpenApiTestKernel extends Kernel
         $services->set(ProductResource::class);
         $services->set(CategoryResource::class);
         $services->set(RecalculatePrices::class);
+        $services->set(SummarizeCatalog::class);
 
         // The decorator seam witness (ADR 0080): autoconfigured onto the OpenAPI factory
         // tag, it stamps a tag onto every built document, so the serving + warmer tests

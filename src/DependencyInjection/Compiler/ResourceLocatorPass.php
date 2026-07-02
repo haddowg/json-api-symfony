@@ -6,11 +6,14 @@ namespace haddowg\JsonApiBundle\DependencyInjection\Compiler;
 
 use haddowg\JsonApi\Hydrator\HydratorInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
+use haddowg\JsonApi\Response\MetaResponse;
+use haddowg\JsonApi\Response\NoContentResponse;
 use haddowg\JsonApi\Serializer\SerializerInterface;
 use haddowg\JsonApiBundle\Action\ActionDescriptor;
 use haddowg\JsonApiBundle\Action\ActionHandlerInterface;
 use haddowg\JsonApiBundle\Action\ActionInput;
 use haddowg\JsonApiBundle\Action\ActionLinkContributor;
+use haddowg\JsonApiBundle\Action\ActionOutput;
 use haddowg\JsonApiBundle\Action\ActionRegistry;
 use haddowg\JsonApiBundle\Action\ActionScope;
 use haddowg\JsonApiBundle\JsonApiBundle;
@@ -366,7 +369,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
         }
 
         $handlerReferences = [];
-        /** @var array<string, array{type: string, path: string, methods: list<string>, scope: string, input: string, inputType: string, outputType: string, security: ?string, handlerServiceId: string, server: string, tags: string, asLink: bool}> $actionDescriptors */
+        /** @var array<string, array{type: string, path: string, methods: list<string>, scope: string, input: string, inputType: string, outputType: string, output: string, security: ?string, handlerServiceId: string, server: string, tags: string, asLink: bool}> $actionDescriptors */
         $actionDescriptors = [];
         /** @var array<string, list<array{uriType: string, type: string, path: string, methods: list<string>, scope: string, name: string}>> $routeDescriptorsByServer */
         $routeDescriptorsByServer = [];
@@ -419,21 +422,47 @@ final class ResourceLocatorPass implements CompilerPassInterface
                 $inputType = \is_string($tag['inputType'] ?? null) && $tag['inputType'] !== '' ? $tag['inputType'] : $type;
                 $declaredOutputType = \is_string($tag['outputType'] ?? null) && $tag['outputType'] !== '' ? $tag['outputType'] : null;
                 $returns204 = ($tag['returns204'] ?? false) === true;
+                $outputMeta = ($tag['outputMeta'] ?? false) === true;
 
-                // A no-output (204) action keeps the empty-string sentinel as its
-                // outputType — the ActionMetadata maps it to null so the generated
-                // document advertises a 204 instead of a 200 body (design §4.5). It is
-                // mutually exclusive with an explicit outputType (a 204 carries no body).
-                if ($returns204 && $declaredOutputType !== null) {
+                // An action answers exactly one way. A body-less (204) or a meta-only
+                // output both suppress the outputType default and keep the empty-string
+                // sentinel as their outputType — the ActionMetadata maps that to null and
+                // reads the output mode so the generated document advertises a 204 / a
+                // meta document / a 200 resource body (design §4.5, core ADR 0102). An
+                // explicit outputType (a resource body) is mutually exclusive with either,
+                // and the two body-shape flags are mutually exclusive with each other. The
+                // attribute constructor already rejects these, but the compiled descriptor
+                // map is the source of truth, so re-assert them here.
+                if ($returns204 && $outputMeta) {
                     throw new \LogicException(\sprintf(
-                        'The JSON:API action "%s" on service "%s" declares both returns204 and an outputType; a 204 action describes no response body, so they are mutually exclusive.',
+                        'The JSON:API action "%s" on service "%s" declares both returns204 and outputMeta; an action answers exactly one way, so they are mutually exclusive.',
                         $path,
                         $id,
                     ));
                 }
 
+                if ($declaredOutputType !== null && ($returns204 || $outputMeta)) {
+                    throw new \LogicException(\sprintf(
+                        'The JSON:API action "%s" on service "%s" declares an outputType alongside %s; a body-less or meta-only action carries no response resource, so they are mutually exclusive.',
+                        $path,
+                        $id,
+                        $returns204 ? 'returns204' : 'outputMeta',
+                    ));
+                }
+
+                // A handler that narrows its declared return type to exactly a
+                // NoContentResponse / MetaResponse has committed to a body shape; require
+                // the matching flag so the generated document can never drift from the
+                // handler's actual output.
+                $this->guardActionHandlerOutput($class, $id, $path, $returns204, $outputMeta);
+
+                $output = match (true) {
+                    $returns204 => ActionOutput::None,
+                    $outputMeta => ActionOutput::Meta,
+                    default => ActionOutput::Document,
+                };
                 $outputType = match (true) {
-                    $returns204 => '',
+                    $returns204 || $outputMeta => '',
                     $declaredOutputType !== null => $declaredOutputType,
                     default => $type,
                 };
@@ -502,6 +531,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
                         'input' => $input->name,
                         'inputType' => $inputType,
                         'outputType' => $outputType,
+                        'output' => $output->name,
                         'security' => $security,
                         'handlerServiceId' => $id,
                         'server' => $server,
@@ -619,6 +649,50 @@ final class ResourceLocatorPass implements CompilerPassInterface
         }
 
         throw new \LogicException(\sprintf('Unknown action input mode "%s" on service "%s".', $input, $id));
+    }
+
+    /**
+     * Guards a handler's declared output shape against its action flags: a handler
+     * whose `handle()` return type is narrowed to exactly {@see NoContentResponse} must
+     * declare `returns204`, and one narrowed to exactly {@see MetaResponse} must declare
+     * `outputMeta` — so the generated OpenAPI response can never drift from the shape
+     * the handler actually returns. A handler that keeps the interface's union return
+     * type declares no single shape, so it is not constrained here (the flags then
+     * govern the projection alone).
+     *
+     * @param class-string $class
+     */
+    private function guardActionHandlerOutput(string $class, string $id, string $path, bool $returns204, bool $outputMeta): void
+    {
+        if (!\method_exists($class, 'handle')) {
+            return;
+        }
+
+        $returnType = (new \ReflectionMethod($class, 'handle'))->getReturnType();
+        if (!$returnType instanceof \ReflectionNamedType) {
+            return;
+        }
+
+        $name = $returnType->getName();
+        if ($name === NoContentResponse::class && !$returns204) {
+            throw new \LogicException(\sprintf(
+                'The JSON:API action "%s" on service "%s" has a handler returning %s but does not declare returns204; '
+                . 'a body-less action must declare returns204 so the generated document advertises a 204.',
+                $path,
+                $id,
+                'NoContentResponse',
+            ));
+        }
+
+        if ($name === MetaResponse::class && !$outputMeta) {
+            throw new \LogicException(\sprintf(
+                'The JSON:API action "%s" on service "%s" has a handler returning %s but does not declare outputMeta; '
+                . 'a meta-only action must declare outputMeta so the generated document advertises a meta document.',
+                $path,
+                $id,
+                'MetaResponse',
+            ));
+        }
     }
 
     /**

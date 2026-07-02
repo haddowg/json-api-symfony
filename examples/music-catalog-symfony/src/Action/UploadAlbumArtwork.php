@@ -21,9 +21,10 @@ use Psr\Http\Message\UploadedFileInterface;
  * content-type negotiation is relaxed and no JSON:API body parsing runs; the handler
  * reads the raw body / uploaded file straight off {@see ActionContext::request()} (the
  * PSR-7 request), attaches it to the resolved album, persists, and returns a bodyless
- * `204`.
+ * `204` (so it declares `returns204: true` — the generated document advertises a `204`,
+ * not a `200` albums body).
  */
-#[AsJsonApiAction(type: 'albums', path: 'artwork', input: ActionInput::Raw)]
+#[AsJsonApiAction(type: 'albums', path: 'artwork', input: ActionInput::Raw, returns204: true)]
 final class UploadAlbumArtwork implements ActionHandlerInterface
 {
     public function __construct(private readonly DataPersisterRegistry $persisters) {}
