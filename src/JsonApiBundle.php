@@ -305,6 +305,10 @@ final class JsonApiBundle extends AbstractBundle
                     ->info('Expose the document HTTP routes outside kernel.debug (D9). Routes are auto-exposed in debug; set true to also serve them in prod. Default false.')
                     ->defaultFalse()
                 ->end()
+                ->booleanNode('describedby')
+                    ->info('Stamp a top-level links.describedby onto every JSON:API response pointing at the served OpenAPI document for the request\'s server (JSON:API 1.1). Only takes effect when the document routes are actually served (generation enabled + the expose gate). Default true.')
+                    ->defaultTrue()
+                ->end()
                 ->enumNode('multi_server')
                     ->info('per_server (default): one document per server, served at /{server}/docs.json. combined: a single document spanning every server at the json path only (D5).')
                     ->values(['per_server', 'combined'])
@@ -953,6 +957,20 @@ final class JsonApiBundle extends AbstractBundle
                 '$jsonSchemaPath' => $openApiConfig->jsonSchemaPath,
             ])
             ->tag('routing.loader');
+
+        // The describedby stamper (D14): a kernel.view listener that, before the
+        // ViewListener renders, points every JSON:API response's top-level
+        // links.describedby at the served OpenAPI document (JSON:API 1.1). It runs only
+        // when generation is enabled and describedby is on; the link is omitted anyway
+        // when the document route is not registered (the expose gate closed). Higher
+        // priority than the ViewListener (priority 0) so it augments the stashed VO first.
+        $services->set(\haddowg\JsonApiBundle\EventListener\DescribedbyListener::class)
+            ->args([
+                '$urlGenerator' => service('router'),
+                '$enabled' => $openApiConfig->enabled && $openApiConfig->describedby,
+                '$combined' => $openApiConfig->combined,
+            ])
+            ->tag('kernel.event_listener', ['event' => 'kernel.view', 'method' => 'onKernelView', 'priority' => 16]);
 
         // The two export commands (D13) — always available (independent of exposure).
         $services->set(\haddowg\JsonApiBundle\Command\OpenApiExportCommand::class)
