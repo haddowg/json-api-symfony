@@ -101,6 +101,16 @@ final class IncludePathResolver
                 continue;
             }
 
+            // The related type(s) must be serializable on THIS server. In a multi-server
+            // setup a relation may point at a type registered only on another server
+            // (e.g. `owner` → `users`, where `users` lives on the admin server): the
+            // relation renders links-only here and an `?include` of it hydrates nothing,
+            // so advertising the path would emit an include token — and a dead codegen
+            // accessor — the server can never fulfil (D45).
+            if (!$this->relatedTypesSerializable($server, $relation)) {
+                continue;
+            }
+
             $path = $prefix === '' ? $relation->name() : $prefix . '.' . $relation->name();
             if (!$this->allowed($path, $allowList)) {
                 continue;
@@ -126,6 +136,29 @@ final class IncludePathResolver
         }
 
         return $paths;
+    }
+
+    /**
+     * Whether every type the relation can resolve to is serializable (renderable) on
+     * `$server` — the gate that keeps the projection from advertising an include the
+     * server cannot hydrate. A monomorphic relation checks its single related type; a
+     * polymorphic one requires **all** member types (an include reaching an
+     * unrenderable member is a partial contract, so the whole path is pruned).
+     */
+    private function relatedTypesSerializable(Server $server, RelationInterface $relation): bool
+    {
+        $relatedTypes = $relation->relatedTypes();
+        if ($relatedTypes === []) {
+            return false;
+        }
+
+        foreach ($relatedTypes as $relatedType) {
+            if (!$server->hasSerializerFor($relatedType)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
