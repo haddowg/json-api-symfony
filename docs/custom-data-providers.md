@@ -48,6 +48,14 @@ spec-conformant — it folds declared filter defaults, throws the right 400s for
 unrecognised `filter[…]`/`sort` key, and handles the `-` descending prefix. You only
 own *execution* (how a filter becomes a `WHERE`, how a window becomes a slice).
 
+If you keep the reference Doctrine provider and only need it to understand a *new*
+custom `FilterInterface`/`SortInterface`, you don't need a custom provider at all —
+register an arm through the
+[arm seam](doctrine.md#custom-filters-and-sorts-the-arm-seam)
+(`DoctrineFilterArmInterface`/`DoctrineSortArmInterface`), an autoconfigured tagged
+service the Doctrine handler dispatches to before it falls back to
+`UnsupportedFilter`.
+
 ### Overriding one type while keeping Doctrine for the rest
 
 In the example app, [`OverridingArtistProvider`](../examples/music-catalog-symfony/src/Provider/OverridingArtistProvider.php)

@@ -3,7 +3,8 @@
 The core library owns the relation DSL — `BelongsTo`/`HasMany`/`BelongsToMany`/`MorphTo`
 (`HasMany` is the plain to-many, `BelongsToMany` the pivot-backed to-many — see
 [core relations](https://github.com/haddowg/json-api/blob/main/docs/relations.md)),
-the `type()`/`paginate()`/`withData()` builders, the
+the related type as a mandatory `make()` argument
+(`BelongsTo::make('owner', 'users')`), the `paginate()`/`withData()` builders, the
 `withoutLinks()`/`cannotReplace()` exposure flags, and the rendering of linkage,
 `self`/`related` links and `?include`. Read
 [core relations](https://github.com/haddowg/json-api/blob/main/docs/relations.md)

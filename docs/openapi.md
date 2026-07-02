@@ -80,6 +80,35 @@ The viewer route additionally honours `ui.enabled`, and the JSON Schema routes h
 `json_schema.enabled`, so you can serve the raw document in prod while keeping the human
 viewer (or the schemas) dev-only — or any other combination.
 
+### Profile-gated parameters: `x-profile`
+
+Some query parameters are recognised by the runtime **only when a JSON:API
+[profile](https://jsonapi.org/format/#profiles) is negotiated** on the request (its
+URI supplied via the `profile` media-type parameter of `Accept` /
+`Content-Type`). `withCount` is the built-in case — the count tokens are honoured
+only under the Countable profile.
+
+The served document advertises this constraint honestly: every such parameter
+carries an **`x-profile`** vendor extension whose value is the profile URI that must
+be negotiated for the parameter to take effect. A client (or a codegen tool) that
+does not negotiate that profile should treat the parameter as inert. For example, the
+`withCount` parameter on a countable collection is emitted as:
+
+```json
+{
+  "name": "withCount",
+  "in": "query",
+  "schema": { "type": "array", "items": { "type": "string", "enum": ["_self_", "tracks"] } },
+  "style": "form",
+  "explode": false,
+  "x-profile": "https://haddowg.github.io/json-api/profiles/countable/"
+}
+```
+
+The extension is produced by the core projection (so it is present on every served
+build path — the warmer, the controllers, and the CLI export alike); the bundle
+simply serves the projected document verbatim.
+
 ## The viewer
 
 A single config-driven route renders the document with **Swagger UI** or **ReDoc**
