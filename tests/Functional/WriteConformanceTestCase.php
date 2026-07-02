@@ -155,6 +155,85 @@ abstract class WriteConformanceTestCase extends JsonApiFunctionalTestCase
         self::assertSame(404, $this->handle('/articles/404', 'DELETE')->getStatusCode());
     }
 
+    #[Test]
+    #[Group('spec:atomic-operations')]
+    public function creatingWithALocalIdOnThePrimaryResourceReturns400(): void
+    {
+        // `lid` is an Atomic Operations member; a standalone create carrying one is a
+        // 400 (not silently ignored), on both providers (core ADR 0104).
+        $response = $this->handle('/articles', 'POST', [
+            'data' => [
+                'type' => 'articles',
+                'lid' => 'a1',
+                'attributes' => ['title' => 'x', 'body' => 'y', 'category' => 'news'],
+            ],
+        ]);
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+        [$code, $pointer] = $this->firstError($response);
+        self::assertSame('LOCAL_ID_NOT_SUPPORTED', $code);
+        self::assertSame('/data/lid', $pointer);
+    }
+
+    #[Test]
+    #[Group('spec:atomic-operations')]
+    public function creatingWithALocalIdInEmbeddedLinkageReturns400(): void
+    {
+        $response = $this->handle('/articles', 'POST', [
+            'data' => [
+                'type' => 'articles',
+                'attributes' => ['title' => 'x', 'body' => 'y', 'category' => 'news'],
+                'relationships' => ['author' => ['data' => ['type' => 'authors', 'lid' => 'p1']]],
+            ],
+        ]);
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+        [$code, $pointer] = $this->firstError($response);
+        self::assertSame('LOCAL_ID_NOT_SUPPORTED', $code);
+        self::assertSame('/data/relationships/author/data/lid', $pointer);
+    }
+
+    #[Test]
+    #[Group('spec:atomic-operations')]
+    public function mutatingARelationshipWithALocalIdLinkageReturns400(): void
+    {
+        // The relationship-endpoint linkage parser also rejects a `lid` — this path
+        // skips top-level-member validation, so the parser check is what guards it.
+        $response = $this->handle('/articles/1/relationships/author', 'PATCH', [
+            'data' => ['type' => 'authors', 'lid' => 'p1'],
+        ]);
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+        [$code, $pointer] = $this->firstError($response);
+        self::assertSame('LOCAL_ID_NOT_SUPPORTED', $code);
+        self::assertSame('/data/lid', $pointer);
+    }
+
+    /**
+     * The `code` and `source.pointer` of the first error in the document.
+     *
+     * @return array{0: ?string, 1: ?string}
+     */
+    private function firstError(Response $response): array
+    {
+        $errors = $this->decode($response)['errors'] ?? null;
+        self::assertIsArray($errors);
+        self::assertArrayHasKey(0, $errors);
+
+        $error = $errors[0];
+        self::assertIsArray($error);
+
+        $code = $error['code'] ?? null;
+        self::assertIsString($code);
+
+        $source = $error['source'] ?? null;
+        self::assertIsArray($source);
+        $pointer = $source['pointer'] ?? null;
+        self::assertIsString($pointer);
+
+        return [$code, $pointer];
+    }
+
     /**
      * The decoded document's primary `data` object, narrowed for offset access.
      *
