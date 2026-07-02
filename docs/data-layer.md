@@ -408,6 +408,13 @@ public function filters(): array
 }
 ```
 
+Need an operator the built-ins don't cover? Author a custom `FilterInterface` and
+teach the Doctrine handler to push it down via the **arm seam** —
+[`DoctrineFilterArmInterface`](doctrine.md#custom-filters-and-sorts-the-arm-seam)
+(the sort twin is `DoctrineSortArmInterface`); an autoconfigured, tagged service the
+handler dispatches to before falling back to `UnsupportedFilter`. Registered arms
+run identically over the in-memory witness via core's array-arm counterpart.
+
 `Contains`/`StartsWith`/`EndsWith` and the numeric/boolean strategies are thin
 `Where` subclasses presetting an operator (the two prefix/suffix operators `starts`/`ends`
 are new in this library) — the handler's existing `Where` arm dispatches them. `Range`

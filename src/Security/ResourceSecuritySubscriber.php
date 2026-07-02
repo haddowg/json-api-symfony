@@ -48,9 +48,13 @@ use Symfony\Component\Security\Core\Exception\AccessDeniedException;
  * so it can be more *or* less permissive than the resource it hangs off (a relation
  * declaring nothing inherits the parent gate unchanged).
  *
- * Collection reads are intentionally **not** gated here: row-level read
- * authorization belongs in the query-scope (a Doctrine extension hiding rows → `404`),
- * not a single all-or-nothing gate. A type that declared no security is never gated
+ * Collection reads (`GET /{type}`) **are** gated here — all-or-nothing — by the
+ * type's `securityList` declaration (bundle ADR 0099), evaluated at
+ * {@see BeforeFetchCollectionEvent} **before** the query with a `null` `object` (a
+ * collection has no single subject, so use a role/attribute check). Row-level read
+ * authorization — hiding individual rows — belongs instead in a query-scope (a
+ * Doctrine extension filtering the collection), not this single gate. A type that
+ * declared no security is never gated
  * (the subscriber is a no-op for it), and the whole seam is inert when
  * `symfony/security-core` is absent (the subscriber is not registered). It is
  * likewise a no-op when no firewall is configured — `security.authorization_checker`
