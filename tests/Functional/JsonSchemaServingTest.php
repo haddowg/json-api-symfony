@@ -76,6 +76,26 @@ final class JsonSchemaServingTest extends JsonApiFunctionalTestCase
         self::assertSame($expected, $this->nested($aggregate, 'products'));
     }
 
+    #[Test]
+    #[Group('spec:openapi')]
+    public function theStandaloneAttributesAreTypedWhileRelationshipsStayPermissive(): void
+    {
+        // The standalone document agrees with the OpenAPI document on attributes (the
+        // same projector), but its relationships/links/meta are the permissive
+        // `{type: object}` placeholders — the OpenAPI document narrows those via
+        // components a self-contained schema cannot reference (bundle ADR 0106).
+        $products = $this->nested($this->fetchAggregate(), 'products');
+
+        // Attributes: a concrete, typed inline object (specific — has properties).
+        $attributes = $this->nested($products, 'properties', 'attributes');
+        self::assertSame('object', $attributes['type'] ?? null);
+        self::assertArrayHasKey('properties', $attributes);
+
+        // Relationships: the permissive placeholder — a bare object, no per-relation
+        // narrowing in the standalone form.
+        self::assertSame(['type' => 'object'], $this->nested($products, 'properties', 'relationships'));
+    }
+
     /**
      * @return array<string, mixed>
      */

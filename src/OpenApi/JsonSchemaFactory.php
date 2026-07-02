@@ -19,9 +19,19 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
  * (paths + envelopes + the component set, where a type's schema is `$ref`-able). This
  * builds a *self-contained* JSON Schema 2020-12 document per type — the type's
  * **resource object** (`type` const, `id`, `attributes`, …) projected by core's
- * {@see SchemaProjector} (the same projector the OpenAPI document uses, so the two
- * agree), wrapped with the canonical `$schema` dialect keyword and a stable `$id` so
- * the artifact is a valid, addressable schema document on its own.
+ * {@see SchemaProjector} — wrapped with the canonical `$schema` dialect keyword and a
+ * stable `$id` so the artifact is a valid, addressable schema document on its own.
+ *
+ * **Specificity vs the OpenAPI document.** The **attributes** are projected identically
+ * to the OpenAPI document (the same {@see SchemaProjector::projectResourceObject()}), so
+ * they agree exactly — typed, constrained, enum-narrowed. The **relationships**, **links**
+ * and **meta** are deliberately the projector's permissive `{type: object}` placeholders:
+ * the OpenAPI document narrows those by `$ref`-ing shared/per-relation components
+ * ({@see \haddowg\JsonApi\OpenApi\OpenApiProjector} — the typed relationship objects,
+ * `Links`/`Meta`), and a self-contained document has no `components` to reference. So for
+ * relationships/links/meta the OpenAPI document is the fuller contract; the standalone
+ * document is authoritative for a type's attribute shape. (Inlining the per-relation
+ * linkage into the standalone form is a possible future enhancement.)
  *
  * Standalone export emits backed-enum schemas **inline** (no
  * {@see \haddowg\JsonApi\OpenApi\EnumComponentCollector} — a standalone file has no
