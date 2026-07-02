@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Tests;
 
+use haddowg\JsonApiBundle\Examples\MusicCatalog\DataFixtures\SeedManifest;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
@@ -369,7 +370,7 @@ final class ReadQueryTest extends MusicCatalogKernelTestCase
                             'self' => 'https://music.example/tracks/1/relationships/playlists',
                             'related' => 'https://music.example/tracks/1/playlists',
                         ],
-                        'data' => [['type' => 'playlists', 'id' => '00000000-0000-4000-8000-000000000001']],
+                        'data' => [['type' => 'playlists', 'id' => SeedManifest::OWNED_PLAYLIST_ID]],
                     ],
                 ],
             ]);
@@ -443,17 +444,18 @@ final class ReadQueryTest extends MusicCatalogKernelTestCase
     #[Group('spec:fetching-pagination')]
     public function anOverLargePageSizeIsCappedNotHonoured(): void
     {
-        // The example sets json_api.pagination.max_per_page: 50 (config/packages/
-        // json_api.yaml), so the server default paginator clamps an abusive
-        // page[size] to 50 — the page-size DoS vector is closed by the clamp, not a
-        // 400. The whole request runs through the Doctrine provider as real DQL.
+        // The example sets json_api.pagination.max_per_page from SeedManifest::MAX_PER_PAGE
+        // (config/packages/json_api.yaml, via !php/const), so the server default paginator
+        // clamps an abusive page[size] to the cap — the page-size DoS vector is closed by
+        // the clamp, not a 400. The whole request runs through the Doctrine provider as
+        // real DQL.
         $document = $this->fetch('/tracks?page[size]=1000000');
 
         // 200 with at most the cap's worth of items (here bounded by the 3 available).
-        self::assertLessThanOrEqual(50, \count($this->trackIds($document)));
+        self::assertLessThanOrEqual(SeedManifest::MAX_PER_PAGE, \count($this->trackIds($document)));
 
         $page = $this->pageMeta($document);
-        self::assertSame(50, $page['perPage'] ?? null, 'meta.page.perPage reflects the cap, not 1000000');
+        self::assertSame(SeedManifest::MAX_PER_PAGE, $page['perPage'] ?? null, 'meta.page.perPage reflects the cap, not 1000000');
     }
 
     #[Test]

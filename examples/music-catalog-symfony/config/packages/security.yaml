@@ -28,7 +28,9 @@
 # `is_granted('EDIT', object)` Voter grants her `EDIT`), and `mallory@example.com`
 # (a non-owner the Voter refuses). The username *is* the user identifier the
 # `PlaylistOwnerVoter` compares against the playlist owner's email — and the bearer
-# token a client presents.
+# token a client presents. The user list is the single-source-of-truth
+# `SeedManifest::USERS`, read here via `!php/const` so the firewall, the seed
+# fixtures and the tests share one definition.
 security:
     password_hashers:
         Symfony\Component\Security\Core\User\InMemoryUser:
@@ -37,16 +39,7 @@ security:
     providers:
         in_memory:
             memory:
-                users:
-                    admin:
-                        password: 'pass'
-                        roles: ['ROLE_ADMIN']
-                    'ada@example.com':
-                        password: 'pass'
-                        roles: ['ROLE_USER']
-                    'mallory@example.com':
-                        password: 'pass'
-                        roles: ['ROLE_USER']
+                users: !php/const haddowg\JsonApiBundle\Examples\MusicCatalog\DataFixtures\SeedManifest::USERS
 
     firewalls:
         main:

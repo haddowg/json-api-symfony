@@ -145,7 +145,7 @@ final class Seed
         $library = new Library();
 
         $ada = new User(
-            email: 'ada@example.com',
+            email: SeedManifest::OWNER,
             displayName: 'Ada',
             birthDate: new \DateTimeImmutable('1990-12-10'),
             preferences: ['theme' => 'dark', 'autoplay' => true],
@@ -156,7 +156,7 @@ final class Seed
 
         // --- Playlist (app-keyed UUID id, hand-set in the fixture) ------------
         $morningMix = new Playlist(
-            id: '00000000-0000-4000-8000-000000000001',
+            id: SeedManifest::OWNED_PLAYLIST_ID,
             title: 'Morning Mix',
             slug: 'morning-mix',
             public: true,

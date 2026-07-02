@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Tests;
 
+use haddowg\JsonApiBundle\Examples\MusicCatalog\DataFixtures\SeedManifest;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
@@ -27,7 +28,7 @@ use PHPUnit\Framework\Attributes\Test;
 #[Group('spec:fetching-relationships')]
 final class RelatedCollectionTest extends MusicCatalogKernelTestCase
 {
-    private const string PLAYLIST_ID = '00000000-0000-4000-8000-000000000001';
+    private const string PLAYLIST_ID = SeedManifest::OWNED_PLAYLIST_ID;
 
     // --- FK fast-path (albums.tracks) ----------------------------------------
 
