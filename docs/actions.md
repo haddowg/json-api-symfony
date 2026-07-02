@@ -384,8 +384,12 @@ included `articles` member too.
 > hang a link on, so `asLink: true` on a `ActionScope::Collection` action is a
 > build-time error. The security-aware visibility uses the same `symfony/security-core`
 > + firewall wiring as the `security` gate; with no firewall configured, a
-> `security`-gated action's link is suppressed (fail-closed — the gate would deny at
-> invocation too).
+> `security`-gated action's link is suppressed — the conservative choice, so the
+> document never advertises a link behind an unevaluable gate. Note this is *stricter*
+> than invocation: without a firewall the `security` gate is inert, so the same action
+> would actually be **allowed** if called (a declared `security` [fails
+> open](authorization.md#enabling-the-layer) when there is no firewall). Wire a
+> firewall and link visibility and invocation agree.
 
 ## Lifecycle events
 
