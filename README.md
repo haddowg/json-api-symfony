@@ -45,7 +45,7 @@ Beyond convention CRUD it ships the capabilities a real JSON:API service needs:
 ## Requirements
 
 - PHP 8.3, 8.4, or 8.5
-- Symfony 6.4 or 7.x
+- Symfony 6.4, 7.x, or 8.x
 
 Doctrine, the validator, the opis linter and strict email are **opt-in** (`suggest`
 dependencies) — install one to enable that capability, leave it out and the path is
