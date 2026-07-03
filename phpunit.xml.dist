@@ -18,6 +18,13 @@
              and caching a container); the cumulative footprint of the dual-provider
              conformance runs now exceeds the stock 128M CLI ceiling. -->
         <ini name="memory_limit" value="256M"/>
+        <!-- Kernel::preBoot() exports SHELL_VERBOSITY=3 process-wide when a DEBUG
+             kernel boots (the OpenAPI expose-gate suite boots one on purpose), and
+             every logger constructed afterwards then leaks [info] lines into the
+             captured output of unrelated tests. Pinning it makes preBoot skip the
+             export. -->
+        <server name="SHELL_VERBOSITY" value="-1"/>
+        <env name="SHELL_VERBOSITY" value="-1"/>
     </php>
     <testsuites>
         <testsuite name="haddowg/json-api-symfony test suite">
