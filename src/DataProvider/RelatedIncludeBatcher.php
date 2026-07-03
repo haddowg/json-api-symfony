@@ -545,6 +545,13 @@ final class RelatedIncludeBatcher
 
         $column = $relation->column() ?? $relation->name();
 
+        // The write-back needs somewhere to land — a declared property, a setter, or
+        // dynamic-property support. Otherwise Accessor::set would create a deprecated
+        // dynamic property (a PHP 9 error), so the relation renders lazily instead.
+        if (isset($entities[0]) && !$this->columnTakesWriteBack($entities[0], $column)) {
+            return null;
+        }
+
         // Snapshot each parent's column value before the batch reads it, so a to-many
         // write-back can restore the column's container type (a Doctrine Collection
         // property cannot take a raw array). Keyed by object id.
@@ -612,6 +619,23 @@ final class RelatedIncludeBatcher
         }
 
         return $targets;
+    }
+
+    /**
+     * Whether {@see Accessor::set} can write `$column` onto `$entity` without creating
+     * a dynamic property: a declared property (a Doctrine association is always one), a
+     * `setX()` method, or explicit dynamic-property support on the class. False for a
+     * relation exposed over a column the model does not carry — e.g. a second pivot
+     * view rendered purely through `extractUsing()`.
+     */
+    private function columnTakesWriteBack(object $entity, string $column): bool
+    {
+        return \property_exists($entity, $column)
+            || \method_exists($entity, 'set' . \ucfirst($column))
+            || \method_exists($entity, '__set')
+            || $entity instanceof \stdClass
+            || $entity instanceof \ArrayAccess
+            || (new \ReflectionClass($entity))->getAttributes(\AllowDynamicProperties::class) !== [];
     }
 
     /**
