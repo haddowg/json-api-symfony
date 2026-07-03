@@ -92,6 +92,13 @@ use haddowg\JsonApiBundle\DataProvider\Doctrine\Filter\WhereHasMatching;
 final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareFilterHandler
 {
     /**
+     * Data-layer-specific remediation appended to the core {@see UnsupportedFilter}
+     * message when a custom filter reaches this Doctrine handler with no arm to run it —
+     * naming the seam that would handle it, so the 500's message points at the fix.
+     */
+    private const string ARM_HINT = 'To run a custom filter on the Doctrine provider, register a DoctrineFilterArmInterface (tag: json_api.doctrine_filter_arm) — see the "custom filters and sorts: the arm seam" section of the doctrine docs.';
+
+    /**
      * @var list<DoctrineFilterArmInterface>
      */
     private readonly array $arms;
@@ -164,7 +171,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
             }
         }
 
-        throw new UnsupportedFilter($filter);
+        throw new UnsupportedFilter($filter, self::ARM_HINT);
     }
 
     /**

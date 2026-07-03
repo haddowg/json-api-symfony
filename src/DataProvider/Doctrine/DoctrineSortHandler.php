@@ -38,6 +38,12 @@ use haddowg\JsonApi\Resource\Sort\UnsupportedSort;
 final class DoctrineSortHandler implements SortHandlerInterface, AliasAwareSortHandler
 {
     /**
+     * Data-layer-specific remediation appended to the core {@see UnsupportedSort}
+     * message when a custom sort reaches this Doctrine handler with no arm to run it.
+     */
+    private const string ARM_HINT = 'To run a custom sort on the Doctrine provider, register a DoctrineSortArmInterface (tag: json_api.doctrine_sort_arm) — see the "custom filters and sorts: the arm seam" section of the doctrine docs.';
+
+    /**
      * @var list<DoctrineSortArmInterface>
      */
     private readonly array $arms;
@@ -104,7 +110,7 @@ final class DoctrineSortHandler implements SortHandlerInterface, AliasAwareSortH
             }
         }
 
-        throw new UnsupportedSort($sort);
+        throw new UnsupportedSort($sort, self::ARM_HINT);
     }
 
     /**
