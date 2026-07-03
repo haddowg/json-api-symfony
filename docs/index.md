@@ -40,7 +40,7 @@ here translated to Symfony Validator rules and actually enforced.
 | Requirement | Version | Why |
 | --- | --- | --- |
 | PHP | 8.3, 8.4, or 8.5 | The bundle uses typed class constants (`public const string …`), which are 8.3+. 8.3 is a hard floor. |
-| Symfony | 6.4 or 7.x | `symfony/framework-bundle`, `config`, `dependency-injection`, `http-foundation`, `http-kernel`, `routing`. |
+| Symfony | 6.4, 7.x, or 8.x | `symfony/framework-bundle`, `config`, `dependency-injection`, `http-foundation`, `http-kernel`, `routing`. |
 | `nyholm/psr7` + `symfony/psr-http-message-bridge` | latest | Hard runtime deps. The lifecycle listeners convert the Symfony `Request` to PSR-7 to drive core, then bridge the PSR-7 response back to HttpFoundation. |
 
 Everything else — Doctrine, the validator, strict email, the opis linter — is

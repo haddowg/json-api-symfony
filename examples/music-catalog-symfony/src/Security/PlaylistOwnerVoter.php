@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Security;
 
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Playlist;
 use Symfony\Component\Security\Core\Authentication\Token\TokenInterface;
+use Symfony\Component\Security\Core\Authorization\Voter\Vote;
 use Symfony\Component\Security\Core\Authorization\Voter\Voter;
 
 /**
@@ -32,7 +33,7 @@ final class PlaylistOwnerVoter extends Voter
         return $attribute === self::EDIT && $subject instanceof Playlist;
     }
 
-    protected function voteOnAttribute(string $attribute, mixed $subject, TokenInterface $token): bool
+    protected function voteOnAttribute(string $attribute, mixed $subject, TokenInterface $token, ?Vote $vote = null): bool
     {
         \assert($subject instanceof Playlist);
 

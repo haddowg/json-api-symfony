@@ -80,16 +80,22 @@ final class EagerValidationDoctrineKernel extends Kernel
             'router' => ['utf8' => true],
         ]);
 
+        $orm = [
+            'auto_generate_proxy_classes' => true,
+            'report_fields_where_declared' => true,
+            'auto_mapping' => false,
+        ];
+
+        if (!\trait_exists(\Symfony\Component\VarExporter\LazyGhostTrait::class)) {
+            $orm['enable_native_lazy_objects'] = true;
+        }
+
         $container->extension('doctrine', [
             'dbal' => [
                 'driver' => 'pdo_sqlite',
                 'memory' => true,
             ],
-            'orm' => [
-                'auto_generate_proxy_classes' => true,
-                'report_fields_where_declared' => true,
-                'auto_mapping' => false,
-            ],
+            'orm' => $orm,
         ]);
 
         $container->extension('json_api', [
