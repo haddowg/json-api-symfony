@@ -9,7 +9,7 @@ rest of the docs assume the steps here are done.
 | Requirement | Constraint |
 | --- | --- |
 | PHP | `^8.3` (8.3 / 8.4 / 8.5) |
-| Symfony | `^6.4 \|\| ^7.0` |
+| Symfony | `^6.4 \|\| ^7.0 \|\| ^8.0` |
 | `symfony/framework-bundle` | required — the bundle relies on its services |
 
 The hard runtime dependencies beyond Symfony are the PSR-7 bridge the kernel
