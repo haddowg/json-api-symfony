@@ -689,13 +689,45 @@ hand-built, so its arms are not DI-tagged). An inherently Doctrine-specific filt
 raw-DQL scope) ships only the Doctrine arm; it is simply not declared on an in-memory
 resource.
 
+### Self-applying filters: no arm to register
+
+For a one-off, dependency-free Doctrine filter, skip the separate arm service and put the
+query fragment on the filter VO itself by implementing
+[`AppliesToQueryBuilder`](../src/DataProvider/Doctrine/AppliesToQueryBuilder.php):
+
+```php
+final readonly class Active implements AppliesToQueryBuilder
+{
+    public function key(): string { return 'active'; }
+    public function constraints(): array { return [(new Boolean())]; }
+
+    public function applyToQueryBuilder(QueryBuilder $query, mixed $value, string $alias): void
+    {
+        $query->andWhere(\sprintf('%s.archivedAt IS NULL', $alias)); // a named scope, a Criteria, raw DQL…
+    }
+}
+```
+
+The handler consults it **before** the arm registry, so it runs with no
+`DoctrineFilterArmInterface` registered — the self-applying twin of the arm seam, and the
+query counterpart of the [`NativeConstraints`](validation.md#native-symfony-constraints-without-a-translator-nativeconstraints)
+validation carrier. Reach for an arm instead when the application needs injected services
+(a `Security`, a repository). Like a raw-DQL arm it is Doctrine-only — the key is undeclared
+on the in-memory provider, so a request there is a clean `400`. Bind the request value as a
+parameter (never interpolate it), deriving a collision-free name off the running parameter
+count, clear of the reserved `jsonapi_` prefix.
+
 > **Describe a custom filter in the OpenAPI document.** A custom `FilterInterface` with
 > no value constraints projects an opaque, permissive `filter[…]` parameter with a
 > generic description. Implement
 > [`DescribedFilter`](https://github.com/haddowg/json-api/blob/main/src/Resource/Filter/DescribedFilter.php)
 > (`getDescription(): ?string`) on the filter VO to give that parameter its own prose —
-> the same hook the convenience filter library uses. (Built-in and `Where`/`Range`-derived
-> filters already self-describe.)
+> the same hook the convenience filter library uses. A filter with a **structured** wire
+> shape (a nested object, a comma-list) additionally implements core's
+> [`DescribesQueryParameter`](https://github.com/haddowg/json-api/blob/main/src/Resource/Filter/DescribesQueryParameter.php)
+> to declare its OAS `style`/`explode` and value schema — so it documents as a `deepObject`
+> or array rather than a scalar. (Built-in and `Where`/`Range`-derived filters already
+> self-describe.)
 
 ## Column safety
 

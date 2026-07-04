@@ -38,6 +38,7 @@ use haddowg\JsonApi\Resource\Constraint\UrlFormat;
 use haddowg\JsonApi\Resource\Constraint\UuidFormat;
 use haddowg\JsonApi\Resource\Constraint\When;
 use haddowg\JsonApi\Resource\Field\Id;
+use haddowg\JsonApiBundle\Validation\Constraint\NativeConstraints;
 use haddowg\JsonApiBundle\Validation\Constraint\UniqueEntity;
 use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity as DoctrineUniqueEntity;
 use Symfony\Component\Validator\Constraint;
@@ -157,6 +158,9 @@ final class ConstraintTranslator
                 fields: $constraint->fields,
                 message: $constraint->message ?? 'This value is already used.',
             )],
+            // A NativeConstraints carrier holds ready-made Symfony constraints — run them
+            // directly; the OpenAPI half rides core's ProvidesJsonSchema (contribute()).
+            $constraint instanceof NativeConstraints => $constraint->constraints,
             default => $this->translateExtension($constraint),
         };
     }
