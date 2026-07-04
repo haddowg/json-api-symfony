@@ -200,8 +200,9 @@ These docs read in six arcs:
    route-scoped [errors](errors.md).
 4. **The data layer** — the [data-layer](data-layer.md) SPI, the
    [doctrine](doctrine.md) reference adapter,
-   [custom-data-providers](custom-data-providers.md), and
-   [pagination](pagination.md) (the count-based strategies and cursor/keyset).
+   [custom-data-providers](custom-data-providers.md),
+   [pagination](pagination.md) (the count-based strategies and cursor/keyset), and
+   [async writes](async.md) (`202 Accepted` / `303 See Other`).
 5. **Validation** — the [validation](validation.md) bridge and the opis linter.
 6. **Advanced & cross-cutting** — [relationships](relationships.md), custom
    [serializers and hydrators](custom-serializers-hydrators.md) (and handler

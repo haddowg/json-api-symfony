@@ -46,7 +46,7 @@ final class InterceptingHandler implements OperationHandlerInterface
         private readonly OperationHandlerInterface $inner,
     ) {}
 
-    public function handle(JsonApiOperationInterface $operation): DataResponse|MetaResponse|RelatedResponse|IdentifierResponse|NoContentResponse|AcceptedResponse|SeeOtherResponse|AtomicResultsResponse|ErrorResponse
+    public function handle(JsonApiOperationInterface $operation): DataResponse|MetaResponse|RelatedResponse|IdentifierResponse|NoContentResponse|AtomicResultsResponse|AcceptedResponse|SeeOtherResponse|ErrorResponse
     {
         $response = $this->inner->handle($operation);
 

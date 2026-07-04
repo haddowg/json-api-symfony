@@ -6,9 +6,11 @@ namespace haddowg\JsonApiBundle\Action;
 
 use haddowg\JsonApi\Operation\QueryParameters;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Response\AcceptedResponse;
 use haddowg\JsonApi\Response\DataResponse;
 use haddowg\JsonApi\Response\MetaResponse;
 use haddowg\JsonApi\Response\NoContentResponse;
+use haddowg\JsonApi\Response\SeeOtherResponse;
 use haddowg\JsonApi\Serializer\SerializerInterface;
 use haddowg\JsonApi\Server\ResolvingServerInterface;
 
@@ -118,5 +120,31 @@ final readonly class ActionContext
     public function noContent(): NoContentResponse
     {
         return NoContentResponse::create();
+    }
+
+    /**
+     * A `202 Accepted` {@see AcceptedResponse} for an action that queues its work
+     * rather than completing it inline: `$contentLocation` is the URL of the job
+     * resource the client polls. Pass `$job` to render it as the `202` body's `data`
+     * (through the action's `outputType` serializer); omit it for a meta-only status
+     * document. Chain `->withRetryAfter()` / `->withMeta()` for the poll hint / status.
+     */
+    public function accepted(string $contentLocation, ?object $job = null): AcceptedResponse
+    {
+        $response = $job !== null
+            ? AcceptedResponse::forResource($job, $this->serializer())
+            : AcceptedResponse::fromMeta([]);
+
+        return $response->withContentLocation($contentLocation);
+    }
+
+    /**
+     * A `303 See Other` {@see SeeOtherResponse} redirecting the client to `$location` —
+     * the completion half of the async lifecycle: a job-status action returns this,
+     * once the queued work is done, pointing at the produced resource.
+     */
+    public function seeOther(string $location): SeeOtherResponse
+    {
+        return SeeOtherResponse::to($location);
     }
 }

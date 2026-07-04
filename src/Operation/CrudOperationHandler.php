@@ -38,6 +38,7 @@ use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\SupportsSingular;
+use haddowg\JsonApi\Response\AcceptedResponse;
 use haddowg\JsonApi\Response\AtomicResultsResponse;
 use haddowg\JsonApi\Response\DataResponse;
 use haddowg\JsonApi\Response\ErrorResponse;
@@ -45,6 +46,7 @@ use haddowg\JsonApi\Response\IdentifierResponse;
 use haddowg\JsonApi\Response\MetaResponse;
 use haddowg\JsonApi\Response\NoContentResponse;
 use haddowg\JsonApi\Response\RelatedResponse;
+use haddowg\JsonApi\Response\SeeOtherResponse;
 use haddowg\JsonApi\Schema\Relationship\RelationshipLinkage;
 use haddowg\JsonApi\Schema\Relationship\RelationshipPagination;
 use haddowg\JsonApi\Serializer\PolymorphicSerializer;
@@ -52,6 +54,8 @@ use haddowg\JsonApi\Serializer\SerializerInterface;
 use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\Action\ActionInvoker;
 use haddowg\JsonApiBundle\Atomic\AtomicLoopBackend;
+use haddowg\JsonApiBundle\DataPersister\AcceptedForProcessing;
+use haddowg\JsonApiBundle\DataPersister\AsyncWriteNotAllowedInAtomicOperation;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataPersister\WriteTransactionContext;
@@ -192,7 +196,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         private readonly ?\Psr\Log\LoggerInterface $logger = null,
     ) {}
 
-    public function handle(\haddowg\JsonApi\Operation\JsonApiOperationInterface $operation): DataResponse|RelatedResponse|IdentifierResponse|MetaResponse|NoContentResponse|AtomicResultsResponse|ErrorResponse
+    public function handle(\haddowg\JsonApi\Operation\JsonApiOperationInterface $operation): DataResponse|RelatedResponse|IdentifierResponse|MetaResponse|NoContentResponse|AcceptedResponse|SeeOtherResponse|AtomicResultsResponse|ErrorResponse
     {
         return match (true) {
             $operation instanceof FetchResourceOperation => $this->fetch($operation),
@@ -1579,7 +1583,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         return $request;
     }
 
-    private function create(CreateResourceOperation $operation): DataResponse
+    private function create(CreateResourceOperation $operation): DataResponse|AcceptedResponse
     {
         $server = $this->server($operation->context());
         $type = $operation->target()->type;
@@ -1619,6 +1623,15 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $this->dispatch(new BeforeCreateEvent($type, $request, $entity, $this->serverName($request)));
 
         $entity = $persister->create($type, $entity);
+
+        // The persister accepted the write for asynchronous processing (it dispatched
+        // the work instead of committing) — render a `202 Accepted` pointing at the
+        // job resource, not the `201` a synchronous create renders (bundle ADR 0110).
+        // The post-commit include/window/count wiring and the After* hooks below do not
+        // apply (no resource was persisted), so the branch returns here.
+        if ($entity instanceof AcceptedForProcessing) {
+            return $this->accepted($entity, $server);
+        }
 
         // A write response honours ?include too — it renders the same DataResponse
         // as a fetch — so batch-preload the created resource's effective include
@@ -1669,7 +1682,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         }, $response);
     }
 
-    private function update(UpdateResourceOperation $operation): DataResponse|ErrorResponse
+    private function update(UpdateResourceOperation $operation): DataResponse|AcceptedResponse|ErrorResponse
     {
         $server = $this->server($operation->context());
         $type = $operation->target()->type;
@@ -1720,6 +1733,13 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         $entity = $persister->update($type, $entity);
 
+        // The persister accepted the update for asynchronous processing — render a
+        // `202 Accepted` pointing at the job resource, as the async create does; the
+        // post-commit wiring and After* hooks below do not apply (bundle ADR 0110).
+        if ($entity instanceof AcceptedForProcessing) {
+            return $this->accepted($entity, $server);
+        }
+
         // A PATCH response honours ?include as a fetch does — preload the updated
         // resource's effective include tree (ADR 0035).
         $this->preloadIncludes($provider, [$entity], $type, $request);
@@ -1748,6 +1768,38 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
             return $afterSave->response() ?? $response;
         }, $response);
+    }
+
+    /**
+     * Renders a persister's async-accept marker ({@see AcceptedForProcessing}) as
+     * core's `202` {@see AcceptedResponse}: the pollable job resource (through the job
+     * type's registered serializer) or a meta-only status document, carrying the
+     * `Content-Location` and any `Retry-After` the persister set. An async accept
+     * cannot participate in an all-or-nothing Atomic Operations batch — it defers the
+     * write past the batch's commit — so it is refused (`422`, rolling the batch back)
+     * when a batch is in flight (bundle ADR 0110).
+     */
+    private function accepted(AcceptedForProcessing $accepted, Server $server): AcceptedResponse
+    {
+        if ($this->txContext?->isActive() ?? false) {
+            throw new AsyncWriteNotAllowedInAtomicOperation();
+        }
+
+        $job = $accepted->job();
+        $jobType = $accepted->jobType();
+
+        $response = $job !== null && $jobType !== null
+            ? AcceptedResponse::forResource($job, $server->serializerFor($jobType))
+            : AcceptedResponse::fromMeta($accepted->meta());
+
+        $response = $response->withContentLocation($accepted->contentLocation());
+
+        $retryAfter = $accepted->retryAfter();
+        if ($retryAfter !== null) {
+            $response = $response->withRetryAfter($retryAfter);
+        }
+
+        return $response;
     }
 
     /**
