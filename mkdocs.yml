@@ -111,3 +111,5 @@ nav:
       - multi-server-and-testing.md
   - OpenAPI & documentation:
       - openapi.md
+  - How it compares:
+      - vs-api-platform.md
