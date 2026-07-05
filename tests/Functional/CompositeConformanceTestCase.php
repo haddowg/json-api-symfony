@@ -4,25 +4,23 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
-use haddowg\JsonApiBundle\Tests\Functional\App\Composite\CompositeInMemoryTestKernel;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * The composite-attribute validation witness (core ADRs 0118/0119): the validator
- * bridge cascades an {@see \haddowg\JsonApi\Resource\Field\Obj}'s children and a
- * {@see \haddowg\JsonApi\Resource\Field\OneOf}'s selected variant children, surfacing
- * per-child `422`s with `/data/attributes/<field>/<child>` pointers, and rejecting an
- * unknown discriminator.
+ * The composite-attribute conformance witness (core ADRs 0118–0121), run against
+ * both providers: the validator bridge cascades an
+ * {@see \haddowg\JsonApi\Resource\Field\Obj}'s children and a
+ * {@see \haddowg\JsonApi\Resource\Field\OneOf}'s selected variant children,
+ * surfacing per-child `422`s with `/data/attributes/<field>/<child>` pointers and
+ * rejecting an unknown discriminator; a {@see \haddowg\JsonApi\Resource\Constraint\Shape}
+ * is value-validated by the core opis validator. Valid composite values
+ * round-trip persistence as a single value each — on the Doctrine kernel, a real
+ * `json` column.
  */
-final class CompositeValidationTest extends JsonApiFunctionalTestCase
+abstract class CompositeConformanceTestCase extends JsonApiFunctionalTestCase
 {
-    protected static function getKernelClass(): string
-    {
-        return CompositeInMemoryTestKernel::class;
-    }
-
     #[Test]
     #[Group('spec:crud')]
     public function aValidCompositeCreates(): void
@@ -40,6 +38,65 @@ final class CompositeValidationTest extends JsonApiFunctionalTestCase
         ]);
 
         self::assertSame(201, $response->getStatusCode());
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function compositeValuesRoundTripThroughPersistence(): void
+    {
+        // Scalar children of all three composite kinds, written as one value per
+        // attribute and read back byte-equal — on the Doctrine kernel this is the
+        // single-json-column round-trip (an int `level` survives json encoding).
+        $attributes = [
+            'name' => 'Gadget',
+            'address' => ['street' => '1 High St', 'city' => 'London', 'postcode' => 'EC1'],
+            'block' => ['kind' => 'heading', 'text' => 'Hello', 'level' => 2],
+            'contact' => ['kind' => 'phone', 'number' => '+44 20 7946 0000'],
+        ];
+
+        $created = $this->handle('/composites', 'POST', [
+            'data' => ['type' => 'composites', 'attributes' => $attributes],
+        ]);
+        self::assertSame(201, $created->getStatusCode());
+
+        $body = $this->decode($created);
+        self::assertIsArray($body['data'] ?? null);
+        self::assertIsString($body['data']['id'] ?? null);
+        $id = $body['data']['id'];
+
+        $fetched = $this->handle('/composites/' . $id);
+        self::assertSame(200, $fetched->getStatusCode());
+
+        $fetchedBody = $this->decode($fetched);
+        self::assertIsArray($fetchedBody['data'] ?? null);
+        self::assertSame($attributes, $fetchedBody['data']['attributes'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function aCompositeValueReplacesOnUpdate(): void
+    {
+        // The seeded widget (id 1) carries an address; a PATCH sending a complete
+        // new address replaces the stored value, and a fresh read serves the new
+        // value from persistence.
+        $updated = $this->handle('/composites/1', 'PATCH', [
+            'data' => [
+                'type' => 'composites',
+                'id' => '1',
+                'attributes' => [
+                    'address' => ['street' => '2 Low Rd', 'city' => 'Leeds', 'postcode' => 'LS1'],
+                ],
+            ],
+        ]);
+        self::assertSame(200, $updated->getStatusCode());
+
+        $fetched = $this->decode($this->handle('/composites/1'));
+        self::assertIsArray($fetched['data'] ?? null);
+        self::assertIsArray($fetched['data']['attributes'] ?? null);
+        self::assertSame(
+            ['street' => '2 Low Rd', 'city' => 'Leeds', 'postcode' => 'LS1'],
+            $fetched['data']['attributes']['address'] ?? null,
+        );
     }
 
     #[Test]
