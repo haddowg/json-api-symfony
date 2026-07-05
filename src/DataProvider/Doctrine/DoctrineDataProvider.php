@@ -22,11 +22,13 @@ use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\FilterDefaults;
 use haddowg\JsonApi\Resource\Filter\WhereDoesntHave;
 use haddowg\JsonApi\Resource\Filter\WhereHas;
+use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\CriteriaApplier;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\PivotAwareProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\PivotCollectionResult;
+use haddowg\JsonApiBundle\DataProvider\PivotCursorCollectionResult;
 use haddowg\JsonApiBundle\DataProvider\PivotFields;
 use haddowg\JsonApiBundle\DataProvider\RelatedBatch;
 use haddowg\JsonApiBundle\Server\IdEncoderResolver;
@@ -1437,7 +1439,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
      * no separate read, no page-shortening, and the window applies per far-entity
      * row so pagination is correct.
      *
-     * @return PivotCollectionResult<object>
+     * @return PivotCollectionResult<object>|PivotCursorCollectionResult<object>
      */
     public function fetchRelatedPivotCollection(
         string $relatedType,
@@ -1445,11 +1447,22 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         RelationInterface $relation,
         CollectionCriteria $criteria,
         JsonApiRequestInterface $request,
-    ): PivotCollectionResult {
+    ): PivotCollectionResult|PivotCursorCollectionResult {
         $builder = $this->pivotQuery($relatedType, $parent, $relation);
 
         foreach ($this->extensionsFor($relatedType) as $extension) {
             $builder = $extension->apply($builder, new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request));
+        }
+
+        // A cursor (keyset) window is its own execution — the keyset owns the order
+        // (forced NULL=largest + PK tiebreak), so only the FILTERS apply here (the
+        // sort-stripped criteria keeps the alias-aware routing, so a pivot filter
+        // still lands on the `pivot` join); the pivot twin of runCursor(), mirrored
+        // in place over the pivot tail exactly as the offset branches below are.
+        if ($criteria->window instanceof CursorWindow) {
+            $builder = $this->applier->apply($this->filtersOnly($criteria), $builder, $this->filterHandler, $this->sortHandler);
+
+            return $this->runPivotCursor($builder, $criteria, $criteria->window, $relatedType, $parent, $relation);
         }
 
         // The criteria already carries the merged related+pivot filter/sort vocab AND
@@ -1528,6 +1541,156 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         }
 
         return $this->pivotResult($rows, $relatedType, $relation, total: null, windowed: true, hasMore: $hasMore);
+    }
+
+    /**
+     * The cursor (keyset) page for a pivot relation — {@see runCursor()} mirrored
+     * in place over the pivot tail (the shared {@see WindowExecutor::runCursor()}
+     * is generic over OBJECT entities, but a pivot fetch windows over "mixed" rows;
+     * see {@see fetchRelatedPivotCollection()}). The keyset spans TWO aliases: a
+     * related-resource sort column lives on the far-entity root, a pivot sort
+     * column on the `pivot` join — routed via the criteria's `aliasOf` map at
+     * SQL-build time (a {@see KeysetColumn} deliberately carries only column +
+     * direction), with the association entity's metadata supplying the pivot
+     * columns' DBAL types for the boundary binds.
+     *
+     * Execution is otherwise the primary/related keyset verbatim: resolve the
+     * columns (validating `?sort`), check the cursor against them (a stale cursor →
+     * 400), force the NULL=largest order + the keyset WHERE, over-fetch `limit+1`,
+     * slice, re-orient a backward page, and mint the boundary tokens. The minter
+     * reads a root column off the hydrated far entity and a pivot column off the
+     * row's `pivot_<field>` scalar (selected by {@see pivotQuery()}; a HIDDEN
+     * pivot field in the keyset is selected here just for the mint — it still
+     * never renders, {@see pivotResult()} skips it).
+     *
+     * @return PivotCursorCollectionResult<object>
+     */
+    private function runPivotCursor(
+        QueryBuilder $builder,
+        CollectionCriteria $criteria,
+        CursorWindow $window,
+        string $relatedType,
+        object $parent,
+        RelationInterface $relation,
+    ): PivotCursorCollectionResult {
+        $relatedClass = $this->entityClassFor($relatedType);
+        $metadata = $this->entityManager->getClassMetadata($relatedClass);
+        $pkColumn = $metadata->getSingleIdentifierFieldName();
+
+        $columns = $this->resolveKeysetColumns($criteria, $pkColumn);
+        $keysetNames = $this->keysetResolver->columnNames($columns);
+        $aliasOfColumn = $this->pivotAliasOfColumn($criteria);
+
+        $association = $this->pivotAssociation($relation, $parent, $relatedClass);
+        $pivotMetadata = $this->entityManager->getClassMetadata($association->entityClass);
+
+        // Each pivot keyset column's mint source: the `pivot_<field>` scalar riding
+        // the row. A non-hidden pivot field is already selected by pivotQuery(); a
+        // hidden one is not (it never renders), so when the keyset walks it, select
+        // it here purely for the mint.
+        $rowKeyOfColumn = [];
+        foreach (PivotFields::declaredFor($relation) as $field) {
+            $column = $field->column() ?? $field->name();
+            if (!isset($aliasOfColumn[$column])) {
+                continue;
+            }
+            $rowKeyOfColumn[$column] = 'pivot_' . $field->name();
+            if ($field->isHidden() && \in_array($column, $keysetNames, true)) {
+                $builder->addSelect(\sprintf('pivot.%s AS pivot_%s', $column, $field->name()));
+            }
+        }
+
+        // page[before] wins over page[after]: a backward page flips every direction
+        // (incl. the null bucket) and the after-predicate — see runCursor().
+        $backward = $window->before !== null;
+        $boundary = $backward ? $window->before : $window->after;
+        $orderColumns = $backward
+            ? \array_map(static fn(KeysetColumn $c): KeysetColumn => new KeysetColumn($c->column, !$c->descending), $columns)
+            : $columns;
+
+        if ($boundary !== null) {
+            $parameter = $backward ? 'page[before]' : 'page[after]';
+            $this->keysetResolver->assertFresh($boundary, $columns, $parameter);
+        }
+
+        $keyset = new DoctrineKeyset($metadata, self::ROOT_ALIAS, $aliasOfColumn, ['pivot' => $pivotMetadata]);
+        if ($boundary !== null) {
+            $keyset->applyAfter($builder, $boundary, $orderColumns);
+        }
+        $keyset->orderBy($builder, $orderColumns);
+
+        // Over-fetch limit+1 in the (possibly flipped) order: the surplus row proves
+        // a further page. Slice, then re-orient a backward page to natural forward
+        // order before minting/rendering.
+        $rows = $this->pivotRows((clone $builder)->setMaxResults($window->limit + 1));
+        $hasSurplus = \count($rows) > $window->limit;
+        $page = \array_slice($rows, 0, $window->limit);
+        if ($backward) {
+            $page = \array_reverse($page);
+        }
+
+        // The minter's row contract is object-shaped; a pivot row is a "mixed"
+        // array (`[0 => farEntity, 'pivot_<field>' => scalar]`), so each row is
+        // wrapped for the read: a pivot column reads its scalar alias, a root
+        // column reads off the hydrated far entity via the metadata.
+        $minted = $this->minter->mint(
+            $window,
+            $columns,
+            \array_map(static fn(array $row): \ArrayObject => new \ArrayObject($row), $page),
+            $hasSurplus,
+            static function (object $row, string $column) use ($metadata, $rowKeyOfColumn): string|int|float|bool|null {
+                \assert($row instanceof \ArrayObject);
+                $rowKey = $rowKeyOfColumn[$column] ?? null;
+                if ($rowKey !== null) {
+                    return CursorTokenMinter::coerce($row[$rowKey] ?? null);
+                }
+
+                $far = $row[0] ?? null;
+                \assert(\is_object($far));
+
+                return CursorTokenMinter::coerce($metadata->getFieldValue($far, $column));
+            },
+        );
+
+        // Items + pivot map come from the same sliced rows the tokens were minted
+        // off, through the shared row → result builder.
+        $pivotPage = $this->pivotResult($page, $relatedType, $relation, null);
+
+        return new PivotCursorCollectionResult(
+            $pivotPage->items,
+            $pivotPage->pivotMap,
+            $minted->cursorBefore,
+            $minted->cursorAfter,
+            $minted->hasPrevious,
+            $minted->hasMore,
+        );
+    }
+
+    /**
+     * The keyset column → query-alias routing for the pivot cursor, derived from
+     * the criteria's KEY-routed `aliasOf` map at SQL-build time: a declared
+     * {@see SortByField} whose key routes to a non-root alias contributes its
+     * COLUMN under that alias (a {@see KeysetColumn} carries only column +
+     * direction, so the key → column translation happens here). Empty off the
+     * pivot path (`aliasOf` is only populated there, bundle ADR 0059).
+     *
+     * @return array<string, string>
+     */
+    private function pivotAliasOfColumn(CollectionCriteria $criteria): array
+    {
+        $aliasOfColumn = [];
+        foreach ($criteria->sorts as $sort) {
+            if (!$sort instanceof SortByField) {
+                continue;
+            }
+
+            $alias = $criteria->aliasOf[$sort->key()] ?? null;
+            if ($alias !== null) {
+                $aliasOfColumn[$sort->column] = $alias;
+            }
+        }
+
+        return $aliasOfColumn;
     }
 
     /**
