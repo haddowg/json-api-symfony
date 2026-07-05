@@ -277,6 +277,32 @@ that type), and `email` simply never renders. Pair the narrower view with an
 [server assignment](#server-assignment) (the public view on the default server, the
 full view admin-only) to keep the privileged surface separate.
 
+### Sparse-by-default attributes
+
+Curation is all-or-nothing per type — a field is either declared (always eligible to
+render) or absent. For the middle ground — a field that *is* part of the type but is
+**too expensive to render every time** — mark it `sparseByDefault()` (core field DSL):
+
+```php
+Integer::make('relevanceScore')->sparseByDefault(),
+```
+
+It is then omitted from the default response and rendered **only** when the client
+explicitly names it in `fields[type]`:
+
+```
+GET /articles/1                                       → no relevanceScore
+GET /articles/1?fields[articles]=title,relevanceScore → relevanceScore included
+```
+
+Because the field is dropped before its value hook runs, the expensive computation is
+skipped on every request that does not ask for it. It stays a fully declared member
+(a valid `fields[type]` name, documented in the schema), so — unlike a curated-out
+field — naming it is *not* rejected. This is the opt-in inverse of the usual sparse
+fieldset (present unless excluded), and is orthogonal to `hidden()` / `writeOnly()`
+(never rendered even when named). Applies to relations too. Witnessed over HTTP in
+`tests/Functional/SparseByDefaultFieldTest.php` (core ADR 0117).
+
 ### Choosing a relationship's target type
 
 A relation declares the resource type it points at as the mandatory second argument
