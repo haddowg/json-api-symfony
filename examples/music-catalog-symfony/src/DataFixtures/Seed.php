@@ -11,6 +11,7 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Favorite;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Library;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Playlist;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\PlaylistEntry;
+use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Release;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Track;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\User;
 
@@ -221,6 +222,23 @@ final class Seed
             user: $ada,
         );
 
+        // --- Releases (ids 1, 2; the composite-attribute showcase — each
+        //     composite value is one json column) --------------------------------
+        $vinylRelease = new Release(
+            catalogNumber: 'NODATA 01 LP',
+            format: ['medium' => 'vinyl', 'rpm' => 33, 'coloured' => true],
+            packaging: ['material' => 'cardboard', 'gatefold' => true],
+            availability: ['regions' => ['GB', 'EU']],
+            dimensions: ['widthMm' => 315, 'heightMm' => 315, 'depthMm' => 8],
+            album: $okComputer,
+        );
+        $digitalRelease = new Release(
+            catalogNumber: 'NODATA 01 DL',
+            format: ['medium' => 'digital', 'codec' => 'FLAC', 'bitrateKbps' => 1411],
+            availability: ['worldwide' => true],
+            album: $okComputer,
+        );
+
         // --- Persist (order so FK-bearing rows follow their targets) ----------
         foreach ([$library, $radiohead, $portishead] as $row) {
             $entityManager->persist($row);
@@ -237,6 +255,9 @@ final class Seed
             $entityManager->persist($row);
         }
         foreach ([$favTrack, $favAlbum, $favArtist] as $row) {
+            $entityManager->persist($row);
+        }
+        foreach ([$vinylRelease, $digitalRelease] as $row) {
             $entityManager->persist($row);
         }
 
