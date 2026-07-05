@@ -19,6 +19,8 @@ use haddowg\JsonApi\Resource\Field\FieldInterface;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Map;
 use haddowg\JsonApi\Resource\Field\Mode;
+use haddowg\JsonApi\Resource\Field\Obj;
+use haddowg\JsonApi\Resource\Field\OneOf;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Schema\Error\Error;
 use haddowg\JsonApi\Schema\Error\ErrorSource;
@@ -194,6 +196,17 @@ final class ResourceValidator
                     $errors[] = $error;
                 }
             }
+        }
+
+        // A discriminated union (OneOf) validates value-dependently — the incoming
+        // discriminator selects the variant whose children are then validated — so it
+        // runs as a document-level pass (like the cross-field compares) where the value
+        // is in scope, not through the static per-field Collection which cannot know
+        // which variant's rules apply. A variant child violation maps to
+        // /data/attributes/<field>/<child>; an unknown discriminator to
+        // /data/attributes/<field>/<discriminator>.
+        foreach ($this->oneOfErrors($resource, $attributes, $creating, $request) as $error) {
+            $errors[] = $error;
         }
 
         // Before any per-field format checking, reject a relationship linkage whose
@@ -1160,13 +1173,12 @@ final class ResourceValidator
     {
         $constraints = [];
 
-        // A structured attribute (Map) validates its children by recursion: a
-        // nested Collection mirroring the top-level one carries the per-child rules,
-        // so a child violation maps to /data/attributes/<map>/<child>. One level
-        // only — a child that is itself a Map (or a list-of-objects) is not
-        // descended into here ($descend is false one level in), which also bounds
-        // the recursion (ADR 0020).
-        if ($descend && $field instanceof Map) {
+        // A structured attribute (Map or the single-value Obj) validates its children
+        // by recursion: a nested Collection mirroring the top-level one carries the
+        // per-child rules, so a child violation maps to /data/attributes/<field>/<child>.
+        // One level only — a child that is itself structured is not descended into here
+        // ($descend is false one level in), which also bounds the recursion (ADR 0020).
+        if ($descend && ($field instanceof Map || $field instanceof Obj)) {
             $constraints[] = $this->nestedCollection($field, $creating, $request);
         }
 
@@ -1201,10 +1213,10 @@ final class ResourceValidator
      * out of scope here (ADR 0020), so a nested Map's *own* children are not
      * descended into, which also guards against unbounded recursion.
      */
-    private function nestedCollection(Map $map, bool $creating, ?JsonApiRequestInterface $request = null): Collection
+    private function nestedCollection(Map|Obj $structured, bool $creating, ?JsonApiRequestInterface $request = null): Collection
     {
         $fields = [];
-        foreach ($map->children() as $child) {
+        foreach ($structured->children() as $child) {
             // A Map child's *visibility* (read-only / hidden) is an explicit non-goal
             // of request-aware predicates (ADR 0020 / core ADR 0079), so this skip
             // stays static; only the child's `when()` condition sees the request,
@@ -1219,6 +1231,68 @@ final class ResourceValidator
         }
 
         return new Collection(fields: $fields, allowExtraFields: true);
+    }
+
+    /**
+     * Validates each present {@see OneOf} attribute value-dependently: the incoming
+     * discriminator selects the variant, whose children are then validated through a
+     * nested Collection mirroring the {@see Map}/{@see Obj} cascade (one level, same
+     * create/update presence resolution). An array value whose discriminator names no
+     * variant yields one error at `/data/attributes/<field>/<discriminator>`; a
+     * non-array value one at `/data/attributes/<field>`. Absent or explicit-null values
+     * are the main pass's concern (presence / nullability), so they are skipped here.
+     *
+     * @param array<string, mixed> $attributes the merged incoming attribute map
+     *
+     * @return list<Error>
+     */
+    private function oneOfErrors(AbstractResource $resource, array $attributes, bool $creating, JsonApiRequestInterface $request): array
+    {
+        $errors = [];
+        foreach ($resource->fields() as $field) {
+            if (!$field instanceof OneOf) {
+                continue;
+            }
+            if (!\array_key_exists($field->name(), $attributes) || $field->isReadOnlyFor($creating, $request)) {
+                continue;
+            }
+
+            $value = $attributes[$field->name()];
+            if ($value === null) {
+                continue;
+            }
+            if (!\is_array($value)) {
+                $errors[] = $this->error('This value should be an object.', '[' . $field->name() . ']');
+
+                continue;
+            }
+
+            $discriminator = $field->discriminatorName();
+            $variant = $field->variantFor($value[$discriminator] ?? null);
+            if ($variant === null) {
+                $errors[] = $this->error('This value is not one of the allowed types.', '[' . $field->name() . '][' . $discriminator . ']');
+
+                continue;
+            }
+
+            $fields = [];
+            foreach ($variant->children() as $child) {
+                if ($child->isReadOnly($creating)) {
+                    continue;
+                }
+                $fields[$child->name()] = $this->fieldConstraint($child, $creating, descend: false, request: $request, value: $value[$child->name()] ?? null);
+            }
+            if ($fields === []) {
+                continue;
+            }
+
+            $violations = $this->validator->validate($value, new Collection(fields: $fields, allowExtraFields: true));
+            foreach ($violations as $violation) {
+                $errors[] = $this->error((string) $violation->getMessage(), '[' . $field->name() . ']' . (string) $violation->getPropertyPath());
+            }
+        }
+
+        return $errors;
     }
 
     /**
