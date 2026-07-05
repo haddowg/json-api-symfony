@@ -156,6 +156,59 @@ abstract class WriteConformanceTestCase extends JsonApiFunctionalTestCase
     }
 
     #[Test]
+    #[Group('spec:crud')]
+    public function patchingWithABodyIdMismatchingTheUrlReturns409(): void
+    {
+        // Core (OperationFactory::fromRequest, the id half of the spec's "type and id must
+        // match the endpoint" MUST): a resource PATCH whose `data.id` is present and differs
+        // from the endpoint id is a 409 conflict — code RESOURCE_ID_CONFLICT at /data/id.
+        // The bundle inherits it verbatim: it resolves every operation through core's factory
+        // in the request listener, so the mismatch is caught before dispatch on both providers.
+        $response = $this->handle('/articles/1', 'PATCH', [
+            'data' => [
+                'type' => 'articles',
+                'id' => '2',
+                'attributes' => ['title' => 'A mismatched id'],
+            ],
+        ]);
+
+        self::assertSame(409, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame('application/vnd.api+json', $response->headers->get('Content-Type'));
+
+        [$code, $pointer] = $this->firstError($response);
+        self::assertSame('RESOURCE_ID_CONFLICT', $code);
+        self::assertSame('/data/id', $pointer);
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function patchingWithAMatchingBodyIdSucceedsAndAnAbsentBodyIdIsNotAConflict(): void
+    {
+        // The 409 fires ONLY on a genuine mismatch. A body id EQUAL to the URL id is the
+        // ordinary update path — a 200.
+        $matching = $this->handle('/articles/1', 'PATCH', [
+            'data' => [
+                'type' => 'articles',
+                'id' => '1',
+                'attributes' => ['title' => 'A matching id'],
+            ],
+        ]);
+        self::assertSame(200, $matching->getStatusCode(), (string) $matching->getContent());
+
+        // An ABSENT body id is "a separate concern the hydrator owns" (core's own words):
+        // the conflict check only fires when a body id is present, so an omitted id is
+        // never a 409 — the update proceeds against the URL-targeted resource as a 200.
+        $absent = $this->handle('/articles/1', 'PATCH', [
+            'data' => [
+                'type' => 'articles',
+                'attributes' => ['title' => 'An absent id'],
+            ],
+        ]);
+        self::assertSame(200, $absent->getStatusCode(), (string) $absent->getContent());
+        self::assertSame('1', $this->dataOf($absent)['id'] ?? null);
+    }
+
+    #[Test]
     #[Group('spec:atomic-operations')]
     public function creatingWithALocalIdOnThePrimaryResourceReturns400(): void
     {

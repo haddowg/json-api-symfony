@@ -394,6 +394,31 @@ abstract class ValidationConformanceTestCase extends JsonApiFunctionalTestCase
         self::assertSame('JSON:API in PHP', $attributes['title'] ?? null);
     }
 
+    #[Test]
+    #[Group('spec:crud')]
+    public function creatingWithAnUnparseableDateAttributeReturns422AtThatPointer(): void
+    {
+        // Core (AttributeValueInvalid): a calendar-garbage or otherwise unparseable string
+        // reaching a DateTime field's `new \DateTimeImmutable()` coercion is a 422 — code
+        // ATTRIBUTE_VALUE_INVALID at /data/attributes/<name> — not an uncaught 500.
+        // `publishedAt` carries a `before(now)` bound, but the bridge SKIPS a value it
+        // cannot read as a date, so "banana" passes validation and reaches the hydrator's
+        // cast — the last gate before the value is written — where the fix raises the typed
+        // 422. Provider-agnostic (the cast is core's), so both kernels behave identically.
+        $response = $this->handle('/articles', 'POST', [
+            'data' => ['type' => 'articles', 'attributes' => [
+                'title' => 'A fine title',
+                'category' => 'news',
+                'publishedAt' => 'banana',
+            ]],
+        ]);
+
+        self::assertSame(422, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame('application/vnd.api+json', $response->headers->get('Content-Type'));
+        self::assertSame(['/data/attributes/publishedAt'], $this->pointers($response));
+        self::assertSame(['ATTRIBUTE_VALUE_INVALID'], $this->codes($response));
+    }
+
     /**
      * The `source.pointer` of every error in the response document.
      *
@@ -418,5 +443,27 @@ abstract class ValidationConformanceTestCase extends JsonApiFunctionalTestCase
         }
 
         return $pointers;
+    }
+
+    /**
+     * The `code` of every error in the response document.
+     *
+     * @return list<string>
+     */
+    private function codes(Response $response): array
+    {
+        $errors = $this->decode($response)['errors'] ?? null;
+        self::assertIsArray($errors);
+
+        $codes = [];
+        foreach ($errors as $error) {
+            self::assertIsArray($error);
+
+            $code = $error['code'] ?? null;
+            self::assertIsString($code);
+            $codes[] = $code;
+        }
+
+        return $codes;
     }
 }

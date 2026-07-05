@@ -160,6 +160,37 @@ abstract class ConvenienceFilterConformanceTestCase extends JsonApiFunctionalTes
         self::assertSame(['parameter' => 'filter[publishedRange]'], $error['source'] ?? null);
     }
 
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    public function anOrderedRangeBoundNeverMatchesANullColumnOnEitherProvider(): void
+    {
+        // Core ADR 0116: an ordered comparison — and a Range bound is a `>=`/`<=` pair —
+        // against a column whose value is `null` never matches; the row is EXCLUDED,
+        // mirroring SQL three-valued logic (a NULL column against a present bound is
+        // UNKNOWN) rather than PHP's silent coercion of `null` toward `0`. The `articles`
+        // fixtures leave `publishedAt` null on every row, so a present DateRange bound must
+        // exclude them ALL — on the in-memory witness AND the Doctrine provider.
+        //
+        // This is exactly the divergence the ADR closes: before the fix the in-memory
+        // `range()` coerced `null <= max` to true and returned every row, diverging from
+        // the Doctrine provider (whose SQL `publishedAt <= :max` excludes NULL). The fix
+        // reads the raw column before the deserializer and drops a null, so both providers
+        // now converge on the empty set.
+
+        // Control: the SAME max-bound mechanism DOES keep non-null in-bound rows — an int
+        // `id` column (never null) returns every article under a high max — so an empty
+        // publishedRange result below reads as "null excluded", not "empty for lack of data".
+        self::assertSame(['1', '2', '3', '4', '5'], $this->sortedIds('/articles?filter[idRange][max]=100'));
+
+        // A max-only bound: pre-fix the in-memory witness returned all five (null coerced
+        // to 0 <= max); the fix excludes every null row on both providers.
+        self::assertSame([], $this->sortedIds('/articles?filter[publishedRange][max]=2999-12-31'));
+        // A min-only bound is UNKNOWN against null too (null >= min never holds).
+        self::assertSame([], $this->sortedIds('/articles?filter[publishedRange][min]=1900-01-01'));
+        // And a two-sided bound spanning any plausible instant still excludes every null row.
+        self::assertSame([], $this->sortedIds('/articles?filter[publishedRange][min]=1900-01-01&filter[publishedRange][max]=2999-12-31'));
+    }
+
     /**
      * The numerically-sorted ids of `$path`'s primary `articles` data — a stable
      * order for set-membership assertions that does not depend on the provider's
