@@ -7,10 +7,12 @@ namespace haddowg\JsonApiBundle\Action;
 use haddowg\JsonApi\Exception\ResourceNotFound;
 use haddowg\JsonApi\Operation\CustomActionOperation;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Response\AcceptedResponse;
 use haddowg\JsonApi\Response\DataResponse;
 use haddowg\JsonApi\Response\ErrorResponse;
 use haddowg\JsonApi\Response\MetaResponse;
 use haddowg\JsonApi\Response\NoContentResponse;
+use haddowg\JsonApi\Response\SeeOtherResponse;
 use haddowg\JsonApi\Server\ResolvingServerInterface;
 use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
@@ -54,7 +56,7 @@ final readonly class ActionInvoker
         private ?EventDispatcherInterface $dispatcher = null,
     ) {}
 
-    public function invoke(CustomActionOperation $operation): DataResponse|MetaResponse|NoContentResponse|ErrorResponse
+    public function invoke(CustomActionOperation $operation): DataResponse|MetaResponse|NoContentResponse|AcceptedResponse|SeeOtherResponse|ErrorResponse
     {
         $server = $operation->context()->server;
         $target = $operation->target();
