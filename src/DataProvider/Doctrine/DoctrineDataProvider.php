@@ -389,6 +389,15 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             $builder = $extension->apply($builder, new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request));
         }
 
+        // A cursor (keyset) window on the related endpoint runs the SAME keyset
+        // push-down as the primary collection: the builder is already scoped to
+        // the parent above, so the parent-membership predicate simply rides the
+        // WHERE alongside the filters while the keyset owns the order (bundle
+        // ADR 0063). The OffsetWindow / null-window tail below stays byte-identical.
+        if ($criteria->window instanceof CursorWindow) {
+            return $this->runCursor($relatedType, $relatedClass, $builder, $criteria, $criteria->window);
+        }
+
         $builder = $this->applier->apply($criteria, $builder, $this->filterHandler, $this->sortHandler);
 
         // The window/count/count-free tail runs through the shared executor (core

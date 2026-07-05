@@ -164,6 +164,19 @@ final class InMemoryDataProvider implements DataProviderInterface
             ? \array_values($related)
             : \iterator_to_array($this->asIterator($related), false);
 
+        // A cursor (keyset) window on the related endpoint runs the SAME keyset
+        // execution as the primary collection — the parent scoping is already done
+        // (the items were read off the parent), so only the source array differs
+        // (bundle ADR 0063). A to-many's members are objects; the filter narrows
+        // the accessor's mixed members to the keyset's list<object> contract. The
+        // OffsetWindow / null-window tail stays byte-identical.
+        if ($criteria->window instanceof CursorWindow) {
+            return $this->runCursor(
+                $criteria,
+                \array_values(\array_filter($items, static fn(mixed $item): bool => \is_object($item))),
+            );
+        }
+
         return $this->applyAndWindow($criteria, $items, $criteria->wantsCount);
     }
 

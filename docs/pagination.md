@@ -181,6 +181,33 @@ services:
 
 A resource's own `pagination()` still wins over the server default, as always.
 
+### On a related collection
+
+A **related** to-many endpoint (`GET /{type}/{id}/{rel}`) pages by cursor exactly
+like a primary collection. The effective paginator resolves through the usual
+3-tier chain — the relation's own `paginate()`, else the related resource's
+`pagination()`, else the server default — so either declaration turns the related
+endpoint into a keyset walk:
+
+```php
+use haddowg\JsonApi\Pagination\CursorPaginator;
+use haddowg\JsonApi\Resource\Field\HasMany;
+
+HasMany::make('widgets', 'widgets')
+    ->paginate(CursorPaginator::make()->withDefaultSize(25));
+```
+
+The keyset executes **inside the parent scope** on both providers (the Doctrine
+parent predicate rides the `WHERE` alongside the filters; in memory the members
+are read off the parent first), the `first`/`prev`/`next` links are scoped to the
+related URL, and everything else on this page — the active-sort keyset, the
+opaque tokens, the count-free `meta.page`, the `400`s — applies verbatim. The
+dual-provider
+[`RelatedCursorConformanceTestCase`](../tests/Functional/RelatedCursorConformanceTestCase.php)
+asserts this over the `cursorShelves` → `widgets` fixture. (The pivot-backed
+`belongsToMany` related endpoint and relationship-linkage `GET` windowing remain
+offset-only for now.)
+
 ### The wire parameters
 
 A cursor page reads three `page[…]` parameters:
