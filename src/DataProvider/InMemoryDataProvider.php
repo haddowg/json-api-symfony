@@ -6,6 +6,10 @@ namespace haddowg\JsonApiBundle\DataProvider;
 
 use haddowg\JsonApi\Collection\CollectionResult;
 use haddowg\JsonApi\Collection\CursorCollectionResult;
+use haddowg\JsonApi\Collection\Keyset\CursorTokenMinter;
+use haddowg\JsonApi\Collection\Keyset\InMemoryKeyset;
+use haddowg\JsonApi\Collection\Keyset\KeysetColumn;
+use haddowg\JsonApi\Collection\Keyset\KeysetResolver;
 use haddowg\JsonApi\Collection\WindowExecutor;
 use haddowg\JsonApi\Operation\QueryParameters;
 use haddowg\JsonApi\Pagination\CursorCodec;
@@ -20,10 +24,6 @@ use haddowg\JsonApi\Resource\Sort\InMemory\ArraySortArmInterface;
 use haddowg\JsonApi\Resource\Sort\InMemory\ArraySortHandler;
 use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApi\Resource\Sort\SortDirective;
-use haddowg\JsonApiBundle\DataProvider\Keyset\CursorTokenMinter;
-use haddowg\JsonApiBundle\DataProvider\Keyset\InMemoryKeyset;
-use haddowg\JsonApiBundle\DataProvider\Keyset\KeysetColumn;
-use haddowg\JsonApiBundle\DataProvider\Keyset\KeysetResolver;
 
 /**
  * An in-memory read provider: a test double and conformance witness. It reads
@@ -456,11 +456,17 @@ final class InMemoryDataProvider implements DataProviderInterface
         $window = $criteria->window;
         \assert($window instanceof CursorWindow);
 
-        // Resolve the keyset columns (the active sort + the PK), validating `?sort`
-        // against the vocabulary exactly as the plain path does. The PK direction
-        // for a PK-only keyset follows the resource default-sort-on-PK; with none
-        // it is ascending (the resolver's default).
-        $columns = $this->keysetResolver->resolve($criteria, $this->idColumn);
+        // Resolve the keyset columns (the active sort + the PK) through the core
+        // resolver, feeding it the criteria's sort inputs (core ADR 0123) so
+        // `?sort` validates against the vocabulary exactly as the plain path does.
+        // The PK direction for a PK-only keyset follows the resource
+        // default-sort-on-PK; with none it is ascending (the resolver's default).
+        $columns = $this->keysetResolver->resolve(
+            $criteria->queryParameters->sort,
+            $criteria->sorts,
+            $criteria->defaultSort,
+            $this->idColumn,
+        );
 
         // Apply the FILTERS only — the keyset owns the order, so the plain sort is
         // never applied (a sort-stripped criteria leaves the filter application

@@ -8,6 +8,9 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\QueryBuilder;
 use haddowg\JsonApi\Collection\CollectionResult;
 use haddowg\JsonApi\Collection\CursorCollectionResult;
+use haddowg\JsonApi\Collection\Keyset\CursorTokenMinter;
+use haddowg\JsonApi\Collection\Keyset\KeysetColumn;
+use haddowg\JsonApi\Collection\Keyset\KeysetResolver;
 use haddowg\JsonApi\Collection\WindowExecutor;
 use haddowg\JsonApi\Operation\QueryParameters;
 use haddowg\JsonApi\Pagination\CursorCodec;
@@ -22,9 +25,6 @@ use haddowg\JsonApi\Resource\Filter\WhereHas;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\CriteriaApplier;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
-use haddowg\JsonApiBundle\DataProvider\Keyset\CursorTokenMinter;
-use haddowg\JsonApiBundle\DataProvider\Keyset\KeysetColumn;
-use haddowg\JsonApiBundle\DataProvider\Keyset\KeysetResolver;
 use haddowg\JsonApiBundle\DataProvider\PivotAwareProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\PivotCollectionResult;
 use haddowg\JsonApiBundle\DataProvider\PivotFields;
@@ -238,8 +238,8 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
     /**
      * The cursor (keyset) execution pushed down to DQL — the twin of the in-memory
-     * witness ({@see \haddowg\JsonApiBundle\DataProvider\Keyset\InMemoryKeyset}),
-     * which is the ground truth (bundle ADR 0063). It resolves the keyset columns
+     * witness ({@see \haddowg\JsonApi\Collection\Keyset\InMemoryKeyset}),
+     * which is the ground truth (bundle ADR 0063 / core ADR 0123). It resolves the keyset columns
      * (the active sort + the appended/deduped PK; validates `?sort`), applies the
      * filters, checks the cursor against the resolved columns (a stale cursor →
      * 400), then via {@see DoctrineKeyset} builds the forced NULL=largest
@@ -263,7 +263,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $metadata = $this->entityManager->getClassMetadata($entityClass);
         $pkColumn = $metadata->getSingleIdentifierFieldName();
 
-        $columns = $this->keysetResolver->resolve($criteria, $pkColumn);
+        $columns = $this->resolveKeysetColumns($criteria, $pkColumn);
 
         // Apply the FILTERS only (the keyset owns the order). A sort-stripped,
         // window-less criteria reuses the shared applier so the filter semantics
@@ -317,6 +317,25 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
                     ),
                 );
             },
+        );
+    }
+
+    /**
+     * Resolves the keyset columns for `$criteria` through the core
+     * {@see KeysetResolver} (core ADR 0123), feeding it the criteria's sort
+     * inputs — the requested `?sort`, the declared vocabulary and the resource
+     * default — so the cursor path's sort validation stays byte-identical to the
+     * plain (offset) path's.
+     *
+     * @return list<KeysetColumn>
+     */
+    private function resolveKeysetColumns(CollectionCriteria $criteria, string $pkColumn): array
+    {
+        return $this->keysetResolver->resolve(
+            $criteria->queryParameters->sort,
+            $criteria->sorts,
+            $criteria->defaultSort,
+            $pkColumn,
         );
     }
 

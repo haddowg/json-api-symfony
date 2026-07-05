@@ -6,14 +6,14 @@ namespace haddowg\JsonApiBundle\DataProvider\Doctrine;
 
 use Doctrine\ORM\Mapping\ClassMetadata;
 use Doctrine\ORM\QueryBuilder;
+use haddowg\JsonApi\Collection\Keyset\KeysetColumn;
 use haddowg\JsonApi\Pagination\CursorBoundary;
-use haddowg\JsonApiBundle\DataProvider\Keyset\KeysetColumn;
 
 /**
  * Builds the Doctrine push-down for a cursor (keyset) page — the forced
  * NULL=largest `ORDER BY` and the IS-NULL-branched lexicographic keyset `WHERE`
- * — matching the in-memory witness ({@see \haddowg\JsonApiBundle\DataProvider\Keyset\InMemoryKeyset})
- * byte-for-byte (bundle ADR 0063).
+ * — matching the in-memory witness ({@see \haddowg\JsonApi\Collection\Keyset\InMemoryKeyset})
+ * byte-for-byte (bundle ADR 0063 / core ADR 0123).
  *
  * The order is forced as a PORTABLE NULL=largest (NOT `NULLS LAST`, which
  * MySQL/SQLite lack): each column emits a leading `CASE WHEN c IS NULL THEN 1
