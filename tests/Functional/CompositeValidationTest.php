@@ -34,6 +34,7 @@ final class CompositeValidationTest extends JsonApiFunctionalTestCase
                     'name' => 'Gadget',
                     'address' => ['street' => '1 High St', 'city' => 'London', 'postcode' => 'EC1'],
                     'block' => ['kind' => 'image', 'src' => 'https://example.test/a.png', 'alt' => 'A photo'],
+                    'contact' => ['kind' => 'email', 'address' => 'ada@example.test'],
                 ],
             ],
         ]);
@@ -91,6 +92,50 @@ final class CompositeValidationTest extends JsonApiFunctionalTestCase
         ]));
 
         self::assertContains('/data/attributes/block/kind', $pointers);
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function aShapeConstraintValueViolationPointsUnderTheField(): void
+    {
+        // kind=email selects the email branch of the Shape's oneOf, but `address`
+        // is missing — the core opis SchemaValueValidator rejects it, and the leaf
+        // pointer is prefixed with the field pointer.
+        $pointers = $this->violationPointers($this->handle('/composites', 'POST', [
+            'data' => [
+                'type' => 'composites',
+                'attributes' => [
+                    'name' => 'Gadget',
+                    'contact' => ['kind' => 'email'], // missing `address`
+                ],
+            ],
+        ]));
+
+        self::assertNotSame([], $pointers);
+        foreach ($pointers as $pointer) {
+            self::assertStringStartsWith('/data/attributes/contact', $pointer);
+        }
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function aShapeConstraintUnknownDiscriminatorIsRejected(): void
+    {
+        // A discriminator matching neither branch fails the whole oneOf.
+        $pointers = $this->violationPointers($this->handle('/composites', 'POST', [
+            'data' => [
+                'type' => 'composites',
+                'attributes' => [
+                    'name' => 'Gadget',
+                    'contact' => ['kind' => 'fax', 'number' => '123'],
+                ],
+            ],
+        ]));
+
+        self::assertNotSame([], $pointers);
+        foreach ($pointers as $pointer) {
+            self::assertStringStartsWith('/data/attributes/contact', $pointer);
+        }
     }
 
     /**

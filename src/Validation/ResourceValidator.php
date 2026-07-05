@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Validation;
 
 use haddowg\JsonApi\Hydrator\Relationship\ToManyRelationship;
 use haddowg\JsonApi\Hydrator\Relationship\ToOneRelationship;
+use haddowg\JsonApi\OpenApi\Schema;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Constraint\CompareField;
@@ -13,6 +14,7 @@ use haddowg\JsonApi\Resource\Constraint\Comparison;
 use haddowg\JsonApi\Resource\Constraint\ConstraintInterface;
 use haddowg\JsonApi\Resource\Constraint\Nullable;
 use haddowg\JsonApi\Resource\Constraint\Required;
+use haddowg\JsonApi\Resource\Constraint\Shape;
 use haddowg\JsonApi\Resource\Constraint\When;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\FieldInterface;
@@ -24,6 +26,7 @@ use haddowg\JsonApi\Resource\Field\OneOf;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Schema\Error\Error;
 use haddowg\JsonApi\Schema\Error\ErrorSource;
+use haddowg\JsonApi\Validation\SchemaValueValidator;
 use haddowg\JsonApiBundle\Server\IdEncoderResolver;
 use Symfony\Component\Validator\Constraints\Collection;
 use Symfony\Component\Validator\Constraints\NotBlank;
@@ -88,6 +91,10 @@ final class ResourceValidator
         private readonly ConstraintTranslator $translator,
         private readonly JsonPointerBuilder $pointers,
         private readonly IdEncoderResolver $idFormats,
+        // The core opis value-validator for the Shape composite-schema constraint,
+        // wired only when opis/json-schema is installed (null-wired otherwise, so a
+        // Shape then documents its OpenAPI shape but is not value-validated).
+        private readonly ?SchemaValueValidator $schemaValues = null,
     ) {}
 
     /**
@@ -206,6 +213,18 @@ final class ResourceValidator
         // /data/attributes/<field>/<child>; an unknown discriminator to
         // /data/attributes/<field>/<discriminator>.
         foreach ($this->oneOfErrors($resource, $attributes, $creating, $request) as $error) {
+            $errors[] = $error;
+        }
+
+        // A Shape constraint carries raw JSON Schema (oneOf/anyOf/allOf of member
+        // schemas) that no Symfony rule can translate — its only validator is opis, run
+        // through the core SchemaValueValidator. Like OneOf and the compares, it runs as
+        // a document-level pass because it validates a whole field value against its
+        // composite schema; a leaf violation carries the opis instance pointer appended
+        // to /data/attributes/<field>. Skipped entirely when opis is not installed (the
+        // validator is null-wired), so a Shape then documents its OpenAPI shape but is
+        // not value-validated — the same optional-linter posture opis already has.
+        foreach ($this->shapeErrors($resource, $attributes, $creating, $request) as $error) {
             $errors[] = $error;
         }
 
@@ -1195,6 +1214,11 @@ final class ResourceValidator
             if ($constraint instanceof EntityConstraintInterface) {
                 continue; // validated against the hydrated entity, not the document
             }
+            if ($constraint instanceof Shape) {
+                continue; // a composite-schema (oneOf/anyOf/allOf) carrier of raw JSON
+                // Schema; not translatable to a Symfony rule — validated by the
+                // core opis SchemaValueValidator in the document-level pass below
+            }
             foreach ($this->translator->translate($constraint, $request) as $symfonyConstraint) {
                 $constraints[] = $symfonyConstraint;
             }
@@ -1289,6 +1313,61 @@ final class ResourceValidator
             $violations = $this->validator->validate($value, new Collection(fields: $fields, allowExtraFields: true));
             foreach ($violations as $violation) {
                 $errors[] = $this->error((string) $violation->getMessage(), '[' . $field->name() . ']' . (string) $violation->getPropertyPath());
+            }
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Validates each present attribute carrying a {@see Shape} constraint against that
+     * constraint's composite JSON Schema (oneOf/anyOf/allOf of raw member schemas),
+     * through the core {@see SchemaValueValidator} (opis). A {@see Shape} is a raw-schema
+     * carrier no Symfony rule can translate, so — like {@see OneOf} and the cross-field
+     * compares — it validates value-dependently at the document level, not through the
+     * static per-field Collection. Each returned {@see Error} already carries the opis
+     * instance pointer appended to `/data/attributes/<field>`.
+     *
+     * A no-op when opis is not installed (`$this->schemaValues === null`), so a Shape
+     * still documents its OpenAPI shape but is not value-validated — the same optional
+     * posture the opis structural linter has. Absent or explicit-null values are the
+     * main pass's concern (presence / nullability), so they are skipped here.
+     *
+     * @param array<string, mixed> $attributes the merged incoming attribute map
+     *
+     * @return list<Error>
+     */
+    private function shapeErrors(AbstractResource $resource, array $attributes, bool $creating, JsonApiRequestInterface $request): array
+    {
+        if ($this->schemaValues === null) {
+            return []; // opis not installed — a Shape documents but does not validate
+        }
+
+        $errors = [];
+        foreach ($resource->fields() as $field) {
+            if ($field instanceof Id || $field instanceof RelationInterface) {
+                continue;
+            }
+            if (!\array_key_exists($field->name(), $attributes) || $field->isReadOnlyFor($creating, $request)) {
+                continue;
+            }
+
+            $value = $attributes[$field->name()];
+            if ($value === null) {
+                continue; // nullability is the main pass's concern, not the shape's
+            }
+
+            foreach ($field->constraints() as $constraint) {
+                if (!$constraint instanceof Shape || !$constraint->context()->appliesTo($creating)) {
+                    continue;
+                }
+                foreach ($this->schemaValues->validate(
+                    $constraint->contribute(Schema::create()),
+                    $value,
+                    '/data/attributes/' . $field->name(),
+                ) as $error) {
+                    $errors[] = $error;
+                }
             }
         }
 

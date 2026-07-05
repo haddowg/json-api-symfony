@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App\Composite;
 
+use haddowg\JsonApi\OpenApi\Schema;
 use haddowg\JsonApi\Resource\AbstractResource;
+use haddowg\JsonApi\Resource\Constraint\Shape;
+use haddowg\JsonApi\Resource\Field\ArrayHash;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Integer;
 use haddowg\JsonApi\Resource\Field\Obj;
@@ -14,9 +17,13 @@ use haddowg\JsonApi\Resource\Field\Url;
 
 /**
  * The composite-attribute witness resource: an {@see Obj} `address` (typed object in
- * one value, per-child constraints) and a discriminated {@see OneOf} `block`. Both
- * carry child constraints so the validator bridge's cascade surfaces per-child `422`
- * pointers (`/data/attributes/address/city`, `/data/attributes/block/level`).
+ * one value, per-child constraints), a discriminated {@see OneOf} `block`, and a
+ * free-form {@see ArrayHash} `contact` carrying a {@see Shape} composite-schema
+ * constraint (a discriminated `oneOf` of an email and a phone shape, raw member
+ * schemas). The Obj/OneOf children exercise the validator bridge's translated cascade
+ * (`/data/attributes/address/city`, `/data/attributes/block/level`); the Shape
+ * exercises the core opis {@see \haddowg\JsonApi\Validation\SchemaValueValidator}
+ * value-validation pass (`/data/attributes/contact/...`).
  */
 final class CompositeWidgetResource extends AbstractResource
 {
@@ -35,6 +42,22 @@ final class CompositeWidgetResource extends AbstractResource
             OneOf::make('block')->nullable()->discriminator('kind')
                 ->variant('heading', Str::make('text')->required(), Integer::make('level')->min(1)->max(6))
                 ->variant('image', Url::make('src')->required(), Str::make('alt')),
+            ArrayHash::make('contact')->nullable()->constrain(
+                Shape::oneOf(
+                    Schema::ofType('object')
+                        ->withProperties([
+                            'kind' => Schema::ofType('string')->withConst('email'),
+                            'address' => Schema::ofType('string')->withFormat('email'),
+                        ])
+                        ->withRequired(['kind', 'address']),
+                    Schema::ofType('object')
+                        ->withProperties([
+                            'kind' => Schema::ofType('string')->withConst('phone'),
+                            'number' => Schema::ofType('string'),
+                        ])
+                        ->withRequired(['kind', 'number']),
+                )->discriminator('kind'),
+            ),
         ];
     }
 }
