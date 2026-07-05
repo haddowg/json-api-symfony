@@ -124,6 +124,12 @@ final class DoctrineJsonApiTestKernel extends Kernel
         // Doctrine provider runs the keyset push-down (bundle ADR 0063).
         $services->set(DoctrineCursorWidgetResource::class);
 
+        // The RELATED-collection cursor (keyset) conformance type: a `cursorShelves`
+        // parent whose to-many `widgets` relation declares its own CursorPaginator,
+        // mapped to an owning-side ManyToMany so the keyset push-down runs inside
+        // the RelationScope IN-subquery parent scope (bundle ADR 0063).
+        $services->set(DoctrineCursorShelfResource::class);
+
         // The genericity witness: a `tags` type served over the Doctrine path by
         // the `-128` fallback provider/persister from its `#[AsJsonApiResource]`
         // entity map alone — no per-type engine code (ADR 0021).

@@ -714,6 +714,34 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $this->applyRelationshipCounts($server, $relatedType, $items, $request);
             }
 
+            // A cursor (keyset) related page: the provider minted the boundary tokens
+            // (it owns the row → boundary-value reader), so render through the
+            // paginator's cursor path (CursorPaginator::fromBoundaries) carrying the
+            // pre-minted prev/next tokens + the has-flags — the related twin of the
+            // primary collection's cursor branch (bundle ADR 0063). `from`/`to` are
+            // the wire ids of the first/last rendered rows (meta.page.from/to). The
+            // cursor strategy is total-null by design, so the counted and count-free
+            // offset branches below stay byte-identical.
+            if ($result instanceof CursorCollectionResult && $paginator instanceof CursorPaginator) {
+                $from = $items === [] ? null : $serializer->getId($items[0]);
+                $to = $items === [] ? null : $serializer->getId($items[\array_key_last($items)]);
+
+                return RelatedResponse::fromPage(
+                    $paginator->fromBoundaries(
+                        $request,
+                        $items,
+                        $result->cursorBefore ?? '',
+                        $result->cursorAfter ?? '',
+                        $result->hasMore,
+                        $result->hasPrevious,
+                        from: $from,
+                        to: $to,
+                    ),
+                    $serializer,
+                    $relation->isCountable(),
+                );
+            }
+
             // Counted page: the single total fans to BOTH meta.page.total (inside the
             // count-based page) AND the universal top-level meta.total — one count, two
             // slots (G21 §6b).
