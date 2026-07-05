@@ -87,6 +87,7 @@ nav:
       - configuration.md
   - Resources & capabilities:
       - resources.md
+      - composite-attributes.md
       - capability-composition.md
       - custom-serializers-hydrators.md
   - The Doctrine data layer:
