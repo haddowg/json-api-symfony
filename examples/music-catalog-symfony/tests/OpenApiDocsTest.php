@@ -88,6 +88,75 @@ final class OpenApiDocsTest extends MusicCatalogKernelTestCase
     }
 
     #[Test]
+    public function theCompositeAttributeTypesProjectTheirCompositeSchemas(): void
+    {
+        // The `releases` showcase carries all three composite kinds; each projects
+        // its combinator keyword into the generated attribute schema.
+        $document = $this->decode($this->handle('/docs.json'));
+        $attributes = $this->nested($document, 'components', 'schemas', 'ReleasesAttributes', 'properties');
+
+        // OneOf → `oneOf` + `discriminator`, each branch carrying the
+        // discriminator as a `const` (plus a null branch — the field is nullable).
+        $format = $this->nested($attributes, 'format');
+        self::assertSame('medium', $this->nested($format, 'discriminator')['propertyName'] ?? null);
+        $branches = $this->nested($format, 'oneOf');
+        self::assertCount(4, $branches);
+        $media = [];
+        foreach ($branches as $branch) {
+            self::assertIsArray($branch);
+            $properties = $branch['properties'] ?? null;
+            if (!\is_array($properties)) {
+                continue; // the null branch — the field is nullable
+            }
+            $medium = $properties['medium'] ?? null;
+            self::assertIsArray($medium);
+            $media[] = $medium['const'] ?? null;
+        }
+        self::assertSame(['vinyl', 'cd', 'digital'], $media);
+
+        // Obj → a typed nested object schema.
+        $packaging = $this->nested($attributes, 'packaging');
+        self::assertSame(['object', 'null'], $packaging['type'] ?? null);
+        self::assertSame(40, $this->nested($packaging, 'properties', 'material')['maxLength'] ?? null);
+
+        // Shape → the combinator contributed to the field's schema; both fields
+        // are nullable, so each combinator also admits null explicitly (an
+        // anyOf gains a null branch, an allOf hoists into anyOf: [null, {allOf}]).
+        $availabilityBranches = $this->nested($attributes, 'availability', 'anyOf');
+        self::assertCount(3, $availabilityBranches);
+        self::assertContains(['type' => 'null'], $availabilityBranches);
+
+        $dimensions = $this->nested($attributes, 'dimensions');
+        self::assertArrayNotHasKey('allOf', $dimensions);
+        $dimensionsBranches = $this->nested($dimensions, 'anyOf');
+        self::assertCount(2, $dimensionsBranches);
+        self::assertSame(['type' => 'null'], $dimensionsBranches[0] ?? null);
+        self::assertCount(2, $this->nested($dimensions, 'anyOf', '1', 'allOf'));
+
+        // On create, each OneOf branch requires its discriminator.
+        $createBranches = $this->nested($document, 'components', 'schemas', 'ReleasesCreateAttributes', 'properties', 'format', 'oneOf');
+        $vinyl = $createBranches[0] ?? null;
+        self::assertIsArray($vinyl);
+        $required = $vinyl['required'] ?? null;
+        self::assertIsArray($required);
+        self::assertContains('medium', $required);
+        self::assertContains('rpm', $required);
+    }
+
+    #[Test]
+    public function aReleaseResponseMatchesItsGeneratedSchema(): void
+    {
+        // The seeded vinyl release, with its album included — the composite values
+        // served from their json columns validate against the projected composite
+        // schemas (oneOf variant, typed object, Shape'd maps).
+        $response = $this->handle('/releases/1?include=album');
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        $this->assertResponseMatchesGeneratedSchema($response, 'releases', SchemaDocumentKind::Single);
+        $this->assertResponseMatchesGeneratedSchema($this->handle('/releases'), 'releases', SchemaDocumentKind::Collection);
+    }
+
+    #[Test]
     #[Group('spec:inclusion-of-related-resources')]
     public function theDefaultServerPrunesIncludePathsToTypesItCannotSerialize(): void
     {
