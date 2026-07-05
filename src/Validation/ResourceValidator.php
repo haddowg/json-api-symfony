@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Validation;
 
 use haddowg\JsonApi\Hydrator\Relationship\ToManyRelationship;
 use haddowg\JsonApi\Hydrator\Relationship\ToOneRelationship;
+use haddowg\JsonApi\OpenApi\Schema;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Constraint\CompareField;
@@ -13,15 +14,19 @@ use haddowg\JsonApi\Resource\Constraint\Comparison;
 use haddowg\JsonApi\Resource\Constraint\ConstraintInterface;
 use haddowg\JsonApi\Resource\Constraint\Nullable;
 use haddowg\JsonApi\Resource\Constraint\Required;
+use haddowg\JsonApi\Resource\Constraint\Shape;
 use haddowg\JsonApi\Resource\Constraint\When;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\FieldInterface;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Map;
 use haddowg\JsonApi\Resource\Field\Mode;
+use haddowg\JsonApi\Resource\Field\Obj;
+use haddowg\JsonApi\Resource\Field\OneOf;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Schema\Error\Error;
 use haddowg\JsonApi\Schema\Error\ErrorSource;
+use haddowg\JsonApi\Validation\SchemaValueValidator;
 use haddowg\JsonApiBundle\Server\IdEncoderResolver;
 use Symfony\Component\Validator\Constraints\Collection;
 use Symfony\Component\Validator\Constraints\NotBlank;
@@ -86,6 +91,10 @@ final class ResourceValidator
         private readonly ConstraintTranslator $translator,
         private readonly JsonPointerBuilder $pointers,
         private readonly IdEncoderResolver $idFormats,
+        // The core opis value-validator for the Shape composite-schema constraint,
+        // wired only when opis/json-schema is installed (null-wired otherwise, so a
+        // Shape then documents its OpenAPI shape but is not value-validated).
+        private readonly ?SchemaValueValidator $schemaValues = null,
     ) {}
 
     /**
@@ -194,6 +203,29 @@ final class ResourceValidator
                     $errors[] = $error;
                 }
             }
+        }
+
+        // A discriminated union (OneOf) validates value-dependently — the incoming
+        // discriminator selects the variant whose children are then validated — so it
+        // runs as a document-level pass (like the cross-field compares) where the value
+        // is in scope, not through the static per-field Collection which cannot know
+        // which variant's rules apply. A variant child violation maps to
+        // /data/attributes/<field>/<child>; an unknown discriminator to
+        // /data/attributes/<field>/<discriminator>.
+        foreach ($this->oneOfErrors($resource, $attributes, $creating, $request) as $error) {
+            $errors[] = $error;
+        }
+
+        // A Shape constraint carries raw JSON Schema (oneOf/anyOf/allOf of member
+        // schemas) that no Symfony rule can translate — its only validator is opis, run
+        // through the core SchemaValueValidator. Like OneOf and the compares, it runs as
+        // a document-level pass because it validates a whole field value against its
+        // composite schema; a leaf violation carries the opis instance pointer appended
+        // to /data/attributes/<field>. Skipped entirely when opis is not installed (the
+        // validator is null-wired), so a Shape then documents its OpenAPI shape but is
+        // not value-validated — the same optional-linter posture opis already has.
+        foreach ($this->shapeErrors($resource, $attributes, $creating, $request) as $error) {
+            $errors[] = $error;
         }
 
         // Before any per-field format checking, reject a relationship linkage whose
@@ -1160,13 +1192,12 @@ final class ResourceValidator
     {
         $constraints = [];
 
-        // A structured attribute (Map) validates its children by recursion: a
-        // nested Collection mirroring the top-level one carries the per-child rules,
-        // so a child violation maps to /data/attributes/<map>/<child>. One level
-        // only — a child that is itself a Map (or a list-of-objects) is not
-        // descended into here ($descend is false one level in), which also bounds
-        // the recursion (ADR 0020).
-        if ($descend && $field instanceof Map) {
+        // A structured attribute (Map or the single-value Obj) validates its children
+        // by recursion: a nested Collection mirroring the top-level one carries the
+        // per-child rules, so a child violation maps to /data/attributes/<field>/<child>.
+        // One level only — a child that is itself structured is not descended into here
+        // ($descend is false one level in), which also bounds the recursion (ADR 0020).
+        if ($descend && ($field instanceof Map || $field instanceof Obj)) {
             $constraints[] = $this->nestedCollection($field, $creating, $request);
         }
 
@@ -1182,6 +1213,11 @@ final class ResourceValidator
             }
             if ($constraint instanceof EntityConstraintInterface) {
                 continue; // validated against the hydrated entity, not the document
+            }
+            if ($constraint instanceof Shape) {
+                continue; // a composite-schema (oneOf/anyOf/allOf) carrier of raw JSON
+                // Schema; not translatable to a Symfony rule — validated by the
+                // core opis SchemaValueValidator in the document-level pass below
             }
             foreach ($this->translator->translate($constraint, $request) as $symfonyConstraint) {
                 $constraints[] = $symfonyConstraint;
@@ -1201,10 +1237,10 @@ final class ResourceValidator
      * out of scope here (ADR 0020), so a nested Map's *own* children are not
      * descended into, which also guards against unbounded recursion.
      */
-    private function nestedCollection(Map $map, bool $creating, ?JsonApiRequestInterface $request = null): Collection
+    private function nestedCollection(Map|Obj $structured, bool $creating, ?JsonApiRequestInterface $request = null): Collection
     {
         $fields = [];
-        foreach ($map->children() as $child) {
+        foreach ($structured->children() as $child) {
             // A Map child's *visibility* (read-only / hidden) is an explicit non-goal
             // of request-aware predicates (ADR 0020 / core ADR 0079), so this skip
             // stays static; only the child's `when()` condition sees the request,
@@ -1219,6 +1255,123 @@ final class ResourceValidator
         }
 
         return new Collection(fields: $fields, allowExtraFields: true);
+    }
+
+    /**
+     * Validates each present {@see OneOf} attribute value-dependently: the incoming
+     * discriminator selects the variant, whose children are then validated through a
+     * nested Collection mirroring the {@see Map}/{@see Obj} cascade (one level, same
+     * create/update presence resolution). An array value whose discriminator names no
+     * variant yields one error at `/data/attributes/<field>/<discriminator>`; a
+     * non-array value one at `/data/attributes/<field>`. Absent or explicit-null values
+     * are the main pass's concern (presence / nullability), so they are skipped here.
+     *
+     * @param array<string, mixed> $attributes the merged incoming attribute map
+     *
+     * @return list<Error>
+     */
+    private function oneOfErrors(AbstractResource $resource, array $attributes, bool $creating, JsonApiRequestInterface $request): array
+    {
+        $errors = [];
+        foreach ($resource->fields() as $field) {
+            if (!$field instanceof OneOf) {
+                continue;
+            }
+            if (!\array_key_exists($field->name(), $attributes) || $field->isReadOnlyFor($creating, $request)) {
+                continue;
+            }
+
+            $value = $attributes[$field->name()];
+            if ($value === null) {
+                continue;
+            }
+            if (!\is_array($value)) {
+                $errors[] = $this->error('This value should be an object.', '[' . $field->name() . ']');
+
+                continue;
+            }
+
+            $discriminator = $field->discriminatorName();
+            $variant = $field->variantFor($value[$discriminator] ?? null);
+            if ($variant === null) {
+                $errors[] = $this->error('This value is not one of the allowed types.', '[' . $field->name() . '][' . $discriminator . ']');
+
+                continue;
+            }
+
+            $fields = [];
+            foreach ($variant->children() as $child) {
+                if ($child->isReadOnly($creating)) {
+                    continue;
+                }
+                $fields[$child->name()] = $this->fieldConstraint($child, $creating, descend: false, request: $request, value: $value[$child->name()] ?? null);
+            }
+            if ($fields === []) {
+                continue;
+            }
+
+            $violations = $this->validator->validate($value, new Collection(fields: $fields, allowExtraFields: true));
+            foreach ($violations as $violation) {
+                $errors[] = $this->error((string) $violation->getMessage(), '[' . $field->name() . ']' . (string) $violation->getPropertyPath());
+            }
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Validates each present attribute carrying a {@see Shape} constraint against that
+     * constraint's composite JSON Schema (oneOf/anyOf/allOf of raw member schemas),
+     * through the core {@see SchemaValueValidator} (opis). A {@see Shape} is a raw-schema
+     * carrier no Symfony rule can translate, so — like {@see OneOf} and the cross-field
+     * compares — it validates value-dependently at the document level, not through the
+     * static per-field Collection. Each returned {@see Error} already carries the opis
+     * instance pointer appended to `/data/attributes/<field>`.
+     *
+     * A no-op when opis is not installed (`$this->schemaValues === null`), so a Shape
+     * still documents its OpenAPI shape but is not value-validated — the same optional
+     * posture the opis structural linter has. Absent or explicit-null values are the
+     * main pass's concern (presence / nullability), so they are skipped here.
+     *
+     * @param array<string, mixed> $attributes the merged incoming attribute map
+     *
+     * @return list<Error>
+     */
+    private function shapeErrors(AbstractResource $resource, array $attributes, bool $creating, JsonApiRequestInterface $request): array
+    {
+        if ($this->schemaValues === null) {
+            return []; // opis not installed — a Shape documents but does not validate
+        }
+
+        $errors = [];
+        foreach ($resource->fields() as $field) {
+            if ($field instanceof Id || $field instanceof RelationInterface) {
+                continue;
+            }
+            if (!\array_key_exists($field->name(), $attributes) || $field->isReadOnlyFor($creating, $request)) {
+                continue;
+            }
+
+            $value = $attributes[$field->name()];
+            if ($value === null) {
+                continue; // nullability is the main pass's concern, not the shape's
+            }
+
+            foreach ($field->constraints() as $constraint) {
+                if (!$constraint instanceof Shape || !$constraint->context()->appliesTo($creating)) {
+                    continue;
+                }
+                foreach ($this->schemaValues->validate(
+                    $constraint->contribute(Schema::create()),
+                    $value,
+                    '/data/attributes/' . $field->name(),
+                ) as $error) {
+                    $errors[] = $error;
+                }
+            }
+        }
+
+        return $errors;
     }
 
     /**

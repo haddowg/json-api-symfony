@@ -465,7 +465,18 @@ return static function (ContainerConfigurator $container): void {
         $services->set(ConstraintTranslator::class)
             ->arg('$extensionTranslators', \Symfony\Component\DependencyInjection\Loader\Configurator\tagged_iterator(JsonApiBundle::CONSTRAINT_TRANSLATOR_TAG));
 
-        $services->set(ResourceValidator::class);
+        // The core opis value-validator backs the Shape composite-schema constraint
+        // (raw oneOf/anyOf/allOf member schemas no Symfony rule can translate). opis is
+        // a `suggest` dependency, so it is registered only when opis/json-schema is
+        // installed and injected ->nullOnInvalid() otherwise — a Shape then documents
+        // its OpenAPI shape but is not value-validated, independent of the optional
+        // structural linter's `json_api.schema_validation` toggle.
+        if (\class_exists(\Opis\JsonSchema\Validator::class)) {
+            $services->set(\haddowg\JsonApi\Validation\SchemaValueValidator::class);
+        }
+
+        $services->set(ResourceValidator::class)
+            ->arg('$schemaValues', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApi\Validation\SchemaValueValidator::class)->nullOnInvalid());
 
         // The filter-value twin of the ResourceValidator: validates client-supplied
         // filter[<key>] values against the value constraints a filter declares,
