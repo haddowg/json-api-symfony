@@ -6,14 +6,14 @@ namespace haddowg\JsonApiBundle\DataProvider\Doctrine;
 
 use Doctrine\ORM\Mapping\ClassMetadata;
 use Doctrine\ORM\QueryBuilder;
+use haddowg\JsonApi\Collection\Keyset\KeysetColumn;
 use haddowg\JsonApi\Pagination\CursorBoundary;
-use haddowg\JsonApiBundle\DataProvider\Keyset\KeysetColumn;
 
 /**
  * Builds the Doctrine push-down for a cursor (keyset) page — the forced
  * NULL=largest `ORDER BY` and the IS-NULL-branched lexicographic keyset `WHERE`
- * — matching the in-memory witness ({@see \haddowg\JsonApiBundle\DataProvider\Keyset\InMemoryKeyset})
- * byte-for-byte (bundle ADR 0063).
+ * — matching the in-memory witness ({@see \haddowg\JsonApi\Collection\Keyset\InMemoryKeyset})
+ * byte-for-byte (bundle ADR 0063 / core ADR 0123).
  *
  * The order is forced as a PORTABLE NULL=largest (NOT `NULLS LAST`, which
  * MySQL/SQLite lack): each column emits a leading `CASE WHEN c IS NULL THEN 1
@@ -32,17 +32,31 @@ use haddowg\JsonApiBundle\DataProvider\Keyset\KeysetColumn;
  * a lexical string compare against a datetime/binary column. Each boundary value
  * binds a FRESH placeholder per occurrence (it repeats across OR branches) in a
  * `jsonapi_cursor_N` space distinct from the filter handler's.
+ *
+ * A keyset column normally lives on the ROOT alias (the fetched entity). The
+ * pivot related-collection cursor walks a keyset that can span TWO aliases —
+ * the far entity at the root plus the association entity joined as `pivot` —
+ * so a column-keyed `$aliasOfColumn` map (derived from the criteria's `aliasOf`
+ * routing at SQL-build time, since a {@see KeysetColumn} deliberately carries
+ * only column + direction) routes each column to its alias, and
+ * `$metadataOfAlias` supplies that alias's entity metadata so the boundary
+ * value still binds with the RIGHT DBAL type. Both default empty, so every
+ * non-pivot keyset is byte-identical to before.
  */
 final class DoctrineKeyset
 {
     private int $bindCount = 0;
 
     /**
-     * @param ClassMetadata<object> $metadata the root entity's metadata (column → DBAL type)
+     * @param ClassMetadata<object>                 $metadata        the root entity's metadata (column → DBAL type)
+     * @param array<string, string>                 $aliasOfColumn   keyset column → non-root query alias; an absent column resolves to the root alias
+     * @param array<string, ClassMetadata<object>>  $metadataOfAlias non-root alias → its entity's metadata (for typed boundary binds)
      */
     public function __construct(
         private readonly ClassMetadata $metadata,
         private readonly string $rootAlias,
+        private readonly array $aliasOfColumn = [],
+        private readonly array $metadataOfAlias = [],
     ) {}
 
     /**
@@ -180,7 +194,8 @@ final class DoctrineKeyset
     {
         $placeholder = 'jsonapi_cursor_' . $this->bindCount++;
 
-        $type = $this->metadata->hasField($column) ? $this->metadata->getTypeOfField($column) : null;
+        $metadata = $this->metadataFor($column);
+        $type = $metadata->hasField($column) ? $metadata->getTypeOfField($column) : null;
 
         if ($type !== null) {
             $value = $this->toPhpValue($value, $type);
@@ -230,6 +245,20 @@ final class DoctrineKeyset
             throw new \LogicException(\sprintf('"%s" is not a valid Doctrine field path.', $column));
         }
 
-        return $this->rootAlias . '.' . $column;
+        return ($this->aliasOfColumn[$column] ?? $this->rootAlias) . '.' . $column;
+    }
+
+    /**
+     * The metadata whose field types bind `$column`'s boundary values: the routed
+     * alias's entity metadata for a non-root (pivot) column, the root entity's
+     * otherwise.
+     *
+     * @return ClassMetadata<object>
+     */
+    private function metadataFor(string $column): ClassMetadata
+    {
+        $alias = $this->aliasOfColumn[$column] ?? null;
+
+        return $alias !== null ? ($this->metadataOfAlias[$alias] ?? $this->metadata) : $this->metadata;
     }
 }

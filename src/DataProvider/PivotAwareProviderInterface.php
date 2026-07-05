@@ -44,7 +44,12 @@ interface PivotAwareProviderInterface
      * and the per-member pivot map (read from the same query), for the related
      * endpoint (`GET /{type}/{id}/{rel}`).
      *
-     * @return PivotCollectionResult<TEntity>
+     * A cursor (keyset) window ({@see \haddowg\JsonApi\Pagination\CursorWindow})
+     * returns the cursor variant instead: the same page + pivot map, plus the
+     * boundary cursor tokens the provider minted (count-free by design — the
+     * handler narrows on it to build the cursor page).
+     *
+     * @return PivotCollectionResult<TEntity>|PivotCursorCollectionResult<TEntity>
      */
     public function fetchRelatedPivotCollection(
         string $relatedType,
@@ -52,7 +57,7 @@ interface PivotAwareProviderInterface
         RelationInterface $relation,
         CollectionCriteria $criteria,
         JsonApiRequestInterface $request,
-    ): PivotCollectionResult;
+    ): PivotCollectionResult|PivotCursorCollectionResult;
 
     /**
      * The pivot map for EVERY member of `$parent`'s pivot `$relation` (no window,

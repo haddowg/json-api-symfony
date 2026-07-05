@@ -29,6 +29,7 @@ use haddowg\JsonApi\Operation\RemoveFromRelationshipOperation;
 use haddowg\JsonApi\Operation\UpdateRelationshipOperation;
 use haddowg\JsonApi\Operation\UpdateResourceOperation;
 use haddowg\JsonApi\Pagination\CursorPaginator;
+use haddowg\JsonApi\Pagination\PageInterface;
 use haddowg\JsonApi\Pagination\PaginatorInterface;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Request\RelatedQuery;
@@ -666,6 +667,32 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $this->preloadIncludes($relatedProvider, $items, $relatedType, $request);
                 $this->applyRelationshipCounts($server, $relatedType, $items, $request);
 
+                // A cursor (keyset) pivot page: the provider minted the boundary
+                // tokens off the same query that read the pivot map, so render
+                // through the paginator's cursor path exactly as the non-pivot twin
+                // below — the members ride the PivotMetaSerializer, so each carries
+                // its `meta.pivot`. Total-null by design, so the counted and
+                // count-free offset arms below stay byte-identical.
+                if ($pivotResult instanceof CursorCollectionResult && $paginator instanceof CursorPaginator) {
+                    $from = $items === [] ? null : $serializer->getId($items[0]);
+                    $to = $items === [] ? null : $serializer->getId($items[\array_key_last($items)]);
+
+                    return RelatedResponse::fromPage(
+                        $paginator->fromBoundaries(
+                            $request,
+                            $items,
+                            $pivotResult->cursorBefore ?? '',
+                            $pivotResult->cursorAfter ?? '',
+                            $pivotResult->hasMore,
+                            $pivotResult->hasPrevious,
+                            from: $from,
+                            to: $to,
+                        ),
+                        $serializer,
+                        $relation->isCountable(),
+                    );
+                }
+
                 // Counted page: the single total fans to BOTH meta.page.total (inside
                 // the count-based page) AND the universal top-level meta.total — one
                 // count, two slots (G21 §6b).
@@ -1041,7 +1068,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // Linkage-only response (IdentifierResponse) — a relationship endpoint carries no
             // compound `included` (core D16 / core ADR 0107); the pivot meta rides the windowed
             // map below, so there is nothing to preload here.
-            $this->supplyWindowedRelationship($parent, $relationshipName, $items, $paginator, $pivotResult, $relWantsCount, $request, $operation->queryParameters());
+            $page = $this->supplyWindowedRelationship($parent, $relationshipName, $items, $paginator, $pivotResult, $relWantsCount, $request, $operation->queryParameters());
 
             // The pivot meta rides the WINDOWED page's map: a PivotMetaSerializer over the
             // page-1 pivot map, bound to this relationship by the PivotParentSerializer.
@@ -1054,7 +1081,12 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $pivotSerializer,
             );
 
-            return IdentifierResponse::forRelationship($parent, $parentSerializer, $relationshipName);
+            $response = IdentifierResponse::forRelationship($parent, $parentSerializer, $relationshipName);
+
+            // Attach the page that windowed the linkage so a page profile (the
+            // cursor-pagination profile) is advertised on the response; the body
+            // stays links-only (core ADR 0124).
+            return $page !== null ? $response->withPage($page) : $response;
         }
 
         // A polymorphic to-many (MorphToMany) relationship endpoint's members span types,
@@ -1127,9 +1159,14 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // carries a compound `included` (core D16 / core ADR 0107), so `?include` here is
             // inert and there is nothing to preload (the old preload was mis-rooted and
             // rendered nothing — a wasted fetch).
-            $this->supplyWindowedRelationship($parent, $relationshipName, $items, $paginator, $result, $relWantsCount, $request, $operation->queryParameters());
+            $page = $this->supplyWindowedRelationship($parent, $relationshipName, $items, $paginator, $result, $relWantsCount, $request, $operation->queryParameters());
 
-            return IdentifierResponse::forRelationship($parent, $server->serializerFor($type), $relationshipName);
+            $response = IdentifierResponse::forRelationship($parent, $server->serializerFor($type), $relationshipName);
+
+            // Attach the page that windowed the linkage so a page profile (the
+            // cursor-pagination profile) is advertised on the response; the body
+            // stays links-only (core ADR 0124).
+            return $page !== null ? $response->withPage($page) : $response;
         }
 
         return IdentifierResponse::forRelationship($parent, $server->serializerFor($type), $relationshipName);
@@ -1149,8 +1186,24 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * with no paginator (`pagination(null)`) is filtered/sorted but not sliced — no
      * pagination entry, so no links (the holders were cleared at the top of the read).
      *
+     * A cursor (keyset) relation builds its page through the paginator's cursor
+     * path ({@see CursorPaginator::fromBoundaries()}, carrying the provider-minted
+     * boundary tokens + has-flags) rather than the count-based conveniences (which
+     * a {@see CursorPaginator} deliberately answers token-less), so the emitted
+     * `prev`/`next` links carry `page[before]`/`page[after]` cursors. A
+     * {@see CursorCollectionResult} is windowed-true/total-null by construction,
+     * so it flows the same guard as a count-free offset page.
+     *
+     * Returns the built page (or `null` when the relation supplied none) so the
+     * caller can attach it to the {@see IdentifierResponse} via `withPage()` —
+     * advertising a page profile (e.g. cursor pagination) on the linkage response
+     * exactly as the related endpoint does, while the body stays links-only (core
+     * ADR 0124).
+     *
      * @param list<object>             $items  the page-1 linkage members
      * @param CollectionResult<object> $result the provider's windowed fetch result
+     *
+     * @return PageInterface<mixed>|null
      */
     private function supplyWindowedRelationship(
         object $parent,
@@ -1161,14 +1214,14 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         bool $wantsCount,
         JsonApiRequestInterface $request,
         QueryParameters $queryParameters,
-    ): void {
+    ): ?PageInterface {
         $objectId = \spl_object_id($parent);
         $this->relationshipLinkage?->set(new WindowedRelationshipLinkage(
             [$objectId => [$relationshipName => new RelationshipLinkage($items)]],
         ));
 
         if ($paginator === null || ($result->total === null && !$result->windowed)) {
-            return;
+            return null;
         }
 
         $queryString = (new RelatedQuery(
@@ -1176,13 +1229,24 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $queryParameters->filter,
         ))->toPlainQueryString();
 
-        $page = $wantsCount && $result->total !== null
-            ? $paginator->paginate($request, $items, $result->total)
-            : $paginator->paginateWithoutCount($request, $items, $result->hasMore);
+        $page = match (true) {
+            $result instanceof CursorCollectionResult && $paginator instanceof CursorPaginator => $paginator->fromBoundaries(
+                $request,
+                $items,
+                $result->cursorBefore ?? '',
+                $result->cursorAfter ?? '',
+                $result->hasMore,
+                $result->hasPrevious,
+            ),
+            $wantsCount && $result->total !== null => $paginator->paginate($request, $items, $result->total),
+            default => $paginator->paginateWithoutCount($request, $items, $result->hasMore),
+        };
 
         $this->relationshipPagination?->set(new WindowedRelationshipPagination(
             [$objectId => [$relationshipName => new RelationshipPagination($page, $queryString)]],
         ));
+
+        return $page;
     }
 
     /**

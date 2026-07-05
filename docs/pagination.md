@@ -204,9 +204,37 @@ related URL, and everything else on this page — the active-sort keyset, the
 opaque tokens, the count-free `meta.page`, the `400`s — applies verbatim. The
 dual-provider
 [`RelatedCursorConformanceTestCase`](../tests/Functional/RelatedCursorConformanceTestCase.php)
-asserts this over the `cursorShelves` → `widgets` fixture. (The pivot-backed
-`belongsToMany` related endpoint and relationship-linkage `GET` windowing remain
-offset-only for now.)
+asserts this over the `cursorShelves` → `widgets` fixture.
+
+A **pivot-backed `belongsToMany`** related endpoint pages by cursor too (bundle
+ADR 0114). Over the Doctrine provider the keyset executes as the same single
+association-entity query that reads the pivot values, so each member still
+renders its `meta.pivot` and a **pivot field is a sortable keyset column** —
+`?sort=position` walks the pivot column with the far entity's primary key as the
+tiebreak, and the boundary tokens snapshot the pivot value. Everything else is
+identical to a plain related cursor page. The in-memory provider is not
+pivot-aware (the documented pivot boundary), so the same declaration pages
+through the plain keyset there: identical page walks, no pivot vocabulary or
+meta. The dual-provider
+[`PivotRelatedCursorConformanceTestCase`](../tests/Functional/PivotRelatedCursorConformanceTestCase.php)
+asserts both halves over the `cursorShelves` → `pivotWidgets` fixture.
+
+### On a relationship (linkage) endpoint
+
+The relationship endpoint (`GET /{type}/{id}/relationships/{rel}`) windows by
+cursor under the same relation-declared (or inherited) `CursorPaginator` (bundle
+ADR 0114). The linkage `data` is the keyset page of resource **identifiers**, and
+the boundary-cursor links ride the document's `links` at the relationship URL —
+`first`, `prev` (`page[before]=…`) and `next` (`page[after]=…`), never `last`
+(count-free by design). The body stays **links-only**: a linkage document carries
+no `meta.page` (core ADR 0124); the windowing page is attached to the response
+only so the cursor-pagination **profile is advertised** (`jsonapi.profile` + the
+`Content-Type` `profile` parameter), byte-identical to the related endpoint's
+advertisement. A pivot relation's linkage page additionally carries each
+identifier's `meta.pivot` over the Doctrine provider, exactly as the related
+endpoint does. The dual-provider
+[`LinkageCursorConformanceTestCase`](../tests/Functional/LinkageCursorConformanceTestCase.php)
+asserts this over the same `cursorShelves` fixtures.
 
 ### The wire parameters
 

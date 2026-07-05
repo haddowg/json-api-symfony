@@ -31,4 +31,34 @@ final class CursorShelfFixtures
             '2' => [3, 5, 6, 8],
         ];
     }
+
+    /**
+     * The per-membership `slot` PIVOT value the Doctrine association entity
+     * ({@see \haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\CursorShelfWidgetEntity})
+     * carries for the pivot-related cursor suite (bundle ADR 0114) — `widgetId =>
+     * slot`, the same value on every shelf the widget sits on. Slots deliberately
+     * TIE in pairs (1:{4,5}, 2:{3,7}, 3:{2,6}, 4:{1,8}), so a `?sort=slot` keyset
+     * order is `slot asc, id asc` = 4,5,3,7,2,6,1,8 — a walk that differs from
+     * BOTH the id order and every widget-attribute order (it cannot pass by
+     * accident), and whose ties force the far PK tiebreak mid-walk.
+     *
+     * The in-memory provider is not pivot-aware, so it never reads these — the
+     * documented boundary the in-memory half of the suite asserts (`?sort=slot`
+     * is a 400 there).
+     *
+     * @return array<int, int>
+     */
+    public static function slots(): array
+    {
+        return [
+            1 => 4,
+            2 => 3,
+            3 => 2,
+            4 => 1,
+            5 => 1,
+            6 => 3,
+            7 => 2,
+            8 => 4,
+        ];
+    }
 }

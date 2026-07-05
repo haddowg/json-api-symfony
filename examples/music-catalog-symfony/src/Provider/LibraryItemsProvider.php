@@ -17,6 +17,7 @@ use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineDataProvider;
 use haddowg\JsonApiBundle\DataProvider\PivotAwareProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\PivotCollectionResult;
+use haddowg\JsonApiBundle\DataProvider\PivotCursorCollectionResult;
 use haddowg\JsonApiBundle\DataProvider\RelatedBatch;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Album;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Artist;
@@ -281,7 +282,7 @@ final class LibraryItemsProvider implements DataProviderInterface, PivotAwarePro
         RelationInterface $relation,
         CollectionCriteria $criteria,
         JsonApiRequestInterface $request,
-    ): PivotCollectionResult {
+    ): PivotCollectionResult|PivotCursorCollectionResult {
         return $this->doctrine->fetchRelatedPivotCollection($relatedType, $parent, $relation, $criteria, $request);
     }
 
