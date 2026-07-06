@@ -19,7 +19,7 @@ owns the storage decision — owns the dispatch decision too, and the only new s
 is a return-value marker plus a handler branch (no new SPI, registry, or interface).
 *How* the work is queued stays the application's choice (see `docs/async.md` for the
 Messenger recipe); the bundle only owns the spec-correct `202`/`303` wire shape, which
-rides core's framework-neutral `AcceptedResponse`/`SeeOtherResponse` (core ADR 0116)
+rides core's framework-neutral `AcceptedResponse`/`SeeOtherResponse` (core ADR 0125)
 so the Laravel package emits the identical bytes over its own queue.
 
 ## Consequences

@@ -71,6 +71,7 @@ validation:
 exclude_docs: |
   IA-PLAN.md
   api-platform-gap-analysis.md
+  json-api-server-gap-analysis.md
   laravel-gap-analysis.md
   laravel-gap-build-plan.md
   query-building-consolidation-review.md
