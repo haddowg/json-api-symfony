@@ -10,7 +10,6 @@ use Doctrine\ORM\EntityManagerInterface;
 use haddowg\JsonApi\Exception\ResourceNotFound;
 use haddowg\JsonApi\Hydrator\Relationship\ToManyRelationship;
 use haddowg\JsonApi\Hydrator\Relationship\ToOneRelationship;
-use haddowg\JsonApi\Resource\Field\AbstractField;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\FieldInterface;
 use haddowg\JsonApi\Resource\Field\Mode;
@@ -481,25 +480,13 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
      * Coerces a wire pivot value to its domain representation via the field's OWN
      * value cast (an `Integer` → int, a `DateTime` → `\DateTimeImmutable`), so the
      * association entity's typed column receives the right type. A pivot field is a
-     * plain field definition (no `deserializeUsing`/`fillUsing` hook), whose cast is
-     * the field's protected `deserializeValue`; it is request-independent, so a
-     * closure bound to the {@see AbstractField} base invokes it without building a
-     * request. A field not built on that base passes the value through unchanged.
+     * plain field definition (no `deserializeUsing`/`fillUsing` hook), so only its
+     * declared type's value cast applies, request-independently, through the field's
+     * public {@see FieldInterface::castWireValue()} seam.
      */
     private function coercePivotValue(FieldInterface $field, mixed $value): mixed
     {
-        if (!$field instanceof AbstractField) {
-            return $value;
-        }
-
-        /** @var \Closure(mixed): mixed $cast */
-        $cast = \Closure::bind(
-            fn(mixed $raw): mixed => $this->deserializeValue($raw),
-            $field,
-            AbstractField::class,
-        );
-
-        return $cast($value);
+        return $field->castWireValue($value);
     }
 
     /**
