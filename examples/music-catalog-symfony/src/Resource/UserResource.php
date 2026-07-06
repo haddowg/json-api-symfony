@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Resource;
 
+use haddowg\JsonApi\Pagination\CursorPaginator;
+use haddowg\JsonApi\Pagination\PaginatorInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Constraint\Comparison;
 use haddowg\JsonApi\Resource\Constraint\MinLength;
@@ -37,6 +39,16 @@ use haddowg\JsonApiBundle\Validation\Constraint\UniqueEntity;
  * additionally carries a {@see UniqueEntity} entity-level rule — the post-hydration
  * seam that queries this repository through `symfony/doctrine-bridge` to reject a
  * duplicate before commit.
+ *
+ * It is finally the **cursor (keyset) pagination witness** (core ADR 0123, bundle
+ * ADR 0063): {@see pagination()} pins a {@see CursorPaginator} for the primary
+ * `users` collection, so `GET /users` (admin server) pages by opaque
+ * `page[after]`/`page[before]` cursor tokens rather than `page[number]`. It is the
+ * ONE cursor surface in the catalogue — every other collection and relation stays
+ * page-based — so the projected OpenAPI advertises the cursor `page[…]` vocabulary
+ * on this one path. With no `?sort` requested and no {@see defaultSort()} declared,
+ * the keyset falls back to the `id` primary key alone (a total, deterministic order),
+ * so the cursor is stable with zero extra ordering config.
  */
 #[AsJsonApiResource(entity: User::class, server: 'admin')]
 final class UserResource extends AbstractResource
@@ -88,6 +100,21 @@ final class UserResource extends AbstractResource
             HasMany::make('playlists', 'playlists'),
             HasOne::make('library', 'libraries'),
         ];
+    }
+
+    /**
+     * Pin the cursor (keyset) strategy for this resource's primary collection — the
+     * catalogue's sole cursor witness. Returning a {@see CursorPaginator} verbatim
+     * replaces the server default (page-based) for `GET /users` alone: the endpoint
+     * pages by opaque `page[after]`/`page[before]` tokens (count-free, no total),
+     * and the OpenAPI projector advertises exactly that cursor `page[…]` vocabulary
+     * for it. The keyset needs a total order; with no requested `?sort` and no
+     * {@see defaultSort()}, the resolver terminates the keyset on the `id` primary key
+     * alone, so the order is deterministic without any extra config.
+     */
+    public function pagination(?PaginatorInterface $serverDefault): PaginatorInterface
+    {
+        return CursorPaginator::make();
     }
 
     /**
