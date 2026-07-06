@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Validation;
 
+use haddowg\JsonApi\OpenApi\Schema;
 use haddowg\JsonApi\Resource\Constraint\After;
 use haddowg\JsonApi\Resource\Constraint\AtLeastOneOf;
 use haddowg\JsonApi\Resource\Constraint\Before;
@@ -31,6 +32,7 @@ use haddowg\JsonApi\Resource\Constraint\UniqueItems;
 use haddowg\JsonApi\Resource\Constraint\UrlFormat;
 use haddowg\JsonApi\Resource\Constraint\UuidFormat;
 use haddowg\JsonApi\Resource\Constraint\When;
+use haddowg\JsonApiBundle\Validation\Constraint\NativeConstraints;
 use haddowg\JsonApiBundle\Validation\Constraint\UniqueEntity;
 use haddowg\JsonApiBundle\Validation\ConstraintTranslator;
 use haddowg\JsonApiBundle\Validation\ConstraintTranslatorInterface;
@@ -176,6 +178,47 @@ final class ConstraintTranslatorTest extends TestCase
         ]);
 
         self::assertEquals([new Length(min: 5)], $translator->translate($constraint));
+    }
+
+    #[Test]
+    public function itPassesNativeSymfonyConstraintsThroughUntranslated(): void
+    {
+        $length = new Length(min: 3);
+        $regex = new Regex(pattern: '/^[a-z]+$/');
+
+        // The carrier holds ready-made Symfony constraints — the translator returns them
+        // verbatim, no class-keyed extension translator needed.
+        self::assertSame([$length, $regex], $this->translator()->translate(NativeConstraints::make([$length, $regex])));
+    }
+
+    #[Test]
+    public function aNativeConstraintActuallyValidatesThroughTheSamePass(): void
+    {
+        $native = NativeConstraints::make([new Length(min: 3)]);
+
+        self::assertSame(1, $this->violations($native, 'ab'));  // too short → violation
+        self::assertSame(0, $this->violations($native, 'abc')); // long enough → ok
+    }
+
+    #[Test]
+    public function nativeConstraintsAreSchemaInvisibleUntilAuthorDeclaresOne(): void
+    {
+        // A native rule validates but contributes nothing to the projected schema…
+        self::assertSame([], NativeConstraints::make([new Length(min: 3)])->contribute(Schema::create())->toArray());
+
+        // …until the author declares the neutral value schema it implies.
+        $documented = NativeConstraints::make([new Length(min: 3)])
+            ->schema(static fn(Schema $s): Schema => $s->withMinLength(3));
+        self::assertSame(['minLength' => 3], $documented->contribute(Schema::create())->toArray());
+    }
+
+    #[Test]
+    public function nativeConstraintsScopeToAWriteContext(): void
+    {
+        $onCreate = NativeConstraints::make([new Length(min: 3)])->onCreate();
+
+        self::assertTrue($onCreate->context()->onCreate);
+        self::assertFalse($onCreate->context()->onUpdate);
     }
 
     #[Test]

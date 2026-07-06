@@ -412,6 +412,39 @@ typed replacement for the removed `$id`-keyed `Custom` hatch — a translator ma
 on the constraint's **class**, not a string id. (An entity-level custom rule uses
 the same seam, additionally implementing `EntityConstraintInterface`.)
 
+### Native Symfony constraints without a translator: `NativeConstraints`
+
+For a one-off Symfony-native rule, skip the bespoke VO + translator and wrap the raw
+`Assert\*` constraints in
+[`NativeConstraints`](../src/Validation/Constraint/NativeConstraints.php), attached with
+`constrain()`:
+
+```php
+Str::make('secret')->constrain(NativeConstraints::make([new Assert\NotCompromisedPassword()]));
+```
+
+The translator recognises the carrier and passes the wrapped constraints straight to the
+validator — so they run in the same `422` pass (and, because the filter-value validator
+shares the translator, on `filter[…]` values too) with nothing to register. Scope it with
+`->onCreate()` / `->onUpdate()`.
+
+A native rule is **invisible to the generated OpenAPI/JSON Schema** by default (it
+validates but doesn't document). Declare the value schema it implies with `->schema()` — a
+closure over core's neutral `Schema` VO (it rides core's
+[`ProvidesJsonSchema`](https://github.com/haddowg/json-api/blob/main/src/Resource/Constraint/ProvidesJsonSchema.php)
+seam) — when you want it in the document:
+
+```php
+Str::make('secret')->constrain(
+    NativeConstraints::make([new Assert\NotCompromisedPassword()])
+        ->schema(static fn(Schema $s): Schema => $s->withMinLength(8)),
+);
+```
+
+Keep the fragment framework-neutral so a byte-compatible twin (the Laravel `LaravelRules`
+carrier) emits the identical schema. `NativeConstraints` couples the field to Symfony, so
+prefer a core constraint when one exists and reach here only for a genuinely native rule.
+
 ## Strict-email degradation
 
 `EmailFormat(strict)` translates to `Email(mode: STRICT)` **only** if

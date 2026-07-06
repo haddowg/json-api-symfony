@@ -151,8 +151,24 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
             // Range (and DateRange, which extends it) is a structured min/max filter:
             // two push-down andWhere predicates on the SAME builder, no subquery.
             $filter instanceof Range => $this->range($query, $filter, $value, $alias),
+            // A self-applying filter carries its own Doctrine query fragment (a named
+            // query-builder method, a Criteria, raw DQL) — consulted before the arm
+            // registry, so no separate arm service is needed.
+            $filter instanceof AppliesToQueryBuilder => $this->applySelf($filter, $query, $value, $alias),
             default => $this->applyArm($filter, $query, $value, $alias),
         };
+    }
+
+    /**
+     * Runs a self-applying filter's own Doctrine query fragment, returning the builder so
+     * it composes in the match exactly like a built-in. The filter owns its parameter
+     * binding (the same discipline an arm follows).
+     */
+    private function applySelf(AppliesToQueryBuilder $filter, QueryBuilder $query, mixed $value, string $alias): QueryBuilder
+    {
+        $filter->applyToQueryBuilder($query, $value, $alias);
+
+        return $query;
     }
 
     /**
