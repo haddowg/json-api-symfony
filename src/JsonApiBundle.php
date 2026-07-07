@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle;
 
+use haddowg\JsonApi\OpenApi\Metadata\Accepted;
+use haddowg\JsonApi\OpenApi\Metadata\ActionResource;
+use haddowg\JsonApi\OpenApi\Metadata\MetaResult;
+use haddowg\JsonApi\OpenApi\Metadata\NoContent;
+use haddowg\JsonApi\OpenApi\Metadata\OperationResponseInterface;
+use haddowg\JsonApi\OpenApi\Metadata\SeeOther;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiAction;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiHydrator;
@@ -702,6 +708,13 @@ final class JsonApiBundle extends AbstractBundle
                     // beneath the resource's own method hooks.
                     'description' => $attribute->description,
                     'operation_descriptions' => self::operationDescriptionsTag($attribute),
+                    // The per-operation OpenAPI response declarations (typed response
+                    // objects): the five create/update/delete/fetchOne/fetchCollection
+                    // sets JSON-encoded into a single scalar tag attribute the
+                    // ResourceLocatorPass decodes into the route descriptor for the
+                    // OpenAPI MetadataSource (a nested map does not survive as a flat tag
+                    // attribute, like `operation_descriptions`).
+                    'responses' => self::responsesTag($attribute),
                 ], static fn(mixed $value): bool => $value !== null));
             },
         );
@@ -764,13 +777,10 @@ final class JsonApiBundle extends AbstractBundle
                     'scope' => $attribute->scope->name,
                     'input' => $attribute->input->name,
                     'inputType' => $attribute->inputType,
-                    'outputType' => $attribute->outputType,
-                    // Only carried when set: a no-output (204) action suppresses the
-                    // outputType default so the document advertises 204 (design §4.5).
-                    'returns204' => $attribute->returns204 ? true : null,
-                    // Only carried when set: a meta-only action suppresses the outputType
-                    // default so the document advertises a meta document (core ADR 0102).
-                    'outputMeta' => $attribute->outputMeta ? true : null,
+                    // The declared success-response set (core ADR 0127), JSON-encoded as a
+                    // list of {kind, type?, jobType?}; absent = the ResourceLocatorPass
+                    // defaults it to a 200 resource document of the mount type.
+                    'responds' => self::actionRespondsTag($attribute),
                     'security' => $attribute->security,
                     'methods' => $attribute->methods !== [] ? \implode(',', $attribute->methods) : null,
                     'name' => $attribute->name,
@@ -1220,6 +1230,69 @@ final class JsonApiBundle extends AbstractBundle
         }
 
         return \json_encode($attribute->operationDescriptions, \JSON_THROW_ON_ERROR);
+    }
+
+    /**
+     * The per-operation OpenAPI response declarations reduced to a single scalar JSON
+     * tag attribute: a map of {@see Operation::value} => list of `{status, jobType?}`,
+     * omitting operations with no declared override. `null` when none are declared, so
+     * `array_filter` drops the attribute. The {@see \haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceLocatorPass}
+     * decodes it back into the route descriptor.
+     */
+    private static function responsesTag(AsJsonApiResource $attribute): ?string
+    {
+        $map = [];
+        foreach ([
+            Operation::Create->value => $attribute->create,
+            Operation::Update->value => $attribute->update,
+            Operation::Delete->value => $attribute->delete,
+            Operation::FetchOne->value => $attribute->fetchOne,
+            Operation::FetchCollection->value => $attribute->fetchCollection,
+        ] as $operation => $responses) {
+            if ($responses === []) {
+                continue;
+            }
+
+            $map[$operation] = \array_map(
+                static fn(OperationResponseInterface $response): array => $response->jobType() !== null
+                    ? ['status' => $response->status(), 'jobType' => $response->jobType()]
+                    : ['status' => $response->status()],
+                $responses,
+            );
+        }
+
+        return $map === [] ? null : \json_encode($map, \JSON_THROW_ON_ERROR);
+    }
+
+    /**
+     * Encodes an action's `responds` set to the JSON scalar the ACTION_TAG carries (a
+     * list of `{kind, type?, jobType?}`) so it survives the compiled container; `null`
+     * when the action declared none (the {@see \haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceLocatorPass}
+     * then defaults it to a `200` resource document of the mount type).
+     */
+    private static function actionRespondsTag(AsJsonApiAction $attribute): ?string
+    {
+        if ($attribute->responds === []) {
+            return null;
+        }
+
+        $out = [];
+        foreach ($attribute->responds as $response) {
+            $out[] = match (true) {
+                $response instanceof ActionResource => ['kind' => 'resource', 'type' => $response->bodyType()],
+                $response instanceof Accepted => ['kind' => 'accepted', 'jobType' => $response->jobType()],
+                $response instanceof MetaResult => ['kind' => 'meta'],
+                $response instanceof NoContent => ['kind' => 'nocontent'],
+                $response instanceof SeeOther => ['kind' => 'seeother'],
+                default => throw new \LogicException(\sprintf(
+                    'Unsupported action response %s on action "%s"; declare responds with ActionResource / MetaResult / NoContent / Accepted / SeeOther.',
+                    $response::class,
+                    $attribute->path,
+                )),
+            };
+        }
+
+        return \json_encode($out, \JSON_THROW_ON_ERROR);
     }
 
     /**

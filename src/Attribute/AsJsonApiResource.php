@@ -4,6 +4,14 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Attribute;
 
+use haddowg\JsonApi\OpenApi\Metadata\CreateResponse;
+use haddowg\JsonApi\OpenApi\Metadata\DeleteResponse;
+use haddowg\JsonApi\OpenApi\Metadata\FetchCollectionResponse;
+use haddowg\JsonApi\OpenApi\Metadata\FetchOneResponse;
+use haddowg\JsonApi\OpenApi\Metadata\OperationResponseInterface;
+use haddowg\JsonApi\OpenApi\Metadata\OperationResponses;
+use haddowg\JsonApi\OpenApi\Metadata\OperationType;
+use haddowg\JsonApi\OpenApi\Metadata\UpdateResponse;
 use haddowg\JsonApiBundle\Operation\Operation;
 
 /**
@@ -118,6 +126,29 @@ use haddowg\JsonApiBundle\Operation\Operation;
 final readonly class AsJsonApiResource
 {
     /**
+     * The declared per-operation OpenAPI success responses (core PR — typed response
+     * objects, self-validating: only spec-valid codes are constructible, a `202`
+     * carries its job type). Each is normalized to a list (`[]` = the operation's
+     * default), validated via {@see OperationResponses::validate()}, and an override
+     * for an operation the type does not expose is a constructor `\LogicException`.
+     *
+     * @var list<CreateResponse>
+     */
+    public array $create;
+
+    /** @var list<UpdateResponse> */
+    public array $update;
+
+    /** @var list<DeleteResponse> */
+    public array $delete;
+
+    /** @var list<FetchOneResponse> */
+    public array $fetchOne;
+
+    /** @var list<FetchCollectionResponse> */
+    public array $fetchCollection;
+
+    /**
      * @param string|list<string>|null                                             $server         the server name(s) exposing this type (null = the implicit `default`)
      * @param class-string|null                                                    $entity         the Doctrine entity backing this resource type
      * @param class-string<\haddowg\JsonApi\Serializer\SerializerInterface>|null    $serializer     a custom serializer for this type
@@ -137,6 +168,11 @@ final readonly class AsJsonApiResource
      * @param list<string>                                                         $tags           the OpenAPI tag names every operation of this type is grouped under (empty = the humanized-type default)
      * @param string|null                                                          $description    the OpenAPI description override for this type's resource-object schema (null = the generated default)
      * @param array<string, string>                                                $operationDescriptions per-CRUD-operation OpenAPI description overrides, keyed by the {@see \haddowg\JsonApiBundle\Operation\Operation} case name (e.g. `Operation::Create->name`); an unknown key is a constructor error
+     * @param CreateResponse|list<CreateResponse>|null                             $create         the declared success responses for `POST` create (single or list; null = the default `201`). `new Accepted($jobType)` documents an async `202`; `new NoContent()` a client-id `204`
+     * @param UpdateResponse|list<UpdateResponse>|null                             $update         the declared success responses for `PATCH` update (null = the default `200`)
+     * @param DeleteResponse|list<DeleteResponse>|null                             $delete         the declared success responses for `DELETE` (null = the default `204`)
+     * @param FetchOneResponse|list<FetchOneResponse>|null                         $fetchOne       the declared success responses for `GET /{type}/{id}` (null = the default `200`; add `new SeeOther()` for a `303` async-completion redirect)
+     * @param FetchCollectionResponse|list<FetchCollectionResponse>|null           $fetchCollection the declared success responses for `GET /{type}` (null = the default `200`)
      */
     public function __construct(
         public ?string $type = null,
@@ -159,6 +195,11 @@ final readonly class AsJsonApiResource
         public array $tags = [],
         public ?string $description = null,
         public array $operationDescriptions = [],
+        CreateResponse|array|null $create = null,
+        UpdateResponse|array|null $update = null,
+        DeleteResponse|array|null $delete = null,
+        FetchOneResponse|array|null $fetchOne = null,
+        FetchCollectionResponse|array|null $fetchCollection = null,
     ) {
         if ($readOnly && $operations !== []) {
             throw new \LogicException(
@@ -179,5 +220,52 @@ final readonly class AsJsonApiResource
                 ));
             }
         }
+
+        // The operations this type exposes (the response-override target set): the
+        // readOnly shorthand, an explicit allow-list, or the all-five default.
+        $allowed = $readOnly
+            ? [Operation::FetchCollection->value, Operation::FetchOne->value]
+            : ($operations !== []
+                ? \array_map(static fn(Operation $op): string => $op->value, $operations)
+                : \array_map(static fn(Operation $op): string => $op->value, Operation::cases()));
+
+        $this->create = self::normalizeResponses($create, OperationType::Create, $allowed);
+        $this->update = self::normalizeResponses($update, OperationType::Update, $allowed);
+        $this->delete = self::normalizeResponses($delete, OperationType::Delete, $allowed);
+        $this->fetchOne = self::normalizeResponses($fetchOne, OperationType::FetchOne, $allowed);
+        $this->fetchCollection = self::normalizeResponses($fetchCollection, OperationType::FetchCollection, $allowed);
+    }
+
+    /**
+     * Normalizes a declared response override to a list, validates it against the
+     * operation's spec-valid set ({@see OperationResponses::validate()}), and rejects an
+     * override for an operation this type does not expose. `null` yields `[]` (the
+     * projector then emits the operation's default).
+     *
+     * @template T of OperationResponseInterface
+     *
+     * @param T|list<T>|null $declared
+     * @param list<string>   $allowed  the exposed operation values ({@see Operation::value})
+     *
+     * @return list<T>
+     */
+    private static function normalizeResponses(OperationResponseInterface|array|null $declared, OperationType $operation, array $allowed): array
+    {
+        if ($declared === null) {
+            return [];
+        }
+
+        $list = \is_array($declared) ? \array_values($declared) : [$declared];
+        OperationResponses::validate($operation, $list);
+
+        if (!\in_array($operation->value, $allowed, true)) {
+            throw new \LogicException(\sprintf(
+                'AsJsonApiResource declares a response override for the %s operation, but that operation is not '
+                . 'exposed (it is excluded by operations/readOnly). Expose the operation or drop the override.',
+                $operation->value,
+            ));
+        }
+
+        return $list;
     }
 }

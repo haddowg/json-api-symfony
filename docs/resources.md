@@ -119,10 +119,13 @@ final readonly class AsJsonApiResource
 | `readOnly` | `bool` | Shorthand for "suppress every write": restricts the type to the two fetch operations. Mutually exclusive with a non-empty `operations`. |
 
 > The constructor also carries the declarative-authorization arguments (`security`,
-> `securityCreate`, …) documented in [authorization](authorization.md), and the
+> `securityCreate`, …) documented in [authorization](authorization.md), the
 > declarative response-header arguments (`cacheHeaders`, `deprecation`, `sunset`,
-> `sunsetLink`) documented in [configuration](configuration.md#response-headers-caching-and-deprecation) —
-> both omitted from the snippet above for brevity.
+> `sunsetLink`) documented in [configuration](configuration.md#response-headers-caching-and-deprecation),
+> and the per-operation **response-declaration** arguments (`create`, `update`,
+> `delete`, `fetchOne`, `fetchCollection`) documented in
+> [Per-operation response declarations](#per-operation-response-declarations) below —
+> all omitted from the snippet above for brevity.
 
 A second job: the attribute **also tags a class that is *not* an `AbstractResource`
 subclass** as a resource. So if you build a type from capabilities rather than the
@@ -212,6 +215,64 @@ endpoint, say). The two are **mutually exclusive**: declaring `readOnly: true`
 ambiguous declaration never compiles — pick the shorthand or the explicit list, not
 both. A read-only type exposes no writes, so it needs only a
 [`DataProvider`](data-layer.md) (no persister, no hydrator) to be servable.
+
+## Per-operation response declarations
+
+By default each operation advertises the one success status JSON:API mandates —
+`POST` a `201`, `PATCH` a `200`, `DELETE` a `204`, and each read a `200`. When an
+operation legitimately answers another way — an async `202`, a client-generated-id
+`204` on create, a `303` async-completion redirect — you declare that per operation
+on the attribute, and the generated OpenAPI advertises exactly what you serve. Five
+arguments, one per operation, each taking a single response object or a **list** of
+them (omit one to keep its default):
+
+| Argument | Operation | Response objects |
+| --- | --- | --- |
+| `create` | `POST /{type}` | `new Created()` (201) · `new NoContent()` (204, client-id) · `new Accepted($jobType)` (202) |
+| `update` | `PATCH /{type}/{id}` | `new Ok()` (200) · `new NoContent()` (204) · `new Accepted($jobType)` (202) |
+| `delete` | `DELETE /{type}/{id}` | `new NoContent()` (204) · `new MetaResult()` (200, meta-only) |
+| `fetchOne` | `GET /{type}/{id}` | `new Ok()` (200) · `new SeeOther()` (303, async completion) |
+| `fetchCollection` | `GET /{type}` | `new Ok()` (200) |
+
+The objects live in `haddowg\JsonApi\OpenApi\Metadata`. Each is valid only on the
+operations it belongs to — the argument types enforce that, so `new SeeOther()` in a
+`create` list is a static-analysis error — and the set is validated at declaration
+time (duplicate statuses, more than one `202`) via `OperationResponses::validate()`.
+`new Accepted($jobType)` names the **job type** whose document is the `202` body; it
+must be a registered type.
+
+```php
+use haddowg\JsonApi\OpenApi\Metadata\{Accepted, MetaResult, NoContent, Ok, SeeOther};
+use haddowg\JsonApi\Resource\AbstractResource;
+use haddowg\JsonApi\Resource\ResolvesCompletionRedirect;
+use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
+use haddowg\JsonApiBundle\Operation\Operation;
+
+// A resource whose create is ALWAYS async; delete may answer 204 or a meta-only 200:
+#[AsJsonApiResource(
+    operations: [Operation::Create, Operation::FetchOne, Operation::FetchCollection, Operation::Delete],
+    create: [new Accepted('export-jobs')],          // POST → 202 only (always deferred)
+    delete: [new NoContent(), new MetaResult()],    // DELETE → 204 or a 200 meta document
+)]
+final class CatalogExportResource extends AbstractResource { /* … */ }
+
+// The job/status type: its fetch-one redirects to the produced resource when done.
+#[AsJsonApiResource(
+    readOnly: true,
+    fetchOne: [new Ok(), new SeeOther()],           // GET → 200 while running, 303 when complete
+)]
+final class ExportJobResource extends AbstractResource implements ResolvesCompletionRedirect { /* … */ }
+```
+
+The three async modes fall out of the one argument: **sync** (omit, or `[new Created()]`),
+**always-async** (`[new Accepted($jobType)]` — a `202` only), and **maybe-async**
+(`[new Created(), new Accepted($jobType)]` — the server may commit inline *or* defer).
+
+The `303` on `fetchOne` is driven at runtime by a resource (or serializer) implementing
+`haddowg\JsonApi\Resource\ResolvesCompletionRedirect` — see [asynchronous
+writes](async.md), where this `catalog-exports` / `export-jobs` pair is the worked
+example. The Laravel package projects a **byte-identical** OpenAPI document for the same
+declarations.
 
 ## One entity, two resource types
 

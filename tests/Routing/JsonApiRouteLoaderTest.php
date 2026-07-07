@@ -77,6 +77,7 @@ final class JsonApiRouteLoaderTest extends TestCase
                     'hasRelations' => false,
                     'operations' => [Operation::FetchCollection->value, Operation::Create->value],
                     'tags' => [],
+                    'responses' => [],
                 ],
             ],
         ];

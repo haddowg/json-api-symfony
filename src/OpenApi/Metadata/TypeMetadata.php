@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\OpenApi\Metadata;
 
 use haddowg\JsonApi\OpenApi\Metadata\ActionMetadataInterface;
+use haddowg\JsonApi\OpenApi\Metadata\OperationResponseInterface;
+use haddowg\JsonApi\OpenApi\Metadata\OperationResponses;
 use haddowg\JsonApi\OpenApi\Metadata\OperationType;
 use haddowg\JsonApi\OpenApi\Metadata\PaginatorKind;
 use haddowg\JsonApi\OpenApi\Metadata\RelationMetadataInterface;
@@ -37,6 +39,7 @@ final readonly class TypeMetadata implements TypeMetadataInterface
      * @param list<ActionMetadataInterface>   $actions
      * @param list<string>                    $tags
      * @param array<string, ?string>          $operationDescriptions per-CRUD-operation description overrides, keyed by {@see OperationType::value}; a missing key (and a null value) means "no override" — the projector emits the generated default
+     * @param array<string, non-empty-list<OperationResponseInterface>> $responseOverrides per-operation success-response overrides, keyed by {@see OperationType::value}; a missing key means "no override" — {@see responsesFor()} falls back to {@see OperationResponses::defaultFor()}
      * @param list<string>                    $includablePaths
      */
     public function __construct(
@@ -59,6 +62,7 @@ final readonly class TypeMetadata implements TypeMetadataInterface
         private array $tags,
         private ?string $description,
         private array $operationDescriptions,
+        private array $responseOverrides,
         private array $includablePaths,
     ) {}
 
@@ -155,6 +159,11 @@ final readonly class TypeMetadata implements TypeMetadataInterface
     public function operationDescription(OperationType $op): ?string
     {
         return $this->operationDescriptions[$op->value] ?? null;
+    }
+
+    public function responsesFor(OperationType $operation): array
+    {
+        return $this->responseOverrides[$operation->value] ?? OperationResponses::defaultFor($operation);
     }
 
     public function includablePaths(): array

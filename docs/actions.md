@@ -45,6 +45,7 @@ use haddowg\JsonApiBundle\Action\ActionHandlerInterface;
 use haddowg\JsonApiBundle\Action\ActionInput;
 use haddowg\JsonApiBundle\Action\ActionScope;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiAction;
+use haddowg\JsonApi\OpenApi\Metadata\ActionResource;
 use haddowg\JsonApi\Response\DataResponse;
 use haddowg\JsonApi\Response\ErrorResponse;
 use haddowg\JsonApi\Response\MetaResponse;
@@ -57,9 +58,7 @@ use haddowg\JsonApi\Response\NoContentResponse;
     scope: ActionScope::Resource,   // Resource (default) | Collection
     input: ActionInput::None,       // None (default) | Document | Raw
     inputType: null,                // Document mode only: hydrator type for the request doc; defaults to `type`
-    outputType: null,               // serializer type for the response doc; defaults to `type`
-    returns204: false,              // handler returns no body (advertise 204); excludes outputType/outputMeta
-    outputMeta: false,              // handler returns a meta-only document (advertise a meta 200); excludes outputType/returns204
+    responds: [new ActionResource('articles')],   // the OpenAPI success response set; omitted = a 200 mount-type document
     server: null,                   // multi-server assignment; defaults to the implicit `default`
     security: "is_granted('PUBLISH', subject)",   // optional authz expression (see Authorization)
     name: null,                     // optional route-name override
@@ -107,7 +106,7 @@ The simplest action. A resource-scope `None` action is the classic "do a thing t
 this entity" verb:
 
 ```php
-#[AsJsonApiAction(type: 'playlists', path: 'archive', returns204: true)]
+#[AsJsonApiAction(type: 'playlists', path: 'archive', responds: [new NoContent()])]
 final class ArchivePlaylist implements ActionHandlerInterface
 {
     public function handle(ActionContext $context): NoContentResponse
@@ -121,7 +120,7 @@ final class ArchivePlaylist implements ActionHandlerInterface
 }
 ```
 
-The handler returns a `204`, so it declares `returns204: true` — the generated
+The handler returns a `204`, so it declares `responds: [new NoContent()]` — the generated
 OpenAPI document then advertises a `204` response instead of a `200` body (see
 [The response contract](#the-response-contract) below).
 
@@ -181,7 +180,7 @@ parsed or validated; the handler reads the request directly:
     type: 'tracks',
     path: 'waveform',
     input: ActionInput::Raw,
-    returns204: true,
+    responds: [new NoContent()],
 )]
 final class UploadWaveform implements ActionHandlerInterface
 {
@@ -216,7 +215,7 @@ document and return a bespoke *result* document while both stay valid JSON:API.
     path: 'publish',
     input: ActionInput::Document,
     inputType: 'publish-commands',      // hydrate the body into a PublishCommand DTO
-    outputType: 'publish-receipts',     // render the response as a PublishReceipt document
+    responds: [new ActionResource('publish-receipts')],   // render the response as a PublishReceipt document
 )]
 final class PublishArticle implements ActionHandlerInterface
 {
@@ -245,9 +244,11 @@ never a raw HTTP response. The choices:
 
 | Return | Renders | Status |
 |--------|---------|--------|
-| `DataResponse` | a JSON:API document, through the `outputType` serializer | `200` |
+| `DataResponse` | a JSON:API document, through the response serializer | `200` |
 | `MetaResponse` | a top-level `meta`-only JSON:API document | `200` |
 | `NoContentResponse` | empty body | `204` |
+| `AcceptedResponse` | an async accept — a job document + `Content-Location` / `Retry-After` | `202` |
+| `SeeOtherResponse` | an async-completion redirect — a `Location` header, no body | `303` |
 | `ErrorResponse` | a JSON:API error document | the error's status |
 
 Because the response flows through the existing [`ViewListener`](lifecycle.md),
@@ -258,24 +259,37 @@ the wire.
 ### Advertising the output in OpenAPI
 
 The runtime response is whatever the handler returns; the **generated OpenAPI
-document** advertises one success response, declared on the attribute so it matches:
+document** advertises the success response set, declared on the attribute so it
+matches. `responds` takes one response object or a **list** of them, from
+`haddowg\JsonApi\OpenApi\Metadata`:
 
 | Declaration | Advertised success response |
 |-------------|-----------------------------|
-| (default) | a `200` with the `outputType`'s document schema (`outputType` defaults to the mount `type`) |
-| `outputMeta: true` | a `200` referencing the shared `MetaDocument` component (a meta-only document, no `data`) |
-| `returns204: true` | a `204 No Content` |
+| (omitted) | a `200` with the mount `type`'s document schema |
+| `responds: [new ActionResource('receipts')]` | a `200` with the named type's document schema (any registered type) |
+| `responds: [new MetaResult()]` | a `200` referencing the shared `MetaDocument` component (a meta-only document, no `data`) |
+| `responds: [new NoContent()]` | a `204 No Content` |
+| `responds: [new Accepted('jobs')]` | a `202 Accepted` — the `jobs` type's document + `Content-Location` + `Retry-After` (an async accept) |
+| `responds: [new SeeOther()]` | a `303 See Other` — a `Location` header, no body (an async-completion redirect) |
 
-`outputMeta` and `returns204` are mutually exclusive with each other and with an
-explicit `outputType` — an action answers exactly one way.
+An action that can answer more than one way lists them — a poll endpoint that returns
+`202` while the work runs and `303` once it is done declares
+`responds: [new Accepted('jobs'), new SeeOther()]`. The set is validated at
+declaration time (`ActionResponses::validate()`), so an impossible set (duplicate
+statuses, two job types) fails the build. Omitted, `responds` defaults to a `200`
+document of the mount type.
 
-These flags exist because the projector cannot read the handler's body. To stop the
+> **Migration (pre-1.0).** `responds` replaces the former `outputType` / `outputMeta` /
+> `returns204` params: `outputType: 'receipts'` → `responds: [new ActionResource('receipts')]`,
+> `outputMeta: true` → `responds: [new MetaResult()]`, `returns204: true` →
+> `responds: [new NoContent()]`.
+
+`responds` exists because the projector cannot read the handler's body. To stop the
 declaration drifting from the handler, the bundle **guards at compile time**: a
 handler whose `handle()` return type is narrowed to exactly `NoContentResponse` must
-declare `returns204: true`, and one narrowed to exactly `MetaResponse` must declare
-`outputMeta: true` — otherwise the container fails to compile with an explanatory
-error. A handler that keeps the interface's union return type opts out of the guard
-(it declares no single shape), and the flags then govern the projection alone.
+declare a `new NoContent()`, and one narrowed to exactly `MetaResponse` must declare a
+`new MetaResult()` — otherwise the container fails to compile with an explanatory
+error. A handler that keeps the interface's union return type opts out of the guard.
 
 ### The `ActionContext`
 
@@ -290,9 +304,11 @@ exposes both the resolved request state and pre-wired response factories:
 | `queryParameters()` | the parsed, strict-validated query parameters |
 | `serializer()` | the `outputType` serializer |
 | `server()` | the resolving server |
-| `data($data)` | a `DataResponse` pre-wired to the `outputType` serializer |
+| `data($data)` | a `DataResponse` pre-wired to the response serializer |
 | `meta($array)` | a `MetaResponse` |
 | `noContent()` | a `NoContentResponse` (`204`) |
+| `accepted($url)` | an `AcceptedResponse` (`202`) — an async accept pointing at the poll URL (chain `->withRetryAfter()`) |
+| `seeOther($url)` | a `SeeOtherResponse` (`303`) — an async-completion redirect to the produced resource |
 
 The `data()` / `meta()` / `noContent()` factories are the ergonomic path; reach for
 the raw response value objects directly only when you need to set a status or

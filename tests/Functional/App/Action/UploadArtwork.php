@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App\Action;
 
+use haddowg\JsonApi\OpenApi\Metadata\NoContent;
 use haddowg\JsonApi\Response\NoContentResponse;
 use haddowg\JsonApiBundle\Action\ActionContext;
 use haddowg\JsonApiBundle\Action\ActionHandlerInterface;
@@ -18,9 +19,9 @@ use Psr\Http\Message\UploadedFileInterface;
  * `application/vnd.api+json`, so the request content-type negotiation is relaxed and
  * no JSON:API body parsing runs. The handler reads the raw body / uploaded files off
  * {@see ActionContext::request()} (the PSR-7 request), attaches the artwork onto the
- * resolved entity, and returns a bodyless `204` (so it declares `returns204: true`).
+ * resolved entity, and returns a bodyless `204` (so it declares `responds: [new NoContent()]`).
  */
-#[AsJsonApiAction(type: 'actionWidgets', path: 'artwork', input: ActionInput::Raw, returns204: true)]
+#[AsJsonApiAction(type: 'actionWidgets', path: 'artwork', input: ActionInput::Raw, responds: [new NoContent()])]
 final class UploadArtwork implements ActionHandlerInterface
 {
     public function __construct(private readonly DataPersisterRegistry $persisters) {}

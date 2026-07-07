@@ -13,6 +13,27 @@ attribute schemas from your constraints, linkage and compound-document envelopes
 enumerated `filter[…]` / `sort` / `include` / `fields[…]` / `page[…]` parameters, and the
 standard error-status set per operation.
 
+## Per-operation response declarations
+
+By default each operation advertises one success response — `POST` → `201`,
+`PATCH` → `200`, `DELETE` → `204`, `GET` → `200`. A resource overrides the set per
+operation with the
+[`create`/`update`/`delete`/`fetchOne`/`fetchCollection` params](resources.md#per-operation-response-declarations)
+on `#[AsJsonApiResource]`, and a [custom action](actions.md#advertising-the-output-in-openapi)
+with its `responds` set. This is how the **asynchronous-write lifecycle**
+([async writes](async.md)) becomes part of the contract:
+
+- `new Accepted('export-jobs')` → a `202 Accepted` whose body is the `export-jobs`
+  document, with `Content-Location` (the poll URL) and `Retry-After` headers.
+- `new SeeOther()` on `fetchOne` → a `303 See Other` with a `Location` header (the
+  completed job redirecting to the produced resource), no body.
+- `new NoContent()` → a `204`; `new MetaResult()` → a `200` meta-only document.
+
+So a codegen client sees, from the document alone, that `POST /catalog-exports`
+returns `202` pointing at an `export-jobs` resource, and that `GET /export-jobs/{id}`
+may `303` to the finished export. These responses ride core's shared projection, so
+the Laravel package's document for the same domain is **byte-identical**.
+
 ## Enabling generation
 
 OpenAPI generation is on by default. The HTTP routes that serve it are gated for

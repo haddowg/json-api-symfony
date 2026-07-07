@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Action;
 
 use haddowg\JsonApiBundle\Action\ActionInput;
-use haddowg\JsonApiBundle\Action\ActionOutput;
 use haddowg\JsonApiBundle\Action\ActionRegistry;
 use haddowg\JsonApiBundle\Action\ActionScope;
 use PHPUnit\Framework\Attributes\Group;
@@ -70,7 +69,7 @@ final class ActionRegistryTest extends TestCase
     }
 
     /**
-     * @return array{type: string, path: string, methods: list<string>, scope: string, input: string, inputType: string, outputType: string, output: string, security: ?string, handlerServiceId: string, server: string, tags: string}
+     * @return array{type: string, path: string, methods: list<string>, scope: string, input: string, inputType: string, outputType: string, responds: list<array{kind: string, type?: string, jobType?: string}>, security: ?string, handlerServiceId: string, server: string, tags: string}
      */
     private function descriptor(string $type, string $path, ActionScope $scope = ActionScope::Resource, string $server = 'default', string $tags = ''): array
     {
@@ -82,7 +81,7 @@ final class ActionRegistryTest extends TestCase
             'input' => ActionInput::None->name,
             'inputType' => $type,
             'outputType' => $type,
-            'output' => ActionOutput::Document->name,
+            'responds' => [['kind' => 'resource', 'type' => $type]],
             'security' => null,
             'handlerServiceId' => 'app.handler',
             'server' => $server,

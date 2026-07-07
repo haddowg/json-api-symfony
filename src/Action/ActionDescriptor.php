@@ -17,17 +17,24 @@ namespace haddowg\JsonApiBundle\Action;
  * resolved) server name the action is exposed on (the implicit `default` when the
  * attribute left it `null`).
  *
- * `output` is the declared success-response shape ({@see ActionOutput}) the OpenAPI
- * projection advertises: a resource document (with `outputType`), a meta-only
- * document, or a `204`. When it is not {@see ActionOutput::Document}, `outputType`
- * carries the empty-string sentinel (there is no response resource).
+ * `outputType` is the **runtime** response serializer the {@see ActionContext} renders
+ * a {@see \haddowg\JsonApi\Response\DataResponse} through — the type named by the
+ * `responds` set's `ActionResource` entry when present, else the mount `type`.
+ *
+ * `responds` is the declared success-response set the OpenAPI projection advertises
+ * (core ADR 0127): each entry a `kind` discriminator (`resource`/`meta`/`nocontent`/
+ * `accepted`/`seeother`) plus the `type` an `ActionResource` names or the `jobType` an
+ * `Accepted` names. The {@see \haddowg\JsonApiBundle\OpenApi\Metadata\ActionMetadata}
+ * rehydrates each into a core response object. It stays a plain scalar list so the
+ * descriptor survives the compiled container.
  */
 final readonly class ActionDescriptor
 {
     /**
-     * @param list<string> $methods the author-declared HTTP method allow-list
-     * @param list<string> $tags    the OpenAPI tag refs this action is grouped under (resolved: explicit, else the mount type's resource tags, else empty)
-     * @param bool         $asLink  expose the action as a security-aware `links` member on the mount type's resources (resource scope only)
+     * @param list<string>                                              $methods  the author-declared HTTP method allow-list
+     * @param list<array{kind: string, type?: string, jobType?: string}> $responds the declared success-response set (OpenAPI projection)
+     * @param list<string>                                              $tags     the OpenAPI tag refs this action is grouped under (resolved: explicit, else the mount type's resource tags, else empty)
+     * @param bool                                                      $asLink   expose the action as a security-aware `links` member on the mount type's resources (resource scope only)
      */
     public function __construct(
         public string $type,
@@ -37,7 +44,7 @@ final readonly class ActionDescriptor
         public ActionInput $input,
         public string $inputType,
         public string $outputType,
-        public ActionOutput $output,
+        public array $responds,
         public ?string $security,
         public string $handlerServiceId,
         public string $server,

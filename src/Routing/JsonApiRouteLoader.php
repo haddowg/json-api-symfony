@@ -114,7 +114,7 @@ final class JsonApiRouteLoader extends Loader
     private const string RESERVED_ACTIONS_SEGMENT = '-actions';
 
     /**
-     * @param array<string, array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>}>> $routeDescriptorsByServer       keyed by server name, then by JSON:API type
+     * @param array<string, array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string}>>}>> $routeDescriptorsByServer       keyed by server name, then by JSON:API type
      * @param array<string, list<array{uriType: string, type: string, path: string, methods: list<string>, scope: string, name: string}>>            $actionRouteDescriptorsByServer keyed by server name; the custom-action routes to emit before the generic routes (bundle ADR 0076)
      * @param ?IdEncoderResolver                                                                                                                          $idEncoders                     resolves each type's route `{id}` pattern (null in a bare scalar-only test wiring)
      */

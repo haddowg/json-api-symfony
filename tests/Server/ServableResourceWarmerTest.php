@@ -69,6 +69,7 @@ final class ServableResourceWarmerTest extends TestCase
                     'hasRelations' => false,
                     'operations' => $operations,
                     'tags' => [],
+                    'responses' => [],
                 ],
             ],
         ]);

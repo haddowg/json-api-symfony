@@ -4,10 +4,15 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\OpenApi\Metadata;
 
+use haddowg\JsonApi\OpenApi\Metadata\Accepted;
 use haddowg\JsonApi\OpenApi\Metadata\ActionInputMode;
 use haddowg\JsonApi\OpenApi\Metadata\ActionMetadataInterface;
-use haddowg\JsonApi\OpenApi\Metadata\ActionOutputMode;
+use haddowg\JsonApi\OpenApi\Metadata\ActionResource;
+use haddowg\JsonApi\OpenApi\Metadata\ActionResponse;
 use haddowg\JsonApi\OpenApi\Metadata\ActionScope;
+use haddowg\JsonApi\OpenApi\Metadata\MetaResult;
+use haddowg\JsonApi\OpenApi\Metadata\NoContent;
+use haddowg\JsonApi\OpenApi\Metadata\SeeOther;
 use haddowg\JsonApiBundle\Action\ActionDescriptor;
 
 /**
@@ -21,18 +26,11 @@ use haddowg\JsonApiBundle\Action\ActionDescriptor;
  * they are mapped **by case name**.
  *
  * `isSecured()` reads the descriptor's resolved `security` expression presence (the
- * expression itself is never surfaced — design §4.6/D8). `outputMode()` maps the
- * descriptor's resolved {@see \haddowg\JsonApiBundle\Action\ActionOutput} to core's
- * {@see ActionOutputMode} by case name — the discriminator the projector switches on
- * (a resource document / a meta-only document / a `204`). `outputType()` maps an
- * empty `outputType` (the "no response resource" sentinel a `returns204`/`outputMeta`
- * action carries) to `null` and otherwise returns the named type; it is read only in
- * {@see ActionOutputMode::Document}. An action declares the sentinel by setting
- * `#[AsJsonApiAction(returns204: true)]` (a `204`) or `outputMeta: true` (a meta
- * document), which suppresses the mount-type default in the
- * {@see \haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceLocatorPass}
- * (design §4.5, core ADR 0102); an action that omits both defaults its `outputType`
- * to the mount type as before.
+ * expression itself is never surfaced — design §4.6/D8). `responds()` rehydrates the
+ * descriptor's scalar success-response set (a `kind` discriminator + optional
+ * `type`/`jobType`) into core's atomic {@see ActionResponse} objects — the values the
+ * projector switches on to advertise a `200` resource document, a `200` meta document,
+ * a `204`, a `202` async accept, or a `303` redirect (core ADR 0127).
  */
 final readonly class ActionMetadata implements ActionMetadataInterface
 {
@@ -66,14 +64,32 @@ final readonly class ActionMetadata implements ActionMetadataInterface
         return $this->inputMode() === ActionInputMode::Document ? $this->descriptor->inputType : null;
     }
 
-    public function outputMode(): ActionOutputMode
+    public function responds(): array
     {
-        return ActionOutputMode::{$this->descriptor->output->name};
-    }
+        $responses = [];
+        foreach ($this->descriptor->responds as $entry) {
+            $responses[] = match ($entry['kind']) {
+                'resource' => new ActionResource($entry['type'] ?? $this->descriptor->type),
+                'meta' => new MetaResult(),
+                'nocontent' => new NoContent(),
+                'accepted' => new Accepted($entry['jobType'] ?? ''),
+                'seeother' => new SeeOther(),
+                default => throw new \LogicException(\sprintf(
+                    'Unknown action response kind "%s" for action "%s" on type "%s".',
+                    $entry['kind'],
+                    $this->descriptor->path,
+                    $this->descriptor->type,
+                )),
+            };
+        }
 
-    public function outputType(): ?string
-    {
-        return $this->descriptor->outputType !== '' ? $this->descriptor->outputType : null;
+        // The compiler pass always resolves a non-empty set (defaulting to a mount-type
+        // resource document); guard defensively so the contract's non-empty promise holds.
+        if ($responses === []) {
+            return [new ActionResource($this->descriptor->outputType !== '' ? $this->descriptor->outputType : $this->descriptor->type)];
+        }
+
+        return $responses;
     }
 
     public function isSecured(): bool

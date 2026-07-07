@@ -66,7 +66,7 @@ final class RouteDescriptorRegistryTest extends TestCase
     /**
      * @param list<string> $tags
      *
-     * @return array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>}
+     * @return array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string}>>}
      */
     private function descriptor(string $type, array $tags): array
     {
@@ -77,6 +77,7 @@ final class RouteDescriptorRegistryTest extends TestCase
             'hasRelations' => true,
             'operations' => ['FetchCollection', 'FetchOne'],
             'tags' => $tags,
+            'responses' => [],
         ];
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\OpenApi\Metadata;
 
+use haddowg\JsonApi\OpenApi\Metadata\OperationResponseInterface;
 use haddowg\JsonApi\OpenApi\Metadata\OperationType;
 use haddowg\JsonApi\OpenApi\Metadata\PaginatorKind;
 use haddowg\JsonApi\OpenApi\Metadata\ServerMetadataInterface;
@@ -241,7 +242,7 @@ final class MetadataSource
     /**
      * Assembles one type's metadata from its route descriptor + the live registry.
      *
-     * @param array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>} $descriptor
+     * @param array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string}>>} $descriptor
      */
     private function buildType(Server $server, string $serverName, string $type, array $descriptor): TypeMetadata
     {
@@ -298,6 +299,10 @@ final class MetadataSource
             // empty for it.
             description: $resource?->getDescription() ?? $this->descriptions?->descriptionFor($type),
             operationDescriptions: $this->operationDescriptions($resource, $type),
+            // The per-operation response overrides declared on #[AsJsonApiResource]
+            // (rehydrated from the descriptor's scalar form); an operation with no
+            // override falls back to the core default in TypeMetadata::responsesFor().
+            responseOverrides: $this->responseOverrides($descriptor['responses']),
             includablePaths: $resource !== null ? $this->includePaths->pathsFor($server, $type) : [],
         );
     }
@@ -370,6 +375,38 @@ final class MetadataSource
         }
 
         return $mapped;
+    }
+
+    /**
+     * Rehydrates the descriptor's scalar per-operation response declarations into the
+     * typed core {@see OperationResponseInterface} objects the projector reads, keyed by
+     * {@see OperationType::value}. An operation with no override is absent (TypeMetadata
+     * then falls back to the core default); a malformed entry is dropped defensively.
+     *
+     * @param array<string, list<array{status: int, jobType?: string}>> $responses
+     *
+     * @return array<string, non-empty-list<OperationResponseInterface>>
+     */
+    private function responseOverrides(array $responses): array
+    {
+        $out = [];
+        foreach ($responses as $operationValue => $entries) {
+            $operation = OperationType::tryFrom($operationValue);
+            if ($operation === null) {
+                continue;
+            }
+
+            $rehydrated = [];
+            foreach ($entries as $entry) {
+                $rehydrated[] = new DeclaredOperationResponse($entry['status'], $entry['jobType'] ?? null);
+            }
+
+            if ($rehydrated !== []) {
+                $out[$operation->value] = $rehydrated;
+            }
+        }
+
+        return $out;
     }
 
     /**
@@ -482,11 +519,12 @@ final class MetadataSource
             $action->input,
             $action->inputType,
             $action->outputType,
-            $action->output,
+            $action->responds,
             $action->security,
             $action->handlerServiceId,
             $action->server,
             $tags,
+            $action->asLink,
         );
     }
 
