@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Tests\OpenApi\Metadata;
 
 use haddowg\JsonApi\OpenApi\Metadata\ActionInputMode;
 use haddowg\JsonApi\OpenApi\Metadata\ActionScope;
+use haddowg\JsonApi\OpenApi\Metadata\OperationResponseInterface;
 use haddowg\JsonApi\OpenApi\Metadata\OperationType;
 use haddowg\JsonApi\OpenApi\Metadata\PaginatorKind;
 use haddowg\JsonApi\OpenApi\Tag;
@@ -17,7 +18,6 @@ use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\Action\ActionInput;
-use haddowg\JsonApiBundle\Action\ActionOutput;
 use haddowg\JsonApiBundle\Action\ActionRegistry;
 use haddowg\JsonApiBundle\Action\ActionScope as BundleActionScope;
 use haddowg\JsonApiBundle\OpenApi\Metadata\IncludePathResolver;
@@ -365,7 +365,38 @@ final class MetadataSourceTest extends TestCase
 
     // --- harness --------------------------------------------------------------
 
-    private function source(?ResourceSecurityRegistry $security = null, ?ServerDocumentConfig $config = null, bool $atomicEnabled = false, string $atomicPath = '/operations', ?ResourceDescriptionRegistry $descriptions = null, bool $describedArticle = false): MetadataSource
+    #[Test]
+    #[Group('spec:openapi')]
+    public function aTypeRehydratesItsDeclaredResponseOverridesElseTheCoreDefault(): void
+    {
+        $server = $this->source(articleResponses: [
+            'Create' => [['status' => 201], ['status' => 202, 'jobType' => 'jobs']],
+            'FetchOne' => [['status' => 200], ['status' => 303]],
+        ])->forServer();
+
+        $articles = $this->typeNamed($server, 'articles');
+
+        self::assertSame(
+            [201, 202],
+            \array_map(static fn(OperationResponseInterface $r): int => $r->status(), $articles->responsesFor(OperationType::Create)),
+        );
+        self::assertSame('jobs', $articles->responsesFor(OperationType::Create)[1]->jobType());
+        self::assertSame(
+            [200, 303],
+            \array_map(static fn(OperationResponseInterface $r): int => $r->status(), $articles->responsesFor(OperationType::FetchOne)),
+        );
+
+        // An operation with no override falls back to the core default.
+        self::assertSame(
+            [204],
+            \array_map(static fn(OperationResponseInterface $r): int => $r->status(), $articles->responsesFor(OperationType::Delete)),
+        );
+    }
+
+    /**
+     * @param array<string, list<array{status: int, jobType?: string}>> $articleResponses per-operation response overrides for the `articles` descriptor (keyed by {@see OperationType::value})
+     */
+    private function source(?ResourceSecurityRegistry $security = null, ?ServerDocumentConfig $config = null, bool $atomicEnabled = false, string $atomicPath = '/operations', ?ResourceDescriptionRegistry $descriptions = null, bool $describedArticle = false, array $articleResponses = []): MetadataSource
     {
         $article = $describedArticle ? new DescribedArticleResource() : new ArticleResource();
         $person = new PersonResource();
@@ -380,7 +411,7 @@ final class MetadataSourceTest extends TestCase
 
         $descriptors = new RouteDescriptorRegistry([
             ServerProvider::DEFAULT_SERVER => [
-                'articles' => $this->descriptor('articles', true, ['Content']),
+                'articles' => $this->descriptor('articles', true, ['Content'], responses: $articleResponses),
                 'people' => $this->descriptor('people', true, []),
                 'snippets' => $this->descriptor('snippets', false, [], operations: []),
             ],
@@ -395,7 +426,7 @@ final class MetadataSourceTest extends TestCase
                 'input' => ActionInput::None->name,
                 'inputType' => 'articles',
                 'outputType' => 'articles',
-                'output' => ActionOutput::Document->name,
+                'responds' => [['kind' => 'resource', 'type' => 'articles']],
                 'security' => "is_granted('PUBLISH')",
                 'handlerServiceId' => 'app.publish_handler',
                 'server' => ServerProvider::DEFAULT_SERVER,
@@ -422,12 +453,13 @@ final class MetadataSourceTest extends TestCase
     }
 
     /**
-     * @param list<string>      $tags
-     * @param list<string>|null $operations
+     * @param list<string>                                               $tags
+     * @param list<string>|null                                          $operations
+     * @param array<string, list<array{status: int, jobType?: string}>>  $responses
      *
-     * @return array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>}
+     * @return array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string}>>}
      */
-    private function descriptor(string $type, bool $isResource, array $tags, ?array $operations = null): array
+    private function descriptor(string $type, bool $isResource, array $tags, ?array $operations = null, array $responses = []): array
     {
         return [
             'uriType' => $type,
@@ -436,6 +468,7 @@ final class MetadataSourceTest extends TestCase
             'hasRelations' => $isResource,
             'operations' => $operations ?? ['FetchCollection', 'FetchOne', 'Create', 'Update', 'Delete'],
             'tags' => $tags,
+            'responses' => $responses,
         ];
     }
 

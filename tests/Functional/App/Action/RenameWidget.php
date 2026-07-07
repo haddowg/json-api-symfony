@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App\Action;
 
+use haddowg\JsonApi\OpenApi\Metadata\ActionResource;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Response\DataResponse;
 use haddowg\JsonApiBundle\Action\ActionContext;
@@ -16,12 +17,12 @@ use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 /**
  * `POST /actionWidgets/{id}/-actions/rename` — the **decoupled document** witness
  * (bundle ADR 0076, design §3/§10): a `Document`-input action whose `inputType`
- * (`renameCommands`) and `outputType` (`receipts`) BOTH differ from the mount type.
+ * (`renameCommands`) and response type (`receipts`) BOTH differ from the mount type.
  *
  * The bespoke `renameCommands` command rides in (validated + hydrated into a
  * {@see RenameCommand} supplied by {@see newInput()}, since it has no persister), the
  * handler applies its `newName` onto the resolved mount entity, then returns a
- * bespoke `receipts` {@see Receipt} document through the `outputType` serializer — a
+ * bespoke `receipts` {@see Receipt} document through the `receipts` serializer — a
  * different request shape in, a different response shape out, both valid JSON:API.
  */
 #[AsJsonApiAction(
@@ -29,7 +30,7 @@ use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
     path: 'rename',
     input: ActionInput::Document,
     inputType: 'renameCommands',
-    outputType: 'receipts',
+    responds: [new ActionResource('receipts')],
 )]
 final class RenameWidget implements ActionHandlerInterface, ActionInputFactoryInterface
 {

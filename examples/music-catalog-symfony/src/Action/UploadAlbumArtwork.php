@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Action;
 
+use haddowg\JsonApi\OpenApi\Metadata\NoContent;
 use haddowg\JsonApi\Response\NoContentResponse;
 use haddowg\JsonApiBundle\Action\ActionContext;
 use haddowg\JsonApiBundle\Action\ActionHandlerInterface;
@@ -21,10 +22,10 @@ use Psr\Http\Message\UploadedFileInterface;
  * content-type negotiation is relaxed and no JSON:API body parsing runs; the handler
  * reads the raw body / uploaded file straight off {@see ActionContext::request()} (the
  * PSR-7 request), attaches it to the resolved album, persists, and returns a bodyless
- * `204` (so it declares `returns204: true` — the generated document advertises a `204`,
- * not a `200` albums body).
+ * `204` (so it declares `responds: [new NoContent()]` — the generated document advertises
+ * a `204`, not a `200` albums body).
  */
-#[AsJsonApiAction(type: 'albums', path: 'artwork', input: ActionInput::Raw, returns204: true)]
+#[AsJsonApiAction(type: 'albums', path: 'artwork', input: ActionInput::Raw, responds: [new NoContent()])]
 final class UploadAlbumArtwork implements ActionHandlerInterface
 {
     public function __construct(private readonly DataPersisterRegistry $persisters) {}

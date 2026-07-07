@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App\Async;
 
+use haddowg\JsonApi\OpenApi\Metadata\NoContent;
 use haddowg\JsonApi\Response\SeeOtherResponse;
 use haddowg\JsonApiBundle\Action\ActionContext;
 use haddowg\JsonApiBundle\Action\ActionHandlerInterface;
@@ -17,7 +18,7 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiAction;
  * operation produced. The witness that a custom action can drive the `303` leg of the
  * async story (bundle ADR 0110).
  */
-#[AsJsonApiAction(type: 'jobs', path: 'complete', scope: ActionScope::Collection, returns204: true)]
+#[AsJsonApiAction(type: 'jobs', path: 'complete', scope: ActionScope::Collection, responds: [new NoContent()])]
 final class CompleteJobAction implements ActionHandlerInterface
 {
     public function handle(ActionContext $context): SeeOtherResponse

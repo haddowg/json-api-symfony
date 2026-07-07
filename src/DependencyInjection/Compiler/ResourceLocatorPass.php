@@ -13,7 +13,6 @@ use haddowg\JsonApiBundle\Action\ActionDescriptor;
 use haddowg\JsonApiBundle\Action\ActionHandlerInterface;
 use haddowg\JsonApiBundle\Action\ActionInput;
 use haddowg\JsonApiBundle\Action\ActionLinkContributor;
-use haddowg\JsonApiBundle\Action\ActionOutput;
 use haddowg\JsonApiBundle\Action\ActionRegistry;
 use haddowg\JsonApiBundle\Action\ActionScope;
 use haddowg\JsonApiBundle\JsonApiBundle;
@@ -98,7 +97,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
         $serializers = [];
         /** @var array<string, string> $hydrators */
         $hydrators = [];
-        /** @var array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>}> $descriptors */
+        /** @var array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string}>>}> $descriptors */
         $descriptors = [];
 
         // Per-server buckets (ADR 0034): a type/resource assigned to N servers lands
@@ -114,7 +113,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
         $standaloneSerializersByServer = [];
         /** @var array<string, array<string, string>> $standaloneHydratorsByServer */
         $standaloneHydratorsByServer = [];
-        /** @var array<string, array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>}>> $descriptorsByServer */
+        /** @var array<string, array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string}>>}>> $descriptorsByServer */
         $descriptorsByServer = [];
 
         // Standalone relations providers, keyed by type: the registry resolves the
@@ -218,6 +217,9 @@ final class ResourceLocatorPass implements CompilerPassInterface
                 // default the MetadataSource resolves. Read across all tags so the
                 // empty autoconfig tag does not erase the attribute's value.
                 'tags' => $this->tagsFromTags($tags),
+                // The per-operation OpenAPI response declarations; empty = every op
+                // uses its default (the MetadataSource resolves that per operation).
+                'responses' => $this->responsesFromTags($tags),
             ];
             $descriptors[$type] = $descriptor;
 
@@ -274,6 +276,9 @@ final class ResourceLocatorPass implements CompilerPassInterface
                     // The standalone-type OpenAPI tag refs (design §4.7); empty = the
                     // humanized-type default the MetadataSource resolves.
                     'tags' => $standaloneSerializerTags[$type] ?? [],
+                    // A standalone serializer carries no response overrides — its
+                    // operations default and use the default response per op.
+                    'responses' => [],
                 ];
             }
 
@@ -360,7 +365,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
      * them `null`.
      *
      * @param list<string>                                                                                                                             $declaredServers
-     * @param array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>}> $descriptors the resource/standalone descriptors, read for each mount type's uriType
+     * @param array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string}>>}> $descriptors the resource/standalone descriptors, read for each mount type's uriType
      */
     private function collectActions(ContainerBuilder $container, array $declaredServers, array $descriptors): void
     {
@@ -369,7 +374,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
         }
 
         $handlerReferences = [];
-        /** @var array<string, array{type: string, path: string, methods: list<string>, scope: string, input: string, inputType: string, outputType: string, output: string, security: ?string, handlerServiceId: string, server: string, tags: string, asLink: bool}> $actionDescriptors */
+        /** @var array<string, array{type: string, path: string, methods: list<string>, scope: string, input: string, inputType: string, outputType: string, responds: list<array{kind: string, type?: string, jobType?: string}>, security: ?string, handlerServiceId: string, server: string, tags: string, asLink: bool}> $actionDescriptors */
         $actionDescriptors = [];
         /** @var array<string, list<array{uriType: string, type: string, path: string, methods: list<string>, scope: string, name: string}>> $routeDescriptorsByServer */
         $routeDescriptorsByServer = [];
@@ -420,52 +425,36 @@ final class ResourceLocatorPass implements CompilerPassInterface
                 $input = $this->actionInput($tag, $id);
                 $methods = $this->actionMethods($tag);
                 $inputType = \is_string($tag['inputType'] ?? null) && $tag['inputType'] !== '' ? $tag['inputType'] : $type;
-                $declaredOutputType = \is_string($tag['outputType'] ?? null) && $tag['outputType'] !== '' ? $tag['outputType'] : null;
-                $returns204 = ($tag['returns204'] ?? false) === true;
-                $outputMeta = ($tag['outputMeta'] ?? false) === true;
 
-                // An action answers exactly one way. A body-less (204) or a meta-only
-                // output both suppress the outputType default and keep the empty-string
-                // sentinel as their outputType — the ActionMetadata maps that to null and
-                // reads the output mode so the generated document advertises a 204 / a
-                // meta document / a 200 resource body (design §4.5, core ADR 0102). An
-                // explicit outputType (a resource body) is mutually exclusive with either,
-                // and the two body-shape flags are mutually exclusive with each other. The
-                // attribute constructor already rejects these, but the compiled descriptor
-                // map is the source of truth, so re-assert them here.
-                if ($returns204 && $outputMeta) {
-                    throw new \LogicException(\sprintf(
-                        'The JSON:API action "%s" on service "%s" declares both returns204 and outputMeta; an action answers exactly one way, so they are mutually exclusive.',
-                        $path,
-                        $id,
-                    ));
+                // The declared success-response set (core ADR 0127), decoded from the
+                // action's `responds` JSON scalar; empty = the action defaults to a `200`
+                // resource document of its mount type. Each entry is a kind discriminator
+                // (+ the type an ActionResource names / the jobType an Accepted names). The
+                // attribute already validated the real declaration; this is the compiled
+                // source of truth, so it re-applies the mount-type default here.
+                $responds = $this->parseActionResponds($tag['responds'] ?? null);
+                if ($responds === []) {
+                    $responds = [['kind' => 'resource', 'type' => $type]];
                 }
 
-                if ($declaredOutputType !== null && ($returns204 || $outputMeta)) {
-                    throw new \LogicException(\sprintf(
-                        'The JSON:API action "%s" on service "%s" declares an outputType alongside %s; a body-less or meta-only action carries no response resource, so they are mutually exclusive.',
-                        $path,
-                        $id,
-                        $returns204 ? 'returns204' : 'outputMeta',
-                    ));
+                // The runtime response serializer the ActionContext renders a DataResponse
+                // through: the type an ActionResource names, else the mount type (a meta /
+                // 204 / async action renders no resource body, so the mount-type fallback
+                // is never exercised by the handler).
+                $outputType = $type;
+                foreach ($responds as $respondsEntry) {
+                    if ($respondsEntry['kind'] === 'resource') {
+                        $outputType = $respondsEntry['type'] ?? $type;
+                        break;
+                    }
                 }
 
                 // A handler that narrows its declared return type to exactly a
                 // NoContentResponse / MetaResponse has committed to a body shape; require
-                // the matching flag so the generated document can never drift from the
-                // handler's actual output.
-                $this->guardActionHandlerOutput($class, $id, $path, $returns204, $outputMeta);
+                // the matching response declaration so the generated document can never
+                // drift from the handler's actual output.
+                $this->guardActionHandlerOutput($class, $id, $path, $responds);
 
-                $output = match (true) {
-                    $returns204 => ActionOutput::None,
-                    $outputMeta => ActionOutput::Meta,
-                    default => ActionOutput::Document,
-                };
-                $outputType = match (true) {
-                    $returns204 || $outputMeta => '',
-                    $declaredOutputType !== null => $declaredOutputType,
-                    default => $type,
-                };
                 $security = \is_string($tag['security'] ?? null) && $tag['security'] !== '' ? $tag['security'] : null;
                 $asLink = ($tag['asLink'] ?? false) === true;
 
@@ -531,7 +520,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
                         'input' => $input->name,
                         'inputType' => $inputType,
                         'outputType' => $outputType,
-                        'output' => $output->name,
+                        'responds' => $responds,
                         'security' => $security,
                         'handlerServiceId' => $id,
                         'server' => $server,
@@ -652,17 +641,18 @@ final class ResourceLocatorPass implements CompilerPassInterface
     }
 
     /**
-     * Guards a handler's declared output shape against its action flags: a handler
+     * Guards a handler's declared output shape against its `responds` set: a handler
      * whose `handle()` return type is narrowed to exactly {@see NoContentResponse} must
-     * declare `returns204`, and one narrowed to exactly {@see MetaResponse} must declare
-     * `outputMeta` — so the generated OpenAPI response can never drift from the shape
-     * the handler actually returns. A handler that keeps the interface's union return
-     * type declares no single shape, so it is not constrained here (the flags then
-     * govern the projection alone).
+     * declare a `204` (`new NoContent()`), and one narrowed to exactly {@see MetaResponse}
+     * must declare a meta `200` (`new MetaResult()`) — so the generated OpenAPI response
+     * can never drift from the shape the handler actually returns. A handler that keeps
+     * the interface's union return type declares no single shape, so it is not
+     * constrained here (the `responds` set then governs the projection alone).
      *
-     * @param class-string $class
+     * @param class-string                                              $class
+     * @param list<array{kind: string, type?: string, jobType?: string}> $responds
      */
-    private function guardActionHandlerOutput(string $class, string $id, string $path, bool $returns204, bool $outputMeta): void
+    private function guardActionHandlerOutput(string $class, string $id, string $path, array $responds): void
     {
         if (!\method_exists($class, 'handle')) {
             return;
@@ -673,24 +663,26 @@ final class ResourceLocatorPass implements CompilerPassInterface
             return;
         }
 
+        $kinds = \array_map(static fn(array $entry): string => $entry['kind'], $responds);
+
         $name = $returnType->getName();
-        if ($name === NoContentResponse::class && !$returns204) {
+        if ($name === NoContentResponse::class && !\in_array('nocontent', $kinds, true)) {
             throw new \LogicException(\sprintf(
-                'The JSON:API action "%s" on service "%s" has a handler returning %s but does not declare returns204; '
-                . 'a body-less action must declare returns204 so the generated document advertises a 204.',
+                'The JSON:API action "%s" on service "%s" has a handler returning NoContentResponse but does not '
+                . 'declare a 204 response; a body-less action must declare responds: [new NoContent()] so the '
+                . 'generated document advertises a 204.',
                 $path,
                 $id,
-                'NoContentResponse',
             ));
         }
 
-        if ($name === MetaResponse::class && !$outputMeta) {
+        if ($name === MetaResponse::class && !\in_array('meta', $kinds, true)) {
             throw new \LogicException(\sprintf(
-                'The JSON:API action "%s" on service "%s" has a handler returning %s but does not declare outputMeta; '
-                . 'a meta-only action must declare outputMeta so the generated document advertises a meta document.',
+                'The JSON:API action "%s" on service "%s" has a handler returning MetaResponse but does not declare '
+                . 'a meta response; a meta-only action must declare responds: [new MetaResult()] so the generated '
+                . 'document advertises a meta document.',
                 $path,
                 $id,
-                'MetaResponse',
             ));
         }
     }
@@ -906,6 +898,109 @@ final class ResourceLocatorPass implements CompilerPassInterface
     }
 
     /**
+     * The per-operation response declarations decoded from the first tag carrying a
+     * `responses` JSON string (mirroring {@see operationsFromTags} / {@see tagsFromTags}),
+     * as a map of {@see Operation} value => list of `{status, jobType?}` for the OpenAPI
+     * MetadataSource; empty when none declared (every op then uses its default).
+     *
+     * @param array<array<string, mixed>> $tags
+     *
+     * @return array<string, list<array{status: int, jobType?: string}>>
+     */
+    private function responsesFromTags(array $tags): array
+    {
+        foreach ($tags as $tag) {
+            if (\array_key_exists('responses', $tag)) {
+                return $this->parseResponses($tag['responses']);
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * Parses the JSON `responses` tag string into the descriptor shape, dropping any
+     * malformed entry defensively (the attribute already validated the real declaration
+     * via {@see \haddowg\JsonApi\OpenApi\Metadata\OperationResponses::validate()}).
+     *
+     * @return array<string, list<array{status: int, jobType?: string}>>
+     */
+    private function parseResponses(mixed $responses): array
+    {
+        if (!\is_string($responses) || $responses === '') {
+            return [];
+        }
+
+        $decoded = \json_decode($responses, true);
+        if (!\is_array($decoded)) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($decoded as $operation => $list) {
+            if (!\is_string($operation) || !\is_array($list)) {
+                continue;
+            }
+
+            $entries = [];
+            foreach ($list as $entry) {
+                if (!\is_array($entry) || !isset($entry['status']) || !\is_int($entry['status'])) {
+                    continue;
+                }
+
+                $parsed = ['status' => $entry['status']];
+                if (isset($entry['jobType']) && \is_string($entry['jobType'])) {
+                    $parsed['jobType'] = $entry['jobType'];
+                }
+                $entries[] = $parsed;
+            }
+
+            if ($entries !== []) {
+                $out[$operation] = $entries;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Parses the JSON `responds` action-tag string into the descriptor shape (a list of
+     * `{kind, type?, jobType?}`), dropping any malformed entry defensively (the attribute
+     * already validated the real declaration via {@see \haddowg\JsonApi\OpenApi\Metadata\ActionResponses::validate()}).
+     *
+     * @return list<array{kind: string, type?: string, jobType?: string}>
+     */
+    private function parseActionResponds(mixed $responds): array
+    {
+        if (!\is_string($responds) || $responds === '') {
+            return [];
+        }
+
+        $decoded = \json_decode($responds, true);
+        if (!\is_array($decoded)) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($decoded as $entry) {
+            if (!\is_array($entry) || !isset($entry['kind']) || !\is_string($entry['kind'])) {
+                continue;
+            }
+
+            $parsed = ['kind' => $entry['kind']];
+            if (isset($entry['type']) && \is_string($entry['type'])) {
+                $parsed['type'] = $entry['type'];
+            }
+            if (isset($entry['jobType']) && \is_string($entry['jobType'])) {
+                $parsed['jobType'] = $entry['jobType'];
+            }
+            $out[] = $parsed;
+        }
+
+        return $out;
+    }
+
+    /**
      * @return list<string>
      */
     private static function allOperations(): array
@@ -940,7 +1035,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
      * Compile-time guard: a type cannot expose a write operation (`Create` /
      * `Update`) without a hydrator to populate the entity.
      *
-     * @param array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>}> $descriptors
+     * @param array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string}>>}> $descriptors
      */
     private function validateWriteCapability(array $descriptors): void
     {

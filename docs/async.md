@@ -12,6 +12,13 @@ returns a marker; the handler renders the spec-correct `202`. *How* you queue th
 is your choice — the recipe below uses [Symfony Messenger](https://symfony.com/doc/current/messenger.html),
 but nothing about Messenger is baked in.
 
+Every part of this lifecycle is **reflected in the generated OpenAPI document** via the
+per-operation [response declarations](resources.md#per-operation-response-declarations):
+the write advertises the `202`, and the job type's fetch advertises the `303`. The
+`examples/music-catalog-symfony` app wires this as the `catalog-exports` (always-async
+create) / `export-jobs` (fetch-one `303` completion) pair, and the Laravel package
+projects a byte-identical document for it.
+
 ## Accepting the write — `AcceptedForProcessing`
 
 A [`DataPersister`](data-layer.md) that dispatches a write instead of committing it
@@ -78,39 +85,84 @@ The `jobs` type is an ordinary JSON:API type — register a serializer for it (a
 standalone `#[AsJsonApiSerializer(type: 'jobs')]`, or a full resource if you want its
 own endpoints). Persist the job wherever your queue tracks state.
 
-## Reporting completion — `303 See Other`
-
-Model the job-status endpoint as a [custom action](actions.md) that returns
-`$context->seeOther($url)` once the queued work has produced the resource:
+Declare the `202` on the resource so the document advertises it — a *maybe-async* write
+lists both the sync and the async status:
 
 ```php
+use haddowg\JsonApi\OpenApi\Metadata\{Accepted, Created};
+
+#[AsJsonApiResource(create: [new Created(), new Accepted('jobs')])]
+final class ArticleResource extends AbstractResource { /* … */ }
+```
+
+An *always*-async type declares `create: [new Accepted('jobs')]` (a `202` only). See
+[per-operation response declarations](resources.md#per-operation-response-declarations).
+
+## Reporting completion — `303 See Other`
+
+The spec models completion as a `GET` on the job's own URL: `200` (the job resource)
+while the work runs, then `303 See Other` to the produced resource once it is done.
+The bundle drives that from the **`jobs` type's fetch-one** — implement
+`haddowg\JsonApi\Resource\ResolvesCompletionRedirect` on the job resource (or its
+serializer) and declare `fetchOne: [new Ok(), new SeeOther()]` so the `303` is in the
+document:
+
+```php
+use haddowg\JsonApi\OpenApi\Metadata\{Ok, SeeOther};
+use haddowg\JsonApi\Resource\AbstractResource;
+use haddowg\JsonApi\Resource\ResolvesCompletionRedirect;
+use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
+
+#[AsJsonApiResource(readOnly: true, fetchOne: [new Ok(), new SeeOther()])]
+final class JobResource extends AbstractResource implements ResolvesCompletionRedirect
+{
+    // Done → the produced resource's URL (the fetch renders 303); still running → null (200).
+    public function completionLocation(object $entity): ?string
+    {
+        \assert($entity instanceof Job);
+
+        return $entity->isDone() ? 'https://example.test/articles/' . $entity->createdId : null;
+    }
+
+    public function fields(): array { /* id + status … */ }
+}
+```
+
+```http
+GET /jobs/9f3b            → 200   (still running — the job resource)
+GET /jobs/9f3b            → 303   Location: https://example.test/articles/42   (done)
+```
+
+**Or via a custom action.** When completion isn't a plain job fetch — a side-effecting
+`POST`, a distinct result endpoint — model it as a [custom action](actions.md)
+declaring `responds: [new Accepted('jobs'), new SeeOther()]`, so the document
+advertises both the still-running `202` and the completion `303`:
+
+```php
+use haddowg\JsonApi\OpenApi\Metadata\{Accepted, SeeOther};
+use haddowg\JsonApi\Response\AcceptedResponse;
 use haddowg\JsonApi\Response\SeeOtherResponse;
 use haddowg\JsonApiBundle\Action\ActionContext;
 use haddowg\JsonApiBundle\Action\ActionHandlerInterface;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiAction;
 
-#[AsJsonApiAction(type: 'jobs', path: 'result', methods: ['GET'])]
+#[AsJsonApiAction(type: 'jobs', path: 'result', methods: ['GET'], responds: [new Accepted('jobs'), new SeeOther()])]
 final class JobResult implements ActionHandlerInterface
 {
-    public function handle(ActionContext $context): SeeOtherResponse
+    public function handle(ActionContext $context): AcceptedResponse|SeeOtherResponse
     {
         $job = $context->entity();
         \assert($job instanceof Job);
 
         // Still running → 202 again; done → redirect to the produced resource.
-        return $context->seeOther('https://example.test/articles/' . $job->createdId);
+        return $job->isDone()
+            ? $context->seeOther('https://example.test/articles/' . $job->createdId)
+            : $context->accepted('https://example.test/jobs/' . $job->id)->withRetryAfter(30);
     }
 }
 ```
 
-```http
-HTTP/1.1 303 See Other
-Location: https://example.test/articles/42
-```
-
-While the job is still running the same action can return
-`$context->accepted($pollUrl)->withRetryAfter(30)` to answer `202` again, so a polling
-client sees `202` until the work finishes and then a single `303`.
+so a polling client sees `202` until the work finishes and then a single `303`.
 
 ## Notes
 

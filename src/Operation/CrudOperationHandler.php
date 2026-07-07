@@ -39,6 +39,7 @@ use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\SupportsSingular;
+use haddowg\JsonApi\Resource\ResolvesCompletionRedirect;
 use haddowg\JsonApi\Response\AcceptedResponse;
 use haddowg\JsonApi\Response\AtomicResultsResponse;
 use haddowg\JsonApi\Response\DataResponse;
@@ -261,7 +262,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         return (new AtomicLoop())->run($operation->descriptors(), $backend);
     }
 
-    private function fetch(FetchResourceOperation $operation): DataResponse|ErrorResponse
+    private function fetch(FetchResourceOperation $operation): DataResponse|SeeOtherResponse|ErrorResponse
     {
         $server = $this->server($operation->context());
         $type = $operation->target()->type;
@@ -276,6 +277,17 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $model = $provider->fetchOne($type, $id);
             if ($model === null) {
                 return ErrorResponse::fromException(new ResourceNotFound());
+            }
+
+            // Async-completion redirect: a serializer/resource that resolves a completion
+            // location for the loaded entity answers a fetch-one with 303 See Other to the
+            // produced resource — the read-side twin of the async-write AcceptedForProcessing
+            // (declared in OpenAPI via a FetchOneResponse `new SeeOther()`; the hook drives runtime).
+            if ($serializer instanceof ResolvesCompletionRedirect) {
+                $location = $serializer->completionLocation($model);
+                if ($location !== null) {
+                    return SeeOtherResponse::to($location);
+                }
             }
 
             // Batch eager-load the effective ?include tree (explicit or the

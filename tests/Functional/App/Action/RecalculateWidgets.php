@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App\Action;
 
+use haddowg\JsonApi\OpenApi\Metadata\MetaResult;
 use haddowg\JsonApi\Response\MetaResponse;
 use haddowg\JsonApiBundle\Action\ActionContext;
 use haddowg\JsonApiBundle\Action\ActionHandlerInterface;
@@ -17,10 +18,10 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiAction;
  * route method and Symfony `405`s natively (mapped by the exception listener) — proving
  * the author-declared method allow-list is enforced at routing, before any handler.
  *
- * The handler returns a meta-only document, so it declares `outputMeta: true` — the
+ * The handler returns a meta-only document, so it declares `responds: [new MetaResult()]` — the
  * generated document advertises a `200` meta document (core ADR 0102).
  */
-#[AsJsonApiAction(type: 'actionWidgets', path: 'recalculate', methods: ['PATCH'], scope: ActionScope::Collection, outputMeta: true)]
+#[AsJsonApiAction(type: 'actionWidgets', path: 'recalculate', methods: ['PATCH'], scope: ActionScope::Collection, responds: [new MetaResult()])]
 final class RecalculateWidgets implements ActionHandlerInterface
 {
     public function handle(ActionContext $context): MetaResponse
