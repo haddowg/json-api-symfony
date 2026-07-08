@@ -8,6 +8,7 @@ use haddowg\JsonApi\Operation\OperationHandlerInterface;
 use haddowg\JsonApi\Pagination\PagePaginator;
 use haddowg\JsonApi\Pagination\PaginatorInterface;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Schema\Error\ErrorMessageResolverInterface;
 use haddowg\JsonApi\Schema\Profile\CountableProfile;
 use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
 use haddowg\JsonApi\Serializer\RelationshipLoadStateInterface;
@@ -111,6 +112,7 @@ final class ServerFactory
         private readonly array $standaloneHydrators = [],
         private readonly string $serverName = 'default',
         private readonly ?EventDispatcherInterface $dispatcher = null,
+        private readonly ?ErrorMessageResolverInterface $errorMessageResolver = null,
     ) {}
 
     /**
@@ -182,6 +184,11 @@ final class ServerFactory
             // above) is recognized automatically when the client negotiates it, with
             // no extra registration. False restores the old silent-ignore behaviour.
             ->withStrictQueryParameters($this->strictQueryParameters)
+            // The error-message resolver (bundle ADR 0115): localizes/overrides every
+            // error's title/detail per its stable code through the Symfony translator.
+            // Null when symfony/translation is absent, so core renders its inline
+            // English copy (byte-identical to today).
+            ->withErrorMessageResolver($this->errorMessageResolver)
             ->withContainer($this->resources);
 
         foreach ($this->resourceClasses as $resourceClass) {
