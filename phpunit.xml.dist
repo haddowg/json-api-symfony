@@ -16,8 +16,10 @@
     <php>
         <!-- The functional suites boot one Symfony kernel per test (each compiling
              and caching a container); the cumulative footprint of the dual-provider
-             conformance runs now exceeds the stock 128M CLI ceiling. -->
-        <ini name="memory_limit" value="256M"/>
+             conformance runs now exceeds the stock 128M CLI ceiling. The container
+             build for the music-catalog kernel tips past 256M on the PHP 8.5 /
+             lowest-deps runner, so give it headroom. -->
+        <ini name="memory_limit" value="512M"/>
         <!-- Kernel::preBoot() exports SHELL_VERBOSITY=3 process-wide when a DEBUG
              kernel boots (the OpenAPI expose-gate suite boots one on purpose), and
              every logger constructed afterwards then leaks [info] lines into the

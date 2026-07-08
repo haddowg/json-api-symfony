@@ -6,7 +6,10 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\Resource;
 
 use haddowg\JsonApi\Resource\Field\BelongsTo;
 use haddowg\JsonApi\Resource\Field\HasMany;
+use haddowg\JsonApi\Resource\Filter\Contains;
 use haddowg\JsonApi\Resource\Filter\Where;
+use haddowg\JsonApi\Resource\Filter\WhereAll;
+use haddowg\JsonApi\Resource\Filter\WhereAny;
 use haddowg\JsonApi\Resource\Filter\WhereIdIn;
 use haddowg\JsonApi\Resource\Filter\WhereThrough;
 
@@ -129,6 +132,36 @@ class ConstrainedFilterArticleResource extends BaseArticleResource
             // therefore still returns 200 (the default is trusted and never
             // validated); only a client-supplied empty value would be a 400.
             Where::make('anyTitle', 'title', 'like')->pattern('^.+$')->default(''),
+
+            // --- Server-composed filter groups + ->fixed() (#24b, core ADR 0129) ---
+            // The same declarations drive the dual-provider FilterGroupConformanceTestCase.
+            //
+            // WhereAny fan-out search: one value fanned across two columns —
+            // filter[search]=nd matches title LIKE '%nd%' OR body LIKE '%nd%'.
+            WhereAny::make('search', Contains::make('title'), Contains::make('body')),
+            // WhereAll canned toggle (all children fixed): filter[hotNews] present
+            // applies category = 'news' AND body LIKE '%workers%'; the request value
+            // is ignored (a presence trigger).
+            WhereAll::make(
+                'hotNews',
+                Where::make('category')->fixed('news'),
+                Contains::make('body')->fixed('workers'),
+            ),
+            // Nested (A AND (B OR C)): title LIKE '%value%' AND (category = 'guide' OR
+            // body LIKE '%workers%'). The value fans to the title child; the fixed
+            // children in the inner OR ignore it.
+            WhereAll::make(
+                'scoped',
+                Contains::make('title'),
+                WhereAny::make(
+                    'inner',
+                    Where::make('category')->fixed('guide'),
+                    Contains::make('body')->fixed('workers'),
+                ),
+            ),
+            // Standalone ->fixed(): filter[onlyGuides]=<anything> pins category = 'guide'
+            // regardless of the sent value; omitting it does not apply it.
+            Where::make('onlyGuides', 'category')->fixed('guide'),
         ];
     }
 }

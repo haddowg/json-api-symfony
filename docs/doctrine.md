@@ -444,6 +444,8 @@ so the same spec test passes on both providers.
 | `WhereHas` / `WhereDoesntHave` | correlated `EXISTS` / `NOT EXISTS` subquery |
 | `WhereThrough` | dotted-traversal correlated `EXISTS` (the related entity narrowed by the leaf comparison) |
 | `WhereHasMatching` | correlated `EXISTS` whose related entity is narrowed by an author-supplied `Criteria`/closure (Doctrine-only) |
+| `WhereAll` / `WhereAny` | the children recombined with `andX()` / `orX()` as one composite `andWhere` (see below) |
+| `Where` pinned with `->fixed()` | the same DQL as the underlying `Where`, its compared value pinned server-side (no dedicated arm — it rides the `deserialize` seam) |
 | a custom `FilterInterface` | a registered [`DoctrineFilterArmInterface`](#custom-filters-and-sorts-the-arm-seam) that supports it; else core `UnsupportedFilter` |
 
 A few translations carry nuance:
@@ -469,6 +471,19 @@ A few translations carry nuance:
 - **Empty-list semantics.** `WhereIn`/`WhereIdIn` with an empty list match nothing
   (`IN ()` is not valid SQL, so the handler emits `1 = 0`); the negated variants
   then match everything (a no-op).
+- **`WhereAll`/`WhereAny` recombine their children with `andX()`/`orX()`.** A
+  [server-composed group](https://github.com/haddowg/json-api/blob/main/docs/filters.md#filter-groups-whereall--whereany) is applied by
+  running each child through the **same** dispatch a top-level filter uses — fanning
+  the group's request value uniformly to every child — capturing the predicate it
+  pushes down, then recombining the captured predicates with `andX()` (`WhereAll`) or
+  `orX()` (`WhereAny`) as one composite `andWhere`. So a fanning group is a
+  multi-column search (`filter[q]=foo` → `LOWER(name) LIKE '%foo%' OR LOWER(email)
+  LIKE '%foo%'`) and a fixed-child group a canned toggle. Each child binds its own
+  parameters on the query with the usual count-derived, collision-free placeholder
+  names — so repeated columns and arbitrarily **nested** groups (`A AND (B OR C)`)
+  bind distinctly. A `->fixed()` `Where` needs no arm of its own: its pinned value
+  rides the existing `deserialize` seam, so the `Where` translation above runs it
+  unchanged (`col = :param` with the server-set literal bound).
 - **`WhereHas`/`WhereThrough`/`WhereHasMatching` share one `EXISTS` builder.** All
   three relationship filters push down through one correlated `EXISTS` (`NOT EXISTS`
   for `WhereDoesntHave`) subquery rooted on the **related** entity (the first hop's
