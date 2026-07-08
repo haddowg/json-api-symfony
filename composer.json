@@ -66,6 +66,7 @@
         "egulias/email-validator": "Enables strict (RFC 5322) translation of the email.strict constraint; without it the Email rule falls back to Symfony's HTML5 mode (^4.0).",
         "opis/json-schema": "Enables the optional dev/CI structural document linter (json_api.schema_validation) that validates write bodies against the JSON:API JSON Schema, and the SchemaConformanceTrait that validates real responses against the generated OpenAPI component schemas in your test suite (^2.6).",
         "symfony/intl": "Enables sourcing a reference-data resource (e.g. a countries list) from the ICU dataset; used by the music-catalog example app (^6.4 || ^7.0 || ^8.0).",
+        "symfony/translation": "Enables localizing/overriding the error catalogue: title/detail are looked up per error code in the jsonapi_errors translation domain, rendered in the request's negotiated locale (^6.4 || ^7.0 || ^8.0).",
         "symfony/framework-bundle": "Enables the JsonApiBrowser test utility (it extends Symfony's KernelBrowser); only needed in test/dev (^6.4 || ^7.0 || ^8.0).",
         "symfony/browser-kit": "Enables the JsonApiBrowser test utility (KernelBrowser's BrowserKit base); only needed in test/dev (^6.4 || ^7.0 || ^8.0).",
         "symfony/yaml": "Enables YAML output for the OpenAPI export command (json-api:openapi:export --format=yaml) and the optional static .yaml artifact the OpenAPI cache warmer writes to public_path; without it only JSON is emitted (^6.4 || ^7.0 || ^8.0)."

@@ -572,6 +572,19 @@ final class JsonApiBundle extends AbstractBundle
                 ]);
         }
 
+        // Localizable/overridable error catalogue (bundle ADR 0115): bind a resolver
+        // over the Symfony translator so an app can localize or rebrand any error's
+        // title/detail per its stable code via translation files (the `jsonapi_errors`
+        // domain). Gated on the concrete symfony/translation component (not merely the
+        // contracts, which are always present) so the `translator` service it depends on
+        // actually exists; without it the ServerFactory arg resolves null (nullOnInvalid)
+        // and core renders its inline English copy, byte-identical to today.
+        if (\class_exists(\Symfony\Component\Translation\Translator::class)) {
+            $container->services()
+                ->set(\haddowg\JsonApiBundle\Server\TranslatorErrorMessageResolver::class)
+                ->args(['$translator' => \Symfony\Component\DependencyInjection\Loader\Configurator\service('translator')]);
+        }
+
         // Declarative resource authorization (bundle ADR 0043): the type-keyed
         // ResourceSecurityRegistry + the ResourceSecuritySubscriber that evaluates a
         // type's security expression at the lifecycle hooks. Registered only when
@@ -1103,6 +1116,11 @@ final class JsonApiBundle extends AbstractBundle
                     // true)] action of the type being rendered, scoped to the request's
                     // server. Its per-server link map is filled by the ResourceLocatorPass.
                     '$resourceLinkContributor' => service(\haddowg\JsonApiBundle\Action\ActionLinkContributor::class),
+                    // The error-message resolver (bundle ADR 0115): a translator-backed
+                    // resolver that localizes/overrides each error's title/detail by its
+                    // stable code. Null when symfony/translation is absent (the service is
+                    // not registered), so core renders its inline English copy.
+                    '$errorMessageResolver' => service(\haddowg\JsonApiBundle\Server\TranslatorErrorMessageResolver::class)->nullOnInvalid(),
                     // This server's name + the dispatcher the serving bridge fires
                     // the bundle ServingEvent through (bundle ADR 0042); the
                     // dispatcher is optional (the lifecycle-hook seam is off when

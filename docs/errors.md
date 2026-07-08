@@ -311,6 +311,40 @@ Two render paths exist, and the `code` member tells you which:
   or arm 3 (`Internal Server Error`, the generic 500). These are the bundle's
   status-keyed shapes for failures that originated outside core's vocabulary.
 
+## Localizing and overriding error copy
+
+Every error's `title` and `detail` are message templates core resolves per stable
+error `code`
+([core ADR 0128](https://github.com/haddowg/json-api/blob/main/docs/errors-and-exceptions.md#localizing-and-overriding-error-copy)).
+The bundle binds that seam to the **Symfony translator** automatically: when
+`symfony/translation` is installed, any error's copy can be localized or rebranded
+through ordinary translation files in the `jsonapi_errors` domain, keyed by code:
+
+```yaml
+# translations/jsonapi_errors.fr.yaml
+RESOURCE_NOT_FOUND:
+    title: Ressource introuvable
+MEDIA_TYPE_UNSUPPORTED:
+    detail: "Le type de média '{mediaType}' n'est pas supporté."
+VALIDATION_FAILED:
+    title: Entité non traitable
+```
+
+Only the human copy moves: an error's `code` and `status` are never touched, and a
+key you don't provide falls back to core's inline English — per slot, so a partial
+translation is fine. The values are **templates**: a `{placeholder}` is filled from
+the error's context *after* translation (a media type, an id), so write `{mediaType}`,
+not Symfony's `%mediaType%` (no parameters are passed to the translator). The
+placeholder names available per code are listed in core's
+[errors-and-exceptions](https://github.com/haddowg/json-api/blob/main/docs/errors-and-exceptions.md#localizing-and-overriding-error-copy).
+
+The lookup uses the translator's current locale, so `Accept-Language` negotiation is
+the framework's job — wire Symfony's usual locale resolution and each request renders
+in its negotiated language. Because the resolver is applied uniformly to every error,
+the validator's `422` `VALIDATION_FAILED` title (arm 1) localizes through the very same
+domain. Without `symfony/translation` the seam is inert and errors render in English
+exactly as before.
+
 ## Next / see also
 
 - [lifecycle](lifecycle.md) — the success path this listener mirrors:
