@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\DataProvider\Doctrine;
 
 use Doctrine\ORM\Mapping\ClassMetadata;
+use Doctrine\ORM\Query\Expr\Andx;
 use Doctrine\ORM\QueryBuilder;
 use haddowg\JsonApi\Resource\Filter\DateRange;
 use haddowg\JsonApi\Resource\Filter\FilterHandlerInterface;
@@ -12,6 +13,8 @@ use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\Range;
 use haddowg\JsonApi\Resource\Filter\UnsupportedFilter;
 use haddowg\JsonApi\Resource\Filter\Where;
+use haddowg\JsonApi\Resource\Filter\WhereAll;
+use haddowg\JsonApi\Resource\Filter\WhereAny;
 use haddowg\JsonApi\Resource\Filter\WhereDoesntHave;
 use haddowg\JsonApi\Resource\Filter\WhereHas;
 use haddowg\JsonApi\Resource\Filter\WhereIdIn;
@@ -46,6 +49,13 @@ use haddowg\JsonApiBundle\DataProvider\Doctrine\Filter\WhereHasMatching;
  * - {@see WhereIn}/{@see WhereIdIn} with an empty value list match nothing
  *   (`IN ()` is not valid SQL); the negated variants then match everything.
  * - {@see WhereNull}/{@see WhereNotNull} ignore the request value entirely.
+ * - {@see WhereAll}/{@see WhereAny} are server-composed boolean groups: each child
+ *   is applied through this same dispatch (fanning the group's value uniformly),
+ *   its predicate captured, and the children recombined with `andX()`/`orX()` as
+ *   one composite `andWhere` — so a fanning group is a multi-column search and a
+ *   fixed-child group a canned toggle, and groups nest (a group child re-enters
+ *   here). A `->fixed()` `Where` needs no arm of its own: its pinned value rides
+ *   the existing `deserialize` seam, so the {@see Where} arm runs it unchanged.
  * - {@see WhereHas}/{@see WhereDoesntHave}, {@see WhereThrough} and the bundle's
  *   {@see WhereHasMatching} are relationship filters: each matches rows whose
  *   named relationship has at least one related row (optionally narrowed). All
@@ -137,6 +147,10 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         }
 
         return match (true) {
+            // Server-composed boolean groups: recurse each child into a captured
+            // predicate and combine with andX()/orX() as one composite andWhere.
+            $filter instanceof WhereAll => $this->whereAll($query, $filter, $value, $alias),
+            $filter instanceof WhereAny => $this->whereAny($query, $filter, $value, $alias),
             $filter instanceof Where => $this->where($filter, $query, $value, $alias),
             $filter instanceof WhereIn => $this->whereIn($query, $this->pivotColumn($filter->column, $alias), $this->toList($value, $filter->delimiter), false, $alias),
             $filter instanceof WhereNotIn => $this->whereIn($query, $this->pivotColumn($filter->column, $alias), $this->toList($value, $filter->delimiter), true, $alias),
@@ -433,6 +447,112 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         $this->applyComparison($query, $query, $path, $filter->operator, $expected, $filter->key());
 
         return $query;
+    }
+
+    /**
+     * AND group ({@see WhereAll}): each child's predicate is combined with `AND`
+     * under one composite `andWhere`. Every child re-enters {@see applyOn()} with
+     * the **group's** value (fanned uniformly) and the SAME `$alias`, so a fixed
+     * child ignores the value, a fanning child consumes it, and a nested group
+     * re-enters this dispatch. An empty group adds no constraint (the AND identity).
+     */
+    private function whereAll(QueryBuilder $query, WhereAll $filter, mixed $value, string $alias): QueryBuilder
+    {
+        $parts = $this->childPredicates($query, $filter->children, $value, $alias);
+
+        if ($parts === []) {
+            return $query;
+        }
+
+        return $query->andWhere($query->expr()->andX(...$parts));
+    }
+
+    /**
+     * OR group ({@see WhereAny}): each child's predicate is combined with `OR`
+     * under one composite `andWhere` — so a value-carrying group is a multi-column
+     * search (`filter[q]=foo` → `col1 LIKE foo OR col2 LIKE foo`) and a fixed-child
+     * group a canned toggle. An empty group matches nothing (the OR identity),
+     * mirroring the in-memory witness.
+     */
+    private function whereAny(QueryBuilder $query, WhereAny $filter, mixed $value, string $alias): QueryBuilder
+    {
+        $parts = $this->childPredicates($query, $filter->children, $value, $alias);
+
+        if ($parts === []) {
+            return $query->andWhere('1 = 0');
+        }
+
+        return $query->andWhere($query->expr()->orX(...$parts));
+    }
+
+    /**
+     * Builds one predicate expression per child WITHOUT leaving it AND-ed onto the
+     * query's WHERE, so the group can recombine the children with its own boolean
+     * operator. Each child is applied through the SAME {@see applyOn()} dispatch a
+     * top-level filter uses — so its DQL, its `like` semantics and its parameter
+     * binding are byte-identical to a standalone application — then the WHERE parts
+     * it added are captured and the WHERE is restored to its pre-child state. The
+     * bound parameters are LEFT on the query (their count-derived placeholder names
+     * stay unique across every child and any nested group), and the captured
+     * expression strings reference them, so the recombined composite executes
+     * correctly.
+     *
+     * @param list<FilterInterface> $children
+     * @return list<string> the child predicate DQL expressions
+     */
+    private function childPredicates(QueryBuilder $query, array $children, mixed $value, string $alias): array
+    {
+        $parts = [];
+        foreach ($children as $child) {
+            $before = $this->whereParts($query);
+            $this->applyOn($child, $query, $value, $alias);
+            $after = $this->whereParts($query);
+
+            $added = \array_slice($after, \count($before));
+
+            // Restore the WHERE to exactly the parts present before this child (the
+            // just-added parts are recombined by the group, not left AND-ed on).
+            $query->resetDQLPart('where');
+            if ($before !== []) {
+                $query->andWhere(...$before);
+            }
+
+            $parts[] = match (\count($added)) {
+                // A child that added no predicate (e.g. NOT IN () ) is a no-op → TRUE.
+                0 => '1 = 1',
+                1 => $added[0],
+                // Several andWhere parts (e.g. a Range's two bounds) AND together as
+                // one parenthesised predicate.
+                default => '(' . \implode(' AND ', $added) . ')',
+            };
+        }
+
+        return $parts;
+    }
+
+    /**
+     * The current top-level WHERE expression as a flat list of its conjuncts' DQL
+     * strings: the parts of the `Andx` a chain of `andWhere` builds, a single
+     * non-`Andx` expression as a one-element list, or empty when there is no WHERE
+     * yet. Each part is a DQL string or a `\Stringable` `Expr\*` node, normalised
+     * to its DQL string so it recombines as a plain predicate.
+     *
+     * @return list<string>
+     */
+    private function whereParts(QueryBuilder $query): array
+    {
+        $where = $query->getDQLPart('where');
+
+        if ($where === null) {
+            return [];
+        }
+
+        $parts = $where instanceof Andx ? \array_values($where->getParts()) : [$where];
+
+        return \array_map(
+            static fn(mixed $part): string => $part instanceof \Stringable ? (string) $part : (\is_string($part) ? $part : ''),
+            $parts,
+        );
     }
 
     /**
