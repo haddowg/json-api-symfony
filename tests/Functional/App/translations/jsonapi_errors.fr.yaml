@@ -1,0 +1,7 @@
+RESOURCE_NOT_FOUND:
+    title: 'Ressource introuvable'
+QUERY_PARAM_UNRECOGNIZED:
+    title: 'Paramètre de requête non reconnu'
+    detail: "Le paramètre de requête '{param}' n'est pas reconnu par le point de terminaison."
+VALIDATION_FAILED:
+    title: 'Entité non traitable'

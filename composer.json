@@ -52,6 +52,7 @@
         "symfony/intl": "^6.4 || ^7.0 || ^8.0",
         "symfony/security-bundle": "^6.4 || ^7.0 || ^8.0",
         "symfony/security-core": "^6.4 || ^7.0 || ^8.0",
+        "symfony/translation": "^6.4 || ^7.0 || ^8.0",
         "symfony/validator": "^6.4 || ^7.0 || ^8.0",
         "symfony/var-exporter": "^6.4 || ^7.0 || ^8.0",
         "symfony/yaml": "^6.4 || ^7.0 || ^8.0",
