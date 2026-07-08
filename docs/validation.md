@@ -445,6 +445,10 @@ Keep the fragment framework-neutral so a byte-compatible twin (the Laravel `Lara
 carrier) emits the identical schema. `NativeConstraints` couples the field to Symfony, so
 prefer a core constraint when one exists and reach here only for a genuinely native rule.
 
+For a *composite* schema (`oneOf`/`anyOf`/`allOf`) rather than a single scalar keyword,
+author your own composite constraint instead — no translator required. See
+[Authoring your own composite constraint](composite-attributes.md#authoring-your-own-composite-constraint).
+
 ## Strict-email degradation
 
 `EmailFormat(strict)` translates to `Email(mode: STRICT)` **only** if

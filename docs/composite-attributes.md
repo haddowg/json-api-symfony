@@ -61,6 +61,62 @@ Two wiring notes:
 Design records: ADR 0111 (the `Obj`/`OneOf` cascade) and ADR 0112 (`Shape` value
 validation through the core validator).
 
+## Authoring your own composite constraint
+
+`Shape` is not privileged — it is just a core
+[`ProvidesJsonSchema`](https://github.com/haddowg/json-api/blob/main/docs/constraints.md#rolling-your-own-composite-constraint)
+constraint that contributes a `oneOf`/`anyOf`/`allOf`. When a composite recurs
+across resources you can wrap it in a **named** constraint of your own (core's
+docs show a reusable `GeoJsonGeometry`), and the bundle needs **nothing
+registered** to honour it: unlike a custom *scalar* constraint, a composite has no
+[translator](validation.md#custom-constraints-the-extension-point) to write — its
+members are raw JSON Schema, so there is nothing for the Symfony validator to
+translate. It rides the same documentation seam as
+[`NativeConstraints::schema()`](validation.md#native-symfony-constraints-without-a-translator-nativeconstraints):
+the combinator lands in the served OpenAPI document, with nothing to wire.
+
+The catch is **runtime enforcement**. The bundle value-validates the built-in
+`Shape` (through core's `SchemaValueValidator`, the `422` route
+[above](#how-each-kind-validates)) but does **not** run a hand-rolled composite
+constraint — it only *documents* it. So:
+
+- Want the field-scoped **`422`** value pass? Attach the built-in **`Shape`** — it
+  is the wired route.
+- Want a **named, self-documenting** shape in your vocabulary and are content with
+  OpenAPI documentation? Author your own `ProvidesJsonSchema` constraint.
+- Want **both** — reuse *and* the `422` pass? Skip the constraint class and expose
+  a small **factory** that returns a preconfigured `Shape`, so every call site gets
+  the wired validation for free:
+
+```php
+final class GeoJson
+{
+    /** A reusable, discriminated Point/LineString geometry. */
+    public static function geometry(): Shape
+    {
+        $position = Schema::ofType('array')->withItems(Schema::ofType('number'));
+
+        return Shape::oneOf(
+            Schema::ofType('object')
+                ->withProperties([
+                    'type' => Schema::ofType('string')->withConst('Point'),
+                    'coordinates' => $position,
+                ])
+                ->withRequired(['type', 'coordinates']),
+            Schema::ofType('object')
+                ->withProperties([
+                    'type' => Schema::ofType('string')->withConst('LineString'),
+                    'coordinates' => Schema::ofType('array')->withItems($position),
+                ])
+                ->withRequired(['type', 'coordinates']),
+        )->discriminator('type');
+    }
+}
+
+// on any resource, at the call site:
+ArrayHash::make('location')->nullable()->constrain(GeoJson::geometry());
+```
+
 ## Storage: one `json` column
 
 A composite attribute is **one value** — the natural Doctrine mapping is a single
