@@ -367,6 +367,42 @@ under the new sort. Note the staleness check pins **direction**, not just the co
 set: flipping `?sort=category` to `?sort=-category` while reusing a cursor is stale,
 because the cursor was minted under the opposite order.
 
+## Offering a menu of strategies (`page[kind]`)
+
+A resource can offer **several** pagination strategies and let the client pick one
+per request — page-number for a browsing UI, cursor for a stable deep-scroll export.
+Return a [`MultiPaginator`](https://github.com/haddowg/json-api/blob/main/docs/pagination.md#offering-a-menu-of-strategies)
+from `pagination()` (or a relation's `paginate()`); because it is itself a
+`PaginatorInterface`, nothing else in the bundle changes:
+
+```php
+use haddowg\JsonApi\Pagination\CursorPaginator;
+use haddowg\JsonApi\Pagination\MultiPaginator;
+use haddowg\JsonApi\Pagination\PagePaginator;
+
+public function pagination(?PaginatorInterface $serverDefault): ?PaginatorInterface
+{
+    return MultiPaginator::make(
+        PagePaginator::make()->withDefaultPerPage(20),
+        CursorPaginator::make(),
+    )->default('cursor');
+}
+```
+
+The client selects with `page[kind]=page` (or `=cursor`); a strategy-**unique** key
+selects without a kind (`page[after]`/`page[before]` → cursor, `page[offset]`/
+`page[limit]` → offset), a **shared** key (`page[size]`/`page[number]`) needs
+`page[kind]`, and an absent `page` uses the declared `default()`. An unknown kind is
+a `400 PAGINATION_KIND_UNKNOWN` naming `page[kind]` in `source.parameter`. The bundle
+resolves the wrapper to its concrete child once, up front, so the count-based and
+cursor render paths behave exactly as they do for a single strategy — the OpenAPI
+document projects the menu as a single `page` deepObject whose schema is a `oneOf`
+discriminated by `kind`.
+
+Included relations are still pinned to page-1 (the Relationship Queries profile), so
+a menu that includes a page strategy batches cleanly; a menu resolving to cursor on a
+batched **include** remains subject to the [windowed-include limitation](#windowed-includes-are-bounded-window_functions).
+
 ## No pagination (fetch-all)
 
 Return `null` from `pagination()` to **disable pagination** for a resource — its

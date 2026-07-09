@@ -228,9 +228,13 @@ final class OpenApiServingTest extends JsonApiFunctionalTestCase
         // include + the sparse-fieldset param for the primary type.
         self::assertContains('include', $names);
         self::assertContains('fields[products]', $names);
-        // The page params (page-based paginator).
-        self::assertContains('page[number]', $names);
-        self::assertContains('page[size]', $names);
+        // The page family projects as one `page` deepObject parameter (ADR 0130),
+        // whose object schema carries the page-based number/size keys.
+        self::assertContains('page', $names);
+        $pageIndex = (string) (int) \array_search('page', $names, true);
+        $pageParam = $this->nested($parameters, $pageIndex);
+        self::assertSame('deepObject', $pageParam['style'] ?? null);
+        self::assertSame(['number', 'size'], \array_keys($this->nested($parameters, $pageIndex, 'schema', 'properties')));
     }
 
     #[Test]

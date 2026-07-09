@@ -8,9 +8,9 @@ use haddowg\JsonApi\OpenApi\Metadata\ActionMetadataInterface;
 use haddowg\JsonApi\OpenApi\Metadata\OperationResponseInterface;
 use haddowg\JsonApi\OpenApi\Metadata\OperationResponses;
 use haddowg\JsonApi\OpenApi\Metadata\OperationType;
-use haddowg\JsonApi\OpenApi\Metadata\PaginatorKind;
 use haddowg\JsonApi\OpenApi\Metadata\RelationMetadataInterface;
 use haddowg\JsonApi\OpenApi\Metadata\TypeMetadataInterface;
+use haddowg\JsonApi\OpenApi\Schema;
 use haddowg\JsonApi\Resource\Field\FieldInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Sort\SortInterface;
@@ -24,7 +24,7 @@ use haddowg\JsonApi\Resource\Sort\SortInterface;
  * It tolerates a **standalone** type (no resource): `hasFields()` is then `false`,
  * `fields()`/`relations()`/`filters()`/`sorts()` are empty, and the projector emits
  * a permissive resource-object schema. Everything else — uriType, operations, tags,
- * paginatorKind — is sourced independently of the field inventory.
+ * the page schema — is sourced independently of the field inventory.
  */
 final readonly class TypeMetadata implements TypeMetadataInterface
 {
@@ -54,7 +54,7 @@ final readonly class TypeMetadata implements TypeMetadataInterface
         private bool $allowsClientId,
         private bool $requiresClientId,
         private ?string $idPattern,
-        private PaginatorKind $paginatorKind,
+        private ?Schema $pageSchema,
         private bool $countable,
         private array $filters,
         private array $sorts,
@@ -121,9 +121,9 @@ final readonly class TypeMetadata implements TypeMetadataInterface
         return $this->idPattern;
     }
 
-    public function paginatorKind(): PaginatorKind
+    public function pageSchema(): ?Schema
     {
-        return $this->paginatorKind;
+        return $this->pageSchema;
     }
 
     public function isCountable(): bool

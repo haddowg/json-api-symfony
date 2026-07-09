@@ -365,6 +365,53 @@ abstract class CursorConformanceTestCase extends JsonApiFunctionalTestCase
         self::assertSame(['parameter' => 'page[after]'], $error['source'] ?? null);
     }
 
+    // --- client-selectable strategy (the multi-paginator menu) ----------------
+
+    #[Test]
+    #[Group('spec:fetching-pagination')]
+    public function anExplicitPageKindSelectsTheCountBasedPageStrategy(): void
+    {
+        // cursorWidgets offers a page+cursor menu (default cursor). `page[kind]=page`
+        // selects the count-based strategy — the handler resolves the wrapper to the
+        // page child before the cursor/count branch, so the page links carry
+        // `page[number]`, never an opaque cursor token. (Sort by the null-free `id` so
+        // page-1 is deterministic across both strategies' null-ordering conventions.)
+        [$ids, $links] = $this->page('/cursorWidgets?sort=id&page[kind]=page&page[number]=1&page[size]=2');
+
+        self::assertSame(['1', '2'], $ids);
+        self::assertArrayHasKey('next', $links);
+        self::assertStringContainsString('page[number]=2', \urldecode($this->href($links['next'])));
+        self::assertStringNotContainsString('page[after]', \urldecode($this->href($links['next'])));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-pagination')]
+    public function aUniqueKeyInfersThePageStrategyWhileASharedKeyFallsBackToCursor(): void
+    {
+        // `number` is read only by the page strategy, so it selects it with no kind.
+        [, $number] = $this->page('/cursorWidgets?sort=priority,id&page[number]=1&page[size]=2');
+        self::assertArrayHasKey('next', $number);
+        self::assertStringContainsString('page[number]=2', \urldecode($this->href($number['next'])));
+
+        // `size` is shared by page and cursor, so alone it cannot select — the declared
+        // cursor default wins and the next link is an opaque `page[after]` cursor token.
+        [, $sizeOnly] = $this->page('/cursorWidgets?sort=priority,id&page[size]=2');
+        self::assertArrayHasKey('next', $sizeOnly);
+        self::assertStringContainsString('page[after]=', \urldecode($this->href($sizeOnly['next'])));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-pagination')]
+    public function anUnknownPageKindIsA400(): void
+    {
+        $response = $this->handle('/cursorWidgets?sort=priority,id&page[kind]=keyset');
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+        $error = $this->firstError($this->decode($response));
+        self::assertSame('PAGINATION_KIND_UNKNOWN', $error['code'] ?? null);
+        self::assertSame(['parameter' => 'page[kind]'], $error['source'] ?? null);
+    }
+
     // --- helpers --------------------------------------------------------------
 
     /**
