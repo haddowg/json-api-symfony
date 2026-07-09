@@ -8,13 +8,17 @@ use haddowg\JsonApi\OpenApi\Metadata\ActionInputMode;
 use haddowg\JsonApi\OpenApi\Metadata\ActionScope;
 use haddowg\JsonApi\OpenApi\Metadata\OperationResponseInterface;
 use haddowg\JsonApi\OpenApi\Metadata\OperationType;
+use haddowg\JsonApi\OpenApi\OpenApiProjector;
 use haddowg\JsonApi\OpenApi\Tag;
 use haddowg\JsonApi\Operation\OperationHandlerInterface;
+use haddowg\JsonApi\Pagination\CursorPaginationProfile;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\BelongsTo;
 use haddowg\JsonApi\Resource\Field\HasMany;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Str;
+use haddowg\JsonApi\Schema\Profile\CountableProfile;
+use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
 use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\Action\ActionInput;
 use haddowg\JsonApiBundle\Action\ActionRegistry;
@@ -97,6 +101,64 @@ final class MetadataSourceTest extends TestCase
         self::assertSame('JSON:API', $combined->title());
         self::assertCount(1, $combined->servers());
         self::assertSame('https://api.test', $combined->servers()[0]->url);
+    }
+
+    #[Test]
+    public function itAdvertisesTheDefaultRegisteredProfilesInCanonicalOrder(): void
+    {
+        // The bundle registers the three built-in profiles by default, in the canonical
+        // order the OpenAPI jsonapi.profile enum lists them (bundle ADR 0117, core ADR
+        // 0131). profiles() reads the live registry the ServerFactory built, not a
+        // hardcoded list.
+        self::assertSame(
+            [CursorPaginationProfile::URI, CountableProfile::URI, RelationshipQueriesProfile::URI],
+            $this->source()->forServer()->profiles(),
+        );
+    }
+
+    #[Test]
+    public function theGeneratedDocumentAdvertisesTheRegisteredProfilesRelatedQueryAndWithCount(): void
+    {
+        // Projected through the core registration-aware projector (core ADR 0131), the
+        // default registration pins the jsonapi.profile enum to the three URIs in order,
+        // advertises the Relationship Queries `relatedQuery` parameter (articles declares
+        // relations) as a $ref to the single shared component, and the Countable
+        // `?withCount` parameter (articles is countable).
+        $document = (new OpenApiProjector())->project($this->source()->forServer())->toArray();
+
+        self::assertSame(
+            [CursorPaginationProfile::URI, CountableProfile::URI, RelationshipQueriesProfile::URI],
+            $this->at($document, 'components', 'schemas', 'JsonApi', 'properties', 'profile', 'items', 'enum'),
+        );
+
+        $collection = $this->at($document, 'paths', '/articles', 'get');
+        self::assertContains('#/components/parameters/relatedQuery', $this->parameterRefs($collection));
+        self::assertContains('withCount', $this->parameterNames($collection));
+        self::assertArrayHasKey('relatedQuery', $this->at($document, 'components', 'parameters'));
+    }
+
+    #[Test]
+    public function trimmingTheProfilesConfigDropsThatProfilesRegistrationAndAdvertisement(): void
+    {
+        // A consumer trimming json_api.profiles to only Countable: the server registers
+        // only that profile, so profiles() reports only it, the document's profile enum
+        // shrinks to it, the relatedQuery parameter/component disappear (Relationship
+        // Queries not registered), and `?withCount` survives (Countable still registered).
+        $source = $this->source(profiles: [CountableProfile::class]);
+
+        self::assertSame([CountableProfile::URI], $source->forServer()->profiles());
+
+        $document = (new OpenApiProjector())->project($source->forServer())->toArray();
+
+        self::assertSame(
+            [CountableProfile::URI],
+            $this->at($document, 'components', 'schemas', 'JsonApi', 'properties', 'profile', 'items', 'enum'),
+        );
+
+        $collection = $this->at($document, 'paths', '/articles', 'get');
+        self::assertNotContains('#/components/parameters/relatedQuery', $this->parameterRefs($collection));
+        self::assertArrayNotHasKey('parameters', $this->at($document, 'components'));
+        self::assertContains('withCount', $this->parameterNames($collection));
     }
 
     #[Test]
@@ -399,7 +461,11 @@ final class MetadataSourceTest extends TestCase
     /**
      * @param array<string, list<array{status: int, jobType?: string}>> $articleResponses per-operation response overrides for the `articles` descriptor (keyed by {@see OperationType::value})
      */
-    private function source(?ResourceSecurityRegistry $security = null, ?ServerDocumentConfig $config = null, bool $atomicEnabled = false, string $atomicPath = '/operations', ?ResourceDescriptionRegistry $descriptions = null, bool $describedArticle = false, array $articleResponses = []): MetadataSource
+    /**
+     * @param array<string, list<array{status: int, jobType?: string}>>               $articleResponses per-operation response overrides for the articles descriptor
+     * @param list<class-string<\haddowg\JsonApi\Schema\Profile\ProfileInterface>>|null $profiles         the profiles the server registers; null uses the ServerFactory default
+     */
+    private function source(?ResourceSecurityRegistry $security = null, ?ServerDocumentConfig $config = null, bool $atomicEnabled = false, string $atomicPath = '/operations', ?ResourceDescriptionRegistry $descriptions = null, bool $describedArticle = false, array $articleResponses = [], ?array $profiles = null): MetadataSource
     {
         $article = $describedArticle ? new DescribedArticleResource() : new ArticleResource();
         $person = new PersonResource();
@@ -410,7 +476,7 @@ final class MetadataSourceTest extends TestCase
         $types = new TypeMetadataResolver($relations);
         $idEncoders = new IdEncoderResolver($resourceLocator);
 
-        $serverProvider = $this->serverProvider($resourceLocator, ['snippets' => $snippetSerializer]);
+        $serverProvider = $this->serverProvider($resourceLocator, ['snippets' => $snippetSerializer], $profiles);
 
         $descriptors = new RouteDescriptorRegistry([
             ServerProvider::DEFAULT_SERVER => [
@@ -486,6 +552,72 @@ final class MetadataSourceTest extends TestCase
     }
 
     /**
+     * Descends a decoded document array by the given keys, asserting each hop is an
+     * array (so a projection-shape drift fails loudly rather than silently).
+     *
+     * @param array<array-key, mixed> $node
+     *
+     * @return array<array-key, mixed>
+     */
+    private function at(array $node, string ...$keys): array
+    {
+        $cursor = $node;
+        foreach ($keys as $key) {
+            self::assertArrayHasKey($key, $cursor);
+            $next = $cursor[$key];
+            self::assertIsArray($next);
+            $cursor = $next;
+        }
+
+        return $cursor;
+    }
+
+    /**
+     * The `name` of each inline parameter of an operation (a component-parameter
+     * reference carries a `$ref` instead — see {@see parameterRefs()}).
+     *
+     * @param array<array-key, mixed> $operation
+     *
+     * @return list<string>
+     */
+    private function parameterNames(array $operation): array
+    {
+        $parameters = $operation['parameters'] ?? [];
+        self::assertIsArray($parameters);
+
+        $names = [];
+        foreach ($parameters as $parameter) {
+            if (\is_array($parameter) && isset($parameter['name']) && \is_string($parameter['name'])) {
+                $names[] = $parameter['name'];
+            }
+        }
+
+        return $names;
+    }
+
+    /**
+     * The `$ref` of each component-parameter reference of an operation.
+     *
+     * @param array<array-key, mixed> $operation
+     *
+     * @return list<string>
+     */
+    private function parameterRefs(array $operation): array
+    {
+        $parameters = $operation['parameters'] ?? [];
+        self::assertIsArray($parameters);
+
+        $refs = [];
+        foreach ($parameters as $parameter) {
+            if (\is_array($parameter) && isset($parameter['$ref']) && \is_string($parameter['$ref'])) {
+                $refs[] = $parameter['$ref'];
+            }
+        }
+
+        return $refs;
+    }
+
+    /**
      * @param list<AbstractResource> $resources
      */
     private function resourceLocator(array $resources): ResourceLocator
@@ -502,8 +634,9 @@ final class MetadataSourceTest extends TestCase
 
     /**
      * @param array<string, \haddowg\JsonApi\Serializer\SerializerInterface> $snippetSerializers a type -> standalone serializer map registered on the server
+     * @param list<class-string<\haddowg\JsonApi\Schema\Profile\ProfileInterface>>|null $profiles the profiles the server registers; null uses the ServerFactory default (the three built-ins)
      */
-    private function serverProvider(ResourceLocator $resourceLocator, array $snippetSerializers): ServerProvider
+    private function serverProvider(ResourceLocator $resourceLocator, array $snippetSerializers, ?array $profiles = null): ServerProvider
     {
         $psr17 = new Psr17Factory();
 
@@ -531,6 +664,7 @@ final class MetadataSourceTest extends TestCase
             $handler,
             resourceClasses: $resourceLocator->classes(),
             standaloneSerializers: \array_map(static fn(\haddowg\JsonApi\Serializer\SerializerInterface $s): string => $s::class, $snippetSerializers),
+            profiles: $profiles ?? ServerFactory::DEFAULT_PROFILES,
         );
 
         return new ServerProvider($this->container([ServerProvider::DEFAULT_SERVER => $factory]));

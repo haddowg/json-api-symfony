@@ -32,6 +32,7 @@ final readonly class ServerMetadata implements ServerMetadataInterface
      * @param array<string, SecurityScheme> $securitySchemes
      * @param list<SecurityRequirement>     $defaultSecurity
      * @param list<TypeMetadataInterface>   $types
+     * @param list<string>                   $profiles
      */
     public function __construct(
         private string $title,
@@ -47,6 +48,7 @@ final readonly class ServerMetadata implements ServerMetadataInterface
         private ?ExternalDocumentation $externalDocs,
         private array $types,
         private ?AtomicOperationsMetadataInterface $atomicOperations = null,
+        private array $profiles = [],
     ) {}
 
     public function title(): string
@@ -112,5 +114,10 @@ final readonly class ServerMetadata implements ServerMetadataInterface
     public function atomicOperations(): ?AtomicOperationsMetadataInterface
     {
         return $this->atomicOperations;
+    }
+
+    public function profiles(): array
+    {
+        return $this->profiles;
     }
 }

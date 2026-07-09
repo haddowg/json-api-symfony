@@ -106,6 +106,7 @@ final class MetadataSource
             externalDocs: $config->externalDocs,
             types: $types,
             atomicOperations: $this->atomicOperations(),
+            profiles: $this->profileUris($server),
         );
     }
 
@@ -173,6 +174,29 @@ final class MetadataSource
             externalDocs: $defaultConfig->externalDocs,
             types: $types,
             atomicOperations: $this->atomicOperations(),
+            // One combined document carries one `jsonapi` object, so its profile enum
+            // reflects the default server's registered set (mirroring how the info block
+            // and JSON:API version come from the default server).
+            profiles: $this->profileUris($defaultServer),
+        );
+    }
+
+    /**
+     * The URIs of the JSON:API profiles the built {@see Server} actually registered, in
+     * registration order — the set the core projector gates profile-aware OpenAPI output
+     * on (the `jsonapi.profile` enum, the Countable `?withCount` parameter, the
+     * Relationship Queries `relatedQuery` parameter, and the cursor page marker). Read
+     * from the live registry the {@see \haddowg\JsonApiBundle\Server\ServerFactory} built
+     * (data-driven from `json_api.profiles`), never hardcoded — so trimming the config
+     * trims the advertisement.
+     *
+     * @return list<string>
+     */
+    private function profileUris(Server $server): array
+    {
+        return \array_map(
+            static fn(\haddowg\JsonApi\Schema\Profile\ProfileInterface $profile): string => $profile->uri(),
+            $server->profiles()->all(),
         );
     }
 
