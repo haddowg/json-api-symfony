@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Server;
 
 use haddowg\JsonApi\Operation\OperationHandlerInterface;
+use haddowg\JsonApi\Pagination\CursorPaginationProfile;
 use haddowg\JsonApi\Pagination\PagePaginator;
 use haddowg\JsonApi\Pagination\PaginatorInterface;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Schema\Error\ErrorMessageResolverInterface;
 use haddowg\JsonApi\Schema\Profile\CountableProfile;
+use haddowg\JsonApi\Schema\Profile\ProfileInterface;
 use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
 use haddowg\JsonApi\Serializer\RelationshipLoadStateInterface;
 use haddowg\JsonApi\Serializer\ResourceLinkContributorInterface;
@@ -79,6 +81,21 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  */
 final class ServerFactory
 {
+    /**
+     * The JSON:API profiles registered by default (bundle ADR 0117): the three
+     * built-ins in the canonical order the OpenAPI `jsonapi.profile` enum advertises
+     * them (core ADR 0131). The order is significant — it is the byte-order the
+     * `jsonapi.profile` enum is generated in — and MUST match the Laravel adapter's
+     * default for cross-adapter byte-parity. `json_api.profiles` overrides or trims it.
+     *
+     * @var list<class-string<ProfileInterface>>
+     */
+    public const array DEFAULT_PROFILES = [
+        CursorPaginationProfile::class,
+        CountableProfile::class,
+        RelationshipQueriesProfile::class,
+    ];
+
     private ?Server $server = null;
 
     /**
@@ -87,6 +104,7 @@ final class ServerFactory
      * @param array<class-string, class-string<\haddowg\JsonApi\Hydrator\HydratorInterface>>      $hydratorsByClass      override hydrator per Resource class-string (ADR 0023), this server only
      * @param array<string, class-string<\haddowg\JsonApi\Serializer\SerializerInterface>>        $standaloneSerializers standalone serializer per type, no resource (ADR 0024), this server only
      * @param array<string, class-string<\haddowg\JsonApi\Hydrator\HydratorInterface>>            $standaloneHydrators   standalone hydrator per type, no resource (ADR 0024), this server only
+     * @param list<class-string<ProfileInterface>>                                                $profiles              the JSON:API profiles this server registers, in registration order (bundle ADR 0117); default {@see self::DEFAULT_PROFILES}
      */
     public function __construct(
         private readonly ResourceLocator $resources,
@@ -113,6 +131,7 @@ final class ServerFactory
         private readonly string $serverName = 'default',
         private readonly ?EventDispatcherInterface $dispatcher = null,
         private readonly ?ErrorMessageResolverInterface $errorMessageResolver = null,
+        private readonly array $profiles = self::DEFAULT_PROFILES,
     ) {}
 
     /**
@@ -157,17 +176,6 @@ final class ServerFactory
             // asLink actions); null when no asLink action is declared on this server, so
             // core renders links exactly as before this seam existed.
             ->withResourceLinkContributor($this->resourceLinkContributor)
-            // Recognize the Relationship Queries profile (core ADR 0058) so the
-            // response advertises it (Content-Type `profile` param + `jsonapi.profile`)
-            // when a client negotiates it; the opt-in relatedQuery/rQ parse is gated
-            // on the Accept `profile` param, the rendering on this registration.
-            ->withProfile(new RelationshipQueriesProfile())
-            // Recognize the Countable profile (core ADR 0065, renamed under G21) so the
-            // opt-in `?withCount` family is parsed and recognized only when a client
-            // negotiates it; the response then advertises it like any applied profile.
-            // The `?withCount` query-param name is unchanged — only the profile's
-            // identity/URI moved from "Relationship Counts" to "Countable".
-            ->withProfile(new CountableProfile())
             // The server-wide default paginator (the tail of core's `relation →
             // related resource → server default` fallback), resolved per server.
             ->withDefaultPaginator($this->resolveDefaultPaginator())
@@ -190,6 +198,19 @@ final class ServerFactory
             // English copy (byte-identical to today).
             ->withErrorMessageResolver($this->errorMessageResolver)
             ->withContainer($this->resources);
+
+        // Register the JSON:API profiles this server recognizes, data-driven from
+        // `json_api.profiles` (bundle ADR 0117; default {@see self::DEFAULT_PROFILES} —
+        // the three built-ins in the canonical order). Registration makes the server
+        // RECOGNIZE a profile — it advertises the URI when a client negotiates it, parses
+        // the profile's opt-in query family only under that negotiation, and (core ADR
+        // 0131) gates the profile's OpenAPI output (the `jsonapi.profile` enum, the
+        // Countable `?withCount` parameter, the Relationship Queries `relatedQuery`
+        // parameter, the cursor page marker) on this set. Registration ORDER is the order
+        // the `jsonapi.profile` enum advertises them, so it must be stable across adapters.
+        foreach ($this->profiles as $profileClass) {
+            $server = $server->withProfile(new $profileClass());
+        }
 
         foreach ($this->resourceClasses as $resourceClass) {
             // A resource may override its serializer/hydrator (ADR 0023); core

@@ -11,6 +11,7 @@ use haddowg\JsonApi\OpenApi\Metadata\NoContent;
 use haddowg\JsonApi\OpenApi\Metadata\OperationResponseInterface;
 use haddowg\JsonApi\OpenApi\Metadata\SeeOther;
 use haddowg\JsonApi\Resource\AbstractResource;
+use haddowg\JsonApi\Schema\Profile\ProfileInterface;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiAction;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiHydrator;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiRelations;
@@ -283,6 +284,11 @@ final class JsonApiBundle extends AbstractBundle
                         ->end()
                     ->end()
                 ->end()
+                ->arrayNode('profiles')
+                    ->info('The JSON:API profiles every server recognizes: each profile\'s URI is advertised (Content-Type `profile` param + `jsonapi.profile`) when a client negotiates it, and the profile\'s opt-in query family is parsed only under that negotiation. Each entry is a ProfileInterface class-string. Default: the three built-ins — CursorPaginationProfile, CountableProfile, RelationshipQueriesProfile — in that order (the order the generated OpenAPI `jsonapi.profile` enum lists them, and the order that must match across framework adapters for byte-parity; core ADR 0131). Trim an entry to stop recognizing and advertising that profile — its OpenAPI parameters (`?withCount`, `relatedQuery`, the cursor page marker) disappear with it; add your own ProfileInterface class to recognize a custom profile.')
+                    ->scalarPrototype()->end()
+                    ->defaultValue(ServerFactory::DEFAULT_PROFILES)
+                ->end()
                 ->append($this->openApiNode())
             ->end();
     }
@@ -507,6 +513,7 @@ final class JsonApiBundle extends AbstractBundle
         $maxIncludeDepth = $this->maxIncludeDepthConfig($config);
         $strictQueryParameters = $this->strictQueryParametersConfig($config);
         $windowFunctions = $this->windowFunctionsConfig($config);
+        $profiles = $this->profilesConfig($config);
 
         [$atomicEnabled, $atomicPath] = $this->atomicOperationsConfig($config);
 
@@ -550,7 +557,7 @@ final class JsonApiBundle extends AbstractBundle
         // One ServerFactory per declared server, plus the ServerProvider that
         // resolves them by name through a service locator. The per-server resource
         // class-strings and serializer/hydrator maps are filled by the pass.
-        $this->registerServers($container, $servers, $maxPerPage, $maxIncludeDepth, $strictQueryParameters);
+        $this->registerServers($container, $servers, $maxPerPage, $maxIncludeDepth, $strictQueryParameters, $profiles);
 
         // The optional opis structural linter: registered (so the RequestListener
         // picks it up) only when explicitly enabled. opis/json-schema is a
@@ -1052,8 +1059,9 @@ final class JsonApiBundle extends AbstractBundle
      * factories.
      *
      * @param array<string, array{base_uri: string, version: string}> $servers
+     * @param list<class-string<ProfileInterface>>                     $profiles the JSON:API profiles every server registers, in order (bundle ADR 0117)
      */
-    private function registerServers(ContainerConfigurator $container, array $servers, int $maxPerPage, int $maxIncludeDepth, bool $strictQueryParameters): void
+    private function registerServers(ContainerConfigurator $container, array $servers, int $maxPerPage, int $maxIncludeDepth, bool $strictQueryParameters, array $profiles): void
     {
         $services = $container->services();
 
@@ -1127,6 +1135,11 @@ final class JsonApiBundle extends AbstractBundle
                     // symfony/event-dispatcher is absent).
                     '$serverName' => $name,
                     '$dispatcher' => service('event_dispatcher')->nullOnInvalid(),
+                    // The JSON:API profiles this server recognizes (bundle ADR 0117),
+                    // data-driven from json_api.profiles (default: the three built-ins in
+                    // canonical order). The same list feeds the OpenAPI jsonapi.profile
+                    // enum + the profile-gated parameters (core ADR 0131).
+                    '$profiles' => $profiles,
                 ]);
 
             $factoryRefs[$name] = service($id);
@@ -1409,6 +1422,40 @@ final class JsonApiBundle extends AbstractBundle
         $value = $config['strict_query_parameters'] ?? null;
 
         return \is_bool($value) ? $value : true;
+    }
+
+    /**
+     * The resolved `json_api.profiles` list (bundle ADR 0117): the ProfileInterface
+     * class-strings every {@see ServerFactory} registers, in order. Each entry must name
+     * an existing {@see ProfileInterface} implementation — a misconfiguration fails the
+     * build with a clear message rather than a runtime error. Defaults to the three
+     * built-ins ({@see ServerFactory::DEFAULT_PROFILES}) when the key is absent.
+     *
+     * @param array<string, mixed> $config
+     *
+     * @return list<class-string<ProfileInterface>>
+     */
+    private function profilesConfig(array $config): array
+    {
+        $profiles = $config['profiles'] ?? ServerFactory::DEFAULT_PROFILES;
+        if (!\is_array($profiles)) {
+            return ServerFactory::DEFAULT_PROFILES;
+        }
+
+        $resolved = [];
+        foreach ($profiles as $class) {
+            if (!\is_string($class) || !\is_a($class, ProfileInterface::class, true)) {
+                throw new \LogicException(\sprintf(
+                    'Each json_api.profiles entry must be a %s class-string; got %s.',
+                    ProfileInterface::class,
+                    \is_string($class) ? \sprintf('"%s"', $class) : \get_debug_type($class),
+                ));
+            }
+
+            $resolved[] = $class;
+        }
+
+        return $resolved;
     }
 
     /**

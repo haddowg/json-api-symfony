@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use haddowg\JsonApi\Pagination\CursorPaginationProfile;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
@@ -376,7 +377,7 @@ abstract class CursorConformanceTestCase extends JsonApiFunctionalTestCase
         // page child before the cursor/count branch, so the page links carry
         // `page[number]`, never an opaque cursor token. (Sort by the null-free `id` so
         // page-1 is deterministic across both strategies' null-ordering conventions.)
-        [$ids, $links] = $this->page('/cursorWidgets?sort=id&page[kind]=page&page[number]=1&page[size]=2');
+        [$ids, $links] = $this->page('/cursorWidgets?sort=id&page[kind]=page&page[number]=1&page[size]=2', expectCursorProfile: false);
 
         self::assertSame(['1', '2'], $ids);
         self::assertArrayHasKey('next', $links);
@@ -389,7 +390,7 @@ abstract class CursorConformanceTestCase extends JsonApiFunctionalTestCase
     public function aUniqueKeyInfersThePageStrategyWhileASharedKeyFallsBackToCursor(): void
     {
         // `number` is read only by the page strategy, so it selects it with no kind.
-        [, $number] = $this->page('/cursorWidgets?sort=priority,id&page[number]=1&page[size]=2');
+        [, $number] = $this->page('/cursorWidgets?sort=priority,id&page[number]=1&page[size]=2', expectCursorProfile: false);
         self::assertArrayHasKey('next', $number);
         self::assertStringContainsString('page[number]=2', \urldecode($this->href($number['next'])));
 
@@ -469,15 +470,26 @@ abstract class CursorConformanceTestCase extends JsonApiFunctionalTestCase
     }
 
     /**
-     * Fetches a cursor page and returns `[ids, links]`.
+     * Fetches a page and returns `[ids, links]`. A cursor page advertises the
+     * cursor-pagination profile on its Content-Type (the server registers that profile
+     * by default — bundle ADR 0117, core ADR 0131); a count-based page selected from the
+     * same menu does not, so `$expectCursorProfile` is passed `false` for the page-strategy
+     * cases. The profile parameter's exact serialization (quoting/spacing) is not pinned.
      *
      * @return array{0: list<string>, 1: array<string, mixed>}
      */
-    private function page(string $path): array
+    private function page(string $path, bool $expectCursorProfile = true): array
     {
         $response = $this->handle($path);
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
-        self::assertSame('application/vnd.api+json', $response->headers->get('Content-Type'));
+        $contentType = $response->headers->get('Content-Type');
+        self::assertIsString($contentType);
+        self::assertStringStartsWith('application/vnd.api+json', $contentType);
+        if ($expectCursorProfile) {
+            self::assertStringContainsString(CursorPaginationProfile::URI, $contentType);
+        } else {
+            self::assertStringNotContainsString(CursorPaginationProfile::URI, $contentType);
+        }
 
         $document = $this->decode($response);
 
