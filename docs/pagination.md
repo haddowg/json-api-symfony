@@ -399,9 +399,12 @@ cursor render paths behave exactly as they do for a single strategy — the Open
 document projects the menu as a single `page` deepObject whose schema is a `oneOf`
 discriminated by `kind`.
 
-Included relations are still pinned to page-1 (the Relationship Queries profile), so
-a menu that includes a page strategy batches cleanly; a menu resolving to cursor on a
-batched **include** remains subject to the [windowed-include limitation](#windowed-includes-are-bounded-window_functions).
+Included relations are pinned to page-1 (the Relationship Queries profile). A cursor
+strategy works there too: an include carries no cursor token, so a cursor-resolved
+include renders the **first** cursor page per parent (`next` carries the minted
+`page[after]`, no `prev`/`last`), minted through the same per-parent keyset fetch the
+related endpoint runs — and the document advertises the cursor-pagination profile even
+when the primary collection is page-based.
 
 ## No pagination (fetch-all)
 
