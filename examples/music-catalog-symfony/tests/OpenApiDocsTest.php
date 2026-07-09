@@ -258,24 +258,32 @@ final class OpenApiDocsTest extends MusicCatalogKernelTestCase
     public function theCursorPaginatedUsersCollectionProjectsTheKeysetPageVocabulary(): void
     {
         // `UserResource::pagination()` pins a CursorPaginator — the catalogue's sole
-        // cursor (keyset) witness — so the `users` primary collection is projected with
-        // the keyset `page[…]` vocabulary: the opaque `page[after]`/`page[before]` cursor
-        // tokens plus `page[size]`, and NOT the `page[number]` of the page-based default.
-        // `users` is admin-only, so this rides the `admin` server's document; the path
-        // keys are unprefixed (the `/admin` mount lives in the server URL).
+        // cursor (keyset) witness — so the `users` primary collection's single `page`
+        // deepObject parameter (ADR 0130) carries the keyset object schema: the opaque
+        // `page[after]`/`page[before]` cursor tokens plus `page[size]`, and NOT the
+        // `number` of the page-based default. `users` is admin-only, so this rides the
+        // `admin` server's document; the path keys are unprefixed (the `/admin` mount
+        // lives in the server URL).
         $document = $this->decode($this->handle('/admin/docs.json'));
 
-        $names = \array_column($this->nested($document, 'paths', '/users', 'get', 'parameters'), 'name');
-        self::assertContains('page[after]', $names);
-        self::assertContains('page[before]', $names);
-        self::assertContains('page[size]', $names);
-        self::assertNotContains('page[number]', $names, 'the cursor surface drops the page-based page[number]');
+        $userParams = $this->nested($document, 'paths', '/users', 'get', 'parameters');
+        $userNames = \array_column($userParams, 'name');
+        self::assertContains('page', $userNames);
+        $userPageIndex = (string) (int) \array_search('page', $userNames, true);
+        self::assertSame(
+            ['after', 'before', 'size'],
+            \array_keys($this->nested($userParams, $userPageIndex, 'schema', 'properties')),
+        );
 
         // The cursor projection is PER-RESOURCE, not server-wide: `albums` is shared onto
-        // the admin server too and keeps the page-based `page[number]` on the SAME
+        // the admin server too and keeps the page-based `number`/`size` keys on the SAME
         // document, so switching `users` to cursor left every other collection untouched.
-        $albumNames = \array_column($this->nested($document, 'paths', '/albums', 'get', 'parameters'), 'name');
-        self::assertContains('page[number]', $albumNames);
+        $albumParams = $this->nested($document, 'paths', '/albums', 'get', 'parameters');
+        $albumPageIndex = (string) (int) \array_search('page', \array_column($albumParams, 'name'), true);
+        self::assertSame(
+            ['number', 'size'],
+            \array_keys($this->nested($albumParams, $albumPageIndex, 'schema', 'properties')),
+        );
     }
 
     #[Test]

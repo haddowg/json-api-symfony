@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Functional\App\Resource;
 
 use haddowg\JsonApi\Pagination\CursorPaginator;
+use haddowg\JsonApi\Pagination\MultiPaginator;
+use haddowg\JsonApi\Pagination\PagePaginator;
 use haddowg\JsonApi\Pagination\PaginatorInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\DateTime;
@@ -15,8 +17,12 @@ use haddowg\JsonApi\Resource\Field\Str;
 /**
  * The shared `cursorWidgets` declaration both functional kernels serve for the
  * cursor (keyset) conformance suite. Its `pagination()` returns a
- * {@see CursorPaginator} (default size 2), so the handler resolves a keyset
- * window and the providers run the keyset push-down (bundle ADR 0063).
+ * {@see MultiPaginator} offering a page-number strategy alongside the cursor
+ * (keyset) strategy, defaulting to cursor — so the same endpoint witnesses both
+ * client-selectable strategy selection AND the keyset push-down (bundle ADR 0063).
+ * Absent a discriminator (or with only the shared `page[size]` key) it resolves to
+ * the cursor default, keeping the keyset suite unchanged; `page[kind]=page` (or the
+ * page-unique `page[number]`) selects the count-based strategy instead.
  *
  * `category`, `priority` and `releasedAt` are all sortable: `category` carries
  * ties (so the appended PK tiebreak is exercised), `priority` is a NULLABLE int
@@ -43,6 +49,9 @@ abstract class BaseCursorWidgetResource extends AbstractResource
 
     public function pagination(?PaginatorInterface $serverDefault): ?PaginatorInterface
     {
-        return CursorPaginator::make()->withDefaultSize(2);
+        return MultiPaginator::make(
+            PagePaginator::make()->withDefaultPerPage(2),
+            CursorPaginator::make()->withDefaultSize(2),
+        )->default('cursor');
     }
 }

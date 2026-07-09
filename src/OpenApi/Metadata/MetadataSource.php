@@ -6,7 +6,6 @@ namespace haddowg\JsonApiBundle\OpenApi\Metadata;
 
 use haddowg\JsonApi\OpenApi\Metadata\OperationResponseInterface;
 use haddowg\JsonApi\OpenApi\Metadata\OperationType;
-use haddowg\JsonApi\OpenApi\Metadata\PaginatorKind;
 use haddowg\JsonApi\OpenApi\Metadata\ServerMetadataInterface;
 use haddowg\JsonApi\OpenApi\Metadata\TypeMetadataInterface;
 use haddowg\JsonApi\OpenApi\Tag;
@@ -72,7 +71,6 @@ final class MetadataSource
         private readonly TypeMetadataResolver $types,
         private readonly IdEncoderResolver $idEncoders,
         private readonly ActionRegistry $actions,
-        private readonly PaginatorKindResolver $paginatorKinds,
         private readonly TagNameResolver $tagNames,
         private readonly IncludePathResolver $includePaths,
         private readonly ?ResourceSecurityRegistry $security = null,
@@ -261,9 +259,11 @@ final class MetadataSource
             $actions[] = new ActionMetadata($this->withResolvedTags($action, $descriptor['tags'], $type));
         }
 
-        $paginatorKind = $resource !== null
-            ? $this->paginatorKinds->resolve($resource->pagination($serverDefaultPaginator))
-            : PaginatorKind::None;
+        // The resolved paginator self-describes its `page[…]` object schema (a `oneOf`
+        // menu for a MultiPaginator); `null` when the type is unpaginated (no `page`
+        // parameter at all). The projector emits the whole `page` family as one
+        // deepObject parameter carrying this schema — no central paginator switch.
+        $pageSchema = $resource?->pagination($serverDefaultPaginator)?->describePageSchema();
 
         return new TypeMetadata(
             type: $type,
@@ -281,7 +281,7 @@ final class MetadataSource
             // unconstrained id (any non-empty string). Core's OperationProjector anchors
             // it onto the OAS {id} parameter as `^(?:<fragment>)$`.
             idPattern: $this->idEncoders->routePatternFor($type),
-            paginatorKind: $paginatorKind,
+            pageSchema: $pageSchema,
             countable: $resource?->isCountable() ?? false,
             filters: $resource !== null ? \array_values($resource->filters()) : [],
             // allSorts(), not sorts(): the runtime accepts the field-derived sortables
@@ -334,19 +334,19 @@ final class MetadataSource
 
     private function buildRelation(Server $server, RelationInterface $relation, ?PaginatorInterface $serverDefault): RelationMetadata
     {
-        // Only a to-many relation has a related-collection to paginate; a to-one is
-        // always PaginatorKind::None (the contract's rule). For a to-many, the
-        // resolved paginator rides core's relation → related-resource → server-default
-        // fallback chain — passing the server default as the fallback matches what a
-        // render would resolve. (core's pagination() returns the fallback even for a
-        // to-one, so the cardinality guard lives here.)
-        $kind = $relation->isToMany()
-            ? $this->paginatorKinds->resolve($relation->pagination($serverDefault))
-            : PaginatorKind::None;
+        // Only a to-many relation has a related-collection to paginate; a to-one has
+        // no page schema (the contract's rule). For a to-many, the resolved paginator
+        // rides core's relation → related-resource → server-default fallback chain —
+        // passing the server default as the fallback matches what a render would
+        // resolve — and self-describes its `page[…]` schema. (core's pagination()
+        // returns the fallback even for a to-one, so the cardinality guard lives here.)
+        $pageSchema = $relation->isToMany()
+            ? $relation->pagination($serverDefault)?->describePageSchema()
+            : null;
 
         return new RelationMetadata(
             $relation,
-            $kind,
+            $pageSchema,
             $this->includePaths->relatedPathsFor($server, $relation),
         );
     }

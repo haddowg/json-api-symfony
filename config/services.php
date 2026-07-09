@@ -94,10 +94,10 @@ return static function (ContainerConfigurator $container): void {
 
     // --- OpenAPI metadata source (Slice 4 stage A) ----------------------------
 
-    // The pure helpers the MetadataSource composes: the paginator-class -> kind
-    // discriminator, the humanized-type tag-name default, and the include-path
-    // graph walk (autowired from the TypeMetadataResolver).
-    $services->set(\haddowg\JsonApiBundle\OpenApi\Metadata\PaginatorKindResolver::class);
+    // The pure helpers the MetadataSource composes: the humanized-type tag-name
+    // default and the include-path graph walk (autowired from the
+    // TypeMetadataResolver). The page schema each paginator self-describes needs no
+    // resolver service.
     $services->set(\haddowg\JsonApiBundle\OpenApi\Metadata\TagNameResolver::class);
     $services->set(\haddowg\JsonApiBundle\OpenApi\Metadata\IncludePathResolver::class);
 

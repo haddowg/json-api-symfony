@@ -8,7 +8,6 @@ use haddowg\JsonApi\OpenApi\Metadata\ActionInputMode;
 use haddowg\JsonApi\OpenApi\Metadata\ActionScope;
 use haddowg\JsonApi\OpenApi\Metadata\OperationResponseInterface;
 use haddowg\JsonApi\OpenApi\Metadata\OperationType;
-use haddowg\JsonApi\OpenApi\Metadata\PaginatorKind;
 use haddowg\JsonApi\OpenApi\Tag;
 use haddowg\JsonApi\Operation\OperationHandlerInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
@@ -22,7 +21,6 @@ use haddowg\JsonApiBundle\Action\ActionRegistry;
 use haddowg\JsonApiBundle\Action\ActionScope as BundleActionScope;
 use haddowg\JsonApiBundle\OpenApi\Metadata\IncludePathResolver;
 use haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource;
-use haddowg\JsonApiBundle\OpenApi\Metadata\PaginatorKindResolver;
 use haddowg\JsonApiBundle\OpenApi\Metadata\ResourceDescriptionRegistry;
 use haddowg\JsonApiBundle\OpenApi\Metadata\ServerDocumentConfig;
 use haddowg\JsonApiBundle\OpenApi\Metadata\TagNameResolver;
@@ -124,19 +122,22 @@ final class MetadataSourceTest extends TestCase
         self::assertFalse($snippets->hasFields());
         self::assertSame([], $snippets->fields());
         self::assertSame([], $snippets->operations());
-        self::assertSame(PaginatorKind::None, $snippets->paginatorKind());
+        self::assertNull($snippets->pageSchema());
         // The default humanized tag still applies to a standalone type.
         self::assertSame(['Snippets'], $snippets->tags());
     }
 
     #[Test]
-    public function aResourcePaginatorIsDiscriminatedToItsKind(): void
+    public function aResourcePaginatorSelfDescribesItsPageSchema(): void
     {
         $articles = $this->typeNamed($this->source()->forServer(), 'articles');
 
         // ArticleResource declares no pagination(), so it resolves the server default
-        // (the built-in capped PagePaginator) => Page.
-        self::assertSame(PaginatorKind::Page, $articles->paginatorKind());
+        // (the built-in capped PagePaginator) => a page-number/size object schema.
+        $pageSchema = $articles->pageSchema();
+        self::assertNotNull($pageSchema);
+        self::assertSame('object', $pageSchema->get('type'));
+        self::assertSame(['number', 'size'], \array_keys((array) $pageSchema->get('properties')));
         self::assertTrue($articles->isCountable());
     }
 
@@ -169,7 +170,7 @@ final class MetadataSourceTest extends TestCase
     }
 
     #[Test]
-    public function itReportsTheRelationsWithResolvedPaginatorKind(): void
+    public function itReportsTheRelationsWithResolvedPageSchema(): void
     {
         $articles = $this->typeNamed($this->source()->forServer(), 'articles');
         $relations = $articles->relations();
@@ -185,10 +186,12 @@ final class MetadataSourceTest extends TestCase
         self::assertSame(['people'], $byName['author']->relatedTypes());
         self::assertSame('The article author', $byName['author']->description());
         // A to-one relation has no related-collection paginator.
-        self::assertSame(PaginatorKind::None, $byName['author']->paginatorKind());
+        self::assertNull($byName['author']->pageSchema());
         // The to-many comments relation resolves the server-default page paginator.
         self::assertTrue($byName['comments']->isToMany());
-        self::assertSame(PaginatorKind::Page, $byName['comments']->paginatorKind());
+        $commentsPage = $byName['comments']->pageSchema();
+        self::assertNotNull($commentsPage);
+        self::assertSame(['number', 'size'], \array_keys((array) $commentsPage->get('properties')));
     }
 
     #[Test]
@@ -441,7 +444,6 @@ final class MetadataSourceTest extends TestCase
             $types,
             $idEncoders,
             $actions,
-            new PaginatorKindResolver(),
             new TagNameResolver(),
             new IncludePathResolver($types),
             $security,

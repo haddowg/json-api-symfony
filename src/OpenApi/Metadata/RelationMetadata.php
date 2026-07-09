@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\OpenApi\Metadata;
 
-use haddowg\JsonApi\OpenApi\Metadata\PaginatorKind;
 use haddowg\JsonApi\OpenApi\Metadata\RelationMetadataInterface;
+use haddowg\JsonApi\OpenApi\Schema;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApiBundle\DataProvider\PivotFields;
 
@@ -16,7 +16,7 @@ use haddowg\JsonApiBundle\DataProvider\PivotFields;
  *
  * Most accessors delegate straight to the relation's own already-resolved facts
  * (endpoint exposure, mutation flags, includability, filters/sorts). The two
- * derived facts — the related-collection {@see PaginatorKind} and the related-
+ * derived facts — the related-collection page {@see Schema} and the related-
  * endpoint includable paths — are resolved by the {@see MetadataSource} (which has
  * the {@see \haddowg\JsonApi\Server\Server} fallback chain + the relation graph) and
  * passed in.
@@ -28,7 +28,7 @@ final readonly class RelationMetadata implements RelationMetadataInterface
      */
     public function __construct(
         private RelationInterface $relation,
-        private PaginatorKind $paginatorKind,
+        private ?Schema $pageSchema,
         private array $relatedIncludablePaths,
     ) {}
 
@@ -97,9 +97,9 @@ final readonly class RelationMetadata implements RelationMetadataInterface
         return $this->relation->securityMutate();
     }
 
-    public function paginatorKind(): PaginatorKind
+    public function pageSchema(): ?Schema
     {
-        return $this->paginatorKind;
+        return $this->pageSchema;
     }
 
     public function filters(): array
