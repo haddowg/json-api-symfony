@@ -31,12 +31,25 @@ keyset suite proves the menu is transparent while new cases prove `page[kind]=pa
 and the page-unique `page[number]` select the count-based strategy, a shared
 `page[size]` falls back to the cursor default, and an unknown kind is a `400`.
 
-**Out of scope** (a known follow-up, unchanged here): lifting the batched-include
-cursor restriction so a cursor-resolved **included** relation mints a per-parent
-forward cursor from the boundary row instead of paging offset page-1. That needs a
-new parent-partitioned keyset push-down in the native batch layer (the current
-`ROW_NUMBER`/group-limit batch is offset-only), byte-identical to the in-memory
-witness — the same follow-up the Laravel side earmarks under its ADR 0006. A menu
-that contains a page strategy still batches includes cleanly (the profile pins the
-included page to page-1, whose `page[number]=1` resolves the page child); only a
-menu resolving to cursor on an include is subject to the existing limitation.
+**Cursor on a batched include (the companion lift).** A cursor-resolved **included**
+relation now renders a first cursor page per parent rather than throwing. An include
+carries no cursor token (the Relationship Queries profile pins the included page to
+page 1), so the window is a **boundaryless** `CursorWindow` — a first page is just
+the first N rows under the keyset sort + id tiebreak, which is what the existing
+per-parent related-collection cursor fetch already computes. So `DoctrineDataProvider::
+fetchRelatedCollectionBatch` routes a `CursorWindow` through the same per-parent
+`fetchRelatedCollection` keyset path the related endpoint uses (each parent's
+forward cursor minted from its boundary row via the shared `CursorTokenMinter`), and
+`RelationshipWindowBatcher::paginationFor` renders a `CursorBasedPage` through
+`CursorPaginator::fromBoundaries` — `next` carries the minted `page[after]`,
+`prev`/`last` are omitted. The in-memory witness already windowed each parent through
+that same path, so no new keyset machinery was needed and the two providers are
+byte-identical (`CursorIncludeBatchConformanceTestCase`).
+
+**Profile advertisement.** A cursor-resolved include activates the cursor-pagination
+profile off its per-parent page, so the batcher surfaces those pages' profiles
+(`WindowedRelationshipPagination::activatedProfiles()`) and the handler advertises
+them on the document via core's `withActivatedProfiles()` — so a cursor include is
+advertised even when the primary collection is page-based (proven end-to-end in
+core's applied-profile suite and witnessed against a registered profile in the
+Laravel twin).

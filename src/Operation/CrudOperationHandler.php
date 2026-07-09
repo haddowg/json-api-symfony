@@ -300,7 +300,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // relation to page 1 of its profile-ordered/filtered set (the relatedQuery
             // sort/filter) and install the relationship-object pagination links seam
             // (bundle ADR 0053). A no-op when the profile is not negotiated.
-            $this->applyRelationshipWindows($server, $type, [$model], $request);
+            $activatedProfiles = $this->applyRelationshipWindows($server, $type, [$model], $request);
 
             // Install the ?withCount batched counts for this single resource so its
             // relationship objects render meta.total (bundle ADR 0052).
@@ -324,7 +324,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $response = $event->response() ?? $response;
             }
 
-            return $response;
+            // Surface any profile a cursor-paginated included relation activated
+            // (e.g. `?include=<cursorRelation>`), even when the primary resource
+            // document itself carries no page profile.
+            return $activatedProfiles === [] ? $response : $response->withActivatedProfiles(...$activatedProfiles);
         }
 
         // An all-or-nothing collection gate runs BEFORE the query: a subscriber (the
@@ -404,7 +407,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             }
 
             // A singular filter collapses to a single resource; window + count it too.
-            $this->applyRelationshipWindows($server, $type, $first === null ? [] : [$first], $request);
+            $activatedProfiles = $this->applyRelationshipWindows($server, $type, $first === null ? [] : [$first], $request);
             $this->applyRelationshipCounts($server, $type, $first === null ? [] : [$first], $request);
 
             $singularSerializer = $this->withPivotLinkage($server, $type, $first === null ? [] : [$first], $serializer, $request);
@@ -414,6 +417,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $type,
                 $request,
                 $items,
+                $activatedProfiles,
             );
         }
 
@@ -424,7 +428,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // Under the profile, window each parent's rendered to-many relations to page
         // 1 of their profile-ordered/filtered set — the per-parent windowed page 1 of
         // a collection include (bundle ADR 0053). A no-op when the profile is absent.
-        $this->applyRelationshipWindows($server, $type, $items, $request);
+        // The returned profiles are the ones a cursor-paginated included relation
+        // activated, surfaced onto the document below.
+        $activatedProfiles = $this->applyRelationshipWindows($server, $type, $items, $request);
 
         // Install the ?withCount batched counts across the whole page in ONE grouped
         // count per relation (no N+1), so every parent's relationship objects render
@@ -462,7 +468,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $serializer,
             );
 
-            return $this->afterFetchCollection($response, $type, $request, $items);
+            return $this->afterFetchCollection($response, $type, $request, $items, $activatedProfiles);
         }
 
         // Fan the single resolved total to BOTH meta slots from one count, per the
@@ -488,7 +494,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $response = DataResponse::fromCollection($items, $serializer);
         }
 
-        return $this->afterFetchCollection($response, $type, $request, $items);
+        return $this->afterFetchCollection($response, $type, $request, $items, $activatedProfiles);
     }
 
     /**
@@ -498,16 +504,19 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      *
      * @param list<object> $items the materialized collection
      */
-    private function afterFetchCollection(DataResponse $response, string $type, ?JsonApiRequestInterface $request, array $items): DataResponse
+    /**
+     * @param list<object>                                          $items
+     * @param list<\haddowg\JsonApi\Schema\Profile\ProfileInterface> $activatedProfiles profiles a cursor-paginated included relation activated, surfaced onto the document's applied set
+     */
+    private function afterFetchCollection(DataResponse $response, string $type, ?JsonApiRequestInterface $request, array $items, array $activatedProfiles = []): DataResponse
     {
-        if ($request === null) {
-            return $response;
+        if ($request !== null) {
+            $event = new AfterFetchCollectionEvent($type, $request, $items, $this->serverName($request));
+            $this->dispatch($event);
+            $response = $event->response() ?? $response;
         }
 
-        $event = new AfterFetchCollectionEvent($type, $request, $items, $this->serverName($request));
-        $this->dispatch($event);
-
-        return $event->response() ?? $response;
+        return $activatedProfiles === [] ? $response : $response->withActivatedProfiles(...$activatedProfiles);
     }
 
     /**
@@ -1490,18 +1499,27 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * leak into this render. A no-op when the seam is not wired (the batcher/holders
      * are optional) or there is no request to read the profile/relatedQuery from.
      *
+     * Returns the distinct profiles the windowed included pages activate (a
+     * cursor-paginated included relation activates the cursor-pagination profile), so
+     * the caller can surface them into the document's applied set even when the primary
+     * page does not carry them; empty when no included page activates a profile.
+     *
      * @param list<object> $items the fetched page whose rendered to-many relations to window
+     *
+     * @return list<\haddowg\JsonApi\Schema\Profile\ProfileInterface>
      */
-    private function applyRelationshipWindows(Server $server, string $type, array $items, ?JsonApiRequestInterface $request): void
+    private function applyRelationshipWindows(Server $server, string $type, array $items, ?JsonApiRequestInterface $request): array
     {
         if ($this->windowBatcher === null || $this->relationshipPagination === null) {
-            return;
+            return [];
         }
 
         $result = $request === null ? null : $this->windowBatcher->batch($server, $type, $items, $request);
 
         $this->relationshipPagination->set($result?->pagination);
         $this->relationshipLinkage?->set($result?->linkage);
+
+        return $result?->pagination?->activatedProfiles() ?? [];
     }
 
     /**

@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Serializer;
 
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Schema\Profile\ProfileInterface;
 use haddowg\JsonApi\Schema\Relationship\RelationshipPagination;
 use haddowg\JsonApi\Serializer\RelationshipPaginationInterface;
 
@@ -52,5 +53,32 @@ final class WindowedRelationshipPagination implements RelationshipPaginationInte
         }
 
         return $this->pages[\spl_object_id($model)][$relation->name()] ?? null;
+    }
+
+    /**
+     * The distinct profiles the windowed included pages activate — a cursor-paginated
+     * included relation renders a {@see \haddowg\JsonApi\Pagination\CursorBasedPage}
+     * whose `profile()` is the cursor-pagination profile. The handler surfaces these
+     * into the document's applied set ({@see \haddowg\JsonApi\Response\AbstractResponse::withActivatedProfiles()}),
+     * so a cursor-resolved include advertises the profile even when the primary
+     * collection is page-based.
+     *
+     * @return list<ProfileInterface>
+     */
+    public function activatedProfiles(): array
+    {
+        $profiles = [];
+        $seen = [];
+        foreach ($this->pages as $byRelation) {
+            foreach ($byRelation as $pagination) {
+                $profile = $pagination->page->profile();
+                if ($profile !== null && !isset($seen[$profile->uri()])) {
+                    $seen[$profile->uri()] = true;
+                    $profiles[] = $profile;
+                }
+            }
+        }
+
+        return $profiles;
     }
 }

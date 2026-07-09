@@ -521,6 +521,18 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         // functions off) routes to the per-parent BOUNDED fallback: a loop over the proven
         // single-parent fetch, each a real LIMIT push-down. A PLAIN include (no window)
         // keeps the materialise-and-partition fast path below, UNTOUCHED.
+        // A CURSOR (keyset) windowed include: an include carries no cursor token (the
+        // profile pins the included page to page 1), so the window is boundaryless — a
+        // FIRST cursor page per parent (offset 0, limit N+1 for hasMore under the keyset
+        // sort + id tiebreak). Route it through the same per-parent keyset fetch the
+        // related-collection endpoint runs: each fetchRelatedCollection mints that
+        // parent's forward cursor via the shared keyset machinery (core ADR 0063), so
+        // the batched include is byte-identical to the in-memory witness (which windows
+        // each parent through the same fetchRelatedCollection cursor path).
+        if ($criteria->window instanceof CursorWindow) {
+            return $this->fetchWindowedBatchPerParent($parentType, $parents, $relatedType, $relation, $criteria, $request);
+        }
+
         if ($criteria->window instanceof OffsetWindow) {
             if ($this->windowFunctions && $this->isNativelyWindowable($relatedType, $relation, $criteria)) {
                 return $this->windowedBatch->fetch($parentType, $parents, $relatedType, $relatedClass, $relation, $criteria);

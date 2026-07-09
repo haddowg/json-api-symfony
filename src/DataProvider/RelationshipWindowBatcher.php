@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\DataProvider;
 
 use haddowg\JsonApi\Collection\CollectionResult;
+use haddowg\JsonApi\Collection\CursorCollectionResult;
 use haddowg\JsonApi\Exception\QueryParamUnrecognized;
 use haddowg\JsonApi\Operation\QueryParameters;
+use haddowg\JsonApi\Pagination\CursorPaginator;
 use haddowg\JsonApi\Pagination\PaginatorInterface;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Request\RelatedQuery;
@@ -318,6 +320,8 @@ final class RelationshipWindowBatcher
                 $relatedQuery,
                 $snapshots[\spl_object_id($parent)][$column] ?? null,
                 $wantsCount,
+                $server,
+                $relatedType,
             );
         }
 
@@ -347,6 +351,8 @@ final class RelationshipWindowBatcher
         RelatedQuery $relatedQuery,
         mixed $snapshot,
         bool $wantsCount,
+        Server $server,
+        string $relatedType,
     ): array {
         $items = \is_array($result->items) ? \array_values($result->items) : \iterator_to_array($result->items, false);
 
@@ -359,7 +365,7 @@ final class RelationshipWindowBatcher
         // navigate and no pagination links to emit — only the linkage override.
         $page = $paginator === null
             ? null
-            : $this->paginationFor($paginator, $pageRequest, $items, $result, $relatedQuery, $wantsCount);
+            : $this->paginationFor($paginator, $pageRequest, $items, $result, $relatedQuery, $wantsCount, $server, $relatedType);
 
         return ['page' => $page, 'linkage' => $linkage];
     }
@@ -842,8 +848,38 @@ final class RelationshipWindowBatcher
         CollectionResult $result,
         RelatedQuery $relatedQuery,
         bool $wantsCount,
+        Server $server,
+        string $relatedType,
     ): RelationshipPagination {
         $queryString = $relatedQuery->toPlainQueryString();
+
+        // A cursor (keyset) window on an included relation: the provider minted the
+        // per-parent boundary tokens (an include is always a FIRST cursor page — no
+        // cursor token rides an include — so `hasPrevious` is false and `prev` is
+        // omitted), so render through the paginator's cursor path carrying the minted
+        // `next` token + `hasMore`, mirroring the primary/related cursor render (core
+        // ADR 0063). `from`/`to` are the wire ids of the first/last rendered rows — the
+        // related serializer is resolved only here (a cursor-resolved relation's related
+        // type is always servable), never eagerly for every windowed relation.
+        if ($result instanceof CursorCollectionResult && $paginator instanceof CursorPaginator) {
+            $relatedSerializer = $server->serializerFor($relatedType);
+            $from = $items === [] ? null : $relatedSerializer->getId($items[0]);
+            $to = $items === [] ? null : $relatedSerializer->getId($items[\array_key_last($items)]);
+
+            return new RelationshipPagination(
+                $paginator->fromBoundaries(
+                    $pageRequest,
+                    $items,
+                    $result->cursorBefore ?? '',
+                    $result->cursorAfter ?? '',
+                    $result->hasMore,
+                    $result->hasPrevious,
+                    from: $from,
+                    to: $to,
+                ),
+                $queryString,
+            );
+        }
 
         if ($wantsCount && $result->total !== null) {
             return new RelationshipPagination($paginator->paginate($pageRequest, $items, $result->total), $queryString);
