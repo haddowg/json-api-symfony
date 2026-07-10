@@ -115,6 +115,41 @@ abstract class CursorIncludeBatchConformanceTestCase extends JsonApiFunctionalTe
         self::assertArrayNotHasKey('next', $shelf3Links, 'a partition with no surplus renders no next link');
     }
 
+    #[Test]
+    #[Group('spec:profiles')]
+    #[Group('spec:fetching-pagination')]
+    public function anInverseFkCollectionIncludeCursorsOnANullableColumnWithMixedSurplusAcrossParents(): void
+    {
+        // The INVERSE-FK complement of the ManyToMany case above: `cursorGroups → widgets` is a
+        // OneToMany (the related widget carries the owning `group_id` FK), so on the Doctrine
+        // provider the whole page of groups windows in ONE inverse-FK query (partition by the
+        // owning FK, no join table), refereed against the in-memory witness. Sorted on the
+        // NULLABLE `priority`, both partitions carry a null member (group 1 → id 3, group 2 →
+        // id 6), so the forced NULL=largest `CASE … IS NULL …` term composes INSIDE
+        // `ROW_NUMBER()` across the partitions and both providers must render the SAME page.
+        //
+        // priority asc, id-tiebreak asc: group 1 (1,2,3,4,5,7) orders 2(10),7(10),5(20),1(30),
+        // 4(30),3(null) → page 1 = [2, 7] with a further page (SIX > size 2 → a `next`); group 2
+        // (6, 8) orders 8(20),6(null) → page 1 = [8, 6] EXACTLY the page (no surplus → NO
+        // `next`). Group 2's null member (6) lands LAST on its page, proving NULL=largest orders
+        // the partition rather than just excluding it.
+        $document = $this->includeDocument('/cursorGroups?include=widgets&relatedQuery[widgets][sort]=priority');
+
+        $group1 = $this->relationshipObject($this->resourceWithId($document, '1'), 'widgets');
+        self::assertSame(['2', '7'], $this->linkageIds($group1));
+        $group1Links = $group1['links'] ?? null;
+        self::assertIsArray($group1Links);
+        self::assertArrayHasKey('next', $group1Links, 'the surplus partition renders a next link');
+        self::assertStringContainsString('page%5Bafter%5D=', $this->href($group1Links['next']));
+        self::assertStringContainsString('sort=priority', $this->href($group1Links['next']));
+
+        $group2 = $this->relationshipObject($this->resourceWithId($document, '2'), 'widgets');
+        self::assertSame(['8', '6'], $this->linkageIds($group2));
+        $group2Links = $group2['links'] ?? null;
+        self::assertIsArray($group2Links);
+        self::assertArrayNotHasKey('next', $group2Links, 'a partition with no surplus renders no next link');
+    }
+
     /**
      * The primary-collection resource carrying `$id`, resolved out of the document's `data`
      * list so a per-parent relationship object can be addressed on a collection include.

@@ -130,6 +130,13 @@ final class DoctrineJsonApiTestKernel extends Kernel
         // the RelationScope IN-subquery parent scope (bundle ADR 0063).
         $services->set(DoctrineCursorShelfResource::class);
 
+        // The INVERSE-FK cursor (keyset) INCLUDE conformance type: a `cursorGroups` parent
+        // whose to-many `widgets` is the inverse side of a OneToMany (the related widget
+        // carries the owning `group_id` FK), so a cursor-resolved include collapses to the
+        // inverse-FK single-window shape — the complement of the owning-side ManyToMany
+        // `cursorShelves` (bundle ADR 0118).
+        $services->set(DoctrineCursorGroupResource::class);
+
         // The genericity witness: a `tags` type served over the Doctrine path by
         // the `-128` fallback provider/persister from its `#[AsJsonApiResource]`
         // entity map alone — no per-type engine code (ADR 0021).

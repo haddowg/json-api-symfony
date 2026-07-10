@@ -6,8 +6,10 @@ namespace haddowg\JsonApiBundle\Tests\Functional;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
+use haddowg\JsonApiBundle\Tests\Functional\App\CursorGroupFixtures;
 use haddowg\JsonApiBundle\Tests\Functional\App\CursorShelfFixtures;
 use haddowg\JsonApiBundle\Tests\Functional\App\CursorWidgetFixtures;
+use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\CursorGroupEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\CursorShelfEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\CursorWidgetEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\CursorWidgetEntityFactory;
@@ -53,6 +55,20 @@ final class DoctrineCursorIncludeBatchTest extends CursorIncludeBatchConformance
                 $shelf->widgets->add($widget);
             }
             $entityManager->persist($shelf);
+        }
+
+        // Then the groups: the inverse-FK OneToMany partition — each member widget carries the
+        // owning `group_id` FK (set on the OWNING side), so a cursor include over `/cursorGroups`
+        // runs the inverse-FK single-window shape. Orthogonal to the ManyToMany shelves above:
+        // a widget can sit on a shelf AND in a group (the join-table membership is separate).
+        foreach (CursorGroupFixtures::data() as $widgetIds) {
+            $group = new CursorGroupEntity();
+            $entityManager->persist($group);
+            foreach ($widgetIds as $widgetId) {
+                $widget = $entityManager->find(CursorWidgetEntity::class, $widgetId);
+                \assert($widget instanceof CursorWidgetEntity);
+                $widget->group = $group;
+            }
         }
         $entityManager->flush();
 
