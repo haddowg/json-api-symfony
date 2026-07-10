@@ -18,6 +18,7 @@ use haddowg\JsonApi\Resource\Field\HasOne;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Ip;
 use haddowg\JsonApi\Resource\Field\Str;
+use haddowg\JsonApi\Resource\Field\StrBuilder;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\User;
 use haddowg\JsonApiBundle\Validation\Constraint\UniqueEntity;
@@ -89,7 +90,7 @@ final class UserResource extends AbstractResource
                 )
                 ->when(
                     static fn(mixed $value): bool => $value !== null && $value !== '',
-                    static function (Str $field): void {
+                    static function (StrBuilder $field): void {
                         $field->minLength(8);
                     },
                 )

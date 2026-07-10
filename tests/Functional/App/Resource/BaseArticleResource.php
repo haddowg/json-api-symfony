@@ -14,6 +14,7 @@ use haddowg\JsonApi\Resource\Field\HasMany;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Map;
 use haddowg\JsonApi\Resource\Field\Str;
+use haddowg\JsonApi\Resource\Field\StrBuilder;
 use haddowg\JsonApi\Resource\Filter\Contains;
 use haddowg\JsonApi\Resource\Filter\DateRange;
 use haddowg\JsonApi\Resource\Filter\EndsWith;
@@ -87,7 +88,7 @@ abstract class BaseArticleResource extends AbstractResource
             // declare→execute path end to end.
             Str::make('couponCode')->nullable()->when(
                 static fn(mixed $value): bool => \is_string($value) && \str_starts_with($value, 'PROMO-'),
-                static function (Str $field): void {
+                static function (StrBuilder $field): void {
                     $field->minLength(12);
                 },
             ),

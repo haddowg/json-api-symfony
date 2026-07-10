@@ -64,7 +64,7 @@ final class DoctrinePlaylistResource extends AbstractResource
                     // A HIDDEN pivot field (core hidden() gates rendering only): it is
                     // filterable via `pivot.note` below, yet never appears in the rendered
                     // pivot meta — the provider skips it from the SELECT and the pivot map.
-                    Str::make('note')->hidden(),
+                    Str::make('note')->hidden()->build(),
                 )
                 // Pivot filters are AUTHOR-DECLARED via the `pivot.` column prefix
                 // (bundle ADR 0067): a filter whose column starts with `pivot.` targets

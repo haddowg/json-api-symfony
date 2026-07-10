@@ -163,7 +163,7 @@ final class ResourceValidator
 
         $fields = [];
         $compares = [];
-        foreach ($resource->fields() as $field) {
+        foreach ($resource->allFields() as $field) {
             if ($field instanceof Id || $field instanceof RelationInterface) {
                 continue;
             }
@@ -522,7 +522,7 @@ final class ResourceValidator
         }
 
         $errors = [];
-        foreach ($resource->fields() as $field) {
+        foreach ($resource->allFields() as $field) {
             if (!$field instanceof RelationInterface || $field->relatedTypes() === []) {
                 continue; // defensive: every relation declares at least one type via make()
             }
@@ -732,7 +732,7 @@ final class ResourceValidator
         }
 
         $errors = [];
-        foreach ($resource->fields() as $field) {
+        foreach ($resource->allFields() as $field) {
             if (!$field instanceof RelationInterface) {
                 continue;
             }
@@ -991,7 +991,7 @@ final class ResourceValidator
     public function validateEntity(AbstractResource $resource, object $entity, bool $creating): void
     {
         $constraints = [];
-        foreach ($resource->fields() as $field) {
+        foreach ($resource->allFields() as $field) {
             foreach ($field->constraints() as $constraint) {
                 if (!$constraint instanceof EntityConstraintInterface || !$constraint->context()->appliesTo($creating)) {
                     continue;
@@ -1273,7 +1273,7 @@ final class ResourceValidator
     private function oneOfErrors(AbstractResource $resource, array $attributes, bool $creating, JsonApiRequestInterface $request): array
     {
         $errors = [];
-        foreach ($resource->fields() as $field) {
+        foreach ($resource->allFields() as $field) {
             if (!$field instanceof OneOf) {
                 continue;
             }
@@ -1344,7 +1344,7 @@ final class ResourceValidator
         }
 
         $errors = [];
-        foreach ($resource->fields() as $field) {
+        foreach ($resource->allFields() as $field) {
             if ($field instanceof Id || $field instanceof RelationInterface) {
                 continue;
             }
