@@ -16,6 +16,14 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App;
  * (incl. both null-priority rows 3 and 6), so a walk over it proves the keyset
  * runs INSIDE the parent scope — a leak of a non-member widget is immediately
  * visible, and the null bucket is still exercised on the scoped subset.
+ *
+ * Shelf 3 holds exactly TWO members (8 priority-20, 6 priority-null), so a
+ * cursor-resolved COLLECTION include windowing every shelf in ONE query proves
+ * MIXED surplus across the partitions of the same window: shelf 1 over-fills
+ * page 1 (a `next`), shelf 3 fits it exactly (NO `next`), and shelf 3's null-
+ * priority member lands ON its page — exercising the NULL=largest branch INSIDE
+ * `ROW_NUMBER()` for a no-surplus partition alongside shelf 1's null bucket sorted
+ * off the page.
  */
 final class CursorShelfFixtures
 {
@@ -29,6 +37,7 @@ final class CursorShelfFixtures
         return [
             '1' => [1, 2, 3, 4, 5, 6, 7, 8],
             '2' => [3, 5, 6, 8],
+            '3' => [6, 8],
         ];
     }
 
