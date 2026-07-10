@@ -40,13 +40,13 @@ final class EncodedPlaylistResource extends AbstractResource
         return [
             Id::make()
                 ->encodeUsing(new PrefixedPlaylistIdEncoder())
-                ->matchAs('pl-[0-9]+'),
+                ->matchAs('pl-[0-9]+')->build(),
             Str::make('name'),
             BelongsToMany::make('dataTracks', 'tracks')
                 ->through(PlaylistTrackEntity::class)
                 ->fields(
-                    Integer::make('position')->required()->min(1),
-                    DateTime::make('addedAt')->readOnly(),
+                    Integer::make('position')->required()->min(1)->build(),
+                    DateTime::make('addedAt')->readOnly()->build(),
                 )
                 ->extractUsing(static function (mixed $playlist): array {
                     if (!$playlist instanceof PlaylistEntity) {

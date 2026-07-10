@@ -29,10 +29,10 @@ final class PivotFailWidgetResource extends AbstractResource
     public function fields(): array
     {
         return [
-            Id::make(),
+            Id::make()->build(),
             Str::make('title'),
             BelongsToMany::make('gadgets', 'gadgets')
-                ->fields(Integer::make('position')->min(1)),
+                ->fields(Integer::make('position')->min(1)->build()),
         ];
     }
 }

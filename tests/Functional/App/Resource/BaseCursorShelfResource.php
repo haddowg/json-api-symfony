@@ -41,7 +41,7 @@ abstract class BaseCursorShelfResource extends AbstractResource
     public function fields(): array
     {
         return [
-            Id::make(),
+            Id::make()->build(),
             HasMany::make('widgets', 'cursorWidgets')
                 ->paginate(CursorPaginator::make()->withDefaultSize(2)),
             $this->pivotWidgets(),
@@ -58,7 +58,7 @@ abstract class BaseCursorShelfResource extends AbstractResource
     {
         return BelongsToMany::make('pivotWidgets', 'cursorWidgets')
             ->storedAs('widgets')
-            ->fields(Integer::make('slot'))
+            ->fields(Integer::make('slot')->build())
             ->paginate(CursorPaginator::make()->withDefaultSize(2));
     }
 }

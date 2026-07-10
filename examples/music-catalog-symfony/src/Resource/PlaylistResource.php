@@ -34,7 +34,7 @@ use haddowg\JsonApiBundle\Hook\ResourceLifecycleHooksTrait;
  * serializes reads.
  *
  * It is also the **UUID id-strategy** demonstrator (bundle ADR 0039):
- * `Id::make()->uuid()->generated()` keys the {@see Playlist} on a string UUID the
+ * `Id::make()->uuid()->generated()->build()` keys the {@see Playlist} on a string UUID the
  * *app* mints when a create omits the id, while the custom hydrator additionally
  * accepts a well-formed client `id` (the `uuid()` format both pins the route `{id}`
  * shape and validates a client-supplied id on the wire).
@@ -105,11 +105,11 @@ final class PlaylistResource extends AbstractResource implements ResourceLifecyc
             // A UUID id: the app mints a v4 UUID via generated() when a create omits
             // the id, and the custom hydrator also accepts a well-formed client UUID
             // (uuid() pins the route shape and validates a wire id).
-            Id::make()->uuid()->generated(),
+            Id::make()->uuid()->generated()->build(),
             Str::make('title')->required(),
             // Derived from title by the custom hydrator, so read-only on the wire.
             Slug::make('slug')->readOnly(),
-            Boolean::make('public'),
+            Boolean::make('public')->build(),
             Uuid::make('externalId')->nullable(),
 
             // Default relation reader: `owner` reads the ManyToOne and `tracks` the
@@ -169,13 +169,13 @@ final class PlaylistResource extends AbstractResource implements ResourceLifecyc
                     // position is preserved from the MERGED stored row (bundle ADR
                     // 0050) — no false 422 — so a required field need not be re-sent to
                     // re-assert a member.
-                    Integer::make('position')->required()->min(1),
+                    Integer::make('position')->required()->min(1)->build(),
                     // A second WRITABLE pivot field constrained `weight >= position` —
                     // a cross-pivot-field rule. On a partial update it evaluates over
                     // the MERGED pivot (an incoming `weight` compared against the stored
                     // `position`), so `weight` may be set without re-sending `position`.
-                    Integer::make('weight')->compareWith('position', Comparison::GreaterThanOrEqual),
-                    DateTime::make('addedAt')->readOnly(),
+                    Integer::make('weight')->compareWith('position', Comparison::GreaterThanOrEqual)->build(),
+                    DateTime::make('addedAt')->readOnly()->build(),
                 )
                 // Pivot filters are AUTHOR-DECLARED via the `pivot.` column prefix
                 // (bundle ADR 0067): a filter whose column starts with `pivot.` targets

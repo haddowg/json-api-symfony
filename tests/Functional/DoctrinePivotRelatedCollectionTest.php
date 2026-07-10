@@ -227,8 +227,8 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
         // column: `addedAfter` filters `pivot.addedAt`, resolved by column.
         $relation = BelongsToMany::make('tracks', 'tracks')
             ->fields(
-                Integer::make('position')->required()->min(1),
-                DateTime::make('addedAt')->readOnly(),
+                Integer::make('position')->required()->min(1)->build(),
+                DateTime::make('addedAt')->readOnly()->build(),
             )
             ->withFilters(
                 // No explicit deserializer — the factory resolves the cast by the

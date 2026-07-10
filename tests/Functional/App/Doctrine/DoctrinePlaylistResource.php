@@ -47,7 +47,7 @@ final class DoctrinePlaylistResource extends AbstractResource
     public function fields(): array
     {
         return [
-            Id::make(),
+            Id::make()->build(),
             Str::make('name'),
             BelongsToMany::make('tracks', 'tracks')
                 ->through(PlaylistTrackEntity::class)
@@ -58,9 +58,9 @@ final class DoctrinePlaylistResource extends AbstractResource
                 // position folded under the incoming weight); `addedAt` is server-owned
                 // — readOnly(), so it is never written from meta and takes its default.
                 ->fields(
-                    Integer::make('position')->required()->min(1),
-                    Integer::make('weight')->compareWith('position', Comparison::GreaterThanOrEqual),
-                    DateTime::make('addedAt')->readOnly(),
+                    Integer::make('position')->required()->min(1)->build(),
+                    Integer::make('weight')->compareWith('position', Comparison::GreaterThanOrEqual)->build(),
+                    DateTime::make('addedAt')->readOnly()->build(),
                     // A HIDDEN pivot field (core hidden() gates rendering only): it is
                     // filterable via `pivot.note` below, yet never appears in the rendered
                     // pivot meta — the provider skips it from the SELECT and the pivot map.
@@ -97,8 +97,8 @@ final class DoctrinePlaylistResource extends AbstractResource
             BelongsToMany::make('orderedTracks', 'tracks')
                 ->through(PlaylistTrackEntity::class)
                 ->fields(
-                    Integer::make('position')->required()->min(1),
-                    DateTime::make('addedAt')->readOnly(),
+                    Integer::make('position')->required()->min(1)->build(),
+                    DateTime::make('addedAt')->readOnly()->build(),
                 )
                 ->withFilters(Where::make('position', 'pivot.position'))
                 ->extractUsing($this->extractTracks())
@@ -113,8 +113,8 @@ final class DoctrinePlaylistResource extends AbstractResource
             BelongsToMany::make('dataTracks', 'tracks')
                 ->through(PlaylistTrackEntity::class)
                 ->fields(
-                    Integer::make('position')->required()->min(1),
-                    DateTime::make('addedAt')->readOnly(),
+                    Integer::make('position')->required()->min(1)->build(),
+                    DateTime::make('addedAt')->readOnly()->build(),
                 )
                 ->extractUsing($this->extractTracks())
                 ->withData(),
@@ -130,8 +130,8 @@ final class DoctrinePlaylistResource extends AbstractResource
             BelongsToMany::make('hiddenDataTracks', 'tracks')
                 ->through(PlaylistTrackEntity::class)
                 ->fields(
-                    Integer::make('position')->required()->min(1),
-                    DateTime::make('addedAt')->readOnly(),
+                    Integer::make('position')->required()->min(1)->build(),
+                    DateTime::make('addedAt')->readOnly()->build(),
                 )
                 ->extractUsing($this->extractTracks())
                 ->withData()
