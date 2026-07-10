@@ -16,11 +16,20 @@ use Doctrine\ORM\Mapping as ORM;
  * `priority` is a NULLABLE int (the null-branch ground truth) and `releasedAt` a
  * NULLABLE datetime (so the keyset binds a date boundary with the column's DBAL
  * type, not a lexical string). Not `final` so Doctrine may proxy it.
+ *
+ * The NULLABLE `group` ManyToOne is the owning side of {@see CursorGroupEntity}'s inverse
+ * `OneToMany widgets` — the owning FK the inverse-FK cursor include window partitions by.
+ * It is nullable so a widget carrying no group (the owning-side ManyToMany shelf fixtures)
+ * is unaffected: those rows simply keep `group_id` NULL.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'cursor_widget')]
 class CursorWidgetEntity
 {
+    #[ORM\ManyToOne(targetEntity: CursorGroupEntity::class, inversedBy: 'widgets')]
+    #[ORM\JoinColumn(name: 'group_id', nullable: true)]
+    public ?CursorGroupEntity $group = null;
+
     public function __construct(
         #[ORM\Id]
         #[ORM\GeneratedValue(strategy: 'AUTO')]

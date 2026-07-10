@@ -116,11 +116,14 @@ final class CursorIncludeBatchLoggingKernel extends Kernel
             ->args([new Reference(QueryCountingLogger::class)])
             ->tag('doctrine.middleware');
 
-        // The cursor (keyset) conformance types: the `cursorWidgets` related resource and the
-        // `cursorShelves` parent whose `widgets` ManyToMany declares a CursorPaginator, so the
-        // cursor-resolved include runs the single-window keyset push-down (bundle ADR 0118).
+        // The cursor (keyset) conformance types: the `cursorWidgets` related resource, the
+        // `cursorShelves` parent whose `widgets` ManyToMany declares a CursorPaginator (the
+        // join-table window shape), and the `cursorGroups` parent whose `widgets` OneToMany is
+        // the inverse-FK window shape — so both single-window branches are SQL-proven (bundle
+        // ADR 0118).
         $services->set(DoctrineCursorWidgetResource::class);
         $services->set(DoctrineCursorShelfResource::class);
+        $services->set(DoctrineCursorGroupResource::class);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

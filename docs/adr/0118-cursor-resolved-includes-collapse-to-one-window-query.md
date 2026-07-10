@@ -39,11 +39,19 @@ byte-identical to the per-parent minting.
 The per-parent loop (`fetchWindowedBatchPerParent`) is **retained** as the fallback for a
 relation the native window cannot express (polymorphic, `window_functions: off`, or an
 extended related type) and remains the related-collection **endpoint**'s path. The in-memory
-witness keeps windowing each parent per-parent and is the **parity referee**:
+witness keeps windowing each parent per-parent and is the **parity referee**.
+
+**Both inner-query shapes have dedicated end-to-end coverage** (test parity with the Laravel
+twin **ADR 0026**, which covers `hasMany` + `belongsToMany`):
 `CursorIncludeBatchConformanceTestCase` asserts the SQL push-down and the PHP witness render
-byte-identical pages — now including a collection include sorted on a **nullable** column
-with the null bucket interleaved across parents and mixed surplus (one partition over-fills
-page 1 → a `next`, one fits it exactly → no `next`), the exact NULL-inside-`ROW_NUMBER`
-composition the blocker feared — while `DoctrineCursorIncludeBatchBudgetTest` pins the
-single bounded ROW_NUMBER statement. This is the Doctrine twin of the Laravel adapter's
-**ADR 0026** (the Eloquent `groupLimit` cursor-include collapse).
+byte-identical pages for the **join-table / many-to-many** shape (`cursorShelves → widgets`,
+an owning-side ManyToMany) AND the **inverse-FK** shape (`cursorGroups → widgets`, a
+`OneToMany` whose related widget carries the owning `group_id` FK) — each a collection include
+sorted on a **nullable** column with the null bucket interleaved across parents and mixed
+surplus (one partition over-fills page 1 → a `next`, one fits it exactly with its null member
+last → no `next`), the exact NULL-inside-`ROW_NUMBER` composition the blocker feared. The
+single bounded `ROW_NUMBER` statement is pinned per shape by
+`DoctrineCursorIncludeBatchBudgetTest` (join-table, partition by the pivot FK) and
+`DoctrineCursorGroupIncludeBatchBudgetTest` (inverse-FK, roots on the widget, partition by
+the owning FK, no join table). This is the Doctrine twin of the Laravel adapter's **ADR 0026**
+(the Eloquent `groupLimit` cursor-include collapse).

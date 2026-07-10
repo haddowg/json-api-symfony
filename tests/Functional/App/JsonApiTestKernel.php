@@ -11,6 +11,7 @@ use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\ArticleResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\AuthorResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\CommentResource;
+use haddowg\JsonApiBundle\Tests\Functional\App\Resource\CursorGroupResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\CursorShelfResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\CursorWidgetResource;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
@@ -116,6 +117,22 @@ final class JsonApiTestKernel extends Kernel
         $services->set('test.cursor_shelves_persister', InMemoryDataPersister::class)
             ->factory([CursorShelfProviderFactory::class, 'createPersister'])
             ->args([service('test.cursor_shelves_provider')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
+
+        // The INVERSE-FK cursor (keyset) include witness: a `cursorGroups` parent whose
+        // to-many `widgets` relation declares its own CursorPaginator, its members drawn live
+        // from the `cursorWidgets` store — the complement of the owning-side ManyToMany
+        // `cursorShelves`, so the batched include exercises the inverse-FK single-window shape
+        // on the Doctrine half and this witness refereeing it (bundle ADR 0118).
+        $services->set(CursorGroupResource::class);
+        $services->set('test.cursor_groups_provider', InMemoryDataProvider::class)
+            ->factory([CursorGroupProviderFactory::class, 'create'])
+            ->args([service('test.cursor_widgets_provider')])
+            ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+
+        $services->set('test.cursor_groups_persister', InMemoryDataPersister::class)
+            ->factory([CursorGroupProviderFactory::class, 'createPersister'])
+            ->args([service('test.cursor_groups_provider')])
             ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
 
         $services->set('test.articles_provider', InMemoryDataProvider::class)
