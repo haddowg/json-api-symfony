@@ -43,7 +43,7 @@ final class WidgetResource extends AbstractResource implements ResolvesCompletio
     {
         return [
             Id::make(),
-            Str::make('name'),
+            Str::make('name')->build(),
         ];
     }
 

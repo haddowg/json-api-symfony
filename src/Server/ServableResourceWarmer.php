@@ -144,7 +144,7 @@ final class ServableResourceWarmer implements CacheWarmerInterface
         }
 
         $idFields = \array_filter(
-            $serializer->fields(),
+            $serializer->allFields(),
             static fn(\haddowg\JsonApi\Resource\Field\FieldInterface $field): bool => $field instanceof Id,
         );
 

@@ -113,7 +113,7 @@ final class TypeMetadataResolver
         $resource = $this->resourceFor($server, $type);
         if ($resource !== null) {
             $relations = [];
-            foreach ($resource->fields() as $field) {
+            foreach ($resource->allFields() as $field) {
                 if ($field instanceof RelationInterface && !$field->isHidden()) {
                     $relations[] = $field;
                 }

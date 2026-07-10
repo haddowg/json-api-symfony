@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App\Doctrine;
 
-use haddowg\JsonApi\Resource\Field\AbstractField;
+use haddowg\JsonApi\Resource\Field\AbstractFieldBuilder;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\BaseArticleResource;
 use haddowg\JsonApiBundle\Validation\Constraint\UniqueEntity;
@@ -27,7 +27,7 @@ final class DoctrineArticleResource extends BaseArticleResource
     {
         $fields = parent::fields();
         foreach ($fields as $field) {
-            if ($field instanceof AbstractField && $field->name() === 'title') {
+            if ($field instanceof AbstractFieldBuilder && $field->name() === 'title') {
                 $field->constrain(new UniqueEntity(['title']));
             }
         }

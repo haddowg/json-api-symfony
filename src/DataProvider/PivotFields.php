@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\DataProvider;
 
-use haddowg\JsonApi\Resource\Field\AbstractField;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\FieldInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
@@ -106,15 +105,10 @@ final class PivotFields
      * value. The field reads its backing column off a tiny array carrier through its
      * request-free serializer, so no request and no `serializeUsing`/`extractUsing`
      * hook is consulted (a pivot field is a plain field definition); a `null` stays
-     * `null`. A field not built on the {@see AbstractField} base (so without the
-     * request-free seam) passes the value through unchanged.
+     * `null`.
      */
     public static function cast(mixed $value, FieldInterface $field): mixed
     {
-        if (!$field instanceof AbstractField) {
-            return $value;
-        }
-
         return $field->serializeWithoutRequest([$field->column() ?? $field->name() => $value]);
     }
 }

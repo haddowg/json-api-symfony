@@ -293,7 +293,7 @@ final class MetadataSource
             type: $type,
             uriType: $descriptor['uriType'],
             hasFields: $resource !== null,
-            fields: $resource !== null ? \array_values($resource->fields()) : [],
+            fields: $resource !== null ? $resource->allFields() : [],
             relations: $relations,
             operations: $operations,
             securedOperations: $this->securedOperations($type, $operations),

@@ -9,6 +9,7 @@ use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\HasMany;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Str;
+use haddowg\JsonApi\Resource\Field\StrBuilder;
 
 /**
  * The shared `badges` declaration both request-aware-predicate kernels serve: one
@@ -73,7 +74,7 @@ abstract class BaseBadgeResource extends AbstractResource
             // non-admin omitting it is accepted.
             Str::make('clearance')->nullable()->when(
                 static fn(mixed $value, ?JsonApiRequestInterface $request): bool => $request?->getHeaderLine('X-Role') === 'admin',
-                static function (Str $field): void {
+                static function (StrBuilder $field): void {
                     $field->required();
                 },
             ),

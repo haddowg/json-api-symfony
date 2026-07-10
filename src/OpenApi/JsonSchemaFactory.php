@@ -83,7 +83,7 @@ final class JsonSchemaFactory
         }
 
         $resource = $this->types->resourceFor($server, $type);
-        $fields = $resource instanceof AbstractResource ? \array_values($resource->fields()) : [];
+        $fields = $resource instanceof AbstractResource ? $resource->allFields() : [];
 
         $document = $this->schemaProjector->projectResourceObject($type, $fields)->toJson();
         // Prepend the dialect + identity keywords so the artifact is a valid,
