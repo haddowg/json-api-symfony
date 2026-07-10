@@ -12,9 +12,13 @@ use Doctrine\ORM\Query\ParserResult;
 use Doctrine\ORM\Query\ResultSetMapping;
 use Doctrine\ORM\QueryBuilder;
 use haddowg\JsonApi\Collection\CollectionResult;
+use haddowg\JsonApi\Collection\Keyset\CursorTokenMinter;
+use haddowg\JsonApi\Collection\Keyset\KeysetColumn;
+use haddowg\JsonApi\Collection\Keyset\KeysetResolver;
 use haddowg\JsonApi\Exception\SortingUnsupported;
 use haddowg\JsonApi\Exception\SortParamUnrecognized;
 use haddowg\JsonApi\Operation\QueryParameters;
+use haddowg\JsonApi\Pagination\CursorWindow;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApi\Resource\Sort\SortDirective;
@@ -98,6 +102,8 @@ final class WindowedRelationBatch
         private readonly CriteriaApplier $applier,
         private readonly DoctrineFilterHandler $filterHandler,
         private readonly DoctrineSortHandler $sortHandler,
+        private readonly KeysetResolver $keysetResolver,
+        private readonly CursorTokenMinter $minter,
     ) {}
 
     /**
@@ -201,6 +207,222 @@ final class WindowedRelationBatch
             : [];
 
         return $this->partition($rows, $parentType, $window, $countable, $shape->isJoinTable(), $relatedById);
+    }
+
+    /**
+     * Runs the native windowed batch for a CURSOR (keyset) included relation — the N→1
+     * collapse of the per-parent keyset loop (bundle ADR 0118). An include carries no cursor
+     * token (the profile pins the included page to page 1), so this is a boundaryless FIRST
+     * cursor page per parent: it wraps the SAME derived-table `ROW_NUMBER() OVER (PARTITION
+     * BY <parent FK> ORDER BY <keyset>)` the offset {@see fetch()} builds, with only two
+     * differences — the ORDER BY is driven by the resolved {@see KeysetColumn}s (the forced
+     * NULL=largest `CASE WHEN … IS NULL …` term, the deduped PK tiebreak carrying the last
+     * active directive's direction — NOT a hardcoded id ASC), and there is NO `COUNT(*) OVER`
+     * (a cursor page is count-free by definition, so the window probes `jsonapi_rn <= limit +
+     * 1` for the `hasMore` signal). There is NO keyset `WHERE` — the boundaryless first page
+     * needs no `applyAfter`, so a bounded page is routed to the per-parent fallback upstream.
+     *
+     * Per parent the boundary rows mint a forward cursor through the SAME
+     * {@see CursorTokenMinter} + row-value reader the per-parent path ({@see DoctrineDataProvider::runCursor()})
+     * uses, so the single window is byte-identical to the per-parent minting (core ADR 0123).
+     *
+     * @param list<object> $parents      the page of parents (non-empty)
+     * @param class-string $relatedClass
+     *
+     * @throws \RuntimeException when the native query fails (an engine without window functions)
+     */
+    public function fetchCursor(
+        string $parentType,
+        array $parents,
+        string $relatedType,
+        string $relatedClass,
+        RelationInterface $relation,
+        CollectionCriteria $criteria,
+        CursorWindow $window,
+    ): RelatedBatch {
+        $relatedMetadata = $this->entityManager->getClassMetadata($relatedClass);
+        $parentMetadata = $this->entityManager->getClassMetadata($parents[0]::class);
+        /** @var class-string $parentClass */
+        $parentClass = $parentMetadata->getName();
+
+        // The keyset columns (active sort + the deduped PK tiebreak) from the ONE core
+        // resolver the per-parent keyset path (runCursor) and the in-memory witness use, so
+        // the single window orders byte-identically. The PK tiebreak direction rides the last
+        // active directive, never a hardcoded id ASC (unlike the offset path's tiebreak).
+        $columns = $this->keysetResolver->resolve(
+            $criteria->queryParameters->sort,
+            $criteria->sorts,
+            $criteria->defaultSort,
+            $relatedMetadata->getSingleIdentifierFieldName(),
+        );
+
+        // Feed the keyset columns to the SAME inner-query projection the offset path uses (the
+        // join-table shape projects each as a `jsonapi_sort_%d` scalar the window ORDER BY
+        // reads back; the inverse-FK shape hydrates the whole entity and ignores them). The PK
+        // is one of the columns, so it projects and orders like any other keyset column.
+        $directives = $this->keysetSortDirectives($columns);
+
+        $shape = $this->resolveShape($parentMetadata, $relatedMetadata, $relation, $parentClass);
+        $parentIds = $this->parentStorageIds($parents, $parentMetadata);
+
+        $builder = $this->innerQuery($shape, $relatedClass, $parentIds, $directives, $criteria);
+        $query = $builder->getQuery();
+        $innerSql = $query->getSQL();
+        \assert(\is_string($innerSql));
+
+        $innerRsm = $this->reflectResultSetMapping($query);
+        $parameterMappings = $this->reflectParameterMappings($query);
+
+        $parentAlias = $this->scalarAlias($innerRsm, BatchScope::PARENT_DISCRIMINATOR_ALIAS);
+        $orderBy = $this->orderByKeyset($innerRsm, $columns, $shape);
+
+        // A cursor page is count-free by definition (a CursorPaginator never counts), so the
+        // window probes limit + 1 per partition for the hasMore signal — no COUNT(*) OVER.
+        $rowCap = $window->limit + 1;
+
+        $strippedInner = (string) \preg_replace('/\s+ORDER BY .*$/is', '', $innerSql);
+
+        $sql = \sprintf(
+            'SELECT * FROM (SELECT w.*, ROW_NUMBER() OVER (PARTITION BY w.%s ORDER BY %s) AS jsonapi_rn FROM (%s) w) x WHERE x.jsonapi_rn <= ?',
+            $parentAlias,
+            $orderBy,
+            $strippedInner,
+        );
+
+        $innerRsm->addScalarResult('jsonapi_rn', 'rn', 'integer');
+
+        $native = $this->entityManager->createNativeQuery($sql, $innerRsm);
+        $this->rebindParameters($native, $query, $parameterMappings, $rowCap);
+
+        /** @var list<array<int|string, mixed>> $rows */
+        $rows = $this->runOrThrow($native);
+
+        $relatedById = $shape->isJoinTable()
+            ? $this->loadRelatedById($relatedClass, $relatedMetadata, $rows)
+            : [];
+
+        return $this->partitionCursor($rows, $parentType, $window, $shape->isJoinTable(), $relatedById, $relatedMetadata, $columns);
+    }
+
+    /**
+     * The keyset columns as {@see SortByField} directives, so the shared {@see innerQuery()}
+     * projection (the join-table shape's `jsonapi_sort_%d` scalars) and {@see orderByKeyset()}
+     * index the SAME positions. The PK tiebreak is one of the columns (never a hardcoded
+     * append), so it projects and orders like any other keyset column.
+     *
+     * @param list<KeysetColumn> $columns
+     *
+     * @return list<SortDirective>
+     */
+    private function keysetSortDirectives(array $columns): array
+    {
+        return \array_map(
+            static fn(KeysetColumn $column): SortDirective => new SortDirective(
+                SortByField::make($column->column, $column->column),
+                $column->descending,
+            ),
+            $columns,
+        );
+    }
+
+    /**
+     * The cursor window ORDER BY: the resolved keyset columns over the GENERATED SQL aliases
+     * READ off the inner query's {@see ResultSetMapping}, each a portable NULL=largest
+     * `CASE WHEN c IS NULL THEN 1 ELSE 0 END` term then the column, both in the column's
+     * direction — the SAME raw term the offset {@see orderBy()} and the per-parent
+     * {@see \haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineKeyset::orderBy()} emit, so
+     * SQL and the witness cannot drift (bundle ADR 0118, the disproven-blocker proof). Unlike
+     * the offset ORDER BY there is NO trailing hardcoded PK tiebreak — the PK is the final
+     * keyset column already, carrying the direction the last active directive resolved.
+     *
+     * @param list<KeysetColumn> $columns
+     */
+    private function orderByKeyset(ResultSetMapping $innerRsm, array $columns, WindowShape $shape): string
+    {
+        $terms = [];
+        foreach ($columns as $i => $column) {
+            // Read the generated SQL alias: the projected scalar for the join-table shape, the
+            // entity field on the `related` alias for the inverse-FK shape.
+            $alias = $shape->isJoinTable()
+                ? 'w.' . $this->scalarAlias($innerRsm, \sprintf('jsonapi_sort_%d', $i))
+                : 'w.' . $this->fieldAlias($innerRsm, 'related', $column->column);
+            $direction = $column->descending ? 'DESC' : 'ASC';
+
+            $terms[] = \sprintf('CASE WHEN %s IS NULL THEN 1 ELSE 0 END %s', $alias, $direction);
+            $terms[] = \sprintf('%s %s', $alias, $direction);
+        }
+
+        return \implode(', ', $terms);
+    }
+
+    /**
+     * Groups the bounded native rows by parent (rn-ordered within each partition, exactly as
+     * {@see partition()}) and mints each parent's {@see \haddowg\JsonApi\Collection\CursorCollectionResult}:
+     * the `limit + 1` probe surplus proves a further page, the page is sliced to `limit`, and
+     * the forward cursor is minted from the boundary rows via the SAME {@see CursorTokenMinter}
+     * + row-value reader the per-parent path uses (read each keyset column off the hydrated
+     * entity through the ORM accessor), so the single window is byte-identical to the per-parent
+     * minting (bundle ADR 0118, core ADR 0123).
+     *
+     * @param list<array<int|string, mixed>> $rows
+     * @param array<string, object>          $relatedById     the join-table shape's id-loaded related entities (empty for inverse-FK)
+     * @param ClassMetadata<object>          $relatedMetadata
+     * @param list<KeysetColumn>             $columns
+     */
+    private function partitionCursor(
+        array $rows,
+        string $parentType,
+        CursorWindow $window,
+        bool $joinTable,
+        array $relatedById,
+        ClassMetadata $relatedMetadata,
+        array $columns,
+    ): RelatedBatch {
+        // Collect each partition as `(rn => entity)` so the items re-order by the ROW_NUMBER
+        // even though the OUTER derived-table SELECT carries no ORDER BY (its row order is
+        // engine-dependent; the rn IS the within-partition keyset order).
+        /** @var array<string, array<int, object>> $partitionByRn */
+        $partitionByRn = [];
+
+        foreach ($rows as $row) {
+            // The inverse-FK shape carries the hydrated entity at index 0; the join-table shape
+            // carries the related id scalar, re-associated to the id-loaded entity.
+            if ($joinTable) {
+                $relatedId = $row[BatchScope::RELATED_DISCRIMINATOR_ALIAS] ?? null;
+                $related = \is_scalar($relatedId) ? ($relatedById[(string) $relatedId] ?? null) : null;
+            } else {
+                $related = $row[0] ?? null;
+            }
+            $storageKey = $row[BatchScope::PARENT_DISCRIMINATOR_ALIAS] ?? null;
+            $rn = $row['rn'] ?? null;
+            if (!\is_object($related) || !\is_scalar($storageKey) || !\is_numeric($rn)) {
+                continue;
+            }
+
+            $wireId = $this->wireId($storageKey, $parentType);
+            $partitionByRn[$wireId][(int) $rn] = $related;
+        }
+
+        // The SAME row -> keyset-value reader the per-parent path (runCursor) mints with: read
+        // each keyset column off the hydrated entity via the ORM accessor, JSON-coerced.
+        $readValue = static fn(object $entity, string $column): string|int|float|bool|null => CursorTokenMinter::coerce(
+            $relatedMetadata->getFieldValue($entity, $column),
+        );
+
+        $results = [];
+        foreach ($partitionByRn as $wireId => $byRn) {
+            \ksort($byRn);
+            $items = \array_values($byRn);
+
+            // The (limit + 1)-th probe row proves a further page; drop it and report hasMore,
+            // exactly as runCursor's over-fetch does before minting.
+            $hasSurplus = \count($items) > $window->limit;
+            $page = $hasSurplus ? \array_slice($items, 0, $window->limit) : $items;
+
+            $results[$wireId] = $this->minter->mint($window, $columns, $page, $hasSurplus, $readValue);
+        }
+
+        return new RelatedBatch($results);
     }
 
     /**

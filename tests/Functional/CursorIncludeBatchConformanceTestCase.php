@@ -80,6 +80,64 @@ abstract class CursorIncludeBatchConformanceTestCase extends JsonApiFunctionalTe
         self::assertSame(['3', '4'], $ids);
     }
 
+    #[Test]
+    #[Group('spec:profiles')]
+    #[Group('spec:fetching-pagination')]
+    public function aCollectionIncludeCursorsOnANullableColumnWithMixedSurplusAcrossParents(): void
+    {
+        // A COLLECTION include windows the whole page of parents in ONE cursor window on the
+        // Doctrine provider (the N→1 collapse) — sorted on the NULLABLE `priority`, so the
+        // forced NULL=largest `CASE … IS NULL …` term composes INSIDE `ROW_NUMBER()`. Shelf 1
+        // holds every widget (nulls 3, 6) and shelf 3 holds { 8 (priority 20), 6 (null) }, so
+        // the null bucket is interleaved across the partitions of the same window and the
+        // witness (in-memory) and the push-down (SQL) must render the SAME page for each —
+        // refereeing exactly the NULL-inside-window composition.
+        //
+        // priority asc, id-tiebreak asc: shelf 1 (1..8) orders 2(10),7(10),5(20),8(20),1(30),
+        // 4(30),3(null),6(null) → page 1 = [2, 7] with a further page (EIGHT > size 2 → a
+        // `next`); shelf 3 (6, 8) orders 8(20),6(null) → page 1 = [8, 6] EXACTLY the page (no
+        // surplus → NO `next`). Shelf 3's null member (6) lands ON its page, proving
+        // NULL=largest orders the partition, not just excludes it.
+        $document = $this->includeDocument('/cursorShelves?include=widgets&relatedQuery[widgets][sort]=priority');
+
+        $shelf1 = $this->relationshipObject($this->resourceWithId($document, '1'), 'widgets');
+        self::assertSame(['2', '7'], $this->linkageIds($shelf1));
+        $shelf1Links = $shelf1['links'] ?? null;
+        self::assertIsArray($shelf1Links);
+        self::assertArrayHasKey('next', $shelf1Links, 'the surplus partition renders a next link');
+        self::assertStringContainsString('page%5Bafter%5D=', $this->href($shelf1Links['next']));
+        self::assertStringContainsString('sort=priority', $this->href($shelf1Links['next']));
+
+        $shelf3 = $this->relationshipObject($this->resourceWithId($document, '3'), 'widgets');
+        self::assertSame(['8', '6'], $this->linkageIds($shelf3));
+        $shelf3Links = $shelf3['links'] ?? null;
+        self::assertIsArray($shelf3Links);
+        self::assertArrayNotHasKey('next', $shelf3Links, 'a partition with no surplus renders no next link');
+    }
+
+    /**
+     * The primary-collection resource carrying `$id`, resolved out of the document's `data`
+     * list so a per-parent relationship object can be addressed on a collection include.
+     *
+     * @param array<string, mixed> $document
+     *
+     * @return array<string, mixed>
+     */
+    private function resourceWithId(array $document, string $id): array
+    {
+        $data = $document['data'] ?? null;
+        self::assertIsArray($data);
+
+        foreach ($data as $resource) {
+            if (\is_array($resource) && ($resource['id'] ?? null) === $id) {
+                /** @var array<string, mixed> $resource */
+                return $resource;
+            }
+        }
+
+        self::fail(\sprintf('No cursorShelves resource with id "%s" in the collection.', $id));
+    }
+
     /**
      * Fetches `$path` under the Relationship-Queries profile (which windows an included
      * to-many to page 1) and returns the decoded document.
