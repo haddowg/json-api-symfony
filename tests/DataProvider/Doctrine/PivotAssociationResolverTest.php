@@ -84,7 +84,7 @@ final class PivotAssociationResolverTest extends KernelTestCase
     public function itAutoDetectsTheAssociationEntityForAnUnambiguousParent(): void
     {
         $resolver = $this->resolver();
-        $relation = BelongsToMany::make('tracks', 'tracks')->fields(Integer::make('position'));
+        $relation = BelongsToMany::make('tracks', 'tracks')->fields(Integer::make('position')->build());
 
         self::assertTrue($resolver->isPivotRelation($relation));
 
@@ -100,7 +100,7 @@ final class PivotAssociationResolverTest extends KernelTestCase
     {
         $resolver = $this->resolver();
         $relation = BelongsToMany::make('tracks', 'tracks')
-            ->fields(Integer::make('position'))
+            ->fields(Integer::make('position')->build())
             ->through(AlbumTrackEntity::class);
 
         $association = $resolver->resolve($relation, new AlbumEntity(1, 'Album'), TrackEntity::class);
@@ -114,7 +114,7 @@ final class PivotAssociationResolverTest extends KernelTestCase
     public function itThrowsWhenAutoDetectionIsAmbiguousAndNoThroughIsDeclared(): void
     {
         $resolver = $this->resolver();
-        $relation = BelongsToMany::make('tracks', 'tracks')->fields(Integer::make('position'));
+        $relation = BelongsToMany::make('tracks', 'tracks')->fields(Integer::make('position')->build());
 
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('ambiguous');

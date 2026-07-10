@@ -42,7 +42,7 @@ final class WidgetResource extends AbstractResource implements ResolvesCompletio
     public function fields(): array
     {
         return [
-            Id::make(),
+            Id::make()->build(),
             Str::make('name')->build(),
         ];
     }

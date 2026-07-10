@@ -1265,6 +1265,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         enabled?: bool|Param, // Emit the Atomic Operations endpoint per server. Default false. // Default: false
  *         path?: scalar|Param|null, // The path the per-server Atomic Operations endpoint is served at (POST). Default /operations. // Default: "/operations"
  *     },
+ *     profiles?: list<scalar|Param|null>,
  *     openapi?: array{ // OpenAPI 3.1 document generation, serving and export (G1–G6).
  *         enabled?: bool|Param, // Whether OpenAPI generation is available at all. When false, no document routes are emitted and the cache warmer skips warming (the CLI export still works). Default true. // Default: true
  *         expose_in_prod?: bool|Param, // Expose the document HTTP routes outside kernel.debug (D9). Routes are auto-exposed in debug; set true to also serve them in prod. Default false. // Default: false

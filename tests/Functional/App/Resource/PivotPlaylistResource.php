@@ -31,13 +31,13 @@ final class PivotPlaylistResource extends AbstractResource
     public function fields(): array
     {
         return [
-            Id::make(),
+            Id::make()->build(),
             Str::make('name'),
             BelongsToMany::make('tracks', 'tracks')
-                ->fields(Integer::make('position')),
+                ->fields(Integer::make('position')->build()),
             BelongsToMany::make('dataTracks', 'tracks')
                 ->storedAs('tracks')
-                ->fields(Integer::make('position'))
+                ->fields(Integer::make('position')->build())
                 ->withData(),
         ];
     }
