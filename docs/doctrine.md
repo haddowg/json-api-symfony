@@ -810,8 +810,7 @@ per-member `meta.pivot`, **sortable** as a zero-config `?sort` vocabulary on the
 related endpoint (`?sort=position` auto-derives from the field), and — writable by
 default — **settable from the linkage `meta`**.
 
-A pivot **filter**, by contrast, is **author-declared**, not auto-derived (a
-behaviour change, a minor bump). To filter on a pivot
+A pivot **filter**, by contrast, is **author-declared**, not auto-derived. To filter on a pivot
 column, add a `Where` (or any value filter) to the relation's `withFilters()` whose
 target column is **`pivot.`-prefixed**:
 
