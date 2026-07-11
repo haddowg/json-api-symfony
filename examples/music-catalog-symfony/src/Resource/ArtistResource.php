@@ -60,9 +60,9 @@ final class ArtistResource extends AbstractResource
 
             // Default relation reader: `albums` reads the OneToMany association
             // straight off the entity (load-aware linkage so a lazy collection emits
-            // links-only without forcing a fetch). The IA-PLAN entity table maps the
-            // artist with a single OneToMany `albums`, so — unlike core's in-memory
-            // domain — there is no separate `featuredAlbum` to-one here.
+            // links-only without forcing a fetch). The example maps the artist with a
+            // single OneToMany `albums`, so — unlike core's in-memory domain — there is
+            // no separate `featuredAlbum` to-one here.
             //
             // `albums` is includable (the back-reference of `albums.artist`): an
             // artist's discography is a natural `GET /artists/{id}?include=albums`, and

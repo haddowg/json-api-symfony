@@ -67,19 +67,6 @@ validation:
   links:
     anchors: warn
 
-# Working/analysis docs kept in the repo but not part of the published site.
-exclude_docs: |
-  IA-PLAN.md
-  api-platform-gap-analysis.md
-  json-api-server-gap-analysis.md
-  laravel-gap-analysis.md
-  laravel-gap-build-plan.md
-  query-building-consolidation-review.md
-  step6-batched-related-fetch-design.md
-  openapi-generation-design.md
-  g13-custom-actions-design.md
-  g21-count-free-pagination-design.md
-
 nav:
   - Home: index.md
   - Getting started:

@@ -279,11 +279,6 @@ declaration time (`ActionResponses::validate()`), so an impossible set (duplicat
 statuses, two job types) fails the build. Omitted, `responds` defaults to a `200`
 document of the mount type.
 
-> **Migration (pre-1.0).** `responds` replaces the former `outputType` / `outputMeta` /
-> `returns204` params: `outputType: 'receipts'` → `responds: [new ActionResource('receipts')]`,
-> `outputMeta: true` → `responds: [new MetaResult()]`, `returns204: true` →
-> `responds: [new NoContent()]`.
-
 `responds` exists because the projector cannot read the handler's body. To stop the
 declaration drifting from the handler, the bundle **guards at compile time**: a
 handler whose `handle()` return type is narrowed to exactly `NoContentResponse` must
