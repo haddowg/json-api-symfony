@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\Resource;
 use haddowg\JsonApi\Pagination\CursorPaginator;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
+use haddowg\JsonApi\Resource\Field\BelongsToManyBuilder;
 use haddowg\JsonApi\Resource\Field\HasMany;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Integer;
@@ -54,7 +55,7 @@ abstract class BaseCursorShelfResource extends AbstractResource
      * `slot` pivot field, the paginator, the `widgets` backing property) stays
      * declared once.
      */
-    protected function pivotWidgets(): BelongsToMany
+    protected function pivotWidgets(): BelongsToManyBuilder
     {
         return BelongsToMany::make('pivotWidgets', 'cursorWidgets')
             ->storedAs('widgets')

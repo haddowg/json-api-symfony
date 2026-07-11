@@ -43,7 +43,7 @@ final class RelationshipLinkageTypeGuardTest extends TestCase
     #[Group('spec:updating-relationships')]
     public function aWrongTypeToOneLinkageIsAFourOhNineConflict(): void
     {
-        $relation = BelongsTo::make('author', 'authors');
+        $relation = BelongsTo::make('author', 'authors')->build();
 
         try {
             $this->validator()->validateRelationshipLinkage(
@@ -68,7 +68,7 @@ final class RelationshipLinkageTypeGuardTest extends TestCase
         $this->expectNotToPerformAssertions();
 
         $this->validator()->validateRelationshipLinkage(
-            BelongsTo::make('author', 'authors'),
+            BelongsTo::make('author', 'authors')->build(),
             new ToOneRelationship(new ResourceIdentifier('authors', '1')),
         );
     }
@@ -77,7 +77,7 @@ final class RelationshipLinkageTypeGuardTest extends TestCase
     #[Group('spec:updating-relationships')]
     public function aWrongTypeToManyMemberIsAFourOhNineConflictPointingAtThatMember(): void
     {
-        $relation = HasMany::make('comments', 'comments');
+        $relation = HasMany::make('comments', 'comments')->build();
 
         try {
             $this->validator()->validateRelationshipLinkage(
@@ -103,7 +103,7 @@ final class RelationshipLinkageTypeGuardTest extends TestCase
     {
         $this->expectNotToPerformAssertions();
 
-        $relation = MorphTo::make('pinned', ['notes', 'images']);
+        $relation = MorphTo::make('pinned', ['notes', 'images'])->build();
 
         // Each declared type is accepted — a polymorphic relation must NOT false-reject
         // a member matching ANY of its inverse types.
@@ -121,7 +121,7 @@ final class RelationshipLinkageTypeGuardTest extends TestCase
     #[Group('spec:updating-relationships')]
     public function aPolymorphicRelationStillRejectsATypeOutsideItsDeclaredSet(): void
     {
-        $relation = MorphTo::make('pinned', ['notes', 'images']);
+        $relation = MorphTo::make('pinned', ['notes', 'images'])->build();
 
         try {
             $this->validator()->validateRelationshipLinkage(

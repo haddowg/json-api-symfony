@@ -14,7 +14,7 @@ use PHPUnit\Framework\Attributes\Test;
  *
  * The in-memory `articles` resource also declares an extra `editor` relation
  * that opts out of the convention links via
- * {@see \haddowg\JsonApi\Resource\Field\AbstractRelation::withoutLinks()}, so
+ * {@see \haddowg\JsonApi\Resource\Field\AbstractRelationBuilder::withoutLinks()}, so
  * this subclass additionally witnesses the opt-out: data still renders, no
  * `links` member appears.
  */

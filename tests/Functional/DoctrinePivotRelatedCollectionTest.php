@@ -237,7 +237,8 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
                 Where::make('addedAfter', 'pivot.addedAt', '>'),
                 // An author's explicit deserializer must WIN — never overwritten.
                 Where::make('weightExplicit', 'pivot.weight')->deserializeUsing(static fn(mixed $v): string => 'kept'),
-            );
+            )
+            ->build();
 
         $factory = new RelationCriteriaFactory();
         $params = new QueryParameters([], [], [], [], []);
