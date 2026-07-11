@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App\Doctrine;
 
-use haddowg\JsonApi\Resource\Field\BelongsToMany;
+use haddowg\JsonApi\Resource\Field\BelongsToManyBuilder;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\BaseCursorShelfResource;
 
@@ -26,7 +26,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Resource\BaseCursorShelfResource;
 #[AsJsonApiResource(entity: CursorShelfEntity::class)]
 final class DoctrineCursorShelfResource extends BaseCursorShelfResource
 {
-    protected function pivotWidgets(): BelongsToMany
+    protected function pivotWidgets(): BelongsToManyBuilder
     {
         return parent::pivotWidgets()->through(CursorShelfWidgetEntity::class);
     }

@@ -135,7 +135,7 @@ final class TrackSerializer extends AbstractSerializer implements SerializerReso
     private function relations(): array
     {
         return [
-            BelongsTo::make('album', 'albums'),
+            BelongsTo::make('album', 'albums')->build(),
             BelongsToMany::make('playlists', 'playlists')
                 ->fields(
                     Integer::make('position')->min(1)->build(),
@@ -145,7 +145,8 @@ final class TrackSerializer extends AbstractSerializer implements SerializerReso
                 // A to-many is lazy by default (core ADR 0067); withData() opts this
                 // one back to EAGER so its linkage renders on a track read — the
                 // deliberate contrast with AlbumResource's lazy `tracks`.
-                ->withData(),
+                ->withData()
+                ->build(),
         ];
     }
 }

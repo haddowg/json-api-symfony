@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Functional\App\Resource;
 
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
-use haddowg\JsonApi\Resource\Field\AbstractRelation;
+use haddowg\JsonApi\Resource\Field\AbstractRelationBuilder;
 use haddowg\JsonApi\Resource\Field\Accessor;
 
 /**
@@ -30,7 +30,7 @@ class IdentifierMetaArticleResource extends BaseArticleResource
     {
         $fields = parent::fields();
         foreach ($fields as $field) {
-            if (!$field instanceof AbstractRelation) {
+            if (!$field instanceof AbstractRelationBuilder) {
                 continue;
             }
 

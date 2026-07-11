@@ -383,7 +383,7 @@ final class RelationshipWindowBatcher
      * `withData()` opt-out). A lazy, links-only, not-included to-many is excluded
      * (bundle ADR 0086): windowing it would write page 1 onto the parent property,
      * flipping the storage load-state predicate to "loaded" — so core's
-     * {@see \haddowg\JsonApi\Resource\Field\AbstractRelation::shouldDeferLinkage()} stops
+     * {@see \haddowg\JsonApi\Resource\Field\AbstractRelationValue::shouldDeferLinkage()} stops
      * deferring and the relationship leaks the filtered linkage the lazy default omits,
      * for a relation the client never included; gating the window closes that leak (and
      * the wasted fetch) while leaving links-only rendering intact. The COUNT path

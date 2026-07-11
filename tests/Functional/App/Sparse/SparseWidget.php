@@ -6,7 +6,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\Sparse;
 
 /**
  * A plain domain model for the sparse-by-default witness: a cheap `name` plus an
- * `expensiveScore` the resource marks {@see \haddowg\JsonApi\Resource\Field\AbstractField::sparseByDefault()},
+ * `expensiveScore` the resource marks {@see \haddowg\JsonApi\Resource\Field\AbstractFieldBuilder::sparseByDefault()},
  * so it renders only when the client names it in `fields[sparseWidgets]`.
  */
 final class SparseWidget

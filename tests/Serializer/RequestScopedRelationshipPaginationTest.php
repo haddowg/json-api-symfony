@@ -64,7 +64,7 @@ final class RequestScopedRelationshipPaginationTest extends TestCase
 
     private function relation(): RelationInterface
     {
-        return HasMany::make('tracks', 'tracks');
+        return HasMany::make('tracks', 'tracks')->build();
     }
 
     private function request(): JsonApiRequestInterface

@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Functional\App\Resource;
 
 use haddowg\JsonApi\Resource\Field\BelongsTo;
+use haddowg\JsonApi\Resource\Field\BelongsToBuilder;
 use haddowg\JsonApi\Resource\Field\HasMany;
+use haddowg\JsonApi\Resource\Field\HasManyBuilder;
 use haddowg\JsonApi\Resource\Filter\Contains;
 use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Filter\WhereAll;
@@ -49,7 +51,7 @@ class ConstrainedFilterArticleResource extends BaseArticleResource
             // Re-declare the `comments` to-many with a relation-scoped, integer-
             // constrained `commentId` filter so the related-collection endpoint has a
             // constrained relation filter to validate.
-            if ($field instanceof HasMany && $field->name() === 'comments') {
+            if ($field instanceof HasManyBuilder && $field->name() === 'comments') {
                 $field = HasMany::make('comments', 'comments')
                     ->withFilters(Where::make('commentId', 'id')->integer());
             }
@@ -60,7 +62,7 @@ class ConstrainedFilterArticleResource extends BaseArticleResource
             // to-one twin of the `comments` constrained filter (bundle ADR 0068 follow-up
             // #2). A mistyped value (via `?filter[authorId]`, `relatedQuery[author][filter]`,
             // or the include path) is the endpoint's same 400.
-            if ($field instanceof BelongsTo && $field->name() === 'author') {
+            if ($field instanceof BelongsToBuilder && $field->name() === 'author') {
                 $field = BelongsTo::make('author', 'authors')
                     ->withFilters(Where::make('authorId', 'id')->integer());
             }

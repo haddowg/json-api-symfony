@@ -84,7 +84,7 @@ final class PivotAssociationResolverTest extends KernelTestCase
     public function itAutoDetectsTheAssociationEntityForAnUnambiguousParent(): void
     {
         $resolver = $this->resolver();
-        $relation = BelongsToMany::make('tracks', 'tracks')->fields(Integer::make('position')->build());
+        $relation = BelongsToMany::make('tracks', 'tracks')->fields(Integer::make('position')->build())->build();
 
         self::assertTrue($resolver->isPivotRelation($relation));
 
@@ -101,7 +101,8 @@ final class PivotAssociationResolverTest extends KernelTestCase
         $resolver = $this->resolver();
         $relation = BelongsToMany::make('tracks', 'tracks')
             ->fields(Integer::make('position')->build())
-            ->through(AlbumTrackEntity::class);
+            ->through(AlbumTrackEntity::class)
+            ->build();
 
         $association = $resolver->resolve($relation, new AlbumEntity(1, 'Album'), TrackEntity::class);
 
@@ -114,7 +115,7 @@ final class PivotAssociationResolverTest extends KernelTestCase
     public function itThrowsWhenAutoDetectionIsAmbiguousAndNoThroughIsDeclared(): void
     {
         $resolver = $this->resolver();
-        $relation = BelongsToMany::make('tracks', 'tracks')->fields(Integer::make('position')->build());
+        $relation = BelongsToMany::make('tracks', 'tracks')->fields(Integer::make('position')->build())->build();
 
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('ambiguous');
@@ -127,8 +128,8 @@ final class PivotAssociationResolverTest extends KernelTestCase
     {
         $resolver = $this->resolver();
 
-        self::assertFalse($resolver->isPivotRelation(BelongsToMany::make('tracks', 'tracks')));
-        self::assertFalse($resolver->isPivotRelation(HasMany::make('tracks', 'tracks')));
+        self::assertFalse($resolver->isPivotRelation(BelongsToMany::make('tracks', 'tracks')->build()));
+        self::assertFalse($resolver->isPivotRelation(HasMany::make('tracks', 'tracks')->build()));
     }
 
     private function resolver(): PivotAssociationResolver

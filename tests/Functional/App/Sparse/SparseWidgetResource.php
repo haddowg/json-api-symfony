@@ -11,7 +11,7 @@ use haddowg\JsonApi\Resource\Field\Str;
 
 /**
  * A `sparseWidgets` resource whose `expensiveScore` attribute is
- * {@see \haddowg\JsonApi\Resource\Field\AbstractField::sparseByDefault()}: omitted
+ * {@see \haddowg\JsonApi\Resource\Field\AbstractFieldBuilder::sparseByDefault()}: omitted
  * from the default response and rendered only when the client names it in
  * `fields[sparseWidgets]`. The bundle witness that core's sparse-by-default field
  * tier (core ADR 0117) flows through the bundle's serializer → transformer → response

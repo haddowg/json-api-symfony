@@ -59,7 +59,7 @@ final class InMemoryPivotWriteIgnoreTest extends TestCase
 
         // The SAME belongsToMany pivot relation the Doctrine fixture declares, with a
         // WRITABLE position field — meaningless in-memory.
-        $relation = BelongsToMany::make('tracks', 'tracks')->fields(Integer::make('position')->build());
+        $relation = BelongsToMany::make('tracks', 'tracks')->fields(Integer::make('position')->build())->build();
 
         // A to-many linkage whose members carry pivot meta (position) — exactly the
         // write convention. In-memory it is applied as a plain membership set.
