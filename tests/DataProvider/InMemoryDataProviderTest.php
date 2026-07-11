@@ -55,7 +55,7 @@ final class InMemoryDataProviderTest extends TestCase
     {
         $result = $this->articles()->fetchCollection('articles', new CollectionCriteria(
             $this->query(filter: ['title' => 'Bravo']),
-            filters: [Where::make('title')],
+            filters: [Where::make('title')->build()],
         ));
 
         self::assertSame(['2'], $this->ids($result->items));
@@ -68,7 +68,7 @@ final class InMemoryDataProviderTest extends TestCase
 
         $this->articles()->fetchCollection('articles', new CollectionCriteria(
             $this->query(filter: ['nope' => 'x']),
-            filters: [Where::make('title')],
+            filters: [Where::make('title')->build()],
         ));
     }
 

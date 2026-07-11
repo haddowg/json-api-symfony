@@ -121,11 +121,11 @@ final class RelationCriteriaFactory
     ): CollectionCriteria {
         $relationFilters = $includePivotFields
             ? $this->withPivotCasts($relation)
-            : $this->withoutPivotFilters($relation->filters());
+            : $this->withoutPivotFilters($relation->allFilters());
 
         return new CollectionCriteria(
             $queryParameters,
-            $this->mergeFilters($relatedResource?->filters() ?? [], $relationFilters),
+            $this->mergeFilters($relatedResource?->allFilters() ?? [], $relationFilters),
             $this->mergeSorts(
                 $this->mergeSorts($relatedResource?->allSorts() ?? [], $relation->sorts()),
                 $includePivotFields ? PivotFields::sortsFor($relation) : [],
@@ -167,7 +167,7 @@ final class RelationCriteriaFactory
     private function withPivotCasts(RelationInterface $relation): array
     {
         $filters = [];
-        foreach ($relation->filters() as $filter) {
+        foreach ($relation->allFilters() as $filter) {
             $filters[] = $this->withPivotCast($relation, $filter);
         }
 
@@ -194,7 +194,24 @@ final class RelationCriteriaFactory
             return $filter;
         }
 
-        return $filter->deserializeUsing(static fn(mixed $value): mixed => PivotFields::cast($value, $field));
+        // The value deserializer lives on the WhereBuilder; the built Where VO is
+        // readonly, so thread every property through a fresh VO with the pivot cast
+        // attached (identical to the old copy-on-write `deserializeUsing()` wither).
+        return new Where(
+            $filter->key,
+            $filter->column,
+            $filter->operator,
+            static fn(mixed $value): mixed => PivotFields::cast($value, $field),
+            $filter->singular,
+            $filter->default,
+            $filter->hasDefault,
+            $filter->constraints,
+            $filter->description,
+            $filter->hasExample,
+            $filter->example,
+            $filter->fixedValue,
+            $filter->hasFixed,
+        );
     }
 
     /**
@@ -270,7 +287,7 @@ final class RelationCriteriaFactory
     private function pivotAliases(RelationInterface $relation): array
     {
         $aliasOf = [];
-        foreach ($relation->filters() as $filter) {
+        foreach ($relation->allFilters() as $filter) {
             if ($this->pivotColumn($this->columnOf($filter)) !== null) {
                 $aliasOf[$filter->key()] = 'pivot';
             }

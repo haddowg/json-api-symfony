@@ -344,7 +344,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // no filter/sort vocabulary and no resource-level paginator.
         $resource = $this->types->resourceFor($server, $type);
 
-        $filters = $resource?->filters() ?? [];
+        $filters = $resource?->allFilters() ?? [];
 
         // Validate each client-supplied filter value against the declared value
         // constraints before the filter reaches the provider, so a mistyped value

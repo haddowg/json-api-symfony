@@ -11,6 +11,7 @@ use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Filter\WhereAll;
 use haddowg\JsonApi\Resource\Filter\WhereAny;
 use haddowg\JsonApi\Resource\Filter\WhereIdIn;
+use haddowg\JsonApi\Resource\Filter\WhereIdInBuilder;
 use haddowg\JsonApi\Resource\Filter\WhereThrough;
 
 /**
@@ -78,7 +79,7 @@ class ConstrainedFilterArticleResource extends BaseArticleResource
             // constrained one (same `id` key), so each member of filter[id]=… must be
             // an integer and a mistyped filter[id]=banana is a clean 400 — no
             // duplicate `id` key.
-            if ($filter instanceof WhereIdIn) {
+            if ($filter instanceof WhereIdInBuilder) {
                 $filter = WhereIdIn::make()->integer();
             }
 

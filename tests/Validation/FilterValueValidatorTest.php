@@ -33,7 +33,7 @@ final class FilterValueValidatorTest extends TestCase
 
         $this->validator()->validate(
             ['year' => '2024'],
-            [Where::make('year')->integer()],
+            [Where::make('year')->integer()->build()],
         );
     }
 
@@ -44,7 +44,7 @@ final class FilterValueValidatorTest extends TestCase
         try {
             $this->validator()->validate(
                 ['year' => 'banana'],
-                [Where::make('year')->integer()],
+                [Where::make('year')->integer()->build()],
             );
             self::fail('Expected a FilterValueInvalid.');
         } catch (FilterValueInvalid $exception) {
@@ -68,7 +68,7 @@ final class FilterValueValidatorTest extends TestCase
         // No constraints declared: any value passes, exactly as today.
         $this->validator()->validate(
             ['title' => 'anything goes'],
-            [Where::make('title')],
+            [Where::make('title')->build()],
         );
     }
 
@@ -82,7 +82,7 @@ final class FilterValueValidatorTest extends TestCase
         // it — a default would be folded in later, never validated here.
         $this->validator()->validate(
             [],
-            [Where::make('year')->integer()],
+            [Where::make('year')->integer()->build()],
         );
     }
 
@@ -93,7 +93,7 @@ final class FilterValueValidatorTest extends TestCase
         try {
             $this->validator()->validate(
                 ['id' => '1,banana,3'],
-                [WhereIdIn::make()->integer()],
+                [WhereIdIn::make()->integer()->build()],
             );
             self::fail('Expected a FilterValueInvalid.');
         } catch (FilterValueInvalid $exception) {
@@ -109,7 +109,7 @@ final class FilterValueValidatorTest extends TestCase
         try {
             $this->validator()->validate(
                 ['id' => ['1', '2', 'banana']],
-                [WhereIdIn::make()->integer()],
+                [WhereIdIn::make()->integer()->build()],
             );
             self::fail('Expected a FilterValueInvalid.');
         } catch (FilterValueInvalid $exception) {
@@ -125,7 +125,7 @@ final class FilterValueValidatorTest extends TestCase
 
         $this->validator()->validate(
             ['id' => '1,2,3'],
-            [WhereIdIn::make()->integer()],
+            [WhereIdIn::make()->integer()->build()],
         );
     }
 
@@ -136,7 +136,7 @@ final class FilterValueValidatorTest extends TestCase
         try {
             $this->validator()->validate(
                 ['ref' => 'not-a-uuid'],
-                [Where::make('ref')->uuid()],
+                [Where::make('ref')->uuid()->build()],
             );
             self::fail('Expected a FilterValueInvalid.');
         } catch (FilterValueInvalid $exception) {

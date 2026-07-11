@@ -103,7 +103,7 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
 
                 if ($resource !== null) {
                     $this->guardSorts($type, $resource->allSorts(), $metadata);
-                    $this->guardFilters($type, $resource->filters(), $metadata);
+                    $this->guardFilters($type, $resource->allFilters(), $metadata);
                 }
 
                 $this->guardPivots($serverName, $type, $metadata);
