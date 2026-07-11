@@ -86,7 +86,7 @@ final class CountryProvider extends AbstractDataProvider
         // supplies none for a resource-less type), then run the shared applier.
         $vocabularyCriteria = new CollectionCriteria(
             $criteria->queryParameters,
-            [Where::make('name', 'name', 'like')],
+            [Where::make('name', 'name', 'like')->build()],
             [SortByField::make('name', 'name')],
             $criteria->window,
         );
