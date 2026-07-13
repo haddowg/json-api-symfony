@@ -22,7 +22,7 @@
     ],
     "require": {
         "php": "^8.3",
-        "haddowg/json-api": "dev-main",
+        "haddowg/json-api": "^1.0",
         "psr/http-factory": "^1.0",
         "psr/http-message": "^2.0",
         "symfony/config": "^6.4 || ^7.0 || ^8.0",
@@ -102,6 +102,6 @@
         "cs-check": "Check code style without modifying files",
         "cs-fix": "Apply code style fixes"
     },
-    "minimum-stability": "dev",
+    "minimum-stability": "stable",
     "prefer-stable": true
 }
