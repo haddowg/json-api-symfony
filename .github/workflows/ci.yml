@@ -37,15 +37,6 @@ jobs:
           coverage: none
           tools: composer:v2
 
-      # Resolve the unpublished haddowg/json-api from GitHub (a global VCS
-      # repository, so the committed composer.json stays clean for local dev,
-      # where a global path repository symlinks a sibling checkout instead).
-      # Drop this and pin a tagged ^1.0 once core is published to Packagist.
-      - name: Configure Composer to resolve haddowg/json-api (dev-main)
-        run: |
-          composer config -g github-oauth.github.com "${{ secrets.GITHUB_TOKEN }}"
-          composer config -g repositories.haddowg-json-api '{"type":"vcs","url":"https://github.com/haddowg/json-api","no-api":true}'
-
       - name: Install dependencies
         uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
         with:
@@ -73,11 +64,6 @@ jobs:
           coverage: none
           tools: composer:v2
 
-      - name: Configure Composer to resolve haddowg/json-api (dev-main)
-        run: |
-          composer config -g github-oauth.github.com "${{ secrets.GITHUB_TOKEN }}"
-          composer config -g repositories.haddowg-json-api '{"type":"vcs","url":"https://github.com/haddowg/json-api","no-api":true}'
-
       - name: Install dependencies
         uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
 
@@ -102,11 +88,6 @@ jobs:
           php-version: '8.4'
           coverage: none
           tools: composer:v2
-
-      - name: Configure Composer to resolve haddowg/json-api (dev-main)
-        run: |
-          composer config -g github-oauth.github.com "${{ secrets.GITHUB_TOKEN }}"
-          composer config -g repositories.haddowg-json-api '{"type":"vcs","url":"https://github.com/haddowg/json-api","no-api":true}'
 
       - name: Install dependencies
         uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
