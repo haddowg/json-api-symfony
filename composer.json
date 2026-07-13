@@ -10,7 +10,9 @@
         "psr-15",
         "api",
         "rest",
-        "doctrine"
+        "doctrine",
+        "openapi",
+        "atomic-operations"
     ],
     "homepage": "https://github.com/haddowg/json-api-symfony",
     "license": "MIT",
