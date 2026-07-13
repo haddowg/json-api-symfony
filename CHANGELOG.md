@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/haddowg/json-api-symfony/compare/v1.0.0...v1.0.1) (2026-07-13)
+
+
+### Miscellaneous Chores
+
+* add openapi and atomic-operations to composer keywords ([#137](https://github.com/haddowg/json-api-symfony/issues/137)) ([329d3aa](https://github.com/haddowg/json-api-symfony/commit/329d3aa6418e4efb22b741925a34a74aa5ce5dce))
+
 ## 1.0.0 (2026-07-13)
 
 
