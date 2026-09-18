@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Server;
 
+use haddowg\JsonApi\OpenApi\ProjectedTypes;
+use haddowg\JsonApi\OpenApi\RelatedTypeNotRegistered;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
+use haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource;
 use haddowg\JsonApiBundle\Operation\Operation;
 use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
 
@@ -45,6 +48,13 @@ use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
  *    guard requires every `AbstractResource` candidate of a polymorphic relation to
  *    override `getType()` (to discriminate by class, e.g. with `instanceof`); a custom
  *    (non-`AbstractResource`) serializer owns its own `getType` and is left to it.
+ *  - **A relation's related endpoint must point at a type the server registers.**
+ *    `GET /{type}/{id}/{rel}` returns the related type as primary data, so a server
+ *    that does not register it has neither a serializer to render the response nor a
+ *    field inventory to describe it. Core's {@see ProjectedTypes::relatedOnly()}
+ *    reports that set and the OpenAPI projector refuses to build a document while it
+ *    is non-empty; this raises the same {@see RelatedTypeNotRegistered} at warmup,
+ *    where the message names the configured server rather than its document title.
  *
  * Gating is on the per-type operation allow-list, so an embedded-only standalone
  * serializer (no operations) and a relationship-only target (served through its
@@ -61,6 +71,7 @@ final class ServableResourceWarmer implements CacheWarmerInterface
         private readonly DataProviderRegistry $providers,
         private readonly DataPersisterRegistry $persisters,
         private readonly TypeMetadataResolver $typeMetadata,
+        private readonly MetadataSource $metadata,
         private readonly array $serverNames,
     ) {}
 
@@ -78,8 +89,10 @@ final class ServableResourceWarmer implements CacheWarmerInterface
      * @return list<string>
      *
      * @throws \LogicException when a routed type has no provider/persister supporting it,
-     *                         an `AbstractResource` does not declare exactly one Id, or a
-     *                         polymorphic relation has a non-discriminating candidate serializer
+     *                         an `AbstractResource` does not declare exactly one Id, a
+     *                         polymorphic relation has a non-discriminating candidate
+     *                         serializer, or a related endpoint points at a type the
+     *                         server does not register
      */
     public function warmUp(string $cacheDir, ?string $buildDir = null): array
     {
@@ -93,6 +106,8 @@ final class ServableResourceWarmer implements CacheWarmerInterface
                 $this->guardExactlyOneId($serverName, $type);
                 $this->guardPolymorphicDiscrimination($serverName, $type);
             }
+
+            $this->guardRelatedEndpointTargets($serverName);
         }
 
         // No preloadable class files: a pure build-time guard.
@@ -155,6 +170,40 @@ final class ServableResourceWarmer implements CacheWarmerInterface
                 $type,
                 \count($idFields),
             ));
+        }
+    }
+
+    /**
+     * Asserts that no relation on `$serverName` exposes its related endpoint to a type
+     * the server does not register — the fault core's OpenAPI projector refuses to
+     * build a document over.
+     *
+     * {@see ProjectedTypes::relatedOnly()} is the rule and the only thing consulted to
+     * decide whether there is a fault. The walk below runs only once that has reported
+     * something, purely to attribute the offending type back to the relation that
+     * exposed it, so the thrown {@see RelatedTypeNotRegistered} can name the parent and
+     * the member — and carry core's own wording for the three ways out.
+     */
+    private function guardRelatedEndpointTargets(string $serverName): void
+    {
+        $metadata = $this->metadata->forServer($serverName);
+        $offending = ProjectedTypes::relatedOnly($metadata);
+        if ($offending === []) {
+            return;
+        }
+
+        foreach ($metadata->types() as $type) {
+            foreach ($type->relations() as $relation) {
+                if (!$relation->exposesRelatedEndpoint()) {
+                    continue;
+                }
+
+                foreach ($relation->relatedTypes() as $relatedType) {
+                    if (\in_array($relatedType, $offending, true)) {
+                        throw new RelatedTypeNotRegistered($serverName, $type->type(), $relation->name(), $relatedType);
+                    }
+                }
+            }
         }
     }
 

@@ -835,6 +835,25 @@ mismatch (a `POST`/`DELETE` against a to-one) is a separate `400`
 `RELATIONSHIP_TYPE_INAPPROPRIATE`; an unknown relation or missing parent is a
 `404`.
 
+### The related endpoint's target must be registered on the server
+
+`GET /albums/1/artist` returns an `artists` resource object as primary data, so the server
+serving it needs a serializer for `artists` and the OpenAPI document needs its field
+inventory. A relation that exposes its related endpoint to a type the server does not
+register is therefore a configuration error, and `cache:warmup` fails the build over it
+(the OpenAPI export refuses too, whichever runs first). Three ways out:
+
+- register the related type on that server as well;
+- point the relation at a **reduced second type** that is registered — the example does
+  this with `public-profiles` beside the admin-only `users`, both backed by the same
+  `User` entity;
+- declare the relation **linkage-only** with `withoutRelatedEndpoint()`. The linkage
+  `{"type": "users", "id": "1"}` asserts no shape, so an unregistered target is fine
+  there; the `related` link is omitted so nothing points at the 404.
+
+A type reached only as linkage never needs registering. It is exposing the endpoint that
+makes the claim.
+
 ## Controlling what can be included
 
 `?include` is a compound-document amplifier — a deeply nested path or a

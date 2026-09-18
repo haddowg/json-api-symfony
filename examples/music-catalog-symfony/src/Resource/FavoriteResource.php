@@ -42,8 +42,13 @@ final class FavoriteResource extends AbstractResource
             DateTime::make('favoritedAt')->readOnlyOnUpdate(),
 
             // Default relation reader: `user` reads the ManyToOne straight off the
-            // entity.
-            BelongsTo::make('user', 'users'),
+            // entity. The target type is `public-profiles`, not `users`: `favorites`
+            // lives on the default server and `users` is admin-only, so a relation
+            // naming it here would expose `GET /favorites/{id}/user` to a type this
+            // server has no serializer for. The curated {@see PublicProfileResource}
+            // view of the same User row is the type the default surface can serve; the
+            // member name stays `user`, so the endpoint path is unchanged.
+            BelongsTo::make('user', 'public-profiles'),
             // The polymorphic to-one: a custom relation resolver reads the resolved
             // `favoritable` member off the entity (the provider fills it from the
             // targetType/targetId pair). This is the one and only extractUsing in the

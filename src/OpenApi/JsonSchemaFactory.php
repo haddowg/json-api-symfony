@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\OpenApi;
 
 use haddowg\JsonApi\OpenApi\EnumDescriptionMode;
+use haddowg\JsonApi\OpenApi\Metadata\ServerMetadataInterface;
+use haddowg\JsonApi\OpenApi\ProjectedTypes;
 use haddowg\JsonApi\OpenApi\SchemaProjector;
 use haddowg\JsonApi\Resource\AbstractResource;
+use haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource;
 use haddowg\JsonApiBundle\Server\RouteDescriptorRegistry;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
@@ -37,8 +40,12 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
  * {@see \haddowg\JsonApi\OpenApi\EnumComponentCollector} — a standalone file has no
  * `components` to hoist into), matching the projector's standalone-projection
  * contract. A resource-less / bare-serializer type contributes a permissive
- * resource-object schema (no field inventory), so every registered type yields a
- * document.
+ * resource-object schema (no field inventory), so every type yields a document.
+ *
+ * **Which types.** The key set is core's {@see ProjectedTypes::forServer()} — the same
+ * rule the OpenAPI document describes a resource object for. Reading it off the route
+ * descriptors instead is what let the document carry a `UsersResource` component while
+ * `schemas.json` had no `users` key. One rule, two artifacts.
  */
 final class JsonSchemaFactory
 {
@@ -46,10 +53,14 @@ final class JsonSchemaFactory
 
     private readonly SchemaProjector $schemaProjector;
 
+    /** @var array<string, ServerMetadataInterface> */
+    private array $metadataByServer = [];
+
     public function __construct(
         private readonly ServerProvider $servers,
         private readonly TypeMetadataResolver $types,
         private readonly RouteDescriptorRegistry $descriptors,
+        private readonly MetadataSource $metadata,
         EnumDescriptionMode $enumDescriptionMode = EnumDescriptionMode::Both,
     ) {
         $this->schemaProjector = new SchemaProjector($enumDescriptionMode);
@@ -59,22 +70,18 @@ final class JsonSchemaFactory
      * The standalone JSON Schema 2020-12 document for one `(server, type)`, as a
      * JSON-ready {@see \stdClass} carrying `$schema` + `$id` (the resource object).
      *
-     * @throws \InvalidArgumentException when `$type` is not a registered JSON:API type
-     *                                   for `$serverName` — a typo (`--type=articals`)
-     *                                   fails loudly rather than emitting a bogus
-     *                                   generic schema for a non-existent type
+     * @throws \InvalidArgumentException when `$type` is not a type this server's
+     *                                   projection describes — a typo
+     *                                   (`--type=articals`) fails loudly rather than
+     *                                   emitting a bogus generic schema for a
+     *                                   non-existent type
      */
     public function forType(string $type, ?string $serverName = null): \stdClass
     {
         $serverName ??= ServerProvider::DEFAULT_SERVER;
         $server = $this->servers->get($serverName);
 
-        // The type must be registered for the server: resourceFor() returns null both
-        // for a registered resource-less type AND for a wholly unknown type, so it
-        // cannot tell them apart — the descriptor registry is the authoritative
-        // "is this type registered" signal (it lists every registered type, resource
-        // or standalone).
-        if ($this->descriptors->forType($serverName, $type) === null) {
+        if (!\in_array($type, ProjectedTypes::forServer($this->serverMetadata($serverName)), true)) {
             throw new \InvalidArgumentException(\sprintf(
                 'Unknown JSON:API type "%s" for server "%s".',
                 $type,
@@ -82,6 +89,9 @@ final class JsonSchemaFactory
             ));
         }
 
+        // Null for a bare serializer/hydrator pair AND for a related-only type, which
+        // registers nothing here at all. Both project fieldless — the permissive
+        // resource object the OpenAPI document gives them.
         $resource = $this->types->resourceFor($server, $type);
         $fields = $resource instanceof AbstractResource ? $resource->allFields() : [];
 
@@ -95,9 +105,9 @@ final class JsonSchemaFactory
     }
 
     /**
-     * The standalone JSON Schema 2020-12 documents for **every** type registered for
-     * `$serverName`, keyed by JSON:API type, in registration order — the directory
-     * export form.
+     * The standalone JSON Schema 2020-12 documents for **every** type this server's
+     * projection describes, keyed by JSON:API type, in registration order — the
+     * directory export form.
      *
      * @return array<string, \stdClass>
      */
@@ -106,7 +116,7 @@ final class JsonSchemaFactory
         $serverName ??= ServerProvider::DEFAULT_SERVER;
 
         $documents = [];
-        foreach (\array_keys($this->descriptors->forServer($serverName)) as $type) {
+        foreach (ProjectedTypes::forServer($this->serverMetadata($serverName)) as $type) {
             if ($type === '') {
                 continue;
             }
@@ -136,6 +146,15 @@ final class JsonSchemaFactory
         }
 
         return $documents;
+    }
+
+    /**
+     * The server's OpenAPI metadata, memoized: {@see forServer()} asks for it once per
+     * type otherwise, and building it walks every descriptor.
+     */
+    private function serverMetadata(string $serverName): ServerMetadataInterface
+    {
+        return $this->metadataByServer[$serverName] ??= $this->metadata->forServer($serverName);
     }
 
     private function schemaId(string $type): string
