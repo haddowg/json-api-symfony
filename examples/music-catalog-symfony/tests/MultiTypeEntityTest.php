@@ -76,20 +76,24 @@ final class MultiTypeEntityTest extends MusicCatalogKernelTestCase
 
     #[Test]
     #[Group('spec:multi-server')]
-    public function theTwoTypesAreServedOnDistinctServers(): void
+    public function theFullRecordNeverLeavesTheAdminServer(): void
     {
-        // `public-profiles` is on the default server, `users` only on admin: the two
-        // views of the one entity never collide. Asserted against the booted route
-        // collection rather than by issuing a request to an absent path (an unrouted
-        // path logs a NotFoundHttpException PHPUnit flags as risky — the convention
-        // MultiServerTest follows).
+        // The two views never collide: `users` is routed under /admin and nowhere
+        // else, so no default-server client can reach the full record — the point of
+        // the split. The curated `public-profiles` view is routed on both surfaces
+        // (a playlist's `publicOwner` relation returns one wherever playlists are
+        // served), which costs nothing: it carries the display name and no more.
+        //
+        // Asserted against the booted route collection rather than by issuing a
+        // request to an absent path (an unrouted path logs a NotFoundHttpException
+        // PHPUnit flags as risky — the convention MultiServerTest follows).
         $paths = $this->routePaths();
-
-        self::assertContains('/public-profiles/{id}', $paths);
-        self::assertNotContains('/admin/public-profiles/{id}', $paths);
 
         self::assertContains('/admin/users/{id}', $paths);
         self::assertNotContains('/users/{id}', $paths);
+
+        self::assertContains('/public-profiles/{id}', $paths);
+        self::assertContains('/admin/public-profiles/{id}', $paths);
     }
 
     #[Test]

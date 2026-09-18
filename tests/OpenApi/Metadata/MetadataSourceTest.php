@@ -731,7 +731,12 @@ class ArticleResource extends AbstractResource
             Id::make(),
             Str::make('title'),
             BelongsTo::make('author', 'people')->describedAs('The article author'),
-            HasMany::make('comments', 'comments')->countable(),
+            // `comments` is not registered on this server, so the relation is
+            // linkage-only: a related endpoint would have to return a `comments`
+            // resource object the server cannot describe, and the projector refuses
+            // one. Its linkage, its countability and its pruned include path are all
+            // still witnessed.
+            HasMany::make('comments', 'comments')->countable()->withoutRelatedEndpoint(),
         ];
     }
 

@@ -8,6 +8,8 @@ use haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
+use haddowg\JsonApiBundle\Tests\Functional\App\Resource\AuthorResource;
+use haddowg\JsonApiBundle\Tests\Functional\App\Resource\CommentResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\DefaultFilterArticleResource;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
@@ -81,6 +83,30 @@ final class DefaultFilterInMemoryTestKernel extends Kernel
             ->autoconfigure();
 
         $services->set(DefaultFilterArticleResource::class);
+
+        // The article's `author`/`comments` related endpoints return these types, so
+        // the server has to register them — a related endpoint returns its target as
+        // primary data, and ServableResourceWarmer fails the boot otherwise.
+        $services->set(AuthorResource::class);
+        $services->set(CommentResource::class);
+
+        $services->set('test.authors_provider', InMemoryDataProvider::class)
+            ->factory([ArticleProviderFactory::class, 'createAuthors'])
+            ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+
+        $services->set('test.authors_persister', InMemoryDataPersister::class)
+            ->factory([ArticleProviderFactory::class, 'authorsPersister'])
+            ->args([service('test.authors_provider')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
+
+        $services->set('test.comments_provider', InMemoryDataProvider::class)
+            ->factory([ArticleProviderFactory::class, 'createComments'])
+            ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+
+        $services->set('test.comments_persister', InMemoryDataPersister::class)
+            ->factory([ArticleProviderFactory::class, 'commentsPersister'])
+            ->args([service('test.comments_provider')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
 
         $services->set('test.articles_provider', InMemoryDataProvider::class)
             ->factory([ArticleProviderFactory::class, 'createArticles'])

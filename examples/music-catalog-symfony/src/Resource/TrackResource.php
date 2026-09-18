@@ -29,6 +29,10 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Serializer\TrackSerializer;
  * bound constructor arg, proving DI resolution) while this resource still hydrates
  * writes — read and write capabilities resolved independently.
  *
+ * It is registered on both servers because {@see AlbumResource} is, and an album's
+ * `tracks` relation exposes `GET /albums/{id}/tracks` — that endpoint returns track
+ * resource objects, so `tracks` has to exist on every server that serves albums.
+ *
  * Field/relation declarations are re-themed verbatim from core's in-memory
  * {@see https://github.com/haddowg/json-api/blob/main/examples/music-catalog/src/Resource/TrackResource.php TrackResource}:
  * an `ArrayList` with per-item rules; a `storedAs()` column rename
@@ -36,7 +40,7 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Serializer\TrackSerializer;
  * `like` text filter on `title`; a `belongsTo` to-one (`album`) and a plain
  * `belongsToMany` to-many (`playlists`) that prohibits full replacement.
  */
-#[AsJsonApiResource(entity: Track::class, serializer: TrackSerializer::class)]
+#[AsJsonApiResource(entity: Track::class, server: ['default', 'admin'], serializer: TrackSerializer::class)]
 final class TrackResource extends AbstractResource
 {
     public static string $type = 'tracks';

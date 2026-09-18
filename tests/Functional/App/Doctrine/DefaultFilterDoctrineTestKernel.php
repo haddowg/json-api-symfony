@@ -112,6 +112,10 @@ final class DefaultFilterDoctrineTestKernel extends Kernel
             ->autoconfigure();
 
         $services->set(DoctrineDefaultFilterArticleResource::class);
+        // The article's `author`/`comments` related endpoints return these types, so the
+        // server has to register them (ServableResourceWarmer fails the boot otherwise).
+        $services->set(DoctrineAuthorResource::class);
+        $services->set(DoctrineCommentResource::class);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

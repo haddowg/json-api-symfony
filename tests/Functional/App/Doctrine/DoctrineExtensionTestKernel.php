@@ -114,6 +114,10 @@ final class DoctrineExtensionTestKernel extends Kernel
             ->autoconfigure();
 
         $services->set(DoctrineArticleResource::class);
+        // The article's `author`/`comments` related endpoints return these types, so the
+        // server has to register them (ServableResourceWarmer fails the boot otherwise).
+        $services->set(DoctrineAuthorResource::class);
+        $services->set(DoctrineCommentResource::class);
 
         // Autoconfiguration alone wires the extension into the provider.
         $services->set(GuideOnlyArticlesExtension::class);

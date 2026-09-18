@@ -85,9 +85,15 @@ use haddowg\JsonApiBundle\Hook\ResourceLifecycleHooksTrait;
  * a UUID id; a read-only `slug` derived from `title` by the custom hydrator; a
  * `belongsTo` owner; a plain `belongsToMany` `tracks`; and the pivot-backed
  * `belongsToMany` `orderedTracks`, both paginating two-per-page.
+ *
+ * It is registered on both servers because {@see TrackResource} is (a track's
+ * `playlists` relation exposes `GET /tracks/{id}/playlists`, which returns playlist
+ * resource objects) and because a user's `playlists` relation does the same under
+ * `/admin`.
  */
 #[AsJsonApiResource(
     entity: Playlist::class,
+    server: ['default', 'admin'],
     hydrator: PlaylistHydrator::class,
     securityUpdate: "is_granted('EDIT', object)",
     securityDelete: "is_granted('ROLE_ADMIN')",
@@ -117,19 +123,25 @@ final class PlaylistResource extends AbstractResource implements ResourceLifecyc
             // join table, so it carries no pivot data (see `orderedTracks` below for
             // the pivot-bearing variant).
             //
-            // `owner` targets the admin-only `users` type — the full record. The
-            // `users` resource lives on the `admin` server, so this linkage points at
-            // a type a default-server client cannot dereference; it is the
-            // privileged-surface owner reference.
+            // `owner` targets the admin-only `users` type — the full record — and is
+            // therefore **linkage-only**: `withoutRelatedEndpoint()` drops
+            // `GET /playlists/{id}/owner` and its `related` link, because `users` is not
+            // registered on the default server and an endpoint returning a `users`
+            // resource object cannot be served there. A linkage `{type: users, id}`
+            // asserts no shape, so it stands on its own; an admin client dereferences it
+            // at `/admin/users/{id}`. This is the third resolution the projector offers,
+            // worked in the demo — see `docs/relationships.md`.
             //
             // It is the **per-relation security** witness (bundle ADR 0100): the playlist
             // itself is publicly readable, but WHO owns it (the full user reference) is
             // privileged, so the relation declares its own read gate — `security(read:
-            // "is_granted('ROLE_ADMIN')")`. Its related/relationship read endpoints become
+            // "is_granted('ROLE_ADMIN')")`. Its relationship read endpoint becomes
             // admin-only, OVERRIDING the (ungated) parent, while `publicOwner` below — the
             // curated public view of the same User — stays open. A relation thus authorizes
             // independently of the resource it hangs off. See `docs/authorization.md`.
-            BelongsTo::make('owner', 'users')->security(read: "is_granted('ROLE_ADMIN')"),
+            BelongsTo::make('owner', 'users')
+                ->security(read: "is_granted('ROLE_ADMIN')")
+                ->withoutRelatedEndpoint(),
             // The **one-entity-two-types** witness: a SECOND relation reading the SAME
             // `owner` ManyToOne column (`storedAs('owner')`) but declaring its target as
             // the curated `public-profiles` type ({@see PublicProfileResource}, the same

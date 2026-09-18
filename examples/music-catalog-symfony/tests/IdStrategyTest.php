@@ -41,7 +41,7 @@ final class IdStrategyTest extends MusicCatalogKernelTestCase
             'data' => [
                 'type' => 'favorites',
                 'attributes' => ['favoritedAt' => '2024-07-01T00:00:00+00:00'],
-                'relationships' => ['user' => ['data' => ['type' => 'users', 'id' => '1']]],
+                'relationships' => ['user' => ['data' => ['type' => 'public-profiles', 'id' => '1']]],
             ],
         ]);
 
