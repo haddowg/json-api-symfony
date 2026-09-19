@@ -198,7 +198,7 @@ final class WriteOnlyAttributeTest extends MusicCatalogKernelTestCase
     }
 
     /**
-     * @param array<string, mixed> $resource
+     * @param array<array-key, mixed> $resource a decoded resource object, primary or included
      *
      * @return array<string, mixed>
      */
