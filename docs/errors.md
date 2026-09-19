@@ -311,6 +311,86 @@ Two render paths exist, and the `code` member tells you which:
   or arm 3 (`Internal Server Error`, the generic 500). These are the bundle's
   status-keyed shapes for failures that originated outside core's vocabulary.
 
+## Documenting your own error codes
+
+Core catalogues its own error codes in the generated OpenAPI document: one named
+schema variant per code, offered from `ErrorDocument.errors.items` by an `anyOf` a
+generated client can dispatch on. Your application's codes join them when you say
+where they are.
+
+An error that wants a place in the catalogue implements core's
+`DescribedErrorInterface`, which reads the code, status and title off the class —
+nothing is constructed to describe it:
+
+```php
+use haddowg\JsonApi\Exception\AbstractJsonApiException;
+use haddowg\JsonApi\Exception\DescribedErrorInterface;
+use haddowg\JsonApi\Exception\ErrorDescriptor;
+
+final class PaymentRequired extends AbstractJsonApiException implements DescribedErrorInterface
+{
+    public function __construct()
+    {
+        parent::__construct('This operation requires an active subscription.', self::describe()->status);
+    }
+
+    public static function describe(): ErrorDescriptor
+    {
+        return new ErrorDescriptor(code: 'PAYMENT_REQUIRED', status: 402, title: 'Payment required');
+    }
+
+    public function getErrors(): array
+    {
+        return [self::describe()->toError(detail: $this->getMessage())];
+    }
+}
+```
+
+Point the bundle at the directory it lives in:
+
+```yaml
+# config/packages/json_api.yaml
+json_api:
+    error_codes:
+        paths:
+            - '%kernel.project_dir%/src/Exception'
+```
+
+Each listed directory is walked at **container build time**, so a request never
+touches the filesystem, and the compiled container is rebuilt when a file under one
+of them changes. Nothing outside these paths is scanned and the default is none: an
+exception reaches your published contract only because you named the directory it
+sits in. That scoping is the point — a described error left in a test fixture or a
+scratch namespace would otherwise become part of the API's contract by accident.
+
+For a class no scan reaches — one in a vendored package, one generated into a cache
+directory — register a source naming it. Core's `ClassListErrorSource` is the escape
+hatch, and autoconfiguration tags any `ErrorCatalogSourceInterface` service
+(`haddowg.json_api.error_source`), so there is nothing else to wire:
+
+```yaml
+services:
+    app.jsonapi.error_source:
+        class: haddowg\JsonApi\Exception\ClassListErrorSource
+        arguments:
+            - 'Acme\Billing\Exception\CardDeclined'
+            - 'Acme\Billing\Exception\ChargebackFiled'
+```
+
+Write your own `ErrorCatalogSourceInterface` when the class list is computed rather
+than written down; it yields class-strings, never descriptors.
+
+Two codes claiming the same `code` string is a container-build failure, not a
+last-one-wins merge: a `code` is what a client dispatches on, so publishing one
+class's status and title under another's would be a lie. The catalogue stays
+**open** either way — the `anyOf` leads with the generic `Error`, so an error
+carrying a code you never declared is still a valid error object
+([core ADR 0136](https://github.com/haddowg/json-api/blob/main/docs/adr/0136-the-projected-error-code-catalogue-is-open.md)).
+
+Contributed codes are documented on every server this bundle declares. An exception
+class is not server-scoped the way a resource is, so there is no per-server
+registration to get wrong.
+
 ## Localizing and overriding error copy
 
 Every error's `title` and `detail` are message templates core resolves per stable
