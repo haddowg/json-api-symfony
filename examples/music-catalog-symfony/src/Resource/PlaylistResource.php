@@ -196,9 +196,16 @@ final class PlaylistResource extends AbstractResource implements ResourceLifecyc
                 // member at pivot position 2; `?sort=position` still works zero-config (a
                 // pivot SORT auto-derives). Declaring the field alone no longer wires the
                 // filter — declare each pivot filter you want to expose.
+                //
+                // `->integer()` is worth the keystrokes even though the pivot field above
+                // already says `Integer`. The value cast is resolved by THIS bundle from
+                // the `pivot.` prefix, which core knows nothing about — a prefix is an
+                // ORM convention, not a core one — so the OpenAPI projector cannot read a
+                // type off `pivot.position` the way it would off a plain column, and
+                // without the constraint the documented value stays untyped.
                 ->withFilters(
-                    Where::make('position', 'pivot.position'),
-                    Where::make('weight', 'pivot.weight'),
+                    Where::make('position', 'pivot.position')->integer(),
+                    Where::make('weight', 'pivot.weight')->integer(),
                 )
                 ->extractUsing(static function (mixed $playlist): array {
                     // The generic engine instantiates the entity without its

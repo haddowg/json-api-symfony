@@ -734,15 +734,23 @@ count, clear of the reserved `jsonapi_` prefix.
 
 > **Describe a custom filter in the OpenAPI document.** A custom `FilterInterface` with
 > no value constraints projects an opaque, permissive `filter[…]` parameter with a
-> generic description. Implement
-> [`DescribedFilter`](https://github.com/haddowg/json-api/blob/main/src/Resource/Filter/DescribedFilter.php)
-> (`getDescription(): ?string`) on the filter VO to give that parameter its own prose —
-> the same hook the convenience filter library uses. A filter with a **structured** wire
-> shape (a nested object, a comma-list) additionally implements core's
-> [`DescribesQueryParameter`](https://github.com/haddowg/json-api/blob/main/src/Resource/Filter/DescribesQueryParameter.php)
-> to declare its OAS `style`/`explode` and value schema — so it documents as a `deepObject`
-> or array rather than a scalar. (Built-in and `Where`/`Range`-derived filters already
-> self-describe.)
+> generic description. Two opt-in core interfaces fix that, and a custom filter gets
+> neither by accident:
+>
+> - [`DescribedFilter`](https://github.com/haddowg/json-api/blob/main/src/Resource/Filter/DescribedFilter.php)
+>   (`getDescription(): ?string`) gives the parameter its own prose — the same hook the
+>   convenience filter library uses.
+> - [`DescribesQueryParameter`](https://github.com/haddowg/json-api/blob/main/src/Resource/Filter/DescribesQueryParameter.php)
+>   declares the parameter envelope: the value schema plus the OAS `style`/`explode` for a
+>   **structured** wire shape, so a nested object or comma-list documents as a `deepObject`
+>   or array rather than a scalar. A *scalar* custom filter wants it too whenever core
+>   cannot infer the value type for itself — core defaults an unconstrained filter's value
+>   from the single column it targets, so a filter that targets several columns (or none)
+>   documents untyped until it describes itself. The example's
+>   [`FullTextSearch`](../examples/music-catalog-symfony/src/Query/FullTextSearch.php)
+>   searches several columns and returns a `string` schema for exactly this reason.
+>
+> (Built-in and `Where`/`Range`-derived filters already self-describe.)
 
 ## Column safety
 
@@ -818,8 +826,8 @@ target column is **`pivot.`-prefixed**:
 BelongsToMany::make('orderedTracks', 'tracks')
     ->fields(Integer::make('position'), Integer::make('weight'))
     ->withFilters(
-        Where::make('position', 'pivot.position'),   // filter[position] on the join column
-        Where::make('weight', 'pivot.weight'),
+        Where::make('position', 'pivot.position')->integer(),   // filter[position] on the join column
+        Where::make('weight', 'pivot.weight')->integer(),
     ),
 ```
 

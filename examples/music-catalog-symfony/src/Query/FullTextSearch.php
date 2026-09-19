@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Query;
 
+use haddowg\JsonApi\OpenApi\QueryParameterShape;
+use haddowg\JsonApi\OpenApi\Schema;
 use haddowg\JsonApi\Resource\Filter\DescribedFilter;
+use haddowg\JsonApi\Resource\Filter\DescribesQueryParameter;
 
 /**
  * A demonstrator **custom full-text filter**: `filter[<key>]=term` keeps a resource
@@ -15,10 +18,19 @@ use haddowg\JsonApi\Resource\Filter\DescribedFilter;
  * execute it. The example serves over Doctrine, so it ships the Doctrine arm only; a
  * portable filter would additionally ship an `ArrayFilterArmInterface` witness.
  *
- * Implements {@see DescribedFilter} so the OpenAPI generator surfaces a meaningful
- * description on the `filter[<key>]` parameter rather than the generic default.
+ * Two opt-in OpenAPI seams carry the rest of the declaration, because a custom filter
+ * gets nothing by accident:
+ *
+ *  - {@see DescribedFilter} surfaces a meaningful description on the `filter[<key>]`
+ *    parameter rather than the generic per-key default.
+ *  - {@see DescribesQueryParameter} types the value. The projector defaults an
+ *    unconstrained filter's value from the single column the filter targets (core ADR
+ *    0138), and this one targets several — so there is no column to read a type off,
+ *    and core honestly leaves the value untyped. Describing the parameter is how a
+ *    multi-column filter says what only it can know: the wire value is one search
+ *    string.
  */
-final class FullTextSearch implements DescribedFilter
+final class FullTextSearch implements DescribedFilter, DescribesQueryParameter
 {
     /**
      * @param list<string> $fields the entity field names searched (OR-ed together)
@@ -52,5 +64,17 @@ final class FullTextSearch implements DescribedFilter
             'Case-insensitive substring search across %s.',
             \implode(', ', $this->fields),
         );
+    }
+
+    /**
+     * The search term is a plain scalar, so the parameter keeps the projector's default
+     * envelope (no `style`/`explode`) and only gains a type. `$valueSchema` is whatever
+     * {@see constraints()} projected — empty here, but adding the type rather than
+     * replacing the schema is the habit that keeps a later constraint from being
+     * silently dropped.
+     */
+    public function describeQueryParameter(Schema $valueSchema): QueryParameterShape
+    {
+        return new QueryParameterShape($valueSchema->withType('string'));
     }
 }
