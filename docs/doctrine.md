@@ -733,9 +733,9 @@ parameter (never interpolate it), deriving a collision-free name off the running
 count, clear of the reserved `jsonapi_` prefix.
 
 > **Describe a custom filter in the OpenAPI document.** A custom `FilterInterface` with
-> no value constraints projects an opaque, permissive `filter[…]` parameter with a
-> generic description. Two opt-in core interfaces fix that, and a custom filter gets
-> neither by accident:
+> no value constraints projects a plain `string` `filter[…]` parameter with a generic
+> description — accurate, but nothing a reader learns from. Two opt-in core interfaces
+> fix that, and a custom filter gets neither by accident:
 >
 > - [`DescribedFilter`](https://github.com/haddowg/json-api/blob/main/src/Resource/Filter/DescribedFilter.php)
 >   (`getDescription(): ?string`) gives the parameter its own prose — the same hook the
@@ -743,12 +743,14 @@ count, clear of the reserved `jsonapi_` prefix.
 > - [`DescribesQueryParameter`](https://github.com/haddowg/json-api/blob/main/src/Resource/Filter/DescribesQueryParameter.php)
 >   declares the parameter envelope: the value schema plus the OAS `style`/`explode` for a
 >   **structured** wire shape, so a nested object or comma-list documents as a `deepObject`
->   or array rather than a scalar. A *scalar* custom filter wants it too whenever core
->   cannot infer the value type for itself — core defaults an unconstrained filter's value
->   from the single column it targets, so a filter that targets several columns (or none)
->   documents untyped until it describes itself. The example's
+>   or array rather than a scalar. A *scalar* custom filter wants it whenever its value is
+>   narrower than core can work out — core types an unconstrained filter's value from the
+>   single column it targets, and a filter targeting several columns (or none) falls back
+>   to the `string` a query parameter is on the wire. The example's
 >   [`FullTextSearch`](../examples/music-catalog-symfony/src/Query/FullTextSearch.php)
->   searches several columns and returns a `string` schema for exactly this reason.
+>   searches several columns and declares that `string` itself, which is what the fallback
+>   would have given it — the declaration starts earning its keep the moment the wire shape
+>   stops being a plain scalar.
 >
 > (Built-in and `Where`/`Range`-derived filters already self-describe.)
 

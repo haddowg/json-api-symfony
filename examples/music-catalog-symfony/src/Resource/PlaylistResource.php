@@ -202,7 +202,8 @@ final class PlaylistResource extends AbstractResource implements ResourceLifecyc
                 // the `pivot.` prefix, which core knows nothing about — a prefix is an
                 // ORM convention, not a core one — so the OpenAPI projector cannot read a
                 // type off `pivot.position` the way it would off a plain column, and
-                // without the constraint the documented value stays untyped.
+                // without the constraint the documented value falls back to a plain
+                // `string` rather than the integer it really is.
                 ->withFilters(
                     Where::make('position', 'pivot.position')->integer(),
                     Where::make('weight', 'pivot.weight')->integer(),
