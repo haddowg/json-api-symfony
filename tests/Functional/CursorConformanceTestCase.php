@@ -47,24 +47,26 @@ abstract class CursorConformanceTestCase extends JsonApiFunctionalTestCase
         [$ids, $links] = $this->page('/cursorWidgets?sort=priority,id&page[size]=2');
         self::assertSame(['2', '7'], $ids);
 
-        $last = null;
         $path = '/cursorWidgets?sort=priority,id&page[size]=2';
         $seen = 0;
+        $guard = 0;
         while (true) {
             [$ids, $links] = $this->page($path);
             $seen += \count($ids);
             if (!isset($links['next'])) {
-                $last = $links;
-
                 break;
             }
             $path = $this->relativePath($this->href($links['next']));
-            self::assertLessThan(10, ++$seen, 'paging must terminate');
+            self::assertLessThan(10, ++$guard, 'paging must terminate');
         }
 
-        self::assertNotNull($last);
-        self::assertArrayNotHasKey('next', $last);
-        self::assertArrayHasKey('prev', $last);
+        // The page the walk stopped on must be the one that exhausts the fixture (8 rows
+        // over 4 pages of 2), not an earlier page that dropped its `next`. That failure
+        // also lands here on a prev-bearing page, so the link assertions alone cannot
+        // see it.
+        self::assertSame(8, $seen, 'the walk must terminate having visited every row');
+        self::assertArrayNotHasKey('next', $links);
+        self::assertArrayHasKey('prev', $links);
     }
 
     #[Test]
