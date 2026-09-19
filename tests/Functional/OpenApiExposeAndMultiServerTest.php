@@ -14,9 +14,9 @@ use Symfony\Component\Routing\RouterInterface;
 
 /**
  * The expose-gate (D9) and multi-server (D5) document witnesses: a non-exposed kernel
- * registers no docs route; a per-server kernel serves a per-server document at
- * `/docs.json` and `/admin/docs.json`; the combined mode serves one document at the
- * json path only.
+ * registers no docs route and advertises no `describedby`; a per-server kernel serves a
+ * per-server document at `/docs.json` and `/admin/docs.json`; the combined mode serves
+ * one document at the json path only.
  *
  * Each test boots the specific kernel it needs (rather than one shared kernel), so it
  * snapshots/restores the global error/exception-handler stack itself (booting a kernel
@@ -58,6 +58,24 @@ final class OpenApiExposeAndMultiServerTest extends \Symfony\Bundle\FrameworkBun
         self::assertNotContains('/docs.json', $paths);
         self::assertNotContains('/docs', $paths);
         self::assertNotContains('/schemas.json', $paths);
+
+        $kernel->shutdown();
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    public function noDescribedbyLinkIsAdvertisedWhenTheDocumentIsNotExposed(): void
+    {
+        // describedby rides the same expose gate as the routes (D9/D14), so the negative
+        // of OpenApiServingTest::aJsonApiResponseCarriesADescribedbyLinkToTheServedDocument:
+        // with no document route emitted the link must be absent rather than dangle at a
+        // 404.
+        $kernel = new OpenApiExposeGateTestKernel('test', false);
+        $kernel->boot();
+
+        $body = $this->document($kernel, '/categories/1');
+
+        self::assertArrayNotHasKey('describedby', $this->asArray($body['links'] ?? null));
 
         $kernel->shutdown();
     }

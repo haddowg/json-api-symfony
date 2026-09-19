@@ -198,7 +198,10 @@ final class WriteOnlyAttributeTest extends MusicCatalogKernelTestCase
     }
 
     /**
-     * @param array<string, mixed> $resource
+     * A json_decode'd resource object carries no key-type guarantee, so the parameter
+     * takes the decoded shape rather than the narrowed one.
+     *
+     * @param array<array-key, mixed> $resource
      *
      * @return array<string, mixed>
      */
