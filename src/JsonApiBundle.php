@@ -910,6 +910,7 @@ final class JsonApiBundle extends AbstractBundle
                 '$servers' => service(ServerProvider::class),
                 '$types' => service(\haddowg\JsonApiBundle\Server\TypeMetadataResolver::class),
                 '$descriptors' => service(\haddowg\JsonApiBundle\Server\RouteDescriptorRegistry::class),
+                '$metadata' => service(\haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource::class),
                 '$enumDescriptionMode' => $enumMode,
             ]);
 
@@ -1163,9 +1164,10 @@ final class JsonApiBundle extends AbstractBundle
             ->tag('kernel.cache_warmer');
 
         // The symmetric build-time guard: every routed type must be SERVABLE — a read
-        // operation needs a DataProvider, a write operation a DataPersister, and an
-        // AbstractResource exactly one Id field — else the misconfiguration would only
-        // surface as a runtime 500 (or a silent `id: ""`). Also NOT optional.
+        // operation needs a DataProvider, a write operation a DataPersister, an
+        // AbstractResource exactly one Id field, and a related endpoint a target type
+        // this server registers — else the misconfiguration would only surface as a
+        // runtime 500 (or a silent `id: ""`). Also NOT optional.
         $services->set(\haddowg\JsonApiBundle\Server\ServableResourceWarmer::class)
             ->args([
                 '$servers' => service(ServerProvider::class),
@@ -1173,6 +1175,7 @@ final class JsonApiBundle extends AbstractBundle
                 '$providers' => service(\haddowg\JsonApiBundle\DataProvider\DataProviderRegistry::class),
                 '$persisters' => service(\haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry::class),
                 '$typeMetadata' => service(\haddowg\JsonApiBundle\Server\TypeMetadataResolver::class),
+                '$metadata' => service(\haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource::class),
                 '$serverNames' => \array_keys($servers),
             ])
             ->tag('kernel.cache_warmer');

@@ -93,10 +93,16 @@ final class UserResource extends AbstractResource { /* … */ }
 ```
 
 ```php
-// src/Resource/ArtistResource.php — default-only (no server: argument)
-#[AsJsonApiResource(entity: Artist::class)]
-final class ArtistResource extends AbstractResource { /* … */ }
+// src/Resource/FavoriteResource.php — default-only (no server: argument)
+#[AsJsonApiResource(entity: Favorite::class)]
+final class FavoriteResource extends AbstractResource { /* … */ }
 ```
+
+A shared type drags its related endpoints' targets along: `GET /admin/albums/1/artist`
+returns an `artists` resource object, so `artists` has to be registered on `admin` too.
+The example's `artists`, `tracks`, `playlists`, `libraries` and `public-profiles` are all
+shared for that reason. See
+[relationships](relationships.md#the-related-endpoints-target-must-be-registered-on-the-server).
 
 A type assigned to a server that isn't declared in `json_api.servers` is a
 build-time `LogicException` naming the offending type and listing the declared

@@ -120,7 +120,7 @@ final class RelationshipMutationTest extends MusicCatalogKernelTestCase
                 'type' => 'favorites',
                 'attributes' => ['favoritedAt' => '2024-06-01T00:00:00+00:00'],
                 'relationships' => [
-                    'user' => ['data' => ['type' => 'users', 'id' => '1']],
+                    'user' => ['data' => ['type' => 'public-profiles', 'id' => '1']],
                 ],
             ],
         ]);
@@ -134,8 +134,9 @@ final class RelationshipMutationTest extends MusicCatalogKernelTestCase
         self::assertNotSame('', $id);
 
         // The association persisted: read the FK straight off a freshly loaded entity
-        // (the rendered linkage for the admin-only `users` type is not the witness
-        // here — the database write is).
+        // (the rendered linkage is not the witness here — the database write is). The
+        // wire type is `public-profiles`, the curated view of the same User row the
+        // default server serves; the FK lands on the same column either way.
         self::assertSame('1', $this->persistedUserId($id));
     }
 

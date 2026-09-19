@@ -183,7 +183,7 @@ self::assertArrayHasKey('jsonapi.admin.albums.show', $names);
 Source: [`MultiServerTest`](../examples/music-catalog-symfony/tests/MultiServerTest.php).
 An admin-only type (`server: 'admin'`) gets only the namespaced name
 (`jsonapi.admin.users.show`); a default-only type (no `server:` argument) gets only
-the unprefixed one (`jsonapi.artists.show`).
+the unprefixed one (`jsonapi.favorites.show`).
 
 ## The route-defaults contract
 

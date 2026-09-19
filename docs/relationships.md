@@ -567,6 +567,14 @@ comparison — so a typed pivot column filters correctly with no extra wiring; a
 explicit `->deserializeUsing()` on the filter still wins. A filter with **no** `pivot.`
 prefix targets the related entity, exactly like any relation-scoped filter.
 
+The **documented** value type does not come along for free. Core types an
+unconstrained filter's OpenAPI value from the single column it targets, and `pivot.`
+means nothing to it — the prefix is this bundle's convention, not core's — so a pivot
+filter with no declared constraint documents as an untyped parameter. Add the
+constraint you would add to any other filter (`->integer()`, `->numeric()`,
+`->uuid()`, …) and you get both: a `400` on a mistyped value and a typed OpenAPI
+parameter.
+
 A pivot field declared `hidden()` is **filterable and sortable but never rendered**:
 `hidden()` gates rendering only, never query. The field stays out of each member's
 `meta.pivot`, yet a `pivot.`-prefixed filter (and `?sort=`) over its column still
@@ -834,6 +842,25 @@ to-many is a `403` and the existing set is untouched — witnessed by
 mismatch (a `POST`/`DELETE` against a to-one) is a separate `400`
 `RELATIONSHIP_TYPE_INAPPROPRIATE`; an unknown relation or missing parent is a
 `404`.
+
+### The related endpoint's target must be registered on the server
+
+`GET /albums/1/artist` returns an `artists` resource object as primary data, so the server
+serving it needs a serializer for `artists` and the OpenAPI document needs its field
+inventory. A relation that exposes its related endpoint to a type the server does not
+register is therefore a configuration error, and `cache:warmup` fails the build over it
+(the OpenAPI export refuses too, whichever runs first). Three ways out:
+
+- register the related type on that server as well;
+- point the relation at a **reduced second type** that is registered — the example does
+  this with `public-profiles` beside the admin-only `users`, both backed by the same
+  `User` entity;
+- declare the relation **linkage-only** with `withoutRelatedEndpoint()`. The linkage
+  `{"type": "users", "id": "1"}` asserts no shape, so an unregistered target is fine
+  there; the `related` link is omitted so nothing points at the 404.
+
+A type reached only as linkage never needs registering. It is exposing the endpoint that
+makes the claim.
 
 ## Controlling what can be included
 

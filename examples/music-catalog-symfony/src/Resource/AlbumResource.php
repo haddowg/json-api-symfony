@@ -176,6 +176,13 @@ final class AlbumResource extends AbstractResource
             // correlated EXISTS subquery rooted on the related `Artist`, never a
             // fetch-join, so it neither hydrates the relation nor multiplies rows). The
             // wire key carries the dots; the operator defaults to `=`.
+            //
+            // Its documented value stays UNTYPED on purpose. `artist.name` is a column
+            // on the related Artist, so core refuses to guess a type through the
+            // relationship path (core ADR 0138) — and the only way to override that here
+            // would be a value constraint asserting something narrower than "a string",
+            // which an artist name is not. An untyped value says "this library does not
+            // know"; a `pattern` invented to buy a type would say something false.
             WhereThrough::make('artist.name'),
             // --- The convenience filter library (G8b, core ADR 0075-0077; bundle ADR
             // 0082). Each is an intent-named strategy that bakes in its operator, value

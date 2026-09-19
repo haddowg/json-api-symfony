@@ -27,11 +27,16 @@ use haddowg\JsonApiBundle\Operation\Operation;
  * `public-profiles` under `/public-profiles/1`, each its own fields and serializer.
  *
  * Where `users` is admin-only (`server: 'admin'`) and exposes the full record —
- * email, birth date, last-seen IP, the write-only credential — this view lives on
- * the **default** server and renders only what a public profile should: the
- * display name. The private columns are simply never declared here, so no sparse
- * fieldset, include, or relationship can resurface them; the curation is the field
- * inventory, not a runtime filter.
+ * email, birth date, last-seen IP, the write-only credential — this view renders only
+ * what a public profile should: the display name. The private columns are simply never
+ * declared here, so no sparse fieldset, include, or relationship can resurface them;
+ * the curation is the field inventory, not a runtime filter.
+ *
+ * It is registered on both servers. The default surface is where it earns its keep —
+ * it is the only User view a default-server client can reach. It joins the `admin`
+ * server because {@see PlaylistResource} does, and a playlist's `publicOwner` relation
+ * exposes `GET /playlists/{id}/publicOwner`, which returns a `public-profiles`
+ * resource object wherever playlists are served.
  *
  * It is **read-only**: the operation allow-list omits create/update/delete (a
  * public profile is mutated through the `users` admin resource), so only
@@ -44,6 +49,7 @@ use haddowg\JsonApiBundle\Operation\Operation;
  */
 #[AsJsonApiResource(
     entity: User::class,
+    server: ['default', 'admin'],
     operations: [Operation::FetchCollection, Operation::FetchOne],
     tags: ['Library'],
 )]
