@@ -23,12 +23,14 @@ use haddowg\JsonApi\Resource\Filter\DescribesQueryParameter;
  *
  *  - {@see DescribedFilter} surfaces a meaningful description on the `filter[<key>]`
  *    parameter rather than the generic per-key default.
- *  - {@see DescribesQueryParameter} types the value. The projector defaults an
- *    unconstrained filter's value from the single column the filter targets (core ADR
- *    0138), and this one targets several — so there is no column to read a type off,
- *    and core honestly leaves the value untyped. Describing the parameter is how a
- *    multi-column filter says what only it can know: the wire value is one search
- *    string.
+ *  - {@see DescribesQueryParameter} declares the value's envelope. The projector types
+ *    an unconstrained filter's value from the single column it targets (core ADR 0138),
+ *    and this one targets several, so there is no column to read a type off and the
+ *    value falls to the `string` every query parameter is on the wire. The fallback and
+ *    this declaration agree here, which is the point of showing it: the seam is where a
+ *    filter states a wire shape only it knows, and the moment that shape stops being a
+ *    plain scalar — an object, a delimited list — the fallback is wrong and nothing
+ *    else can fix it.
  */
 final class FullTextSearch implements DescribedFilter, DescribesQueryParameter
 {

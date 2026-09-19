@@ -570,10 +570,11 @@ prefix targets the related entity, exactly like any relation-scoped filter.
 The **documented** value type does not come along for free. Core types an
 unconstrained filter's OpenAPI value from the single column it targets, and `pivot.`
 means nothing to it — the prefix is this bundle's convention, not core's — so a pivot
-filter with no declared constraint documents as an untyped parameter. Add the
+filter with no declared constraint documents as the plain `string` every query
+parameter is on the wire, not as the integer or date its column really holds. Add the
 constraint you would add to any other filter (`->integer()`, `->numeric()`,
-`->uuid()`, …) and you get both: a `400` on a mistyped value and a typed OpenAPI
-parameter.
+`->uuid()`, …) and you get both: a `400` on a mistyped value and the narrower OpenAPI
+type.
 
 A pivot field declared `hidden()` is **filterable and sortable but never rendered**:
 `hidden()` gates rendering only, never query. The field stays out of each member's
