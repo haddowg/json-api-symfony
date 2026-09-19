@@ -26,6 +26,9 @@ Thumbs.db
 
 # Agent tooling (transient worktrees / session state)
 /.claude/
+# Ad-hoc local OpenAPI exports. Generate them with json-api:openapi:export; a
+# committed copy only drifts from what the projector actually emits.
+/.workflows/
 
 # Local overrides
 /.env
