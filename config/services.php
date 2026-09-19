@@ -119,6 +119,10 @@ return static function (ContainerConfigurator $container): void {
         ->arg('$security', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Security\ResourceSecurityRegistry::class)->nullOnInvalid())
         ->arg('$descriptions', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\OpenApi\Metadata\ResourceDescriptionRegistry::class))
         ->arg('$configByServer', [])
+        // The application's described-error sources; filled by the ErrorCatalogPass from
+        // `json_api.error_codes.paths` + the ERROR_SOURCE_TAG services. Empty here so a
+        // container without the pass still builds.
+        ->arg('$errorSources', [])
         // The global Atomic Operations config (opt-in, default off): the same params
         // the JsonApiRouteLoader reads. When enabled, every server's OpenAPI document
         // gains the atomic POST {path} endpoint (mirroring the per-server route).

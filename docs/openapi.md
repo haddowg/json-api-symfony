@@ -400,6 +400,14 @@ document never carries a dangling security reference).
 final class PlaylistResource extends AbstractResource { /* … */ }
 ```
 
+### Your own error codes
+
+The document catalogues one named schema variant per error code the server can raise,
+so a generated client gets a typed exception per code rather than one opaque error
+type. Core's codes are always there; point `json_api.error_codes.paths` at the
+directory your own described errors live in and they join them. See
+[errors](errors.md#documenting-your-own-error-codes).
+
 ### Wholesale customisation (the decorator)
 
 For anything the projection can't express declaratively — a server variable, an extra

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\OpenApi\Metadata;
 
+use haddowg\JsonApi\Exception\ErrorCatalogSourceInterface;
 use haddowg\JsonApi\OpenApi\Metadata\OperationResponseInterface;
 use haddowg\JsonApi\OpenApi\Metadata\OperationType;
 use haddowg\JsonApi\OpenApi\Metadata\ServerMetadataInterface;
@@ -64,6 +65,7 @@ final class MetadataSource
      * @param array<string, ServerDocumentConfig> $configByServer the per-server document config (info / servers / tags / security), keyed by server name; a server with no entry uses defaults
      * @param bool                                 $atomicEnabled  whether the global Atomic Operations extension is enabled (`json_api.atomic_operations.enabled`); when true every server's document gains the atomic endpoint, mirroring the route loader
      * @param string                               $atomicPath     the path the per-server atomic endpoint is served at (`json_api.atomic_operations.path`, default `/operations`)
+     * @param list<ErrorCatalogSourceInterface>    $errorSources   the application's described-error sources, filled by the {@see \haddowg\JsonApiBundle\DependencyInjection\Compiler\ErrorCatalogPass}; every declared server contributes the same set, since an exception class is not server-scoped
      */
     public function __construct(
         private readonly ServerProvider $servers,
@@ -78,6 +80,7 @@ final class MetadataSource
         private readonly array $configByServer = [],
         private readonly bool $atomicEnabled = false,
         private readonly string $atomicPath = '/operations',
+        private readonly array $errorSources = [],
     ) {}
 
     /**
@@ -107,6 +110,7 @@ final class MetadataSource
             types: $types,
             atomicOperations: $this->atomicOperations(),
             profiles: $this->profileUris($server),
+            errorSources: $this->errorSources,
         );
     }
 
@@ -178,6 +182,7 @@ final class MetadataSource
             // reflects the default server's registered set (mirroring how the info block
             // and JSON:API version come from the default server).
             profiles: $this->profileUris($defaultServer),
+            errorSources: $this->errorSources,
         );
     }
 
