@@ -176,6 +176,14 @@ final class AlbumResource extends AbstractResource
             // correlated EXISTS subquery rooted on the related `Artist`, never a
             // fetch-join, so it neither hydrates the relation nor multiplies rows). The
             // wire key carries the dots; the operator defaults to `=`.
+            //
+            // It declares no value constraint on purpose. `artist.name` is a column on
+            // the related Artist, so core will not derive a narrower type through the
+            // relationship path (core ADR 0138) and the value documents as the plain
+            // `string` a query parameter is on the wire. A constraint would buy a
+            // narrower type and a `400` — but every constraint that fits here asserts
+            // something narrower than "a string", which an artist name is not, and an
+            // invented `pattern` would reject real names to buy a type nobody wanted.
             WhereThrough::make('artist.name'),
             // --- The convenience filter library (G8b, core ADR 0075-0077; bundle ADR
             // 0082). Each is an intent-named strategy that bakes in its operator, value

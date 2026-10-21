@@ -29,6 +29,11 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Query\FullTextSearch;
  * `TrackCountSort`; that computed sort needs a hand-written sort handler — not a
  * Doctrine push-down — so it is reintroduced in a later slice, not the Foundation.)
  *
+ * It is registered on both servers because {@see AlbumResource} is, and an album's
+ * `artist` relation exposes `GET /albums/{id}/artist` — a related endpoint returns
+ * the related type as primary data, so `artists` has to exist on every server that
+ * serves albums.
+ *
  * `securityRead: false` + `securityList: false` declare the artist catalogue
  * **fully public** — both `GET /artists/{id}` and `GET /artists` — even though the API
  * configures a document-level default (`bearer`). The booleans are documentation-only:
@@ -37,7 +42,7 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Query\FullTextSearch;
  * firewall already allows the anonymous reads). Contrast the expression-gated writes on
  * `PlaylistResource` and the collection gate on the test suite's `ownedWidgets`.
  */
-#[AsJsonApiResource(entity: Artist::class, securityRead: false, securityList: false)]
+#[AsJsonApiResource(entity: Artist::class, server: ['default', 'admin'], securityRead: false, securityList: false)]
 final class ArtistResource extends AbstractResource
 {
     public static string $type = 'artists';

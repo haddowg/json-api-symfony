@@ -4,11 +4,17 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Server;
 
+use haddowg\JsonApiBundle\Action\ActionRegistry;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
+use haddowg\JsonApiBundle\OpenApi\Metadata\IncludePathResolver;
+use haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource;
+use haddowg\JsonApiBundle\OpenApi\Metadata\TagNameResolver;
 use haddowg\JsonApiBundle\Operation\Operation;
+use haddowg\JsonApiBundle\Server\IdEncoderResolver;
 use haddowg\JsonApiBundle\Server\RelationsRegistry;
+use haddowg\JsonApiBundle\Server\ResourceLocator;
 use haddowg\JsonApiBundle\Server\RouteDescriptorRegistry;
 use haddowg\JsonApiBundle\Server\ServableResourceWarmer;
 use haddowg\JsonApiBundle\Server\ServerProvider;
@@ -79,12 +85,24 @@ final class ServableResourceWarmerTest extends TestCase
             $providerTypes,
         ));
 
+        $servers = new ServerProvider($this->throwingLocator());
+        $typeMetadata = new TypeMetadataResolver(new RelationsRegistry($this->throwingLocator()));
+
         return new ServableResourceWarmer(
-            new ServerProvider($this->throwingLocator()),
+            $servers,
             $descriptors,
             $providers,
             new DataPersisterRegistry([]),
-            new TypeMetadataResolver(new RelationsRegistry($this->throwingLocator())),
+            $typeMetadata,
+            new MetadataSource(
+                $servers,
+                $descriptors,
+                $typeMetadata,
+                new IdEncoderResolver(new ResourceLocator($this->throwingLocator(), [])),
+                new ActionRegistry($this->throwingLocator(), []),
+                new TagNameResolver(),
+                new IncludePathResolver($typeMetadata),
+            ),
             ['default'],
         );
     }

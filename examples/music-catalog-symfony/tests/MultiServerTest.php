@@ -18,7 +18,13 @@ use Symfony\Component\Routing\RouterInterface;
  *
  * Three resources exercise the three assignment shapes: `albums` is shared
  * (`server: ['default', 'admin']`), `users` is admin-only (`server: 'admin'`), and
- * `artists` is default-only (no `server:` argument → the implicit `default`).
+ * `favorites` is default-only (no `server:` argument → the implicit `default`).
+ *
+ * The catalogue types an album's or a user's related endpoints return — `artists`,
+ * `tracks`, `playlists`, `libraries`, `public-profiles` — are shared too: a related
+ * endpoint returns its target as primary data, so the target has to be registered
+ * wherever the parent is. No relation anywhere points at `favorites`, which is what
+ * makes it the clean default-only exemplar.
  *
  * Reachability is asserted against the booted route collection rather than by
  * issuing an HTTP request to an absent path — an unrouted path would surface as a
@@ -40,13 +46,13 @@ final class MultiServerTest extends MusicCatalogKernelTestCase
     {
         $paths = $this->routePaths();
 
-        // `artists` declares no `server:` argument, so it lands on the implicit
+        // `favorites` declares no `server:` argument, so it lands on the implicit
         // `default` server alone: reachable at the root, never under /admin.
-        self::assertContains('/artists/{id}', $paths);
-        self::assertNotContains('/admin/artists/{id}', $paths);
+        self::assertContains('/favorites/{id}', $paths);
+        self::assertNotContains('/admin/favorites/{id}', $paths);
 
         // The default server keeps the existing unprefixed route names.
-        self::assertArrayHasKey('jsonapi.artists.show', $this->routesByName());
+        self::assertArrayHasKey('jsonapi.favorites.show', $this->routesByName());
     }
 
     #[Test]
@@ -86,13 +92,13 @@ final class MultiServerTest extends MusicCatalogKernelTestCase
     #[Group('spec:multi-server')]
     public function theDefaultOnlyResourceResolvesTheDefaultServer(): void
     {
-        $response = $this->handle('/artists/1');
+        $response = $this->handle('/favorites/1');
         self::assertSame(200, $response->getStatusCode());
-        self::assertSame('artists', $this->primaryType($response));
+        self::assertSame('favorites', $this->primaryType($response));
 
         self::assertSame(
-            self::DEFAULT_BASE_URI . '/artists/1/relationships/albums',
-            $this->relationshipSelf($response, 'albums'),
+            self::DEFAULT_BASE_URI . '/favorites/1/relationships/favoritable',
+            $this->relationshipSelf($response, 'favoritable'),
         );
     }
 

@@ -23,6 +23,7 @@ use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineExtensionInterface;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineFilterArmInterface;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineSortArmInterface;
 use haddowg\JsonApiBundle\DependencyInjection\Compiler\DoctrineEntityMapPass;
+use haddowg\JsonApiBundle\DependencyInjection\Compiler\ErrorCatalogPass;
 use haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceDescriptionPass;
 use haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceLocatorPass;
 use haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceSecurityPass;
@@ -128,6 +129,17 @@ final class JsonApiBundle extends AbstractBundle
     public const string EXCEPTION_MAPPER_TAG = 'json_api.exception_mapper';
 
     /**
+     * Tag applied to every {@see \haddowg\JsonApi\Exception\ErrorCatalogSourceInterface}
+     * service — autoconfigured, so an application source needs nothing but the interface.
+     * {@see \haddowg\JsonApiBundle\DependencyInjection\Compiler\ErrorCatalogPass} collects
+     * them (descending tag `priority`) into the error catalogue every server's OpenAPI
+     * document projects, beside core's own codes. Use it for a described error the
+     * `json_api.error_codes.paths` scan does not reach — core's
+     * {@see \haddowg\JsonApi\Exception\ClassListErrorSource} names classes directly.
+     */
+    public const string ERROR_SOURCE_TAG = 'haddowg.json_api.error_source';
+
+    /**
      * Tag applied to a standalone {@see \haddowg\JsonApi\Serializer\SerializerInterface}
      * registered for a type via {@see AsJsonApiSerializer} — a serializer without an
      * {@see AbstractResource} (bundle ADR 0024). The tag carries the `type` it
@@ -208,6 +220,16 @@ final class JsonApiBundle extends AbstractBundle
                     ->info('Map an exception class (FQCN) to an HTTP status; a thrown instance renders as a JSON:API error with that status, reason-phrase title, and (in debug) its message as detail. A core JsonApiExceptionInterface always renders natively and is never overridden by this map. For richer errors (custom source/meta), implement ExceptionMapperInterface (bundle ADR 0073). Default empty.')
                     ->useAttributeAsKey('class')
                     ->integerPrototype()->end()
+                ->end()
+                ->arrayNode('error_codes')
+                    ->info('The error codes your application documents alongside core\'s in the OpenAPI catalogue. Each listed directory is scanned (recursively, at container build time) for classes implementing core\'s DescribedErrorInterface, and each one found becomes a named error component a generated client can dispatch on. Nothing outside these paths is scanned — the default is none — so an exception reaches your published contract only when you point at the directory it lives in. For a class no scan reaches, register an ErrorCatalogSourceInterface service (core ships ClassListErrorSource); autoconfiguration tags it.')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->arrayNode('paths')
+                            ->info('Directories scanned for DescribedErrorInterface classes, e.g. %kernel.project_dir%/src/Exception. Default empty.')
+                            ->scalarPrototype()->end()
+                        ->end()
+                    ->end()
                 ->end()
                 ->arrayNode('pagination')
                     ->info('Tuning for the server\'s default page-based paginator. See core docs/pagination.md.')
@@ -530,6 +552,10 @@ final class JsonApiBundle extends AbstractBundle
         // ConfiguredExceptionMapper reads to map a thrown app/third-party exception
         // to a JSON:API error. Default empty (no config mappings).
         $builder->setParameter('json_api.exceptions', $this->exceptionsConfig($config));
+        // The directories the ErrorCatalogPass scans for the application's own
+        // DescribedErrorInterface classes. Default empty — nothing is scanned until a
+        // path is named, so no stray described error can reach a published document.
+        $builder->setParameter(ErrorCatalogPass::PATHS_PARAMETER, $this->errorCodePathsConfig($config));
 
         // The full server map (ADR 0034): the implicit `default` server carries the
         // top-level base_uri/version, and each named server from `json_api.servers`
@@ -665,6 +691,12 @@ final class JsonApiBundle extends AbstractBundle
         // throwable that is not a core JsonApiExceptionInterface (bundle ADR 0073).
         $builder->registerForAutoconfiguration(ExceptionMapperInterface::class)
             ->addTag(self::EXCEPTION_MAPPER_TAG);
+
+        // Any app service contributing described-error classes is auto-tagged, so the
+        // ErrorCatalogPass folds its codes into the projected catalogue. This is the
+        // route in for an error class the `error_codes.paths` scan does not reach.
+        $builder->registerForAutoconfiguration(\haddowg\JsonApi\Exception\ErrorCatalogSourceInterface::class)
+            ->addTag(self::ERROR_SOURCE_TAG);
 
         // Any app service implementing the OpenAPI decorator seam is auto-tagged, so the
         // DocumentFactory applies it (priority-ordered) over the built document for every
@@ -833,6 +865,7 @@ final class JsonApiBundle extends AbstractBundle
         $container->addCompilerPass(new ResourceSecurityPass());
         $container->addCompilerPass(new ResponseHeadersPass());
         $container->addCompilerPass(new ResourceDescriptionPass());
+        $container->addCompilerPass(new ErrorCatalogPass());
     }
 
     /**
@@ -910,6 +943,7 @@ final class JsonApiBundle extends AbstractBundle
                 '$servers' => service(ServerProvider::class),
                 '$types' => service(\haddowg\JsonApiBundle\Server\TypeMetadataResolver::class),
                 '$descriptors' => service(\haddowg\JsonApiBundle\Server\RouteDescriptorRegistry::class),
+                '$metadata' => service(\haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource::class),
                 '$enumDescriptionMode' => $enumMode,
             ]);
 
@@ -1163,9 +1197,10 @@ final class JsonApiBundle extends AbstractBundle
             ->tag('kernel.cache_warmer');
 
         // The symmetric build-time guard: every routed type must be SERVABLE — a read
-        // operation needs a DataProvider, a write operation a DataPersister, and an
-        // AbstractResource exactly one Id field — else the misconfiguration would only
-        // surface as a runtime 500 (or a silent `id: ""`). Also NOT optional.
+        // operation needs a DataProvider, a write operation a DataPersister, an
+        // AbstractResource exactly one Id field, and a related endpoint a target type
+        // this server registers — else the misconfiguration would only surface as a
+        // runtime 500 (or a silent `id: ""`). Also NOT optional.
         $services->set(\haddowg\JsonApiBundle\Server\ServableResourceWarmer::class)
             ->args([
                 '$servers' => service(ServerProvider::class),
@@ -1173,6 +1208,7 @@ final class JsonApiBundle extends AbstractBundle
                 '$providers' => service(\haddowg\JsonApiBundle\DataProvider\DataProviderRegistry::class),
                 '$persisters' => service(\haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry::class),
                 '$typeMetadata' => service(\haddowg\JsonApiBundle\Server\TypeMetadataResolver::class),
+                '$metadata' => service(\haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource::class),
                 '$serverNames' => \array_keys($servers),
             ])
             ->tag('kernel.cache_warmer');
@@ -1502,6 +1538,33 @@ final class JsonApiBundle extends AbstractBundle
         }
 
         return $map;
+    }
+
+    /**
+     * The resolved `json_api.error_codes.paths`: the directories the
+     * {@see ErrorCatalogPass} scans for the application's own described-error classes.
+     * Empty (scan nothing) unless configured.
+     *
+     * @param array<string, mixed> $config
+     *
+     * @return list<string>
+     */
+    private function errorCodePathsConfig(array $config): array
+    {
+        $errorCodes = $config['error_codes'] ?? [];
+        $paths = \is_array($errorCodes) ? ($errorCodes['paths'] ?? []) : [];
+        if (!\is_array($paths)) {
+            return [];
+        }
+
+        $resolved = [];
+        foreach ($paths as $path) {
+            if (\is_string($path) && $path !== '') {
+                $resolved[] = $path;
+            }
+        }
+
+        return $resolved;
     }
 
     /**
