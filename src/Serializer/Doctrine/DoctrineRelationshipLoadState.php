@@ -71,9 +71,9 @@ final class DoctrineRelationshipLoadState implements RelationshipLoadStateInterf
             return true;
         }
 
-        // getReflectionProperty() spans the whole supported doctrine/orm ^3.0
-        // range; the non-deprecated getPropertyAccessor() only exists in newer
-        // 3.x, so it cannot be used while ORM 3.0 is supported. The deprecation is
+        // getReflectionProperty() spans the whole supported doctrine/orm
+        // ^2.20 || ^3.0 range; the non-deprecated getPropertyAccessor() only exists
+        // in newer 3.x, so it cannot be used yet. The deprecation is
         // docblock-only (no runtime notice); revisit when the ORM floor rises.
         $reflection = $metadata->getReflectionProperty($association);
         if ($reflection === null || !$reflection->isInitialized($model)) {

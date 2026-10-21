@@ -11,6 +11,7 @@ rest of the docs assume the steps here are done.
 | PHP | `^8.3` (8.3 / 8.4 / 8.5) |
 | Symfony | `^6.4 \|\| ^7.0 \|\| ^8.0` |
 | `symfony/framework-bundle` | required — the bundle relies on its services |
+| `doctrine/orm` | optional, `^2.20 \|\| ^3.0` — Composer refuses any other version |
 
 The hard runtime dependencies beyond Symfony are the PSR-7 bridge the kernel
 listeners use: `nyholm/psr7` (the PSR-7 implementation) and
@@ -127,7 +128,7 @@ bundle behaves without it) is on
 
 | Package | Enables |
 | --- | --- |
-| `doctrine/orm` | the reference Doctrine data provider / persister ([doctrine](doctrine.md)) |
+| `doctrine/orm` (`^2.20 \|\| ^3.0`) | the reference Doctrine data provider / persister ([doctrine](doctrine.md)) |
 | `symfony/validator` | the constraint bridge that validates writes ([validation](validation.md)) |
 | `symfony/doctrine-bridge` | the `UniqueEntity` entity-level rule ([validation](validation.md)) |
 | `egulias/email-validator` | strict (RFC 5322) email validation |
