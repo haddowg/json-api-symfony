@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.1.0](https://github.com/haddowg/json-api-symfony/compare/v1.0.0...v1.1.0) (2026-10-21)
+
+
+### Features
+
+* **openapi:** document the application's own error codes ([c6f608e](https://github.com/haddowg/json-api-symfony/commit/c6f608e4a14da7cc3e0765ab9919cf322f0078dd))
+* support doctrine/orm 2.20 ([#141](https://github.com/haddowg/json-api-symfony/issues/141)) ([da942c2](https://github.com/haddowg/json-api-symfony/commit/da942c20e416909990288dd4c83a2703cfe615a8))
+
+
+### Bug Fixes
+
+* **openapi:** register every type a related endpoint returns ([c6f608e](https://github.com/haddowg/json-api-symfony/commit/c6f608e4a14da7cc3e0765ab9919cf322f0078dd))
+
+
+### Miscellaneous Chores
+
+* add openapi and atomic-operations to composer keywords ([#137](https://github.com/haddowg/json-api-symfony/issues/137)) ([329d3aa](https://github.com/haddowg/json-api-symfony/commit/329d3aa6418e4efb22b741925a34a74aa5ce5dce))
+
 ## 1.0.0 (2026-07-13)
 
 
