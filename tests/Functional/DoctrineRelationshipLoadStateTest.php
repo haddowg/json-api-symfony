@@ -101,7 +101,8 @@ final class DoctrineRelationshipLoadStateTest extends JsonApiFunctionalTestCase
         self::assertFalse($predicate->isRelationshipLoaded($article, $relation));
 
         // The predicate must not have triggered a load while answering.
-        self::assertFalse($collection->isInitialized(), 'the predicate must answer without initialising the collection');
+        self::assertInstanceOf(PersistentCollection::class, $article->featuredComments);
+        self::assertFalse($article->featuredComments->isInitialized(), 'the predicate must answer without initialising the collection');
     }
 
     #[Test]
