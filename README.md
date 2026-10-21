@@ -22,6 +22,7 @@ for an identical domain, so a client generator consumes either backend unchanged
 
 - PHP 8.3, 8.4, or 8.5
 - Symfony 6.4, 7.x, or 8.x
+- Doctrine ORM 2.20 or 3.x, if you use the Doctrine data layer
 
 Doctrine, the validator, the opis linter, and strict email are **opt-in** (`suggest`
 dependencies) — install one to enable that capability, leave it out and the path is simply

@@ -154,13 +154,12 @@ final class PivotAssociationResolver
         $parentMetadata = $this->entityManager->getClassMetadata($parentClass);
 
         $matches = [];
-        foreach ($parentMetadata->getAssociationMappings() as $field => $mapping) {
-            if (!$parentMetadata->isCollectionValuedAssociation((string) $field)) {
+        foreach ($parentMetadata->getAssociationNames() as $field) {
+            if (!$parentMetadata->isCollectionValuedAssociation($field)) {
                 continue;
             }
 
-            /** @var class-string $candidateClass */
-            $candidateClass = $mapping->targetEntity;
+            $candidateClass = $parentMetadata->getAssociationTargetClass($field);
             $candidateMetadata = $this->entityManager->getClassMetadata($candidateClass);
 
             $farProperty = $this->singleValuedTargeting($candidateMetadata, $farClass);
@@ -210,13 +209,13 @@ final class PivotAssociationResolver
     {
         $targetName = $this->entityManager->getClassMetadata($targetClass)->getName();
 
-        foreach ($metadata->getAssociationMappings() as $field => $mapping) {
-            if (!$metadata->isSingleValuedAssociation((string) $field)) {
+        foreach ($metadata->getAssociationNames() as $field) {
+            if (!$metadata->isSingleValuedAssociation($field)) {
                 continue;
             }
 
-            if ($this->entityManager->getClassMetadata($mapping->targetEntity)->getName() === $targetName) {
-                return (string) $field;
+            if ($this->entityManager->getClassMetadata($metadata->getAssociationTargetClass($field))->getName() === $targetName) {
+                return $field;
             }
         }
 

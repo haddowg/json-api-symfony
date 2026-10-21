@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\DataPersister\Doctrine;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Mapping\ClassMetadata;
 use haddowg\JsonApi\Exception\ResourceNotFound;
 use haddowg\JsonApi\Hydrator\Relationship\ToManyRelationship;
 use haddowg\JsonApi\Hydrator\Relationship\ToOneRelationship;
@@ -400,15 +401,14 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
     {
         $metadata = $this->entityManager->getClassMetadata($parent::class);
 
-        foreach ($metadata->getAssociationMappings() as $field => $mapping) {
-            $field = (string) $field;
+        foreach ($metadata->getAssociationNames() as $field) {
             if (!$metadata->isCollectionValuedAssociation($field)) {
                 continue;
             }
-            if ($this->entityManager->getClassMetadata($mapping->targetEntity)->getName() !== $this->entityManager->getClassMetadata($association->entityClass)->getName()) {
+            if ($this->entityManager->getClassMetadata($metadata->getAssociationTargetClass($field))->getName() !== $this->entityManager->getClassMetadata($association->entityClass)->getName()) {
                 continue;
             }
-            if (($mapping['mappedBy'] ?? null) !== $association->parentProperty) {
+            if (!$this->isInverseOf($metadata, $field, $association->parentProperty)) {
                 continue;
             }
 
@@ -555,15 +555,14 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
         $metadata = $this->entityManager->getClassMetadata($parent::class);
         $entityName = $this->entityManager->getClassMetadata($association->entityClass)->getName();
 
-        foreach ($metadata->getAssociationMappings() as $field => $mapping) {
-            $field = (string) $field;
+        foreach ($metadata->getAssociationNames() as $field) {
             if (!$metadata->isCollectionValuedAssociation($field)) {
                 continue;
             }
-            if ($this->entityManager->getClassMetadata($mapping->targetEntity)->getName() !== $entityName) {
+            if ($this->entityManager->getClassMetadata($metadata->getAssociationTargetClass($field))->getName() !== $entityName) {
                 continue;
             }
-            if (($mapping['mappedBy'] ?? null) === $association->parentProperty) {
+            if ($this->isInverseOf($metadata, $field, $association->parentProperty)) {
                 return $field;
             }
         }
@@ -620,22 +619,20 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
     private function inverseOwningField(object $entity, string $property): ?string
     {
         $metadata = $this->entityManager->getClassMetadata($entity::class);
-        if (!$metadata->hasAssociation($property)) {
+        if (!$metadata->isAssociationInverseSide($property)) {
             return null;
         }
 
-        $mapping = $metadata->getAssociationMapping($property);
+        return $metadata->getAssociationMappedByTargetField($property);
+    }
 
-        if ($mapping->isOwningSide()) {
-            return null;
-        }
-
-        // `mappedBy` lives on the inverse-side mapping; read it through the
-        // mapping's array access so the lookup is robust across the ORM 3 mapping
-        // class hierarchy.
-        $mappedBy = $mapping['mappedBy'] ?? null;
-
-        return \is_string($mappedBy) ? $mappedBy : null;
+    /**
+     * @param ClassMetadata<object> $metadata
+     */
+    private function isInverseOf(ClassMetadata $metadata, string $field, string $owningField): bool
+    {
+        return $metadata->isAssociationInverseSide($field)
+            && $metadata->getAssociationMappedByTargetField($field) === $owningField;
     }
 
     /**

@@ -60,8 +60,11 @@
         "symfony/yaml": "^6.4 || ^7.0 || ^8.0",
         "zenstruck/foundry": "^2.10"
     },
+    "conflict": {
+        "doctrine/orm": "<2.20 || >=4.0"
+    },
     "suggest": {
-        "doctrine/orm": "Enables the reference Doctrine data provider/persister for zero-handler CRUD endpoints (^3.0).",
+        "doctrine/orm": "Enables the reference Doctrine data provider/persister for zero-handler CRUD endpoints (^2.20 || ^3.0).",
         "symfony/validator": "Enables translating JSON:API resource constraints into Symfony Validator rules for create/update validation (^6.4 || ^7.0 || ^8.0).",
         "symfony/security-core": "Enables declarative resource authorization: security expressions on #[AsJsonApiResource] are evaluated at the lifecycle hooks via the AuthorizationChecker, and an AccessDenied/Authentication exception maps to a 403/401 JSON:API error (^6.4 || ^7.0 || ^8.0).",
         "symfony/expression-language": "Enables the ECMA expression syntax used by the resource security expressions (it ships with symfony/security-core's ExpressionVoter) (^6.4 || ^7.0 || ^8.0).",

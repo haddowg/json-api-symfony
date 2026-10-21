@@ -853,13 +853,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             return false;
         }
 
-        $mapping = $metadata->getAssociationMapping($property);
-        $targetEntity = $mapping['targetEntity'] ?? null;
-        if (!\is_string($targetEntity)) {
-            return false;
-        }
-
-        return !$this->entityManager->getClassMetadata($targetEntity)->isIdentifierComposite;
+        return !$this->entityManager->getClassMetadata($metadata->getAssociationTargetClass($property))->isIdentifierComposite;
     }
 
     /**

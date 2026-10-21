@@ -179,21 +179,10 @@ final class RelationScope
     private function inverseOwningField(object $parent, string $property): ?string
     {
         $metadata = $this->entityManager->getClassMetadata($parent::class);
-        if (!$metadata->hasAssociation($property)) {
+        if (!$metadata->isAssociationInverseSide($property)) {
             return null;
         }
 
-        $mapping = $metadata->getAssociationMapping($property);
-
-        if ($mapping->isOwningSide()) {
-            return null;
-        }
-
-        // `mappedBy` lives on the inverse-side mapping; read it through the
-        // mapping's array access so the lookup is robust across the ORM 3 mapping
-        // class hierarchy.
-        $mappedBy = $mapping['mappedBy'] ?? null;
-
-        return \is_string($mappedBy) ? $mappedBy : null;
+        return $metadata->getAssociationMappedByTargetField($property);
     }
 }

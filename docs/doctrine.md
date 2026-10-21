@@ -31,6 +31,12 @@ The Doctrine layer is active only when **both** of these hold:
    [configuration.md](configuration.md)), and
 2. at least one resource maps an entity via `#[AsJsonApiResource(entity: …)]`.
 
+The layer supports `doctrine/orm` `^2.20 || ^3.0`, with whichever DBAL and
+`doctrine/persistence` that ORM version installs. The bundle declares a `conflict` on
+anything outside that range, so Composer refuses an ORM 2.19 or 4.0 at install time
+rather than the first relationship query failing at runtime. CI runs the full suite
+on ORM 3 and on ORM 2.20 with DBAL 3, `doctrine/persistence` 2.5 and Symfony 6.4.
+
 You map an entity on the resource attribute:
 
 ```php

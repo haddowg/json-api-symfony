@@ -51,16 +51,18 @@ final class WriteTransactionContextTest extends TestCase
             $log[] = 'third';
         });
 
-        // Nothing runs until drain.
-        self::assertSame([], $log);
-
+        $beforeDrain = $log;
         $context->drain();
+        $afterFirstDrain = $log;
+        $context->drain();
+
+        // Nothing runs until drain.
+        self::assertSame([], $beforeDrain);
 
         // FIFO: enqueue order is run order.
-        self::assertSame(['first', 'second', 'third'], $log);
+        self::assertSame(['first', 'second', 'third'], $afterFirstDrain);
 
         // The queue is cleared — a second drain runs nothing.
-        $context->drain();
         self::assertSame(['first', 'second', 'third'], $log);
     }
 

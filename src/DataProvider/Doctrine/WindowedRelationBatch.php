@@ -578,7 +578,7 @@ final class WindowedRelationBatch
      * read off the RSM's public field-mapping maps (`fieldMappings`: sqlColumnAlias =>
      * field; `columnOwnerMap`: sqlColumnAlias => dqlAlias). This deliberately avoids the
      * `getColumnAliasByField()`/`hasColumnAliasByField()` accessors, which doctrine/orm
-     * only added after 3.0, so the bundle keeps its `doctrine/orm: ^3.0` floor. A column
+     * 3.0 lacks, so the whole supported `^2.20 || ^3.0` range works. A column
      * the wrap must reference but the inner query never selected is a logic error.
      */
     private function fieldAlias(ResultSetMapping $rsm, string $dqlAlias, string $field): string
@@ -956,18 +956,11 @@ final class WindowedRelationBatch
      */
     private function inverseOwningField(ClassMetadata $parentMetadata, string $property): ?string
     {
-        if (!$parentMetadata->hasAssociation($property)) {
+        if (!$parentMetadata->isAssociationInverseSide($property)) {
             return null;
         }
 
-        $mapping = $parentMetadata->getAssociationMapping($property);
-        if ($mapping->isOwningSide()) {
-            return null;
-        }
-
-        $mappedBy = $mapping['mappedBy'] ?? null;
-
-        return \is_string($mappedBy) ? $mappedBy : null;
+        return $parentMetadata->getAssociationMappedByTargetField($property);
     }
 
     /**
