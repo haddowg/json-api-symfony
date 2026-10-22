@@ -18,7 +18,7 @@ final class CompositeWidgetFactory
     {
         return new InMemoryDataProvider(
             'composites',
-            ['1' => new CompositeWidget('1', 'Seed', ['street' => '1 High St', 'city' => 'London', 'postcode' => 'EC1'])],
+            ['1' => new CompositeWidget('1', 'Seed', ['street' => '1 High St', 'city' => 'London', 'postcode' => 'EC1'], prefs: [])],
             static function (object $item): string {
                 \assert($item instanceof CompositeWidget);
 

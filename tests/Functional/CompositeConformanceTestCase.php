@@ -6,7 +6,9 @@ namespace haddowg\JsonApiBundle\Tests\Functional;
 
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\HttpKernelInterface;
 
 /**
  * The composite-attribute conformance witness (core ADRs 0118–0121), run against
@@ -52,6 +54,7 @@ abstract class CompositeConformanceTestCase extends JsonApiFunctionalTestCase
             'address' => ['street' => '1 High St', 'city' => 'London', 'postcode' => 'EC1'],
             'block' => ['kind' => 'heading', 'text' => 'Hello', 'level' => 2],
             'contact' => ['kind' => 'phone', 'number' => '+44 20 7946 0000'],
+            'prefs' => ['theme' => 'dark'],
         ];
 
         $created = $this->handle('/composites', 'POST', [
@@ -195,6 +198,77 @@ abstract class CompositeConformanceTestCase extends JsonApiFunctionalTestCase
         }
     }
 
+    #[Test]
+    #[Group('spec:atomic')]
+    public function anAtomicResultKeepsAnEmptyMapAnObject(): void
+    {
+        // The seeded widget stores an empty `prefs` map. Its update result must carry
+        // `{}`, the same as a direct read; an associative decode can't tell `{}` from
+        // `[]`, so the raw body is the only honest witness.
+        $response = $this->atomic([
+            [
+                'op' => 'update',
+                'ref' => ['type' => 'composites', 'id' => '1'],
+                'data' => ['type' => 'composites', 'id' => '1', 'attributes' => ['name' => 'Renamed']],
+            ],
+        ]);
+
+        $body = (string) $response->getContent();
+        self::assertSame(200, $response->getStatusCode(), $body);
+        self::assertStringContainsString('"prefs":{}', $body);
+        self::assertStringNotContainsString('"prefs":[]', $body);
+    }
+
+    #[Test]
+    #[Group('spec:atomic')]
+    public function anAtomicResultKeepsANonEmptyMapUnchanged(): void
+    {
+        $response = $this->atomic([
+            [
+                'op' => 'update',
+                'ref' => ['type' => 'composites', 'id' => '1'],
+                'data' => ['type' => 'composites', 'id' => '1', 'attributes' => ['prefs' => ['theme' => 'dark']]],
+            ],
+        ]);
+
+        $body = (string) $response->getContent();
+        self::assertSame(200, $response->getStatusCode(), $body);
+        self::assertStringContainsString('"prefs":{"theme":"dark"}', $body);
+    }
+
+    #[Test]
+    #[Group('spec:atomic')]
+    public function anAtomicFailureDocumentCarriesNoEmptyArrayMembers(): void
+    {
+        // A returned 404 (a missing update target) and a thrown 422 (a value failing
+        // its object shape) take the two failure paths through the batch.
+        $missing = $this->atomic([
+            [
+                'op' => 'update',
+                'ref' => ['type' => 'composites', 'id' => '404'],
+                'data' => ['type' => 'composites', 'id' => '404', 'attributes' => ['name' => 'Ghost']],
+            ],
+        ]);
+        $invalid = $this->atomic([
+            [
+                'op' => 'update',
+                'ref' => ['type' => 'composites', 'id' => '1'],
+                'data' => ['type' => 'composites', 'id' => '1', 'attributes' => ['prefs' => 'not an object']],
+            ],
+        ]);
+
+        self::assertSame(404, $missing->getStatusCode(), (string) $missing->getContent());
+        self::assertSame(422, $invalid->getStatusCode(), (string) $invalid->getContent());
+        self::assertContains('/atomic:operations/0/data/attributes/prefs', $this->fieldPointersOf($invalid), (string) $invalid->getContent());
+
+        foreach ([$missing, $invalid] as $response) {
+            $body = (string) $response->getContent();
+            foreach (['source', 'links', 'meta', 'jsonapi'] as $member) {
+                self::assertStringNotContainsString('"' . $member . '":[]', $body);
+            }
+        }
+    }
+
     /**
      * @return list<string>
      */
@@ -202,6 +276,25 @@ abstract class CompositeConformanceTestCase extends JsonApiFunctionalTestCase
     {
         self::assertSame(422, $response->getStatusCode());
 
+        return $this->pointersOf($response);
+    }
+
+    /**
+     * The error pointers with any trailing `/` dropped: opis reports a whole-value
+     * violation at the instance root `/`, which core appends to the field pointer.
+     *
+     * @return list<string>
+     */
+    private function fieldPointersOf(Response $response): array
+    {
+        return \array_map(static fn(string $pointer): string => \rtrim($pointer, '/'), $this->pointersOf($response));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function pointersOf(Response $response): array
+    {
         $body = $this->decode($response);
         $errors = $body['errors'] ?? [];
         self::assertIsArray($errors);
@@ -216,5 +309,28 @@ abstract class CompositeConformanceTestCase extends JsonApiFunctionalTestCase
         }
 
         return $pointers;
+    }
+
+    /**
+     * Posts an Atomic Operations batch. Operation members may hold a `\stdClass`
+     * where the wire needs an empty object `{}`.
+     *
+     * @param list<array<string, mixed>> $operations
+     */
+    private function atomic(array $operations): Response
+    {
+        $kernel = static::$kernel;
+        self::assertNotNull($kernel);
+
+        $ext = 'application/vnd.api+json; ext="https://jsonapi.org/ext/atomic"';
+        $request = Request::create('/operations', 'POST', server: [
+            'CONTENT_TYPE' => $ext,
+            'HTTP_ACCEPT' => $ext,
+        ], content: \json_encode(['atomic:operations' => $operations], \JSON_THROW_ON_ERROR));
+
+        $response = $kernel->handle($request, HttpKernelInterface::MAIN_REQUEST, true);
+        $this->restoreHandlers();
+
+        return $response;
     }
 }

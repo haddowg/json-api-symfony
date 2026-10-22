@@ -664,7 +664,7 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
         }
 
         $resource = $fragment['data'] ?? null;
-        $id = \is_array($resource) ? ($resource['id'] ?? null) : null;
+        $id = $resource instanceof \stdClass ? ($resource->id ?? null) : null;
         if (!\is_string($id)) {
             return;
         }
@@ -677,6 +677,8 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
      * the only members the extension allows in a result object. The response is rendered
      * through core's own render seam ({@see \haddowg\JsonApi\Response\AbstractResponse::toPsrResponse()}),
      * then decoded, and only `data`/`meta` are kept (never `links`/`included`/`jsonapi`).
+     * The decode keeps JSON objects as `\stdClass` so an empty map the render wrote as
+     * `{}` is re-encoded into `atomic:results` as `{}`, not `[]`.
      *
      * @return array<string, mixed>
      */
@@ -690,15 +692,17 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
             return [];
         }
 
-        /** @var array<string, mixed> $decoded */
-        $decoded = \json_decode($body, true, 512, \JSON_THROW_ON_ERROR);
+        $decoded = \json_decode($body, false, 512, \JSON_THROW_ON_ERROR);
+        if (!$decoded instanceof \stdClass) {
+            return [];
+        }
 
         $fragment = [];
-        if (\array_key_exists('data', $decoded)) {
-            $fragment['data'] = $decoded['data'];
+        if (\property_exists($decoded, 'data')) {
+            $fragment['data'] = $decoded->data;
         }
-        if (\array_key_exists('meta', $decoded)) {
-            $fragment['meta'] = $decoded['meta'];
+        if (\property_exists($decoded, 'meta')) {
+            $fragment['meta'] = $decoded->meta;
         }
 
         return $fragment;

@@ -24,8 +24,10 @@ use haddowg\JsonApi\Resource\Field\Url;
  * exercise the validator bridge's translated cascade
  * (`/data/attributes/address/city`, `/data/attributes/block/level`); the Shape
  * exercises the core opis {@see \haddowg\JsonApi\Validation\SchemaValueValidator}
- * value-validation pass (`/data/attributes/contact/...`). All three store as a
- * single array — the shape a `json` column round-trips.
+ * value-validation pass (`/data/attributes/contact/...`). A second
+ * {@see ArrayHash} `prefs` only has to be a JSON object, so an empty `{}` is
+ * valid and an empty `[]` is not. Each stores as a single array — the shape a
+ * `json` column round-trips.
  */
 abstract class BaseCompositeWidgetResource extends AbstractResource
 {
@@ -60,6 +62,9 @@ abstract class BaseCompositeWidgetResource extends AbstractResource
                         ->withRequired(['kind', 'number']),
                 )->discriminator('kind'),
             ),
+            // A free-form map whose only rule is "a JSON object", so `{}` is valid and
+            // `[]` is not: the witness for object-preserving value validation.
+            ArrayHash::make('prefs')->nullable()->constrain(Shape::allOf(Schema::ofType('object'))),
         ];
     }
 }
