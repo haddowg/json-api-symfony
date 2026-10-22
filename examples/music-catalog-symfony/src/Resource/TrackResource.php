@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Resource;
 
+use haddowg\JsonApi\Pagination\CursorPaginator;
+use haddowg\JsonApi\Pagination\MultiPaginator;
+use haddowg\JsonApi\Pagination\OffsetPaginator;
+use haddowg\JsonApi\Pagination\PagePaginator;
+use haddowg\JsonApi\Pagination\PaginatorInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Constraint\MinLength;
 use haddowg\JsonApi\Resource\Field\ArrayList;
@@ -17,6 +22,7 @@ use haddowg\JsonApi\Resource\Field\Time;
 use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Filter\WhereIn;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
+use haddowg\JsonApiBundle\Examples\MusicCatalog\DataFixtures\SeedManifest;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Track;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Query\FullTextSearch;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Serializer\TrackSerializer;
@@ -39,6 +45,10 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Serializer\TrackSerializer;
  * (`durationSeconds` ← `length_seconds`); a computed read-only `displayTitle`; a
  * `like` text filter on `title`; a `belongsTo` to-one (`album`) and a plain
  * `belongsToMany` to-many (`playlists`) that prohibits full replacement.
+ *
+ * It is also the **pagination-menu witness**: {@see pagination()} offers page, cursor
+ * and offset strategies on the primary `tracks` collection, and the client picks one
+ * per request.
  */
 #[AsJsonApiResource(entity: Track::class, server: ['default', 'admin'], serializer: TrackSerializer::class)]
 final class TrackResource extends AbstractResource
@@ -85,6 +95,25 @@ final class TrackResource extends AbstractResource
                 // the deliberate contrast with AlbumResource's lazy `tracks`.
                 ->withData(),
         ];
+    }
+
+    /**
+     * A {@see MultiPaginator} menu for `GET /tracks`. `page[kind]` names a strategy; a
+     * key only one strategy reads (`after`/`before` for cursor, `offset`/`limit` for
+     * offset) selects it without a kind; anything else falls back to `page`. The page
+     * arm repeats the server default (count-free, capped at the configured max), so a
+     * request that doesn't pick a strategy gets the same response as before the menu.
+     *
+     * The album and playlist relations that reach `tracks` declare their own
+     * `paginate()`, so the menu stays on this collection alone.
+     */
+    public function pagination(?PaginatorInterface $serverDefault): PaginatorInterface
+    {
+        return MultiPaginator::make(
+            PagePaginator::make()->withMaxPerPage(SeedManifest::MAX_PER_PAGE),
+            CursorPaginator::make()->withMaxPerPage(SeedManifest::MAX_PER_PAGE),
+            OffsetPaginator::make()->withMaxPerPage(SeedManifest::MAX_PER_PAGE),
+        )->default('page');
     }
 
     public function filters(): array

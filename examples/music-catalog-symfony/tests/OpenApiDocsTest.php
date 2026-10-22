@@ -287,6 +287,41 @@ final class OpenApiDocsTest extends MusicCatalogKernelTestCase
     }
 
     #[Test]
+    #[Group('spec:fetching-pagination')]
+    public function theTracksCollectionProjectsItsPaginationMenuAsAOneOf(): void
+    {
+        // `TrackResource::pagination()` is a page/cursor/offset MultiPaginator, so the
+        // `page` parameter is a `oneOf` with one closed branch per strategy, each with a
+        // `kind` const, discriminated on `kind`.
+        $document = $this->decode($this->handle('/docs.json'));
+
+        $params = $this->nested($document, 'paths', '/tracks', 'get', 'parameters');
+        $pageIndex = (string) (int) \array_search('page', \array_column($params, 'name'), true);
+        $schema = $this->nested($params, $pageIndex, 'schema');
+
+        self::assertSame(['propertyName' => 'kind'], $schema['discriminator'] ?? null);
+        $branches = $this->nested($schema, 'oneOf');
+        $shapes = [];
+        foreach ($branches as $index => $branch) {
+            $properties = $this->nested($branches, (string) $index, 'properties');
+            self::assertFalse($this->nested($branches, (string) $index)['additionalProperties'] ?? null);
+            $kind = $this->nested($properties, 'kind')['const'] ?? null;
+            self::assertIsString($kind);
+            $shapes[$kind] = \array_keys($properties);
+        }
+        self::assertSame([
+            'page' => ['number', 'size', 'kind'],
+            'cursor' => ['after', 'before', 'size', 'kind'],
+            'offset' => ['offset', 'limit', 'kind'],
+        ], $shapes);
+
+        // The menu belongs to `tracks` alone: `albums` keeps the plain page object.
+        $albumParams = $this->nested($document, 'paths', '/albums', 'get', 'parameters');
+        $albumPageIndex = (string) (int) \array_search('page', \array_column($albumParams, 'name'), true);
+        self::assertArrayNotHasKey('oneOf', $this->nested($albumParams, $albumPageIndex, 'schema'));
+    }
+
+    #[Test]
     #[Group('spec:openapi')]
     public function theJsonSchemasServeAsAnAggregateKeyedByType(): void
     {
