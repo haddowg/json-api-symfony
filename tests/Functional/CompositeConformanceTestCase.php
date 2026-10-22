@@ -269,6 +269,116 @@ abstract class CompositeConformanceTestCase extends JsonApiFunctionalTestCase
         }
     }
 
+    #[Test]
+    #[Group('spec:crud')]
+    public function anEmptyObjectSatisfiesAnObjectShapeOnCreate(): void
+    {
+        $created = $this->handle('/composites', 'POST', [
+            'data' => ['type' => 'composites', 'attributes' => ['name' => 'Gadget', 'prefs' => new \stdClass()]],
+        ]);
+        self::assertSame(201, $created->getStatusCode(), (string) $created->getContent());
+
+        $id = $this->createdId($created);
+
+        // Stored as an empty map: a stored null would read back as `null`.
+        self::assertStringContainsString('"prefs":{}', (string) $this->handle('/composites/' . $id)->getContent());
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function anEmptyArrayFailsAnObjectShapeOnCreate(): void
+    {
+        $response = $this->handle('/composites', 'POST', [
+            'data' => ['type' => 'composites', 'attributes' => ['name' => 'Gadget', 'prefs' => []]],
+        ]);
+
+        self::assertSame(422, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['/data/attributes/prefs'], $this->fieldPointersOf($response));
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function anEmptyObjectSatisfiesAnObjectShapeOnUpdate(): void
+    {
+        $this->handle('/composites/1', 'PATCH', [
+            'data' => ['type' => 'composites', 'id' => '1', 'attributes' => ['prefs' => ['theme' => 'dark']]],
+        ]);
+
+        $updated = $this->handle('/composites/1', 'PATCH', [
+            'data' => ['type' => 'composites', 'id' => '1', 'attributes' => ['prefs' => new \stdClass()]],
+        ]);
+        self::assertSame(200, $updated->getStatusCode(), (string) $updated->getContent());
+
+        self::assertStringContainsString('"prefs":{}', (string) $this->handle('/composites/1')->getContent());
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function anEmptyArrayFailsAnObjectShapeOnUpdate(): void
+    {
+        $response = $this->handle('/composites/1', 'PATCH', [
+            'data' => ['type' => 'composites', 'id' => '1', 'attributes' => ['prefs' => []]],
+        ]);
+
+        self::assertSame(422, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['/data/attributes/prefs'], $this->fieldPointersOf($response));
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function aNonEmptyMapPassesAnObjectShapeUnchanged(): void
+    {
+        $created = $this->handle('/composites', 'POST', [
+            'data' => ['type' => 'composites', 'attributes' => ['name' => 'Gadget', 'prefs' => ['theme' => 'dark', 'size' => 2]]],
+        ]);
+        self::assertSame(201, $created->getStatusCode(), (string) $created->getContent());
+
+        $id = $this->createdId($created);
+        self::assertStringContainsString('"prefs":{"theme":"dark","size":2}', (string) $this->handle('/composites/' . $id)->getContent());
+    }
+
+    #[Test]
+    #[Group('spec:atomic')]
+    public function anAtomicAddWithAnEmptyObjectSatisfiesAnObjectShape(): void
+    {
+        $response = $this->atomic([
+            [
+                'op' => 'add',
+                'data' => ['type' => 'composites', 'attributes' => ['name' => 'Gadget', 'prefs' => new \stdClass()]],
+            ],
+            [
+                'op' => 'update',
+                'ref' => ['type' => 'composites', 'id' => '1'],
+                'data' => ['type' => 'composites', 'id' => '1', 'attributes' => ['prefs' => ['theme' => 'dark']]],
+            ],
+        ]);
+
+        $body = (string) $response->getContent();
+        self::assertSame(200, $response->getStatusCode(), $body);
+        self::assertStringContainsString('"prefs":{}', $body);
+        self::assertStringContainsString('"prefs":{"theme":"dark"}', $body);
+    }
+
+    #[Test]
+    #[Group('spec:atomic')]
+    public function anAtomicAddWithAnEmptyArrayFailsAnObjectShape(): void
+    {
+        $response = $this->atomic([
+            [
+                'op' => 'update',
+                'ref' => ['type' => 'composites', 'id' => '1'],
+                'data' => ['type' => 'composites', 'id' => '1', 'attributes' => ['prefs' => new \stdClass()]],
+            ],
+            [
+                'op' => 'add',
+                'data' => ['type' => 'composites', 'attributes' => ['name' => 'Gadget', 'prefs' => []]],
+            ],
+        ]);
+
+        self::assertSame(422, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['/atomic:operations/1/data/attributes/prefs'], $this->fieldPointersOf($response));
+    }
+
     /**
      * @return list<string>
      */
@@ -277,6 +387,16 @@ abstract class CompositeConformanceTestCase extends JsonApiFunctionalTestCase
         self::assertSame(422, $response->getStatusCode());
 
         return $this->pointersOf($response);
+    }
+
+    private function createdId(Response $response): string
+    {
+        $data = $this->decode($response)['data'] ?? null;
+        self::assertIsArray($data);
+        $id = $data['id'] ?? null;
+        self::assertIsString($id);
+
+        return $id;
     }
 
     /**

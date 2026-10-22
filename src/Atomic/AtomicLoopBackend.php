@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Atomic;
 
+use haddowg\JsonApi\Atomic\AtomicExtension;
 use haddowg\JsonApi\Atomic\AtomicLoopBackendInterface;
 use haddowg\JsonApi\Atomic\AtomicOperationCode;
 use haddowg\JsonApi\Atomic\AtomicResult;
@@ -28,6 +29,7 @@ use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataPersister\TransactionalDataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\WriteTransactionContext;
 use haddowg\JsonApiBundle\Operation\CrudOperationHandler;
+use haddowg\JsonApiBundle\Validation\ObjectView;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Routing\Exception\MethodNotAllowedException;
@@ -94,6 +96,14 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
     private bool $opened = false;
 
     private readonly LoggerInterface $logger;
+
+    /**
+     * The batch's operations decoded with JSON objects kept as objects, decoded once on
+     * first use.
+     *
+     * @var array<array-key, mixed>|null
+     */
+    private ?array $objectOperations = null;
 
     /**
      * @param list<OperationDescriptor> $descriptors the parsed batch, in request order
@@ -183,7 +193,7 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
         // request carrying `{data: …}`, and dispatch it through the handler's own per-op
         // CRUD arms IN-PROCESS (handle(), never Server::dispatch — serving already fired
         // once for the batch).
-        $operation = $this->buildOperation($op->opCode, $target, $data);
+        $operation = $this->buildOperation($op->opCode, $target, $data, $op->index);
         $response = $this->handler->handle($operation);
 
         // A sub-operation that resolved to a 404/400 (a missing update/delete target, an
@@ -369,7 +379,7 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
      *  - `update` → {@see UpdateResourceOperation}  | {@see UpdateRelationshipOperation};
      *  - `remove` → {@see DeleteResourceOperation}  | {@see RemoveFromRelationshipOperation}.
      */
-    private function buildOperation(AtomicOperationCode $opCode, Target $target, mixed $data): JsonApiOperationInterface
+    private function buildOperation(AtomicOperationCode $opCode, Target $target, mixed $data, int $index): JsonApiOperationInterface
     {
         $query = new QueryParameters([], [], [], [], []);
 
@@ -380,7 +390,7 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
                 AtomicOperationCode::Update => 'PATCH',
                 AtomicOperationCode::Remove => 'DELETE',
             };
-            $body = $this->subRequest($target, $method, $data);
+            $body = $this->subRequest($target, $method, $data, $index);
             $context = new OperationContext($this->server, $body);
 
             return match ($opCode) {
@@ -399,7 +409,7 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
             AtomicOperationCode::Update => 'PATCH',
             AtomicOperationCode::Remove => 'DELETE',
         };
-        $body = $this->subRequest($target, $method, $data);
+        $body = $this->subRequest($target, $method, $data, $index);
         $context = new OperationContext($this->server, $body);
 
         return match ($opCode) {
@@ -416,18 +426,39 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
      * sub-operation's verb/path and a parsed body of `{data: <data>}`. The verb is
      * load-bearing for the create-vs-update client-id rule (an update is PATCH so its
      * `data.id` is the target, not a rejected client-generated create id).
+     *
+     * The raw body stays the whole batch, so the operation's object-decoded `data`
+     * rides an attribute for value validation ({@see ObjectView}).
      */
-    private function subRequest(Target $target, string $method, mixed $data): JsonApiRequestInterface
+    private function subRequest(Target $target, string $method, mixed $data, int $index): JsonApiRequestInterface
     {
         $uri = $this->request->getUri()->withPath($this->pathFor($target));
 
         $request = $this->request
             ->withMethod($method)
             ->withUri($uri, preserveHost: true)
-            ->withParsedBody(['data' => $data]);
+            ->withParsedBody(['data' => $data])
+            ->withAttribute(ObjectView::DATA_ATTRIBUTE, $this->objectDataOf($index));
         \assert($request instanceof JsonApiRequestInterface);
 
         return $request;
+    }
+
+    /**
+     * The `data` member of the batch's operation at `$index`, decoded with JSON objects
+     * kept as objects; `null` when the batch body offers none.
+     */
+    private function objectDataOf(int $index): mixed
+    {
+        if ($this->objectOperations === null) {
+            $document = ObjectView::decode((string) $this->request->getBody());
+            $operations = $document instanceof \stdClass ? ($document->{AtomicExtension::OPERATIONS_MEMBER} ?? null) : null;
+            $this->objectOperations = \is_array($operations) ? $operations : [];
+        }
+
+        $operation = $this->objectOperations[$index] ?? null;
+
+        return $operation instanceof \stdClass ? ($operation->data ?? null) : null;
     }
 
     /**
