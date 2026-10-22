@@ -6,7 +6,6 @@ namespace haddowg\JsonApiBundle\Routing;
 
 use haddowg\JsonApiBundle\Action\ActionScope;
 use haddowg\JsonApiBundle\Controller\JsonApiController;
-use haddowg\JsonApiBundle\EventListener\ExceptionListener;
 use haddowg\JsonApiBundle\Operation\Operation;
 use haddowg\JsonApiBundle\Operation\TargetResolver;
 use haddowg\JsonApiBundle\Server\IdEncoderResolver;
@@ -42,7 +41,7 @@ use Symfony\Component\Routing\RouteCollection;
  * route carries:
  *  - `_jsonapi_type` — the resource type the {@see TargetResolver} reads;
  *  - `_jsonapi_server` — the server name (`default` for the unnamed import);
- *  - the {@see ExceptionListener::ROUTE_MARKER} default that scopes the
+ *  - the {@see JsonApiRoute::MARKER} default that scopes the
  *    JSON:API exception listener to these routes only.
  *
  * Multi-server (bundle ADR 0034): each routing import names a server through its
@@ -192,7 +191,7 @@ final class JsonApiRouteLoader extends Loader
                 '_controller' => JsonApiController::class,
                 TargetResolver::TYPE_ATTRIBUTE => $resourceType,
                 '_jsonapi_server' => $server,
-                ExceptionListener::ROUTE_MARKER => true,
+                JsonApiRoute::MARKER => true,
             ];
 
             // The default server keeps the existing unprefixed route names; a named
@@ -331,7 +330,7 @@ final class JsonApiRouteLoader extends Loader
         $defaults = [
             '_controller' => JsonApiController::class,
             '_jsonapi_server' => $server,
-            ExceptionListener::ROUTE_MARKER => true,
+            JsonApiRoute::MARKER => true,
             self::ATOMIC_ATTRIBUTE => true,
         ];
 
@@ -418,7 +417,7 @@ final class JsonApiRouteLoader extends Loader
                 '_controller' => JsonApiController::class,
                 TargetResolver::TYPE_ATTRIBUTE => $type,
                 '_jsonapi_server' => $server,
-                ExceptionListener::ROUTE_MARKER => true,
+                JsonApiRoute::MARKER => true,
                 self::ACTION_ATTRIBUTE => $path,
                 self::ACTION_SCOPE_ATTRIBUTE => $scopeName,
             ];

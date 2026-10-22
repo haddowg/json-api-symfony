@@ -20,7 +20,7 @@ with the firewall and logging.
 [`ExceptionListener`](../src/EventListener/ExceptionListener.php) registers on
 `kernel.exception` at priority **128** — high enough to win over Symfony's own
 error handling on JSON:API routes — and is **route-scoped**: it acts only when the
-matched route carries the marker `_jsonapi` (`ExceptionListener::ROUTE_MARKER`).
+matched route carries the marker `_jsonapi` (`JsonApiRoute::MARKER`).
 Every route the bundle's loader emits stamps that default (see
 [routing](routing.md)); nothing else does. So on any non-JSON:API route the
 listener returns immediately and Symfony handles the error as usual — the bundle
@@ -31,7 +31,7 @@ public function onKernelException(ExceptionEvent $event): void
 {
     $request = $event->getRequest();
 
-    if ($request->attributes->get(self::ROUTE_MARKER) !== true) {
+    if (!JsonApiRoute::matches($request)) {
         return;
     }
     // … resolve the server, map the throwable, render the error document

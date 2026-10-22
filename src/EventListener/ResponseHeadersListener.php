@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\EventListener;
 use haddowg\JsonApiBundle\Http\ResponseHeaderOperation;
 use haddowg\JsonApiBundle\Http\ResponseHeadersRegistry;
 use haddowg\JsonApiBundle\Operation\TargetResolver;
+use haddowg\JsonApiBundle\Routing\JsonApiRoute;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Event\ResponseEvent;
@@ -25,7 +26,7 @@ use Symfony\Component\HttpKernel\Event\ResponseEvent;
  *    the type (reads and writes alike — a deprecated endpoint is deprecated
  *    regardless of method).
  *
- * It acts only on the bundle's JSON:API routes (the {@see ExceptionListener::ROUTE_MARKER}
+ * It acts only on the bundle's JSON:API routes (the {@see JsonApiRoute::MARKER}
  * default), resolves the type + read shape the same way the request/view/exception
  * listeners do (the {@see TargetResolver} over the route attributes), and **never
  * clobbers a header an app set explicitly** (each value object checks before
@@ -50,7 +51,7 @@ final class ResponseHeadersListener
         }
 
         $request = $event->getRequest();
-        if ($request->attributes->get(ExceptionListener::ROUTE_MARKER) !== true) {
+        if (!JsonApiRoute::matches($request)) {
             return;
         }
 
