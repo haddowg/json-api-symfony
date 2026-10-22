@@ -156,10 +156,16 @@ final class ResourceValidator
         }
 
         // On update, fold the stored resource's wire-form attributes under the
-        // incoming partial so the constraints see the MERGED resource state.
-        $attributes = !$creating && $existingObject !== null
-            ? \array_merge($this->storedAttributes($resource, $existingObject, $request), $incoming)
+        // incoming partial so the constraints see the MERGED resource state. The wire
+        // form renders an empty map as a `\stdClass`; the Symfony constraints read maps
+        // as arrays, while the schema pass needs the object.
+        $stored = !$creating && $existingObject !== null
+            ? $this->storedAttributes($resource, $existingObject, $request)
+            : [];
+        $attributes = $stored !== []
+            ? \array_merge(\array_map(ObjectView::toArray(...), $stored), $incoming)
             : $incoming;
+        $wireAttributes = $stored !== [] ? \array_merge($stored, $incoming) : $incoming;
 
         $fields = [];
         $compares = [];
@@ -224,7 +230,7 @@ final class ResourceValidator
         // to /data/attributes/<field>. Skipped entirely when opis is not installed (the
         // validator is null-wired), so a Shape then documents its OpenAPI shape but is
         // not value-validated — the same optional-linter posture opis already has.
-        foreach ($this->shapeErrors($resource, $attributes, $incoming, $creating, $request) as $error) {
+        foreach ($this->shapeErrors($resource, $wireAttributes, $incoming, $creating, $request) as $error) {
             $errors[] = $error;
         }
 
@@ -1337,7 +1343,7 @@ final class ResourceValidator
      * objects ({@see ObjectView}), so an empty `{}` satisfies `type: object` and an
      * empty `[]` does not.
      *
-     * @param array<string, mixed>    $attributes the merged incoming attribute map
+     * @param array<array-key, mixed> $attributes the merged attribute map, stored values in wire form
      * @param array<array-key, mixed> $incoming   the attributes the request sent
      *
      * @return list<Error>

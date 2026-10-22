@@ -326,6 +326,32 @@ abstract class CompositeConformanceTestCase extends JsonApiFunctionalTestCase
 
     #[Test]
     #[Group('spec:crud')]
+    public function aStoredEmptyMapSurvivesAPartialUpdate(): void
+    {
+        // The seeded widget stores an empty `prefs` map, which the update's validation
+        // folds in from its rendered `{}` form though the client didn't send it.
+        $updated = $this->handle('/composites/1', 'PATCH', [
+            'data' => ['type' => 'composites', 'id' => '1', 'attributes' => ['name' => 'Renamed']],
+        ]);
+
+        self::assertSame(200, $updated->getStatusCode(), (string) $updated->getContent());
+        self::assertStringContainsString('"prefs":{}', (string) $updated->getContent());
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function aMapOverItsSizeLimitStillFails(): void
+    {
+        $response = $this->handle('/composites/1', 'PATCH', [
+            'data' => ['type' => 'composites', 'id' => '1', 'attributes' => ['prefs' => ['a' => 1, 'b' => 2, 'c' => 3, 'd' => 4, 'e' => 5, 'f' => 6]]],
+        ]);
+
+        self::assertSame(422, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['/data/attributes/prefs'], $this->fieldPointersOf($response));
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
     public function aNonEmptyMapPassesAnObjectShapeUnchanged(): void
     {
         $created = $this->handle('/composites', 'POST', [
