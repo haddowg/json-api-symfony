@@ -45,9 +45,8 @@ use haddowg\JsonApiBundle\Validation\Constraint\UniqueEntity;
  * ADR 0063): {@see pagination()} pins a {@see CursorPaginator} for the primary
  * `users` collection, so `GET /users` (admin server) pages by opaque
  * `page[after]`/`page[before]` cursor tokens rather than `page[number]`. It is the
- * ONE cursor surface in the catalogue — every other collection and relation stays
- * page-based — so the projected OpenAPI advertises the cursor `page[…]` vocabulary
- * on this one path. With no `?sort` requested and no {@see defaultSort()} declared,
+ * catalogue's only cursor-only collection (`tracks` offers cursor as one choice in its
+ * pagination menu; every other collection and relation stays page-based). With no `?sort` requested and no {@see defaultSort()} declared,
  * the keyset falls back to the `id` primary key alone (a total, deterministic order),
  * so the cursor is stable with zero extra ordering config.
  */
@@ -105,7 +104,7 @@ final class UserResource extends AbstractResource
 
     /**
      * Pin the cursor (keyset) strategy for this resource's primary collection — the
-     * catalogue's sole cursor witness. Returning a {@see CursorPaginator} verbatim
+     * catalogue's only cursor-only collection. Returning a {@see CursorPaginator} verbatim
      * replaces the server default (page-based) for `GET /users` alone: the endpoint
      * pages by opaque `page[after]`/`page[before]` tokens (count-free, no total),
      * and the OpenAPI projector advertises exactly that cursor `page[…]` vocabulary

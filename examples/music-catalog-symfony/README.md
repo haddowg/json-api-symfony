@@ -28,9 +28,9 @@ reference-data type sourced from `symfony/intl`.
 | --- | --- | --- |
 | `artists` | `Artist` entity | singular `filter[slug]`, shared full-text `filter[q]` (over `name` + `bio`), computed `trackCount`, includable `hasMany albums` (discography via `?include=albums`) |
 | `albums` | `Album` entity | multi-server (default + `admin`), directional `CompareField` (**merge-before-validate** witness on update), `Map releaseInfo` (JSON column), default-include `artist`, `WhereHas tracks`, shared full-text `filter[q]`, **relation-scoped `filter`/`sort`** on `tracks` |
-| `tracks` | `Track` entity | **serializer override** (`TrackSerializer`), `storedAs` rename, `ArrayList genres`, `like` filter, shared full-text `filter[q]`, plain `belongsToMany playlists` (`cannotReplace`) |
+| `tracks` | `Track` entity | **serializer override** (`TrackSerializer`), `storedAs` rename, `ArrayList genres`, `like` filter, shared full-text `filter[q]`, plain `belongsToMany playlists` (`cannotReplace`), **pagination menu** on its collection (`MultiPaginator`: page by default, cursor or offset on request) |
 | `playlists` | `Playlist` entity | **hydrator override** (`PlaylistHydrator`), **UUID id** (`uuid()->generated()`), derived `slug`, **lifecycle hooks** (`beforeCreate` stamp + `beforeDelete` 409 guard), **authorization** (`securityDelete` admin-only + `securityUpdate` owner Voter), **pivot** `belongsToMany orderedTracks` (`PlaylistEntry` association entity: required writable `position` + cross-pivot `weight >= position` + server-owned `addedAt` as `meta.pivot`, set/reordered via linkage `meta`, `?filter`/`?sort`, **merge-before-validate** per member) |
-| `users` | `User` entity | **admin-server-only**, **cursor (keyset) pagination** on its collection (`page[after]`/`page[before]`, keyset on the `id` PK — the catalogue's sole cursor witness), `UniqueEntity` on `email`, write-only `password`, validation-composition trio, `getAllowedIncludePaths` whitelist (include safeguard C) |
+| `users` | `User` entity | **admin-server-only**, **cursor (keyset) pagination** on its collection (`page[after]`/`page[before]`, keyset on the `id` PK; the catalogue's only cursor-only collection), `UniqueEntity` on `email`, write-only `password`, validation-composition trio, `getAllowedIncludePaths` whitelist (include safeguard C) |
 | `favorites` | `Favorite` entity | **polymorphic to-one** `MorphTo favoritable` (Track\|Album\|Artist) (`cannotBeIncluded` — include safeguard A; reached via the related endpoint) |
 | `libraries` | `Library` entity | **polymorphic to-many** `MorphToMany items` (custom provider) |
 | `genres` | `Genre` entity | **client-supplied natural-key id** (`requireClientId()->pattern(slug)`), **declarative HTTP cache headers** (`cacheHeaders` + `collection` override) |
@@ -434,6 +434,48 @@ whose linkage is *derived* rather than a plain Doctrine association (the pivot
 `playlists.orderedTracks` here) is addressed at its own endpoint, not from a parent
 request.
 
+## A menu of pagination strategies
+
+`TrackResource::pagination()` returns a `MultiPaginator`, so a client picks how to page
+`GET /tracks` per request:
+
+```php
+return MultiPaginator::make(
+    PagePaginator::make()->withMaxPerPage(SeedManifest::MAX_PER_PAGE),
+    CursorPaginator::make()->withMaxPerPage(SeedManifest::MAX_PER_PAGE),
+    OffsetPaginator::make()->withMaxPerPage(SeedManifest::MAX_PER_PAGE),
+)->default('page');
+```
+
+The page arm is the server default paginator verbatim, so a request with no `page`, or
+with only `page[number]`/`page[size]`, gets the same response it got before the menu
+existed. `tests/PaginationMenuTest.php` covers the rest:
+
+```
+# no page, or only shared keys: the page default, unchanged
+GET /tracks?page[size]=2
+  → [tracks/1, tracks/3], next = page[number]=2&page[size]=2
+
+# name the strategy
+GET /tracks?page[kind]=cursor&page[size]=2
+  → [tracks/1, tracks/3], next = page[after]=<cursor>&page[size]=2
+
+# or send a key only one strategy reads: after/before mean cursor, offset/limit offset
+GET /tracks?page[offset]=1&page[limit]=1
+  → [tracks/3]
+
+# an unknown kind
+GET /tracks?page[kind]=keyset
+  → 400 PAGINATION_KIND_UNKNOWN, source.parameter = page[kind]
+```
+
+A strategy chosen over the default carries `page[kind]` in every link it renders, so
+following `first`, `next` or `prev` stays on it. The default's links have no `kind`. This
+needs haddowg/json-api 1.2.0; the tests that pin it skip on older versions. The OpenAPI
+document projects the `page` parameter of `/tracks` as a `oneOf` with one closed branch per strategy, discriminated by `kind`. The relations that
+reach `tracks` (`albums.tracks`, `playlists.tracks`, `playlists.orderedTracks`) declare
+their own `paginate()`, so they stay page-based.
+
 ## Strict query parameters
 
 An **unrecognized** top-level query-parameter family is **rejected with a `400`**
@@ -770,6 +812,9 @@ See [`docs/relationships.md`](../../docs/relationships.md) and
   (strict query-parameter validation: an unrecognized family is a `400` by default, the
   recognized set stays `200`, and the relax toggle flips a well-named param back to a
   silent ignore over `tests/RelaxedQueryParametersKernel.php`), and
+  **`tests/PaginationMenuTest.php`** (the `tracks` page/cursor/offset menu: selection by
+  `page[kind]` or a strategy-unique key, the page default, an unknown-kind `400`, and a
+  link walk per strategy), and
   **`tests/WriteOnlyAttributeTest.php`** (the write-only `users.password`: accepted +
   stored on create/update, still validated, and absent from every read — single,
   collection, compound `?include`, and a sparse fieldset naming it).
