@@ -29,9 +29,10 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  * 0034) from:
  *  - this server's Resource class-strings (the subset of the discovered resources
  *    assigned to it via `#[AsJsonApiResource(server: …)]`), registered through
- *    core's lazy container resolver — held by the shared {@see ResourceLocator},
- *    which stays the global resolver/container — so a Resource can have real
- *    constructor dependencies;
+ *    core's lazy container resolver — this server's own {@see ResourceLocator},
+ *    which hands out a per-server instance of any class another server also
+ *    resolves (bundle ADR 0124) — so a Resource can have real constructor
+ *    dependencies;
  *  - this server's base URI and JSON:API version;
  *  - the PSR-17 response / stream factories;
  *  - the server-wide default paginator, resolved in order: (1) a

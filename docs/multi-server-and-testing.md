@@ -187,6 +187,10 @@ Each factory builds the immutable, memoized core `Server` for **its** surface fr
 - **only the resources and standalone pairs assigned to that server** (the
   compiler pass buckets each type per server, so the `admin` factory holds only the
   admin-assigned types);
+- its own instance of each resource it shares with another server. Core injects the
+  server's registry into every resource it resolves, so a single shared instance would
+  carry whichever server resolved it last. The compiler pass copies the service
+  definition per server, constructor arguments included;
 - the bundle's single `CrudOperationHandler` via `withHandler()`.
 
 It deliberately does **not** install core's PSR-15 `Middleware\*` chain — the bundle

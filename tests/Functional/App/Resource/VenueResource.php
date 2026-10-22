@@ -6,5 +6,5 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\Resource;
 
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 
-#[AsJsonApiResource(readOnly: true)]
+#[AsJsonApiResource(server: ['default', 'tokyo', 'raw'], readOnly: true)]
 final class VenueResource extends BaseVenueResource {}

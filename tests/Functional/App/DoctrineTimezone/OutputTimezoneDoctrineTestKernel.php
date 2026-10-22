@@ -117,6 +117,7 @@ final class OutputTimezoneDoctrineTestKernel extends Kernel
         $services->set(DoctrinePerformerResource::class);
         $services->set(DoctrineGigListingResource::class);
         $services->set(DoctrineRawGigResource::class);
+        $services->set(DoctrineSharedGigResource::class);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

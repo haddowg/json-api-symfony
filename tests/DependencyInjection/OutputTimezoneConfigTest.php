@@ -4,18 +4,25 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\DependencyInjection;
 
+use haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceLocatorPass;
 use haddowg\JsonApiBundle\JsonApiBundle;
+use haddowg\JsonApiBundle\Tests\Functional\App\Resource\GigResource;
+use haddowg\JsonApiBundle\Tests\Functional\App\Resource\SharedGigResource;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
+use Symfony\Component\DependencyInjection\Argument\ServiceClosureArgument;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\Definition;
+use Symfony\Component\DependencyInjection\Reference;
 
 /**
  * How `json_api.output_timezone` and `json_api.servers.<name>.output_timezone` reach
- * each server's {@see \haddowg\JsonApiBundle\Server\ServerFactory}, and that a zone
- * PHP does not recognise fails the container build.
+ * each server's {@see \haddowg\JsonApiBundle\Server\ServerFactory}, that a zone PHP
+ * does not recognise fails the container build, and that a class on several servers
+ * gets one service per server (bundle ADR 0124).
  */
 #[Group('spec:multi-server')]
 final class OutputTimezoneConfigTest extends TestCase
@@ -89,6 +96,54 @@ final class OutputTimezoneConfigTest extends TestCase
         $this->expectExceptionMessageMatches('/' . \preg_quote($path, '/') . '.*is not a timezone PHP recognises/s');
 
         $this->load($config);
+    }
+
+    #[Test]
+    public function aClassOnSeveralServersGetsACopyPerServerAndASingleServerClassKeepsItsService(): void
+    {
+        $container = $this->load(['servers' => ['tokyo' => [], 'raw' => []]]);
+        $container->register(SharedGigResource::class, SharedGigResource::class)
+            ->addTag(JsonApiBundle::RESOURCE_TAG, ['server' => 'tokyo,raw']);
+        $container->register(GigResource::class, GigResource::class)
+            ->addTag(JsonApiBundle::RESOURCE_TAG, ['server' => 'tokyo']);
+
+        (new ResourceLocatorPass())->process($container);
+
+        $tokyo = $this->servicesOf($container, 'tokyo');
+        $raw = $this->servicesOf($container, 'raw');
+
+        self::assertSame('.haddowg.json_api.server_resource.tokyo.' . SharedGigResource::class, $tokyo[SharedGigResource::class]);
+        self::assertSame('.haddowg.json_api.server_resource.raw.' . SharedGigResource::class, $raw[SharedGigResource::class]);
+        self::assertSame(GigResource::class, $tokyo[GigResource::class]);
+
+        $copy = $container->getDefinition($tokyo[SharedGigResource::class]);
+        self::assertSame(SharedGigResource::class, $copy->getClass());
+        self::assertSame([], $copy->getTags());
+    }
+
+    /**
+     * The service id behind each class-string of a server's resource locator.
+     *
+     * @return array<string, string>
+     */
+    private function servicesOf(ContainerBuilder $container, string $server): array
+    {
+        $locator = $container->getDefinition(JsonApiBundle::serverFactoryId($server))->getArgument('$resources');
+        self::assertInstanceOf(Definition::class, $locator);
+        $services = $locator->getArgument(0);
+        self::assertInstanceOf(Reference::class, $services);
+        $map = $container->getDefinition((string) $services)->getArgument(0);
+        self::assertIsArray($map);
+
+        $ids = [];
+        foreach ($map as $class => $argument) {
+            self::assertInstanceOf(ServiceClosureArgument::class, $argument);
+            $reference = $argument->getValues()[0] ?? null;
+            self::assertInstanceOf(Reference::class, $reference);
+            $ids[(string) $class] = (string) $reference;
+        }
+
+        return $ids;
     }
 
     /**

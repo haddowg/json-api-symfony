@@ -52,6 +52,11 @@ final class OutputTimezoneFixtures
         return self::gigProvider('raw-gigs');
     }
 
+    public static function createSharedGigs(): InMemoryDataProvider
+    {
+        return self::gigProvider('shared-gigs');
+    }
+
     public static function createVenues(): InMemoryDataProvider
     {
         return new InMemoryDataProvider('venues', [1 => self::venue()]);

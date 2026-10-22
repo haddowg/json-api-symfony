@@ -479,6 +479,10 @@ json_api:
             output_timezone: ''   # no conversion on this server
 ```
 
+A type shared by several servers (`server: ['default', 'admin']`) renders in each
+server's own zone. Every server builds its own instance of the resource service, so
+nothing a server sets on it reaches the others.
+
 Every
 declared server (including `default`) gets one `ServerFactory`, registered under the
 id `haddowg.json_api.server_factory.<name>`.
