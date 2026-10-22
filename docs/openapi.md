@@ -524,6 +524,31 @@ warmer / controller / CLI use, and validates over `opis/json-schema` — which i
 the 2020-12 dialect natively, so the helper is fully offline (no meta-schema to vendor).
 `assertBodyMatchesGeneratedComponent($body, '<Component>')` is the escape hatch for a
 component the four kinds don't name (a custom enum component, a per-relation collection).
+The trait also checks each `included` resource against its own type's `<Type>Resource`
+component, since the envelope's `included` schema only checks `type` and `id`.
+
+### Sparse fieldsets
+
+The read schemas mark every attribute `required`, because a full response always carries
+them. A response to `?fields[articles]=title` leaves the other members out, so tell the
+trait which fieldsets the request asked for. Pass the browser that made the request in
+place of the response, and the trait reads `fields` from its last request:
+
+```php
+$client->get('/articles?include=author&fields[articles]=title,author&fields[authors]=name');
+
+$this->assertResponseMatchesGeneratedSchema($client, 'articles', SchemaDocumentKind::Collection);
+```
+
+With a bare `Response` or body string, pass the map yourself as `fieldsets:`, in the same
+shape as the query (`['articles' => 'title,author']`, or a list of names per type).
+`assertBodyMatchesGeneratedComponent()` and `bodyMatchesGeneratedComponent()` take the
+same argument.
+
+For each type with a fieldset, attributes and relationships outside it stop counting as
+required, in primary data and in `included`. Members inside the fieldset are still
+required, and a type without a fieldset still requires everything, so a member that goes
+missing from a full response still fails.
 
 This is a real, biting guarantee: when a response diverges from its schema, the assertion
 names exactly which member diverged. The bundle's own suite runs these assertions across

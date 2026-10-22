@@ -8,8 +8,8 @@ use haddowg\JsonApi\OpenApi\ComponentNaming;
 use haddowg\JsonApiBundle\OpenApi\DocumentFactory;
 use Opis\JsonSchema\Errors\ErrorFormatter;
 use Opis\JsonSchema\Errors\ValidationError;
-use Opis\JsonSchema\ValidationResult;
 use Opis\JsonSchema\Validator;
+use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -32,6 +32,12 @@ use Symfony\Component\HttpFoundation\Response;
  * internal `#/components/schemas/<Component>` pointers within the one registered document,
  * which opis resolves.
  *
+ * **Sparse fieldsets.** The read schemas require every member a full response carries.
+ * When the request asked for `fields[<type>]`, members outside that fieldset are not
+ * required for that type, in primary data and in `included` alike; members inside it
+ * still are. Pass the browser that made the request in place of the response and the
+ * fieldsets are read from its last request, or pass them explicitly as `$fieldsets`.
+ *
  * @phpstan-require-extends KernelTestCase
  */
 trait SchemaConformanceTrait
@@ -43,26 +49,32 @@ trait SchemaConformanceTrait
      * Assert `$response`'s JSON body validates against the generated component schema for
      * `$type`'s `$kind` document.
      *
-     * @param Response|string         $response     the HttpFoundation response (the bundle's `handle()` form) or a raw JSON body string
-     * @param string                  $type         the JSON:API primary type (e.g. `articles`) — for a related/relationship kind this is the type the endpoint hangs off
-     * @param SchemaDocumentKind      $kind         which document envelope the response carries
-     * @param string|null             $relationship the relation name — required for {@see SchemaDocumentKind::Relationship} / {@see SchemaDocumentKind::Related}
-     * @param string|null             $server       the JSON:API server whose document to validate against (the implicit `default` server when null)
+     * @param KernelBrowser|Response|string   $response     the browser that made the request (its last response is validated and its fieldsets are read from its last request), the HttpFoundation response (the bundle's `handle()` form) or a raw JSON body string
+     * @param string                          $type         the JSON:API primary type (e.g. `articles`) — for a related/relationship kind this is the type the endpoint hangs off
+     * @param SchemaDocumentKind              $kind         which document envelope the response carries
+     * @param string|null                     $relationship the relation name — required for {@see SchemaDocumentKind::Relationship} / {@see SchemaDocumentKind::Related}
+     * @param string|null                     $server       the JSON:API server whose document to validate against (the implicit `default` server when null)
+     * @param array<mixed>|null               $fieldsets    the request's `fields` map (`['albums' => 'title,year']`); overrides any read from a browser
      */
     protected function assertResponseMatchesGeneratedSchema(
-        Response|string $response,
+        KernelBrowser|Response|string $response,
         string $type,
         SchemaDocumentKind $kind,
         ?string $relationship = null,
         ?string $server = null,
+        ?array $fieldsets = null,
     ): void {
         $component = $kind->componentName($type, $relationship);
 
-        $this->assertBodyMatchesGeneratedComponent(
-            $response instanceof Response ? (string) $response->getContent() : $response,
-            $component,
-            $server,
-        );
+        if ($response instanceof KernelBrowser) {
+            $query = $response->getRequest()->query->all();
+            $fieldsets ??= \is_array($query['fields'] ?? null) ? $query['fields'] : null;
+            $body = (string) $response->getResponse()->getContent();
+        } else {
+            $body = $response instanceof Response ? (string) $response->getContent() : $response;
+        }
+
+        $this->assertBodyMatchesGeneratedComponent($body, $component, $server, $fieldsets);
     }
 
     /**
@@ -71,17 +83,19 @@ trait SchemaConformanceTrait
      * component, or a per-relation `RelatedCollection`). The kind-based
      * {@see assertResponseMatchesGeneratedSchema()} is the ergonomic front door; this is
      * the escape hatch for a component the four standard kinds do not name.
+     *
+     * @param array<mixed>|null $fieldsets the request's `fields` map, when it asked for sparse fieldsets
      */
-    protected function assertBodyMatchesGeneratedComponent(string $body, string $component, ?string $server = null): void
+    protected function assertBodyMatchesGeneratedComponent(string $body, string $component, ?string $server = null, ?array $fieldsets = null): void
     {
-        $result = $this->validateBody($body, $component, $server);
+        $failures = $this->validateBody($body, $component, $server, $fieldsets);
 
-        self::assertTrue(
-            $result->isValid(),
+        self::assertNull(
+            $failures,
             \sprintf(
                 "The response does not validate against the generated \"%s\" component schema:\n%s",
                 $component,
-                $this->describeErrors($result->error()),
+                $failures ?? '',
             ),
         );
     }
@@ -91,22 +105,67 @@ trait SchemaConformanceTrait
      * assertion helpers above are the front door; this is for a test that needs to prove
      * validation **fails** for a deliberately-invalid body (the conformance guarantee
      * having teeth), where an assertion would be inverted.
+     *
+     * @param array<mixed>|null $fieldsets the request's `fields` map, when it asked for sparse fieldsets
      */
-    protected function bodyMatchesGeneratedComponent(string $body, string $component, ?string $server = null): bool
+    protected function bodyMatchesGeneratedComponent(string $body, string $component, ?string $server = null, ?array $fieldsets = null): bool
     {
-        return $this->validateBody($body, $component, $server)->isValid();
+        return $this->validateBody($body, $component, $server, $fieldsets) === null;
     }
 
-    private function validateBody(string $body, string $component, ?string $server): ValidationResult
+    /**
+     * Validates the body against `$component`, then each `included` resource against its
+     * own type's `<Base>Resource` component (the envelope's `included` schema only checks
+     * `type`/`id`). An included type the document has no component for is skipped.
+     *
+     * @param array<mixed>|null $fieldsets
+     *
+     * @return string|null the readable failure detail, or null when the body is valid
+     */
+    private function validateBody(string $body, string $component, ?string $server, ?array $fieldsets): ?string
     {
         $decoded = \json_decode($body, false, 512, \JSON_THROW_ON_ERROR);
+
+        $document = $this->generatedDocument($server);
+        $normalized = SparseFieldsetSchema::normalize($fieldsets ?? []);
+        if ($normalized !== []) {
+            $document = SparseFieldsetSchema::relax($document, $normalized);
+        }
 
         $validator = new Validator();
         $resolver = $validator->resolver();
         \assert($resolver !== null);
-        $resolver->registerRaw($this->generatedDocument($server), self::documentId());
+        $resolver->registerRaw($document, self::documentId());
 
-        return $validator->validate($decoded, self::documentId() . ComponentNaming::schemaRef($component));
+        $result = $validator->validate($decoded, self::documentId() . ComponentNaming::schemaRef($component));
+        if (!$result->isValid()) {
+            return $this->describeErrors($result->error());
+        }
+
+        $included = $decoded instanceof \stdClass ? ($decoded->included ?? null) : null;
+        if (!\is_array($included)) {
+            return null;
+        }
+
+        $schemas = $document->components->schemas ?? null;
+        $failures = [];
+        foreach ($included as $index => $resource) {
+            $type = $resource instanceof \stdClass ? ($resource->type ?? null) : null;
+            if (!\is_string($type) || !$schemas instanceof \stdClass) {
+                continue;
+            }
+            $resourceComponent = ComponentNaming::base($type) . 'Resource';
+            if (!isset($schemas->{$resourceComponent})) {
+                continue;
+            }
+
+            $result = $validator->validate($resource, self::documentId() . ComponentNaming::schemaRef($resourceComponent));
+            if (!$result->isValid()) {
+                $failures[] = \sprintf("/included/%d does not validate against \"%s\":\n%s", $index, $resourceComponent, $this->describeErrors($result->error()));
+            }
+        }
+
+        return $failures === [] ? null : \implode("\n", $failures);
     }
 
     /**
