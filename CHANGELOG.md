@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.0](https://github.com/haddowg/json-api-symfony/compare/v1.1.0...v1.2.0) (2026-10-22)
+
+
+### Features
+
+* base an empty base_uri on the prefix a server is mounted under ([fed2c3c](https://github.com/haddowg/json-api-symfony/commit/fed2c3cd92a6564e089cfe6940bba1a07cf73b59))
+* **openapi:** advertise a mounted server's prefix in servers ([fed2c3c](https://github.com/haddowg/json-api-symfony/commit/fed2c3cd92a6564e089cfe6940bba1a07cf73b59))
+
+
+### Miscellaneous Chores
+
+* **deps:** require haddowg/json-api ^1.1.1 ([fed2c3c](https://github.com/haddowg/json-api-symfony/commit/fed2c3cd92a6564e089cfe6940bba1a07cf73b59))
+
 ## [1.1.0](https://github.com/haddowg/json-api-symfony/compare/v1.0.0...v1.1.0) (2026-10-21)
 
 
