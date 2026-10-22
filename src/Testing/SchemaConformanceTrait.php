@@ -205,9 +205,10 @@ trait SchemaConformanceTrait
             return '(no error detail)';
         }
 
-        $keyed = (new ErrorFormatter())->formatKeyed(
+        $formatter = new ErrorFormatter();
+        $keyed = $formatter->formatKeyed(
             $error,
-            static fn(ValidationError $e): string => $e->message(),
+            static fn(ValidationError $e): string => $formatter->formatErrorMessage($e),
         );
 
         $lines = [];

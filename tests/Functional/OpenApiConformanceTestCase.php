@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional;
 
 use haddowg\JsonApiBundle\Testing\SchemaConformanceTrait;
 use haddowg\JsonApiBundle\Testing\SchemaDocumentKind;
+use PHPUnit\Framework\AssertionFailedError;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
@@ -176,6 +177,28 @@ abstract class OpenApiConformanceTestCase extends JsonApiFunctionalTestCase
             'ArticlesDocument',
             fieldsets: ['articles' => 'title,body'],
         ));
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    public function aFailureNamesTheTypesItExpectedAndFound(): void
+    {
+        $document = $this->decode($this->handle('/articles/1'));
+        self::assertIsArray($document['data']);
+        self::assertIsArray($document['data']['attributes']);
+        $document['data']['attributes']['title'] = 42;
+
+        try {
+            $this->assertBodyMatchesGeneratedComponent(\json_encode($document, \JSON_THROW_ON_ERROR), 'ArticlesDocument');
+        } catch (AssertionFailedError $failure) {
+            self::assertStringContainsString('/data/attributes/title', $failure->getMessage());
+            self::assertStringContainsString('string', $failure->getMessage());
+            self::assertStringNotContainsString('{expected}', $failure->getMessage());
+
+            return;
+        }
+
+        self::fail('A non-string title should not match the generated schema.');
     }
 
     #[Test]
