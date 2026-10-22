@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/haddowg/json-api-symfony/compare/v1.2.0...v1.3.0) (2026-10-22)
+
+
+### Features
+
+* expose the matched JSON:API route on the request ([#145](https://github.com/haddowg/json-api-symfony/issues/145)) ([1bc9ace](https://github.com/haddowg/json-api-symfony/commit/1bc9ace132c11ea938451798f9f62cc5cd232432))
+
 ## [1.2.0](https://github.com/haddowg/json-api-symfony/compare/v1.1.0...v1.2.0) (2026-10-22)
 
 
