@@ -33,7 +33,8 @@ use Symfony\Component\HttpKernel\Event\RequestEvent;
  * On a JSON:API route (one whose route defaults carry `_jsonapi_type`) it:
  *  1. resolves the {@see \haddowg\JsonApi\Operation\Target} via the
  *     {@see TargetResolver};
- *  2. picks the server by the `_jsonapi_server` route default;
+ *  2. picks the server by the `_jsonapi_server` route default, basing an empty
+ *     `base_uri` on the route's mount ({@see ServerProvider::forRequest()});
  *  3. converts the Symfony request to a PSR-7 request and wraps it in core's
  *     {@see JsonApiRequest} (the idempotent guard every core middleware uses);
  *  4. runs the negotiation + query-param validation core's middleware would,
@@ -88,8 +89,7 @@ final class RequestListener
             return;
         }
 
-        $serverName = $request->attributes->get('_jsonapi_server');
-        $server = $this->servers->get(\is_string($serverName) ? $serverName : null);
+        $server = $this->servers->forRequest($request);
 
         $psrRequest = $this->psrHttpFactory->createRequest($request);
         $jsonApiRequest = $psrRequest instanceof JsonApiRequestInterface
@@ -174,8 +174,7 @@ final class RequestListener
      */
     private function handleAtomic(\Symfony\Component\HttpFoundation\Request $request): void
     {
-        $serverName = $request->attributes->get('_jsonapi_server');
-        $server = $this->servers->get(\is_string($serverName) ? $serverName : null);
+        $server = $this->servers->forRequest($request);
 
         $psrRequest = $this->psrHttpFactory->createRequest($request);
         $jsonApiRequest = $psrRequest instanceof JsonApiRequestInterface

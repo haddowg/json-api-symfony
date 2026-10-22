@@ -100,6 +100,21 @@ final class JsonApiRouteLoader extends Loader
     public const string ATOMIC_ATTRIBUTE = '_jsonapi_atomic';
 
     /**
+     * The route default carrying the path this loader emitted for the route, before
+     * any import `prefix` is applied. {@see MountRecordingLoader} compares it with the
+     * route's final path to find the server's mount (bundle ADR 0121).
+     */
+    public const string PATH_ATTRIBUTE = '_jsonapi_path';
+
+    /**
+     * The route default carrying the server's mount: the import prefix Symfony put in
+     * front of {@see PATH_ATTRIBUTE}, e.g. `/api/v5`. Absent when the import has no
+     * prefix. Set by {@see MountRecordingLoader}, read by
+     * {@see ServerProvider::forRequest()} (bundle ADR 0121).
+     */
+    public const string MOUNT_ATTRIBUTE = '_jsonapi_mount';
+
+    /**
      * The reserved path segment custom actions hang off (design §1/§7). It is a
      * **literal** in every action path and must never be captured as a resource
      * `{id}`: a collection-scope action `/{uriType}/-actions/{name}` is three
@@ -280,6 +295,10 @@ final class JsonApiRouteLoader extends Loader
                     methods: ['GET'],
                 ),
             );
+        }
+
+        foreach ($routes as $route) {
+            $route->setDefault(self::PATH_ATTRIBUTE, $route->getPath());
         }
 
         return $routes;

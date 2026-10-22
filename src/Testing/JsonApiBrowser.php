@@ -8,6 +8,8 @@ use haddowg\JsonApi\Response\DataResponse;
 use haddowg\JsonApi\Testing\JsonApiDocument;
 use haddowg\JsonApi\Testing\JsonApiErrors;
 use haddowg\JsonApi\Testing\ResponseMeta;
+use haddowg\JsonApiBundle\Operation\TargetResolver;
+use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use PHPUnit\Framework\Assert;
 use Symfony\Bridge\PsrHttpMessage\Factory\PsrHttpFactory;
@@ -17,6 +19,7 @@ use Symfony\Component\BrowserKit\History;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\KernelInterface;
+use Symfony\Component\Routing\RouterInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 /**
@@ -427,12 +430,6 @@ class JsonApiBrowser extends KernelBrowser
         \assert($servers instanceof ServerProvider);
         $server = $servers->get($serverName);
 
-        $psrHttpFactory = $container->get(PsrHttpFactory::class);
-        \assert($psrHttpFactory instanceof PsrHttpFactory);
-        $psrRequest = $psrHttpFactory->createRequest(
-            Request::create('/', 'GET', server: ['HTTP_ACCEPT' => self::MEDIA_TYPE]),
-        );
-
         // Resolve the entity's type by matching it against each registered
         // serializer: the serializer that serializes this object reports its own
         // registered type from getType(). A foreign serializer that errors on the
@@ -459,6 +456,19 @@ class JsonApiBrowser extends KernelBrowser
 
         $serializer = $server->serializerFor($type);
 
+        // Render as the type's own route would, so links carry the server's mount.
+        $request = Request::create('/', 'GET', server: ['HTTP_ACCEPT' => self::MEDIA_TYPE]);
+        $request->attributes->set('_jsonapi_server', $serverName ?? ServerProvider::DEFAULT_SERVER);
+        $mount = $this->mountOf($serverName ?? ServerProvider::DEFAULT_SERVER, $type);
+        if ($mount !== null) {
+            $request->attributes->set(JsonApiRouteLoader::MOUNT_ATTRIBUTE, $mount);
+        }
+        $server = $servers->forRequest($request);
+
+        $psrHttpFactory = $container->get(PsrHttpFactory::class);
+        \assert($psrHttpFactory instanceof PsrHttpFactory);
+        $psrRequest = $psrHttpFactory->createRequest($request);
+
         $document = (string) DataResponse::fromResource($entity, $serializer)
             ->toPsrResponse($server, $psrRequest)
             ->getBody();
@@ -470,6 +480,31 @@ class JsonApiBrowser extends KernelBrowser
 
         /** @var array<string, mixed> $data */
         return $data;
+    }
+
+    /**
+     * The literal mount the router recorded for `$type` on `$serverName`, if any. A
+     * mount with placeholders has no single value outside a request, so it is skipped.
+     */
+    private function mountOf(string $serverName, string $type): ?string
+    {
+        $router = $this->getContainer()->get('router');
+        if (!$router instanceof RouterInterface) {
+            return null;
+        }
+
+        foreach ($router->getRouteCollection() as $route) {
+            if ($route->getDefault('_jsonapi_server') !== $serverName
+                || $route->getDefault(TargetResolver::TYPE_ATTRIBUTE) !== $type) {
+                continue;
+            }
+
+            $mount = $route->getDefault(JsonApiRouteLoader::MOUNT_ATTRIBUTE);
+
+            return \is_string($mount) && !\str_contains($mount, '{') ? $mount : null;
+        }
+
+        return null;
     }
 
     // --- request lifecycle ---------------------------------------------------

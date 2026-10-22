@@ -108,8 +108,7 @@ final class ExceptionListener
 
         $throwable = $event->getThrowable();
 
-        $serverName = $request->attributes->get('_jsonapi_server');
-        $server = $this->servers->get(\is_string($serverName) ? $serverName : null);
+        $server = $this->servers->forRequest($request);
 
         $psrRequest = $request->attributes->get(RequestListener::PSR_REQUEST_ATTRIBUTE);
         if (!$psrRequest instanceof ServerRequestInterface) {

@@ -13,6 +13,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
+use Symfony\Component\HttpFoundation\Request;
 
 /**
  * Characterizes the multi-server {@see ServerProvider} (bundle ADR 0034): it
@@ -56,6 +57,79 @@ final class ServerProviderTest extends TestCase
         $this->expectExceptionMessage('No JSON:API server is configured under the name "missing".');
 
         $provider->get('missing');
+    }
+
+    #[Test]
+    #[Group('spec:document-links')]
+    public function forRequestBasesAnEmptyBaseUriOnTheRouteMount(): void
+    {
+        $provider = new ServerProvider($this->locator(['default' => $this->factory(''), 'admin' => $this->factory('')]));
+
+        $request = $this->routed('https://tenant.example/api/v5/articles/1', ['_jsonapi_mount' => '/api/v5']);
+        self::assertSame('https://tenant.example/api/v5', $provider->forRequest($request)->baseUri());
+
+        $admin = $this->routed('http://localhost/admin/articles', ['_jsonapi_server' => 'admin', '_jsonapi_mount' => '/admin']);
+        self::assertSame('http://localhost/admin', $provider->forRequest($admin)->baseUri());
+    }
+
+    #[Test]
+    #[Group('spec:document-links')]
+    public function forRequestReadsAPlaceholderMountFromTheRequestPath(): void
+    {
+        $provider = new ServerProvider($this->locator(['default' => $this->factory('')]));
+
+        $request = $this->routed('https://host.example/acme/api/articles/1', ['_jsonapi_mount' => '/{tenant}/api']);
+
+        self::assertSame('https://host.example/acme/api', $provider->forRequest($request)->baseUri());
+    }
+
+    #[Test]
+    #[Group('spec:document-links')]
+    public function forRequestKeepsTheFrontControllerBasePath(): void
+    {
+        $provider = new ServerProvider($this->locator(['default' => $this->factory('')]));
+
+        $request = Request::create('https://host.example/app/index.php/api/v5/articles', server: [
+            'SCRIPT_NAME' => '/app/index.php',
+            'SCRIPT_FILENAME' => '/var/www/app/index.php',
+        ]);
+        $request->attributes->set('_jsonapi_mount', '/api/v5');
+
+        self::assertSame('/app/index.php', $request->getBaseUrl());
+        self::assertSame('https://host.example/app/index.php/api/v5', $provider->forRequest($request)->baseUri());
+    }
+
+    #[Test]
+    #[Group('spec:document-links')]
+    public function forRequestLeavesAnUnmountedServerAlone(): void
+    {
+        $default = $this->factory('');
+        $provider = new ServerProvider($this->locator(['default' => $default]));
+
+        self::assertSame($default->create(), $provider->forRequest($this->routed('https://host.example/articles', [])));
+    }
+
+    #[Test]
+    #[Group('spec:document-links')]
+    public function forRequestLeavesAConfiguredBaseUriAlone(): void
+    {
+        $default = $this->factory('https://api.example/v5');
+        $provider = new ServerProvider($this->locator(['default' => $default]));
+
+        $request = $this->routed('https://tenant.example/api/v5/articles', ['_jsonapi_mount' => '/api/v5']);
+
+        self::assertSame($default->create(), $provider->forRequest($request));
+    }
+
+    /**
+     * @param array<string, string> $attributes
+     */
+    private function routed(string $uri, array $attributes): Request
+    {
+        $request = Request::create($uri);
+        $request->attributes->add($attributes);
+
+        return $request;
     }
 
     /**

@@ -81,6 +81,7 @@ final class MetadataSource
         private readonly bool $atomicEnabled = false,
         private readonly string $atomicPath = '/operations',
         private readonly array $errorSources = [],
+        private readonly ?MountServers $mountServers = null,
     ) {}
 
     /**
@@ -101,7 +102,7 @@ final class MetadataSource
             description: $config->description,
             contact: $config->contact,
             license: $config->license,
-            servers: $config->servers !== [] ? $config->servers : $this->defaultServers($server),
+            servers: $config->servers !== [] ? $config->servers : $this->defaultServers($serverName, $server),
             jsonApiVersion: $server->jsonApiVersion(),
             tags: $this->tagDefinitions($config, $types),
             securitySchemes: $config->securitySchemes,
@@ -155,7 +156,7 @@ final class MetadataSource
                 $typeNames[] = $type->type();
             }
 
-            foreach (($config->servers !== [] ? $config->servers : $this->defaultServers($server)) as $advertisedServer) {
+            foreach (($config->servers !== [] ? $config->servers : $this->defaultServers($serverName, $server)) as $advertisedServer) {
                 $advertised[$advertisedServer->url] ??= $advertisedServer;
             }
 
@@ -620,11 +621,14 @@ final class MetadataSource
     /**
      * @return list<\haddowg\JsonApi\OpenApi\Server>
      */
-    private function defaultServers(Server $server): array
+    private function defaultServers(string $serverName, Server $server): array
     {
         $baseUri = $server->baseUri();
+        if ($baseUri !== '') {
+            return [new \haddowg\JsonApi\OpenApi\Server($baseUri)];
+        }
 
-        return $baseUri === '' ? [] : [new \haddowg\JsonApi\OpenApi\Server($baseUri)];
+        return $this->mountServers?->forServer($serverName) ?? [];
     }
 
     private function defaultTitle(string $serverName): string
