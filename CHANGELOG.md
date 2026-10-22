@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.4.0](https://github.com/haddowg/json-api-symfony/compare/v1.3.0...v1.4.0) (2026-10-22)
+
+
+### Features
+
+* add a JSON:API browser accessor that leaves createClient() alone ([f00158b](https://github.com/haddowg/json-api-symfony/commit/f00158bbec1d01d6026313bc556a0064fbf771a2))
+* give authentication and authorization errors stable codes ([08420e2](https://github.com/haddowg/json-api-symfony/commit/08420e202466b64dc8e88751dc0e053cd8a0d421))
+* render DateTime attributes in a configured output timezone ([08420e2](https://github.com/haddowg/json-api-symfony/commit/08420e202466b64dc8e88751dc0e053cd8a0d421))
+* **testing:** validate included resources against their own type's schema ([f00158b](https://github.com/haddowg/json-api-symfony/commit/f00158bbec1d01d6026313bc556a0064fbf771a2))
+
+
+### Bug Fixes
+
+* give each server its own instance of a shared resource ([08420e2](https://github.com/haddowg/json-api-symfony/commit/08420e202466b64dc8e88751dc0e053cd8a0d421))
+* let schema conformance accept sparse-fieldset responses ([f00158b](https://github.com/haddowg/json-api-symfony/commit/f00158bbec1d01d6026313bc556a0064fbf771a2))
+
+
+### Miscellaneous Chores
+
+* **deps:** require haddowg/json-api ^1.2 ([08420e2](https://github.com/haddowg/json-api-symfony/commit/08420e202466b64dc8e88751dc0e053cd8a0d421))
+
 ## [1.3.0](https://github.com/haddowg/json-api-symfony/compare/v1.2.0...v1.3.0) (2026-10-22)
 
 
