@@ -99,6 +99,9 @@ named server follows its own import, so `default` under `/api/v5` and `admin` un
 `/admin` each link under their own prefix. A prefix with placeholders
 (`/{tenant}/api`) works too: its value comes from the request path. A front controller
 served below the web root (`/app/index.php`) adds its base path in the same way.
+The OpenAPI document advertises the same prefix as a relative `servers` URL
+(`/api/v5`); see [OpenAPI](openapi.md#the-servers-list) for placeholders and what it
+can't see.
 
 A configured `base_uri` is used as it is, so it has to include the prefix:
 

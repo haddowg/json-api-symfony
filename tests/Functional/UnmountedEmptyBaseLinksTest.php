@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use haddowg\JsonApiBundle\OpenApi\DocumentFactory;
 use haddowg\JsonApiBundle\Tests\Functional\App\EmptyBaseWritableInMemoryTestKernel;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
@@ -44,5 +45,23 @@ final class UnmountedEmptyBaseLinksTest extends JsonApiFunctionalTestCase
         $links = $this->decode($response)['links'] ?? null;
         self::assertIsArray($links);
         self::assertSame('http://localhost/articles?page%5Bnumber%5D=2&page%5Bsize%5D=2', $links['next'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    public function theOpenApiDocumentAdvertisesNoServers(): void
+    {
+        self::assertArrayNotHasKey('servers', $this->openApi());
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function openApi(?string $server = null): array
+    {
+        $factory = static::getContainer()->get(DocumentFactory::class);
+        self::assertInstanceOf(DocumentFactory::class, $factory);
+
+        return $factory->forServer($server)->toArray();
     }
 }

@@ -435,6 +435,43 @@ final class StampInternalServer implements OpenApiFactoryInterface
 Register multiple by priority (`#[AsTaggedItem]` or a `priority` tag attribute); lower
 priority runs first, the highest-priority decorator gets the final mutation.
 
+## The `servers` list
+
+Unless `json_api.openapi.servers` overrides it, each document's `servers` comes from
+the JSON:API server it describes:
+
+- **A configured `base_uri`** is the one server URL, as it is
+  (`https://api.example.com/api/v5`).
+- **An empty `base_uri`** advertises the prefix the server's routes are imported under,
+  as a relative URL, so a client resolves `/articles` against the document's host as
+  `/api/v5/articles`. Routes imported with no prefix advertise no `servers`, as before.
+  A server imported under two prefixes gets one entry per prefix, sorted, and an
+  unprefixed import beside them adds `/`.
+- **A prefix with placeholders** (`/{tenant}/api`) becomes a templated URL with a server
+  variable whose `default` is the route default for that placeholder:
+
+```yaml
+# config/routes/json_api.yaml
+json_api_tenant:
+  resource: default
+  type: jsonapi
+  prefix: /{tenant}/api
+  defaults: { tenant: acme }
+```
+
+```json
+"servers": [{ "url": "/{tenant}/api", "variables": { "tenant": { "default": "acme" } } }]
+```
+
+OpenAPI requires a variable default, so a placeholder prefix without a route default is
+left out of `servers` rather than given an invented value.
+
+The document is built from the compiled routes, not from a request, so it is the same
+whether the cache warmer or the first request builds it. That also means it can't see
+a front controller served below the web root (`/app/index.php`) or a proxy prefix: those
+are only known per request. Set `json_api.openapi.servers` (or a configured `base_uri`)
+when the API is reached through one.
+
 ## Multi-server
 
 With several JSON:API [servers](multi-server-and-testing.md), the default is **one

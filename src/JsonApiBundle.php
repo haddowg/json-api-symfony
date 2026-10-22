@@ -416,7 +416,7 @@ final class JsonApiBundle extends AbstractBundle
                     ->end()
                 ->end()
                 ->arrayNode('servers')
-                    ->info('Override the advertised OAS servers list. Null/empty = derive one server from each JSON:API server\'s base URI (D2). A non-empty list replaces that derivation document-wide.')
+                    ->info('Override the advertised OAS servers list. Null/empty = derive one server from each JSON:API server\'s base URI (D2), or from the prefixes its routes are imported under when the base URI is empty (ADR 0121). A non-empty list replaces that derivation document-wide.')
                     ->arrayPrototype()
                         ->children()
                             ->scalarNode('url')->isRequired()->cannotBeEmpty()->end()

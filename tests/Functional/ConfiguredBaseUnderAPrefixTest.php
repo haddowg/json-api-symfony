@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use haddowg\JsonApiBundle\OpenApi\DocumentFactory;
 use haddowg\JsonApiBundle\Tests\Functional\App\ConfiguredBaseMountedInMemoryTestKernel;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
@@ -76,5 +77,23 @@ final class ConfiguredBaseUnderAPrefixTest extends JsonApiFunctionalTestCase
         self::assertSame(201, $response->getStatusCode(), (string) $response->getContent());
 
         self::assertSame(self::BASE . '/articles/6', $response->headers->get('Location'));
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    public function theOpenApiServerIsTheConfiguredBase(): void
+    {
+        self::assertSame([['url' => self::BASE]], $this->openApi()['servers'] ?? null);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function openApi(?string $server = null): array
+    {
+        $factory = static::getContainer()->get(DocumentFactory::class);
+        self::assertInstanceOf(DocumentFactory::class, $factory);
+
+        return $factory->forServer($server)->toArray();
     }
 }

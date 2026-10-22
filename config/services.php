@@ -129,7 +129,13 @@ return static function (ContainerConfigurator $container): void {
         // the JsonApiRouteLoader reads. When enabled, every server's OpenAPI document
         // gains the atomic POST {path} endpoint (mirroring the per-server route).
         ->arg('$atomicEnabled', '%haddowg_json_api.atomic_operations.enabled%')
-        ->arg('$atomicPath', '%haddowg_json_api.atomic_operations.path%');
+        ->arg('$atomicPath', '%haddowg_json_api.atomic_operations.path%')
+        // An empty base_uri advertises the server's recorded route mounts as relative
+        // servers (bundle ADR 0121).
+        ->arg('$mountServers', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\OpenApi\Metadata\MountServers::class));
+
+    $services->set(\haddowg\JsonApiBundle\OpenApi\Metadata\MountServers::class)
+        ->arg('$router', \Symfony\Component\DependencyInjection\Loader\Configurator\service('router')->nullOnInvalid());
 
     // Custom, non-CRUD actions (bundle ADR 0076). The ActionRegistry resolves an
     // ActionDescriptor + its ActionHandlerInterface by the composite key

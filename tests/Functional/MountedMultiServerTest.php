@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use haddowg\JsonApiBundle\OpenApi\DocumentFactory;
 use haddowg\JsonApiBundle\Tests\Functional\App\MountedMultiServerTestKernel;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
@@ -88,5 +89,24 @@ final class MountedMultiServerTest extends JsonApiFunctionalTestCase
         self::assertIsArray($links);
 
         return $links['self'] ?? null;
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    public function eachServersOpenApiDocumentAdvertisesItsOwnMount(): void
+    {
+        self::assertSame([['url' => '/api/v5']], $this->openApi()['servers'] ?? null);
+        self::assertSame([['url' => '/admin']], $this->openApi('admin')['servers'] ?? null);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function openApi(?string $server = null): array
+    {
+        $factory = static::getContainer()->get(DocumentFactory::class);
+        self::assertInstanceOf(DocumentFactory::class, $factory);
+
+        return $factory->forServer($server)->toArray();
     }
 }

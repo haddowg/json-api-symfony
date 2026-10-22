@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use haddowg\JsonApiBundle\OpenApi\DocumentFactory;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Response;
@@ -148,6 +149,20 @@ abstract class MountedServerLinksConformanceTestCase extends JsonApiFunctionalTe
         $expected = self::BASE . '/articles/' . $data['id'];
         self::assertSame(['self' => $expected], $data['links'] ?? null);
         self::assertSame($expected, $response->headers->get('Location'));
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    public function theOpenApiDocumentAdvertisesTheMountAsItsServer(): void
+    {
+        $factory = static::getContainer()->get(DocumentFactory::class);
+        self::assertInstanceOf(DocumentFactory::class, $factory);
+
+        $document = $factory->forServer()->toArray();
+
+        self::assertSame([['url' => '/api/v5']], $document['servers'] ?? null);
+        self::assertIsArray($document['paths'] ?? null);
+        self::assertArrayHasKey('/articles/{id}', $document['paths']);
     }
 
     /**

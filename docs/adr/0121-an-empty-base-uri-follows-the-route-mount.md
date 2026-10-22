@@ -25,5 +25,11 @@ document links carry it once.
 - A front controller below the web root (`/app/index.php`) now adds its base path to an
   empty base, even with no prefix, matching the URLs the router generates.
 - A hand-written route has no recorded mount unless it sets `_jsonapi_mount` itself.
-- The OpenAPI document still advertises no `servers` entry for an empty base, so its
-  paths don't show the prefix.
+- The OpenAPI document advertises each distinct mount of an empty-base server as a
+  relative `servers` URL (`/api/v5`), sorted, read from the router's route collection
+  rather than a request so the warmed document matches a lazily built one. A
+  placeholder prefix becomes a server variable defaulting to the route default; without
+  a route default the mount is left out, because OAS requires a default and an invented
+  one would advertise a URL that may not exist. The front-controller base path and a
+  proxy prefix are per request, so the document can't include them;
+  `json_api.openapi.servers` covers that case.
