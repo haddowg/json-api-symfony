@@ -71,6 +71,10 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  * `Server::dispatch()` and rendered by the route-scoped exception listener; when
  * off, an unrecognized family is silently ignored (the old behaviour).
  *
+ * It threads the server's output timezone (`json_api.output_timezone`, or a named
+ * server's own) into the Server through {@see Server::withOutputTimezone()}, so
+ * `DateTime` attributes render in that zone unless the field sets its own.
+ *
  * When a {@see RelationshipLoadStateInterface} is wired (the reference Doctrine
  * predicate, present only on a Doctrine application), it is threaded into the
  * Server through core's
@@ -132,6 +136,7 @@ final class ServerFactory
         private readonly ?EventDispatcherInterface $dispatcher = null,
         private readonly ?ErrorMessageResolverInterface $errorMessageResolver = null,
         private readonly array $profiles = self::DEFAULT_PROFILES,
+        private readonly ?string $outputTimezone = null,
     ) {}
 
     /**
@@ -197,6 +202,11 @@ final class ServerFactory
             // Null when symfony/translation is absent, so core renders its inline
             // English copy (byte-identical to today).
             ->withErrorMessageResolver($this->errorMessageResolver)
+            // The zone DateTime attributes render in unless a field sets its own
+            // (json_api.output_timezone, or the named server's own). Core carries it on
+            // the registry every resource of this server reads it from; null renders
+            // each value in the zone it carries.
+            ->withOutputTimezone($this->outputTimezone)
             ->withContainer($this->resources);
 
         // Register the JSON:API profiles this server recognizes, data-driven from

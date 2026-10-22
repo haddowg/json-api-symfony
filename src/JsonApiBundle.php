@@ -197,6 +197,8 @@ final class JsonApiBundle extends AbstractBundle
      */
     public const int DEFAULT_MAX_INCLUDE_DEPTH = 3;
 
+    private const string INVALID_TIMEZONE_MESSAGE = '%s is not a timezone PHP recognises. Use an identifier such as "UTC" or "Europe/London" (see \\DateTimeZone::listIdentifiers()), or an empty string for no conversion.';
+
     public function configure(DefinitionConfigurator $definition): void
     {
         $definition->rootNode()
@@ -211,6 +213,14 @@ final class JsonApiBundle extends AbstractBundle
                     ->info('Cap the nesting depth of a `?include` request (number of relationship hops from the primary resource): a cap of 3 allows `?include=a.b.c` and rejects `a.b.c.d` (400). The default is 3; set 0 for unlimited. A resource\'s own maxIncludeDepth() overrides this server default.')
                     ->defaultValue(self::DEFAULT_MAX_INCLUDE_DEPTH)
                     ->min(0)
+                ->end()
+                ->scalarNode('output_timezone')
+                    ->info('The timezone every DateTime attribute renders in, e.g. UTC, unless the field sets its own outputTimezone(). Date and Time attributes are left alone. Named servers inherit it. The default, null (or an empty string), renders each value in the zone it carries.')
+                    ->defaultNull()
+                    ->validate()
+                        ->ifTrue(static fn(mixed $value): bool => !self::isOutputTimezoneSetting($value))
+                        ->thenInvalid(self::INVALID_TIMEZONE_MESSAGE)
+                    ->end()
                 ->end()
                 ->booleanNode('strict_query_parameters')
                     ->info('Reject an unrecognized top-level query-parameter family with a 400 (bundle ADR 0055, core ADR 0059). A param is recognized when its base name is a reserved JSON:API family (include/fields/filter/sort/page), a key the primary resource declares, a negotiated profile keyword (relatedQuery/rQ for the Relationship Queries profile, withCount for the Countable profile), or an app-registered custom param. The default is true; set false to restore the old silent-ignore behaviour.')
@@ -289,6 +299,14 @@ final class JsonApiBundle extends AbstractBundle
                         ->children()
                             ->scalarNode('base_uri')->defaultNull()->end()
                             ->scalarNode('version')->defaultNull()->end()
+                            ->scalarNode('output_timezone')
+                                ->info('The timezone this server\'s DateTime attributes render in. Null (the default) inherits the top-level output_timezone; an empty string renders each value in the zone it carries.')
+                                ->defaultNull()
+                                ->validate()
+                                    ->ifTrue(static fn(mixed $value): bool => !self::isOutputTimezoneSetting($value))
+                                    ->thenInvalid(self::INVALID_TIMEZONE_MESSAGE)
+                                ->end()
+                            ->end()
                         ->end()
                     ->end()
                 ->end()
@@ -562,7 +580,7 @@ final class JsonApiBundle extends AbstractBundle
         // inherits the top-level value when its own is omitted. The list of names is
         // a container parameter the ResourceLocatorPass reads to validate resource
         // assignments and bucket per server.
-        $servers = $this->serverMap($config, $baseUri, $version);
+        $servers = $this->serverMap($config, $baseUri, $version, $this->outputTimezoneConfig($config));
         $builder->setParameter('haddowg_json_api.servers', \array_keys($servers));
 
         $container->import(\dirname(__DIR__) . '/config/services.php');
@@ -1049,16 +1067,16 @@ final class JsonApiBundle extends AbstractBundle
     /**
      * The full server map: the implicit `default` server plus each named server
      * from `json_api.servers`. A named server inherits the top-level base_uri /
-     * version when its own is omitted; a named server may not be literally
-     * `default` (that name is reserved for the implicit, top-level server).
+     * version / output_timezone when its own is omitted; a named server may not be
+     * literally `default` (that name is reserved for the implicit, top-level server).
      *
      * @param array<string, mixed> $config
      *
-     * @return array<string, array{base_uri: string, version: string}>
+     * @return array<string, array{base_uri: string, version: string, output_timezone: ?string}>
      */
-    private function serverMap(array $config, string $baseUri, string $version): array
+    private function serverMap(array $config, string $baseUri, string $version, ?string $outputTimezone): array
     {
-        $servers = [ServerProvider::DEFAULT_SERVER => ['base_uri' => $baseUri, 'version' => $version]];
+        $servers = [ServerProvider::DEFAULT_SERVER => ['base_uri' => $baseUri, 'version' => $version, 'output_timezone' => $outputTimezone]];
 
         $named = $config['servers'] ?? [];
         if (!\is_array($named)) {
@@ -1078,6 +1096,10 @@ final class JsonApiBundle extends AbstractBundle
             $servers[$name] = [
                 'base_uri' => $this->stringConfig($settings, 'base_uri', $baseUri),
                 'version' => $this->stringConfig($settings, 'version', $version),
+                // Null inherits the top-level zone; '' turns conversion off here.
+                'output_timezone' => \is_string($settings['output_timezone'] ?? null)
+                    ? $this->outputTimezoneConfig($settings)
+                    : $outputTimezone,
             ];
         }
 
@@ -1092,8 +1114,8 @@ final class JsonApiBundle extends AbstractBundle
      * {@see ServerProvider} resolves a server by name through a locator over these
      * factories.
      *
-     * @param array<string, array{base_uri: string, version: string}> $servers
-     * @param list<class-string<ProfileInterface>>                     $profiles the JSON:API profiles every server registers, in order (bundle ADR 0117)
+     * @param array<string, array{base_uri: string, version: string, output_timezone: ?string}> $servers
+     * @param list<class-string<ProfileInterface>>                                               $profiles the JSON:API profiles every server registers, in order (bundle ADR 0117)
      */
     private function registerServers(ContainerConfigurator $container, array $servers, int $maxPerPage, int $maxIncludeDepth, bool $strictQueryParameters, array $profiles): void
     {
@@ -1174,6 +1196,9 @@ final class JsonApiBundle extends AbstractBundle
                     // canonical order). The same list feeds the OpenAPI jsonapi.profile
                     // enum + the profile-gated parameters (core ADR 0131).
                     '$profiles' => $profiles,
+                    // The zone DateTime attributes render in (json_api.output_timezone,
+                    // or the named server's own); null leaves values in their own zone.
+                    '$outputTimezone' => $settings['output_timezone'],
                 ]);
 
             $factoryRefs[$name] = service($id);
@@ -1443,6 +1468,45 @@ final class JsonApiBundle extends AbstractBundle
         $value = $config['max_include_depth'] ?? null;
 
         return \is_int($value) ? \max(0, $value) : self::DEFAULT_MAX_INCLUDE_DEPTH;
+    }
+
+    /**
+     * The zone the `output_timezone` key of a config level (top-level or one named
+     * server) sets, already validated by the config tree, or null for none: absent,
+     * null and the empty string all mean no conversion at that level.
+     *
+     * @param array<array-key, mixed> $config
+     */
+    private function outputTimezoneConfig(array $config): ?string
+    {
+        $value = $config['output_timezone'] ?? null;
+
+        return \is_string($value) && $value !== '' ? $value : null;
+    }
+
+    /**
+     * Whether a configured output timezone is null, the empty string (no
+     * conversion) or a zone `\DateTimeZone` accepts, the same check core's
+     * `Server::withOutputTimezone()` makes, so a typo fails the container build
+     * instead of the first request.
+     */
+    private static function isOutputTimezoneSetting(mixed $value): bool
+    {
+        if ($value === null || $value === '') {
+            return true;
+        }
+
+        if (!\is_string($value)) {
+            return false;
+        }
+
+        try {
+            new \DateTimeZone($value);
+        } catch (\Exception) {
+            return false;
+        }
+
+        return true;
     }
 
     /**

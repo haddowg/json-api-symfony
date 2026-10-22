@@ -64,6 +64,9 @@ json_api:
             # version omitted → inherits the top-level '1.1'
 ```
 
+`output_timezone` follows the same rule, and a named server sets it to `''` to switch
+off a top-level zone (see [configuration](configuration.md#named-servers-json_apiservers)).
+
 The full config tree, the surfaced container parameters
 (`haddowg_json_api.servers`), and the reserved-name guard live on
 [configuration](configuration.md). The one rule worth repeating here: a named
@@ -179,7 +182,7 @@ the service id `haddowg.json_api.server_factory.<name>` (use
 
 Each factory builds the immutable, memoized core `Server` for **its** surface from:
 
-- *that server's* `base_uri` / `version`;
+- *that server's* `base_uri` / `version` / `output_timezone`;
 - the PSR-17 response / stream factories;
 - **only the resources and standalone pairs assigned to that server** (the
   compiler pass buckets each type per server, so the `admin` factory holds only the
