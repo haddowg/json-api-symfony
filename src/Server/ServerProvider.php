@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Server;
 
 use haddowg\JsonApi\Server\Server;
+use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
+use Symfony\Component\HttpFoundation\Request;
 
 /**
  * Resolves a configured {@see Server} by its `_jsonapi_server` route-default name.
@@ -43,5 +45,55 @@ final class ServerProvider
         \assert($factory instanceof ServerFactory);
 
         return $factory->create();
+    }
+
+    /**
+     * The Server for the request's `_jsonapi_server` route default, with its links
+     * based where the request found it.
+     *
+     * A configured `base_uri` is returned as it is. An empty one would make core base
+     * every link on the request origin alone, dropping the import prefix a server's
+     * routes are mounted under; so when the route carries a mount (or the front
+     * controller lives below the web root) the Server is given the effective base
+     * `origin + base path + mount` for this request instead (bundle ADR 0121).
+     *
+     * @throws \LogicException when the route names an unknown server
+     */
+    public function forRequest(Request $request): Server
+    {
+        $name = $request->attributes->get('_jsonapi_server');
+        $server = $this->get(\is_string($name) ? $name : null);
+
+        if ($server->baseUri() !== '') {
+            return $server;
+        }
+
+        $path = $request->getBaseUrl() . self::mountOf($request);
+        if ($path === '') {
+            return $server;
+        }
+
+        return $server->withBaseUri($request->getSchemeAndHttpHost() . $path);
+    }
+
+    /**
+     * The mount the matched route recorded. A prefix with placeholders
+     * (`/{tenant}/api`) is read back from the request path, one segment per segment
+     * of the prefix.
+     */
+    private static function mountOf(Request $request): string
+    {
+        $mount = $request->attributes->get(JsonApiRouteLoader::MOUNT_ATTRIBUTE);
+        if (!\is_string($mount) || $mount === '') {
+            return '';
+        }
+
+        if (!\str_contains($mount, '{')) {
+            return $mount;
+        }
+
+        $segments = \explode('/', $request->getPathInfo());
+
+        return \implode('/', \array_slice($segments, 0, \substr_count($mount, '/') + 1));
     }
 }

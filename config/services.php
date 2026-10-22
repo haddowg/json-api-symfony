@@ -14,6 +14,7 @@ use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Operation\CrudOperationHandler;
 use haddowg\JsonApiBundle\Operation\TargetResolver;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
+use haddowg\JsonApiBundle\Routing\MountRecordingLoader;
 use haddowg\JsonApiBundle\Server\IdEncoderResolver;
 use haddowg\JsonApiBundle\Server\RelationsRegistry;
 use haddowg\JsonApiBundle\Server\ResourceLocator;
@@ -23,6 +24,7 @@ use haddowg\JsonApiBundle\Validation\ConstraintTranslator;
 use haddowg\JsonApiBundle\Validation\FilterValueValidator;
 use haddowg\JsonApiBundle\Validation\JsonPointerBuilder;
 use haddowg\JsonApiBundle\Validation\ResourceValidator;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 
 /*
@@ -300,6 +302,13 @@ return static function (ContainerConfigurator $container): void {
         ->arg('$atomicEnabled', '%haddowg_json_api.atomic_operations.enabled%')
         ->arg('$atomicPath', '%haddowg_json_api.atomic_operations.path%')
         ->tag('routing.loader');
+
+    // Records each server's import prefix on its routes once the whole route
+    // collection is loaded (bundle ADR 0121). Dropped when FrameworkBundle's router
+    // isn't installed.
+    $services->set(MountRecordingLoader::class)
+        ->decorate('routing.loader', invalidBehavior: ContainerInterface::IGNORE_ON_INVALID_REFERENCE)
+        ->args([\Symfony\Component\DependencyInjection\Loader\Configurator\service('.inner')]);
 
     // The pass-through controller every generated route resolves to; the
     // RequestListener has already produced the response VO it returns.

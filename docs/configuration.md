@@ -37,7 +37,7 @@ json_api:
             public: true
     servers:
         admin:
-            base_uri: 'https://admin.music.example'
+            base_uri: 'https://admin.music.example/admin'
 ```
 
 — [`config/packages/json_api.yaml`](../examples/music-catalog-symfony/config/packages/json_api.yaml)
@@ -46,7 +46,7 @@ witness).
 
 | Key | Type | Default | What it does |
 | --- | --- | --- | --- |
-| `base_uri` | scalar | `''` | The base prepended to every generated link. **Empty (the default): links are absolute, built from the request's scheme + host** — each tenant/host gets correct self-links with no hardcoded host. Set a value to pin a fixed canonical base regardless of the request. Trailing slashes are tolerated. |
+| `base_uri` | scalar | `''` | The base prepended to every generated link. **Empty (the default): links are absolute, built from the request's scheme + host plus the prefix the server's routes are imported under**, so each tenant/host gets correct self-links with no hardcoded host. Set a value to pin a fixed canonical base regardless of the request; it must then include that prefix itself. Trailing slashes are tolerated. |
 | `version` | scalar | `'1.1'` | The JSON:API version the implicit `default` server advertises. Defaults to `'1.1'`, so set it **only** to pin a non-default version — most apps omit it (the example app's `'1.1'` above is just the explicit-version witness). |
 | `max_include_depth` | int | `3` | The cap on `?include` nesting depth (relationship hops from the primary resource). `0` is unlimited. A resource's own `maxIncludeDepth()` overrides it. |
 | `strict_query_parameters` | bool | `true` | Reject an unrecognized top-level query-parameter family — and an unknown [`fields[type]` sparse-fieldset member](#unknown-sparse-fieldset-members) — with a `400`. `false` restores the old silent-ignore behaviour. |
@@ -76,6 +76,47 @@ nothing else) and never touches `servers:`.
 > canonical host regardless of the request; it is a compile-time constant applied to every
 > request and is **not** request-host aware. Trailing slashes on a configured base are
 > tolerated (`https://api.example/` and `https://api.example` are equivalent).
+
+### Mounting a server under a prefix
+
+A server's routes can be imported under a prefix (see [routing](routing.md)):
+
+```yaml
+# config/routes/json_api.yaml
+json_api_v5:
+    resource: default
+    type: jsonapi
+    prefix: /api/v5
+```
+
+With an empty `base_uri`, links follow the mount. The bundle records each route's
+import prefix when the router loads its routes, and on every request it bases the
+links on the request origin plus that prefix. A request to
+`https://tenant.example/api/v5/advertisers/1` renders `https://tenant.example/api/v5/advertisers/1`
+as both the resource and the document `self`, and pagination links read
+`https://tenant.example/api/v5/advertisers?page[number]=2…` with the prefix once. Each
+named server follows its own import, so `default` under `/api/v5` and `admin` under
+`/admin` each link under their own prefix. A prefix with placeholders
+(`/{tenant}/api`) works too: its value comes from the request path. A front controller
+served below the web root (`/app/index.php`) adds its base path in the same way.
+
+A configured `base_uri` is used as it is, so it has to include the prefix:
+
+```yaml
+json_api:
+    base_uri: 'https://api.example/api/v5'
+```
+
+Resource links append the server-relative path to that base. Document `self` and
+pagination links reuse the request path, which already starts with `/api/v5`, so core
+drops the base's own path from the front of it and the prefix appears once. A
+configured base without the prefix (`https://api.example` for routes under `/api/v5`)
+renders resource links that miss the prefix.
+
+Hand-written routes (see [routing](routing.md#the-explicit-route-seam-targetresolver))
+don't go through the route loader, so nothing records their prefix. Set the
+`_jsonapi_mount` route default on them yourself, or an empty base links them from the
+request origin alone.
 
 ### Container parameters
 
@@ -376,7 +417,7 @@ json_api:
     base_uri: 'https://music.example'
     servers:
         admin:
-            base_uri: 'https://admin.music.example'
+            base_uri: 'https://admin.music.example/admin'
 ```
 
 Each named server **inherits the top-level value when its own is omitted** — the

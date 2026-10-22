@@ -37,7 +37,9 @@ json_api:
     # strict_query_parameters: true
     servers:
         admin:
-            base_uri: 'https://admin.music.example'
+            # The admin routes are imported under `/admin`, and a configured
+            # base_uri is used verbatim, so it has to carry that mount too.
+            base_uri: 'https://admin.music.example/admin'
 
     # The JSON:API Atomic Operations extension (https://jsonapi.org/ext/atomic):
     # a batch of write operations applied in order, all-or-nothing, within one

@@ -27,6 +27,27 @@ final class ArticleProviderFactory
         return new InMemoryDataProvider('articles', self::graph()['articles']);
     }
 
+    /**
+     * The `articles` provider with id closures, so a create can key the new item.
+     */
+    public static function createWritableArticles(): InMemoryDataProvider
+    {
+        return new InMemoryDataProvider(
+            'articles',
+            self::graph()['articles'],
+            static function (object $item): string {
+                \assert($item instanceof Article);
+
+                return $item->id === null ? '' : (string) $item->id;
+            },
+            static function (object $item, string $id): void {
+                \assert($item instanceof Article);
+
+                $item->id = (int) $id;
+            },
+        );
+    }
+
     public static function createAuthors(): InMemoryDataProvider
     {
         return new InMemoryDataProvider('authors', self::graph()['authors']);

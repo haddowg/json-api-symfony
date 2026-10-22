@@ -60,7 +60,7 @@ json_api:
     version: '1.1'
     servers:
         admin:
-            base_uri: 'https://admin.music.example'
+            base_uri: 'https://admin.music.example/admin'
             # version omitted → inherits the top-level '1.1'
 ```
 
@@ -139,13 +139,13 @@ mechanics are owned by [routing](routing.md).
 
 Each emitted route carries a `_jsonapi_server` route default — `default` for the
 bare import, the named server otherwise. The request lifecycle reads it and resolves
-the matching `Server` through `ServerProvider::get($name)` — `ServerProvider` is the
+the matching `Server` through `ServerProvider::forRequest($request)`, which reads the
+name and hands it to `ServerProvider::get($name)`. `ServerProvider` is the
 name → `ServerFactory` locator (detailed in the next section):
 
 ```php
 // src/EventListener/RequestListener.php
-$serverName = $request->attributes->get('_jsonapi_server');
-$server = $this->servers->get(\is_string($serverName) ? $serverName : null);
+$server = $this->servers->forRequest($request);
 ```
 
 ```php
@@ -208,10 +208,15 @@ self::assertSame(
     $this->relationshipSelf($fromDefault, 'artist'),
 );
 self::assertSame(
-    'https://admin.music.example/albums/1/relationships/artist',
+    'https://admin.music.example/admin/albums/1/relationships/artist',
     $this->relationshipSelf($fromAdmin, 'artist'),
 );
 ```
+
+The admin `base_uri` ends in `/admin` because the admin routes are imported under
+that prefix and a configured base is used verbatim. With an empty `base_uri` the
+bundle adds each server's prefix itself (see
+[configuration](configuration.md#mounting-a-server-under-a-prefix)).
 
 ### Where each multi-server concern is documented
 

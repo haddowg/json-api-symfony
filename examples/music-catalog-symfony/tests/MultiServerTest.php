@@ -12,7 +12,7 @@ use Symfony\Component\Routing\RouterInterface;
 /**
  * The multi-server witness (bundle ADR 0034) for the example app: the implicit
  * `default` server (top-level `base_uri`, `https://music.example`) plus a named
- * `admin` server (its own `base_uri`, `https://admin.music.example`), declared in
+ * `admin` server (its own `base_uri`, `https://admin.music.example/admin`), declared in
  * `config/packages/json_api.yaml` and mounted by the two per-server imports in
  * `config/routes/json_api.yaml` (the `admin` import under `/admin`).
  *
@@ -38,7 +38,7 @@ final class MultiServerTest extends MusicCatalogKernelTestCase
 {
     private const string DEFAULT_BASE_URI = 'https://music.example';
 
-    private const string ADMIN_BASE_URI = 'https://admin.music.example';
+    private const string ADMIN_BASE_URI = 'https://admin.music.example/admin';
 
     #[Test]
     #[Group('spec:multi-server')]
@@ -114,6 +114,26 @@ final class MultiServerTest extends MusicCatalogKernelTestCase
             self::ADMIN_BASE_URI . '/users/1/relationships/playlists',
             $this->relationshipSelf($response, 'playlists'),
         );
+    }
+
+    #[Test]
+    #[Group('spec:multi-server')]
+    public function theAdminDocumentAndResourceLinksCarryTheMountOnce(): void
+    {
+        // The admin base_uri carries the `/admin` mount, so the resource link (base +
+        // server-relative path) and the document link (base + request path, which also
+        // starts with `/admin`) agree.
+        $response = $this->handle('/admin/users/1');
+        self::assertSame(200, $response->getStatusCode());
+
+        $document = $this->decode($response);
+        $links = $document['links'] ?? null;
+        self::assertIsArray($links);
+        self::assertSame(self::ADMIN_BASE_URI . '/users/1', $links['self'] ?? null);
+
+        $data = $document['data'] ?? null;
+        self::assertIsArray($data);
+        self::assertSame(['self' => self::ADMIN_BASE_URI . '/users/1'], $data['links'] ?? null);
     }
 
     #[Test]

@@ -46,8 +46,11 @@ json_api_admin:
 Source: [`config/routes/json_api.yaml`](../examples/music-catalog-symfony/config/routes/json_api.yaml).
 The `admin` import emits only the `admin` server's routes. Prefix, host and
 condition stay in your routing config where Symfony users expect them — Symfony
-applies the import's `prefix('/admin')` to every emitted path. An unknown or empty
-server emits nothing. Server *configuration* (the `servers:` map) lives on
+applies the import's `prefix('/admin')` to every emitted path, and the bundle
+records that prefix as the server's mount so links built from an empty `base_uri`
+carry it (see [configuration](configuration.md#mounting-a-server-under-a-prefix); a
+configured `base_uri` must include it). An unknown or empty server emits nothing.
+Server *configuration* (the `servers:` map) lives on
 [configuration](configuration.md); *assignment* (which types join which server) is
 the `server:` argument on the resource attribute (see [resources](resources.md)); the
 end-to-end per-server resolution is on [multi-server-and-testing](multi-server-and-testing.md).
@@ -198,18 +201,25 @@ the lifecycle will not engage:
 | --- | --- | --- |
 | `_controller` | `JsonApiController::class` | HttpKernel |
 | `_jsonapi_type` | the JSON:API type | `TargetResolver` |
-| `_jsonapi_server` | the import's server name (`default` for the bare import) | `RequestListener` → `ServerProvider::get()` |
+| `_jsonapi_server` | the import's server name (`default` for the bare import) | `RequestListener` → `ServerProvider::forRequest()` |
 | `_jsonapi` | `true` (the `ExceptionListener::ROUTE_MARKER`) | `ExceptionListener` ([errors](errors.md)) |
+
+Two more defaults locate the server's mount. The loader sets `_jsonapi_path` to the
+path it emitted, and once the router has loaded every route the bundle sets
+`_jsonapi_mount` to whatever prefix the import added in front of it (`/api/v5`).
+`ServerProvider::forRequest()` reads `_jsonapi_mount` to base an empty `base_uri` on
+the origin plus the mount. A hand-written route may set `_jsonapi_mount` itself; without
+it an empty base links from the request origin alone.
 
 Relationship and related routes add one more,
 `_jsonapi_relationship_endpoint` (`true` for the four-segment linkage path, `false`
 for the three-segment related path), which `TargetResolver` reads to build the
 relationship-aware target. `_jsonapi_server` is how a per-server route reaches its
 own `Server`: `RequestListener` resolves it via
-`ServerProvider::get($request->attributes->get('_jsonapi_server'))` — `ServerProvider`
+`ServerProvider::forRequest($request)`. `ServerProvider`
 is the runtime resolver that maps a server name to its `ServerFactory`'s `Server`
-(see [multi-server-and-testing](multi-server-and-testing.md#what-serverprovider-and-serverfactory-build)) —
-so each route renders links against its own `base_uri` (see
+(see [multi-server-and-testing](multi-server-and-testing.md#what-serverprovider-and-serverfactory-build)),
+so each route renders links against its own `base_uri` and mount (see
 [server](https://github.com/haddowg/json-api/blob/main/docs/server.md) for what a
 `Server` is, and [lifecycle](lifecycle.md) for the dispatch).
 
