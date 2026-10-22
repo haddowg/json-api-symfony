@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\EventListener;
 
 use haddowg\JsonApi\Atomic\AtomicExtension;
+use haddowg\JsonApi\Exception\AccessDenied;
+use haddowg\JsonApi\Exception\AuthenticationRequired;
 use haddowg\JsonApi\Exception\JsonApiExceptionInterface;
 use haddowg\JsonApi\Exception\MediaTypeUnacceptable;
 use haddowg\JsonApi\Exception\MediaTypeUnsupported;
@@ -39,14 +41,18 @@ use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
  *    (including the bundle's config-driven {@see ConfiguredExceptionMapper} at the
  *    low `-1000` fallback priority, which maps a `json_api.exceptions` class to its
  *    configured HTTP status);
- *  - a Symfony {@see HttpExceptionInterface} (firewall `401`/`403`, routing
- *    `404`, …) maps to a status-keyed JSON:API error;
+ *  - a Symfony {@see HttpExceptionInterface} (routing `404`, …) maps to a
+ *    status-keyed JSON:API error, except a `401`/`403`, which renders as core's
+ *    {@see AuthenticationRequired}/{@see AccessDenied} like the Security exceptions;
  *  - a Symfony Security {@see \Symfony\Component\Security\Core\Exception\AccessDeniedException}
- *    (thrown by the declarative-authorization layer, bundle ADR 0043) maps to `403`
- *    and an {@see \Symfony\Component\Security\Core\Exception\AuthenticationException}
- *    (an unauthenticated request the firewall surfaces) maps to `401` — neither is an
- *    `HttpExceptionInterface`, so both are mapped explicitly (guarded by
- *    `\class_exists` so the listener compiles without `symfony/security-core`);
+ *    (thrown by the declarative-authorization layer, bundle ADR 0043) renders as
+ *    core's {@see AccessDenied} (`403`, `ACCESS_DENIED`), or {@see AuthenticationRequired}
+ *    (`401`, `AUTHENTICATION_REQUIRED`) when the request is unauthenticated, and an
+ *    {@see \Symfony\Component\Security\Core\Exception\AuthenticationException}
+ *    (an unauthenticated request the firewall surfaces) as {@see AuthenticationRequired}.
+ *    Neither is an `HttpExceptionInterface`, so both are mapped explicitly (guarded by
+ *    `\class_exists` so the listener compiles without `symfony/security-core`). The
+ *    detail is the exception message in debug only;
  *  - anything else becomes a `500`, with `{exception, file, line, trace}` in the
  *    error object's `meta` gated on `kernel.debug` and the throwable logged.
  *
@@ -161,7 +167,13 @@ final class ExceptionListener
         }
 
         if ($throwable instanceof HttpExceptionInterface) {
-            return ErrorResponse::fromErrors($this->statusError($throwable->getStatusCode(), $throwable));
+            // A firewall's 401/403 carries the same stable code as the Security
+            // exceptions below, so a client can dispatch on it whatever raised it.
+            return match ($throwable->getStatusCode()) {
+                401 => ErrorResponse::fromException(new AuthenticationRequired($this->debugDetail($throwable), $throwable)),
+                403 => ErrorResponse::fromException(new AccessDenied($this->debugDetail($throwable), $throwable)),
+                default => ErrorResponse::fromErrors($this->statusError($throwable->getStatusCode(), $throwable)),
+            };
         }
 
         // The declarative-authorization layer (bundle ADR 0043) throws a Symfony
@@ -174,13 +186,15 @@ final class ExceptionListener
         if (\class_exists(\Symfony\Component\Security\Core\Exception\AccessDeniedException::class)
             && $throwable instanceof \Symfony\Component\Security\Core\Exception\AccessDeniedException
         ) {
-            return ErrorResponse::fromErrors($this->statusError($this->isAuthenticated() ? 403 : 401, $throwable));
+            return ErrorResponse::fromException($this->isAuthenticated()
+                ? new AccessDenied($this->debugDetail($throwable), $throwable)
+                : new AuthenticationRequired($this->debugDetail($throwable), $throwable));
         }
 
         if (\class_exists(\Symfony\Component\Security\Core\Exception\AuthenticationException::class)
             && $throwable instanceof \Symfony\Component\Security\Core\Exception\AuthenticationException
         ) {
-            return ErrorResponse::fromErrors($this->statusError(401, $throwable));
+            return ErrorResponse::fromException(new AuthenticationRequired($this->debugDetail($throwable), $throwable));
         }
 
         $this->logger?->error($throwable->getMessage(), ['exception' => $throwable]);
@@ -193,8 +207,16 @@ final class ExceptionListener
         return new Error(
             status: (string) $status,
             title: $this->reasonPhrase($status),
-            detail: $this->debug ? $throwable->getMessage() : '',
+            detail: $this->debugDetail($throwable),
         );
+    }
+
+    /**
+     * The throwable's message as the error detail in debug, else empty (omitted).
+     */
+    private function debugDetail(\Throwable $throwable): string
+    {
+        return $this->debug ? $throwable->getMessage() : '';
     }
 
     /**

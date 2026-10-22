@@ -33,7 +33,7 @@ final class InMemoryResourceSecurityTest extends JsonApiFunctionalTestCase
     #[Test]
     public function read_is_unauthorized_without_authentication(): void
     {
-        $this->browser()->get('/securedWidgets/1')->getErrors()->assertStatus(401)->assertHasError(status: '401');
+        $this->browser()->get('/securedWidgets/1')->getErrors()->assertStatus(401)->assertHasError(status: '401', code: 'AUTHENTICATION_REQUIRED');
     }
 
     #[Test]
@@ -47,7 +47,7 @@ final class InMemoryResourceSecurityTest extends JsonApiFunctionalTestCase
     {
         // A read-gated resource is not reachable via its related endpoint: the parent
         // read-security gate fires on /{id}/{rel} too.
-        $this->browser()->get('/securedWidgets/1/partner')->getErrors()->assertStatus(401)->assertHasError(status: '401');
+        $this->browser()->get('/securedWidgets/1/partner')->getErrors()->assertStatus(401)->assertHasError(status: '401', code: 'AUTHENTICATION_REQUIRED');
         $this->browser()->actingAs('user')->get('/securedWidgets/1/partner')->assertStatus(200);
     }
 
@@ -55,7 +55,7 @@ final class InMemoryResourceSecurityTest extends JsonApiFunctionalTestCase
     public function the_read_gate_covers_the_relationship_endpoint(): void
     {
         // The relationship-linkage endpoint /{id}/relationships/{rel} is likewise gated.
-        $this->browser()->get('/securedWidgets/1/relationships/partner')->getErrors()->assertStatus(401)->assertHasError(status: '401');
+        $this->browser()->get('/securedWidgets/1/relationships/partner')->getErrors()->assertStatus(401)->assertHasError(status: '401', code: 'AUTHENTICATION_REQUIRED');
         $this->browser()->actingAs('user')->get('/securedWidgets/1/relationships/partner')->assertStatus(200);
     }
 
@@ -75,8 +75,8 @@ final class InMemoryResourceSecurityTest extends JsonApiFunctionalTestCase
         // `adminPartner` declares security(read: is_granted('ROLE_ADMIN')) → a plain
         // ROLE_USER may read the resource (and its inherited `partner`) but NOT this
         // relation; only an admin may. The relation is MORE restrictive than its parent.
-        $this->browser()->actingAs('user')->get('/securedWidgets/1/adminPartner')->getErrors()->assertStatus(403)->assertHasError(status: '403');
-        $this->browser()->actingAs('user')->get('/securedWidgets/1/relationships/adminPartner')->getErrors()->assertStatus(403)->assertHasError(status: '403');
+        $this->browser()->actingAs('user')->get('/securedWidgets/1/adminPartner')->getErrors()->assertStatus(403)->assertHasError(status: '403', code: 'ACCESS_DENIED');
+        $this->browser()->actingAs('user')->get('/securedWidgets/1/relationships/adminPartner')->getErrors()->assertStatus(403)->assertHasError(status: '403', code: 'ACCESS_DENIED');
 
         $this->browser()->actingAs('admin')->get('/securedWidgets/1/adminPartner')->assertStatus(200);
         $this->browser()->actingAs('admin')->get('/securedWidgets/1/relationships/adminPartner')->assertStatus(200);
@@ -92,7 +92,7 @@ final class InMemoryResourceSecurityTest extends JsonApiFunctionalTestCase
             ])
             ->getErrors()
             ->assertStatus(403)
-            ->assertHasError(status: '403');
+            ->assertHasError(status: '403', code: 'ACCESS_DENIED');
 
         // The abort happened before persistence: only the seeded row remains.
         $this->browser()->actingAs('user')->get('/securedWidgets')->assertFetchedMany()->assertCollectionCount(1);

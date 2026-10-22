@@ -226,7 +226,8 @@ A denied expression throws `AccessDeniedException`; the route-scoped
   `AuthenticationException` the firewall surfaces.
 
 Both render as `application/vnd.api+json` with the standard `errors[].status` /
-`errors[].title`, exactly like every other bundle error.
+`errors[].title`, plus the stable `errors[].code`: `ACCESS_DENIED` for the `403`,
+`AUTHENTICATION_REQUIRED` for the `401` (see [errors](errors.md#authentication-and-authorization-failures)).
 
 ## Request-aware predicates: lightweight per-caller authz
 

@@ -122,6 +122,11 @@ abstract class CustomActionConformanceTestCase extends JsonApiFunctionalTestCase
         $response = $this->action('/actionWidgets/1/-actions/archive', 'POST', null, ['HTTP_AUTHORIZATION' => 'Bearer user']);
 
         self::assertSame(403, $response->getStatusCode(), (string) $response->getContent());
+        $errors = $this->decode($response)['errors'] ?? null;
+        self::assertIsArray($errors);
+        $error = $errors[0] ?? null;
+        self::assertIsArray($error);
+        self::assertSame('ACCESS_DENIED', $error['code'] ?? null);
     }
 
     #[Test]
