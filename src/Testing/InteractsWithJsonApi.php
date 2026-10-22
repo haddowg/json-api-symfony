@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Testing;
 
-use PHPUnit\Framework\Attributes\After;
 use PHPUnit\Framework\Attributes\Before;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -45,21 +44,16 @@ use Symfony\Component\HttpKernel\KernelInterface;
  * The browser disables kernel reboot in its constructor, so a write-then-read in one
  * test sees the write (the seed survives) without any further setup.
  *
+ * A suite whose base test case already overrides `createClient()` can't use this trait;
+ * use {@see WrapsKernelBrowser} and its `jsonApi($client)` accessor instead.
+ *
  * @phpstan-require-extends KernelTestCase
  */
 trait InteractsWithJsonApi
 {
+    use WrapsKernelBrowser;
+
     private static ?JsonApiBrowser $jsonApiBrowser = null;
-
-    /**
-     * @var callable|null the error handler active before the kernel booted
-     */
-    private $jsonApiErrorHandler;
-
-    /**
-     * @var callable|null the exception handler active before the kernel booted
-     */
-    private $jsonApiExceptionHandler;
 
     /**
      * Boots the kernel and returns a {@see JsonApiBrowser} — the JSON:API drop-in for
@@ -93,46 +87,10 @@ trait InteractsWithJsonApi
         return self::$jsonApiBrowser ??= new JsonApiBrowser($this->bootedKernel());
     }
 
-    /**
-     * Snapshot the active error/exception handlers before the kernel boots and
-     * installs Symfony's, so {@see restoreJsonApiHandlers()} can pop the stack back to
-     * this baseline for PHPUnit's strict-mode handler check.
-     */
     #[Before]
-    protected function snapshotJsonApiHandlers(): void
+    protected function resetJsonApiClient(): void
     {
         self::$jsonApiBrowser = null;
-
-        $this->jsonApiErrorHandler = \set_error_handler(null);
-        \restore_error_handler();
-        $this->jsonApiExceptionHandler = \set_exception_handler(null);
-        \restore_exception_handler();
-    }
-
-    /**
-     * Pop every error/exception handler the kernel pushed back to the snapshot, so the
-     * global handler stack is balanced when the test ends.
-     */
-    #[After]
-    protected function restoreJsonApiHandlers(): void
-    {
-        while (true) {
-            $current = \set_error_handler(static fn(): bool => false);
-            \restore_error_handler();
-            if ($current === $this->jsonApiErrorHandler) {
-                break;
-            }
-            \restore_error_handler();
-        }
-
-        while (true) {
-            $current = \set_exception_handler(null);
-            \restore_exception_handler();
-            if ($current === $this->jsonApiExceptionHandler) {
-                break;
-            }
-            \restore_exception_handler();
-        }
     }
 
     private function bootedKernel(): KernelInterface

@@ -126,4 +126,100 @@ abstract class OpenApiConformanceTestCase extends JsonApiFunctionalTestCase
         $this->assertResponseMatchesGeneratedSchema($this->handle('/authors/1'), 'authors', SchemaDocumentKind::Single);
         $this->assertResponseMatchesGeneratedSchema($this->handle('/authors'), 'authors', SchemaDocumentKind::Collection);
     }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    #[Group('spec:sparse-fieldsets')]
+    public function aSparseFieldsetResponseValidatesWhenGivenItsFieldsets(): void
+    {
+        $response = $this->handle('/articles/1?fields[articles]=title');
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $document = $this->decode($response);
+        self::assertIsArray($document['data']);
+        self::assertSame(['title'], \array_keys((array) ($document['data']['attributes'] ?? [])));
+
+        // The read schema requires every attribute, so without the fieldset it fails.
+        self::assertFalse($this->bodyMatchesGeneratedComponent((string) $response->getContent(), 'ArticlesDocument'));
+
+        $this->assertResponseMatchesGeneratedSchema(
+            $response,
+            'articles',
+            SchemaDocumentKind::Single,
+            fieldsets: ['articles' => 'title'],
+        );
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    #[Group('spec:sparse-fieldsets')]
+    public function aSparseFieldsetCollectionValidatesThroughTheBrowserThatMadeTheRequest(): void
+    {
+        // Passing the browser reads `fields` from its last request.
+        $browser = $this->browser()->get('/articles?fields[articles]=title,category');
+        $browser->assertStatus(200);
+
+        $this->assertResponseMatchesGeneratedSchema($browser, 'articles', SchemaDocumentKind::Collection);
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    #[Group('spec:sparse-fieldsets')]
+    public function aMemberInsideTheFieldsetIsStillRequired(): void
+    {
+        $document = $this->decode($this->handle('/articles/1?fields[articles]=title,body'));
+        self::assertIsArray($document['data']);
+        self::assertIsArray($document['data']['attributes']);
+        unset($document['data']['attributes']['body']);
+
+        self::assertFalse($this->bodyMatchesGeneratedComponent(
+            \json_encode($document, \JSON_THROW_ON_ERROR),
+            'ArticlesDocument',
+            fieldsets: ['articles' => 'title,body'],
+        ));
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    public function aFullResponseStillRequiresEveryAttribute(): void
+    {
+        $document = $this->decode($this->handle('/articles/1'));
+        self::assertIsArray($document['data']);
+        self::assertIsArray($document['data']['attributes']);
+        unset($document['data']['attributes']['body']);
+
+        self::assertFalse($this->bodyMatchesGeneratedComponent(\json_encode($document, \JSON_THROW_ON_ERROR), 'ArticlesDocument'));
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    #[Group('spec:sparse-fieldsets')]
+    public function includedResourcesFollowTheirOwnTypesFieldset(): void
+    {
+        // An empty `authors` fieldset strips the included author of its attributes.
+        $response = $this->handle('/articles/1?include=author&fields[articles]=title,author&fields[authors]=');
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $document = $this->decode($response);
+        self::assertIsArray($document['included']);
+        self::assertArrayNotHasKey('attributes', (array) $document['included'][0]);
+
+        $this->assertResponseMatchesGeneratedSchema(
+            $response,
+            'articles',
+            SchemaDocumentKind::Single,
+            fieldsets: ['articles' => 'title,author', 'authors' => ''],
+        );
+
+        // With a fieldset only for `articles`, the included author keeps every member required.
+        $document = $this->decode($this->handle('/articles/1?include=author&fields[articles]=title,author'));
+        self::assertIsArray($document['included']);
+        self::assertIsArray($document['included'][0]);
+        self::assertIsArray($document['included'][0]['attributes']);
+        unset($document['included'][0]['attributes']['name']);
+
+        self::assertFalse($this->bodyMatchesGeneratedComponent(
+            \json_encode($document, \JSON_THROW_ON_ERROR),
+            'ArticlesDocument',
+            fieldsets: ['articles' => 'title,author'],
+        ));
+    }
 }

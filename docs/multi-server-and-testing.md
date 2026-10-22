@@ -405,6 +405,41 @@ preserved; the trait also snapshots/restores the error/exception handlers (PHPUn
 strict) and boots `debug => false` (production-fidelity error meta, no stdout debug
 logs).
 
+#### When your base test case already owns `createClient()`
+
+If your app's base test case overrides `createClient()` to return its own
+`KernelBrowser`, `InteractsWithJsonApi` would clash with it. Use `WrapsKernelBrowser`
+instead. It leaves `createClient()` alone and adds `jsonApi($client)`, which wraps the
+client your base case returns:
+
+```php
+use haddowg\JsonApiBundle\Testing\WrapsKernelBrowser;
+
+final class PlaylistTest extends AppWebTestCase   // createClient() returns a KernelBrowser
+{
+    use WrapsKernelBrowser;
+
+    public function test_owner_reads_their_playlists(): void
+    {
+        $client = static::createClient();
+
+        $this->jsonApi($client)
+            ->actingAs('ada@example.com')
+            ->get('/playlists')
+            ->assertFetchedMany();
+    }
+}
+```
+
+The `JsonApiBrowser` it returns runs on the same kernel and shares the client's history
+and cookie jar. It copies the client's default `$_SERVER` parameters and redirect
+settings, so a header your base case sets is still sent. Calling `jsonApi()` again with
+the same client in the same test returns the same browser, so you can assert over its
+last response later. The trait snapshots and restores the error and exception handlers
+exactly as `InteractsWithJsonApi` does, which in fact uses it.
+
+Outside a test case, `JsonApiBrowser::wrap($client)` does the same wrapping.
+
 ### The example app's base case
 
 The example app's suites extend one thin base that names the kernel and seeds the

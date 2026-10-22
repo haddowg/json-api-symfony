@@ -65,6 +65,8 @@ use Symfony\Component\Security\Core\User\UserInterface;
  *    `Accept`/`Content-Type` negotiation).
  *  - {@see documentFor()} / {@see errorsFor()} — how a response becomes a core
  *    {@see JsonApiDocument} / {@see JsonApiErrors}.
+ *
+ * @phpstan-consistent-constructor
  */
 class JsonApiBrowser extends KernelBrowser
 {
@@ -102,6 +104,21 @@ class JsonApiBrowser extends KernelBrowser
         // default, which would wipe an in-memory SQLite seed bound to the kernel's
         // connection. Keep the one booted kernel across requests.
         $this->disableReboot();
+    }
+
+    /**
+     * A JSON:API browser over an existing client's kernel, for a test suite whose own
+     * `createClient()` already returns a {@see KernelBrowser}. It shares the client's
+     * history and cookie jar and copies its default `$_SERVER` parameters and redirect
+     * settings, so headers or cookies the app's base test case set carry over.
+     */
+    public static function wrap(KernelBrowser $client): static
+    {
+        $browser = new static($client->getKernel(), $client->server, $client->getHistory(), $client->getCookieJar());
+        $browser->followRedirects($client->isFollowingRedirects());
+        $browser->setMaxRedirects($client->getMaxRedirects());
+
+        return $browser;
     }
 
     // --- request helpers (auto content-negotiation) --------------------------
