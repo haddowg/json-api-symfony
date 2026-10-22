@@ -11,6 +11,7 @@ use haddowg\JsonApi\Exception\MediaTypeUnsupported;
 use haddowg\JsonApi\Response\ErrorResponse;
 use haddowg\JsonApi\Schema\Error\Error;
 use haddowg\JsonApi\Schema\Error\InternalServerError;
+use haddowg\JsonApiBundle\Routing\JsonApiRoute;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use Psr\Http\Message\ServerRequestInterface;
@@ -23,7 +24,7 @@ use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 /**
  * The route-scoped `kernel.exception` listener: it owns every error on JSON:API
  * routes (it acts only when the matched route carries
- * {@see self::ROUTE_MARKER}), so even failures are spec-compliant JSON:API
+ * {@see JsonApiRoute::MARKER}), so even failures are spec-compliant JSON:API
  * documents.
  *
  * Mapping:
@@ -68,7 +69,11 @@ use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
  */
 final class ExceptionListener
 {
-    public const string ROUTE_MARKER = '_jsonapi';
+    /**
+     * @deprecated since 1.3, use {@see JsonApiRoute::MARKER}, or {@see JsonApiRoute::matches()}
+     *             to test a request
+     */
+    public const string ROUTE_MARKER = JsonApiRoute::MARKER;
 
     /**
      * @param iterable<ExceptionMapperInterface> $mappers the tagged exception
@@ -102,7 +107,7 @@ final class ExceptionListener
     {
         $request = $event->getRequest();
 
-        if ($request->attributes->get(self::ROUTE_MARKER) !== true) {
+        if (!JsonApiRoute::matches($request)) {
             return;
         }
 

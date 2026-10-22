@@ -202,7 +202,7 @@ the lifecycle will not engage:
 | `_controller` | `JsonApiController::class` | HttpKernel |
 | `_jsonapi_type` | the JSON:API type | `TargetResolver` |
 | `_jsonapi_server` | the import's server name (`default` for the bare import) | `RequestListener` → `ServerProvider::forRequest()` |
-| `_jsonapi` | `true` (the `ExceptionListener::ROUTE_MARKER`) | `ExceptionListener` ([errors](errors.md)) |
+| `_jsonapi` | `true` (`JsonApiRoute::MARKER`) | `ExceptionListener` ([errors](errors.md)), `JsonApiRoute::matches()` |
 
 Two more defaults locate the server's mount. The loader sets `_jsonapi_path` to the
 path it emitted, and once the router has loaded every route the bundle sets
@@ -222,6 +222,64 @@ is the runtime resolver that maps a server name to its `ServerFactory`'s `Server
 so each route renders links against its own `base_uri` and mount (see
 [server](https://github.com/haddowg/json-api/blob/main/docs/server.md) for what a
 `Server` is, and [lifecycle](lifecycle.md) for the dispatch).
+
+## Recognising a JSON:API request
+
+Application code that needs to treat JSON:API routes differently, such as a legacy
+listener that rewrites query parameters, can ask `JsonApiRoute::matches()` instead of
+reading the marker itself:
+
+```php
+use haddowg\JsonApiBundle\Routing\JsonApiRoute;
+use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
+use Symfony\Component\HttpKernel\Event\RequestEvent;
+
+#[AsEventListener(priority: 20)]
+final class LegacyQuerySanitiser
+{
+    public function __invoke(RequestEvent $event): void
+    {
+        if (JsonApiRoute::matches($event->getRequest())) {
+            return;
+        }
+        // … rewrite the legacy query
+    }
+}
+```
+
+It is `true` when the matched route carries the `_jsonapi` marker, which every route
+the loader emits has. The router copies route defaults into the request attributes,
+so the answer only exists after routing: register a `kernel.request` listener below
+Symfony's `RouterListener` (priority 32). Earlier, every request reads as `false`. A
+hand-written route that sets `_jsonapi: true` counts too.
+
+`JsonApiRoute::of($request)` returns what the route says about the request, or `null`
+when it isn't a JSON:API route:
+
+```php
+$route = JsonApiRoute::of($request);
+
+$route?->server;       // 'default', or the named server
+$route?->type;         // 'articles' (null on the atomic endpoint)
+$route?->id;           // '7' as the URL carries it, null on a collection
+$route?->relationship; // 'author' on a relationship or related endpoint
+$route?->target();     // core's Operation\Target, as handlers see it
+```
+
+| Property | On which routes |
+| --- | --- |
+| `server` | every route |
+| `type` | every route except the atomic endpoint |
+| `id` | resource, relationship, related and resource-scoped action routes |
+| `relationship` | relationship (`isRelationshipEndpoint: true`) and related routes |
+| `action`, `actionScope` | custom action routes (`ActionScope::Resource` or `Collection`) |
+| `isAtomic` | the Atomic Operations endpoint |
+
+These are facts about the route only. For the server the request runs against, with
+the effective `base_uri` worked out for it, inject `ServerProvider` and call
+`forRequest($request)`. The resource itself isn't loaded here: the lifecycle loads it
+and hands it to [hooks](lifecycle-hooks.md) and handlers, so a helper that ran the
+query earlier would also run before authorization.
 
 ## The explicit-route seam: `TargetResolver`
 
