@@ -53,7 +53,7 @@ controller, no template — the same render seam the
 | Throwable | Mapped via | Status & shape |
 | --- | --- | --- |
 | Core `JsonApiExceptionInterface` | `ErrorResponse::fromException($throwable)` | The exception's own `getErrors()` / `getStatusCode()` — the full core error object(s), `source` and `code` intact |
-| Symfony `HttpExceptionInterface` | `ErrorResponse::fromErrors($this->httpError(...))` | A single status-keyed `Error` with a reason-phrase `title` (the bundle's `match()` table) and a debug-only `detail` |
+| Symfony `HttpExceptionInterface` | `ErrorResponse::fromErrors($this->httpError(...))` | A single status-keyed `Error` with a reason-phrase `title` (the bundle's `match()` table) and a debug-only `detail`. A `401`/`403` renders as core's `AuthenticationRequired`/`AccessDenied` instead, so it carries a `code` (see [authentication and authorization failures](#authentication-and-authorization-failures)) |
 | Anything else (`\Throwable`) | `InternalServerError::for($throwable, $debug)` | A generic `500`, byte-identical to core's own middleware 500 |
 
 **Arm 1 — core exceptions render themselves.** Anything implementing core's
@@ -127,6 +127,32 @@ The reason-phrase table:
 
 This arm is where the firewall (401/403) and routing (404, 405) land — see the
 firewall interplay below.
+
+### Authentication and authorization failures
+
+A `401` or `403` renders through core's `AuthenticationRequired` and `AccessDenied`
+exceptions, so the error carries a stable `code` a client can dispatch on, whichever
+layer refused the request:
+
+| Thrown | Status | `code` | `title` |
+| --- | --- | --- | --- |
+| `AuthenticationException` (Security) | `401` | `AUTHENTICATION_REQUIRED` | `Unauthorized` |
+| `AccessDeniedException` (Security), request unauthenticated | `401` | `AUTHENTICATION_REQUIRED` | `Unauthorized` |
+| `AccessDeniedException` (Security), request authenticated | `403` | `ACCESS_DENIED` | `Forbidden` |
+| `HttpExceptionInterface` with status `401`, e.g. `UnauthorizedHttpException` | `401` | `AUTHENTICATION_REQUIRED` | `Unauthorized` |
+| `HttpExceptionInterface` with status `403`, e.g. `AccessDeniedHttpException` | `403` | `ACCESS_DENIED` | `Forbidden` |
+
+The `detail` is the exception's message in debug only, as for every other mapped
+exception. The declarative [authorization](authorization.md) layer throws
+`AccessDeniedException`, so its denials carry these codes too:
+
+```json
+{"errors": [{"status": "403", "code": "ACCESS_DENIED", "title": "Forbidden"}]}
+```
+
+Because they carry a code, their title can be localized in the `jsonapi_errors`
+translation domain like any other error's (see
+[localizing and overriding error copy](#localizing-and-overriding-error-copy)).
 
 > Between arm 1 and arm 2, the listener consults the application-extensible
 > exception mappers (below). Arm 1 always runs first: a core
@@ -273,8 +299,8 @@ Because the listener is route-scoped and a Symfony security denial is an
 `HttpExceptionInterface` (401/403), a firewall exception thrown on a JSON:API route
 renders as a JSON:API error document through arm 2 — not as Symfony's HTML login
 redirect or access-denied page. Put a firewall in front of your JSON:API routes and
-a 401/403 still comes back as `application/vnd.api+json` with a `401`/`403` status
-and the matching reason-phrase title. Per-route firewall configuration and
+a 401/403 still comes back as `application/vnd.api+json` with a `401`/`403` status,
+the matching title and the `AUTHENTICATION_REQUIRED`/`ACCESS_DENIED` code. Per-route firewall configuration and
 JSON:API error rendering compose with no extra wiring — there is a real route and
 real kernel events, so Symfony's security machinery runs normally (see
 [lifecycle](lifecycle.md)). The example app ships no firewall, so this arm is

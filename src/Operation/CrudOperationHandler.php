@@ -87,6 +87,7 @@ use haddowg\JsonApiBundle\Event\BeforeUpdateEvent;
 use haddowg\JsonApiBundle\Serializer\PivotLinkageParentSerializer;
 use haddowg\JsonApiBundle\Serializer\PivotMetaSerializer;
 use haddowg\JsonApiBundle\Serializer\PivotParentSerializer;
+use haddowg\JsonApiBundle\Serializer\RequestScopedOutputTimezone;
 use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipCount;
 use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipLinkage;
 use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipPagination;
@@ -196,10 +197,16 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // hook that throws AFTER an atomic batch commits is logged (best-effort) rather
         // than failing the committed batch. Null on the single-op path (no batch).
         private readonly ?\Psr\Log\LoggerInterface $logger = null,
+        // The output timezone holder render paths outside a resource's attributes read
+        // (pivot meta, bundle ADR 0123), set per operation from its Server.
+        private readonly ?RequestScopedOutputTimezone $outputTimezone = null,
     ) {}
 
     public function handle(\haddowg\JsonApi\Operation\JsonApiOperationInterface $operation): DataResponse|RelatedResponse|IdentifierResponse|MetaResponse|NoContentResponse|AcceptedResponse|SeeOtherResponse|AtomicResultsResponse|ErrorResponse
     {
+        $server = $operation->context()->server;
+        $this->outputTimezone?->set($server instanceof \haddowg\JsonApi\Resource\ProvidesOutputTimezoneInterface ? $server->outputTimezone() : null);
+
         return match (true) {
             $operation instanceof FetchResourceOperation => $this->fetch($operation),
             $operation instanceof FetchRelatedOperation => $this->fetchRelated($operation),

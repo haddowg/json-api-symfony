@@ -31,6 +31,7 @@ use haddowg\JsonApiBundle\DataProvider\PivotCollectionResult;
 use haddowg\JsonApiBundle\DataProvider\PivotCursorCollectionResult;
 use haddowg\JsonApiBundle\DataProvider\PivotFields;
 use haddowg\JsonApiBundle\DataProvider\RelatedBatch;
+use haddowg\JsonApiBundle\Serializer\RequestScopedOutputTimezone;
 use haddowg\JsonApiBundle\Server\IdEncoderResolver;
 
 /**
@@ -116,6 +117,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
      * @param bool                                   $windowFunctions   whether the windowed-include batch runs the bounded ROW_NUMBER/COUNT OVER native query (`json_api.doctrine.window_functions`, default true) or the per-parent bounded fallback (bundle ADR 0065)
      * @param iterable<DoctrineFilterArmInterface>   $filterArms        author arms for custom `FilterInterface` types (autoconfigured tag)
      * @param iterable<DoctrineSortArmInterface>     $sortArms          author arms for custom `SortInterface` types (autoconfigured tag)
+     * @param ?RequestScopedOutputTimezone           $outputTimezone    the current server's output zone, applied to the pivot DateTime values the provider renders (bundle ADR 0123)
      */
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
@@ -126,6 +128,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         private readonly bool $windowFunctions = true,
         iterable $filterArms = [],
         iterable $sortArms = [],
+        private readonly ?RequestScopedOutputTimezone $outputTimezone = null,
     ) {
         $this->extensions = \is_array($extensions) ? \array_values($extensions) : \iterator_to_array($extensions, false);
         $this->applier = new CriteriaApplier();
@@ -1850,7 +1853,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
                 if ($field->isHidden()) {
                     continue;
                 }
-                $values[$name] = PivotFields::cast($row['pivot_' . $name] ?? null, $field);
+                $values[$name] = PivotFields::cast($row['pivot_' . $name] ?? null, $field, $this->outputTimezone?->timezone());
             }
 
             $map[$parentWireId][$farWireId] = $values;
@@ -2010,7 +2013,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
                 }
                 // The scalar was selected under the `pivot_<name>` alias (keyed by
                 // wire name) in pivotQuery(); cast it through the field's own type.
-                $values[$name] = PivotFields::cast($row['pivot_' . $name] ?? null, $field);
+                $values[$name] = PivotFields::cast($row['pivot_' . $name] ?? null, $field, $this->outputTimezone?->timezone());
             }
 
             $pivotMap[$wireId] = $values;

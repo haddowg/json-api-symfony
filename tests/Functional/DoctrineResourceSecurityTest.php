@@ -71,7 +71,7 @@ final class DoctrineResourceSecurityTest extends JsonApiFunctionalTestCase
             ->getErrors()
             ->assertStatus(401)
             ->assertContentType()
-            ->assertHasError(status: '401');
+            ->assertHasError(status: '401', code: 'AUTHENTICATION_REQUIRED');
     }
 
     // --- per-operation overrides gate independently of the default ------------
@@ -87,7 +87,7 @@ final class DoctrineResourceSecurityTest extends JsonApiFunctionalTestCase
             ->getErrors()
             ->assertStatus(403)
             ->assertContentType()
-            ->assertHasError(status: '403');
+            ->assertHasError(status: '403', code: 'ACCESS_DENIED');
 
         // The abort happened before persistence: only the seeded row remains.
         $this->browser()->actingAs('admin')->get('/securedWidgets')->assertFetchedMany()->assertCollectionCount(1);
@@ -127,7 +127,7 @@ final class DoctrineResourceSecurityTest extends JsonApiFunctionalTestCase
             ->delete('/securedWidgets/1')
             ->getErrors()
             ->assertStatus(403)
-            ->assertHasError(status: '403');
+            ->assertHasError(status: '403', code: 'ACCESS_DENIED');
 
         // The row survives: the delete never ran (abort before side-effect).
         $this->browser()->actingAs('user')->get('/securedWidgets/1')->assertFetchedOne();
@@ -165,7 +165,7 @@ final class DoctrineResourceSecurityTest extends JsonApiFunctionalTestCase
             ])
             ->getErrors()
             ->assertStatus(403)
-            ->assertHasError(status: '403');
+            ->assertHasError(status: '403', code: 'ACCESS_DENIED');
 
         // No write happened: a fresh read by the owner is whole-member EXACT (a leaked
         // or mutated attribute would fail) — the seeded widget, name intact, parent
@@ -198,7 +198,7 @@ final class DoctrineResourceSecurityTest extends JsonApiFunctionalTestCase
             ->get('/ownedWidgets/1')
             ->getErrors()
             ->assertStatus(403)
-            ->assertHasError(status: '403');
+            ->assertHasError(status: '403', code: 'ACCESS_DENIED');
     }
 
     // --- collection gate: securityList overrides the per-object default ---------
@@ -225,7 +225,7 @@ final class DoctrineResourceSecurityTest extends JsonApiFunctionalTestCase
             ->get('/ownedWidgets')
             ->getErrors()
             ->assertStatus(401)
-            ->assertHasError(status: '401');
+            ->assertHasError(status: '401', code: 'AUTHENTICATION_REQUIRED');
     }
 
     // --- relationship mutation: gated by the update expression (the parent) ----
@@ -267,7 +267,7 @@ final class DoctrineResourceSecurityTest extends JsonApiFunctionalTestCase
             ->getErrors()
             ->assertStatus(403)
             ->assertContentType()
-            ->assertHasError(status: '403');
+            ->assertHasError(status: '403', code: 'ACCESS_DENIED');
 
         // The abort happened before the persister: the parent linkage is unchanged
         // (still empty) on a fresh read by the owner.
@@ -292,7 +292,7 @@ final class DoctrineResourceSecurityTest extends JsonApiFunctionalTestCase
 
         // The baseline `partner` relation (declares no security) still inherits the
         // parent's read gate: unauthenticated is 401.
-        $this->browser()->get('/securedWidgets/1/partner')->getErrors()->assertStatus(401)->assertHasError(status: '401');
+        $this->browser()->get('/securedWidgets/1/partner')->getErrors()->assertStatus(401)->assertHasError(status: '401', code: 'AUTHENTICATION_REQUIRED');
     }
 
     #[Test]
@@ -302,8 +302,8 @@ final class DoctrineResourceSecurityTest extends JsonApiFunctionalTestCase
         // the resource (and its inherited `partner`) but NOT this relation; only an admin
         // may. The relation is MORE restrictive than its parent.
         $this->browser()->actingAs('user')->get('/securedWidgets/1/partner')->assertStatus(200);
-        $this->browser()->actingAs('user')->get('/securedWidgets/1/adminPartner')->getErrors()->assertStatus(403)->assertHasError(status: '403');
-        $this->browser()->actingAs('user')->get('/securedWidgets/1/relationships/adminPartner')->getErrors()->assertStatus(403)->assertHasError(status: '403');
+        $this->browser()->actingAs('user')->get('/securedWidgets/1/adminPartner')->getErrors()->assertStatus(403)->assertHasError(status: '403', code: 'ACCESS_DENIED');
+        $this->browser()->actingAs('user')->get('/securedWidgets/1/relationships/adminPartner')->getErrors()->assertStatus(403)->assertHasError(status: '403', code: 'ACCESS_DENIED');
 
         $this->browser()->actingAs('admin')->get('/securedWidgets/1/adminPartner')->assertStatus(200);
         $this->browser()->actingAs('admin')->get('/securedWidgets/1/relationships/adminPartner')->assertStatus(200);
@@ -320,7 +320,7 @@ final class DoctrineResourceSecurityTest extends JsonApiFunctionalTestCase
             ->patch('/securedWidgets/1/relationships/lockedPartner', ['data' => ['type' => 'securedWidgets', 'id' => '1']])
             ->getErrors()
             ->assertStatus(403)
-            ->assertHasError(status: '403');
+            ->assertHasError(status: '403', code: 'ACCESS_DENIED');
 
         // The same user MAY mutate the baseline `partner` (its mutation inherits the
         // ROLE_USER update default) — proving the gate is the relation's, not the type's.

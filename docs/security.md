@@ -58,12 +58,12 @@ Symfony `HttpExceptionInterface` to a status-keyed JSON:API error, a security
 exception on a JSON:API route renders as a **spec-compliant error document**, not
 an HTML login redirect:
 
-| Thrown by the firewall | Status | Rendered error title |
-| --- | --- | --- |
-| `UnauthorizedHttpException` (no credentials) | `401` | `Unauthorized` |
-| `AccessDeniedHttpException` (denied) | `403` | `Forbidden` |
-| `AccessDeniedException` (Security, e.g. the declarative layer) | `403` (or `401` when unauthenticated) | `Forbidden` / `Unauthorized` |
-| `AuthenticationException` (Security) | `401` | `Unauthorized` |
+| Thrown by the firewall | Status | `code` | Rendered error title |
+| --- | --- | --- | --- |
+| `UnauthorizedHttpException` (no credentials) | `401` | `AUTHENTICATION_REQUIRED` | `Unauthorized` |
+| `AccessDeniedHttpException` (denied) | `403` | `ACCESS_DENIED` | `Forbidden` |
+| `AccessDeniedException` (Security, e.g. the declarative layer) | `403` (or `401` when unauthenticated) | `ACCESS_DENIED` / `AUTHENTICATION_REQUIRED` | `Forbidden` / `Unauthorized` |
+| `AuthenticationException` (Security) | `401` | `AUTHENTICATION_REQUIRED` | `Unauthorized` |
 
 The last two are Symfony Security exceptions that are **not** `HttpExceptionInterface`,
 so the listener maps them explicitly (guarded so it compiles without

@@ -76,7 +76,7 @@ final class AuthorizationTest extends MusicCatalogKernelTestCase
             ->getErrors()
             ->assertStatus(403)
             ->assertContentType()
-            ->assertHasError(status: '403');
+            ->assertHasError(status: '403', code: 'ACCESS_DENIED');
 
         // The denial aborted before the persister ran: the title is untouched.
         $this->browser()
@@ -102,7 +102,7 @@ final class AuthorizationTest extends MusicCatalogKernelTestCase
             ->getErrors()
             ->assertStatus(401)
             ->assertContentType()
-            ->assertHasError(status: '401');
+            ->assertHasError(status: '401', code: 'AUTHENTICATION_REQUIRED');
     }
 
     #[Test]
@@ -123,7 +123,7 @@ final class AuthorizationTest extends MusicCatalogKernelTestCase
             ->getErrors()
             ->assertStatus(403)
             ->assertContentType()
-            ->assertHasError(status: '403');
+            ->assertHasError(status: '403', code: 'ACCESS_DENIED');
 
         // The denial aborted before the persister: track 1 is still a member.
         self::assertContains('1', $this->trackMembers(), 'the denied mutation must not have removed track 1');
@@ -185,7 +185,7 @@ final class AuthorizationTest extends MusicCatalogKernelTestCase
             ->get('/playlists/' . self::OWNED_PLAYLIST_ID . '/relationships/owner')
             ->getErrors()
             ->assertStatus(401)
-            ->assertHasError(status: '401');
+            ->assertHasError(status: '401', code: 'AUTHENTICATION_REQUIRED');
 
         // A plain ROLE_USER is forbidden (403).
         $this->browser()
@@ -194,7 +194,7 @@ final class AuthorizationTest extends MusicCatalogKernelTestCase
             ->getErrors()
             ->assertStatus(403)
             ->assertContentType()
-            ->assertHasError(status: '403');
+            ->assertHasError(status: '403', code: 'ACCESS_DENIED');
 
         // An admin passes the relation's gate (200). (The linkage itself renders
         // data-less here because `owner` targets the admin-server `users` type, off the
@@ -245,7 +245,7 @@ final class AuthorizationTest extends MusicCatalogKernelTestCase
             ->getErrors()
             ->assertStatus(403)
             ->assertContentType()
-            ->assertHasError(status: '403');
+            ->assertHasError(status: '403', code: 'ACCESS_DENIED');
 
         // The delete never ran: the playlist is still readable.
         $this->browser()->actingAs(self::OWNER)->get('/playlists/' . $id)->assertFetchedOne();

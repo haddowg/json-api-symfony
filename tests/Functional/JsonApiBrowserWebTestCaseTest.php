@@ -52,7 +52,7 @@ final class JsonApiBrowserWebTestCaseTest extends WebTestCase
             ->get('/securedWidgets/1')
             ->getErrors()
             ->assertStatus(401)
-            ->assertHasError(status: '401');
+            ->assertHasError(status: '401', code: 'AUTHENTICATION_REQUIRED');
     }
 
     #[Test]
@@ -83,7 +83,7 @@ final class JsonApiBrowserWebTestCaseTest extends WebTestCase
             ->post('/securedWidgets', $document)
             ->getErrors()
             ->assertStatus(403)
-            ->assertHasError(status: '403');
+            ->assertHasError(status: '403', code: 'ACCESS_DENIED');
 
         $client->actingAs('admin')
             ->post('/securedWidgets', $document)

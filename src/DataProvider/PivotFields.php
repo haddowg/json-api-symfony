@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\DataProvider;
 
+use haddowg\JsonApi\Resource\Field\AcceptsDefaultOutputTimezoneInterface;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\FieldInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
@@ -106,9 +107,17 @@ final class PivotFields
      * request-free serializer, so no request and no `serializeUsing`/`extractUsing`
      * hook is consulted (a pivot field is a plain field definition); a `null` stays
      * `null`.
+     *
+     * `$outputTimezone` is the server's default output zone, applied the way core
+     * applies it to attributes: a `DateTime` field adopts it unless it set its own
+     * `outputTimezone()`, and `Date`/`Time` fields ignore it.
      */
-    public static function cast(mixed $value, FieldInterface $field): mixed
+    public static function cast(mixed $value, FieldInterface $field, ?string $outputTimezone = null): mixed
     {
+        if ($outputTimezone !== null && $field instanceof AcceptsDefaultOutputTimezoneInterface) {
+            $field = $field->withDefaultOutputTimezone($outputTimezone);
+        }
+
         return $field->serializeWithoutRequest([$field->column() ?? $field->name() => $value]);
     }
 }

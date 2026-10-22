@@ -227,7 +227,10 @@ return static function (ContainerConfigurator $container): void {
         // Optional PSR logger, threaded into the per-batch AtomicLoopBackend: a
         // deferred After* hook that throws AFTER an atomic batch durably commits is
         // logged (best-effort) instead of failing the committed batch (bundle ADR 0088).
-        ->arg('$logger', \Symfony\Component\DependencyInjection\Loader\Configurator\service('logger')->nullOnInvalid());
+        ->arg('$logger', \Symfony\Component\DependencyInjection\Loader\Configurator\service('logger')->nullOnInvalid())
+        // The per-operation output timezone holder (bundle ADR 0123), set from the
+        // operation's Server so pivot meta renders in the server's zone.
+        ->arg('$outputTimezone', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Serializer\RequestScopedOutputTimezone::class));
 
     // The per-request write-transaction context + post-commit-hook queue the Atomic
     // Operations executor drives (the next slice). It is DORMANT on the single-op
@@ -244,6 +247,11 @@ return static function (ContainerConfigurator $container): void {
     // counts. Both autowired.
     $services->set(\haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipCount::class);
     $services->set(\haddowg\JsonApiBundle\DataProvider\RelationCountBatcher::class);
+
+    // The output timezone of the server handling the current operation (bundle ADR
+    // 0123): the handler sets it per operation so the Doctrine provider can render
+    // pivot DateTime values in the server's zone. Reset between requests (kernel.reset).
+    $services->set(\haddowg\JsonApiBundle\Serializer\RequestScopedOutputTimezone::class);
 
     // The Relationship Queries profile window seam (bundle ADR 0053): a stable
     // per-request holder threaded into the memoized Server (in loadExtension) and a
@@ -416,6 +424,9 @@ return static function (ContainerConfigurator $container): void {
                 // the handler raises UnsupportedFilter/UnsupportedSort (core ADR 0078).
                 '$filterArms' => \Symfony\Component\DependencyInjection\Loader\Configurator\tagged_iterator(JsonApiBundle::DOCTRINE_FILTER_ARM_TAG),
                 '$sortArms' => \Symfony\Component\DependencyInjection\Loader\Configurator\tagged_iterator(JsonApiBundle::DOCTRINE_SORT_ARM_TAG),
+                // The current server's output zone, so rendered pivot DateTime values
+                // follow it the way attributes do (bundle ADR 0123).
+                '$outputTimezone' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Serializer\RequestScopedOutputTimezone::class),
             ])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG, ['priority' => -128]);
 

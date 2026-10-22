@@ -89,7 +89,9 @@ final class ExceptionListenerTest extends TestCase
         self::assertSame(403, $response->getStatusCode());
         $error = $this->firstError($response);
         self::assertSame('403', $error['status'] ?? null);
+        self::assertSame('ACCESS_DENIED', $error['code'] ?? null);
         self::assertSame('Forbidden', $error['title'] ?? null);
+        self::assertArrayNotHasKey('detail', $error);
     }
 
     #[Test]
@@ -104,7 +106,9 @@ final class ExceptionListenerTest extends TestCase
         self::assertSame(401, $response->getStatusCode());
         $error = $this->firstError($response);
         self::assertSame('401', $error['status'] ?? null);
+        self::assertSame('AUTHENTICATION_REQUIRED', $error['code'] ?? null);
         self::assertSame('Unauthorized', $error['title'] ?? null);
+        self::assertArrayNotHasKey('detail', $error);
     }
 
     #[Test]
@@ -119,7 +123,71 @@ final class ExceptionListenerTest extends TestCase
         self::assertSame(401, $response->getStatusCode());
         $error = $this->firstError($response);
         self::assertSame('401', $error['status'] ?? null);
+        self::assertSame('AUTHENTICATION_REQUIRED', $error['code'] ?? null);
         self::assertSame('Unauthorized', $error['title'] ?? null);
+        self::assertArrayNotHasKey('detail', $error);
+    }
+
+    #[Test]
+    #[Group('spec:errors')]
+    public function anAuthFailureCarriesTheExceptionMessageAsDetailInDebugOnly(): void
+    {
+        $denied = $this->firstError($this->fire(
+            new \Symfony\Component\Security\Core\Exception\AccessDeniedException('nope'),
+            authenticated: true,
+            debug: true,
+        ));
+        self::assertSame('ACCESS_DENIED', $denied['code'] ?? null);
+        self::assertSame('nope', $denied['detail'] ?? null);
+
+        $unauthenticated = $this->firstError($this->fire(
+            new \Symfony\Component\Security\Core\Exception\AuthenticationException('login required'),
+            authenticated: false,
+            debug: true,
+        ));
+        self::assertSame('AUTHENTICATION_REQUIRED', $unauthenticated['code'] ?? null);
+        self::assertSame('login required', $unauthenticated['detail'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:errors')]
+    public function anHttp401Or403CarriesTheSameCodeAsTheSecurityExceptions(): void
+    {
+        $unauthorized = $this->fire(
+            new \Symfony\Component\HttpKernel\Exception\UnauthorizedHttpException('Bearer', 'token expired'),
+            authenticated: false,
+        );
+        self::assertSame(401, $unauthorized->getStatusCode());
+        $error = $this->firstError($unauthorized);
+        self::assertSame('AUTHENTICATION_REQUIRED', $error['code'] ?? null);
+        self::assertSame('Unauthorized', $error['title'] ?? null);
+        self::assertArrayNotHasKey('detail', $error);
+
+        $forbidden = $this->fire(
+            new \Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException('firewall says no'),
+            authenticated: true,
+            debug: true,
+        );
+        self::assertSame(403, $forbidden->getStatusCode());
+        $error = $this->firstError($forbidden);
+        self::assertSame('ACCESS_DENIED', $error['code'] ?? null);
+        self::assertSame('Forbidden', $error['title'] ?? null);
+        self::assertSame('firewall says no', $error['detail'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:errors')]
+    public function anotherHttpStatusStaysCodeless(): void
+    {
+        $response = $this->fire(
+            new \Symfony\Component\HttpKernel\Exception\NotFoundHttpException('gone'),
+            authenticated: true,
+        );
+
+        self::assertSame(404, $response->getStatusCode());
+        $error = $this->firstError($response);
+        self::assertSame('Not Found', $error['title'] ?? null);
+        self::assertArrayNotHasKey('code', $error);
     }
 
     /**
@@ -161,7 +229,7 @@ final class ExceptionListenerTest extends TestCase
      * resolver reflecting `$authenticated`, returning the rendered response so the
      * mapped status (401 vs 403) can be asserted.
      */
-    private function fire(\Throwable $throwable, bool $authenticated): Response
+    private function fire(\Throwable $throwable, bool $authenticated, bool $debug = false): Response
     {
         $tokenStorage = new \Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorage();
         $trustResolver = $this->createStub(\Symfony\Component\Security\Core\Authentication\AuthenticationTrustResolverInterface::class);
@@ -177,7 +245,7 @@ final class ExceptionListenerTest extends TestCase
             $this->serverProvider(),
             $this->psrHttpFactory(),
             new HttpFoundationFactory(),
-            debug: false,
+            debug: $debug,
             logger: null,
             tokenStorage: $tokenStorage,
             trustResolver: $trustResolver,

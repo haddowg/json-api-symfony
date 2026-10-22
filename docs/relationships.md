@@ -535,6 +535,11 @@ relationships block** — wherever that relation's linkage data renders, i.e. wh
 > Pivot is Doctrine-only (it needs an association entity): the in-memory provider never
 > renders it, on any endpoint or document.
 
+A `DateTime` pivot field follows the server's
+[`output_timezone`](configuration.md#output_timezone) like an attribute does: it
+renders in the server zone unless it sets its own `outputTimezone()`, and `Date` and
+`Time` pivot fields keep their value.
+
 ### Filtering by a pivot column
 
 Pivot **filters are author-declared** — distinct from sorts, which auto-derive. To

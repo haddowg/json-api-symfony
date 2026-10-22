@@ -16,7 +16,7 @@ inline in the bundle's `configure()` (an `AbstractBundle`), and the extension al
 
 ## The config tree
 
-Ten top-level keys, all optional:
+The main top-level keys, all optional:
 
 ```yaml
 # config/packages/json_api.yaml
@@ -49,6 +49,7 @@ witness).
 | `base_uri` | scalar | `''` | The base prepended to every generated link. **Empty (the default): links are absolute, built from the request's scheme + host plus the prefix the server's routes are imported under**, so each tenant/host gets correct self-links with no hardcoded host. Set a value to pin a fixed canonical base regardless of the request; it must then include that prefix itself. Trailing slashes are tolerated. |
 | `version` | scalar | `'1.1'` | The JSON:API version the implicit `default` server advertises. Defaults to `'1.1'`, so set it **only** to pin a non-default version — most apps omit it (the example app's `'1.1'` above is just the explicit-version witness). |
 | `max_include_depth` | int | `3` | The cap on `?include` nesting depth (relationship hops from the primary resource). `0` is unlimited. A resource's own `maxIncludeDepth()` overrides it. |
+| `output_timezone` | scalar | `null` | The zone every `DateTime` attribute of the `default` server renders in, such as `UTC`, unless the field sets its own `outputTimezone()`. `Date` and `Time` attributes are left alone. `null` or `''` renders each value in the zone it carries. Named servers inherit it. See [`output_timezone`](#output_timezone). |
 | `strict_query_parameters` | bool | `true` | Reject an unrecognized top-level query-parameter family — and an unknown [`fields[type]` sparse-fieldset member](#unknown-sparse-fieldset-members) — with a `400`. `false` restores the old silent-ignore behaviour. |
 | `pagination.max_per_page` | int | `100` | The page-size cap the built-in server default paginator clamps `page[size]`/`page[limit]` to. `0` installs no built-in default (those collections render unpaginated). |
 | `doctrine.window_functions` | bool | `true` | Use SQL window functions (`ROW_NUMBER`/`COUNT OVER`) for the bounded windowed-include batch. Requires MySQL ≥ 8, MariaDB ≥ 10.2, SQLite ≥ 3.25, or any PostgreSQL. On an older engine the default `true` throws a `500` at the first windowed include — set `false` for the per-parent bounded fallback. |
@@ -57,7 +58,7 @@ witness).
 | `schema_validation` | bool | `false` | Registers the optional opis structural linter. Enabling it without `opis/json-schema` **fails the build**. |
 | `defaults.cache_headers` | map | `{}` | Fleet-wide default HTTP cache directives for `GET` reads. A resource's own `cacheHeaders` overrides these. |
 | `defaults.deprecation` / `sunset` / `sunset_link` | scalar | `null` | Fleet-wide default deprecation/sunset headers. A resource's own `deprecation`/`sunset` overrides these. |
-| `servers` | map | `[]` | Additional **named** servers, keyed by name. |
+| `servers` | map | `[]` | Additional **named** servers, keyed by name. Each takes `base_uri`, `version` and `output_timezone`. |
 
 `base_uri` and `version` configure the implicit `default` server — link core
 [server.md](https://github.com/haddowg/json-api/blob/main/docs/server.md) for what
@@ -271,6 +272,44 @@ You can toggle it per-environment by layering a partial override — the example
 does exactly this, merging `['schema_validation' => true]` over the shipped config so
 `base_uri`/`servers` stay unchanged.
 
+### `output_timezone`
+
+Set it when your data holds local times but the API should answer in one zone:
+
+```yaml
+json_api:
+    output_timezone: UTC
+```
+
+A `DateTime` attribute stored as `2024-06-01T21:30:00+02:00` then renders as
+`2024-06-01T19:30:00+00:00`. The conversion is core's `Server::withOutputTimezone()`
+(see [core's server docs](https://github.com/haddowg/json-api/blob/main/docs/server.md#output-timezone)),
+so these rules come from core:
+
+- A field's own `outputTimezone()` wins over the server zone.
+- `Date` and `Time` fields never take the server zone. A calendar date stored as local
+  midnight would land on the previous day in UTC, and a time of day has no date to
+  convert against. Give such a field its own `outputTimezone()` if you do want it moved.
+- It reaches every place a resource renders its attributes: primary data, `included`,
+  related endpoints, `on()` flattened attributes, and `DateTime` children of a `Map`,
+  `Obj` or `OneOf`.
+- A hand-written serializer formats its own values and is not affected.
+
+The bundle also applies it to `DateTime` [pivot fields](relationships.md#pivot-belongstomany-data)
+in `meta.pivot`, with the same rules.
+
+The value must be a zone PHP's `\DateTimeZone` accepts, normally an identifier such as
+`UTC` or `Europe/London`. `null` (the default) and `''` both mean no conversion.
+Anything else fails the container build:
+
+```
+Invalid configuration for path "json_api.output_timezone": "Europe/Londn" is not a
+timezone PHP recognises. ...
+```
+
+A named server inherits the top-level zone, sets its own, or turns conversion off
+with `''`. See [named servers](#named-servers-json_apiservers).
+
 ### `strict_query_parameters`
 
 By default the bundle **rejects an unrecognized top-level query-parameter family
@@ -424,7 +463,27 @@ json_api:
 ```
 
 Each named server **inherits the top-level value when its own is omitted** — the
-`admin` server above declares only `base_uri` and inherits `version: '1.1'`. Every
+`admin` server above declares only `base_uri` and inherits `version: '1.1'`.
+
+`output_timezone` inherits the same way when it is omitted or `null`, like `base_uri`.
+To render a server's values in their own zone while the top level sets one, give it
+an empty string:
+
+```yaml
+json_api:
+    output_timezone: UTC
+    servers:
+        tokyo:
+            output_timezone: Asia/Tokyo
+        legacy:
+            output_timezone: ''   # no conversion on this server
+```
+
+A type shared by several servers (`server: ['default', 'admin']`) renders in each
+server's own zone. Every server builds its own instance of the resource service, so
+nothing a server sets on it reaches the others.
+
+Every
 declared server (including `default`) gets one `ServerFactory`, registered under the
 id `haddowg.json_api.server_factory.<name>`.
 

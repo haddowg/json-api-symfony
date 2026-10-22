@@ -26,6 +26,7 @@ use haddowg\JsonApiBundle\Server\ServerProvider;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\Compiler\ServiceLocatorTagPass;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
 
 /**
@@ -312,6 +313,14 @@ final class ResourceLocatorPass implements CompilerPassInterface
             $container->getDefinition(RelationsRegistry::class)->setArgument('$providers', $relationsLocator);
         }
 
+        $serverLocators = $this->serverLocators(
+            $container,
+            $declaredServers,
+            $references,
+            \array_values(\array_unique($classes)),
+            [$resourceClassesByServer, $serializersByServer, $hydratorsByServer, $standaloneSerializersByServer, $standaloneHydratorsByServer],
+        );
+
         // Each declared server's ServerFactory gets only its own buckets (empty when
         // the server exposes nothing).
         foreach ($declaredServers as $server) {
@@ -321,6 +330,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
             }
 
             $factory = $container->getDefinition($factoryId);
+            $factory->setArgument('$resources', $serverLocators[$server]);
             $factory->setArgument('$resourceClasses', \array_values(\array_unique($resourceClassesByServer[$server] ?? [])));
             $factory->setArgument('$serializersByClass', $serializersByServer[$server] ?? []);
             $factory->setArgument('$hydratorsByClass', $hydratorsByServer[$server] ?? []);
@@ -786,6 +796,74 @@ final class ResourceLocatorPass implements CompilerPassInterface
         }
 
         return $names === [] ? [ServerProvider::DEFAULT_SERVER] : $names;
+    }
+
+    /**
+     * One {@see ResourceLocator} per server. Core's registry injects itself into
+     * every resource it resolves, and the server's output timezone, relationship
+     * seams and related serializers are all read back through that resolver. A class
+     * shared by several servers would be one service whose resolver is whichever
+     * server resolved it last, so each of those servers gets its own copy of the
+     * service definition (same arguments, so constructor injection still works).
+     * A class on a single server keeps its original service.
+     *
+     * @param list<string>                                    $servers
+     * @param array<string, Reference>                        $references every resolvable class-string, mapped to its service
+     * @param list<string>                                    $classes    the discovered resource classes
+     * @param list<array<string, array<array-key, string>>>   $buckets    per-server maps whose values are the class-strings that server's registry resolves
+     *
+     * @return array<string, Definition>
+     */
+    private function serverLocators(ContainerBuilder $container, array $servers, array $references, array $classes, array $buckets): array
+    {
+        $classesByServer = [];
+        foreach ($buckets as $bucket) {
+            foreach ($bucket as $server => $resolved) {
+                foreach ($resolved as $class) {
+                    $classesByServer[$server][$class] = true;
+                }
+            }
+        }
+
+        $serverCount = [];
+        foreach ($classesByServer as $resolved) {
+            foreach (\array_keys($resolved) as $class) {
+                $serverCount[$class] = ($serverCount[$class] ?? 0) + 1;
+            }
+        }
+
+        $locators = [];
+        foreach ($servers as $server) {
+            $serverReferences = $references;
+            foreach (\array_keys($classesByServer[$server] ?? []) as $class) {
+                if (($serverCount[$class] ?? 0) < 2 || !isset($references[$class])) {
+                    continue;
+                }
+
+                $original = $container->findDefinition((string) $references[$class]);
+                if ($original->isSynthetic()) {
+                    continue;
+                }
+
+                // The copy is a plain private service: no tags, so no pass collects
+                // it a second time, and no decoration of whatever the original decorates.
+                $copy = clone $original;
+                $copy->clearTags();
+                $copy->setDecoratedService(null);
+                $copy->setPublic(false);
+
+                $copyId = \sprintf('.haddowg.json_api.server_resource.%s.%s', $server, $class);
+                $container->setDefinition($copyId, $copy);
+                $serverReferences[$class] = new Reference($copyId);
+            }
+
+            $locators[$server] = new Definition(ResourceLocator::class, [
+                ServiceLocatorTagPass::register($container, $serverReferences),
+                $classes,
+            ]);
+        }
+
+        return $locators;
     }
 
     /**
