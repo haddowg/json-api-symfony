@@ -141,7 +141,7 @@ final class JsonApiRouteOfTest extends TestCase
      */
     private function matched(string $kernelClass, string $method, string $path): Request
     {
-        $kernel = new $kernelClass('test', true);
+        $kernel = new $kernelClass('test', false);
         $kernel->boot();
         $this->kernels[] = $kernel;
 
