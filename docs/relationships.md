@@ -927,6 +927,45 @@ all three: it never batch-loads a non-includable relation, bounds its own recurs
 the same effective depth, and skips a path the root's whitelist excludes (so a mutual
 default-include cycle terminates the batcher too, not only the renderer).
 
+## Included data is scoped like the related endpoint
+
+Whatever a document renders for a relation, it renders what the related endpoint
+serves. That covers `included` resources at every depth, the linkage `data` of a
+relationship whether or not it is included (a `withData()` relation, a collection your
+code already loaded, a to-one), pivot `meta.pivot`, `?withCount` totals, the
+Relationship Queries window, `on()` attributes flattened through a to-one, and the
+to-one related and relationship endpoints. A Doctrine query extension or a provider
+that hides rows hides them from all of these, on every server.
+
+The bundle reads a relation through the provider that serves its related endpoint
+(the provider of its first related type). When that provider scopes its reads and is
+not the parent type's provider, each parent's members are fetched through it, as the
+related endpoint does. The loaded members, or a to-one's target, reach the renderer
+through core's out-of-band linkage seams, so nothing is written onto the entity. A
+to-one whose target the scope hides renders `data: null`, is left out of `included`,
+flattens to `null` through an `on()` attribute, and a write to such an attribute is a
+`422` `RELATED_ATTRIBUTE_OWNER_MISSING`. A `MorphTo` target is checked against the
+provider of the type it renders as.
+
+Two kinds of relation render their own value instead:
+
+- a relation with `extractUsing()` renders what its closure returns, and the walk
+  continues into those targets (a pivot `belongsToMany` is the exception: it always
+  loads through the provider's pivot query);
+- a relation stored on a getter or property that is not a Doctrine association renders
+  what the model returns.
+
+Your code owns the scoping of those. Anything else that cannot be loaded through a
+scoping provider is refused with a `500` (a `\LogicException` naming the relation)
+rather than rendered from the model: a polymorphic to-many whose first related type is
+scoped (core reads polymorphic to-many linkage straight off the model), or an
+association the provider cannot batch, such as one with a composite-key target.
+
+A provider tells the bundle whether its related reads are scoped by implementing
+[`ScopesRelatedReadsInterface`](custom-data-providers.md#saying-whether-related-reads-are-scoped).
+The Doctrine provider reports a relation scoped when any query extension supports one
+of its related types; the in-memory provider never does.
+
 ## Polymorphic relationships
 
 A `MorphTo` to-one and a `MorphToMany` to-many point across several related

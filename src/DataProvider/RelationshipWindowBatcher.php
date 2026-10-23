@@ -84,6 +84,7 @@ final class RelationshipWindowBatcher
         private readonly DataProviderRegistry $providers,
         private readonly TypeMetadataResolver $types,
         private readonly RelationCriteriaFactory $relationCriteria,
+        private readonly RelatedReadRouter $router,
         // The same optional filter-value validator the CrudOperationHandler carries
         // (wired only when `symfony/validator` is present): the profile/include path
         // validates a relatedQuery filter VALUE against the per-relation merged
@@ -131,8 +132,8 @@ final class RelationshipWindowBatcher
 
         // Null each filter-excluded to-one's linkage across the page in ONE batched match
         // per relation (no N+1) — runs whether or not any to-many is windowed — supplied
-        // out of band as an empty to-one, which wins over a preloaded target (bundle ADR
-        // 0068). It produces no pagination entry (a to-one has none).
+        // out of band as an empty to-one (bundle ADRs 0068, 0125). It produces no
+        // pagination entry (a to-one has none).
         $excluded = $this->nullExcludedToOnes($server, $type, $parents, $toOneFiltered, $request);
 
         // The to-many relations to window — restricted to those whose linkage DATA renders
@@ -188,9 +189,9 @@ final class RelationshipWindowBatcher
             }
         }
 
-        // Nothing writes a relation onto the parents (bundle ADR 0086), so any bystander
-        // renders its true membership; the windowed relations read their pages from the
-        // linkage seam.
+        // Nothing writes a to-many column (bundle ADRs 0086, 0125), so the parents are
+        // pristine and any bystander renders its true membership; the windowed relations
+        // read their pages from the linkage seam.
         return $pages === [] && $linkages === [] && $excluded === []
             ? null
             : new WindowedRelationshipResult(
@@ -291,8 +292,7 @@ final class RelationshipWindowBatcher
         // per-parent scoping, merged-vocabulary key validation (unknown key -> the
         // endpoint's 400), and the count-free vs countable distinction are all reused
         // verbatim from fetchRelatedCollection's tail.
-        $batch = $this->providers->forType($type)
-            ->fetchRelatedCollectionBatch($type, $parents, $relation, $criteria, $pageRequest);
+        $batch = $this->router->batch($server, $type, $parents, $relation, $criteria, $pageRequest);
 
         $serializer = $server->serializerFor($type);
 
@@ -645,8 +645,7 @@ final class RelationshipWindowBatcher
             // never validated (ADR 0048); a no-op without the validator.
             $this->filterValues?->validate($request->getRelatedQuery($relation->name())->filter, $criteria->filters);
 
-            $matches = $this->providers->forType($type)
-                ->relatedToOneMatchesBatch($type, $parents, $relation, $criteria, $request);
+            $matches = $this->router->toOneMatches($server, $type, $parents, $relation, $criteria, $request);
 
             $serializer = $server->serializerFor($type);
             foreach ($parents as $parent) {

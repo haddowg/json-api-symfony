@@ -37,7 +37,7 @@ use haddowg\JsonApi\Resource\Field\RelationInterface;
  *
  * @implements DataProviderInterface<TEntity>
  */
-abstract class AbstractDataProvider implements DataProviderInterface
+abstract class AbstractDataProvider implements DataProviderInterface, ScopesRelatedReadsInterface
 {
     abstract public function supports(string $type): bool;
 
@@ -70,11 +70,10 @@ abstract class AbstractDataProvider implements DataProviderInterface
     }
 
     /**
-     * Default: an **empty {@see RelatedBatch}** — no parent has any related members in
-     * the batch, so {@see RelatedBatch::for()} fills every parent with its own empty
-     * result and the include preloader loads this relation lazily instead. This is the
-     * exact "a relation the provider cannot batch" contract value (a computed column, a
-     * non-association). Override to batch a to-many include without N+1.
+     * Default: {@see RelatedBatch::unsupported()} — the provider cannot batch the
+     * relation, so the include preloader reads it off the parent instead (or refuses it,
+     * when {@see scopesRelatedReads()} says the reads are scoped). Override to batch an
+     * include without N+1.
      */
     public function fetchRelatedCollectionBatch(
         string $parentType,
@@ -83,7 +82,19 @@ abstract class AbstractDataProvider implements DataProviderInterface
         CollectionCriteria $criteria,
         JsonApiRequestInterface $request,
     ): RelatedBatch {
-        return new RelatedBatch([]);
+        return RelatedBatch::unsupported();
+    }
+
+    /**
+     * Default: **`false`** — the base serves no related reads of its own, so reading a
+     * relation off the parent is what it would return. A provider whose related reads
+     * filter anything (tenancy, soft-delete, visibility) MUST return `true` here, so the
+     * {@see RelatedIncludeBatcher} loads included and linkage data through it rather than
+     * off the parent (bundle ADR 0125).
+     */
+    public function scopesRelatedReads(RelationInterface $relation): bool
+    {
+        return false;
     }
 
     /**

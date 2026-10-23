@@ -43,7 +43,49 @@ final readonly class RelatedBatch
      */
     public function __construct(
         private array $resultsByParentWireId,
+        private bool $supported = true,
+        private bool $computed = false,
     ) {}
+
+    /**
+     * A batch for a relation that is not backed by anything the provider loads: its
+     * value comes from a getter or other model member, which the author owns. The
+     * {@see RelatedIncludeBatcher} renders it as the model returns it, scoped or not
+     * (bundle ADR 0125).
+     */
+    public static function computed(): self
+    {
+        return new self([], false, true);
+    }
+
+    /**
+     * Whether the relation is computed by the model rather than loaded ({@see computed()}).
+     */
+    public function isComputed(): bool
+    {
+        return $this->computed;
+    }
+
+    /**
+     * A batch the provider could not run for the relation (for example a composite-id
+     * target). Every parent reads as empty through
+     * {@see for()}, and {@see isSupported()} is `false` so the
+     * {@see RelatedIncludeBatcher} can tell "no members" from "not loaded": it leaves an
+     * unscoped relation lazy and refuses a scoped one (bundle ADR 0125).
+     */
+    public static function unsupported(): self
+    {
+        return new self([], false);
+    }
+
+    /**
+     * Whether the provider actually loaded the relation. `false` only for
+     * {@see unsupported()}.
+     */
+    public function isSupported(): bool
+    {
+        return $this->supported;
+    }
 
     /**
      * The windowed page for the parent with `$parentWireId`, or an EMPTY

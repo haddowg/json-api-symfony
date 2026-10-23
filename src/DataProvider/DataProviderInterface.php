@@ -108,10 +108,11 @@ interface DataProviderInterface
      * 0062): the reference Doctrine provider projects each parent's target id as a
      * scalar (`IDENTITY(parent.<assoc>)`, no proxy init), loads the distinct targets in
      * ONE `WHERE id IN (:ids)` query, and partitions 1:1; the in-memory witness wraps
-     * each parent's {@see RelationInterface::readValue()} object. A relation the
-     * provider cannot batch (a computed/`extractUsing` column that is not a real
-     * association, or a composite-id target) returns an empty {@see RelatedBatch}, so
-     * the caller's write-back is a no-op and the relation renders lazily.
+     * each parent's {@see RelationInterface::readValue()} object. A relation whose value
+     * the model computes (a column that is not a real association) returns
+     * {@see RelatedBatch::computed()}, and one the provider cannot batch (a composite-id
+     * target) returns {@see RelatedBatch::unsupported()}; the batcher then reads it off
+     * the model only when that is not scoped (bundle ADR 0125).
      *
      * Where {@see fetchRelatedCollection()} answers ONE parent and the
      * {@see RelationshipWindowBatcher} looped it M parents x N relations

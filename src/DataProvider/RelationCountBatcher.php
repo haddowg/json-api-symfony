@@ -48,9 +48,9 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
 final class RelationCountBatcher
 {
     public function __construct(
-        private readonly DataProviderRegistry $providers,
         private readonly TypeMetadataResolver $types,
         private readonly RelationCriteriaFactory $relationCriteria,
+        private readonly RelatedReadRouter $router,
     ) {}
 
     /**
@@ -76,7 +76,6 @@ final class RelationCountBatcher
             return null;
         }
 
-        $provider = $this->providers->forType($type);
         $serializer = $server->serializerFor($type);
 
         // Resolve each parent's wire id once (the provider keys its counts by it),
@@ -91,7 +90,7 @@ final class RelationCountBatcher
         foreach ($relations as $relation) {
             $criteria = $this->countCriteria($server, $relation, $request);
 
-            $relationCounts = $provider->countRelated($type, $parents, $relation, $criteria, $request);
+            $relationCounts = $this->router->counts($server, $type, $parents, $relation, $criteria, $request);
             foreach ($relationCounts as $wireId => $count) {
                 foreach ($byWireId[(string) $wireId] ?? [] as $parent) {
                     $counts[\spl_object_id($parent)][$relation->name()] = $count;

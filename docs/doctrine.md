@@ -228,17 +228,22 @@ final class AlbumResource extends AbstractResource
 
 — from [`AlbumResource`](../examples/music-catalog-symfony/src/Resource/AlbumResource.php).
 
-Batch-loading is a **pure optimization**: the rendered document is identical with or
-without it. So a relation the batcher cannot batch silently falls back to a lazy
-load — a polymorphic relation (more than one related type), a computed /
-`extractUsing` / aliased non-association column, or a composite-key target. The
-relation's storage column drives the batch (`column() ?? name()`), so a `storedAs()`
-rename is honoured.
+The batch loads through the query extensions of the related type, so `included` and
+linkage hold exactly what the related endpoint returns (see
+[relationships → included data is scoped like the related endpoint](relationships.md#included-data-is-scoped-like-the-related-endpoint)).
+When no extension applies to the related type, batching is a pure optimization and a
+relation it cannot batch falls back to a lazy load: a polymorphic relation, a
+composite-key target. With an extension, a polymorphic to-many or a composite-key
+target is refused with a `500` instead. An
+`extractUsing()` relation, or one stored on a non-association getter, always renders
+the model's own value. The relation's storage column drives the batch
+(`column() ?? name()`), so a `storedAs()` rename is honoured.
 
 The batching runs through the same provider-agnostic
 [`fetchRelatedCollectionBatch()`](../src/DataProvider/DataProviderInterface.php) seam
-that windowed related collections use, so it works on the in-memory provider too (an idempotent
-re-assignment that changes no rendered bytes). The
+that windowed related collections use, so it works on the in-memory provider too. A
+loaded to-many reaches the renderer out of band and never replaces the entity's
+collection, so a collection with no setter is fine. The
 witness is [`IncludePreloadTest`](../examples/music-catalog-symfony/tests/IncludePreloadTest.php).
 
 ### Eager-loaded flattened (`on()`) attributes
