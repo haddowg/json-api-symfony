@@ -102,6 +102,7 @@ final class CompositeDoctrineTestKernel extends Kernel
         $container->extension('json_api', [
             'base_uri' => 'https://example.test',
             'version' => '1.1',
+            'atomic_operations' => ['enabled' => true],
         ]);
 
         $services = $container->services()

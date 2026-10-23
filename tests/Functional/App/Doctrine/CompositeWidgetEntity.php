@@ -24,6 +24,7 @@ class CompositeWidgetEntity
      * @param array<string, mixed>|null $address
      * @param array<string, mixed>|null $block
      * @param array<string, mixed>|null $contact
+     * @param array<string, mixed>|null $prefs
      */
     public function __construct(
         #[ORM\Id]
@@ -38,5 +39,7 @@ class CompositeWidgetEntity
         public ?array $block = null,
         #[ORM\Column(type: 'json', nullable: true)]
         public ?array $contact = null,
+        #[ORM\Column(type: 'json', nullable: true)]
+        public ?array $prefs = null,
     ) {}
 }

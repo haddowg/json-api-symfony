@@ -37,6 +37,7 @@ final class DoctrineCompositeTest extends CompositeConformanceTestCase
         $entityManager->persist(new CompositeWidgetEntity(
             name: 'Seed',
             address: ['street' => '1 High St', 'city' => 'London', 'postcode' => 'EC1'],
+            prefs: [],
         ));
         $entityManager->flush();
         $entityManager->clear();

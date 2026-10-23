@@ -156,10 +156,16 @@ final class ResourceValidator
         }
 
         // On update, fold the stored resource's wire-form attributes under the
-        // incoming partial so the constraints see the MERGED resource state.
-        $attributes = !$creating && $existingObject !== null
-            ? \array_merge($this->storedAttributes($resource, $existingObject, $request), $incoming)
+        // incoming partial so the constraints see the MERGED resource state. The wire
+        // form renders an empty map as a `\stdClass`; the Symfony constraints read maps
+        // as arrays, while the schema pass needs the object.
+        $stored = !$creating && $existingObject !== null
+            ? $this->storedAttributes($resource, $existingObject, $request)
+            : [];
+        $attributes = $stored !== []
+            ? \array_merge(\array_map(ObjectView::toArray(...), $stored), $incoming)
             : $incoming;
+        $wireAttributes = $stored !== [] ? \array_merge($stored, $incoming) : $incoming;
 
         $fields = [];
         $compares = [];
@@ -224,7 +230,7 @@ final class ResourceValidator
         // to /data/attributes/<field>. Skipped entirely when opis is not installed (the
         // validator is null-wired), so a Shape then documents its OpenAPI shape but is
         // not value-validated — the same optional-linter posture opis already has.
-        foreach ($this->shapeErrors($resource, $attributes, $creating, $request) as $error) {
+        foreach ($this->shapeErrors($resource, $wireAttributes, $incoming, $creating, $request) as $error) {
             $errors[] = $error;
         }
 
@@ -1333,16 +1339,22 @@ final class ResourceValidator
      * posture the opis structural linter has. Absent or explicit-null values are the
      * main pass's concern (presence / nullability), so they are skipped here.
      *
-     * @param array<string, mixed> $attributes the merged incoming attribute map
+     * An incoming value is validated as the client sent it, with JSON objects kept as
+     * objects ({@see ObjectView}), so an empty `{}` satisfies `type: object` and an
+     * empty `[]` does not.
+     *
+     * @param array<array-key, mixed> $attributes the merged attribute map, stored values in wire form
+     * @param array<array-key, mixed> $incoming   the attributes the request sent
      *
      * @return list<Error>
      */
-    private function shapeErrors(AbstractResource $resource, array $attributes, bool $creating, JsonApiRequestInterface $request): array
+    private function shapeErrors(AbstractResource $resource, array $attributes, array $incoming, bool $creating, JsonApiRequestInterface $request): array
     {
         if ($this->schemaValues === null) {
             return []; // opis not installed — a Shape documents but does not validate
         }
 
+        $objects = null;
         $errors = [];
         foreach ($resource->allFields() as $field) {
             if ($field instanceof Id || $field instanceof RelationInterface) {
@@ -1361,6 +1373,10 @@ final class ResourceValidator
                 if (!$constraint instanceof Shape || !$constraint->context()->appliesTo($creating)) {
                     continue;
                 }
+                if (\array_key_exists($field->name(), $incoming)) {
+                    $objects ??= $this->objectAttributes($request);
+                    $value = $this->objectValue($objects, $field->name(), $value);
+                }
                 foreach ($this->schemaValues->validate(
                     $constraint->contribute(Schema::create()),
                     $value,
@@ -1372,6 +1388,36 @@ final class ResourceValidator
         }
 
         return $errors;
+    }
+
+    /**
+     * The request's `data.attributes` with JSON objects kept as objects, by name;
+     * empty when the body offers no such view.
+     *
+     * @return array<array-key, mixed>
+     */
+    private function objectAttributes(JsonApiRequestInterface $request): array
+    {
+        $data = ObjectView::dataOf($request);
+        $attributes = $data instanceof \stdClass ? ($data->attributes ?? null) : null;
+
+        return $attributes instanceof \stdClass ? (array) $attributes : [];
+    }
+
+    /**
+     * The object-preserving form of an incoming attribute value. Falls back to the
+     * associative value when the object view doesn't hold the same value, e.g. after
+     * a listener rewrote the parsed body.
+     *
+     * @param array<array-key, mixed> $objects
+     */
+    private function objectValue(array $objects, string $name, mixed $value): mixed
+    {
+        if (\array_key_exists($name, $objects) && ObjectView::toArray($objects[$name]) === $value) {
+            return $objects[$name];
+        }
+
+        return $value;
     }
 
     /**
