@@ -1114,6 +1114,17 @@ reference, **no related-persister change**. A write where **any hop** is null is
 (`RELATED_ATTRIBUTE_OWNER_MISSING`, at `/data/attributes/<name>`) — a flattened attribute
 never auto-instantiates a missing related model.
 
+> **Explicit change tracking.** The write relies on Doctrine's default change-tracking
+> policy (`DEFERRED_IMPLICIT`), under which `flush()` saves every managed entity that has
+> changed. An entity mapped with `DEFERRED_EXPLICIT`
+> (`#[ORM\ChangeTrackingPolicy('DEFERRED_EXPLICIT')]`) is only saved when it's passed to
+> `persist()` itself, so a flattened write onto one is **silently lost**: the response
+> shows the new value, but nothing reaches the database. The bundle only persists the
+> resource being written. If a related entity uses explicit tracking, persist it yourself
+> in a [`beforeUpdate` hook](lifecycle-hooks.md#the-hook-set-and-firing-order), which runs
+> before the commit's flush (`$entityManager->persist($entity->author)`), or keep the
+> related entity on the default policy.
+
 **Eager loading.** The bundle eager-loads every `on()` attribute's backing relation chain
 so the flattened read does not N+1 — one batched load per hop per page (a multi-hop chain
 loads in `O(depth)`, a shared prefix loads once), the same batch as `?include` (see
