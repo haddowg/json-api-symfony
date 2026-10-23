@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.4.2](https://github.com/haddowg/json-api-symfony/compare/v1.4.1...v1.4.2) (2026-10-23)
+
+
+### Bug Fixes
+
+* render loaded includes out of band instead of writing them onto entities ([7684597](https://github.com/haddowg/json-api-symfony/commit/76845972665b5b540368822d57bdf725ec66ef2f))
+* resolve written linkage through the related endpoint's scope ([7684597](https://github.com/haddowg/json-api-symfony/commit/76845972665b5b540368822d57bdf725ec66ef2f))
+* scope included and linkage data like the related endpoint ([7684597](https://github.com/haddowg/json-api-symfony/commit/76845972665b5b540368822d57bdf725ec66ef2f))
+* scope on() hops below the relations a create sets ([7684597](https://github.com/haddowg/json-api-symfony/commit/76845972665b5b540368822d57bdf725ec66ef2f))
+
+
+### Miscellaneous Chores
+
+* **deps:** require haddowg/json-api ^1.4 ([7684597](https://github.com/haddowg/json-api-symfony/commit/76845972665b5b540368822d57bdf725ec66ef2f))
+
 ## [1.4.1](https://github.com/haddowg/json-api-symfony/compare/v1.4.0...v1.4.1) (2026-10-23)
 
 
