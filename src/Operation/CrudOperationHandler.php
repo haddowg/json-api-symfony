@@ -1834,6 +1834,14 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // hydrateRelationships() stays a no-op (no scalar-id assignment, ADR 0018).
         $this->applyRelationships($server, $persister, $type, $entity, $relationships, $body, creating: true);
 
+        // As on update: an `on()` attribute writes onto the target its relation's related
+        // endpoint serves, so scope the hops below the relations this body set (ADR 0126).
+        if ($this->includeBatcher !== null) {
+            $this->relationshipLinkage?->setIncluded(
+                $this->includeBatcher->scopeEagerLoads($server, $type, $entity, $request, $this->bodyRelationshipNames($body)),
+            );
+        }
+
         $entity = $server->hydratorFor($type)->hydrate($this->withoutRelationships($body), $entity);
         \assert(\is_object($entity));
 

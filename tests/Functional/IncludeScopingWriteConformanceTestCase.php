@@ -318,6 +318,43 @@ abstract class IncludeScopingWriteConformanceTestCase extends JsonApiFunctionalT
     #[Test]
     #[TestWith(['', ''], 'default server')]
     #[TestWith(['/partner', 'partner-'], 'named server')]
+    public function aCreateCannotWriteThroughAHiddenOnHop(string $mount, string $prefix): void
+    {
+        // Agency 1 is visible; its manager, member 2, is not.
+        $response = $this->handle($mount . '/' . $prefix . 'members', 'POST', [
+            'data' => [
+                'type' => $prefix . 'members',
+                'attributes' => ['name' => 'New', 'teamManagerName' => 'Renamed'],
+                'relationships' => ['team' => ['data' => ['type' => $prefix . 'agencies', 'id' => '1']]],
+            ],
+        ]);
+
+        self::assertSame(422, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame('RELATED_ATTRIBUTE_OWNER_MISSING', $this->errorCode($response));
+        self::assertSame('Hidden Member', $this->storedMemberName($prefix, 2));
+        self::assertSame(4, $this->storedMemberCount($prefix));
+    }
+
+    #[Test]
+    #[TestWith(['', ''], 'default server')]
+    #[TestWith(['/partner', 'partner-'], 'named server')]
+    public function aCreateWritesThroughAVisibleOnHop(string $mount, string $prefix): void
+    {
+        $response = $this->handle($mount . '/' . $prefix . 'members', 'POST', [
+            'data' => [
+                'type' => $prefix . 'members',
+                'attributes' => ['name' => 'New', 'teamManagerName' => 'Renamed'],
+                'relationships' => ['team' => ['data' => ['type' => $prefix . 'agencies', 'id' => '3']]],
+            ],
+        ]);
+
+        self::assertSame(201, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame('Renamed', $this->storedMemberName($prefix, 3));
+    }
+
+    #[Test]
+    #[TestWith(['', ''], 'default server')]
+    #[TestWith(['/partner', 'partner-'], 'named server')]
     public function anAtomicBatchReferencingAHiddenIdRollsBack(string $mount, string $prefix): void
     {
         $response = $this->atomic($mount, [

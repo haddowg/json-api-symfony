@@ -995,7 +995,9 @@ PATCH /advertisers/1/relationships/partners {"data":[{"type":"agencies","id":"3"
 ```
 
 A to-one has one slot, so a client allowed to write it replaces, or clears, whatever it
-holds.
+holds. A create also scopes the `on()` hops below the relations its body sets, so
+writing a flattened attribute through a hidden target is a `422`
+`RELATED_ATTRIBUTE_OWNER_MISSING`, as on an update.
 
 A relation whose types are unscoped keeps resolving ids straight through the persister,
 unchecked. A relationship endpoint mutation of a polymorphic to-many reaching a scoped

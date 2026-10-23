@@ -16,7 +16,9 @@ including accepting an id that does not exist.
 A to-many replace on an existing parent changes only the members the client can see: the
 handler appends the current members the scope hides to the linkage it hands the persister,
 so their rows and pivot rows stay. A to-one has a single slot, so a client allowed to
-write it replaces whatever it holds.
+write it replaces whatever it holds. A create scopes the `on()` hops below the relations
+its body sets, as an update already did, so a flattened attribute reached through a
+hidden target is a `422 RELATED_ATTRIBUTE_OWNER_MISSING`.
 
 ## Considered options
 
