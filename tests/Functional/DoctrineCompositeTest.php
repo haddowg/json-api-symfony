@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
+use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\ChecklistEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\CompositeDoctrineTestKernel;
 use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\CompositeWidgetEntity;
 
@@ -38,6 +39,13 @@ final class DoctrineCompositeTest extends CompositeConformanceTestCase
             name: 'Seed',
             address: ['street' => '1 High St', 'city' => 'London', 'postcode' => 'EC1'],
             prefs: [],
+        ));
+        $entityManager->persist(new ChecklistEntity(
+            done: true,
+            count: 3,
+            title: 'Seed',
+            tags: ['a'],
+            settings: ['k' => 'v'],
         ));
         $entityManager->flush();
         $entityManager->clear();

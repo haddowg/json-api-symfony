@@ -17,8 +17,11 @@ use haddowg\JsonApi\Resource\Constraint\Required;
 use haddowg\JsonApi\Resource\Constraint\Shape;
 use haddowg\JsonApi\Resource\Constraint\When;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
+use haddowg\JsonApi\Resource\Field\Boolean;
+use haddowg\JsonApi\Resource\Field\Decimal;
 use haddowg\JsonApi\Resource\Field\FieldInterface;
 use haddowg\JsonApi\Resource\Field\Id;
+use haddowg\JsonApi\Resource\Field\Integer;
 use haddowg\JsonApi\Resource\Field\Map;
 use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\Obj;
@@ -47,9 +50,10 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
  * field's constraints are filtered by the create/update {@see \haddowg\JsonApi\Resource\Constraint\Context}
  * and translated by the {@see ConstraintTranslator}, then wrapped per the
  * {@see Required}/{@see Nullable} resolution into a Symfony {@see Collection}:
- *  - a create-required field is a {@see RequiredField} with `NotBlank` (present and
- *    non-empty); on update it relaxes to {@see Optional} with `NotBlank` (a partial
- *    update may omit it, but a supplied value must be non-empty);
+ *  - a create-required field is a {@see RequiredField} (present); on update it
+ *    relaxes to {@see Optional} (a partial update may omit it). Either way a
+ *    supplied string, list or object must be non-empty (`NotBlank`), and a
+ *    supplied boolean or number non-null, so `false` and `0` are valid;
  *  - a non-nullable field gets `NotNull`, so an explicit `null` is rejected when
  *    the field is present;
  *  - unknown attributes are ignored (the hydrator ignores them too).
@@ -1173,8 +1177,8 @@ final class ResourceValidator
         $isNullable = $this->hasNullable($field, $creating, $request, $value);
 
         if ($isRequired) {
-            // Present-and-non-empty on create; if-present-non-empty on update.
-            \array_unshift($constraints, new NotBlank(allowNull: $isNullable));
+            // Present on create, plus non-empty or non-null per the field's type.
+            \array_unshift($constraints, ...$this->requiredValue($field, $isNullable));
         } elseif (!$isNullable) {
             // A present optional field that is not nullable may not be explicit null.
             \array_unshift($constraints, new NotNull());
@@ -1184,6 +1188,29 @@ final class ResourceValidator
         return $creating && $isRequired
             ? new RequiredField($constraints)
             : new Optional($constraints);
+    }
+
+    /**
+     * The value rule behind a required field, matching core's projection of
+     * {@see Required}: a string, list or object may not be empty, while a boolean,
+     * number or discriminated union only has to be non-null, so `false` and `0`
+     * pass. `NotBlank` would reject `false`. A nullable required field accepts
+     * `null` either way.
+     *
+     * @return list<\Symfony\Component\Validator\Constraint>
+     */
+    private function requiredValue(FieldInterface $field, bool $nullable): array
+    {
+        $nonEmpty = !($field instanceof Boolean
+            || $field instanceof Integer
+            || $field instanceof Decimal
+            || $field instanceof OneOf);
+
+        if ($nonEmpty) {
+            return [new NotBlank(allowNull: $nullable)];
+        }
+
+        return $nullable ? [] : [new NotNull()];
     }
 
     /**
