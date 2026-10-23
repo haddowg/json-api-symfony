@@ -11,6 +11,7 @@ use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineDataProvider;
 use haddowg\JsonApiBundle\DataProvider\RelatedBatch;
+use haddowg\JsonApiBundle\DataProvider\ScopesRelatedReadsInterface;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Artist;
 
 /**
@@ -33,7 +34,7 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Artist;
  *
  * @implements DataProviderInterface<object>
  */
-final class OverridingArtistProvider implements DataProviderInterface
+final class OverridingArtistProvider implements DataProviderInterface, ScopesRelatedReadsInterface
 {
     public const string SENTINEL_ID = '999999';
 
@@ -83,6 +84,11 @@ final class OverridingArtistProvider implements DataProviderInterface
         JsonApiRequestInterface $request,
     ): RelatedBatch {
         return $this->doctrine->fetchRelatedCollectionBatch($parentType, $parents, $relation, $criteria, $request);
+    }
+
+    public function scopesRelatedReads(RelationInterface $relation): bool
+    {
+        return $this->doctrine->scopesRelatedReads($relation);
     }
 
     public function fetchRelationshipPivot(string $type, object $parent, RelationInterface $relation): array

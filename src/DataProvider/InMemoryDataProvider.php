@@ -46,7 +46,7 @@ use haddowg\JsonApi\Resource\Sort\SortDirective;
  *
  * @implements DataProviderInterface<object>
  */
-final class InMemoryDataProvider implements DataProviderInterface
+final class InMemoryDataProvider implements DataProviderInterface, ScopesRelatedReadsInterface
 {
     private readonly InMemoryStore $store;
 
@@ -107,6 +107,15 @@ final class InMemoryDataProvider implements DataProviderInterface
     public function store(): InMemoryStore
     {
         return $this->store;
+    }
+
+    /**
+     * The in-memory store reads every relation off the parent, so its related reads
+     * never scope beyond the parent's own value.
+     */
+    public function scopesRelatedReads(RelationInterface $relation): bool
+    {
+        return false;
     }
 
     public function supports(string $type): bool

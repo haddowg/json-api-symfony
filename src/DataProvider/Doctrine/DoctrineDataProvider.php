@@ -31,6 +31,7 @@ use haddowg\JsonApiBundle\DataProvider\PivotCollectionResult;
 use haddowg\JsonApiBundle\DataProvider\PivotCursorCollectionResult;
 use haddowg\JsonApiBundle\DataProvider\PivotFields;
 use haddowg\JsonApiBundle\DataProvider\RelatedBatch;
+use haddowg\JsonApiBundle\DataProvider\ScopesRelatedReadsInterface;
 use haddowg\JsonApiBundle\Serializer\RequestScopedOutputTimezone;
 use haddowg\JsonApiBundle\Server\IdEncoderResolver;
 
@@ -80,7 +81,7 @@ use haddowg\JsonApiBundle\Server\IdEncoderResolver;
  * @implements DataProviderInterface<object>
  * @implements PivotAwareProviderInterface<object>
  */
-final class DoctrineDataProvider implements DataProviderInterface, PivotAwareProviderInterface
+final class DoctrineDataProvider implements DataProviderInterface, PivotAwareProviderInterface, ScopesRelatedReadsInterface
 {
     /**
      * The root alias every generated QueryBuilder uses; handlers re-read it
@@ -498,11 +499,35 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         // The opt-out moves into how the provider batches (bundle ADR 0062): a column
         // that is not a real Doctrine association (a computed/extractUsing value, or an
         // alias that is not the association name), or a target with a composite id, is
-        // not batchable here — return an EMPTY batch so the orchestrator's write-back is
-        // a no-op and the relation renders lazily, exactly as the retired preloader
-        // skipped it. (These were the preloader's hasAssociation/composite-id guards.)
+        // not batchable here. A non-association is the model's own computed value, rendered
+        // as it is; an association this cannot batch is unsupported, which the
+        // orchestrator refuses when the related type is scoped (bundle ADR 0125).
+        // A pivot belongsToMany reaches its members through the association entity, not a
+        // parent property, so it is read per parent through the same scoped pivot query
+        // the related endpoint runs (bundle ADR 0125).
+        $pivotRelatedType = $relation->relatedTypes()[0] ?? $parentType;
+        if ($relation->isToMany() && $this->supportsPivot($pivotRelatedType, $relation)) {
+            $parentMetadata = $this->entityManager->getClassMetadata($parents[0]::class);
+            $encoder = $this->idEncoders->encoderFor($parentType);
+            $results = [];
+            foreach ($parents as $parent) {
+                $wireId = $this->parentWireId($parent, $parentMetadata, $encoder);
+                if ($wireId !== null) {
+                    $results[$wireId] = $this->fetchRelatedPivotCollection($pivotRelatedType, $parent, $relation, $criteria, $request);
+                }
+            }
+
+            return new RelatedBatch($results);
+        }
+
+        $metadata = $this->entityManager->getClassMetadata($parents[0]::class);
+        $property = $relation->column() ?? $relation->name();
+        if (!$metadata->hasAssociation($property)) {
+            return RelatedBatch::computed();
+        }
+
         if (!$this->isBatchableAssociation($parents[0], $relation)) {
-            return new RelatedBatch([]);
+            return RelatedBatch::unsupported();
         }
 
         $relatedType = $relation->relatedTypes()[0] ?? $parentType;
@@ -719,6 +744,10 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $parentTargetId = [];
         $targetIds = [];
         foreach ($parents as $parent) {
+            // A parent reached through a lazy hop may be an uninitialised proxy, whose
+            // association property is not populated until it loads.
+            $this->entityManager->initializeObject($parent);
+
             $wireId = $this->parentWireId($parent, $parentMetadata, $encoder);
             if ($wireId === null) {
                 continue;
@@ -1139,6 +1168,8 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         // common no-filter count is the unchanged grouped query.
         if ($relatedType !== null && $this->supportsPivot($relatedType, $relation)) {
             $builder = $this->pivotCountQuery($relation, $parents[0], $relatedType, $parentIds, $criteria);
+            $association = $this->pivotAssociation($relation, $parents[0], $this->entityClassFor($relatedType));
+            $builder = $this->constrainToExtendedRelated($builder, \sprintf('IDENTITY(pivot.%s)', $association->farProperty), $relatedType, $request);
         } else {
             $builder = $this->entityManager->createQueryBuilder()
                 ->select(\sprintf('parent.%s AS parent_id', $parentIdField))
@@ -1152,6 +1183,11 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             // Apply the relation's relatedQuery filters on the `related` JOIN alias
             // (the default alias the count passes), never the `parent` root.
             $builder = $this->applier->apply($criteria, $builder, $this->filterHandler, $this->sortHandler, 'related');
+
+            if ($relatedType !== null) {
+                $relatedIdField = $this->entityManager->getClassMetadata($this->entityClassFor($relatedType))->getSingleIdentifierFieldName();
+                $builder = $this->constrainToExtendedRelated($builder, \sprintf('related.%s', $relatedIdField), $relatedType, $request);
+            }
         }
 
         /** @var list<array<string, mixed>> $rows */
@@ -1179,6 +1215,41 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         }
 
         return $counts;
+    }
+
+    /**
+     * Restricts a count to the related members the related type's query extensions
+     * admit, so `?withCount` totals the same set the related endpoint serves (bundle ADR
+     * 0125). The extensions build on a related-rooted subquery, as their contract
+     * expects, and `$memberExpr` (the counted member's id) is constrained `IN` it.
+     */
+    private function constrainToExtendedRelated(QueryBuilder $builder, string $memberExpr, string $relatedType, ?JsonApiRequestInterface $request): QueryBuilder
+    {
+        $extensions = $this->extensionsFor($relatedType);
+        if ($extensions === []) {
+            return $builder;
+        }
+
+        $relatedClass = $this->entityClassFor($relatedType);
+        $relatedIdField = $this->entityManager->getClassMetadata($relatedClass)->getSingleIdentifierFieldName();
+        $subAlias = 'jsonapi_count_related';
+        $sub = $this->entityManager
+            ->getRepository($relatedClass)
+            ->createQueryBuilder($subAlias)
+            ->select(\sprintf('%s.%s', $subAlias, $relatedIdField));
+
+        $context = new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request);
+        foreach ($extensions as $extension) {
+            $sub = $extension->apply($sub, $context);
+        }
+
+        $merged = $builder->getParameters();
+        foreach ($sub->getParameters() as $parameter) {
+            $merged->add($parameter);
+        }
+        $builder->setParameters($merged);
+
+        return $builder->andWhere($builder->expr()->in($memberExpr, $sub->getDQL()));
     }
 
     /**
@@ -1264,6 +1335,10 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $parentTargetId = [];
         $targetIds = [];
         foreach ($parents as $parent) {
+            // A parent reached through a lazy hop may be an uninitialised proxy, whose
+            // association property is not populated until it loads.
+            $this->entityManager->initializeObject($parent);
+
             $wireId = $this->parentWireId($parent, $parentMetadata, $encoder);
             if ($wireId === null) {
                 continue;
@@ -2082,6 +2157,21 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
     {
         return $this->entityClassByType[$type]
             ?? throw new \LogicException(\sprintf('No Doctrine entity class is mapped for JSON:API type "%s".', $type));
+    }
+
+    /**
+     * A relation is scoped when a query extension applies to any of its related types:
+     * its include and linkage then load through the extended query (bundle ADR 0125).
+     */
+    public function scopesRelatedReads(RelationInterface $relation): bool
+    {
+        foreach ($relation->relatedTypes() as $relatedType) {
+            if ($this->extensionsFor($relatedType) !== []) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

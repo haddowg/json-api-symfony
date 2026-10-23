@@ -7,7 +7,9 @@ namespace haddowg\JsonApiBundle\Serializer;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Schema\Relationship\RelationshipLinkage;
+use haddowg\JsonApi\Schema\Relationship\ToOneRelationshipLinkage;
 use haddowg\JsonApi\Serializer\RelationshipLinkageInterface;
+use haddowg\JsonApi\Serializer\ToOneRelationshipLinkageInterface;
 
 /**
  * The bundle's fill of core's {@see RelationshipLinkageInterface} seam: a render-time
@@ -37,12 +39,46 @@ use haddowg\JsonApi\Serializer\RelationshipLinkageInterface;
  * the handler swaps in only for a profile read), so it lives only for the render of the
  * page it was built from.
  */
-final class WindowedRelationshipLinkage implements RelationshipLinkageInterface
+final class WindowedRelationshipLinkage implements ToOneRelationshipLinkageInterface
 {
     /**
-     * @param array<int, array<string, RelationshipLinkage>> $linkages `spl_object_id(parent) => [relationName => linkage]`
+     * @param array<int, array<string, RelationshipLinkage>>      $linkages `spl_object_id(parent) => [relationName => linkage]`
+     * @param array<int, array<string, ToOneRelationshipLinkage>> $toOne    `spl_object_id(parent) => [relationName => target]`, the scoped to-one targets (bundle ADR 0125)
      */
-    public function __construct(private readonly array $linkages) {}
+    public function __construct(
+        private readonly array $linkages,
+        private readonly array $toOne = [],
+    ) {}
+
+    /**
+     * This map with `$other`'s entries added; an entry both carry keeps this one's.
+     */
+    public function with(self $other): self
+    {
+        $linkages = $this->linkages;
+        foreach ($other->linkages as $objectId => $relations) {
+            $linkages[$objectId] = ($linkages[$objectId] ?? []) + $relations;
+        }
+
+        $toOne = $this->toOne;
+        foreach ($other->toOne as $objectId => $relations) {
+            $toOne[$objectId] = ($toOne[$objectId] ?? []) + $relations;
+        }
+
+        return new self($linkages, $toOne);
+    }
+
+    public function toOneLinkageForRelationship(
+        mixed $model,
+        RelationInterface $relation,
+        JsonApiRequestInterface $request,
+    ): ?ToOneRelationshipLinkage {
+        if (!\is_object($model)) {
+            return null;
+        }
+
+        return $this->toOne[\spl_object_id($model)][$relation->name()] ?? null;
+    }
 
     public function linkageForRelationship(
         mixed $model,

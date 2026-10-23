@@ -288,7 +288,8 @@ gone). The bundle batch-loads a read's effective include tree automatically — 
 query per relation per level, reusing core's include decision so it loads exactly
 what is rendered (requested `?include` **or** a resource's
 `getDefaultIncludedRelationships()` fallback when none is sent). It degrades to a
-lazy load for any relation it cannot batch (polymorphic, computed, composite-key).
+lazy load for a relation it cannot batch only when reading it off the model returns
+what the related endpoint would; a scoped relation it cannot load is refused.
 See [Eager-loading includes](doctrine.md#eager-loading-includes-no-n1) on the
 Doctrine page.
 
@@ -299,9 +300,42 @@ read), or to optimise a specific access shape the per-level batch does not cover
 A custom provider participates in the same automatic batching by implementing
 [`fetchRelatedCollectionBatch()`](../src/DataProvider/DataProviderInterface.php) — the provider-agnostic
 `RelatedIncludeBatcher` orchestrates the include tree level by level and calls that
-seam per included relation over the level's parents. A provider whose
-`fetchRelatedCollectionBatch()` returns an empty batch for a relation (or that
-cannot batch a given relation) simply renders that relation's includes lazily.
+seam per included relation over the level's parents. Return
+`RelatedBatch::unsupported()` for a relation you cannot batch, and
+`RelatedBatch::computed()` for one whose value the model computes itself. An empty
+`new RelatedBatch([])` means every parent has no members.
+
+### Saying whether related reads are scoped
+
+Included and linkage data always match the related endpoint (see
+[relationships → included data is scoped like the related endpoint](relationships.md#included-data-is-scoped-like-the-related-endpoint)).
+To know when it may read a relation straight off the parent, the bundle asks the
+provider of the relation's first related type through
+[`ScopesRelatedReadsInterface`](../src/DataProvider/ScopesRelatedReadsInterface.php):
+
+```php
+final class TenantAgencyProvider implements DataProviderInterface, ScopesRelatedReadsInterface
+{
+    public function scopesRelatedReads(RelationInterface $relation): bool
+    {
+        return true; // fetchRelatedCollection() filters by tenant
+    }
+
+    // ...
+}
+```
+
+Return `false` only when your related reads return exactly what the parent model
+holds. A provider that does not implement the interface is treated as scoping every
+relation: its relations are loaded through it, per parent when the parent type has a
+different provider, and one it cannot load (a polymorphic relation, or an
+`unsupported()` batch) is refused with a `500`. `AbstractDataProvider` implements it
+and returns `false`, so override it there when your reads filter.
+
+The answer governs writes too: linkage naming a scoped type is checked through your
+`fetchOne()` before any persister runs, and an id it returns `null` for is a `404`
+(see [relationships → written linkage is scoped too](relationships.md#written-linkage-is-scoped-too)).
+Make `fetchOne()` apply the same scope as your related reads.
 
 ## The in-memory provider as a worked example
 

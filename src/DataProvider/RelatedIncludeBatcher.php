@@ -7,120 +7,103 @@ namespace haddowg\JsonApiBundle\DataProvider;
 use haddowg\JsonApi\Collection\CollectionResult;
 use haddowg\JsonApi\Operation\QueryParameters;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Resource\Field\AbstractFieldValue;
 use haddowg\JsonApi\Resource\Field\Accessor;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Schema\Relationship\RelationshipLinkage;
+use haddowg\JsonApi\Schema\Relationship\ToOneRelationshipLinkage;
 use haddowg\JsonApi\Serializer\DeclaresEagerLoadsInterface;
 use haddowg\JsonApi\Serializer\IncludeControlsInterface;
+use haddowg\JsonApi\Serializer\RelationshipLinkageInterface;
 use haddowg\JsonApi\Serializer\SerializerInterface;
 use haddowg\JsonApi\Server\Server;
+use haddowg\JsonApiBundle\Serializer\WindowedRelationshipLinkage;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
 
 /**
- * Laravel-style batch eager-loading of a read's effective `?include` tree, so an
- * included relationship does not N+1: one batched query loads a relation for every
- * source entity at a level, then its loaded targets seed the next level. The
- * successor to the retired Doctrine `IncludePreloader` + `shipmonk/doctrine-entity-preloader`
- * (bundle ADR 0062): the include-decision + the three ADR-0037 safeguards + the
- * recursion are lifted UNCHANGED, but the per-relation load now runs through the
- * provider SPI's {@see DataProviderInterface::fetchRelatedCollectionBatch()} +
- * {@see Accessor::set} write-back rather than a Doctrine-specific preloader — so the
- * orchestrator is **provider-agnostic** and batches includes for EVERY batching
- * provider (the Doctrine reference AND the in-memory witness), per level, with no
- * per-provider branching.
+ * Loads every relation a read renders data for through the provider, so `included`
+ * and linkage `data` hold exactly what the related endpoint returns, and so includes
+ * do not N+1 (bundle ADRs 0062, 0125).
  *
- * Each level loads in PLAIN-INCLUDE (fast-path) mode: an empty filter/sort criteria
- * with a NULL window, so the batch loads the WHOLE related set per parent
- * (`WHERE fk IN`, no per-parent slice) — byte-for-byte the rows the preloader
- * loaded. The write-back wraps a to-many's loaded set to match the column's
- * container (a Doctrine `Collection` property cannot take a raw array) and writes a
- * to-one's single target (`items[0] ?? null`) onto the to-one column. The recursion
- * then descends on the flat list of loaded targets, threading the root-resolved
- * safeguards unchanged.
+ * It walks the document level by level, starting from the primary resources. At each
+ * level it looks at every relation of the level's type:
  *
- * Batching is a pure optimization: a relation/provider that cannot batch falls back
- * to a LAZY load and the rendered document is identical. The orchestrator simply
- * skips such a relation (the serializer reads it off the parent on demand):
+ *  - an **included** relation (explicit `?include` or a default include, within the
+ *    root's depth cap and allowed paths) is loaded for the whole level in one
+ *    {@see DataProviderInterface::fetchRelatedCollectionBatch()} call, and the walk
+ *    descends into the loaded targets;
+ *  - a relation that is not included but whose linkage `data` still renders (a
+ *    `withData()` relation, a relation the load-state predicate reports as loaded, a
+ *    Doctrine to-one, or one with no links to render instead) is loaded the same way
+ *    when its provider scopes related reads, so its identifiers are scoped too.
  *
- *  - a polymorphic relation (more than one related type — no single target class to
- *    batch) is skipped here, so even the in-memory provider (which CAN read a mixed
- *    set) is left lazy, keeping includes byte-identical with the Doctrine boundary;
- *  - a related type with no batching provider is skipped;
- *  - a relation the provider cannot batch (a computed/`extractUsing` column that is
- *    not a real association, or a composite-id target) is detected INSIDE the
- *    provider's batch, which returns an empty {@see RelatedBatch} — so the write-back
- *    is a no-op and the relation renders lazily (bundle ADR 0062).
+ * Loaded relations reach core out of band through the relationship-linkage seams
+ * ({@see preload()} returns the map): a to-many's members, and a scoped to-one's target
+ * or none. Nothing is written onto the model.
  *
- * It honours the three include safeguards (bundle ADR 0037), resolved once against
- * the ROOT resource and threaded unchanged through the recursion: it never batches a
- * non-includable relation ({@see RelationInterface::isIncludable()} `=== false`),
- * never descends past the effective max include depth (the root resource's
- * {@see IncludeControlsInterface::maxIncludeDepth()} override, else the server
- * default), and never batches a path the root resource's
- * {@see IncludeControlsInterface::getAllowedIncludePaths()} excludes. A request that
- * violates any of these `400`s in core before this runs, so this is belt and braces —
- * and the recursion is bounded by the same effective depth so a mutual default-include
- * cycle terminates here too.
+ * Each relation loads through the provider that serves its related endpoint, routed by
+ * {@see RelatedReadRouter}. Reading a relation straight off the model is allowed only
+ * when that equals what the provider would load: the provider reports it unscoped
+ * ({@see ScopesRelatedReadsInterface}), the author computes its value (an
+ * `extractUsing()` closure, or a getter that is not an association, reported as
+ * {@see RelatedBatch::computed()}), or no provider serves the related type.
+ * Otherwise a relation that cannot be loaded through the provider (a polymorphic
+ * to-many, or a column the provider cannot batch) throws a `\LogicException` rather than
+ * render the unscoped value. A `MorphTo` target is checked against the provider of the
+ * type it renders as. {@see disable()} turns off only the optional batching of unscoped
+ * relations.
  *
- * The {@see Server} (and so the per-type metadata) is resolved through the
- * {@see ServerProvider}'s default server — the single-server-optimized common case; a
- * type registered only on a non-default server resolves no resource here and renders
- * lazily.
+ * Metadata is resolved on the request's own server, so a type registered only on a
+ * named server is walked like any other.
  *
- * In addition to the `?include` tree it runs an **eager-load pass** (bundle ADR 0085):
- * the load-not-render to-one chains a resource declares via
- * {@see \haddowg\JsonApi\Serializer\DeclaresEagerLoadsInterface::eagerLoadRelationshipPaths()}
- * — the dedup set of every `on()` flattened attribute's backing relation chain — batch-loaded
- * onto each level through the SAME {@see DataProviderInterface::fetchRelatedCollectionBatch()}
- * seam, so a flattened read does not N+1. An `on()` chain MAY be **multi-hop**
- * (`'publisher.country'`): the pass walks it SEGMENT BY SEGMENT, batch-loading each level across
- * the targets the previous level loaded (the same level-walk / fan-out the `?include` tree
- * uses), so a multi-hop chain loads in O(depth) with no per-row N+1 at any level; a shared
- * prefix (`author.country` + `author.city`) loads its `author` once. The eager set is
- * author-declared and trusted, so it BYPASSES the client-include safeguards and is NEVER
- * expanded into `included` (rendering stays gated on the transformer's `isIncludedRelationship`),
- * and resolves its targets against the HIDDEN-INCLUSIVE declared-relation set (an `on()` backing
- * relation is idiomatically hidden). An overlap with `?include` (or a sibling eager path) loads
- * ONCE (a per-level "already loaded" guard that holds across levels).
- *
- * Every segment of every `on()` chain is a DECLARED to-one relation — guaranteed by core's
- * {@see \haddowg\JsonApi\Serializer\EagerLoadValidator} (the bundle's
- * {@see \haddowg\JsonApiBundle\Serializer\EagerLoadWarmer}), which throws a developer-facing
- * `\LogicException` at **boot / container warm-up** (`cache:clear` / deploy, never a runtime
- * 500) on an unknown segment (a typo) OR a to-many segment at any depth (`on()` flattens a
- * scalar from a to-one chain; a to-many is not flattenable — use `?include`). This pass
- * therefore runs over a validated, all-to-one declaration: there is no windowed-to-many
- * interaction and no rendering contradiction to guard against (eager-loading a to-one never
- * flips its linkage). A polymorphic / inventory-less segment that cannot be resolved to a
- * single next type is left lazy (the branch stops), exactly as the include walk leaves it.
+ * It also runs the eager-load pass for `on()` flattened attributes (bundle ADR 0085):
+ * the to-one chains a resource declares via
+ * {@see DeclaresEagerLoadsInterface::eagerLoadRelationshipPaths()} are loaded segment by
+ * segment under the same rules, so a flattened attribute reads a scoped target (or
+ * `null`) and does not N+1. The eager set is never expanded into `included`.
  */
 final class RelatedIncludeBatcher
 {
     /**
-     * Process-wide on/off for include batching — the disable seam the conformance
-     * witness toggles to prove the rendered document is identical with and without
-     * batching (and that disabling it reveals the N+1). When false {@see preload()}
-     * early-returns, so every relation renders lazily. Not readonly: the witness
-     * flips it at runtime.
+     * Process-wide switch for batching relations that are not scoped. When false those
+     * relations render lazily (the N+1 the query-budget witnesses reveal); a scoped
+     * relation is still loaded through its provider.
      *
-     * @internal a test/diagnostic seam, not part of any contract; it disables ALL
-     *           types' batching for the process (the per-type preloader instance it
-     *           replaced only ever disabled one type, so the witness sees the same
-     *           lazy behaviour)
+     * @internal a test/diagnostic seam, not part of any contract
      */
     private bool $enabled = true;
+
+    /**
+     * The objects the document being prepared already renders as primary data or
+     * loaded through a provider, keyed by object id. A to-one linkage pointing at one
+     * of them discloses nothing new, so it needs no scoped load.
+     *
+     * @var array<int, true>
+     */
+    private array $known = [];
+
+    /**
+     * The scoped to-one targets the walk supplies out of band, keyed by parent object id
+     * then relation name.
+     *
+     * @var array<int, array<string, ToOneRelationshipLinkage>>
+     */
+    private array $toOne = [];
+
+    /**
+     * The Relationship Queries window pages already installed for the primary level.
+     */
+    private ?RelationshipLinkageInterface $windowed = null;
 
     public function __construct(
         private readonly DataProviderRegistry $providers,
         private readonly TypeMetadataResolver $types,
         private readonly ServerProvider $servers,
+        private readonly RelatedReadRouter $router,
     ) {}
 
     /**
-     * Disables include batching process-wide (the witness's cold-read seam). Batching
-     * is a pure optimization, so turning it off only changes HOW includes are loaded
-     * (lazily), never WHAT is rendered.
-     *
      * @internal
      */
     public function disable(): void
@@ -129,8 +112,6 @@ final class RelatedIncludeBatcher
     }
 
     /**
-     * Re-enables include batching process-wide (restores the default).
-     *
      * @internal
      */
     public function enable(): void
@@ -139,189 +120,451 @@ final class RelatedIncludeBatcher
     }
 
     /**
-     * Batch-loads the effective include tree rooted at the `$type` entities in
-     * `$entities`, recursing one level per `.`-separated include segment. A no-op when
-     * batching is disabled, there are no entities, the type has no resource (a bare
-     * pair declares no relations) or no relation at this level is included.
+     * Loads the relations the read of `$entities` (all of `$type`) renders data for,
+     * and returns the to-many linkage to supply out-of-band, keyed by parent object and
+     * relation name (`null` when there is none).
      *
-     * The include safeguards (bundle ADR 0037) are resolved once against the root
-     * resource — the effective depth cap and the allowed-include-paths whitelist — and
-     * threaded unchanged through the recursion, so the whole nested tree obeys the
-     * root's policy.
+     * `$server` is the server the request runs on. When omitted it is resolved from the
+     * request's `_jsonapi_server` attribute. `$windowed` supplies the Relationship
+     * Queries pages already windowed for the primary resources: those pages are what
+     * renders, so the walk descends into them instead of loading the relation again.
      *
-     * @param iterable<object>  $entities
-     * @param ?int              $maxDepth     the effective include-depth cap resolved at the root (null = unlimited)
-     * @param list<string>|null $allowedPaths the root resource's allowed-include-paths whitelist (null = unrestricted)
+     * @param iterable<object> $entities
+     *
+     * @throws \LogicException when a relation whose data renders cannot be loaded through
+     *                         its scoping provider
      */
     public function preload(
         iterable $entities,
         string $type,
         JsonApiRequestInterface $request,
-        string $basePath = '',
-        ?int $maxDepth = null,
-        ?array $allowedPaths = null,
-        bool $rootResolved = false,
-    ): void {
-        if (!$this->enabled) {
-            return;
+        ?Server $server = null,
+        ?RelationshipLinkageInterface $windowed = null,
+    ): ?WindowedRelationshipLinkage {
+        return $this->preloadGrouped([$type => $this->materialize($entities)], $request, $server, $windowed);
+    }
+
+    /**
+     * {@see preload()} for primary resources of several types (a polymorphic related
+     * page), keyed by type. Each type's tree follows its own include safeguards.
+     *
+     * @param array<string, list<object>> $entitiesByType
+     *
+     * @throws \LogicException when a relation whose data renders cannot be loaded through
+     *                         its scoping provider
+     */
+    public function preloadGrouped(array $entitiesByType, JsonApiRequestInterface $request, ?Server $server = null, ?RelationshipLinkageInterface $windowed = null): ?WindowedRelationshipLinkage
+    {
+        $server ??= $this->servers->get($this->serverName($request));
+
+        $this->windowed = $windowed;
+        $this->known = [];
+        $this->toOne = [];
+        foreach ($entitiesByType as $entities) {
+            $this->remember($entities);
         }
 
-        $entities = $this->materialize($entities);
-        if ($entities === []) {
-            return;
+        $linkages = [];
+        foreach ($entitiesByType as $type => $entities) {
+            $entities = $this->unique($entities);
+            if ($entities === [] || !$server->hasSerializerFor($type)) {
+                continue;
+            }
+
+            // The include safeguards (bundle ADR 0037) are a property of the root
+            // resource: its depth cap and allowed paths hold for the whole tree.
+            $rootSerializer = $server->serializerFor($type);
+            $maxDepth = $this->effectiveMaxDepth($rootSerializer, $server);
+            $allowedPaths = $rootSerializer instanceof IncludeControlsInterface
+                ? $rootSerializer->getAllowedIncludePaths()
+                : null;
+
+            $this->walkLevel($server, $entities, $type, $request, '', $maxDepth, $allowedPaths, $linkages);
         }
 
-        if (!$this->providers->supportsType($type)) {
-            return;
-        }
+        return $this->linkage($linkages);
+    }
 
-        $server = $this->servers->get();
+    /**
+     * The to-one target the related endpoint renders for `$relation` on `$parent`: the
+     * one the parent holds, or `null` when the related type's scope hides it.
+     *
+     * @throws \LogicException when the relation cannot be loaded through its scoping provider
+     */
+    public function scopeToOne(Server $server, string $type, object $parent, RelationInterface $relation, JsonApiRequestInterface $request): ?object
+    {
+        $this->reset();
+        $linkages = [];
 
-        // The metadata is resolved through the default server (the single-server-optimized
-        // common case). A type registered ONLY on a non-default server is unknown here, so
-        // there is no serializer/resource to read an eager set or a relation tree from — it
-        // renders lazily, exactly as before the eager pass existed (the original early-return
-        // on an empty relation set covered this; the eager pass must not regress it).
+        return $this->loadRelation($server, $type, [$parent], $relation, $request, false, true, $linkages)[0] ?? null;
+    }
+
+    /**
+     * The scoped linkage of `$relation` on a single `$parent` for its relationship
+     * endpoint (a to-one, or a polymorphic relation), or `null` when it is not scoped.
+     *
+     * @throws \LogicException when the relation cannot be loaded through its scoping provider
+     */
+    public function scopeRelationship(Server $server, string $type, object $parent, RelationInterface $relation, JsonApiRequestInterface $request): ?WindowedRelationshipLinkage
+    {
+        $this->reset();
+        $linkages = [];
+        $this->loadRelation($server, $type, [$parent], $relation, $request, false, false, $linkages);
+
+        return $this->linkage($linkages);
+    }
+
+    /**
+     * The scoped to-one targets of the `on()` chains `$entity` declares, for hydrating a
+     * write: a flattened attribute is written onto the target its related endpoint
+     * serves, and a hidden one is missing. The relations in `$skip` were just set from
+     * the request body, so their new value is kept; the hops below them are still scoped.
+     *
+     * @param list<string> $skip
+     *
+     * @throws \LogicException when a hop cannot be loaded through its scoping provider
+     */
+    public function scopeEagerLoads(Server $server, string $type, object $entity, JsonApiRequestInterface $request, array $skip = []): ?WindowedRelationshipLinkage
+    {
+        $this->reset();
         if (!$server->hasSerializerFor($type)) {
+            return null;
+        }
+
+        $loaded = [];
+        foreach ($skip as $name) {
+            $relation = $this->types->relationNamedIncludingHidden($server, $type, $name);
+            if ($relation !== null) {
+                $loaded[$name] = $this->readTargets([$entity], $relation, $request);
+            }
+        }
+
+        $linkages = [];
+        $this->eagerLoad($server, $server->serializerFor($type), [$entity], $type, $request, $loaded, $linkages);
+
+        return $this->linkage($linkages);
+    }
+
+    private function reset(): void
+    {
+        $this->known = [];
+        $this->toOne = [];
+        $this->windowed = null;
+    }
+
+    /**
+     * @param array<int, array<string, RelationshipLinkage>> $linkages
+     */
+    private function linkage(array $linkages): ?WindowedRelationshipLinkage
+    {
+        return $linkages === [] && $this->toOne === [] ? null : new WindowedRelationshipLinkage($linkages, $this->toOne);
+    }
+
+    /**
+     * One level of the walk: the eager pass, then every rendered relation of `$type`
+     * over `$entities`, descending into the targets of the included ones.
+     *
+     * @param list<object>                                   $entities
+     * @param list<string>|null                              $allowedPaths
+     * @param array<int, array<string, RelationshipLinkage>> $linkages
+     */
+    private function walkLevel(
+        Server $server,
+        array $entities,
+        string $type,
+        JsonApiRequestInterface $request,
+        string $basePath,
+        ?int $maxDepth,
+        ?array $allowedPaths,
+        array &$linkages,
+    ): void {
+        if ($entities === [] || !$server->hasSerializerFor($type)) {
+            // A type the server cannot serialize renders no relationships at all.
             return;
         }
 
-        $relations = $this->types->relationsFor($server, $type);
-
-        // The serializer is the eager-load + include-safeguard authority for this level.
-        // Resolved unconditionally (NOT only when a relation is `?include`'d): a resource
-        // with no rendered relationship can still declare eager loads — an `on()` attribute
-        // flattens a HIDDEN to-one that never appears in `$relations`.
         $serializer = $server->serializerFor($type);
 
-        // Resolve the root-scoped safeguards once: the effective depth cap (the
-        // primary resource's maxIncludeDepth() override ?? the server default,
-        // normalised so <=0 is unlimited) and its allowed-include-paths whitelist.
-        // Both then ride the recursion unchanged — they are a property of the root.
-        if (!$rootResolved) {
-            $maxDepth = $this->effectiveMaxDepth($serializer, $server);
-            $allowedPaths = $serializer instanceof IncludeControlsInterface
-                ? $serializer->getAllowedIncludePaths()
-                : null;
-            $rootResolved = true;
-        }
-
-        // Per-level "already loaded" guard, keyed by relation name: a relation eager-loaded
-        // here (an `on()` attribute's backing relation chain) is not loaded a SECOND time when
-        // the same relation is also `?include`'d — the include walk reuses the loaded value and
-        // only recurses into it for nested includes.
+        // Relations already loaded at this level, keyed by name, holding their targets,
+        // so an eager relation that is also included loads once.
         $loaded = [];
 
-        // Eager-load pass FIRST (load-not-render): batch-load the to-one chains the resource
-        // declares via DeclaresEagerLoadsInterface — every `on()` flattened attribute's backing
-        // relation chain — so the flattened read does not N+1. The eager set is author-declared
-        // and trusted, so it BYPASSES the client-include safeguards (depth cap / allowed-paths /
-        // cannotBeIncluded) and is NEVER expanded into `included` (rendering stays gated on the
-        // transformer's isIncludedRelationship — eager-loading changes only the query plan,
-        // never the document).
-        $this->eagerLoad($server, $serializer, $entities, $type, $request, $loaded);
+        $this->eagerLoad($server, $serializer, $entities, $type, $request, $loaded, $linkages);
 
-        // No rendered relations at this level: the eager pass has run, so nothing remains.
+        $relations = $this->types->relationsFor($server, $type);
         if ($relations === []) {
             return;
         }
 
-        // The default includes are per-type-uniform here: read off the first entity as
-        // the representative (getDefaultIncludedRelationships is a type-level
-        // declaration, not a per-object one in the reference resources).
         $resource = $this->types->resourceFor($server, $type);
         $defaults = $resource === null
             ? []
             : \array_flip($resource->getDefaultIncludedRelationships($entities[0]));
 
         foreach ($relations as $relation) {
-            // Capability A: a non-includable relation can never be part of the rendered
-            // tree (core 400s a request that names it, and excludes it from the default
-            // cascade), so it is never batched. Includability is request-aware (core
-            // ADR 0079): a relation declared `cannotBeIncluded(fn)` resolves against
-            // the inbound request and the representative entity, so a relation that is
-            // non-includable for *this* caller isn't eagerly batched for it (matching
-            // the 400 the transformer raises if the caller names it).
-            //
-            // Includability is resolved ONCE PER BATCH off the first entity as the
-            // representative — this is an eager-load optimisation over a whole page, not
-            // the rendering authority. The transformer remains the per-OBJECT authority,
-            // so a model-VARYING includability predicate (includable for one entity in
-            // the page but not another) is rendered correctly regardless: the batch
-            // either skips the eager load (the relation degrades to a per-entity lazy
-            // load at render) or eager-loads members the transformer then omits for the
-            // entities that gate it. The wire document is identical either way; only the
-            // query plan differs.
-            if (!$relation->isIncludableFor($request, $entities[0])) {
+            $name = $relation->name();
+            $childPath = $basePath === '' ? $name : $basePath . '.' . $name;
+
+            $windowedTargets = $basePath === '' ? $this->windowedTargets($entities, $relation, $request) : null;
+            if ($windowedTargets !== null) {
+                $loaded[$name] = $windowedTargets;
+            }
+
+            if ($this->isIncluded($relation, $request, $entities[0], $basePath, $childPath, $defaults, $maxDepth, $allowedPaths)) {
+                $targets = $loaded[$name]
+                    ?? $this->loadRelation($server, $type, $entities, $relation, $request, true, true, $linkages);
+                $loaded[$name] = $targets;
+
+                $this->descend($server, $relation, $targets, $request, $childPath, $maxDepth, $allowedPaths, $linkages);
+
                 continue;
             }
 
-            if (!$request->isIncludedRelationship($basePath, $relation->name(), $defaults)) {
+            if (isset($loaded[$name]) || !$request->isIncludedField($type, $name)) {
                 continue;
             }
 
-            $childPath = $basePath === '' ? $relation->name() : $basePath . '.' . $relation->name();
-
-            // Capability B: this relation sits at depth = the segment count of its path;
-            // stop the descent once it would exceed the effective cap (this is also what
-            // halts a mutual default-include cycle here).
-            if ($maxDepth !== null && (\substr_count($childPath, '.') + 1) > $maxDepth) {
-                continue;
+            // Linkage only: load the parents whose relationship data renders anyway, and
+            // leave the deferred ones (links only) untouched so the document keeps its shape.
+            $rendering = \array_values(\array_filter(
+                $entities,
+                fn(object $entity): bool => $this->rendersLinkageData($server, $entity, $relation),
+            ));
+            if ($rendering !== []) {
+                $this->loadRelation($server, $type, $rendering, $relation, $request, false, false, $linkages);
             }
-
-            // Capability C: when the root restricts include paths, only batch a path it
-            // permits.
-            if ($allowedPaths !== null && !\in_array($childPath, $allowedPaths, true)) {
-                continue;
-            }
-
-            $this->loadRelation($server, $entities, $type, $relation, $request, $childPath, $maxDepth, $allowedPaths, $loaded);
         }
     }
 
     /**
-     * The eager-load pass (bundle ADR 0085, load-not-render): batch-loads every to-one chain
-     * the `$serializer` declares via
-     * {@see DeclaresEagerLoadsInterface::eagerLoadRelationshipPaths()} — the dedup set of every
-     * `on()` flattened attribute's backing relation chain — onto `$entities`, so the flattened
-     * read does not N+1. Marks each top-level relation it loads in `$loaded` so the include walk
-     * does not re-load an overlapping relation.
+     * The members of a primary-level to-many the Relationship Queries window already
+     * supplies, or `null` when it is not windowed.
      *
-     * An `on()` chain may be **multi-hop** (`on('publisher.country')`): the pass groups the
-     * declared paths into a prefix tree once, then walks it **segment by segment**, batch-loading
-     * each level across the targets the previous level loaded (mirroring the {@see loadRelation()}
-     * `?include` fan-out — `WHERE fk IN` per level, no per-row N+1 at ANY depth) and following
-     * each segment's relation to the next type via {@see RelationInterface::relatedTypes()}. A
-     * shared prefix loads ONCE: the tree dedups `author.country` and `author.city` to a single
-     * `author` load whose targets seed both branches. The per-level "already loaded" guard holds
-     * across levels — each relation loads once per level, and an eager top-level relation already
-     * loaded by `?include` is not reloaded.
+     * @param list<object> $entities
      *
-     * The eager set is author-declared and trusted, so it BYPASSES the client-include
-     * safeguards (depth cap / allowed-paths / cannotBeIncluded) — none are consulted here.
-     * It is NEVER expanded into `included`: the eager load writes the related value onto the
-     * parent's column exactly as a lazy read would have materialised it, and rendering stays
-     * gated on the transformer's `isIncludedRelationship` (which the eager set never touches),
-     * so eager-loading changes only the query plan, never the document.
+     * @return list<object>|null
+     */
+    private function windowedTargets(array $entities, RelationInterface $relation, JsonApiRequestInterface $request): ?array
+    {
+        if ($this->windowed === null || !$relation->isToMany()) {
+            return null;
+        }
+
+        $targets = [];
+        foreach ($entities as $entity) {
+            $linkage = $this->windowed->linkageForRelationship($entity, $relation, $request);
+            if ($linkage === null) {
+                return null;
+            }
+
+            if (\is_iterable($linkage->data)) {
+                foreach ($linkage->data as $member) {
+                    if (\is_object($member)) {
+                        $targets[] = $member;
+                    }
+                }
+            }
+        }
+
+        $targets = $this->unique($targets);
+        $this->remember($targets);
+
+        return $targets;
+    }
+
+    /**
+     * Loads `$relation` across `$entities` and returns the loaded targets (for the next
+     * level), recording to-many linkage in `$linkages` and writing to-one values.
      *
-     * The relations resolve against the HIDDEN-INCLUSIVE declared set via
-     * {@see TypeMetadataResolver::relationNamedIncludingHidden()} (NOT
-     * {@see TypeMetadataResolver::relationsFor()}, which filters hidden out): an `on()`
-     * attribute's backing relation is idiomatically `hidden()`, so it must be found there.
-     * A standalone/bare serializer with no field inventory does not implement
-     * {@see DeclaresEagerLoadsInterface}, so it declares no eager loads (skipped).
+     * `$included` marks a relation whose targets render in `included`; `$descends` marks
+     * one whose targets the walk continues into. Either needs the targets back even when
+     * the relation is left lazy.
      *
-     * Every segment is a DECLARED to-one relation — guaranteed by core's
-     * {@see \haddowg\JsonApi\Serializer\EagerLoadValidator} (bundle's {@see EagerLoadWarmer}),
-     * which throws a developer-facing `\LogicException` at boot / container warm-up
-     * (`cache:clear` / deploy) on an unknown segment OR a to-many segment at any depth. So this
-     * pass assumes a validated, all-to-one declaration: there is no windowed-to-many interaction
-     * and no rendering contradiction to guard against. A polymorphic / inventory-less segment
-     * whose next type cannot be resolved to a single registered type is left LAZY (the walk stops
-     * on that branch), exactly as the include walk leaves it unbatched.
+     * @param list<object>                                   $entities
+     * @param array<int, array<string, RelationshipLinkage>> $linkages
      *
-     * @param list<object>         $entities
-     * @param array<string, true> &$loaded the level-1 "already loaded" guard, keyed by relation name (shared with the include walk)
+     * @return list<object>
+     */
+    private function loadRelation(
+        Server $server,
+        string $type,
+        array $entities,
+        RelationInterface $relation,
+        JsonApiRequestInterface $request,
+        bool $included,
+        bool $descends,
+        array &$linkages,
+    ): array {
+        // An extractUsing() relation renders whatever its closure returns: the author owns
+        // that value, and it is not the model's association. A pivot belongsToMany is the
+        // exception: its closure only feeds core's model read, and the provider's pivot
+        // query is what its related endpoint serves.
+        if ($this->isComputed($relation) && !$this->router->isPivot($relation)) {
+            return $descends ? $this->readTargets($entities, $relation, $request) : [];
+        }
+
+        $relatedTypes = $relation->relatedTypes();
+        $scoped = $this->isScoped($relation);
+
+        if (\count($relatedTypes) !== 1) {
+            if (!$relation->isToMany()) {
+                return $this->loadPolymorphicToOne($server, $entities, $relation, $request, $descends);
+            }
+
+            // Core reads polymorphic to-many linkage off the model, so a scoped one cannot
+            // be supplied out of band.
+            if ($scoped) {
+                throw $this->refused($type, $relation, 'it is a polymorphic to-many, which core reads off the model');
+            }
+
+            return $descends ? $this->readTargets($entities, $relation, $request) : [];
+        }
+
+        $relatedType = $relatedTypes[0];
+
+        // Core renders no data for a related type the server cannot serialize.
+        if (!$server->hasSerializerFor($relatedType)) {
+            return [];
+        }
+
+        if (!$this->providers->supportsType($relatedType) || (!$scoped && (!$included || !$this->enabled))) {
+            return $descends ? $this->readTargets($entities, $relation, $request) : [];
+        }
+
+        // A scoped to-one that is empty, or points at an object this document already
+        // renders, discloses nothing the scope would hide, so only the rest is loaded.
+        $targets = [];
+        if ($scoped && !$relation->isToMany()) {
+            $pending = [];
+            foreach ($entities as $entity) {
+                $target = Accessor::get($entity, $relation->column() ?? $relation->name());
+                if (!\is_object($target)) {
+                    continue;
+                }
+                if (isset($this->known[\spl_object_id($target)])) {
+                    $targets[] = $target;
+
+                    continue;
+                }
+                $pending[] = $entity;
+            }
+
+            $entities = $pending;
+            if ($entities === []) {
+                return $descends ? $this->unique($targets) : [];
+            }
+        }
+
+        $batch = $this->router->batch($server, $type, $entities, $relation, $this->plainIncludeCriteria($request), $request);
+
+        if (!$batch->isSupported()) {
+            if ($scoped && !$batch->isComputed()) {
+                throw $this->refused($type, $relation, 'its provider cannot batch-load it (not a single-identifier association)');
+            }
+
+            return $descends ? $this->unique([...$targets, ...$this->readTargets($entities, $relation, $request)]) : [];
+        }
+
+        $serializer = $server->serializerFor($type);
+
+        foreach ($entities as $entity) {
+            $items = $this->itemsOf($batch->for($serializer->getId($entity)));
+
+            if ($relation->isToMany()) {
+                $linkages[\spl_object_id($entity)][$relation->name()] = new RelationshipLinkage($items);
+            } elseif ($scoped) {
+                $this->toOne[\spl_object_id($entity)][$relation->name()] = isset($items[0])
+                    ? ToOneRelationshipLinkage::to($items[0])
+                    : ToOneRelationshipLinkage::none();
+            }
+
+            foreach ($items as $item) {
+                $targets[] = $item;
+            }
+        }
+
+        $targets = $this->unique($targets);
+        $this->remember($targets);
+
+        return $targets;
+    }
+
+    /**
+     * Scopes a polymorphic to-one per parent: each target is checked against the
+     * provider of the type it renders as, which hides it (`none()`) when its scope
+     * excludes it.
+     *
+     * @param list<object> $entities
+     *
+     * @return list<object>
+     */
+    private function loadPolymorphicToOne(Server $server, array $entities, RelationInterface $relation, JsonApiRequestInterface $request, bool $descends): array
+    {
+        $targets = [];
+        foreach ($entities as $entity) {
+            $target = $relation->readValue($entity, $request);
+            if (!\is_object($target)) {
+                continue;
+            }
+
+            $serializer = $relation->resolveSerializer($target, $server);
+            if ($serializer === null) {
+                continue;
+            }
+
+            $targetType = $serializer->getType($target);
+            if (isset($this->known[\spl_object_id($target)]) || !$this->router->isScopedType($targetType, $relation)) {
+                $targets[] = $target;
+
+                continue;
+            }
+
+            $visible = $this->providers->forType($targetType)
+                ->relatedToOneMatches($targetType, $target, $relation, $this->plainIncludeCriteria($request), $request);
+            $this->toOne[\spl_object_id($entity)][$relation->name()] = $visible
+                ? ToOneRelationshipLinkage::to($target)
+                : ToOneRelationshipLinkage::none();
+            if ($visible) {
+                $targets[] = $target;
+            }
+        }
+
+        $targets = $this->unique($targets);
+        $this->remember($targets);
+
+        return $descends ? $targets : [];
+    }
+
+    /**
+     * Continues the walk into an included relation's targets, grouped by their type (a
+     * polymorphic relation's targets span several).
+     *
+     * @param list<object>                                   $targets
+     * @param list<string>|null                              $allowedPaths
+     * @param array<int, array<string, RelationshipLinkage>> $linkages
+     */
+    private function descend(
+        Server $server,
+        RelationInterface $relation,
+        array $targets,
+        JsonApiRequestInterface $request,
+        string $childPath,
+        ?int $maxDepth,
+        ?array $allowedPaths,
+        array &$linkages,
+    ): void {
+        foreach ($this->groupByType($server, $relation, $targets) as $targetType => $group) {
+            $this->walkLevel($server, $group, $targetType, $request, $childPath, $maxDepth, $allowedPaths, $linkages);
+        }
+    }
+
+    /**
+     * The eager-load pass (bundle ADR 0085, load-not-render) for the `on()` chains the
+     * serializer declares, walked segment by segment. A shared prefix loads once.
+     *
+     * @param list<object>                                   $entities
+     * @param array<string, list<object>>                   &$loaded the level guard shared with the include walk
+     * @param array<int, array<string, RelationshipLinkage>> $linkages
      */
     private function eagerLoad(
         Server $server,
@@ -330,42 +573,26 @@ final class RelatedIncludeBatcher
         string $type,
         JsonApiRequestInterface $request,
         array &$loaded,
+        array &$linkages,
     ): void {
         if (!$serializer instanceof DeclaresEagerLoadsInterface) {
             return;
         }
 
-        // Group the declared (possibly dotted) eager paths into a prefix tree so a shared
-        // ancestor — e.g. `author` for both `author.country` and `author.city` — is walked
-        // (and loaded) ONCE, its loaded targets seeding every child branch.
         $tree = $this->eagerTree($serializer->eagerLoadRelationshipPaths());
-        if ($tree === []) {
-            return;
+        if ($tree !== []) {
+            $this->eagerLoadLevel($server, $entities, $type, $request, $tree, $loaded, $linkages);
         }
-
-        // The level-1 guard is the include walk's $loaded, so a top-level eager relation that
-        // is also `?include`'d loads once. Deeper levels get a fresh per-level guard inside
-        // the recursion (a different entity set / type).
-        $this->eagerLoadLevel($server, $entities, $type, $request, $tree, $loaded);
     }
 
     /**
-     * Walks ONE eager-load level: for each child relation in `$tree` (the prefix sub-tree
-     * rooted at the current type), batch-loads it across `$entities` (unless the level guard
-     * `$loaded` already has it — then it reads the already-loaded targets straight off the
-     * parents, so an overlap with `?include` or a sibling eager path loads once), then
-     * recurses into the loaded targets for the child's own sub-tree, resolving the next type
-     * via {@see RelationInterface::relatedTypes()}.
+     * One eager level. Every segment is a declared to-one (core's warm-up validation
+     * guarantees it), loaded like an included relation but never rendered as one.
      *
-     * Every segment is a DECLARED to-one relation (guaranteed by core's warm-up
-     * {@see \haddowg\JsonApi\Serializer\EagerLoadValidator}), so there is no windowed-to-many
-     * interaction and no rendering contradiction: eager-loading a to-one never flips its
-     * linkage. A relation that cannot be resolved on the current type, or whose next type is
-     * polymorphic / unregistered, stops that branch (lazy) — never throws here.
-     *
-     * @param list<object>         $entities
-     * @param array<string, mixed> $tree    the prefix sub-tree at this level: relation name => its own (nested) sub-tree
-     * @param array<string, true> &$loaded  the per-level "already loaded" guard, keyed by relation name
+     * @param list<object>                                   $entities
+     * @param array<string, mixed>                           $tree
+     * @param array<string, list<object>>                   &$loaded
+     * @param array<int, array<string, RelationshipLinkage>> $linkages
      */
     private function eagerLoadLevel(
         Server $server,
@@ -374,6 +601,7 @@ final class RelatedIncludeBatcher
         JsonApiRequestInterface $request,
         array $tree,
         array &$loaded,
+        array &$linkages,
     ): void {
         if ($entities === []) {
             return;
@@ -382,63 +610,191 @@ final class RelatedIncludeBatcher
         foreach ($tree as $relationName => $children) {
             $relation = $this->types->relationNamedIncludingHidden($server, $type, $relationName);
             if ($relation === null) {
-                // Unknown segment: core's warm-up validation throws for this, so a warmed
-                // app never reaches here. Leave the branch lazy as a runtime safety net.
+                // Core's warm-up validation rejects an unknown segment.
                 continue;
             }
 
-            // Every `on()` segment is a to-one (core's warm-up validation throws on a to-many
-            // segment at any depth), so there is no windowed-to-many interaction and no
-            // rendering contradiction to guard against — eager-loading a to-one never flips
-            // its linkage. The walk proceeds straight to the load.
+            $children = $this->subTree($children);
+            $hasChildren = $children !== [];
 
-            if (isset($loaded[$relationName])) {
-                // Already loaded at this level (an overlap with `?include` or a sibling eager
-                // path): read the loaded targets off the parents rather than re-batch.
-                $targets = $this->collectLoadedTargets($entities, $relation);
-            } else {
-                $loadedTargets = $this->executeLoad($server, $entities, $type, $relation, $request);
-                $loaded[$relationName] = true;
-                if ($loadedTargets === null) {
-                    // The relation could not be batched (polymorphic / no batching provider):
-                    // it renders lazily and has no single next type to descend into.
-                    continue;
-                }
-                $targets = $loadedTargets;
-            }
+            $targets = $loaded[$relationName]
+                ?? $this->loadRelation($server, $type, $entities, $relation, $request, true, $hasChildren, $linkages);
+            $loaded[$relationName] = $targets;
 
-            if (!\is_array($children) || $children === [] || $targets === []) {
+            if (!$hasChildren || $targets === []) {
                 continue;
             }
 
-            // Advance to the next level. A relation with anything other than a single related
-            // type (polymorphic / inventory-less) cannot be walked to one next type, so its
-            // sub-tree is left lazy — exactly as the include walk leaves it (NOT thrown; core's
-            // warm-up validation leaves such a branch unvalidated too).
-            $relatedTypes = $relation->relatedTypes();
-            if (\count($relatedTypes) !== 1) {
-                continue;
+            foreach ($this->groupByType($server, $relation, $targets) as $nextType => $group) {
+                $nextLoaded = [];
+                $this->eagerLoadLevel($server, $group, $nextType, $request, $children, $nextLoaded, $linkages);
             }
-
-            $nextType = $relatedTypes[0];
-            if (!$server->hasSerializerFor($nextType)) {
-                continue;
-            }
-
-            // A fresh guard for the deeper level: it is a different entity set / type, and the
-            // child sub-tree already deduped sibling branches sharing this prefix.
-            $nextLoaded = [];
-            /** @var array<string, mixed> $children */
-            $this->eagerLoadLevel($server, $targets, $nextType, $request, $children, $nextLoaded);
         }
     }
 
     /**
-     * Folds a flat list of (possibly dotted) eager paths into a prefix tree: a nested map
-     * `relation name => sub-tree`, where a leaf relation maps to an empty array. A shared
-     * prefix collapses to one node, so `['author.country', 'author.city', 'publisher']`
-     * becomes `['author' => ['country' => [], 'city' => []], 'publisher' => []]` — the walk
-     * then loads `author` once and seeds both children from its targets.
+     * Whether `$relation` is part of the rendered include tree at this level: includable
+     * for this caller, named (or defaulted) at `$basePath`, within the root's depth cap
+     * and allowed paths (bundle ADR 0037). Includability is read off the level's first
+     * entity; the transformer stays the per-object authority.
+     *
+     * @param array<string, int> $defaults
+     * @param list<string>|null  $allowedPaths
+     */
+    private function isIncluded(
+        RelationInterface $relation,
+        JsonApiRequestInterface $request,
+        object $representative,
+        string $basePath,
+        string $childPath,
+        array $defaults,
+        ?int $maxDepth,
+        ?array $allowedPaths,
+    ): bool {
+        if (!$relation->isIncludableFor($request, $representative)) {
+            return false;
+        }
+
+        if (!$request->isIncludedRelationship($basePath, $relation->name(), $defaults)) {
+            return false;
+        }
+
+        if ($maxDepth !== null && (\substr_count($childPath, '.') + 1) > $maxDepth) {
+            return false;
+        }
+
+        return $allowedPaths === null || \in_array($childPath, $allowedPaths, true);
+    }
+
+    /**
+     * Whether core renders `data` for `$relation` on `$entity` when it is not included.
+     * Mirrors core's deferral: only a lazy relation with links to render, whose
+     * load-state predicate reports it unloaded, renders links only.
+     */
+    private function rendersLinkageData(Server $server, object $entity, RelationInterface $relation): bool
+    {
+        if (!$relation->emitsDataOnlyWhenLoaded() || !$relation->includesLinks()) {
+            return true;
+        }
+
+        // No endpoint to link to leaves the relationship nothing to render but data.
+        if (!$relation->exposesRelatedEndpoint() && !$relation->exposesRelationshipEndpoint()) {
+            return true;
+        }
+
+        $loadState = $server->relationshipLoadState();
+
+        return $loadState === null || $loadState->isRelationshipLoaded($entity, $relation);
+    }
+
+    private function isScoped(RelationInterface $relation): bool
+    {
+        return $this->router->isScoped($relation);
+    }
+
+    /**
+     * Whether the relation's value comes from an `extractUsing()` closure. Core keeps
+     * the closure on the field's protected state, so this reads it by reflection.
+     */
+    private function isComputed(RelationInterface $relation): bool
+    {
+        if (!$relation instanceof AbstractFieldValue) {
+            return false;
+        }
+
+        static $state = null;
+        $state ??= new \ReflectionProperty(AbstractFieldValue::class, 'state');
+        $fieldState = $state->getValue($relation);
+
+        return \is_object($fieldState) && \property_exists($fieldState, 'extractUsing') && $fieldState->extractUsing !== null;
+    }
+
+    /**
+     * Reads the relation's current value off each entity (the lazy path), flattened to
+     * the target objects.
+     *
+     * @param list<object> $entities
+     *
+     * @return list<object>
+     */
+    private function readTargets(array $entities, RelationInterface $relation, JsonApiRequestInterface $request): array
+    {
+        $targets = [];
+        foreach ($entities as $entity) {
+            $value = $relation->readValue($entity, $request);
+            if (\is_object($value) && !\is_iterable($value)) {
+                $targets[] = $value;
+
+                continue;
+            }
+
+            if (\is_iterable($value)) {
+                foreach ($value as $member) {
+                    if (\is_object($member)) {
+                        $targets[] = $member;
+                    }
+                }
+            }
+        }
+
+        return $this->unique($targets);
+    }
+
+    /**
+     * Groups targets by the JSON:API type they render as.
+     *
+     * @param list<object> $targets
+     *
+     * @return array<string, list<object>>
+     */
+    private function groupByType(Server $server, RelationInterface $relation, array $targets): array
+    {
+        $relatedTypes = $relation->relatedTypes();
+        if (\count($relatedTypes) === 1) {
+            return $targets === [] ? [] : [$relatedTypes[0] => $targets];
+        }
+
+        $groups = [];
+        foreach ($targets as $target) {
+            $serializer = $relation->resolveSerializer($target, $server);
+            if ($serializer !== null) {
+                $groups[$serializer->getType($target)][] = $target;
+            }
+        }
+
+        return $groups;
+    }
+
+    private function refused(string $type, RelationInterface $relation, string $reason): \LogicException
+    {
+        return new \LogicException(\sprintf(
+            'Relationship "%s" of type "%s" renders data, and its related type is scoped by its data provider, but %s. Rendering it from the model would bypass that scope. Give it an extractUsing() that applies the scope, make it lazy (no withData()) and do not include it, or hide it.',
+            $relation->name(),
+            $type,
+            $reason,
+        ));
+    }
+
+    /**
+     * Empty filters/sorts and no window: each parent's whole related set, scoped by the
+     * provider.
+     */
+    private function plainIncludeCriteria(JsonApiRequestInterface $request): CollectionCriteria
+    {
+        return new CollectionCriteria(
+            new QueryParameters(
+                fields: [],
+                includes: [],
+                sort: [],
+                filter: [],
+                pagination: $request->getPagination(),
+            ),
+        );
+    }
+
+    /**
+     * Folds dotted eager paths into a prefix tree, so `['author.country', 'author.city']`
+     * becomes `['author' => ['country' => [], 'city' => []]]`.
      *
      * @param list<string> $paths
      *
@@ -466,221 +822,23 @@ final class RelatedIncludeBatcher
     }
 
     /**
-     * Batch-loads a single included relation across `$entities` (through {@see executeLoad()}),
-     * unless the eager pass already loaded it, then recurses into the loaded targets for
-     * nested includes. A polymorphic relation, or a related type with no batching provider,
-     * is left to a lazy load (the orchestrator simply does not batch it).
-     *
-     * @param list<object>         $entities
-     * @param ?int                 $maxDepth     the effective include-depth cap (null = unlimited)
-     * @param list<string>|null    $allowedPaths the root resource's allowed-include-paths whitelist (null = unrestricted)
-     * @param array<string, true> &$loaded       the per-level "already loaded" guard (an eager-loaded relation is not re-loaded)
+     * @return array<string, mixed>
      */
-    private function loadRelation(
-        Server $server,
-        array $entities,
-        string $type,
-        RelationInterface $relation,
-        JsonApiRequestInterface $request,
-        string $childPath,
-        ?int $maxDepth,
-        ?array $allowedPaths,
-        array &$loaded,
-    ): void {
-        $relatedTypes = $relation->relatedTypes();
-        if (\count($relatedTypes) !== 1) {
-            return;
-        }
-
-        $relatedType = $relatedTypes[0];
-
-        // An overlap with the eager pass: the relation is already loaded onto the column, so
-        // skip the (redundant) batch and read the loaded targets straight off the parents to
-        // seed the next include level — the load runs ONCE.
-        if (isset($loaded[$relation->name()])) {
-            $targets = $this->collectLoadedTargets($entities, $relation);
-        } else {
-            $targets = $this->executeLoad($server, $entities, $type, $relation, $request);
-            if ($targets === null) {
-                return;
-            }
-            $loaded[$relation->name()] = true;
-        }
-
-        // Thread the root-scoped safeguards into the next level unchanged: the cap and
-        // whitelist are a property of the root resource, not of each hop.
-        $this->preload($targets, $relatedType, $request, $childPath, $maxDepth, $allowedPaths, rootResolved: true);
-    }
-
-    /**
-     * Batch-loads `$relation` across `$entities` through the PRIMARY type's provider in
-     * PLAIN-INCLUDE (fast-path) mode — an empty filter/sort criteria with a NULL window loads
-     * the WHOLE related set per parent (`WHERE fk IN`, no slice) — and writes each parent's
-     * result back onto its relation column via {@see Accessor::set}, returning the flat list
-     * of loaded targets (to seed a nested include level). Returns `null` when the relation
-     * cannot be batched — a polymorphic relation (more than one related type, skipped HERE so
-     * even the in-memory provider stays lazy and includes stay byte-identical with the
-     * Doctrine boundary) or a related type with no batching provider — so the column is left
-     * untouched and the relation renders lazily.
-     *
-     * @param list<object> $entities
-     *
-     * @return list<object>|null the loaded targets, or `null` when the relation cannot be batched
-     */
-    private function executeLoad(
-        Server $server,
-        array $entities,
-        string $type,
-        RelationInterface $relation,
-        JsonApiRequestInterface $request,
-    ): ?array {
-        $relatedTypes = $relation->relatedTypes();
-        if (\count($relatedTypes) !== 1) {
-            return null;
-        }
-
-        if (!$this->providers->supportsType($relatedTypes[0])) {
-            return null;
-        }
-
-        $column = $relation->column() ?? $relation->name();
-
-        // The write-back needs somewhere to land — a declared property, a setter, or
-        // dynamic-property support. Otherwise Accessor::set would create a deprecated
-        // dynamic property (a PHP 9 error), so the relation renders lazily instead.
-        if (isset($entities[0]) && !$this->columnTakesWriteBack($entities[0], $column)) {
-            return null;
-        }
-
-        // Snapshot each parent's column value before the batch reads it, so a to-many
-        // write-back can restore the column's container type (a Doctrine Collection
-        // property cannot take a raw array). Keyed by object id.
-        $snapshots = [];
-        foreach ($entities as $entity) {
-            $snapshots[\spl_object_id($entity)] = Accessor::get($entity, $column);
-        }
-
-        $batch = $this->providers->forType($type)
-            ->fetchRelatedCollectionBatch($type, $entities, $relation, $this->plainIncludeCriteria($request), $request);
-
-        $serializer = $server->serializerFor($type);
-
-        $targets = [];
-        foreach ($entities as $entity) {
-            $result = $batch->for($serializer->getId($entity));
-            $items = $this->itemsOf($result);
-            $this->writeBack($entity, $relation, $column, $items, $snapshots[\spl_object_id($entity)] ?? null);
-            foreach ($items as $target) {
-                $targets[] = $target;
-            }
-        }
-
-        return $targets;
-    }
-
-    /**
-     * Reads the already-loaded targets of `$relation` straight off `$entities` (for an
-     * include that overlaps an eager load already written onto the column) so the nested
-     * include level is seeded without re-running the batch.
-     *
-     * @param list<object> $entities
-     *
-     * @return list<object>
-     */
-    private function collectLoadedTargets(array $entities, RelationInterface $relation): array
+    private function subTree(mixed $node): array
     {
-        $column = $relation->column() ?? $relation->name();
-
-        $targets = [];
-        foreach ($entities as $entity) {
-            $value = Accessor::get($entity, $column);
-            if ($value === null) {
-                continue;
-            }
-
-            if ($relation->isToMany()) {
-                $members = $value instanceof \Doctrine\Common\Collections\Collection
-                    ? $value->toArray()
-                    : $value;
-                if (\is_iterable($members)) {
-                    foreach ($members as $member) {
-                        if (\is_object($member)) {
-                            $targets[] = $member;
-                        }
-                    }
+        $tree = [];
+        if (\is_array($node)) {
+            foreach ($node as $name => $children) {
+                if (\is_string($name)) {
+                    $tree[$name] = $children;
                 }
-
-                continue;
-            }
-
-            if (\is_object($value)) {
-                $targets[] = $value;
             }
         }
 
-        return $targets;
+        return $tree;
     }
 
     /**
-     * Whether {@see Accessor::set} can write `$column` onto `$entity` without creating
-     * a dynamic property: a declared property (a Doctrine association is always one), a
-     * `setX()` method, or explicit dynamic-property support on the class. False for a
-     * relation exposed over a column the model does not carry — e.g. a second pivot
-     * view rendered purely through `extractUsing()`.
-     */
-    private function columnTakesWriteBack(object $entity, string $column): bool
-    {
-        return \property_exists($entity, $column)
-            || \method_exists($entity, 'set' . \ucfirst($column))
-            || \method_exists($entity, '__set')
-            || $entity instanceof \stdClass
-            || $entity instanceof \ArrayAccess
-            || (new \ReflectionClass($entity))->getAttributes(\AllowDynamicProperties::class) !== [];
-    }
-
-    /**
-     * Writes a parent's batched-loaded related value back onto its relation column. A
-     * to-many writes the loaded list wrapped to match the column's container (the
-     * snapshot carries the container type); a to-one writes `items[0] ?? null` onto the
-     * to-one column — NEVER an array/CollectionResult, which would corrupt the to-one
-     * render. An empty to-one batch (the target is null/scoped out) leaves the loaded
-     * value `null`, matching the lazy result.
-     *
-     * @param list<object> $loaded
-     */
-    private function writeBack(object $entity, RelationInterface $relation, string $column, array $loaded, mixed $snapshot): void
-    {
-        if ($relation->isToMany()) {
-            Accessor::set($entity, $column, $this->asContainer($loaded, $snapshot));
-
-            return;
-        }
-
-        Accessor::set($entity, $column, $loaded[0] ?? null);
-    }
-
-    /**
-     * The plain-include (fast-path) criteria: empty filters/sorts/defaultSort and a
-     * NULL window, so {@see DataProviderInterface::fetchRelatedCollectionBatch()} loads
-     * the WHOLE related set per parent with no slice — the byte-for-byte rows the
-     * preloader loaded (bundle ADR 0062).
-     */
-    private function plainIncludeCriteria(JsonApiRequestInterface $request): CollectionCriteria
-    {
-        return new CollectionCriteria(
-            new QueryParameters(
-                fields: [],
-                includes: [],
-                sort: [],
-                filter: [],
-                pagination: $request->getPagination(),
-            ),
-        );
-    }
-
-    /**
-     * Materializes a {@see CollectionResult}'s items to a `list<object>`.
-     *
      * @param CollectionResult<object> $result
      *
      * @return list<object>
@@ -695,12 +853,8 @@ final class RelatedIncludeBatcher
     }
 
     /**
-     * The effective include-depth cap for a root `$serializer` on `$server`: the
-     * resource's own {@see IncludeControlsInterface::maxIncludeDepth()} override (when
-     * it implements the capability) `??` the server default
-     * {@see Server::maxIncludeDepth()}, normalised so a non-positive value means
-     * unlimited (`null`). Mirrors the transformer's resolution, so the recursion is
-     * bounded by exactly the tree core would render.
+     * The root's include-depth cap (its own override, else the server default), with a
+     * non-positive value meaning unlimited.
      */
     private function effectiveMaxDepth(SerializerInterface $serializer, Server $server): ?int
     {
@@ -710,43 +864,45 @@ final class RelatedIncludeBatcher
         return ($depth !== null && $depth <= 0) ? null : $depth;
     }
 
-    /**
-     * Wraps a to-many's loaded list in the container the relation's column expects: a
-     * Doctrine `Collection`-typed property cannot take a raw array, so when the column
-     * held a {@see \Doctrine\Common\Collections\Collection} the list is wrapped in an
-     * {@see \Doctrine\Common\Collections\ArrayCollection}; an array (the in-memory
-     * model) keeps the plain list. The snapshot is the column's pre-batch value, so it
-     * carries the container type to preserve.
-     *
-     * @param list<object> $items
-     *
-     * @return list<object>|\Doctrine\Common\Collections\Collection<int, object>
-     */
-    private function asContainer(array $items, mixed $snapshot): array|object
+    private function serverName(JsonApiRequestInterface $request): string
     {
-        if (
-            $snapshot instanceof \Doctrine\Common\Collections\Collection
-            && \class_exists(\Doctrine\Common\Collections\ArrayCollection::class)
-        ) {
-            return new \Doctrine\Common\Collections\ArrayCollection($items);
-        }
+        $name = $request->getAttribute('_jsonapi_server');
 
-        return $items;
+        return \is_string($name) && $name !== '' ? $name : ServerProvider::DEFAULT_SERVER;
     }
 
     /**
-     * Materializes `$entities` to a `list<object>`.
-     *
      * @param iterable<object> $entities
      *
      * @return list<object>
      */
     private function materialize(iterable $entities): array
     {
-        if (\is_array($entities)) {
-            return \array_values($entities);
+        return \is_array($entities) ? \array_values($entities) : \iterator_to_array($entities, false);
+    }
+
+    /**
+     * @param list<object> $objects
+     */
+    private function remember(array $objects): void
+    {
+        foreach ($objects as $object) {
+            $this->known[\spl_object_id($object)] = true;
+        }
+    }
+
+    /**
+     * @param list<object> $objects
+     *
+     * @return list<object>
+     */
+    private function unique(array $objects): array
+    {
+        $unique = [];
+        foreach ($objects as $object) {
+            $unique[\spl_object_id($object)] = $object;
         }
 
-        return \iterator_to_array($entities, false);
+        return \array_values($unique);
     }
 }

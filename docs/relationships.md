@@ -927,6 +927,84 @@ all three: it never batch-loads a non-includable relation, bounds its own recurs
 the same effective depth, and skips a path the root's whitelist excludes (so a mutual
 default-include cycle terminates the batcher too, not only the renderer).
 
+## Included data is scoped like the related endpoint
+
+Whatever a document renders for a relation, it renders what the related endpoint
+serves. That covers `included` resources at every depth, the linkage `data` of a
+relationship whether or not it is included (a `withData()` relation, a collection your
+code already loaded, a to-one), pivot `meta.pivot`, `?withCount` totals, the
+Relationship Queries window, `on()` attributes flattened through a to-one, and the
+to-one related and relationship endpoints. A Doctrine query extension or a provider
+that hides rows hides them from all of these, on every server.
+
+The bundle reads a relation through the provider that serves its related endpoint
+(the provider of its first related type). When that provider scopes its reads and is
+not the parent type's provider, each parent's members are fetched through it, as the
+related endpoint does. The loaded members, or a to-one's target, reach the renderer
+through core's out-of-band linkage seams, so nothing is written onto the entity. A
+to-one whose target the scope hides renders `data: null`, is left out of `included`,
+flattens to `null` through an `on()` attribute, and a write to such an attribute is a
+`422` `RELATED_ATTRIBUTE_OWNER_MISSING`. A `MorphTo` target is checked against the
+provider of the type it renders as.
+
+Two kinds of relation render their own value instead:
+
+- a relation with `extractUsing()` renders what its closure returns, and the walk
+  continues into those targets (a pivot `belongsToMany` is the exception: it always
+  loads through the provider's pivot query);
+- a relation stored on a getter or property that is not a Doctrine association renders
+  what the model returns.
+
+Your code owns the scoping of those. Anything else that cannot be loaded through a
+scoping provider is refused with a `500` (a `\LogicException` naming the relation)
+rather than rendered from the model: a polymorphic to-many whose first related type is
+scoped (core reads polymorphic to-many linkage straight off the model), or an
+association the provider cannot batch, such as one with a composite-key target.
+
+A provider tells the bundle whether its related reads are scoped by implementing
+[`ScopesRelatedReadsInterface`](custom-data-providers.md#saying-whether-related-reads-are-scoped).
+The Doctrine provider reports a relation scoped when any query extension supports one
+of its related types; the in-memory provider never does.
+
+### Written linkage is scoped too
+
+The same scope governs the linkage a write sends: `data.relationships` in a create or
+update, the `…/relationships/{rel}` endpoints, and atomic operations (after their `lid`s
+resolve). Before the persister runs, each identifier of a scoped type is loaded through
+that type's provider `fetchOne()`, as `GET /{type}/{id}` would load it. A `MorphTo` or
+`MorphToMany` identifier is checked against the type it names. An identifier the
+provider does not return gets the response JSON:API prescribes for a related resource
+that does not exist, whether the row is hidden or missing:
+
+```json
+{"errors": [{"status": "404", "code": "RESOURCE_NOT_FOUND", "title": "Resource not found"}]}
+```
+
+That holds for adding, replacing and removing members, for setting a to-one, and for a
+pivot member's `meta.pivot` (a hidden member's pivot also validates as a new member's).
+In an atomic batch the error rolls the whole batch back.
+
+A to-many replace (a `PATCH` to the relationship endpoint, or the relationship in a
+resource body) changes only the members the client can see. Members the scope hides
+stay, with their pivot rows, and the response lists only the visible members:
+
+```
+advertiser 1 partners: agencies 1, 2 (agency 2 hidden)
+PATCH /advertisers/1/relationships/partners {"data":[{"type":"agencies","id":"3"}]}
+→ 200 {"data":[{"type":"agencies","id":"3"}]}, stored: agencies 2, 3
+```
+
+A to-one has one slot, so a client allowed to write it replaces, or clears, whatever it
+holds. A create also scopes the `on()` hops below the relations its body sets, so
+writing a flattened attribute through a hidden target is a `422`
+`RELATED_ATTRIBUTE_OWNER_MISSING`, as on an update.
+
+A relation whose types are unscoped keeps resolving ids straight through the persister,
+unchecked. A relationship endpoint mutation of a polymorphic to-many reaching a scoped
+type is refused with a `500` before it writes, since its linkage cannot be rendered
+scoped. The decision is recorded in
+[ADR 0126](adr/0126-written-linkage-resolves-through-the-related-endpoints-scope.md).
+
 ## Polymorphic relationships
 
 A `MorphTo` to-one and a `MorphToMany` to-many point across several related

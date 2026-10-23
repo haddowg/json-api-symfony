@@ -19,6 +19,7 @@ use haddowg\JsonApiBundle\DataProvider\PivotAwareProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\PivotCollectionResult;
 use haddowg\JsonApiBundle\DataProvider\PivotCursorCollectionResult;
 use haddowg\JsonApiBundle\DataProvider\RelatedBatch;
+use haddowg\JsonApiBundle\DataProvider\ScopesRelatedReadsInterface;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Album;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Artist;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Library;
@@ -60,7 +61,7 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Track;
  * @implements DataProviderInterface<object>
  * @implements PivotAwareProviderInterface<object>
  */
-final class LibraryItemsProvider implements DataProviderInterface, PivotAwareProviderInterface
+final class LibraryItemsProvider implements DataProviderInterface, PivotAwareProviderInterface, ScopesRelatedReadsInterface
 {
     /**
      * The mixed-member map per library id: the JSON:API type and id of each
@@ -100,6 +101,16 @@ final class LibraryItemsProvider implements DataProviderInterface, PivotAwarePro
     public function supports(string $type): bool
     {
         return $type === self::PARENT_TYPE || $type === self::RELATED_TYPE;
+    }
+
+    /**
+     * The mixed `items` members are resolved by id across the repositories with no
+     * scope, so reading them off the library is what the related endpoint returns.
+     * Every other relation is the Doctrine provider's.
+     */
+    public function scopesRelatedReads(RelationInterface $relation): bool
+    {
+        return \count($relation->relatedTypes()) > 1 ? false : $this->doctrine->scopesRelatedReads($relation);
     }
 
     public function fetchOne(string $type, string $id): ?object
