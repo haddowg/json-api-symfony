@@ -33,7 +33,6 @@ use haddowg\JsonApi\Pagination\PageInterface;
 use haddowg\JsonApi\Pagination\PaginatorInterface;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Request\RelatedQuery;
-use haddowg\JsonApi\Resource\Field\Accessor;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
@@ -51,6 +50,7 @@ use haddowg\JsonApi\Response\RelatedResponse;
 use haddowg\JsonApi\Response\SeeOtherResponse;
 use haddowg\JsonApi\Schema\Relationship\RelationshipLinkage;
 use haddowg\JsonApi\Schema\Relationship\RelationshipPagination;
+use haddowg\JsonApi\Schema\Relationship\ToOneRelationshipLinkage;
 use haddowg\JsonApi\Serializer\PolymorphicSerializer;
 use haddowg\JsonApi\Serializer\SerializerInterface;
 use haddowg\JsonApi\Server\Server;
@@ -205,6 +205,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
     public function handle(\haddowg\JsonApi\Operation\JsonApiOperationInterface $operation): DataResponse|RelatedResponse|IdentifierResponse|MetaResponse|NoContentResponse|AcceptedResponse|SeeOtherResponse|AtomicResultsResponse|ErrorResponse
     {
         $server = $operation->context()->server;
+        // Each operation installs its own linkage; never render another's.
+        $this->relationshipLinkage?->set(null);
+        $this->relationshipLinkage?->setIncluded(null);
         $this->outputTimezone?->set($server instanceof \haddowg\JsonApi\Resource\ProvidesOutputTimezoneInterface ? $server->outputTimezone() : null);
 
         return match (true) {
@@ -1039,7 +1042,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                     $this->validateFilterValues($filter, $criteria->filters);
 
                     if (!$this->providers->forType($relatedType)->relatedToOneMatches($relatedType, $related, $relation, $criteria, $request)) {
-                        Accessor::set($parent, $relation->column() ?? $relation->name(), null);
+                        $this->relationshipLinkage?->set(new WindowedRelationshipLinkage([], [
+                            \spl_object_id($parent) => [$relation->name() => ToOneRelationshipLinkage::none()],
+                        ]));
                     }
                 }
             }
@@ -1460,7 +1465,15 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return;
         }
 
-        $this->includeBatcher->preload($entities, $type, $request);
+        $linkage = $this->includeBatcher->preloadLinkage($entities, $type, $request);
+
+        if ($linkage !== null && $this->relationshipLinkage === null) {
+            throw new \LogicException('The included linkage cannot be rendered: no RequestScopedRelationshipLinkage is wired into the CrudOperationHandler.');
+        }
+
+        // The Relationship Queries window, installed separately, is looked up first, so
+        // its page wins over the preloaded set.
+        $this->relationshipLinkage?->setIncluded($linkage);
     }
 
     /**

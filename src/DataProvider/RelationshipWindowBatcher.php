@@ -17,6 +17,7 @@ use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
 use haddowg\JsonApi\Schema\Relationship\RelationshipLinkage;
 use haddowg\JsonApi\Schema\Relationship\RelationshipPagination;
+use haddowg\JsonApi\Schema\Relationship\ToOneRelationshipLinkage;
 use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\Serializer\WindowedRelationshipLinkage;
 use haddowg\JsonApiBundle\Serializer\WindowedRelationshipPagination;
@@ -129,10 +130,10 @@ final class RelationshipWindowBatcher
         }
 
         // Null each filter-excluded to-one's linkage across the page in ONE batched match
-        // per relation (no N+1) — runs whether or not any to-many is windowed, and after
-        // preloadIncludes() at the call site so it overwrites a preloaded to-one target
-        // with null (bundle ADR 0068). It produces no pagination entry (a to-one has none).
-        $this->nullExcludedToOnes($server, $type, $parents, $toOneFiltered, $request);
+        // per relation (no N+1) — runs whether or not any to-many is windowed — supplied
+        // out of band as an empty to-one, which wins over a preloaded target (bundle ADR
+        // 0068). It produces no pagination entry (a to-one has none).
+        $excluded = $this->nullExcludedToOnes($server, $type, $parents, $toOneFiltered, $request);
 
         // The to-many relations to window — restricted to those whose linkage DATA renders
         // for THIS request (bundle ADR 0086): a relation that is included at the primary
@@ -156,15 +157,11 @@ final class RelationshipWindowBatcher
         $this->validateUnwindowedRelatedQueryKeys($server, $type, $allRelations, $relations, $request);
 
         if ($relations === []) {
-            return null;
+            return $excluded === [] ? null : new WindowedRelationshipResult(null, new WindowedRelationshipLinkage([], $excluded));
         }
 
-        // Snapshot every windowable column for every parent ONCE up front, so each
-        // relation windows from the parent's ORIGINAL related set rather than a value a
-        // sibling relation already trimmed in place. Two relations may share one column
-        // (e.g. a default `comments` and a paginated `pagedComments` over the same
-        // association); each windows from the same original set. Keyed by object id then
-        // column so a relation restores its own column before its batch reads it.
+        // Snapshot every windowable column for every parent once, keyed by object id then
+        // column: the snapshot carries the container type each page is wrapped in.
         $snapshots = [];
         foreach ($parents as $parent) {
             $snapshots[\spl_object_id($parent)] = $this->snapshotColumns($parent, $relations);
@@ -173,8 +170,7 @@ final class RelationshipWindowBatcher
         // ONE batch fetch per windowed relation over the WHOLE page, replacing the
         // per-parent fetch loop (bundle ADR 0061): a collection include of N windowable
         // relations over M parents is O(N) provider round-trips, not O(M*N). For each
-        // relation, restore the page's snapshot for its column (so the in-memory witness
-        // reads each parent's original set), fetch the page-1 windowed batch once, then
+        // relation, fetch the page-1 windowed batch once, then
         // record each parent's page-1 linkage + relationship-object pagination — WITHOUT
         // writing the page onto the parent property (bundle ADR 0086): the page is supplied
         // to core OUT-OF-BAND through the relationship-linkage seam, so a relation sharing
@@ -192,15 +188,14 @@ final class RelationshipWindowBatcher
             }
         }
 
-        // After the window loop every column has been restored to its pre-window snapshot
-        // by windowRelationOverPage's per-relation restore (and never overwritten with a
-        // filtered page), so the parents are pristine and any bystander renders its true
-        // membership — the windowed relations read their pages from the linkage seam.
-        return $pages === [] && $linkages === []
+        // Nothing writes a relation onto the parents (bundle ADR 0086), so any bystander
+        // renders its true membership; the windowed relations read their pages from the
+        // linkage seam.
+        return $pages === [] && $linkages === [] && $excluded === []
             ? null
             : new WindowedRelationshipResult(
                 $pages === [] ? null : new WindowedRelationshipPagination($pages),
-                $linkages === [] ? null : new WindowedRelationshipLinkage($linkages),
+                $linkages === [] && $excluded === [] ? null : new WindowedRelationshipLinkage($linkages, $excluded),
             );
     }
 
@@ -251,15 +246,6 @@ final class RelationshipWindowBatcher
         }
 
         $column = $relation->column() ?? $relation->name();
-
-        // Restore each parent's ORIGINAL related set onto the column before the batch
-        // reads it (the in-memory witness reads the related set off the property), so a
-        // sibling relation sharing the column has not already trimmed it. The Doctrine
-        // provider scopes its own query and ignores the property, so the restore is inert
-        // there.
-        foreach ($parents as $parent) {
-            Accessor::set($parent, $column, $snapshots[\spl_object_id($parent)][$column] ?? null);
-        }
 
         // The page-1 synthetic request and the merged criteria are resolved once for the
         // relation — they do not vary per parent (page is OUT for includes, fixed at page
@@ -613,14 +599,15 @@ final class RelationshipWindowBatcher
      * merged filter criteria (related resource ⊕ relation filters, the same vocabulary
      * the related endpoint uses), drives the provider's
      * {@see DataProviderInterface::relatedToOneMatchesBatch()} ONCE over the page (no
-     * N+1), and writes `null` onto the to-one property of each parent whose target does
-     * not match — so the rendered linkage is `null` and, because the include preloader
-     * already wrote the target onto the property, the include is omitted. A GET read, so
-     * nothing flushes. The to-one nulling produces no pagination entry (a to-one has no
-     * pagination).
+     * N+1), and returns an empty to-one ({@see ToOneRelationshipLinkage::none()}) for
+     * each parent whose target does not match, so the rendered linkage is `null` and the
+     * include is omitted, with nothing written onto the parent. The to-one nulling
+     * produces no pagination entry (a to-one has no pagination).
      *
      * @param list<object>            $parents
      * @param list<RelationInterface> $toOneFiltered
+     *
+     * @return array<int, array<string, ToOneRelationshipLinkage>>
      */
     private function nullExcludedToOnes(
         Server $server,
@@ -628,7 +615,8 @@ final class RelationshipWindowBatcher
         array $parents,
         array $toOneFiltered,
         JsonApiRequestInterface $request,
-    ): void {
+    ): array {
+        $excluded = [];
         foreach ($toOneFiltered as $relation) {
             $relatedType = $relation->relatedTypes()[0] ?? null;
             if ($relatedType === null || !$this->providers->supportsType($relatedType)) {
@@ -661,13 +649,14 @@ final class RelationshipWindowBatcher
                 ->relatedToOneMatchesBatch($type, $parents, $relation, $criteria, $request);
 
             $serializer = $server->serializerFor($type);
-            $column = $relation->column() ?? $relation->name();
             foreach ($parents as $parent) {
                 if (($matches[$serializer->getId($parent)] ?? false) === false) {
-                    Accessor::set($parent, $column, null);
+                    $excluded[\spl_object_id($parent)][$relation->name()] = ToOneRelationshipLinkage::none();
                 }
             }
         }
+
+        return $excluded;
     }
 
     /**

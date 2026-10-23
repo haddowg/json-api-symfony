@@ -7,7 +7,9 @@ namespace haddowg\JsonApiBundle\Serializer;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Schema\Relationship\RelationshipLinkage;
+use haddowg\JsonApi\Schema\Relationship\ToOneRelationshipLinkage;
 use haddowg\JsonApi\Serializer\RelationshipLinkageInterface;
+use haddowg\JsonApi\Serializer\ToOneRelationshipLinkageInterface;
 use Symfony\Contracts\Service\ResetInterface;
 
 /**
@@ -34,9 +36,11 @@ use Symfony\Contracts\Service\ResetInterface;
  * could read a stale page. It therefore implements {@see ResetInterface} (auto-tagged
  * `kernel.reset`): the container resets it between messages.
  */
-final class RequestScopedRelationshipLinkage implements RelationshipLinkageInterface, ResetInterface
+final class RequestScopedRelationshipLinkage implements ToOneRelationshipLinkageInterface, ResetInterface
 {
     private ?RelationshipLinkageInterface $delegate = null;
+
+    private ?RelationshipLinkageInterface $included = null;
 
     /**
      * Installs (or clears, with `null`) the windowed linkage backing for the read
@@ -49,12 +53,38 @@ final class RequestScopedRelationshipLinkage implements RelationshipLinkageInter
         $this->delegate = $delegate;
     }
 
+    /**
+     * Installs (or clears) the scoped to-many linkage the
+     * {@see \haddowg\JsonApiBundle\DataProvider\RelatedIncludeBatcher} loaded for the
+     * read being handled (bundle ADR 0125). The windowed backing from {@see set()} wins
+     * for a relation both supply, since it is the profile's page of the same scoped set.
+     */
+    public function setIncluded(?RelationshipLinkageInterface $included): void
+    {
+        $this->included = $included;
+    }
+
     public function linkageForRelationship(
         mixed $model,
         RelationInterface $relation,
         JsonApiRequestInterface $request,
     ): ?RelationshipLinkage {
-        return $this->delegate?->linkageForRelationship($model, $relation, $request);
+        return $this->delegate?->linkageForRelationship($model, $relation, $request)
+            ?? $this->included?->linkageForRelationship($model, $relation, $request);
+    }
+
+    public function toOneLinkageForRelationship(
+        mixed $model,
+        RelationInterface $relation,
+        JsonApiRequestInterface $request,
+    ): ?ToOneRelationshipLinkage {
+        $windowed = $this->delegate instanceof ToOneRelationshipLinkageInterface
+            ? $this->delegate->toOneLinkageForRelationship($model, $relation, $request)
+            : null;
+
+        return $windowed ?? ($this->included instanceof ToOneRelationshipLinkageInterface
+            ? $this->included->toOneLinkageForRelationship($model, $relation, $request)
+            : null);
     }
 
     /**
@@ -65,5 +95,6 @@ final class RequestScopedRelationshipLinkage implements RelationshipLinkageInter
     public function reset(): void
     {
         $this->delegate = null;
+        $this->included = null;
     }
 }

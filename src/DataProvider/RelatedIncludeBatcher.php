@@ -9,10 +9,13 @@ use haddowg\JsonApi\Operation\QueryParameters;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\Accessor;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Schema\Relationship\RelationshipLinkage;
+use haddowg\JsonApi\Schema\Relationship\ToOneRelationshipLinkage;
 use haddowg\JsonApi\Serializer\DeclaresEagerLoadsInterface;
 use haddowg\JsonApi\Serializer\IncludeControlsInterface;
 use haddowg\JsonApi\Serializer\SerializerInterface;
 use haddowg\JsonApi\Server\Server;
+use haddowg\JsonApiBundle\Serializer\WindowedRelationshipLinkage;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
 
@@ -23,8 +26,8 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
  * successor to the retired Doctrine `IncludePreloader` + `shipmonk/doctrine-entity-preloader`
  * (bundle ADR 0062): the include-decision + the three ADR-0037 safeguards + the
  * recursion are lifted UNCHANGED, but the per-relation load now runs through the
- * provider SPI's {@see DataProviderInterface::fetchRelatedCollectionBatch()} +
- * {@see Accessor::set} write-back rather than a Doctrine-specific preloader — so the
+ * provider SPI's {@see DataProviderInterface::fetchRelatedCollectionBatch()}, handed to
+ * core out of band, rather than a Doctrine-specific preloader — so the
  * orchestrator is **provider-agnostic** and batches includes for EVERY batching
  * provider (the Doctrine reference AND the in-memory witness), per level, with no
  * per-provider branching.
@@ -32,11 +35,10 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
  * Each level loads in PLAIN-INCLUDE (fast-path) mode: an empty filter/sort criteria
  * with a NULL window, so the batch loads the WHOLE related set per parent
  * (`WHERE fk IN`, no per-parent slice) — byte-for-byte the rows the preloader
- * loaded. The write-back wraps a to-many's loaded set to match the column's
- * container (a Doctrine `Collection` property cannot take a raw array) and writes a
- * to-one's single target (`items[0] ?? null`) onto the to-one column. The recursion
- * then descends on the flat list of loaded targets, threading the root-resolved
- * safeguards unchanged.
+ * loaded. The loaded set reaches core through its out-of-band linkage seams (a
+ * to-many's members, a to-one's target or none; {@see preloadLinkage()} returns them),
+ * so nothing is written onto the entity. The recursion then descends on the flat list
+ * of loaded targets, threading the root-resolved safeguards unchanged.
  *
  * Batching is a pure optimization: a relation/provider that cannot batch falls back
  * to a LAZY load and the rendered document is identical. The orchestrator simply
@@ -48,8 +50,7 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
  *  - a related type with no batching provider is skipped;
  *  - a relation the provider cannot batch (a computed/`extractUsing` column that is
  *    not a real association, or a composite-id target) is detected INSIDE the
- *    provider's batch, which returns an empty {@see RelatedBatch} — so the write-back
- *    is a no-op and the relation renders lazily (bundle ADR 0062).
+ *    provider's batch, which returns an empty {@see RelatedBatch} (bundle ADR 0062).
  *
  * It honours the three include safeguards (bundle ADR 0037), resolved once against
  * the ROOT resource and threaded unchanged through the recursion: it never batches a
@@ -110,6 +111,22 @@ final class RelatedIncludeBatcher
      */
     private bool $enabled = true;
 
+    /**
+     * The loaded to-many members of the read being prepared, keyed by parent object id
+     * then relation name, supplied to core out of band.
+     *
+     * @var array<int, array<string, RelationshipLinkage>>
+     */
+    private array $linkages = [];
+
+    /**
+     * The loaded to-one targets of the read being prepared, keyed by parent object id
+     * then relation name, supplied to core out of band.
+     *
+     * @var array<int, array<string, ToOneRelationshipLinkage>>
+     */
+    private array $toOne = [];
+
     public function __construct(
         private readonly DataProviderRegistry $providers,
         private readonly TypeMetadataResolver $types,
@@ -136,6 +153,25 @@ final class RelatedIncludeBatcher
     public function enable(): void
     {
         $this->enabled = true;
+    }
+
+    /**
+     * {@see preload()} for a read's primary resources, returning what it loaded as the
+     * out-of-band linkage core renders, or `null` when nothing was loaded. The loaded
+     * relations are never written onto the entities.
+     *
+     * @param iterable<object> $entities
+     */
+    public function preloadLinkage(iterable $entities, string $type, JsonApiRequestInterface $request): ?WindowedRelationshipLinkage
+    {
+        $this->linkages = [];
+        $this->toOne = [];
+
+        $this->preload($entities, $type, $request);
+
+        return $this->linkages === [] && $this->toOne === []
+            ? null
+            : new WindowedRelationshipLinkage($this->linkages, $this->toOne);
     }
 
     /**
@@ -515,8 +551,8 @@ final class RelatedIncludeBatcher
     /**
      * Batch-loads `$relation` across `$entities` through the PRIMARY type's provider in
      * PLAIN-INCLUDE (fast-path) mode — an empty filter/sort criteria with a NULL window loads
-     * the WHOLE related set per parent (`WHERE fk IN`, no slice) — and writes each parent's
-     * result back onto its relation column via {@see Accessor::set}, returning the flat list
+     * the WHOLE related set per parent (`WHERE fk IN`, no slice) — and records each parent's
+     * result as its out-of-band linkage, returning the flat list
      * of loaded targets (to seed a nested include level). Returns `null` when the relation
      * cannot be batched — a polymorphic relation (more than one related type, skipped HERE so
      * even the in-memory provider stays lazy and includes stay byte-identical with the
@@ -545,19 +581,10 @@ final class RelatedIncludeBatcher
 
         $column = $relation->column() ?? $relation->name();
 
-        // The write-back needs somewhere to land — a declared property, a setter, or
-        // dynamic-property support. Otherwise Accessor::set would create a deprecated
-        // dynamic property (a PHP 9 error), so the relation renders lazily instead.
+        // A relation over a member the model does not carry (one rendered purely through
+        // extractUsing()) has nothing for the batch to stand in for, so it renders lazily.
         if (isset($entities[0]) && !$this->columnTakesWriteBack($entities[0], $column)) {
             return null;
-        }
-
-        // Snapshot each parent's column value before the batch reads it, so a to-many
-        // write-back can restore the column's container type (a Doctrine Collection
-        // property cannot take a raw array). Keyed by object id.
-        $snapshots = [];
-        foreach ($entities as $entity) {
-            $snapshots[\spl_object_id($entity)] = Accessor::get($entity, $column);
         }
 
         $batch = $this->providers->forType($type)
@@ -569,7 +596,13 @@ final class RelatedIncludeBatcher
         foreach ($entities as $entity) {
             $result = $batch->for($serializer->getId($entity));
             $items = $this->itemsOf($result);
-            $this->writeBack($entity, $relation, $column, $items, $snapshots[\spl_object_id($entity)] ?? null);
+            if ($relation->isToMany()) {
+                $this->linkages[\spl_object_id($entity)][$relation->name()] = new RelationshipLinkage($items);
+            } else {
+                $this->toOne[\spl_object_id($entity)][$relation->name()] = isset($items[0])
+                    ? ToOneRelationshipLinkage::to($items[0])
+                    : ToOneRelationshipLinkage::none();
+            }
             foreach ($items as $target) {
                 $targets[] = $target;
             }
@@ -593,7 +626,12 @@ final class RelatedIncludeBatcher
 
         $targets = [];
         foreach ($entities as $entity) {
-            $value = Accessor::get($entity, $column);
+            $objectId = \spl_object_id($entity);
+            $value = match (true) {
+                isset($this->linkages[$objectId][$relation->name()]) => $this->linkages[$objectId][$relation->name()]->data,
+                isset($this->toOne[$objectId][$relation->name()]) => $this->toOne[$objectId][$relation->name()]->target,
+                default => Accessor::get($entity, $column),
+            };
             if ($value === null) {
                 continue;
             }
@@ -622,11 +660,10 @@ final class RelatedIncludeBatcher
     }
 
     /**
-     * Whether {@see Accessor::set} can write `$column` onto `$entity` without creating
-     * a dynamic property: a declared property (a Doctrine association is always one), a
-     * `setX()` method, or explicit dynamic-property support on the class. False for a
-     * relation exposed over a column the model does not carry — e.g. a second pivot
-     * view rendered purely through `extractUsing()`.
+     * Whether `$entity` carries `$column`: a declared property (a Doctrine association
+     * is always one), a `setX()` method, or explicit dynamic-property support on the
+     * class. False for a relation exposed over a column the model does not carry, e.g.
+     * a second pivot view rendered purely through `extractUsing()`.
      */
     private function columnTakesWriteBack(object $entity, string $column): bool
     {
@@ -636,27 +673,6 @@ final class RelatedIncludeBatcher
             || $entity instanceof \stdClass
             || $entity instanceof \ArrayAccess
             || (new \ReflectionClass($entity))->getAttributes(\AllowDynamicProperties::class) !== [];
-    }
-
-    /**
-     * Writes a parent's batched-loaded related value back onto its relation column. A
-     * to-many writes the loaded list wrapped to match the column's container (the
-     * snapshot carries the container type); a to-one writes `items[0] ?? null` onto the
-     * to-one column — NEVER an array/CollectionResult, which would corrupt the to-one
-     * render. An empty to-one batch (the target is null/scoped out) leaves the loaded
-     * value `null`, matching the lazy result.
-     *
-     * @param list<object> $loaded
-     */
-    private function writeBack(object $entity, RelationInterface $relation, string $column, array $loaded, mixed $snapshot): void
-    {
-        if ($relation->isToMany()) {
-            Accessor::set($entity, $column, $this->asContainer($loaded, $snapshot));
-
-            return;
-        }
-
-        Accessor::set($entity, $column, $loaded[0] ?? null);
     }
 
     /**
@@ -708,30 +724,6 @@ final class RelatedIncludeBatcher
             ?? $server->maxIncludeDepth();
 
         return ($depth !== null && $depth <= 0) ? null : $depth;
-    }
-
-    /**
-     * Wraps a to-many's loaded list in the container the relation's column expects: a
-     * Doctrine `Collection`-typed property cannot take a raw array, so when the column
-     * held a {@see \Doctrine\Common\Collections\Collection} the list is wrapped in an
-     * {@see \Doctrine\Common\Collections\ArrayCollection}; an array (the in-memory
-     * model) keeps the plain list. The snapshot is the column's pre-batch value, so it
-     * carries the container type to preserve.
-     *
-     * @param list<object> $items
-     *
-     * @return list<object>|\Doctrine\Common\Collections\Collection<int, object>
-     */
-    private function asContainer(array $items, mixed $snapshot): array|object
-    {
-        if (
-            $snapshot instanceof \Doctrine\Common\Collections\Collection
-            && \class_exists(\Doctrine\Common\Collections\ArrayCollection::class)
-        ) {
-            return new \Doctrine\Common\Collections\ArrayCollection($items);
-        }
-
-        return $items;
     }
 
     /**
