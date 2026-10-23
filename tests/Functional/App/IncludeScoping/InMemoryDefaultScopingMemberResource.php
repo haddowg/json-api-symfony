@@ -7,7 +7,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\IncludeScoping;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 use haddowg\JsonApiBundle\Operation\Operation;
 
-#[AsJsonApiResource(operations: [Operation::FetchCollection, Operation::FetchOne, Operation::Update])]
+#[AsJsonApiResource(operations: [Operation::FetchCollection, Operation::FetchOne, Operation::Create, Operation::Update])]
 final class InMemoryDefaultScopingMemberResource extends BaseScopingMemberResource
 {
     public static string $type = 'members';

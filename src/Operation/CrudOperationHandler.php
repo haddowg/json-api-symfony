@@ -69,6 +69,7 @@ use haddowg\JsonApiBundle\DataProvider\RelatedIncludeBatcher;
 use haddowg\JsonApiBundle\DataProvider\RelationCountBatcher;
 use haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory;
 use haddowg\JsonApiBundle\DataProvider\RelationshipWindowBatcher;
+use haddowg\JsonApiBundle\DataProvider\ScopedLinkageGuard;
 use haddowg\JsonApiBundle\Event\AfterCreateEvent;
 use haddowg\JsonApiBundle\Event\AfterDeleteEvent;
 use haddowg\JsonApiBundle\Event\AfterFetchCollectionEvent;
@@ -200,6 +201,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // The output timezone holder render paths outside a resource's attributes read
         // (pivot meta, bundle ADR 0123), set per operation from its Server.
         private readonly ?RequestScopedOutputTimezone $outputTimezone = null,
+        // Applies the related endpoint's scope to written linkage (bundle ADR 0126).
+        private readonly ?ScopedLinkageGuard $linkageGuard = null,
     ) {}
 
     public function handle(\haddowg\JsonApi\Operation\JsonApiOperationInterface $operation): DataResponse|RelatedResponse|IdentifierResponse|MetaResponse|NoContentResponse|AcceptedResponse|SeeOtherResponse|AtomicResultsResponse|ErrorResponse
@@ -1371,6 +1374,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $existingPivot = $mode !== Mode::Remove && $relation instanceof BelongsToMany && $relation->pivotFields() !== []
             ? $this->providers->forType($type)->fetchRelationshipPivot($type, $parent, $relation)
             : [];
+        // A member the scope hides validates as a new one, as a missing one would.
+        if ($existingPivot !== [] && $linkage instanceof ToManyRelationship && $this->linkageGuard !== null) {
+            $existingPivot = $this->linkageGuard->visiblePivot($relation, $existingPivot, $linkage);
+        }
         $this->validateLinkage($relation, $linkage, $mode, $existingPivot);
 
         $request = $this->jsonApiRequest($operation->context());
@@ -1380,7 +1387,31 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // which may replace the linkage response (post-commit).
         $this->dispatch(new BeforeRelationshipMutateEvent($type, $request, $parent, $relation, $linkage, $mode, $this->serverName($request)));
 
-        $parent = $this->persisters->forType($type)->mutateRelationship($type, $parent, $relation, $linkage, $mode);
+        // Linkage naming a resource the related endpoint does not serve is rejected as
+        // missing, and a replace keeps the members the scope hides (bundle ADR 0126).
+        $scopedLinkage = $this->linkageGuard?->scope($server, $parent, $relation, $linkage, $mode, $request) ?? $linkage;
+
+        // The response renders the relationship's scoped linkage, which a polymorphic
+        // to-many cannot supply: refuse it before anything is written.
+        if ($this->linkageGuard?->isScopedPolymorphicToMany($relation) === true) {
+            throw new \LogicException(\sprintf(
+                'Relationship "%s" of type "%s" is a polymorphic to-many reaching a type its data provider scopes, so its linkage cannot be rendered after a mutation.',
+                $relationshipName,
+                $type,
+            ));
+        }
+
+        $parent = $this->persisters->forType($type)->mutateRelationship($type, $parent, $relation, $scopedLinkage, $mode);
+
+        // Render the linkage `GET` on the relationship endpoint serves (unpaginated), not
+        // the model's members, which still include the ones the scope hides.
+        $this->relationshipLinkage?->set(null);
+        $members = $this->linkageGuard?->scopedMembers($parent, $relation, $request);
+        $this->relationshipLinkage?->setIncluded(match (true) {
+            $members !== null => new WindowedRelationshipLinkage([\spl_object_id($parent) => [$relationshipName => new RelationshipLinkage($members)]]),
+            !$relation->isToMany() => $this->includeBatcher?->scopeRelationship($server, $type, $parent, $relation, $request),
+            default => null,
+        });
 
         $response = IdentifierResponse::forRelationship($parent, $server->serializerFor($type), $relationshipName);
 
@@ -1801,7 +1832,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // parent) sees a related model associated in the SAME request body (ADR 0085).
         // Relationships are still stripped from the hydrate body, so core's
         // hydrateRelationships() stays a no-op (no scalar-id assignment, ADR 0018).
-        $this->applyRelationships($persister, $type, $entity, $relationships, $body, creating: true);
+        $this->applyRelationships($server, $persister, $type, $entity, $relationships, $body, creating: true);
 
         $entity = $server->hydratorFor($type)->hydrate($this->withoutRelationships($body), $entity);
         \assert(\is_object($entity));
@@ -1910,7 +1941,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // from the hydrate body, so core's hydrateRelationships() stays a no-op.
         $relationships = $this->extractRelationships($server, $type, $body, creating: false);
 
-        $this->applyRelationships($persister, $type, $entity, $relationships, $body, creating: false);
+        $this->applyRelationships($server, $persister, $type, $entity, $relationships, $body, creating: false);
 
         // An `on()` attribute writes onto the target its relation's related endpoint
         // serves: scope the hops this body did not just set (bundle ADR 0125).
@@ -2072,6 +2103,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * @param list<array{relation: RelationInterface, linkage: ToOneRelationship|ToManyRelationship}> $relationships
      */
     private function applyRelationships(
+        Server $server,
         DataPersisterInterface $persister,
         string $type,
         object $entity,
@@ -2095,7 +2127,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $type,
                 $entity,
                 $relationship['relation'],
-                $relationship['linkage'],
+                $this->linkageGuard?->scope($server, $entity, $relationship['relation'], $relationship['linkage'], Mode::Replace, $body, $creating)
+                    ?? $relationship['linkage'],
                 Mode::Replace,
                 flush: false,
             );
@@ -2236,6 +2269,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             }
 
             $pivot = $provider->fetchRelationshipPivot($type, $parent, $relation);
+            if ($pivot !== [] && $this->linkageGuard !== null && $body->hasToManyRelationship($name)) {
+                $pivot = $this->linkageGuard->visiblePivot($relation, $pivot, $body->getToManyRelationship($name));
+            }
             if ($pivot !== []) {
                 $existingPivots[$name] = $pivot;
             }

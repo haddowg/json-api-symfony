@@ -332,6 +332,11 @@ different provider, and one it cannot load (a polymorphic relation, or an
 `unsupported()` batch) is refused with a `500`. `AbstractDataProvider` implements it
 and returns `false`, so override it there when your reads filter.
 
+The answer governs writes too: linkage naming a scoped type is checked through your
+`fetchOne()` before any persister runs, and an id it returns `null` for is a `404`
+(see [relationships → written linkage is scoped too](relationships.md#written-linkage-is-scoped-too)).
+Make `fetchOne()` apply the same scope as your related reads.
+
 ## The in-memory provider as a worked example
 
 [`InMemoryDataProvider`](../src/DataProvider/InMemoryDataProvider.php),

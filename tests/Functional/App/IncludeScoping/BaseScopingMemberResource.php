@@ -12,7 +12,8 @@ use haddowg\JsonApi\Resource\Field\Str;
 
 /**
  * The member declaration. `agencyName` flattens the agency's name, and `party` is a
- * polymorphic view of the same to-one.
+ * polymorphic view of the same to-one. `team`, `teamName`, `teamManagerName` and
+ * `side` are their writable twins over the public `team` association.
  */
 abstract class BaseScopingMemberResource extends AbstractResource
 {
@@ -31,6 +32,10 @@ abstract class BaseScopingMemberResource extends AbstractResource
             BelongsTo::make('agency', static::PREFIX . 'agencies'),
             Str::make('agencyName')->storedAs('name')->on('agency'),
             MorphTo::make('party', [static::PREFIX . 'agencies', static::PREFIX . 'members'])->storedAs('agency'),
+            BelongsTo::make('team', static::PREFIX . 'agencies'),
+            Str::make('teamName')->storedAs('name')->on('team'),
+            Str::make('teamManagerName')->storedAs('name')->on('team.manager'),
+            MorphTo::make('side', [static::PREFIX . 'agencies', static::PREFIX . 'members'])->storedAs('team'),
         ];
     }
 }

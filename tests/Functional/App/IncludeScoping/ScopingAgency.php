@@ -25,6 +25,13 @@ class ScopingAgency
     #[ORM\OneToOne(targetEntity: ScopingMember::class, mappedBy: 'leadOf')]
     private ?ScopingMember $lead = null;
 
+    /**
+     * The writable twin of `$lead`, held on this side.
+     */
+    #[ORM\OneToOne(targetEntity: ScopingMember::class)]
+    #[ORM\JoinColumn(name: 'manager_id')]
+    public ?ScopingMember $manager = null;
+
     public function __construct(
         #[ORM\Id]
         #[ORM\Column(type: 'integer')]
@@ -53,6 +60,7 @@ class ScopingAgency
     public function setLeadFrom(ScopingMember $member): void
     {
         $this->lead = $member;
+        $this->manager = $member;
     }
 
     public function addMember(ScopingMember $member): void

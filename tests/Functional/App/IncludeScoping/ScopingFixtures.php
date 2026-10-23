@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App\IncludeScoping;
 
+use Doctrine\Common\Collections\ArrayCollection;
 use haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
+use haddowg\JsonApiBundle\DataProvider\InMemorySnapshotCoordinator;
 
 /**
  * The include-scoping graph. Agency 2 ("Soft Hidden") and member 2 are soft-hidden.
@@ -16,9 +18,17 @@ use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
  *    agency 3 ("Support");
  *  - agency 1: members 1 and 2, led by member 2; agency 2: member 4; agency 3:
  *    member 3, led by member 3.
+ *
+ * The public write twins start the same, except that advertiser 2's `partners`
+ * holds agency 3 alone.
  */
 final class ScopingFixtures
 {
+    /**
+     * @var array<string, InMemoryDataProvider>|null
+     */
+    private static ?array $providers = null;
+
     /**
      * @return array{advertisers: list<ScopingAdvertiser>, agencies: list<ScopingAgency>, members: list<ScopingMember>, placements: list<ScopingPlacement>}
      */
@@ -41,6 +51,7 @@ final class ScopingFixtures
 
         $advertiser1 = new ScopingAdvertiser(1, 'Advertiser One', [$agency1, $agency2]);
         $advertiser2 = new ScopingAdvertiser(2, 'Advertiser Two', [$agency2, $agency3]);
+        $advertiser2->partners = new ArrayCollection([$agency3]);
 
         return [
             'advertisers' => [$advertiser1, $advertiser2],
@@ -63,32 +74,54 @@ final class ScopingFixtures
      */
     public static function inMemoryProviders(): array
     {
-        static $providers = null;
-        if ($providers !== null) {
-            return $providers;
+        if (self::$providers !== null) {
+            return self::$providers;
         }
 
         $graph = self::graph();
-        $identify = static fn(object $item): string => \property_exists($item, 'id') && \is_int($item->id) ? (string) $item->id : '';
+        $identify = static fn(object $item): string => \property_exists($item, 'id') && \is_int($item->id) && $item->id > 0 ? (string) $item->id : '';
+        $assignId = static function (object $item, string $id): void {
+            \assert($item instanceof ScopingMember);
+            $item->id = (int) $id;
+        };
+        // One coordinator, so an atomic rollback restores the shared graph as one.
+        $coordinator = new InMemorySnapshotCoordinator();
 
         $providers = [];
         foreach (['' => '', 'partner-' => 'partner-'] as $prefix) {
-            foreach (['advertisers', 'agencies', 'members'] as $base) {
-                $items = $graph[$base];
+            foreach (['advertisers' => 'advertisers', 'agencies' => 'agencies', 'members' => 'members', 'mixed-advertisers' => 'advertisers'] as $base => $source) {
+                $items = $graph[$source];
                 $byId = [];
                 foreach ($items as $item) {
                     $byId[(string) $item->id] = $item;
                 }
-                $providers[$prefix . $base] = new InMemoryDataProvider($prefix . $base, $byId, $identify);
+                $providers[$prefix . $base] = new InMemoryDataProvider($prefix . $base, $byId, $identify, $assignId, coordinator: $coordinator);
             }
         }
 
-        return $providers;
+        return self::$providers = $providers;
     }
 
+    /**
+     * Drops the shared in-memory graph, so the next kernel serves a fresh one.
+     */
+    public static function reset(): void
+    {
+        self::$providers = null;
+    }
+
+    /**
+     * A persister for `$type` that resolves linkage ids straight from the stores, so
+     * it would attach a hidden row if nothing scoped the ids first.
+     */
     public static function inMemoryPersister(string $type): InMemoryDataPersister
     {
-        return new InMemoryDataPersister($type, self::inMemoryProvider($type)->store(), static fn(): ScopingMember => new ScopingMember(0, ''));
+        return new InMemoryDataPersister(
+            $type,
+            self::inMemoryProvider($type)->store(),
+            static fn(): ScopingMember => new ScopingMember(0, ''),
+            static fn(string $relatedType, string $id): ?object => self::inMemoryProvider($relatedType)->store()->find($id),
+        );
     }
 
     public static function inMemoryProvider(string $type): InMemoryDataProvider

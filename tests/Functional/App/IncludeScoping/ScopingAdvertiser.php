@@ -10,7 +10,8 @@ use Doctrine\ORM\Mapping as ORM;
 
 /**
  * The parent of the include-scoping suite. Its `agencies` collection is private with
- * a getter and no setter, so nothing outside the entity can assign it.
+ * a getter and no setter, so nothing outside the entity can assign it; `partners`
+ * starts as the same agencies and is public, for the write cases.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'scoping_advertiser')]
@@ -24,10 +25,19 @@ class ScopingAdvertiser
     private Collection $agencies;
 
     /**
+     * The writable twin of `$agencies`, a list once the in-memory persister writes it.
+     *
+     * @var iterable<int, ScopingAgency>
+     */
+    #[ORM\ManyToMany(targetEntity: ScopingAgency::class)]
+    #[ORM\JoinTable(name: 'scoping_advertiser_partner')]
+    public iterable $partners;
+
+    /**
      * @var Collection<int, ScopingPlacement>
      */
     #[ORM\OneToMany(targetEntity: ScopingPlacement::class, mappedBy: 'advertiser')]
-    private Collection $placements;
+    public Collection $placements;
 
     /**
      * @param list<ScopingAgency> $agencies
@@ -41,6 +51,7 @@ class ScopingAdvertiser
         array $agencies = [],
     ) {
         $this->agencies = new ArrayCollection($agencies);
+        $this->partners = new ArrayCollection($agencies);
         $this->placements = new ArrayCollection();
     }
 

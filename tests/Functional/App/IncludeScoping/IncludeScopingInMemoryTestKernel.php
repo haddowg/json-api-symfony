@@ -70,6 +70,7 @@ final class IncludeScopingInMemoryTestKernel extends Kernel
             'servers' => [
                 'partner' => ['base_uri' => 'https://partner.test'],
             ],
+            'atomic_operations' => ['enabled' => true],
         ]);
 
         $services = $container->services()
@@ -86,6 +87,8 @@ final class IncludeScopingInMemoryTestKernel extends Kernel
         $services->set(InMemoryPartnerScopingAdvertiserResource::class);
         $services->set(InMemoryPartnerScopingAgencyResource::class);
         $services->set(InMemoryPartnerScopingMemberResource::class);
+        $services->set(InMemoryDefaultScopingMixedAdvertiserResource::class);
+        $services->set(InMemoryPartnerScopingMixedAdvertiserResource::class);
 
         $services->set(OpaqueAdvertiserResource::class);
         $services->set(OpaqueAgencyResource::class);
@@ -98,7 +101,7 @@ final class IncludeScopingInMemoryTestKernel extends Kernel
                 ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
         }
 
-        foreach (['advertisers', 'partner-advertisers'] as $type) {
+        foreach (['advertisers', 'partner-advertisers', 'mixed-advertisers', 'partner-mixed-advertisers'] as $type) {
             $services->set('test.scoping_provider.' . $type, InMemoryDataProvider::class)
                 ->factory([ScopingFixtures::class, 'inMemoryProvider'])
                 ->args([$type])
@@ -113,7 +116,7 @@ final class IncludeScopingInMemoryTestKernel extends Kernel
                 ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
         }
 
-        foreach (['members', 'partner-members'] as $type) {
+        foreach (['advertisers', 'agencies', 'members', 'mixed-advertisers', 'partner-advertisers', 'partner-agencies', 'partner-members', 'partner-mixed-advertisers'] as $type) {
             $services->set('test.scoping_persister.' . $type, \haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister::class)
                 ->factory([ScopingFixtures::class, 'inMemoryPersister'])
                 ->args([$type])

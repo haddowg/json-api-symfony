@@ -966,6 +966,43 @@ A provider tells the bundle whether its related reads are scoped by implementing
 The Doctrine provider reports a relation scoped when any query extension supports one
 of its related types; the in-memory provider never does.
 
+### Written linkage is scoped too
+
+The same scope governs the linkage a write sends: `data.relationships` in a create or
+update, the `…/relationships/{rel}` endpoints, and atomic operations (after their `lid`s
+resolve). Before the persister runs, each identifier of a scoped type is loaded through
+that type's provider `fetchOne()`, as `GET /{type}/{id}` would load it. A `MorphTo` or
+`MorphToMany` identifier is checked against the type it names. An identifier the
+provider does not return gets the response JSON:API prescribes for a related resource
+that does not exist, whether the row is hidden or missing:
+
+```json
+{"errors": [{"status": "404", "code": "RESOURCE_NOT_FOUND", "title": "Resource not found"}]}
+```
+
+That holds for adding, replacing and removing members, for setting a to-one, and for a
+pivot member's `meta.pivot` (a hidden member's pivot also validates as a new member's).
+In an atomic batch the error rolls the whole batch back.
+
+A to-many replace (a `PATCH` to the relationship endpoint, or the relationship in a
+resource body) changes only the members the client can see. Members the scope hides
+stay, with their pivot rows, and the response lists only the visible members:
+
+```
+advertiser 1 partners: agencies 1, 2 (agency 2 hidden)
+PATCH /advertisers/1/relationships/partners {"data":[{"type":"agencies","id":"3"}]}
+→ 200 {"data":[{"type":"agencies","id":"3"}]}, stored: agencies 2, 3
+```
+
+A to-one has one slot, so a client allowed to write it replaces, or clears, whatever it
+holds.
+
+A relation whose types are unscoped keeps resolving ids straight through the persister,
+unchecked. A relationship endpoint mutation of a polymorphic to-many reaching a scoped
+type is refused with a `500` before it writes, since its linkage cannot be rendered
+scoped. The decision is recorded in
+[ADR 0126](adr/0126-written-linkage-resolves-through-the-related-endpoints-scope.md).
+
 ## Polymorphic relationships
 
 A `MorphTo` to-one and a `MorphToMany` to-many point across several related

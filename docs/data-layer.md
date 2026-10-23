@@ -190,6 +190,10 @@ interface DataPersisterInterface
   `meta` off the `ToManyRelationship` here and applies the association-entity diff
   (upsert / reorder-in-place / remove) — Doctrine-only; a custom persister owns its
   own pivot handling (see [doctrine.md](doctrine.md#belongstomany-pivot-data)).
+  When a related type is scoped, the handler has already rejected identifiers its
+  provider does not serve, and a `Replace` linkage also carries the current members the
+  scope hides, so applying it as given leaves them in place (see
+  [relationships → written linkage is scoped too](relationships.md#written-linkage-is-scoped-too)).
 
 #### The `$flush` subtlety
 

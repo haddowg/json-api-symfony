@@ -95,6 +95,7 @@ abstract class AbstractIncludeScopingDoctrineKernel extends Kernel
             'servers' => [
                 'partner' => ['base_uri' => 'https://partner.test'],
             ],
+            'atomic_operations' => ['enabled' => true],
         ]);
 
         $services = $container->services()
@@ -111,6 +112,8 @@ abstract class AbstractIncludeScopingDoctrineKernel extends Kernel
         $services->set($this->advertiserResources()[1]);
         $services->set(PartnerScopingAgencyResource::class);
         $services->set(PartnerScopingMemberResource::class);
+        $services->set(DefaultScopingMixedAdvertiserResource::class);
+        $services->set(PartnerScopingMixedAdvertiserResource::class);
         $this->scope($services);
 
         $services->alias('test.scoping_include_batcher', \haddowg\JsonApiBundle\DataProvider\RelatedIncludeBatcher::class)->public();

@@ -14,7 +14,8 @@ use haddowg\JsonApi\Resource\Field\Str;
  * The advertiser declaration, shared by the default-server and named-server types.
  * `agencies` is a belongsToMany over a plain many-to-many, `listedAgencies` reads the
  * same association but always emits its linkage data, and `curatedAgencies` is
- * computed by its own closure.
+ * computed by its own closure. `partners` writes the public twin of the same
+ * association.
  */
 abstract class BaseScopingAdvertiserResource extends AbstractResource
 {
@@ -32,6 +33,7 @@ abstract class BaseScopingAdvertiserResource extends AbstractResource
                     ? \array_values(\array_filter($model->getAgencyList(), static fn(ScopingAgency $agency): bool => !$agency->hidden))
                     : [],
             ),
+            BelongsToMany::make('partners', static::PREFIX . 'agencies'),
         ];
     }
 }

@@ -248,6 +248,7 @@ return static function (ContainerConfigurator $container): void {
     // Routes each relation's document reads (includes, linkage, counts, the window)
     // to the provider whose reads match the related endpoint (bundle ADR 0125).
     $services->set(\haddowg\JsonApiBundle\DataProvider\RelatedReadRouter::class);
+    $services->set(\haddowg\JsonApiBundle\DataProvider\ScopedLinkageGuard::class);
     $services->set(\haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipCount::class);
     $services->set(\haddowg\JsonApiBundle\DataProvider\RelationCountBatcher::class);
 

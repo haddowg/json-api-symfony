@@ -15,6 +15,8 @@ class ScopingPlacement
 {
     public function __construct(
         #[ORM\Id]
+        #[ORM\GeneratedValue(strategy: 'CUSTOM')]
+        #[ORM\CustomIdGenerator(class: ScopingIdGenerator::class)]
         #[ORM\Column(type: 'integer')]
         public int $id,
         #[ORM\ManyToOne(targetEntity: ScopingAdvertiser::class, inversedBy: 'placements')]

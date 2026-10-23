@@ -10,7 +10,8 @@ use haddowg\JsonApi\Resource\Field\Str;
 
 /**
  * The Doctrine advertiser's pivot relations over {@see ScopingPlacement}: `placedAgencies`
- * (paginated) and `listedPlacedAgencies`, which always emits its linkage data.
+ * (paginated, its `role` required for a new member) and `listedPlacedAgencies`, which
+ * always emits its linkage data.
  */
 trait DeclaresScopingPivotRelations
 {
@@ -22,7 +23,7 @@ trait DeclaresScopingPivotRelations
             ...parent::fields(),
             BelongsToMany::make('placedAgencies', static::PREFIX . 'agencies')
                 ->through(ScopingPlacement::class)
-                ->fields(Str::make('role')->build())
+                ->fields(Str::make('role')->requiredOnCreate()->build())
                 ->extractUsing($placed)
                 ->paginate(PagePaginator::make()),
             BelongsToMany::make('listedPlacedAgencies', static::PREFIX . 'agencies')
