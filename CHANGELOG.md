@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.4.1](https://github.com/haddowg/json-api-symfony/compare/v1.4.0...v1.4.1) (2026-10-23)
+
+
+### Bug Fixes
+
+* fold stored empty maps into update validation as arrays ([c5df608](https://github.com/haddowg/json-api-symfony/commit/c5df608dab2fbc3564c970fc3e03909b5fa3c0b2))
+* keep empty maps as objects in atomic results ([c5df608](https://github.com/haddowg/json-api-symfony/commit/c5df608dab2fbc3564c970fc3e03909b5fa3c0b2))
+* **testing:** fill in schema conformance failure messages ([#151](https://github.com/haddowg/json-api-symfony/issues/151)) ([3065a0a](https://github.com/haddowg/json-api-symfony/commit/3065a0a2862aa1b87f8f8780e386dc8702998bdc))
+* validate attribute values against their schema with objects kept ([c5df608](https://github.com/haddowg/json-api-symfony/commit/c5df608dab2fbc3564c970fc3e03909b5fa3c0b2))
+
+
+### Miscellaneous Chores
+
+* **deps:** require haddowg/json-api ^1.2.1 ([c5df608](https://github.com/haddowg/json-api-symfony/commit/c5df608dab2fbc3564c970fc3e03909b5fa3c0b2))
+
 ## [1.4.0](https://github.com/haddowg/json-api-symfony/compare/v1.3.0...v1.4.0) (2026-10-22)
 
 
