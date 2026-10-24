@@ -1658,7 +1658,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         $relations = [];
         $maps = [];
-        foreach ($this->types->relationsFor($server, $type) as $relation) {
+        foreach ($this->types->readableRelationsFor($server, $type, $request) as $relation) {
             // Only a belongsToMany carries pivot fields; a relation whose related type
             // has no pivot-aware provider (or no pivot association) contributes nothing.
             if (!$relation instanceof BelongsToMany) {

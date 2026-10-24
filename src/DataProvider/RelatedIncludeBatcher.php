@@ -291,7 +291,7 @@ final class RelatedIncludeBatcher
 
         $this->eagerLoad($server, $serializer, $entities, $type, $request, $loaded, $linkages);
 
-        $relations = $this->types->relationsFor($server, $type);
+        $relations = $this->types->readableRelationsFor($server, $type, $request);
         if ($relations === []) {
             return;
         }

@@ -71,7 +71,7 @@ final class RelationCountBatcher
             return null;
         }
 
-        $relations = $this->countableRelations($server, $type, $requested);
+        $relations = $this->countableRelations($server, $type, $requested, $request);
         if ($relations === []) {
             return null;
         }
@@ -173,12 +173,12 @@ final class RelationCountBatcher
      *
      * @return list<RelationInterface>
      */
-    private function countableRelations(Server $server, string $type, array $requested): array
+    private function countableRelations(Server $server, string $type, array $requested, JsonApiRequestInterface $request): array
     {
         $wanted = \array_flip($requested);
 
         $relations = [];
-        foreach ($this->types->relationsFor($server, $type) as $relation) {
+        foreach ($this->types->readableRelationsFor($server, $type, $request) as $relation) {
             if ($relation->isToMany()
                 && $relation->isCountable()
                 && isset($wanted[$relation->name()])) {

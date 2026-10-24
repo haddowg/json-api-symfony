@@ -108,7 +108,7 @@ final class RelationshipWindowBatcher
             return null;
         }
 
-        $allRelations = $this->types->relationsFor($server, $type);
+        $allRelations = $this->types->readableRelationsFor($server, $type, $request);
 
         // The monomorphic to-one relations addressed by a filter-only relatedQuery: a
         // relation filter that excludes a to-one's single target nulls the linkage (and
