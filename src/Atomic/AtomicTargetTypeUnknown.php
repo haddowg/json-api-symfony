@@ -8,9 +8,10 @@ use haddowg\JsonApi\Exception\JsonApiExceptionInterface;
 use haddowg\JsonApi\Schema\Error\Error;
 
 /**
- * An atomic operation targets a resource type no data source can write — the
+ * An atomic operation targets a resource type the batch cannot write — the
  * `data.type` of an `add`, or the `ref.type`/resolved `href` type of an
- * `update`/`remove`, names a type for which no {@see \haddowg\JsonApiBundle\DataPersister\DataPersisterInterface}
+ * `update`/`remove`, names a type that is not registered on the batch's server, or
+ * one for which no {@see \haddowg\JsonApiBundle\DataPersister\DataPersisterInterface}
  * is registered.
  *
  * Inside a batch there is no routing step to reject an unknown type first (unlike a
@@ -25,8 +26,8 @@ final class AtomicTargetTypeUnknown extends \RuntimeException implements JsonApi
     public function __construct(public readonly string $type)
     {
         parent::__construct(\sprintf(
-            'The atomic operation targets the JSON:API type "%s", which no data source can write: no data '
-            . 'persister is registered for it.',
+            'The atomic operation targets the JSON:API type "%s", which this server does not register or no '
+            . 'data persister can write.',
             $type,
         ));
     }
