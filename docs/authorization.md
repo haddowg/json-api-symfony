@@ -94,6 +94,10 @@ how you carve out the public ones (`securityRead: false` for the single read,
   so a caller can't turn a resource into one the expression would refuse them, such as
   handing it to another user. An Atomic Operations `update` is gated the same way. A
   relationship mutation is gated once, against the parent before the change.
+- **Moving a related resource out of another parent is gated.** On the inverse side
+  of a Doctrine one-to-many, adding a member that belongs to another parent moves it.
+  The move needs the caller to pass the update gate of the parent it leaves, or of the
+  member itself; see [Moving a child between parents](doctrine.md#moving-a-child-between-parents).
 - **Writes are gated at the *before* hook**, so a denial throws before the persister
   runs: no row is created, updated, or deleted, and no relationship is mutated. The
   store is left exactly as it was.

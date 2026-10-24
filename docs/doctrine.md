@@ -410,6 +410,21 @@ precondition the unit of work needs to schedule the orphan delete. This is the
 Doctrine-native equivalent of Laravel's `deleteDetached` — declared on the mapping,
 not a resource flag.
 
+### Moving a child between parents
+
+On an inverse one-to-many each child points at exactly one parent, so adding a child
+to `articles/1` that currently belongs to `articles/2` takes it out of `articles/2`.
+Before an add or replace, the persister reports each child whose parent would change
+(`ReportsMovedMembersInterface`), and the handler dispatches a `BeforeMemberMoveEvent`
+for it. The bundle's security subscriber allows the move when the caller passes the
+relation's mutate gate (or the type's `securityUpdate`) for the parent the child
+leaves, or the child type's `securityUpdate` for the child itself. A child with no
+parent needs the latter. Anything else is a `403`, and nothing is written. A type with
+no security declared moves children as before.
+
+A remove only detaches current members. Naming a child that belongs to another parent
+leaves it where it is, as the JSON:API spec requires of removing a non-member.
+
 ### Constructor-less instantiation
 
 On create, the persister builds a blank instance via

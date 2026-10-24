@@ -14,18 +14,21 @@ use Symfony\Component\Security\Core\Authorization\Voter\Voter;
  * the authenticated user's identifier equals the entity's `owner`. The keystone
  * per-object authorization the security expression delegates to (bundle ADR 0043).
  *
- * @extends Voter<string, OwnedWidgetEntity>
+ * It also grants `EDIT` on the owned folder and note fixtures by the same rule.
+ *
+ * @extends Voter<string, OwnedWidgetEntity|OwnedFolderEntity|OwnedNoteEntity>
  */
 final class OwnedWidgetVoter extends Voter
 {
     protected function supports(string $attribute, mixed $subject): bool
     {
-        return $attribute === 'EDIT' && $subject instanceof OwnedWidgetEntity;
+        return $attribute === 'EDIT'
+            && ($subject instanceof OwnedWidgetEntity || $subject instanceof OwnedFolderEntity || $subject instanceof OwnedNoteEntity);
     }
 
     protected function voteOnAttribute(string $attribute, mixed $subject, TokenInterface $token, ?Vote $vote = null): bool
     {
-        \assert($subject instanceof OwnedWidgetEntity);
+        \assert($subject instanceof OwnedWidgetEntity || $subject instanceof OwnedFolderEntity || $subject instanceof OwnedNoteEntity);
         $user = $token->getUser();
         if ($user === null) {
             return false;
