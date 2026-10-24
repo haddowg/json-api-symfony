@@ -60,7 +60,7 @@ final class TrackResource extends AbstractResource
         return [
             Id::make(),
             Str::make('title')->required()->sortable(),
-            Integer::make('trackNumber')->min(1)->sortable()->guaranteed(),
+            Integer::make('trackNumber')->required()->min(1)->sortable(),
             // The JSON:API member `durationSeconds` is stored on the entity's
             // `length_seconds` column — a storedAs() rename round-trips transparently.
             Integer::make('durationSeconds')->storedAs('length_seconds')->guaranteed(),

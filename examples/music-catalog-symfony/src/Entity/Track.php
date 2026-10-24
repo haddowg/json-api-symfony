@@ -48,9 +48,11 @@ class Track
      */
     public function __construct(
         #[ORM\Column]
-        public string $title = '',
+        public string $title,
+        // No default: a track's position on its album has no sensible fallback, so
+        // every create has to supply one (the API requires it too).
         #[ORM\Column(type: 'integer')]
-        public int $trackNumber = 0,
+        public int $trackNumber,
         // The storage column the `durationSeconds` field renames via storedAs().
         #[ORM\Column(name: 'length_seconds', type: 'integer')]
         public int $length_seconds = 0,

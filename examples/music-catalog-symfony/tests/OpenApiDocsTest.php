@@ -396,6 +396,9 @@ final class OpenApiDocsTest extends MusicCatalogKernelTestCase
         self::assertSame('string', $this->nested($schemas, 'CatalogExportsAttributes', 'properties', 'status')['type'] ?? null);
         self::assertSame('boolean', $this->nested($schemas, 'AlbumsAttributes', 'properties', 'explicit')['type'] ?? null);
 
+        // Every create must supply it, which guarantees it without guaranteed().
+        self::assertSame('integer', $this->nested($schemas, 'TracksAttributes', 'properties', 'trackNumber')['type'] ?? null);
+
         // Read-only but only seeded, so an album created over the API can lack it.
         $catalogueNumber = $this->nested($schemas, 'AlbumsAttributes', 'properties', 'releaseInfo', 'properties', 'catalogueNumber');
         self::assertSame(['string', 'null'], $catalogueNumber['type'] ?? null);

@@ -43,6 +43,22 @@ final class ValidationTest extends MusicCatalogKernelTestCase
 
     #[Test]
     #[Group('spec:creating-resources')]
+    public function creatingATrackWithoutATrackNumberReturns422WithAPointer(): void
+    {
+        // A track has no default position, so omitting it fails validation rather
+        // than reaching the NOT NULL column.
+        $response = $this->handle('/tracks', 'POST', [
+            'data' => ['type' => 'tracks', 'attributes' => [
+                'title' => 'A fine title', 'durationSeconds' => 10, 'genres' => ['rock'],
+            ]],
+        ]);
+
+        self::assertSame(422, $response->getStatusCode());
+        self::assertSame(['/data/attributes/trackNumber'], $this->pointers($response));
+    }
+
+    #[Test]
+    #[Group('spec:creating-resources')]
     public function creatingWithAValueBelowAMinimumReturns422AtThatPointer(): void
     {
         // `trackNumber` carries min(1): zero fails GreaterThanOrEqual.
