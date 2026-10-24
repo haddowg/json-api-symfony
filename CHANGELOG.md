@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.5.0](https://github.com/haddowg/json-api-symfony/compare/v1.4.2...v1.5.0) (2026-10-24)
+
+
+### Features
+
+* leave write-only relations out of reads and the OpenAPI read side ([#163](https://github.com/haddowg/json-api-symfony/issues/163)) ([5c35ee2](https://github.com/haddowg/json-api-symfony/commit/5c35ee285ee93682b9456b668496ed339009dc67))
+* **openapi:** declare vendor extensions on #[AsJsonApiResource] ([0634964](https://github.com/haddowg/json-api-symfony/commit/063496400a6a9cf27591759524a2b7bd9bc94409))
+
+
+### Bug Fixes
+
+* fail the container build when declared resource security can't be enforced ([#164](https://github.com/haddowg/json-api-symfony/issues/164)) ([2eb9d8f](https://github.com/haddowg/json-api-symfony/commit/2eb9d8f921889d55f035918482d85bfb4503a373))
+* let a required boolean or number accept false and zero ([#157](https://github.com/haddowg/json-api-symfony/issues/157)) ([f82158e](https://github.com/haddowg/json-api-symfony/commit/f82158ee0859404a6459a05450540adfc38fa400))
+* **openapi:** document the paginator a related endpoint serves ([#161](https://github.com/haddowg/json-api-symfony/issues/161)) ([4b53cb2](https://github.com/haddowg/json-api-symfony/commit/4b53cb2ef3f9260bae7b42f819285a410b2accca))
+* **testing:** resolve expectResource() by the model's entity class ([#162](https://github.com/haddowg/json-api-symfony/issues/162)) ([722bdc5](https://github.com/haddowg/json-api-symfony/commit/722bdc52834a9d95d93730c3f4f2b3bc87ee3da5))
+
+
+### Miscellaneous Chores
+
+* **example:** mark server-filled read attributes guaranteed ([#159](https://github.com/haddowg/json-api-symfony/issues/159)) ([e4e2abd](https://github.com/haddowg/json-api-symfony/commit/e4e2abd388d04893924d1062789614efb4df238b))
+
 ## [1.4.2](https://github.com/haddowg/json-api-symfony/compare/v1.4.1...v1.4.2) (2026-10-23)
 
 
