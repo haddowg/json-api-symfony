@@ -667,13 +667,7 @@ final class ResourceValidator
             return null;
         }
 
-        return new Error(
-            status: '409',
-            code: 'RESOURCE_TYPE_UNACCEPTABLE',
-            title: 'Resource type is unacceptable',
-            detail: \sprintf("Resource type '%s' is unacceptable for relationship '%s'!", $type, $relation->name()),
-            source: ErrorSource::fromPointer($pointer),
-        );
+        return RelationshipTypeUnacceptable::error($relation, $type, $pointer);
     }
 
     /**

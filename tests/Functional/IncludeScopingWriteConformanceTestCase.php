@@ -428,6 +428,128 @@ abstract class IncludeScopingWriteConformanceTestCase extends JsonApiFunctionalT
         self::assertSame(1, $this->storedTeamId($prefix, 5));
     }
 
+    #[Test]
+    #[TestWith(['', '', 'zz'], 'default server, unknown type')]
+    #[TestWith(['', '', 'agencies'], 'default server, accepted type')]
+    #[TestWith(['/partner', 'partner-', 'zz'], 'named server, unknown type')]
+    #[TestWith(['/partner', 'partner-', 'partner-agencies'], 'named server, accepted type')]
+    public function anUpdateWhoseAttributesIsNotAnObjectWritesNoLinkage(string $mount, string $prefix, string $linkageType): void
+    {
+        $response = $this->handle($mount . '/' . $prefix . 'members/1', 'PATCH', [
+            'data' => [
+                'type' => $prefix . 'members',
+                'id' => '1',
+                'attributes' => 0,
+                'relationships' => ['team' => ['data' => ['type' => $linkageType, 'id' => '2']]],
+            ],
+        ]);
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame('REQUEST_BODY_INVALID_JSON_API', $this->errorCode($response));
+        self::assertSame('/data/attributes', $this->value($this->decode($response), 'errors', '0', 'source', 'pointer'));
+        self::assertSame(1, $this->storedTeamId($prefix, 1));
+
+        $response = $this->handle($mount . '/' . $prefix . 'advertisers/2', 'PATCH', [
+            'data' => [
+                'type' => $prefix . 'advertisers',
+                'id' => '2',
+                'attributes' => 'x',
+                'relationships' => ['partners' => ['data' => [['type' => $linkageType, 'id' => '2']]]],
+            ],
+        ]);
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame([3], $this->storedPartnerIds($prefix, 2));
+    }
+
+    #[Test]
+    #[TestWith(['', ''], 'default server')]
+    #[TestWith(['/partner', 'partner-'], 'named server')]
+    public function aResourceWriteWithALinkageTypeTheRelationDoesNotAcceptIsRefused(string $mount, string $prefix): void
+    {
+        $response = $this->handle($mount . '/' . $prefix . 'members/1', 'PATCH', [
+            'data' => [
+                'type' => $prefix . 'members',
+                'id' => '1',
+                'attributes' => ['name' => 'Renamed'],
+                'relationships' => ['team' => ['data' => ['type' => 'zz', 'id' => '2']]],
+            ],
+        ]);
+        $this->assertTypeUnacceptable($response, '/data/relationships/team/data/type');
+        self::assertSame(1, $this->storedTeamId($prefix, 1));
+
+        $response = $this->handle($mount . '/' . $prefix . 'advertisers/2', 'PATCH', [
+            'data' => [
+                'type' => $prefix . 'advertisers',
+                'id' => '2',
+                'relationships' => ['partners' => ['data' => [['type' => $prefix . 'agencies', 'id' => '3'], ['type' => 'zz', 'id' => '2']]]],
+            ],
+        ]);
+        $this->assertTypeUnacceptable($response, '/data/relationships/partners/data/1/type');
+        self::assertSame([3], $this->storedPartnerIds($prefix, 2));
+
+        $response = $this->handle($mount . '/' . $prefix . 'members', 'POST', [
+            'data' => [
+                'type' => $prefix . 'members',
+                'attributes' => ['name' => 'New'],
+                'relationships' => ['team' => ['data' => ['type' => 'zz', 'id' => '2']]],
+            ],
+        ]);
+        $this->assertTypeUnacceptable($response, '/data/relationships/team/data/type');
+        self::assertSame(4, $this->storedMemberCount($prefix));
+    }
+
+    #[Test]
+    #[TestWith(['', ''], 'default server')]
+    #[TestWith(['/partner', 'partner-'], 'named server')]
+    public function aRelationshipEndpointLinkageTypeTheRelationDoesNotAcceptIsRefused(string $mount, string $prefix): void
+    {
+        $response = $this->handle($mount . '/' . $prefix . 'members/1/relationships/team', 'PATCH', [
+            'data' => ['type' => 'zz', 'id' => '2'],
+        ]);
+        $this->assertTypeUnacceptable($response, '/data/type');
+        self::assertSame(1, $this->storedTeamId($prefix, 1));
+
+        $response = $this->handle($mount . '/' . $prefix . 'members/1/relationships/side', 'PATCH', [
+            'data' => ['type' => 'zz', 'id' => '2'],
+        ]);
+        $this->assertTypeUnacceptable($response, '/data/type');
+        self::assertSame(1, $this->storedTeamId($prefix, 1));
+
+        foreach (['POST', 'PATCH'] as $method) {
+            $response = $this->handle($mount . '/' . $prefix . 'advertisers/2/relationships/partners', $method, [
+                'data' => [['type' => 'zz', 'id' => '2']],
+            ]);
+            $this->assertTypeUnacceptable($response, '/data/0/type');
+            self::assertSame([3], $this->storedPartnerIds($prefix, 2));
+        }
+    }
+
+    #[Test]
+    #[TestWith(['', ''], 'default server')]
+    #[TestWith(['/partner', 'partner-'], 'named server')]
+    public function anAtomicLinkageTypeTheRelationDoesNotAcceptRollsBack(string $mount, string $prefix): void
+    {
+        $response = $this->atomic($mount, [
+            [
+                'op' => 'update',
+                'ref' => ['type' => $prefix . 'members', 'id' => '1', 'relationship' => 'team'],
+                'data' => ['type' => 'zz', 'id' => '2'],
+            ],
+        ]);
+
+        self::assertSame(409, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame('RESOURCE_TYPE_UNACCEPTABLE', $this->errorCode($response));
+        self::assertSame(1, $this->storedTeamId($prefix, 1));
+    }
+
+    private function assertTypeUnacceptable(Response $response, string $pointer): void
+    {
+        self::assertSame(409, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame('RESOURCE_TYPE_UNACCEPTABLE', $this->errorCode($response));
+        self::assertSame($pointer, $this->value($this->decode($response), 'errors', '0', 'source', 'pointer'));
+    }
+
     /**
      * Sends the same write with a hidden id and with a missing one, and asserts both
      * fail with the same `404` document.

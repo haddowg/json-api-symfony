@@ -13,12 +13,15 @@ use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Schema\ResourceIdentifier;
 use haddowg\JsonApi\Server\Server;
+use haddowg\JsonApiBundle\Validation\JsonPointerBuilder;
+use haddowg\JsonApiBundle\Validation\RelationshipTypeUnacceptable;
 
 /**
  * Applies the related endpoint's scope to the linkage a write sends (bundle ADR 0126),
  * before the persister resolves it.
  *
- * Each identifier whose type is scoped (the read side's decision, {@see RelatedReadRouter})
+ * Each identifier must name one of the relation's related types, whether or not the
+ * validator bridge is installed. Each identifier whose type is scoped (the read side's decision, {@see RelatedReadRouter})
  * must be served by that type's provider, as `GET /{type}/{id}` would serve it; one that
  * is not is rejected exactly as a resource that does not exist. A to-many replace on an
  * existing parent keeps the members the scope hides, so it changes only the members the
@@ -28,16 +31,28 @@ use haddowg\JsonApi\Server\Server;
  */
 final class ScopedLinkageGuard
 {
+    private readonly JsonPointerBuilder $pointers;
+
     public function __construct(
         private readonly DataProviderRegistry $providers,
         private readonly RelatedReadRouter $router,
-    ) {}
+    ) {
+        $this->pointers = new JsonPointerBuilder();
+    }
 
     /**
      * The linkage the persister applies: `$linkage` itself, or on a to-many replace of an
      * existing parent, `$linkage` plus the current members the scope hides.
      *
-     * @throws ResourceNotFound when the linkage names a resource its scoped type does not serve
+     * Every identifier must name one of the relation's related types; the persister
+     * resolves each id under its identifier's type, so that is the type checked here.
+     *
+     * @param bool $atEndpoint whether the linkage is a relationship endpoint's body
+     *                         (pointers at `/data`) rather than a member of a
+     *                         resource's `data.relationships`
+     *
+     * @throws RelationshipTypeUnacceptable when an identifier names a type the relation does not accept
+     * @throws ResourceNotFound             when the linkage names a resource its scoped type does not serve
      */
     public function scope(
         Server $server,
@@ -47,10 +62,13 @@ final class ScopedLinkageGuard
         Mode $mode,
         JsonApiRequestInterface $request,
         bool $creating = false,
+        bool $atEndpoint = false,
     ): ToOneRelationship|ToManyRelationship {
         $identifiers = $linkage instanceof ToManyRelationship
             ? $linkage->resourceIdentifiers
             : \array_filter([$linkage->resourceIdentifier]);
+
+        $this->assertAcceptedTypes($relation, $linkage, $atEndpoint);
 
         $sent = [];
         foreach ($identifiers as $identifier) {
@@ -101,7 +119,13 @@ final class ScopedLinkageGuard
         foreach ($linkage->resourceIdentifiers as $identifier) {
             \assert($identifier instanceof ResourceIdentifier);
             $id = $identifier->id;
-            if ($id !== null && isset($existingPivot[$id]) && !$this->isVisible($identifier->type, $id, $relation)) {
+            if ($id === null || !isset($existingPivot[$id])) {
+                continue;
+            }
+
+            // Pivot rows are keyed by id alone: a member sent under a type the relation
+            // does not accept is no existing member (the write is refused later).
+            if (!$this->accepts($relation, $identifier->type) || !$this->isVisible($identifier->type, $id, $relation)) {
                 unset($existingPivot[$id]);
             }
         }
@@ -149,6 +173,41 @@ final class ScopedLinkageGuard
         }
 
         return false;
+    }
+
+    /**
+     * @throws RelationshipTypeUnacceptable when an identifier names a type the relation does not accept
+     */
+    private function assertAcceptedTypes(RelationInterface $relation, ToOneRelationship|ToManyRelationship $linkage, bool $atEndpoint): void
+    {
+        $identifiers = $linkage instanceof ToManyRelationship
+            ? \array_values($linkage->resourceIdentifiers)
+            : [$linkage->resourceIdentifier];
+
+        $errors = [];
+        foreach ($identifiers as $index => $identifier) {
+            if (!$identifier instanceof ResourceIdentifier || $this->accepts($relation, $identifier->type)) {
+                continue;
+            }
+
+            $index = $linkage instanceof ToManyRelationship ? $index : null;
+            $errors[] = RelationshipTypeUnacceptable::error(
+                $relation,
+                $identifier->type,
+                $atEndpoint
+                    ? $this->pointers->forRelationshipEndpointLinkageType($index)
+                    : $this->pointers->forLinkageType($relation->name(), $index),
+            );
+        }
+
+        if ($errors !== []) {
+            throw new RelationshipTypeUnacceptable($errors);
+        }
+    }
+
+    private function accepts(RelationInterface $relation, string $type): bool
+    {
+        return \in_array($type, $relation->relatedTypes(), true);
     }
 
     private function isVisible(string $type, string $id, RelationInterface $relation): bool

@@ -101,6 +101,23 @@ final class IncludeScopingPivotWriteTest extends JsonApiFunctionalTestCase
         self::assertSame([1 => 'Partner', 2 => 'Secret Role', 3 => 'Support'], $this->placements(2));
     }
 
+    #[Test]
+    #[TestWith(['', ''], 'default server')]
+    #[TestWith(['/partner', 'partner-'], 'named server')]
+    public function aMemberUnderATypeTheRelationDoesNotAcceptIsRefused(string $mount, string $prefix): void
+    {
+        foreach (['POST', 'PATCH'] as $method) {
+            $response = $this->handle($mount . '/' . $prefix . 'advertisers/2/relationships/placedAgencies', $method, [
+                'data' => [['type' => 'zz', 'id' => '2', 'meta' => ['pivot' => ['role' => 'Overwritten']]]],
+            ]);
+
+            self::assertSame(409, $response->getStatusCode(), (string) $response->getContent());
+            self::assertSame('RESOURCE_TYPE_UNACCEPTABLE', $this->value($this->decode($response), 'errors', '0', 'code'));
+        }
+
+        self::assertSame([2 => 'Secret Role', 3 => 'Support'], $this->placements(2));
+    }
+
     private function place(string $mount, string $prefix, int $advertiser, string $method, string $agency, string $role): Response
     {
         return $this->handle($mount . '/' . $prefix . 'advertisers/' . $advertiser . '/relationships/placedAgencies', $method, [
