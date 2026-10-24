@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.1](https://github.com/haddowg/json-api-symfony/compare/v1.7.0...v1.7.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* leave write-only pivot fields out of responses ([#181](https://github.com/haddowg/json-api-symfony/issues/181)) ([360bbd8](https://github.com/haddowg/json-api-symfony/commit/360bbd871a396a12c07994cbbf34a51dfbeeeb6d))
+
 ## [1.7.0](https://github.com/haddowg/json-api-symfony/compare/v1.6.1...v1.7.0) (2026-10-24)
 
 
