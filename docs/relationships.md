@@ -593,6 +593,11 @@ A pivot field declared `hidden()` is **filterable and sortable but never rendere
 works — the filter reads the column on the join directly, not the rendered scalar.
 Use it for a join column you want to query by but not expose.
 
+A pivot field declared `writeOnly()` is accepted in a write's `meta.pivot` and never
+rendered, the same rule a write-only attribute follows. A `writeOnly(when:)` predicate
+is evaluated against each request, and the field stays out of `meta.pivot` on every
+request it returns `true` for.
+
 > **Filter / sort asymmetry.** A pivot **sort** auto-derives from `fields()` —
 > `?sort=position` works with no further declaration. A pivot **filter** must be
 > declared explicitly via `withFilters()` (a sort is a single well-defined ordering; a

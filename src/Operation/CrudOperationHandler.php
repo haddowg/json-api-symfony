@@ -706,7 +706,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $pivotResult = $relatedProvider
                     ->fetchRelatedPivotCollection($relatedType, $parent, $relation, $criteria, $request);
 
-                $serializer = new PivotMetaSerializer($server->serializerFor($relatedType), $pivotResult->pivotMap);
+                $serializer = new PivotMetaSerializer($server->serializerFor($relatedType), $pivotResult->pivotMap, $relation);
                 $items = \is_array($pivotResult->items) ? \array_values($pivotResult->items) : \iterator_to_array($pivotResult->items, false);
                 $this->preloadIncludes($relatedProvider, $items, $relatedType, $request, $server);
                 $this->applyRelationshipCounts($server, $relatedType, $items, $request);
@@ -1134,7 +1134,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
             // The pivot meta rides the WINDOWED page's map: a PivotMetaSerializer over the
             // page-1 pivot map, bound to this relationship by the PivotParentSerializer.
-            $pivotSerializer = new PivotMetaSerializer($server->serializerFor($relatedType), $pivotResult->pivotMap);
+            $pivotSerializer = new PivotMetaSerializer($server->serializerFor($relatedType), $pivotResult->pivotMap, $relation);
             $parentSerializer = new PivotParentSerializer(
                 $server->serializerFor($type),
                 $relationshipName,

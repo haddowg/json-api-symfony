@@ -80,7 +80,7 @@ final class PivotLinkageParentSerializer extends AbstractPivotParentSerializer
             $relationships[$name] = $this->pivotLinkageBuilder(
                 $relation,
                 $this->resolver,
-                new PivotMetaSerializer($this->resolver->serializerFor($relatedType), $mapForThisParent),
+                new PivotMetaSerializer($this->resolver->serializerFor($relatedType), $mapForThisParent, $relation),
             );
         }
 
