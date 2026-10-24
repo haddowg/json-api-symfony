@@ -26,8 +26,9 @@ use Symfony\Component\Routing\RouteCollection;
  * resource-less type that declared standalone relations (ADR 0026) — it
  * additionally emits the relationship endpoints
  * `GET /{type}/{id}/{relationship}` (related resources) and
- * `GET`/`PATCH`/`POST`/`DELETE` `/{type}/{id}/relationships/{relationship}`
- * (relationship linkage read + replace/add/remove mutations).
+ * `GET /{type}/{id}/relationships/{relationship}` (relationship linkage), plus
+ * `PATCH`/`POST`/`DELETE` on the linkage path (replace/add/remove) when the type
+ * exposes Update.
  *
  * Concrete per-type paths are emitted (one literal path per type) rather than a
  * single parametric `/{type}` catch-all, so the router natively `404`s unknown
@@ -270,20 +271,24 @@ final class JsonApiRouteLoader extends Loader
                 new Route($relationshipPath, $relationshipDefaults, $idRequirements, methods: ['GET']),
             );
 
-            $routes->add(
-                \sprintf('%s%s.relationship.update', $namePrefix, $resourceType),
-                new Route($relationshipPath, $relationshipDefaults, $idRequirements, methods: ['PATCH']),
-            );
+            // Mutating a relationship updates its parent, so the mutation routes
+            // exist only when the type exposes Update.
+            if (\in_array(Operation::Update->value, $operations, true)) {
+                $routes->add(
+                    \sprintf('%s%s.relationship.update', $namePrefix, $resourceType),
+                    new Route($relationshipPath, $relationshipDefaults, $idRequirements, methods: ['PATCH']),
+                );
 
-            $routes->add(
-                \sprintf('%s%s.relationship.add', $namePrefix, $resourceType),
-                new Route($relationshipPath, $relationshipDefaults, $idRequirements, methods: ['POST']),
-            );
+                $routes->add(
+                    \sprintf('%s%s.relationship.add', $namePrefix, $resourceType),
+                    new Route($relationshipPath, $relationshipDefaults, $idRequirements, methods: ['POST']),
+                );
 
-            $routes->add(
-                \sprintf('%s%s.relationship.remove', $namePrefix, $resourceType),
-                new Route($relationshipPath, $relationshipDefaults, $idRequirements, methods: ['DELETE']),
-            );
+                $routes->add(
+                    \sprintf('%s%s.relationship.remove', $namePrefix, $resourceType),
+                    new Route($relationshipPath, $relationshipDefaults, $idRequirements, methods: ['DELETE']),
+                );
+            }
 
             $routes->add(
                 \sprintf('%s%s.related.show', $namePrefix, $resourceType),
