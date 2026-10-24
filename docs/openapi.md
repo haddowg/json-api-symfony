@@ -226,7 +226,9 @@ When `describedby` is on, no `document_url` is set, the expose gate is open, and
 serves a server's document, the warmup logs a warning naming the server and suggesting
 `document_url` or a document route. Links for that server carry no `describedby`, and
 nothing fails, since `describedby` is optional. A closed expose gate is a deliberate
-choice, so it gets no warning.
+choice, so it gets no warning. Only a server that serves JSON:API routes is checked: one
+whose routes you never import, such as an implicit `default` server in an app that
+declares only named servers, renders no links and gets no warning.
 
 Links get no `describedby` when the document isn't served and no `document_url` is set
 (the expose gate is closed, or generation is disabled), or when `describedby: false`.

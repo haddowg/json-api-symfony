@@ -120,6 +120,32 @@ final class OpenApiDocumentRouteLookupTest extends \Symfony\Bundle\FrameworkBund
 
     #[Test]
     #[Group('spec:document-links')]
+    public function theWarmupSkipsAServerWithNoJsonApiRoutesMounted(): void
+    {
+        $kernel = $this->boot(new OpenApiMultiServerTestKernel('test', false, docsRoutes: 'none', mountDefault: false));
+        $this->warm($kernel);
+
+        self::assertCount(1, WarningLogger::$warnings);
+        self::assertStringContainsString('No route serves the OpenAPI document for server "admin"', WarningLogger::$warnings[0]);
+
+        $kernel->shutdown();
+    }
+
+    #[Test]
+    #[Group('spec:document-links')]
+    public function combinedModeStillWarnsWhenAnyServerIsMounted(): void
+    {
+        $kernel = $this->boot(new OpenApiMultiServerTestKernel('test', false, combined: true, docsRoutes: 'none', mountDefault: false));
+        $this->warm($kernel);
+
+        self::assertCount(1, WarningLogger::$warnings);
+        self::assertStringContainsString('No route serves the combined OpenAPI document', WarningLogger::$warnings[0]);
+
+        $kernel->shutdown();
+    }
+
+    #[Test]
+    #[Group('spec:document-links')]
     public function theWarmupStaysQuietWhenTheDocumentIsDeliberatelyNotExposed(): void
     {
         $kernel = $this->boot(new OpenApiMultiServerTestKernel('test', false, docsRoutes: 'none', exposed: false));

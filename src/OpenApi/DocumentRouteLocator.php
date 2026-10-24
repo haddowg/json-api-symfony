@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\OpenApi;
 
 use haddowg\JsonApiBundle\Controller\OpenApiController;
+use haddowg\JsonApiBundle\Routing\JsonApiRoute;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use Symfony\Component\Routing\Exception\ExceptionInterface as RoutingException;
 use Symfony\Component\Routing\Route;
@@ -20,6 +21,11 @@ use Symfony\Component\Routing\RouterInterface;
  * default server, or a `{server}` path variable whose requirement accepts the name. In
  * combined mode every such route serves the one document. A route with a fixed server
  * wins over a parametric one, then the collection's order decides.
+ *
+ * Only a server with JSON:API routes mounted is looked up, meaning some route carries the
+ * {@see JsonApiRoute::MARKER} default and names the server in `_jsonapi_server`. A server
+ * no route serves renders no links, so it has no entry; in combined mode the one entry is
+ * there only when at least one server is mounted.
  *
  * The scan reads the whole route collection, so it runs once: the {@see DocumentRouteWarmer}
  * writes its result beside the warmed documents, and a process without one scans once and
@@ -67,25 +73,49 @@ final class DocumentRouteLocator
     }
 
     /**
-     * Scans the route collection for every server's document route, keyed by server name,
-     * or by {@see OpenApiController::COMBINED_KEY} alone in combined mode.
+     * Scans the route collection for the document route of every mounted server, keyed
+     * by server name, or by {@see OpenApiController::COMBINED_KEY} alone in combined mode.
      *
      * @return array<string, DocumentRoute|null>
      */
     private function scan(): array
     {
         $collection = $this->router->getRouteCollection()->all();
+        $mounted = self::mountedServers($collection);
+        $servers = \array_values(\array_filter($this->servers, static fn(string $server): bool => isset($mounted[$server])));
 
         if ($this->combined) {
-            return [OpenApiController::COMBINED_KEY => $this->firstFor($collection, $this->servers[0] ?? ServerProvider::DEFAULT_SERVER)];
+            return $servers === [] ? [] : [OpenApiController::COMBINED_KEY => $this->firstFor($collection, $this->servers[0] ?? ServerProvider::DEFAULT_SERVER)];
         }
 
         $routes = [];
-        foreach ($this->servers as $server) {
+        foreach ($servers as $server) {
             $routes[$server] = $this->firstFor($collection, $server);
         }
 
         return $routes;
+    }
+
+    /**
+     * The servers some JSON:API route serves, as keys.
+     *
+     * @param array<string, Route> $collection
+     *
+     * @return array<string, true>
+     */
+    private static function mountedServers(array $collection): array
+    {
+        $mounted = [];
+        foreach ($collection as $route) {
+            if ($route->getDefault(JsonApiRoute::MARKER) !== true) {
+                continue;
+            }
+
+            $server = $route->getDefault('_jsonapi_server');
+            $mounted[\is_string($server) && $server !== '' ? $server : ServerProvider::DEFAULT_SERVER] = true;
+        }
+
+        return $mounted;
     }
 
     /**
