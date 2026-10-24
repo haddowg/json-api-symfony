@@ -13,6 +13,7 @@ final class Checklist
      * @param list<mixed>               $tags
      * @param array<string, mixed>      $settings
      * @param array<string, mixed>|null $options
+     * @param list<mixed>               $steps
      */
     public function __construct(
         public string $id = '',
@@ -23,5 +24,7 @@ final class Checklist
         public array $settings = [],
         public ?string $note = null,
         public ?array $options = null,
+        public array $steps = ['seed'],
+        public string $code = 'seed',
     ) {}
 }

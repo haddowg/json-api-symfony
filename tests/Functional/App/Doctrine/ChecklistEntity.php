@@ -19,6 +19,7 @@ class ChecklistEntity
      * @param list<mixed>               $tags
      * @param array<string, mixed>      $settings
      * @param array<string, mixed>|null $options
+     * @param list<mixed>               $steps
      */
     public function __construct(
         #[ORM\Id]
@@ -39,5 +40,9 @@ class ChecklistEntity
         public ?string $note = null,
         #[ORM\Column(type: 'json', nullable: true)]
         public ?array $options = null,
+        #[ORM\Column(type: 'json')]
+        public array $steps = ['seed'],
+        #[ORM\Column]
+        public string $code = 'seed',
     ) {}
 }

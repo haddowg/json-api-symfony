@@ -109,6 +109,12 @@ or `minProperties: 1` for a string, list or object, and nothing more than presen
 for a boolean or number. Date, time, email, URL and other string-typed fields count
 as strings, so `""` fails them.
 
+A required field that also declares its own minimum (`minItems`, `minLength` or
+`minProperties` of at least 1) reports an empty value once, with the minimum's
+message ("This collection should contain 1 element or more."), not a second
+"should not be blank" error at the same pointer. `null` is still rejected by
+`NotNull` unless the field is nullable.
+
 Presence is mandatory only on create; a `PATCH` never requires a member, so a
 partial update may legitimately omit a required attribute. The
 [`tracks`](../examples/music-catalog-symfony/src/Resource/TrackResource.php)

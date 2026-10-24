@@ -12,7 +12,6 @@ use haddowg\JsonApi\Pagination\PaginatorInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Constraint\MinLength;
 use haddowg\JsonApi\Resource\Field\ArrayList;
-use haddowg\JsonApi\Resource\Field\ArrayListBuilder;
 use haddowg\JsonApi\Resource\Field\BelongsTo;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\Boolean;
@@ -68,13 +67,10 @@ final class TrackResource extends AbstractResource
             Boolean::make('explicit')->guaranteed(),
             // An array attribute with per-item rules: at least one genre, each a
             // non-empty string, no duplicates. There is no sensible default, so a
-            // create must send a non-empty list (required() already rejects an empty
-            // one) and an update can't empty it.
+            // create must send a non-empty list and an update can't empty it.
             ArrayList::make('genres')
                 ->required()
-                ->onUpdate(static function (ArrayListBuilder $genres): void {
-                    $genres->minItems(1);
-                })
+                ->minItems(1)
                 ->each(new MinLength(1))
                 ->uniqueItems(),
             Time::make('previewOffset')->nullable(),

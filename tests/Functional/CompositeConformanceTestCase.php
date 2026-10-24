@@ -514,6 +514,48 @@ abstract class CompositeConformanceTestCase extends JsonApiFunctionalTestCase
 
     #[Test]
     #[Group('spec:crud')]
+    public function aRequiredListWithMinItemsReportsAnEmptyListOnce(): void
+    {
+        $response = $this->createChecklist(['steps' => []]);
+
+        self::assertSame(422, $response->getStatusCode());
+        self::assertSame([[
+            'status' => '422',
+            'code' => 'VALIDATION_FAILED',
+            'title' => 'Unprocessable Entity',
+            'detail' => 'This collection should contain 1 element or more.',
+            'source' => ['pointer' => '/data/attributes/steps'],
+        ]], $this->decode($response)['errors'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function aRequiredListWithMinItemsStillRejectsNull(): void
+    {
+        $response = $this->createChecklist(['steps' => null]);
+
+        self::assertSame(422, $response->getStatusCode());
+        self::assertSame(['/data/attributes/steps'], $this->pointersOf($response));
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function aRequiredStringWithMinLengthReportsAnEmptyStringOnce(): void
+    {
+        $response = $this->createChecklist(['code' => '']);
+
+        self::assertSame(422, $response->getStatusCode());
+        self::assertSame([[
+            'status' => '422',
+            'code' => 'VALIDATION_FAILED',
+            'title' => 'Unprocessable Entity',
+            'detail' => 'This value is too short. It should have 2 characters or more.',
+            'source' => ['pointer' => '/data/attributes/code'],
+        ]], $this->decode($response)['errors'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
     public function aRequiredMapRejectsAnEmptyObject(): void
     {
         $response = $this->createChecklist(['settings' => new \stdClass()]);
@@ -594,6 +636,8 @@ abstract class CompositeConformanceTestCase extends JsonApiFunctionalTestCase
             'tags' => ['home'],
             'settings' => ['colour' => 'green'],
             'note' => 'Before six',
+            'steps' => ['shop'],
+            'code' => 'GR',
         ];
     }
 
