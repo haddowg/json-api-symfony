@@ -7,3 +7,8 @@ parameters:
         - examples/music-catalog-symfony/tests
     tmpDir: .phpstan.cache
     treatPhpDocTypesAsCertain: false
+    # The DI configurator's service()/param() functions live in this class file. A
+    # parallel worker that meets `use function ...\service` before anything loads the
+    # class can't find them, so scan the file up front.
+    scanFiles:
+        - vendor/symfony/dependency-injection/Loader/Configurator/ContainerConfigurator.php
