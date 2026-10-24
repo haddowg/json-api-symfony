@@ -16,6 +16,7 @@ use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\Action\ActionDescriptor;
 use haddowg\JsonApiBundle\Action\ActionRegistry;
+use haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory;
 use haddowg\JsonApiBundle\Operation\Operation;
 use haddowg\JsonApiBundle\Security\ResourceSecurity;
 use haddowg\JsonApiBundle\Security\ResourceSecurityRegistry;
@@ -388,15 +389,16 @@ final class MetadataSource
 
     private function buildRelation(Server $server, RelationInterface $relation, ?PaginatorInterface $serverDefault): RelationMetadata
     {
-        // Only a to-many relation has a related-collection to paginate; a to-one has
-        // no page schema (the contract's rule). For a to-many, the resolved paginator
-        // rides core's relation → related-resource → server-default fallback chain —
-        // passing the server default as the fallback matches what a render would
-        // resolve — and self-describes its `page[…]` schema. (core's pagination()
-        // returns the fallback even for a to-one, so the cardinality guard lives here.)
-        $pageSchema = $relation->isToMany()
-            ? $relation->pagination($serverDefault)?->describePageSchema()
-            : null;
+        // Only a to-many relation has a related collection to paginate. Its page
+        // schema comes from the paginator the related and relationship endpoints
+        // serve: the relation's own, else the related resource's, else the server
+        // default. A polymorphic to-many has no single related resource, as at runtime.
+        $pageSchema = null;
+        if ($relation->isToMany()) {
+            $relatedTypes = $relation->relatedTypes();
+            $relatedResource = \count($relatedTypes) === 1 ? $this->types->resourceFor($server, $relatedTypes[0]) : null;
+            $pageSchema = RelationCriteriaFactory::resolvePaginator($relation, $relatedResource, $serverDefault)?->describePageSchema();
+        }
 
         return new RelationMetadata(
             $relation,

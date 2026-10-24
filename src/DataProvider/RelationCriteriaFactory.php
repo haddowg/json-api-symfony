@@ -68,7 +68,16 @@ final class RelationCriteriaFactory
      */
     public function paginatorFor(RelationInterface $relation, ?AbstractResource $relatedResource, Server $server): ?PaginatorInterface
     {
-        $serverDefault = $server->defaultPaginator();
+        return self::resolvePaginator($relation, $relatedResource, $server->defaultPaginator());
+    }
+
+    /**
+     * The chain {@see paginatorFor()} resolves, against an already-resolved server
+     * default. The OpenAPI metadata projects related-collection page schemas through
+     * it so the document states the paginator the endpoint serves.
+     */
+    public static function resolvePaginator(RelationInterface $relation, ?AbstractResource $relatedResource, ?PaginatorInterface $serverDefault): ?PaginatorInterface
+    {
         $fallback = $relatedResource?->pagination($serverDefault) ?? $serverDefault;
 
         return $relation->pagination($fallback);
