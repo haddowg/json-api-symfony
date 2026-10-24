@@ -1,5 +1,7 @@
 # The served OpenAPI document is decorated per request from serialized value objects
 
+> Update: the pruner, the serialized artifact and the ETag recipe now live in core's `OpenApi\Serve` (core ADR 0159), so every integration prunes and tags the same way. The artifact now records the installed versions of core and this bundle and reads as missing after either changes, and it only unserializes core's value objects, `stdClass`, enums and the classes in `json_api.openapi.serve_allowed_classes`. A document holding any other object gets no artifact: the warmer logs a warning and decorated requests build it.
+
 Build-time decorators can't see the request, so one deployment serving many hosts couldn't give each host its own `servers`, hide a tenant's disabled operations or rewrite example hosts. `OpenApiServeDecoratorInterface` and `JsonSchemaServeDecoratorInterface` now run in the controllers with the `Request`, after the warmer has done the expensive build. The CLI exports and the static `public_path` files stay undecorated, because the committed spec is the full contract for diffing and codegen.
 
 ## Considered options

@@ -413,6 +413,16 @@ final class JsonApiBundle extends AbstractBundle
                     ->info('The Cache-Control header for the served docs.json and schemas.json of every server, e.g. "public, max-age=60, s-maxage=300, stale-while-revalidate=86400". Both always carry an ETag and answer a matching If-None-Match with a 304. Null (the default) leaves Cache-Control to Symfony, which makes the response private.')
                     ->defaultNull()
                 ->end()
+                ->arrayNode('serve_allowed_classes')
+                    ->info('Classes, besides core\'s OpenAPI value objects and enums, that the document\'s example, default or extension values hold as objects. The warmer caches the document for serve decorators as serialized PHP, and unserializing is limited to an allow-list, so a document holding an unlisted object isn\'t cached: the warmer logs a warning and each decorated request builds it. Default empty.')
+                    ->scalarPrototype()
+                        ->validate()
+                            ->ifTrue(static fn(mixed $value): bool => !\is_string($value) || $value === '')
+                            ->thenInvalid('Each json_api.openapi.serve_allowed_classes entry must be a class name, got %s.')
+                        ->end()
+                    ->end()
+                    ->defaultValue([])
+                ->end()
                 ->scalarNode('public_path')
                     ->info('Also emit a fully static <server>.json (+ .yaml when symfony/yaml is installed) into this directory at cache:warmup (D17), so a web server/CDN can serve the document with zero PHP. Null = controller-only (served from the cache dir).')
                     ->defaultNull()
@@ -1009,7 +1019,10 @@ final class JsonApiBundle extends AbstractBundle
 
         // The shared cache-artifact store the warmer writes and the controller reads.
         $services->set(\haddowg\JsonApiBundle\OpenApi\ArtifactStore::class)
-            ->args(['$cacheDir' => '%kernel.cache_dir%']);
+            ->args([
+                '$cacheDir' => '%kernel.cache_dir%',
+                '$allowedClasses' => $openApiConfig->serveAllowedClasses,
+            ]);
 
         // The optional cache warmer (D17): pre-builds each server's document + JSON
         // Schemas at cache:warmup, and (when public_path is set) a static .json/.yaml.
