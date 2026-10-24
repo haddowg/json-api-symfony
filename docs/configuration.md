@@ -517,7 +517,7 @@ are silent, so read this table before assuming a capability is active.
 
 | Package | Enables | When absent |
 | --- | --- | --- |
-| `doctrine/orm` (`^2.20 \|\| ^3.0`) | The reference Doctrine provider/persister ([doctrine](doctrine.md)) | No Doctrine path; `#[AsJsonApiResource(entity:)]` mappings are inert. Provide your own [data provider](custom-data-providers.md). |
+| `doctrine/orm` (`^2.20 \|\| ^3.0`) | The reference Doctrine provider/persister ([doctrine](doctrine.md)) | No Doctrine path; `#[AsJsonApiResource(entity:)]` mappings are inert. With `doctrine/orm` installed, an `entity:` mapping needs an `EntityManagerInterface` service (doctrine-bundle) or the build fails. Provide your own [data provider](custom-data-providers.md). |
 | `symfony/validator` | The constraint bridge ([validation](validation.md)) | **Writes run unvalidated, silently** — declared constraints are not enforced. |
 | `symfony/event-dispatcher` | The lifecycle-hook seam ([lifecycle hooks](lifecycle-hooks.md)) | The per-operation events and resource hook methods are inert — the dispatcher is injected `->nullOnInvalid()` and the seam is simply off. |
 | `symfony/security-core` + `symfony/expression-language` | Declarative resource authorization ([authorization](authorization.md)) | A security expression on a resource, relation or action fails the container build, as it does without a configured firewall. The documentation-only `true`/`false` values still work. |

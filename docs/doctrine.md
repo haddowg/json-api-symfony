@@ -60,9 +60,14 @@ the Doctrine provider, the Doctrine persister, and (with no map argument) the
 load-state predicate.
 
 When the map is **empty** — Doctrine is in the vendor tree but no resource maps an
-entity — the pass *removes* the Doctrine provider, persister, and load-state
-definitions entirely, so a non-Doctrine-integrated app never holds a definition
-referencing an absent `EntityManagerInterface`.
+entity — the pass *removes* the Doctrine provider, persister, load-state and pivot
+resolver definitions entirely, so a non-Doctrine-integrated app never holds a
+definition referencing an absent `EntityManagerInterface`.
+
+When the map is **not** empty, the container must have an `EntityManagerInterface`
+service, which `doctrine/doctrine-bundle` registers. Declaring `entity:` with
+`doctrine/orm` installed but no entity manager configured fails the build rather
+than leaving the Doctrine services pointing at a service that doesn't exist.
 
 ### Build-time faults
 
@@ -73,6 +78,7 @@ These are all `\LogicException` at container build, never request-time errors:
 | `entity:` names a class that does not exist | *The entity class "…" mapped by #[AsJsonApiResource] on service "…" does not exist.* |
 | Type cannot be determined (no static `$type`, no `type:` override) | *Cannot determine the JSON:API type for the entity mapping on service "…".* |
 | Two resources map one type to different entities | *JSON:API type "…" is mapped to two different Doctrine entities: "…" and "…".* |
+| `entity:` is declared but there is no `EntityManagerInterface` service | *#[AsJsonApiResource(entity: ...)] maps type "…" (…) to a Doctrine entity, but the container has no Doctrine\ORM\EntityManagerInterface service. Install and configure doctrine/doctrine-bundle … or remove `entity:` …* |
 
 Source: [`DoctrineEntityMapPass`](../src/DependencyInjection/Compiler/DoctrineEntityMapPass.php).
 
