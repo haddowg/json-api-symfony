@@ -370,7 +370,8 @@ final class PaginationMenuTest extends MusicCatalogKernelTestCase
     {
         $links = $document['links'] ?? null;
         self::assertIsArray($links);
-        $href = $links[$rel] ?? null;
+        self::assertIsArray($links[$rel] ?? null, "links.{$rel}");
+        $href = $links[$rel]['href'] ?? null;
         self::assertIsString($href, "links.{$rel}");
 
         $path = (string) \parse_url($href, \PHP_URL_PATH);

@@ -371,8 +371,14 @@ knowledge of the URL structure:
     "id": "42",
     "attributes": { "...": "..." },
     "links": {
-      "self": "https://example.com/articles/42",
-      "publish": "https://example.com/articles/42/-actions/publish"
+      "self": {
+        "href": "https://example.com/articles/42",
+        "describedby": "/docs.json#/paths/~1articles~1%7Bid%7D/get"
+      },
+      "publish": {
+        "href": "https://example.com/articles/42/-actions/publish",
+        "describedby": "/docs.json#/paths/~1articles~1%7Bid%7D~1-actions~1publish/post"
+      }
     }
   }
 }
@@ -386,6 +392,10 @@ absent for a user who lacks `PUBLISH` on article 42). An action with no `securit
 always renders its link. The link is added without the resource's own
 `getLinks()` having to know about it, and an author-supplied link of the same name
 always wins.
+
+The link's `describedby` names the action's operation in the served OpenAPI document,
+using its first declared method, and the document lists the action under its name in
+the type's resource links (see [links and `describedby`](openapi.md#links-and-describedby)).
 
 The contribution applies to **every** rendered resource of the type, primary or
 included — so `GET /comments/1?include=article` carries the `publish` link on the

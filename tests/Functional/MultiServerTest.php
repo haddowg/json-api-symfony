@@ -149,7 +149,7 @@ final class MultiServerTest extends JsonApiFunctionalTestCase
 
         $self = $links['self'] ?? null;
 
-        return \is_string($self) ? $self : null;
+        return \is_array($self) && \is_string($self['href'] ?? null) ? $self['href'] : null;
     }
 
     /**

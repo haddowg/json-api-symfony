@@ -298,7 +298,7 @@ abstract class RelationshipEndpointConformanceTestCase extends JsonApiFunctional
         self::assertIsArray($data);
         $links = $data['links'] ?? null;
         self::assertIsArray($links);
-        self::assertSame(self::BASE_URI . '/authors/1', $links['self'] ?? null);
+        self::assertSame(['href' => self::BASE_URI . '/authors/1'], $links['self'] ?? null);
     }
 
     #[Test]
@@ -311,7 +311,7 @@ abstract class RelationshipEndpointConformanceTestCase extends JsonApiFunctional
 
         $links = $document['links'] ?? null;
         self::assertIsArray($links);
-        self::assertSame(self::BASE_URI . '/articles/1/author', $links['self'] ?? null);
+        self::assertSame(['href' => self::BASE_URI . '/articles/1/author'], $links['self'] ?? null);
     }
 
     #[Test]
@@ -325,7 +325,7 @@ abstract class RelationshipEndpointConformanceTestCase extends JsonApiFunctional
         $links = $document['links'] ?? null;
         self::assertIsArray($links);
         self::assertSame(
-            self::BASE_URI . '/articles/1/comments?page%5Bnumber%5D=1&page%5Bsize%5D=15',
+            ['href' => self::BASE_URI . '/articles/1/comments?page%5Bnumber%5D=1&page%5Bsize%5D=15'],
             $links['self'] ?? null,
         );
     }
@@ -340,7 +340,7 @@ abstract class RelationshipEndpointConformanceTestCase extends JsonApiFunctional
 
         $links = $document['links'] ?? null;
         self::assertIsArray($links);
-        self::assertSame(self::BASE_URI . '/articles/1/relationships/author', $links['self'] ?? null);
+        self::assertSame(['href' => self::BASE_URI . '/articles/1/relationships/author'], $links['self'] ?? null);
     }
 
     #[Test]
@@ -351,7 +351,7 @@ abstract class RelationshipEndpointConformanceTestCase extends JsonApiFunctional
 
         $links = $document['links'] ?? null;
         self::assertIsArray($links);
-        self::assertSame(self::BASE_URI . '/articles/1/relationships/comments', $links['self'] ?? null);
+        self::assertSame(['href' => self::BASE_URI . '/articles/1/relationships/comments'], $links['self'] ?? null);
     }
 
     // --- helpers ---------------------------------------------------------------

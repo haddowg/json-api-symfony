@@ -191,6 +191,33 @@ final class OpenApiAtomicServingTest extends \Symfony\Bundle\FrameworkBundle\Tes
 
     #[Test]
     #[Group('spec:openapi')]
+    #[Group('spec:document-links')]
+    public function anAtomicResultIsDescribedByTheWholeDocument(): void
+    {
+        // Core has no operation pointer for the atomic endpoint, so the result document
+        // points at the whole served document instead.
+        $kernel = new OpenApiMultiServerTestKernel('test', false, false, true);
+        $kernel->boot();
+
+        $request = Request::create('/operations', 'POST', server: [
+            'CONTENT_TYPE' => self::ATOMIC_MEDIA_TYPE,
+            'HTTP_ACCEPT' => self::ATOMIC_MEDIA_TYPE,
+        ], content: \json_encode(['atomic:operations' => [
+            ['op' => 'add', 'data' => ['type' => 'public-items', 'attributes' => ['name' => 'Added']]],
+        ]], \JSON_THROW_ON_ERROR));
+        $response = $kernel->handle($request, HttpKernelInterface::MAIN_REQUEST, true);
+        $this->restoreHandlers();
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $body = \json_decode((string) $response->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertIsArray($body);
+        self::assertSame(['describedby' => ['href' => '/docs.json']], $body['links'] ?? null);
+
+        $kernel->shutdown();
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
     public function theCombinedDocumentAdvertisesTheAtomicEndpointWhenEnabled(): void
     {
         $kernel = new OpenApiMultiServerTestKernel('test', false, true, true);

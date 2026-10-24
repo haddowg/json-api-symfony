@@ -43,6 +43,7 @@ use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigura
 use Symfony\Component\HttpKernel\Bundle\AbstractBundle;
 
 use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
+use function Symfony\Component\DependencyInjection\Loader\Configurator\service_closure;
 use function Symfony\Component\DependencyInjection\Loader\Configurator\service_locator;
 use function Symfony\Component\DependencyInjection\Loader\Configurator\tagged_iterator;
 
@@ -237,6 +238,10 @@ final class JsonApiBundle extends AbstractBundle
                         ->thenInvalid(self::INVALID_TIMEZONE_MESSAGE)
                     ->end()
                 ->end()
+                ->booleanNode('link_objects')
+                    ->info('Render the links the server builds (resource, relationship, top-level self, pagination and action links) as JSON:API link objects, {"href": ...}, which carry a describedby into the OpenAPI document. False renders them as bare URL strings, with no describedby. Named servers inherit it. Default true.')
+                    ->defaultTrue()
+                ->end()
                 ->booleanNode('strict_query_parameters')
                     ->info('Reject an unrecognized top-level query-parameter family with a 400 (bundle ADR 0055, core ADR 0059). A param is recognized when its base name is a reserved JSON:API family (include/fields/filter/sort/page), a key the primary resource declares, a negotiated profile keyword (relatedQuery/rQ for the Relationship Queries profile, withCount for the Countable profile), or an app-registered custom param. The default is true; set false to restore the old silent-ignore behaviour.')
                     ->defaultTrue()
@@ -314,6 +319,16 @@ final class JsonApiBundle extends AbstractBundle
                         ->children()
                             ->scalarNode('base_uri')->defaultNull()->end()
                             ->scalarNode('version')->defaultNull()->end()
+                            // A scalar rather than a boolean node: before Symfony 7, a boolean
+                            // node reads an explicit null as true, so null couldn't mean inherit.
+                            ->scalarNode('link_objects')
+                                ->info('Whether this server renders its built links as link objects. Null (the default) inherits the top-level link_objects.')
+                                ->defaultNull()
+                                ->validate()
+                                    ->ifTrue(static fn(mixed $value): bool => $value !== null && !\is_bool($value))
+                                    ->thenInvalid('A server\'s link_objects must be true, false or null, got %s.')
+                                ->end()
+                            ->end()
                             ->scalarNode('output_timezone')
                                 ->info('The timezone this server\'s DateTime attributes render in. Null (the default) inherits the top-level output_timezone; an empty string renders each value in the zone it carries.')
                                 ->defaultNull()
@@ -373,8 +388,16 @@ final class JsonApiBundle extends AbstractBundle
                     ->defaultFalse()
                 ->end()
                 ->booleanNode('describedby')
-                    ->info('Stamp a top-level links.describedby onto every JSON:API response pointing at the served OpenAPI document for the request\'s server (JSON:API 1.1). Only takes effect when the document routes are actually served (generation enabled + the expose gate). Default true.')
+                    ->info('Give each built link object, and each document, a describedby pointing at the operation in the OpenAPI document that describes it, e.g. /docs.json#/paths/~1albums~1%7Bid%7D/get. The document is the one the bundle serves for the request\'s server, so this only takes effect when the document routes are registered (generation enabled and the expose gate open), unless document_url names one. Default true.')
                     ->defaultTrue()
+                ->end()
+                ->scalarNode('document_url')
+                    ->info('The URL describedby points into, used as given, for a document published somewhere other than the bundle\'s own route (a docs site, or a CDN serving the public_path files). {server} is replaced by the server name, or by "combined" in combined mode. Null (the default) uses the path of the bundle\'s document route, host-relative and including any import prefix.')
+                    ->defaultNull()
+                    ->validate()
+                        ->ifTrue(static fn(mixed $value): bool => $value !== null && (!\is_string($value) || \trim($value) === ''))
+                        ->thenInvalid('json_api.openapi.document_url must be a non-empty URL or null, got %s.')
+                    ->end()
                 ->end()
                 ->enumNode('multi_server')
                     ->info('per_server (default): one document per server, served at /{server}/docs.json. combined: a single document spanning every server at the json path only (D5).')
@@ -1064,17 +1087,40 @@ final class JsonApiBundle extends AbstractBundle
             ])
             ->tag('routing.loader');
 
-        // The describedby stamper (D14): a kernel.view listener that, before the
-        // ViewListener renders, points every JSON:API response's top-level
-        // links.describedby at the served OpenAPI document (JSON:API 1.1). It runs only
-        // when generation is enabled and describedby is on; the link is omitted anyway
-        // when the document route is not registered (the expose gate closed). Higher
-        // priority than the ViewListener (priority 0) so it augments the stashed VO first.
-        $services->set(\haddowg\JsonApiBundle\EventListener\DescribedbyListener::class)
+        // The URL each server's describedby links point into: a configured document_url,
+        // else the path of the bundle's own document route. Null when describedby is off,
+        // generation is disabled, or the route isn't registered, so links then carry none.
+        $services->set(\haddowg\JsonApiBundle\OpenApi\DocumentUrlProvider::class)
             ->args([
                 '$urlGenerator' => service('router'),
                 '$enabled' => $openApiConfig->enabled && $openApiConfig->describedby,
                 '$combined' => $openApiConfig->combined,
+                '$configuredUrl' => $openApiConfig->documentUrl,
+            ]);
+
+        // The per-server describedby resolver the ServerProvider sets on each request's
+        // Server, built from the operations map the warmer writes beside each document.
+        // The document factory is a closure because the metadata it reads needs the
+        // ServerProvider, which needs this.
+        $services->set(\haddowg\JsonApiBundle\OpenApi\DescribedByResolverProvider::class)
+            ->args([
+                '$urls' => service(\haddowg\JsonApiBundle\OpenApi\DocumentUrlProvider::class),
+                '$store' => service(\haddowg\JsonApiBundle\OpenApi\ArtifactStore::class),
+                '$documents' => service_closure(\haddowg\JsonApiBundle\OpenApi\DocumentFactory::class),
+                '$combined' => $openApiConfig->combined,
+            ]);
+
+        $builder->getDefinition(\haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource::class)
+            ->setArgument('$documentUrls', new \Symfony\Component\DependencyInjection\Reference(\haddowg\JsonApiBundle\OpenApi\DocumentUrlProvider::class));
+
+        // The document-level describedby fallback (bundle ADR 0132): core gives a response
+        // a top-level describedby naming the operation that produced it; this listener
+        // points the rest (an Atomic Operations result, a response naming no operation the
+        // document carries) at the whole document. Higher priority than the ViewListener
+        // (priority 0) so it augments the stashed response first.
+        $services->set(\haddowg\JsonApiBundle\EventListener\DescribedbyListener::class)
+            ->args([
+                '$urls' => service(\haddowg\JsonApiBundle\OpenApi\DocumentUrlProvider::class),
             ])
             ->tag('kernel.event_listener', ['event' => 'kernel.view', 'method' => 'onKernelView', 'priority' => 16]);
 
@@ -1091,16 +1137,17 @@ final class JsonApiBundle extends AbstractBundle
     /**
      * The full server map: the implicit `default` server plus each named server
      * from `json_api.servers`. A named server inherits the top-level base_uri /
-     * version / output_timezone when its own is omitted; a named server may not be
+     * version / output_timezone / link_objects when its own is omitted; a named server may not be
      * literally `default` (that name is reserved for the implicit, top-level server).
      *
      * @param array<string, mixed> $config
      *
-     * @return array<string, array{base_uri: string, version: string, output_timezone: ?string}>
+     * @return array<string, array{base_uri: string, version: string, output_timezone: ?string, link_objects: bool}>
      */
     private function serverMap(array $config, string $baseUri, string $version, ?string $outputTimezone): array
     {
-        $servers = [ServerProvider::DEFAULT_SERVER => ['base_uri' => $baseUri, 'version' => $version, 'output_timezone' => $outputTimezone]];
+        $linkObjects = ($config['link_objects'] ?? true) !== false;
+        $servers = [ServerProvider::DEFAULT_SERVER => ['base_uri' => $baseUri, 'version' => $version, 'output_timezone' => $outputTimezone, 'link_objects' => $linkObjects]];
 
         $named = $config['servers'] ?? [];
         if (!\is_array($named)) {
@@ -1124,6 +1171,7 @@ final class JsonApiBundle extends AbstractBundle
                 'output_timezone' => \is_string($settings['output_timezone'] ?? null)
                     ? $this->outputTimezoneConfig($settings)
                     : $outputTimezone,
+                'link_objects' => \is_bool($settings['link_objects'] ?? null) ? $settings['link_objects'] : $linkObjects,
             ];
         }
 
@@ -1138,7 +1186,7 @@ final class JsonApiBundle extends AbstractBundle
      * {@see ServerProvider} resolves a server by name through a locator over these
      * factories.
      *
-     * @param array<string, array{base_uri: string, version: string, output_timezone: ?string}> $servers
+     * @param array<string, array{base_uri: string, version: string, output_timezone: ?string, link_objects: bool}> $servers
      * @param list<class-string<ProfileInterface>>                                               $profiles the JSON:API profiles every server registers, in order (bundle ADR 0117)
      */
     private function registerServers(ContainerConfigurator $container, array $servers, int $maxPerPage, int $maxIncludeDepth, bool $strictQueryParameters, array $profiles): void
@@ -1223,13 +1271,19 @@ final class JsonApiBundle extends AbstractBundle
                     // The zone DateTime attributes render in (json_api.output_timezone,
                     // or the named server's own); null leaves values in their own zone.
                     '$outputTimezone' => $settings['output_timezone'],
+                    '$linkObjects' => $settings['link_objects'],
                 ]);
 
             $factoryRefs[$name] = service($id);
         }
 
         $services->set(ServerProvider::class)
-            ->args(['$factories' => service_locator($factoryRefs)]);
+            ->args([
+                '$factories' => service_locator($factoryRefs),
+                // Points each request's links at the operations of its server's OpenAPI
+                // document; registered with the OpenAPI services.
+                '$describedBy' => service(\haddowg\JsonApiBundle\OpenApi\DescribedByResolverProvider::class)->nullOnInvalid(),
+            ]);
 
         // The fail-loud eager-load warmer (bundle ADR 0085): at cache:warmup it walks every
         // server's registered types and runs core's EagerLoadValidator over each, so a

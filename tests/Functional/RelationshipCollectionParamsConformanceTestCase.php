@@ -125,7 +125,7 @@ abstract class RelationshipCollectionParamsConformanceTestCase extends JsonApiFu
         // The bare convention self stays the endpoint URL (the page self is dropped —
         // the relationship object's pagination rides first/prev/next/last).
         self::assertSame(
-            self::BASE_URI . '/articles/1/relationships/pagedComments',
+            ['href' => self::BASE_URI . '/articles/1/relationships/pagedComments'],
             $links['self'] ?? null,
         );
 

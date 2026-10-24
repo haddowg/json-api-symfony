@@ -130,6 +130,98 @@ The extension is produced by the core projection (so it is present on every serv
 build path — the warmer, the controllers, and the CLI export alike); the bundle
 simply serves the projected document verbatim.
 
+## Links and `describedby`
+
+The links the server builds (each resource's `self`, relationship `self` and `related`,
+the top-level `self`, pagination links and [action links](actions.md#exposing-an-action-as-a-resource-link-aslink))
+render as JSON:API link objects. When the document is served, each one carries a
+`describedby` pointing at the operation in the document that describes its target, and
+the document gets a top-level `describedby` naming the operation that produced it:
+
+```jsonc
+// GET /api/articles/1, with the routes imported under /api
+{
+  "data": {
+    "type": "articles",
+    "id": "1",
+    "links": {
+      "self": {
+        "href": "https://example.test/api/articles/1",
+        "describedby": "/api/docs.json#/paths/~1articles~1%7Bid%7D/get"
+      },
+      "publish": {
+        "href": "https://example.test/api/articles/1/-actions/publish",
+        "describedby": "/api/docs.json#/paths/~1articles~1%7Bid%7D~1-actions~1publish/post"
+      }
+    },
+    "relationships": {
+      "author": {
+        "links": {
+          "self": {
+            "href": "https://example.test/api/articles/1/relationships/author",
+            "describedby": "/api/docs.json#/paths/~1articles~1%7Bid%7D~1relationships~1author/get"
+          },
+          "related": {
+            "href": "https://example.test/api/articles/1/author",
+            "describedby": "/api/docs.json#/paths/~1articles~1%7Bid%7D~1author/get"
+          }
+        }
+      }
+    }
+  },
+  "links": {
+    "self": {
+      "href": "https://example.test/api/articles/1",
+      "describedby": "/api/docs.json#/paths/~1articles~1%7Bid%7D/get"
+    },
+    "describedby": { "href": "/api/docs.json#/paths/~1articles~1%7Bid%7D/get" }
+  }
+}
+```
+
+The fragment is a JSON Pointer to the path and method in `paths`. An action link names
+the action's first declared method. A link whose operation the document doesn't carry
+gets no `describedby`, so none points at a fragment that isn't there.
+
+The document URL is the path of the server's document route, host-relative and with the
+prefix the routes are imported under: `/docs.json` for the default server and
+`/{server}/docs.json` for a named one, or `/docs.json` for every server in combined mode.
+When the document lives somewhere else, such as a docs site or a CDN serving the
+[`public_path`](#production-the-cache-warmer) files, name it with `document_url`. It's
+used as given, with `{server}` replaced by the server name (or `combined` in combined
+mode), the same names the `public_path` files use:
+
+```yaml
+json_api:
+  openapi:
+    document_url: 'https://docs.music.example/openapi/{server}.json'
+```
+
+Links get no `describedby` when the document isn't served and no `document_url` is set
+(the expose gate is closed, or generation is disabled), or when `describedby: false`.
+They stay link objects either way. To render bare URL strings instead, set
+`json_api.link_objects: false`, or the same key on a [named server](configuration.md#named-servers-json_apiservers).
+A string can't carry a `describedby`, but the document's own top-level one still renders.
+
+An [Atomic Operations](atomic-operations.md) result has no single operation in the
+document, so its top-level `describedby` points at the whole document. Error documents
+get none.
+
+The generated document describes these links: each `<Type>ResourceLinks`,
+`<Type>DocumentLinks`, `<Type>CollectionLinks` and `<Type><Rel>RelationshipLinks`
+component lists the members that context renders, with an example carrying the same
+`describedby`, and an `asLink` action is listed by its name.
+
+The warmer writes a small map of each document's operations beside it, which is all a
+request reads to resolve a `describedby`. Without a warmed map (in development, say) the
+first request builds the document once and writes the map.
+
+!!! note
+    A `describedby` points into the document as the warmer built it. A
+    [per-request decorator](#per-request-customisation) that removes an operation for some
+    requests doesn't remove the `describedby` pointing at it, so a client served the
+    trimmed document can be handed a fragment it doesn't contain.
+
 ## The viewer
 
 A single config-driven route renders the document with **Swagger UI** or **ReDoc**
@@ -557,6 +649,10 @@ aren't removed either: if `articles` keeps its `author` relationship while the `
 endpoints are hidden, the article responses still carry that linkage on the wire, so the
 `users` schemas it points at stay in the document. Hide a relationship in the document
 only when you also hide it at runtime.
+
+The same goes for [`describedby`](#links-and-describedby): links point into the document
+as the warmer built it, so a response can carry a `describedby` naming an operation a
+serve decorator hid from that client.
 
 `schemas.json` has its own interface, `JsonSchemaServeDecoratorInterface`, which gets
 the schemas keyed by type (unset a key to hide a type). The schemas are standalone, so

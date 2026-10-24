@@ -32,11 +32,11 @@ final class ConfiguredBaseUnderAPrefixTest extends JsonApiFunctionalTestCase
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
 
         $document = $this->decode($response);
-        self::assertSame(['self' => self::BASE . '/articles/1'], $document['links'] ?? null);
+        self::assertSame(['self' => ['href' => self::BASE . '/articles/1']], $document['links'] ?? null);
 
         $data = $document['data'] ?? null;
         self::assertIsArray($data);
-        self::assertSame(['self' => self::BASE . '/articles/1'], $data['links'] ?? null);
+        self::assertSame(['self' => ['href' => self::BASE . '/articles/1']], $data['links'] ?? null);
 
         $relationships = $data['relationships'] ?? null;
         self::assertIsArray($relationships);
@@ -44,8 +44,8 @@ final class ConfiguredBaseUnderAPrefixTest extends JsonApiFunctionalTestCase
         self::assertIsArray($author);
         self::assertSame(
             [
-                'self' => self::BASE . '/articles/1/relationships/author',
-                'related' => self::BASE . '/articles/1/author',
+                'self' => ['href' => self::BASE . '/articles/1/relationships/author'],
+                'related' => ['href' => self::BASE . '/articles/1/author'],
             ],
             $author['links'] ?? null,
         );
@@ -60,8 +60,8 @@ final class ConfiguredBaseUnderAPrefixTest extends JsonApiFunctionalTestCase
 
         $links = $this->decode($response)['links'] ?? null;
         self::assertIsArray($links);
-        self::assertSame(self::BASE . '/articles?page%5Bnumber%5D=1&page%5Bsize%5D=2', $links['self'] ?? null);
-        self::assertSame(self::BASE . '/articles?page%5Bnumber%5D=2&page%5Bsize%5D=2', $links['next'] ?? null);
+        self::assertSame(['href' => self::BASE . '/articles?page%5Bnumber%5D=1&page%5Bsize%5D=2'], $links['self'] ?? null);
+        self::assertSame(['href' => self::BASE . '/articles?page%5Bnumber%5D=2&page%5Bsize%5D=2'], $links['next'] ?? null);
     }
 
     #[Test]

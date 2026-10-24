@@ -55,7 +55,7 @@ abstract class WriteConformanceTestCase extends JsonApiFunctionalTestCase
         // to the Location (core ADR 0054).
         $links = $data['links'] ?? null;
         self::assertIsArray($links);
-        self::assertSame('https://example.test/articles/' . $id, $links['self'] ?? null);
+        self::assertSame(['href' => 'https://example.test/articles/' . $id], $links['self'] ?? null);
 
         $attributes = $data['attributes'] ?? null;
         self::assertIsArray($attributes);

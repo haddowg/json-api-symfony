@@ -347,7 +347,7 @@ final class ReadQueryTest extends MusicCatalogKernelTestCase
                 'type' => 'tracks',
                 'id' => '1',
                 'meta' => ['served_by' => 'music-catalog'],
-                'links' => ['self' => 'https://music.example/tracks/1'],
+                'links' => ['self' => ['href' => 'https://music.example/tracks/1', 'describedby' => '/docs.json#/paths/~1tracks~1%7Bid%7D/get']],
                 'attributes' => [
                     'title' => 'Airbag',
                     'trackNumber' => 1,
@@ -360,15 +360,15 @@ final class ReadQueryTest extends MusicCatalogKernelTestCase
                 'relationships' => [
                     'album' => [
                         'links' => [
-                            'self' => 'https://music.example/tracks/1/relationships/album',
-                            'related' => 'https://music.example/tracks/1/album',
+                            'self' => ['href' => 'https://music.example/tracks/1/relationships/album', 'describedby' => '/docs.json#/paths/~1tracks~1%7Bid%7D~1relationships~1album/get'],
+                            'related' => ['href' => 'https://music.example/tracks/1/album', 'describedby' => '/docs.json#/paths/~1tracks~1%7Bid%7D~1album/get'],
                         ],
                         'data' => ['type' => 'albums', 'id' => '1'],
                     ],
                     'playlists' => [
                         'links' => [
-                            'self' => 'https://music.example/tracks/1/relationships/playlists',
-                            'related' => 'https://music.example/tracks/1/playlists',
+                            'self' => ['href' => 'https://music.example/tracks/1/relationships/playlists', 'describedby' => '/docs.json#/paths/~1tracks~1%7Bid%7D~1relationships~1playlists/get'],
+                            'related' => ['href' => 'https://music.example/tracks/1/playlists', 'describedby' => '/docs.json#/paths/~1tracks~1%7Bid%7D~1playlists/get'],
                         ],
                         'data' => [['type' => 'playlists', 'id' => SeedManifest::OWNED_PLAYLIST_ID]],
                     ],

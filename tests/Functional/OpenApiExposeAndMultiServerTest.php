@@ -137,6 +137,51 @@ final class OpenApiExposeAndMultiServerTest extends \Symfony\Bundle\FrameworkBun
 
     #[Test]
     #[Group('spec:openapi')]
+    #[Group('spec:document-links')]
+    public function perServerModePointsEachServersLinksIntoItsOwnDocument(): void
+    {
+        $kernel = new OpenApiMultiServerTestKernel('test', false);
+        $kernel->boot();
+
+        $public = $this->document($kernel, '/public-items/1');
+        self::assertSame(
+            ['href' => 'https://public.test/public-items/1', 'describedby' => '/docs.json#/paths/~1public-items~1%7Bid%7D/get'],
+            $this->asArray($public['links'] ?? null)['self'] ?? null,
+        );
+
+        $admin = $this->document($kernel, '/admin/admin-items/1');
+        self::assertSame(
+            ['href' => 'https://admin.test/admin/admin-items/1', 'describedby' => '/admin/docs.json#/paths/~1admin-items~1%7Bid%7D/get'],
+            $this->asArray($admin['links'] ?? null)['self'] ?? null,
+        );
+        self::assertSame(
+            ['href' => '/admin/docs.json#/paths/~1admin-items~1%7Bid%7D/get'],
+            $this->asArray($admin['links'] ?? null)['describedby'] ?? null,
+        );
+
+        $kernel->shutdown();
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    #[Group('spec:document-links')]
+    public function combinedModePointsEveryServersLinksIntoTheOneDocument(): void
+    {
+        $kernel = new OpenApiMultiServerTestKernel('test', false, true);
+        $kernel->boot();
+
+        $admin = $this->document($kernel, '/admin/admin-items/1');
+        self::assertSame(
+            ['href' => 'https://admin.test/admin/admin-items/1', 'describedby' => '/docs.json#/paths/~1admin-items~1%7Bid%7D/get'],
+            $this->asArray($admin['links'] ?? null)['self'] ?? null,
+        );
+        self::assertArrayHasKey('/admin-items/{id}', $this->asArray($this->document($kernel, '/docs.json')['paths'] ?? null));
+
+        $kernel->shutdown();
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
     public function combinedModeEmitsOnlyTheJsonPathRoute(): void
     {
         $kernel = new OpenApiMultiServerTestKernel('test', false, true);

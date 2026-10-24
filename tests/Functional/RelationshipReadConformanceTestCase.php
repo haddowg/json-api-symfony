@@ -63,8 +63,8 @@ abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTest
         self::assertIsArray($author);
         self::assertSame(
             [
-                'self' => self::BASE_URI . '/articles/1/relationships/author',
-                'related' => self::BASE_URI . '/articles/1/author',
+                'self' => ['href' => self::BASE_URI . '/articles/1/relationships/author'],
+                'related' => ['href' => self::BASE_URI . '/articles/1/author'],
             ],
             $author['links'] ?? null,
         );
@@ -80,8 +80,8 @@ abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTest
         self::assertIsArray($comments);
         self::assertSame(
             [
-                'self' => self::BASE_URI . '/articles/1/relationships/comments',
-                'related' => self::BASE_URI . '/articles/1/comments',
+                'self' => ['href' => self::BASE_URI . '/articles/1/relationships/comments'],
+                'related' => ['href' => self::BASE_URI . '/articles/1/comments'],
             ],
             $comments['links'] ?? null,
         );
@@ -213,7 +213,7 @@ abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTest
 
         $links = $resource['links'] ?? null;
         self::assertIsArray($links);
-        self::assertSame(self::BASE_URI . '/articles/1', $links['self'] ?? null);
+        self::assertSame(['href' => self::BASE_URI . '/articles/1'], $links['self'] ?? null);
     }
 
     #[Test]
@@ -231,7 +231,7 @@ abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTest
 
         $links = $resource['links'] ?? null;
         self::assertIsArray($links);
-        self::assertSame(self::BASE_URI . '/articles/3', $links['self'] ?? null);
+        self::assertSame(['href' => self::BASE_URI . '/articles/3'], $links['self'] ?? null);
     }
 
     #[Test]
@@ -244,7 +244,7 @@ abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTest
 
         $links = $document['links'] ?? null;
         self::assertIsArray($links);
-        self::assertSame(self::BASE_URI . '/articles/1', $links['self'] ?? null);
+        self::assertSame(['href' => self::BASE_URI . '/articles/1'], $links['self'] ?? null);
     }
 
     #[Test]
@@ -259,7 +259,7 @@ abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTest
         $links = $document['links'] ?? null;
         self::assertIsArray($links);
         self::assertSame(
-            self::BASE_URI . '/articles?page%5Bnumber%5D=1&page%5Bsize%5D=15',
+            ['href' => self::BASE_URI . '/articles?page%5Bnumber%5D=1&page%5Bsize%5D=15'],
             $links['self'] ?? null,
         );
     }
@@ -276,7 +276,7 @@ abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTest
         $links = $document['links'] ?? null;
         self::assertIsArray($links);
         self::assertSame(
-            self::BASE_URI . '/articles?filter%5Btitle%5D=Zebra+patterns&page%5Bnumber%5D=1&page%5Bsize%5D=15',
+            ['href' => self::BASE_URI . '/articles?filter%5Btitle%5D=Zebra+patterns&page%5Bnumber%5D=1&page%5Bsize%5D=15'],
             $links['self'] ?? null,
         );
     }
@@ -294,7 +294,7 @@ abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTest
         $links = $document['links'] ?? null;
         self::assertIsArray($links);
         self::assertSame(
-            self::BASE_URI . '/articles?sort=title&page%5Bnumber%5D=2&page%5Bsize%5D=2',
+            ['href' => self::BASE_URI . '/articles?sort=title&page%5Bnumber%5D=2&page%5Bsize%5D=2'],
             $links['self'] ?? null,
         );
         // The navigation links remain.
@@ -321,7 +321,7 @@ abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTest
 
         $links = $author['links'] ?? null;
         self::assertIsArray($links);
-        self::assertSame(self::BASE_URI . '/authors/1', $links['self'] ?? null);
+        self::assertSame(['href' => self::BASE_URI . '/authors/1'], $links['self'] ?? null);
     }
 
     // --- relationship-existence filters ----------------------------------------

@@ -46,8 +46,8 @@ final class DoctrineRelationshipReadTest extends RelationshipReadConformanceTest
         self::assertArrayNotHasKey('data', $lazyComments, 'a lazy to-many over an uninitialised collection must not leak its linkage data');
         self::assertSame(
             [
-                'self' => 'https://example.test/articles/1/relationships/lazyComments',
-                'related' => 'https://example.test/articles/1/lazyComments',
+                'self' => ['href' => 'https://example.test/articles/1/relationships/lazyComments'],
+                'related' => ['href' => 'https://example.test/articles/1/lazyComments'],
             ],
             $lazyComments['links'] ?? null,
         );

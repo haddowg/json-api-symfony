@@ -120,6 +120,49 @@ final class ArtifactStore
     }
 
     /**
+     * The operations the warmed document carries, as path template → lower-case methods:
+     * the input of the `describedby` resolver, so a request never loads the whole document
+     * to point a link at it. Null when it was never written or can't be read.
+     *
+     * @return array<string, list<string>>|null
+     */
+    public function readOperations(string $server): ?array
+    {
+        $json = $this->get($this->operationsPath($server));
+        if ($json === null) {
+            return null;
+        }
+
+        try {
+            $operations = \json_decode($json, true, 512, \JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            return null;
+        }
+
+        if (!\is_array($operations)) {
+            return null;
+        }
+
+        $map = [];
+        foreach ($operations as $path => $methods) {
+            if (!\is_string($path) || !\is_array($methods)) {
+                return null;
+            }
+            $map[$path] = \array_values(\array_filter($methods, \is_string(...)));
+        }
+
+        return $map;
+    }
+
+    /**
+     * @param array<string, list<string>> $operations
+     */
+    public function writeOperations(string $server, array $operations): void
+    {
+        $this->put($this->operationsPath($server), (string) \json_encode((object) $operations, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES));
+    }
+
+    /**
      * The hash of the aggregate JSON Schema artifact, or null when it was never written.
      */
     public function readSchemaAggregateHash(string $server): ?string
@@ -198,6 +241,11 @@ final class ArtifactStore
     public function writeSchemaAggregate(string $server, string $json): void
     {
         $this->put($this->schemaAggregatePath($server), $json);
+    }
+
+    private function operationsPath(string $server): string
+    {
+        return $this->baseDir() . '/' . $this->safe($server) . '.operations.json';
     }
 
     private function serveArtifactPath(string $server): string

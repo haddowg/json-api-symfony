@@ -5,86 +5,62 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\EventListener;
 
 use haddowg\JsonApi\Response\AbstractResponse;
+use haddowg\JsonApi\Response\ErrorResponse;
 use haddowg\JsonApi\Schema\Link\Link;
-use haddowg\JsonApiBundle\Server\ServerProvider;
-use Symfony\Component\HttpFoundation\Request;
+use haddowg\JsonApi\Schema\Link\LinkObject;
+use haddowg\JsonApi\Server\Server;
+use haddowg\JsonApiBundle\OpenApi\DocumentUrlProvider;
 use Symfony\Component\HttpKernel\Event\ViewEvent;
-use Symfony\Component\Routing\Exception\ExceptionInterface as RoutingException;
-use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 
 /**
- * Stamps a top-level `links.describedby` onto every JSON:API response, pointing at the
- * served OpenAPI document for the request's server (JSON:API 1.1 — a link to a
- * description document). It runs on `kernel.view` **before** the {@see ViewListener}
- * (higher priority), re-stashing the response value object with the link set via core's
- * {@see AbstractResponse::withDescribedby()}; the ViewListener then renders it.
+ * Points a response's top-level `links.describedby` at the whole OpenAPI document when
+ * core can't point it at an operation.
  *
- * The link is generated against the request host by the router, so it is correct behind
- * any prefix/host the application mounted the document routes under. It points at the
- * default server's document, or — in per-server mode — the current server's document
- * ({@see \haddowg\JsonApiBundle\Routing\OpenApiRouteLoader} route names). When the
- * document routes are not registered (generation disabled, or the expose gate closed)
- * URL generation fails and no link is added — so the member appears only when the
- * document is actually reachable.
+ * Core gives each document a `describedby` naming the operation that produced it, from
+ * the resolver the {@see \haddowg\JsonApiBundle\Server\ServerProvider} sets on the
+ * request's Server. That covers every CRUD, relationship and action endpoint. It leaves
+ * out a response whose operation the document doesn't carry: an Atomic Operations
+ * result (core doesn't know that endpoint's path) or a handler response naming an
+ * operation nobody serves. For those this listener stamps the document's URL, the same
+ * one the operation pointers use, through core's
+ * {@see AbstractResponse::withDescribedby()}. It runs on `kernel.view` before the
+ * {@see ViewListener}.
  *
- * Disabled wholesale by `json_api.openapi.describedby: false`.
+ * With no document URL (`json_api.openapi.describedby: false`, generation disabled, or
+ * the document routes not registered and no `document_url` configured) it does nothing.
  */
-final class DescribedbyListener
+final readonly class DescribedbyListener
 {
-    public function __construct(
-        private readonly UrlGeneratorInterface $urlGenerator,
-        private readonly bool $enabled,
-        private readonly bool $combined,
-    ) {}
+    public function __construct(private DocumentUrlProvider $urls) {}
 
     public function onKernelView(ViewEvent $event): void
     {
-        if (!$this->enabled) {
-            return;
-        }
-
         $request = $event->getRequest();
 
         $response = $request->attributes->get(RequestListener::RESPONSE_ATTRIBUTE);
-        if (!$response instanceof AbstractResponse) {
+        // An error document describes the failure, not an operation, as core decides
+        // for the documents it describes itself.
+        if (!$response instanceof AbstractResponse || $response instanceof ErrorResponse) {
             return;
         }
 
-        $url = $this->describedbyUrl($request);
+        $server = $request->attributes->get(RequestListener::SERVER_ATTRIBUTE);
+        $operation = $response->operationReference();
+        if ($server instanceof Server && $operation !== null && $server->describedByResolver()?->describedBy($operation) !== null) {
+            return;
+        }
+
+        $name = $request->attributes->get('_jsonapi_server');
+        $url = $this->urls->forServer(\is_string($name) && $name !== '' ? $name : null);
         if ($url === null) {
             return;
         }
 
         $request->attributes->set(
             RequestListener::RESPONSE_ATTRIBUTE,
-            $response->withDescribedby(new Link($url)),
+            // In the same form as the server's other links: `{"href": ...}` unless the
+            // server opted back out to strings.
+            $response->withDescribedby($server instanceof Server && !$server->rendersLinkObjects() ? new Link($url) : new LinkObject($url)),
         );
-    }
-
-    /**
-     * The absolute URL of the OpenAPI document for the request's server, or null when
-     * the document route is not registered (so no `describedby` is stamped).
-     */
-    private function describedbyUrl(Request $request): ?string
-    {
-        $server = $request->attributes->get('_jsonapi_server');
-
-        try {
-            // In per-server mode a named (non-default) server has its own document route;
-            // the default server and combined mode both serve the single default document.
-            if (!$this->combined && \is_string($server) && $server !== '' && $server !== ServerProvider::DEFAULT_SERVER) {
-                return $this->urlGenerator->generate(
-                    'jsonapi.openapi.server',
-                    ['server' => $server],
-                    UrlGeneratorInterface::ABSOLUTE_URL,
-                );
-            }
-
-            return $this->urlGenerator->generate('jsonapi.openapi.default', [], UrlGeneratorInterface::ABSOLUTE_URL);
-        } catch (RoutingException) {
-            // The document routes are not registered (generation disabled or the expose
-            // gate closed) — the document is unreachable, so advertise no link to it.
-            return null;
-        }
     }
 }

@@ -129,11 +129,11 @@ final class MultiServerTest extends MusicCatalogKernelTestCase
         $document = $this->decode($response);
         $links = $document['links'] ?? null;
         self::assertIsArray($links);
-        self::assertSame(self::ADMIN_BASE_URI . '/users/1', $links['self'] ?? null);
+        self::assertSame(['href' => self::ADMIN_BASE_URI . '/users/1', 'describedby' => '/admin/docs.json#/paths/~1users~1%7Bid%7D/get'], $links['self'] ?? null);
 
         $data = $document['data'] ?? null;
         self::assertIsArray($data);
-        self::assertSame(['self' => self::ADMIN_BASE_URI . '/users/1'], $data['links'] ?? null);
+        self::assertSame(['self' => ['href' => self::ADMIN_BASE_URI . '/users/1', 'describedby' => '/admin/docs.json#/paths/~1users~1%7Bid%7D/get']], $data['links'] ?? null);
     }
 
     #[Test]
@@ -186,7 +186,7 @@ final class MultiServerTest extends MusicCatalogKernelTestCase
 
         $self = $links['self'] ?? null;
 
-        return \is_string($self) ? $self : null;
+        return \is_array($self) && \is_string($self['href'] ?? null) ? $self['href'] : null;
     }
 
     /**

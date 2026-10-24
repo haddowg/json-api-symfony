@@ -39,8 +39,8 @@ final class RelationshipReadTest extends MusicCatalogKernelTestCase
         self::assertSame(['type' => 'albums', 'id' => '1'], $album['data'] ?? null);
         self::assertSame(
             [
-                'self' => self::BASE_URI . '/tracks/1/relationships/album',
-                'related' => self::BASE_URI . '/tracks/1/album',
+                'self' => ['href' => self::BASE_URI . '/tracks/1/relationships/album', 'describedby' => '/docs.json#/paths/~1tracks~1%7Bid%7D~1relationships~1album/get'],
+                'related' => ['href' => self::BASE_URI . '/tracks/1/album', 'describedby' => '/docs.json#/paths/~1tracks~1%7Bid%7D~1album/get'],
             ],
             $album['links'] ?? null,
         );
@@ -60,8 +60,8 @@ final class RelationshipReadTest extends MusicCatalogKernelTestCase
         );
         self::assertSame(
             [
-                'self' => self::BASE_URI . '/tracks/1/relationships/playlists',
-                'related' => self::BASE_URI . '/tracks/1/playlists',
+                'self' => ['href' => self::BASE_URI . '/tracks/1/relationships/playlists', 'describedby' => '/docs.json#/paths/~1tracks~1%7Bid%7D~1relationships~1playlists/get'],
+                'related' => ['href' => self::BASE_URI . '/tracks/1/playlists', 'describedby' => '/docs.json#/paths/~1tracks~1%7Bid%7D~1playlists/get'],
             ],
             $playlists['links'] ?? null,
         );
@@ -82,8 +82,8 @@ final class RelationshipReadTest extends MusicCatalogKernelTestCase
         self::assertArrayNotHasKey('data', $tracks);
         self::assertSame(
             [
-                'self' => self::BASE_URI . '/albums/1/relationships/tracks',
-                'related' => self::BASE_URI . '/albums/1/tracks',
+                'self' => ['href' => self::BASE_URI . '/albums/1/relationships/tracks', 'describedby' => '/docs.json#/paths/~1albums~1%7Bid%7D~1relationships~1tracks/get'],
+                'related' => ['href' => self::BASE_URI . '/albums/1/tracks', 'describedby' => '/docs.json#/paths/~1albums~1%7Bid%7D~1tracks/get'],
             ],
             $tracks['links'] ?? null,
         );
@@ -237,7 +237,7 @@ final class RelationshipReadTest extends MusicCatalogKernelTestCase
         // stays the bare endpoint URL.
         $links = $document['links'] ?? null;
         self::assertIsArray($links);
-        self::assertSame(self::BASE_URI . '/albums/1/relationships/tracks', $links['self'] ?? null);
+        self::assertSame(['href' => self::BASE_URI . '/albums/1/relationships/tracks', 'describedby' => '/docs.json#/paths/~1albums~1%7Bid%7D~1relationships~1tracks/get'], $links['self'] ?? null);
         self::assertArrayHasKey('first', $links);
     }
 
