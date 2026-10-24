@@ -158,7 +158,8 @@ app imports the docs route loader, your own `GET /docs` route wins by registrati
 
 ## Production: the cache warmer
 
-The document is **never built per request**. A `CacheWarmer` pre-builds each server's
+The document is **never built per request** (a [serve decorator](#per-request-customisation)
+adjusts the pre-built one). A `CacheWarmer` pre-builds each server's
 document, the per-type JSON Schemas, and the aggregate schema document at `cache:warmup`
 — i.e. on every deploy — into `%kernel.cache_dir%`; the controllers then serve the
 pre-built artifacts with an `O(file read)`. In dev (`kernel.debug`) the controllers
@@ -466,6 +467,140 @@ final class StampInternalServer implements OpenApiFactoryInterface
 
 Register multiple by priority (`#[AsTaggedItem]` or a `priority` tag attribute); lower
 priority runs first, the highest-priority decorator gets the final mutation.
+
+### Per-request customisation
+
+`OpenApiFactoryInterface` runs once per deploy, so it can't see who is asking. When one
+deployment serves several hosts that each need their own view of the spec (absolute
+`servers` URLs, operations a tenant hasn't paid for, example hosts), implement
+`OpenApiServeDecoratorInterface` instead. It runs every time `docs.json` is served and
+gets the `Request`:
+
+```php
+use haddowg\JsonApi\OpenApi\OpenApi;
+use haddowg\JsonApi\OpenApi\Server;
+use haddowg\JsonApiBundle\OpenApi\OpenApiServeCacheKeyInterface;
+use haddowg\JsonApiBundle\OpenApi\OpenApiServeDecoratorInterface;
+use Symfony\Component\HttpFoundation\Request;
+
+final class ServersFromHost implements OpenApiServeDecoratorInterface, OpenApiServeCacheKeyInterface
+{
+    public function decorate(OpenApi $document, Request $request, string $server): OpenApi
+    {
+        return $document->withServers([new Server('https://' . $request->getHost() . '/api/v5')]);
+    }
+
+    public function cacheKey(Request $request, string $server): string
+    {
+        return $request->getHost();
+    }
+}
+```
+
+Hiding operations works well with the `x-feature` [vendor extension](#vendor-extensions):
+mark operations at build time, then drop the ones the requesting tenant lacks.
+
+```php
+use haddowg\JsonApi\OpenApi\OpenApi;
+use haddowg\JsonApi\OpenApi\Operation;
+use haddowg\JsonApi\OpenApi\Paths;
+use haddowg\JsonApiBundle\OpenApi\OpenApiServeCacheKeyInterface;
+use haddowg\JsonApiBundle\OpenApi\OpenApiServeDecoratorInterface;
+use Symfony\Component\HttpFoundation\Request;
+
+final class FeatureGate implements OpenApiServeDecoratorInterface, OpenApiServeCacheKeyInterface
+{
+    public function __construct(private readonly TenantFeatures $features) {}
+
+    public function decorate(OpenApi $document, Request $request, string $server): OpenApi
+    {
+        $enabled = $this->features->forHost($request->getHost());
+        $items = [];
+        foreach ($document->paths->items ?? [] as $path => $item) {
+            $items[$path] = $item->withOperations(\array_filter(
+                $item->operations,
+                static function (Operation $operation) use ($enabled): bool {
+                    $feature = $operation->extension('x-feature');
+
+                    return !\is_string($feature) || \in_array($feature, $enabled, true);
+                },
+            ));
+        }
+
+        return $document->withPaths(new Paths($items));
+    }
+
+    public function cacheKey(Request $request, string $server): array
+    {
+        // Bump 'v' whenever decorate() changes behaviour.
+        return ['v' => 1, 'features' => $this->features->forHost($request->getHost())];
+    }
+}
+```
+
+Both are autoconfigured and ordered by `priority` like the build-time decorators: lower
+runs first, the highest gets the last word. `$server` is the server name, or
+`[combined]` in combined mode.
+
+You only remove operations. After the last decorator the bundle cleans up what they
+orphaned:
+
+- a path item left with no operation is dropped;
+- a component (schema, response, parameter, request body, header and so on) that the
+  served document referenced before decoration and nothing references now is dropped,
+  following `$ref`s through other components;
+- a tag definition whose operations all went is dropped.
+
+Components the document never referenced (or that a decorator added) stay, and so does
+everything they reference. Security schemes are never touched. Relationship members
+aren't removed either: if `articles` keeps its `author` relationship while the `users`
+endpoints are hidden, the article responses still carry that linkage on the wire, so the
+`users` schemas it points at stay in the document. Hide a relationship in the document
+only when you also hide it at runtime.
+
+`schemas.json` has its own interface, `JsonSchemaServeDecoratorInterface`, which gets
+the schemas keyed by type (unset a key to hide a type). The schemas are standalone, so
+nothing is pruned. The CLI export commands and the static `public_path` files never run
+serve decorators: the exported spec stays the full contract for diffing and codegen.
+
+#### Caching at the edge
+
+Both `docs.json` and `schemas.json` always send an `ETag` and answer a matching
+`If-None-Match` with a `304`. The comparison is weak, so the `W/` prefix a CDN adds when
+it compresses the body still matches. How the ETag is computed depends on the
+decorators:
+
+| Serve decorators | ETag | Cost of a 304 |
+|---|---|---|
+| none | the warmed artifact's hash, stored beside it | one 32-byte file read |
+| all implement `OpenApiServeCacheKeyInterface` | a hash of the artifact hash and every key, in decorator order | that read plus your `cacheKey()` calls |
+| any without a key | a hash of the final body | a full decorate and serialise |
+
+A partial key would let two different documents share an ETag, so one keyless decorator
+switches that document kind to the body hash. The key mixes in each decorator's class
+name, so adding or removing a decorator changes it; a change inside `decorate()` doesn't,
+which is why the example carries a version.
+
+Set `Cache-Control` for both routes with `cache_control`:
+
+```yaml
+json_api:
+  openapi:
+    cache_control: 'public, max-age=60, s-maxage=300, stale-while-revalidate=86400'
+```
+
+It is off by default, which leaves Symfony's `private` default in place. The docs routes
+are often behind a firewall in production, and a `public` default would let a shared
+cache hand an authenticated document to anyone. The responses carry no `Vary` header:
+the routes don't negotiate (always JSON), and a CDN already keys on the host. If a
+decorator reads anything other than the host, such as a cookie or an `Authorization`
+header, keep `cache_control` private.
+
+Nothing on the docs, schemas or viewer routes starts a session or sets a cookie, and a
+lazy firewall leaves an anonymous request alone too. A firewall that does start a
+session (a request carrying a session cookie, say) makes Symfony mark the response
+private whatever `cache_control` says, so put these paths under a stateless firewall, or
+none, when an edge cache should keep them.
 
 ## The `servers` list
 

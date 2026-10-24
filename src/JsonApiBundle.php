@@ -188,6 +188,21 @@ final class JsonApiBundle extends AbstractBundle
     public const string OPENAPI_FACTORY_TAG = 'haddowg.json_api.openapi_factory';
 
     /**
+     * Tag applied to an {@see \haddowg\JsonApiBundle\OpenApi\OpenApiServeDecoratorInterface}
+     * (bundle ADR 0131). The {@see \haddowg\JsonApiBundle\Controller\OpenApiController}
+     * runs the tagged services on every served `docs.json`, with the request, in the same
+     * priority order as {@see self::OPENAPI_FACTORY_TAG}. The CLI export never runs them.
+     */
+    public const string OPENAPI_SERVE_DECORATOR_TAG = 'haddowg.json_api.openapi_serve_decorator';
+
+    /**
+     * Tag applied to a {@see \haddowg\JsonApiBundle\OpenApi\JsonSchemaServeDecoratorInterface}
+     * (bundle ADR 0131): the `schemas.json` counterpart of
+     * {@see self::OPENAPI_SERVE_DECORATOR_TAG}.
+     */
+    public const string JSON_SCHEMA_SERVE_DECORATOR_TAG = 'haddowg.json_api.json_schema_serve_decorator';
+
+    /**
      * The bundle's opinionated default `json_api.max_include_depth`: a `?include`
      * may nest at most this many relationship hops from the primary resource
      * unless a resource overrides it with its own `maxIncludeDepth()`. Core itself
@@ -370,6 +385,10 @@ final class JsonApiBundle extends AbstractBundle
                     ->info('How a backed enum\'s per-value descriptions are surfaced (D16): both (markdown table + x-enum-* extensions), extensions (only the extensions), or description (only the markdown table). Default both.')
                     ->values(['both', 'extensions', 'description'])
                     ->defaultValue('both')
+                ->end()
+                ->scalarNode('cache_control')
+                    ->info('The Cache-Control header for the served docs.json and schemas.json of every server, e.g. "public, max-age=60, s-maxage=300, stale-while-revalidate=86400". Both always carry an ETag and answer a matching If-None-Match with a 304. Null (the default) leaves Cache-Control to Symfony, which makes the response private.')
+                    ->defaultNull()
                 ->end()
                 ->scalarNode('public_path')
                     ->info('Also emit a fully static <server>.json (+ .yaml when symfony/yaml is installed) into this directory at cache:warmup (D17), so a web server/CDN can serve the document with zero PHP. Null = controller-only (served from the cache dir).')
@@ -715,6 +734,10 @@ final class JsonApiBundle extends AbstractBundle
         // build path — warmer, controller lazy-build, and CLI export (bundle ADR 0080).
         $builder->registerForAutoconfiguration(\haddowg\JsonApiBundle\OpenApi\OpenApiFactoryInterface::class)
             ->addTag(self::OPENAPI_FACTORY_TAG);
+        $builder->registerForAutoconfiguration(\haddowg\JsonApiBundle\OpenApi\OpenApiServeDecoratorInterface::class)
+            ->addTag(self::OPENAPI_SERVE_DECORATOR_TAG);
+        $builder->registerForAutoconfiguration(\haddowg\JsonApiBundle\OpenApi\JsonSchemaServeDecoratorInterface::class)
+            ->addTag(self::JSON_SCHEMA_SERVE_DECORATOR_TAG);
 
         // The constraint-translator interface references Symfony Validator types,
         // so only register its autoconfiguration when the optional
@@ -988,6 +1011,9 @@ final class JsonApiBundle extends AbstractBundle
                 '$store' => service(\haddowg\JsonApiBundle\OpenApi\ArtifactStore::class),
                 '$debug' => '%kernel.debug%',
                 '$combined' => $openApiConfig->combined,
+                // Per-request customisation (ADR 0131), never run by the CLI export.
+                '$serveDecorators' => tagged_iterator(self::OPENAPI_SERVE_DECORATOR_TAG),
+                '$cacheControl' => $openApiConfig->cacheControl,
             ])
             ->public()
             ->tag('controller.service_arguments');
@@ -1013,6 +1039,8 @@ final class JsonApiBundle extends AbstractBundle
                 '$store' => service(\haddowg\JsonApiBundle\OpenApi\ArtifactStore::class),
                 '$debug' => '%kernel.debug%',
                 '$combined' => $openApiConfig->combined,
+                '$serveDecorators' => tagged_iterator(self::JSON_SCHEMA_SERVE_DECORATOR_TAG),
+                '$cacheControl' => $openApiConfig->cacheControl,
             ])
             ->public()
             ->tag('controller.service_arguments');
