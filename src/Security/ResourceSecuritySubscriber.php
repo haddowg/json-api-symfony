@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Security;
 
 use haddowg\JsonApiBundle\Event\AfterFetchOneEvent;
 use haddowg\JsonApiBundle\Event\BeforeActionEvent;
+use haddowg\JsonApiBundle\Event\BeforeApplyUpdateEvent;
 use haddowg\JsonApiBundle\Event\BeforeCreateEvent;
 use haddowg\JsonApiBundle\Event\BeforeDeleteEvent;
 use haddowg\JsonApiBundle\Event\BeforeFetchCollectionEvent;
@@ -33,6 +34,7 @@ use Symfony\Component\Security\Core\Exception\AccessDeniedException;
  * persist or side-effect — and at {@see AfterFetchOneEvent} for the single read. The
  * subject `$object` is:
  *  - {@see BeforeCreateEvent}             → the hydrated entity (post-denormalization);
+ *  - {@see BeforeApplyUpdateEvent}        → the loaded entity, before the body is applied;
  *  - {@see BeforeUpdateEvent}             → the loaded, changed entity;
  *  - {@see BeforeRelationshipMutateEvent} → the parent (gated by the relation's mutate
  *                                           expression, overriding the type's update);
@@ -43,7 +45,13 @@ use Symfony\Component\Security\Core\Exception\AccessDeniedException;
  *                                           expression, overriding the type's read; only
  *                                           dispatched when the relation declares one).
  *
- * A relation may thus be authorized **independently** of its parent: its declared
+ * An update is gated twice by the same expression: against the stored entity, so a
+ * body cannot make the caller pass by rewriting what the expression reads (an owner),
+ * and against the changed entity, so a caller cannot turn the resource into one they
+ * could not edit (handing it to someone else). A relationship mutation is gated
+ * against the parent before the persister applies it.
+ *
+ * A relation may be authorized **independently** of its parent: its declared
  * `security(read:, mutate:)` replaces the parent's gate for the relation's endpoints,
  * so it can be more *or* less permissive than the resource it hangs off (a relation
  * declaring nothing inherits the parent gate unchanged).
@@ -75,6 +83,7 @@ final class ResourceSecuritySubscriber implements EventSubscriberInterface
     {
         return [
             BeforeCreateEvent::class => 'onBeforeCreate',
+            BeforeApplyUpdateEvent::class => 'onBeforeApplyUpdate',
             BeforeUpdateEvent::class => 'onBeforeUpdate',
             BeforeRelationshipMutateEvent::class => 'onBeforeRelationshipMutate',
             BeforeDeleteEvent::class => 'onBeforeDelete',
@@ -137,6 +146,11 @@ final class ResourceSecuritySubscriber implements EventSubscriberInterface
     public function onBeforeCreate(BeforeCreateEvent $event): void
     {
         $this->authorize($event->type, $this->registry->securityFor($event->type)?->forCreate(), $event->entity);
+    }
+
+    public function onBeforeApplyUpdate(BeforeApplyUpdateEvent $event): void
+    {
+        $this->authorize($event->type, $this->registry->securityFor($event->type)?->forUpdate(), $event->entity);
     }
 
     public function onBeforeUpdate(BeforeUpdateEvent $event): void

@@ -1,0 +1,7 @@
+# The update gate checks the stored and the changed resource
+
+`securityUpdate` was evaluated only at `BeforeUpdateEvent`, after the body's relationships and attributes had been applied, so an ownership expression read the owner the request had just written and a caller could edit someone else's resource by naming themselves as its owner. The handler now dispatches `BeforeApplyUpdateEvent` as soon as the target is loaded, before validation and before anything is applied, and the security subscriber evaluates the update expression there first; the existing evaluation against the changed entity stays, so a caller also can't turn a resource into one the expression would refuse them, such as handing it to another user. The relationship endpoints already gate the parent before the persister applies the change, and keep doing only that: adding a check after the change would mean applying it without committing, which `DataPersisterInterface::mutateRelationship()` doesn't offer on that path.
+
+## Consequences
+
+An app that lets an owner transfer a resource through a whole-resource `PATCH` needs an expression that also allows the new state, for example `is_granted('EDIT', object) or is_granted('ROLE_ADMIN')`. The relationship endpoint checks only the parent before the change, so the two paths differ for a transfer. A caller the stored-state check refuses now gets a `403` before validation runs, so they no longer see `422` validation errors for a resource they can't edit.

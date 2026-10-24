@@ -44,7 +44,7 @@ final class AlbumResource extends AbstractResource { /* … */ }
 | --- | --- | --- | --- |
 | `security` | every operation (incl. the collection) | (the operation's subject) | — |
 | `securityCreate` | `POST /{type}` | the **hydrated** entity (post-denormalization) | `security` |
-| `securityUpdate` | `PATCH /{type}/{id}` **and** relationship mutation | the loaded, changed entity (the **parent** for a relationship mutation) | `security` |
+| `securityUpdate` | `PATCH /{type}/{id}` **and** relationship mutation | the stored entity before the body is applied, then the changed entity; the **parent**, before the change, for a relationship mutation | `security` |
 | `securityDelete` | `DELETE /{type}/{id}` | the loaded entity | `security` |
 | `securityRead` | `GET /{type}/{id}` (single) | the loaded entity | `security` |
 | `securityList` | `GET /{type}` (collection) | **none** — evaluated before the query (use a role/attribute check) | `security` |
@@ -87,6 +87,13 @@ how you carve out the public ones (`securityRead: false` for the single read,
 
 ## What is — and is not — gated
 
+- **An update must pass `securityUpdate` twice.** The expression is evaluated first
+  against the resource as stored, before the body's attributes or relationships are
+  applied, so a caller can't pass an ownership check by setting the owner to
+  themselves in the same request. It is evaluated again against the changed resource,
+  so a caller can't turn a resource into one the expression would refuse them, such as
+  handing it to another user. An Atomic Operations `update` is gated the same way. A
+  relationship mutation is gated once, against the parent before the change.
 - **Writes are gated at the *before* hook**, so a denial throws before the persister
   runs: no row is created, updated, or deleted, and no relationship is mutated. The
   store is left exactly as it was.

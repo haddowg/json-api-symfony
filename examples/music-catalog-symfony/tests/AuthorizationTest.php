@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Tests;
 
+use Doctrine\ORM\EntityManagerInterface;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\DataFixtures\SeedManifest;
+use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Playlist;
+use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\User;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
@@ -221,6 +224,119 @@ final class AuthorizationTest extends MusicCatalogKernelTestCase
             ->assertHasType('public-profiles');
     }
 
+    // --- the update gate judges the stored playlist, not the patched one -------
+
+    #[Test]
+    #[Group('spec:updating-relationships')]
+    public function aNonOwnerCannotReassignAPlaylistToThemselvesThroughAnEmbeddedRelationship(): void
+    {
+        $mallory = $this->persistUser(self::NON_OWNER);
+
+        $this->browser()
+            ->actingAs(self::NON_OWNER)
+            ->patch('/playlists/' . self::OWNED_PLAYLIST_ID, [
+                'data' => [
+                    'type' => 'playlists',
+                    'id' => self::OWNED_PLAYLIST_ID,
+                    'attributes' => ['title' => 'Taken'],
+                    'relationships' => ['publicOwner' => ['data' => ['type' => 'public-profiles', 'id' => (string) $mallory]]],
+                ],
+            ])
+            ->getErrors()
+            ->assertStatus(403)
+            ->assertHasError(status: '403', code: 'ACCESS_DENIED');
+
+        $this->assertPlaylistUnchanged();
+    }
+
+    #[Test]
+    #[Group('spec:updating-relationships')]
+    public function aNonOwnerCannotReassignAPlaylistThroughTheOwnerRelation(): void
+    {
+        $mallory = $this->persistUser(self::NON_OWNER);
+
+        $this->browser()
+            ->actingAs(self::NON_OWNER)
+            ->patch('/playlists/' . self::OWNED_PLAYLIST_ID, [
+                'data' => [
+                    'type' => 'playlists',
+                    'id' => self::OWNED_PLAYLIST_ID,
+                    'attributes' => ['title' => 'Taken'],
+                    'relationships' => ['owner' => ['data' => ['type' => 'users', 'id' => (string) $mallory]]],
+                ],
+            ])
+            ->getErrors()
+            ->assertStatus(403)
+            ->assertHasError(status: '403', code: 'ACCESS_DENIED');
+
+        $this->assertPlaylistUnchanged();
+    }
+
+    #[Test]
+    #[Group('spec:updating-relationships')]
+    public function aNonOwnerCannotReassignAPlaylistAtTheRelationshipEndpoint(): void
+    {
+        $mallory = $this->persistUser(self::NON_OWNER);
+
+        $this->browser()
+            ->actingAs(self::NON_OWNER)
+            ->patch('/playlists/' . self::OWNED_PLAYLIST_ID . '/relationships/public-owner', [
+                'data' => ['type' => 'public-profiles', 'id' => (string) $mallory],
+            ])
+            ->getErrors()
+            ->assertStatus(403)
+            ->assertHasError(status: '403', code: 'ACCESS_DENIED');
+
+        $this->assertPlaylistUnchanged();
+    }
+
+    #[Test]
+    public function aNonOwnerCannotReassignAPlaylistInAnAtomicUpdate(): void
+    {
+        $mallory = $this->persistUser(self::NON_OWNER);
+        $atomic = 'application/vnd.api+json; ext="https://jsonapi.org/ext/atomic"';
+
+        $response = $this->browser()
+            ->actingAs(self::NON_OWNER)
+            ->post('/operations', [
+                'atomic:operations' => [[
+                    'op' => 'update',
+                    'ref' => ['type' => 'playlists', 'id' => self::OWNED_PLAYLIST_ID],
+                    'data' => [
+                        'type' => 'playlists',
+                        'id' => self::OWNED_PLAYLIST_ID,
+                        'attributes' => ['title' => 'Taken'],
+                        'relationships' => ['publicOwner' => ['data' => ['type' => 'public-profiles', 'id' => (string) $mallory]]],
+                    ],
+                ]],
+            ], ['CONTENT_TYPE' => $atomic, 'HTTP_ACCEPT' => $atomic])
+            ->getResponse();
+
+        self::assertSame(403, $response->getStatusCode(), (string) $response->getContent());
+        $this->assertPlaylistUnchanged();
+    }
+
+    #[Test]
+    public function theOwnerCannotHandAPlaylistToAnotherUserTheyCouldNotThenEdit(): void
+    {
+        $mallory = $this->persistUser(self::NON_OWNER);
+
+        $this->browser()
+            ->actingAs(self::OWNER)
+            ->patch('/playlists/' . self::OWNED_PLAYLIST_ID, [
+                'data' => [
+                    'type' => 'playlists',
+                    'id' => self::OWNED_PLAYLIST_ID,
+                    'relationships' => ['publicOwner' => ['data' => ['type' => 'public-profiles', 'id' => (string) $mallory]]],
+                ],
+            ])
+            ->getErrors()
+            ->assertStatus(403)
+            ->assertHasError(status: '403', code: 'ACCESS_DENIED');
+
+        $this->assertPlaylistUnchanged();
+    }
+
     // --- securityDelete: is_granted('ROLE_ADMIN') (a role gate) ----------------
 
     #[Test]
@@ -266,6 +382,37 @@ final class AuthorizationTest extends MusicCatalogKernelTestCase
     }
 
     // --- helpers --------------------------------------------------------------
+
+    /**
+     * Persists a user with the given email and returns its id.
+     */
+    private function persistUser(string $email): int
+    {
+        $entityManager = static::getContainer()->get('doctrine.orm.entity_manager');
+        \assert($entityManager instanceof EntityManagerInterface);
+
+        $user = new User(email: $email, displayName: 'Mallory');
+        $entityManager->persist($user);
+        $entityManager->flush();
+        \assert($user->id !== null);
+
+        return $user->id;
+    }
+
+    /**
+     * Asserts the seeded playlist still has its seeded title and owner, read fresh from the database.
+     */
+    private function assertPlaylistUnchanged(): void
+    {
+        $entityManager = static::getContainer()->get('doctrine.orm.entity_manager');
+        \assert($entityManager instanceof EntityManagerInterface);
+        $entityManager->clear();
+
+        $playlist = $entityManager->find(Playlist::class, self::OWNED_PLAYLIST_ID);
+        self::assertInstanceOf(Playlist::class, $playlist);
+        self::assertSame('Morning Mix', $playlist->title);
+        self::assertSame(self::OWNER, $playlist->owner?->email);
+    }
 
     /**
      * Creates a fresh, empty (track-less) playlist and returns its minted UUID. Create

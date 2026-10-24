@@ -191,6 +191,36 @@ final class DoctrineResourceSecurityTest extends JsonApiFunctionalTestCase
     }
 
     #[Test]
+    public function a_non_owner_cannot_pass_the_update_gate_by_rewriting_the_owner_attribute(): void
+    {
+        $this->browser()
+            ->actingAs('grace')
+            ->patch('/ownedWidgets/1', [
+                'data' => ['type' => 'ownedWidgets', 'id' => '1', 'attributes' => ['name' => 'taken', 'owner' => 'grace']],
+            ])
+            ->getErrors()
+            ->assertStatus(403)
+            ->assertHasError(status: '403', code: 'ACCESS_DENIED');
+
+        $this->assertOwnedWidget(1, 'ada-widget', 'ada');
+    }
+
+    #[Test]
+    public function an_owner_cannot_hand_a_widget_to_a_user_who_could_not_then_edit_it_via_the_owner_attribute(): void
+    {
+        $this->browser()
+            ->actingAs('ada')
+            ->patch('/ownedWidgets/1', [
+                'data' => ['type' => 'ownedWidgets', 'id' => '1', 'attributes' => ['owner' => 'grace']],
+            ])
+            ->getErrors()
+            ->assertStatus(403)
+            ->assertHasError(status: '403', code: 'ACCESS_DENIED');
+
+        $this->assertOwnedWidget(1, 'ada-widget', 'ada');
+    }
+
+    #[Test]
     public function a_non_owner_is_forbidden_to_read_the_single_resource(): void
     {
         $this->browser()
@@ -350,5 +380,17 @@ final class DoctrineResourceSecurityTest extends JsonApiFunctionalTestCase
                 'data' => ['type' => 'openWidgets', 'attributes' => ['name' => 'anon']],
             ])
             ->assertCreated();
+    }
+
+    private function assertOwnedWidget(int $id, string $name, string $owner): void
+    {
+        $entityManager = static::getContainer()->get('doctrine.orm.entity_manager');
+        \assert($entityManager instanceof EntityManagerInterface);
+        $entityManager->clear();
+
+        $widget = $entityManager->find(OwnedWidgetEntity::class, $id);
+        self::assertInstanceOf(OwnedWidgetEntity::class, $widget);
+        self::assertSame($name, $widget->name);
+        self::assertSame($owner, $widget->owner);
     }
 }
