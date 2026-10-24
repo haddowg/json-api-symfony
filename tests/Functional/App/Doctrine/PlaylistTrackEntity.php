@@ -51,6 +51,12 @@ class PlaylistTrackEntity
         // query). Nullable so a freshly-created row without one inserts cleanly.
         #[ORM\Column(type: 'string', nullable: true)]
         public ?string $note = null,
+        // Write-only pivot columns: `source` is declared writeOnly() and `curator`
+        // writeOnly(when:), so a write may set them but no response renders them.
+        #[ORM\Column(type: 'string', nullable: true)]
+        public ?string $source = null,
+        #[ORM\Column(type: 'string', nullable: true)]
+        public ?string $curator = null,
     ) {}
 
     /**

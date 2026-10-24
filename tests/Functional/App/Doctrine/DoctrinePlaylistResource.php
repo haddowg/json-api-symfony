@@ -65,6 +65,10 @@ final class DoctrinePlaylistResource extends AbstractResource
                     // filterable via `pivot.note` below, yet never appears in the rendered
                     // pivot meta — the provider skips it from the SELECT and the pivot map.
                     Str::make('note')->hidden()->build(),
+                    // Write-only pivot fields, one static and one by predicate: a write
+                    // may set them, but no response's meta.pivot carries them.
+                    Str::make('source')->writeOnly()->build(),
+                    Str::make('curator')->writeOnly(static fn(JsonApiRequestInterface $request): bool => true)->build(),
                 )
                 // Pivot filters are AUTHOR-DECLARED via the `pivot.` column prefix
                 // (bundle ADR 0067): a filter whose column starts with `pivot.` targets
@@ -115,6 +119,8 @@ final class DoctrinePlaylistResource extends AbstractResource
                 ->fields(
                     Integer::make('position')->required()->min(1)->build(),
                     DateTime::make('addedAt')->readOnly()->build(),
+                    Str::make('source')->writeOnly()->build(),
+                    Str::make('curator')->writeOnly(static fn(JsonApiRequestInterface $request): bool => true)->build(),
                 )
                 ->extractUsing($this->extractTracks())
                 ->withData(),

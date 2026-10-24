@@ -83,6 +83,10 @@ trait SeedsDoctrinePivot
                 weight: 100,
                 addedAt: new \DateTimeImmutable($addedAt),
                 note: $note,
+                // Every row carries the write-only pivot values, so a response that
+                // rendered them would show them.
+                source: 'import',
+                curator: 'staff',
             ));
         }
 
