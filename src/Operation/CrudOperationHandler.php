@@ -81,6 +81,7 @@ use haddowg\JsonApiBundle\Event\AfterUpdateEvent;
 use haddowg\JsonApiBundle\Event\BeforeApplyUpdateEvent;
 use haddowg\JsonApiBundle\Event\BeforeCreateEvent;
 use haddowg\JsonApiBundle\Event\BeforeDeleteEvent;
+use haddowg\JsonApiBundle\Event\BeforeEmbeddedRelationshipWriteEvent;
 use haddowg\JsonApiBundle\Event\BeforeFetchCollectionEvent;
 use haddowg\JsonApiBundle\Event\BeforeFetchRelatedEvent;
 use haddowg\JsonApiBundle\Event\BeforeFetchRelationshipEvent;
@@ -1865,7 +1866,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // parent) sees a related model associated in the SAME request body (ADR 0085).
         // Relationships are still stripped from the hydrate body, so core's
         // hydrateRelationships() stays a no-op (no scalar-id assignment, ADR 0018).
-        $this->applyRelationships($server, $persister, $type, $entity, $relationships, $body, creating: true);
+        $this->applyRelationships($server, $persister, $type, $entity, $relationships, $body, $request, creating: true);
 
         // As on update: an `on()` attribute writes onto the target its relation's related
         // endpoint serves, so scope the hops below the relations this body set (ADR 0126).
@@ -1986,7 +1987,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // from the hydrate body, so core's hydrateRelationships() stays a no-op.
         $relationships = $this->extractRelationships($server, $type, $body, creating: false);
 
-        $this->applyRelationships($server, $persister, $type, $entity, $relationships, $body, creating: false);
+        $this->applyRelationships($server, $persister, $type, $entity, $relationships, $body, $request, creating: false);
 
         // An `on()` attribute writes onto the target its relation's related endpoint
         // serves: scope the hops this body did not just set (bundle ADR 0125).
@@ -2154,6 +2155,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         object $entity,
         array $relationships,
         JsonApiRequestInterface $body,
+        JsonApiRequestInterface $request,
         bool $creating,
     ): void {
         foreach ($relationships as $relationship) {
@@ -2167,6 +2169,17 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                     $entity,
                 );
             }
+
+            // A relation's own mutate gate applies here as on its relationship endpoint.
+            $this->dispatch(new BeforeEmbeddedRelationshipWriteEvent(
+                $type,
+                $request,
+                $entity,
+                $relationship['relation'],
+                $relationship['linkage'],
+                $creating,
+                $this->serverName($request),
+            ));
 
             $persister->mutateRelationship(
                 $type,

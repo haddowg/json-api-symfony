@@ -210,7 +210,11 @@ public function fields(): array
 ```
 
 - **`read`** governs the related and relationship read endpoints; **`mutate`** governs
-  relationship mutation (`PATCH`/`POST`/`DELETE …/relationships/{rel}`).
+  relationship mutation (`PATCH`/`POST`/`DELETE …/relationships/{rel}`) and setting
+  the relationship in a create or update body (`data.relationships`, Atomic Operations
+  `add`/`update` included). In a body it is checked in addition to the resource's
+  `securityCreate`/`securityUpdate`, not instead of it, and only when the body carries
+  that relationship.
 - Each accepts the same `string|bool|null` as the resource-level keys: an expression is
   **enforced** (against the **parent** resource as `object`) and documented secured;
   `true`/`false` are [documentation-only](#documentation-only-true--false); `null`

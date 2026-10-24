@@ -142,6 +142,8 @@ final class SecurityTestKernel extends Kernel
             ],
         ]);
 
+        $container->extension('json_api', ['atomic_operations' => ['enabled' => true]]);
+
         $services = $container->services()
             ->defaults()
             ->autowire()

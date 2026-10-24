@@ -9,6 +9,7 @@ use haddowg\JsonApiBundle\Event\BeforeActionEvent;
 use haddowg\JsonApiBundle\Event\BeforeApplyUpdateEvent;
 use haddowg\JsonApiBundle\Event\BeforeCreateEvent;
 use haddowg\JsonApiBundle\Event\BeforeDeleteEvent;
+use haddowg\JsonApiBundle\Event\BeforeEmbeddedRelationshipWriteEvent;
 use haddowg\JsonApiBundle\Event\BeforeFetchCollectionEvent;
 use haddowg\JsonApiBundle\Event\BeforeFetchRelatedEvent;
 use haddowg\JsonApiBundle\Event\BeforeFetchRelationshipEvent;
@@ -38,6 +39,10 @@ use Symfony\Component\Security\Core\Exception\AccessDeniedException;
  *  - {@see BeforeUpdateEvent}             → the loaded, changed entity;
  *  - {@see BeforeRelationshipMutateEvent} → the parent (gated by the relation's mutate
  *                                           expression, overriding the type's update);
+ *  - {@see BeforeEmbeddedRelationshipWriteEvent}
+ *                                         → the parent (gated by the relation's own mutate
+ *                                           expression only; the parent's create/update
+ *                                           gate covers the rest of the write);
  *  - {@see BeforeDeleteEvent}             → the loaded entity;
  *  - {@see AfterFetchOneEvent}            → the loaded entity;
  *  - {@see BeforeFetchRelatedEvent} / {@see BeforeFetchRelationshipEvent}
@@ -86,6 +91,7 @@ final class ResourceSecuritySubscriber implements EventSubscriberInterface
             BeforeApplyUpdateEvent::class => 'onBeforeApplyUpdate',
             BeforeUpdateEvent::class => 'onBeforeUpdate',
             BeforeRelationshipMutateEvent::class => 'onBeforeRelationshipMutate',
+            BeforeEmbeddedRelationshipWriteEvent::class => 'onBeforeEmbeddedRelationshipWrite',
             BeforeDeleteEvent::class => 'onBeforeDelete',
             AfterFetchOneEvent::class => 'onAfterFetchOne',
             BeforeFetchCollectionEvent::class => 'onBeforeFetchCollection',
@@ -165,6 +171,16 @@ final class ResourceSecuritySubscriber implements EventSubscriberInterface
         // parent's update expression. The subject is the parent resource in both cases.
         $expression = $event->relation->securityMutate() ?? $this->registry->securityFor($event->type)?->forUpdate();
         $this->authorize($event->type, $expression, $event->parent);
+    }
+
+    /**
+     * A relationship set in a create or update body is gated by the relation's own
+     * mutate expression, as its relationship endpoint is. A relation declaring none adds
+     * no gate: the write is already gated by the type's create or update expression.
+     */
+    public function onBeforeEmbeddedRelationshipWrite(BeforeEmbeddedRelationshipWriteEvent $event): void
+    {
+        $this->authorize($event->type, $event->relation->securityMutate(), $event->parent);
     }
 
     public function onBeforeDelete(BeforeDeleteEvent $event): void

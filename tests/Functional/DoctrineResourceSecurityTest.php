@@ -368,6 +368,138 @@ final class DoctrineResourceSecurityTest extends JsonApiFunctionalTestCase
             ->assertStatus(200);
     }
 
+    #[Test]
+    public function an_embedded_update_of_a_relation_with_its_own_mutate_gate_requires_that_gate(): void
+    {
+        $this->browser()
+            ->actingAs('user')
+            ->patch('/securedWidgets/1', [
+                'data' => [
+                    'type' => 'securedWidgets',
+                    'id' => '1',
+                    'attributes' => ['name' => 'renamed'],
+                    'relationships' => ['lockedPartner' => ['data' => ['type' => 'securedWidgets', 'id' => '1']]],
+                ],
+            ])
+            ->getErrors()
+            ->assertStatus(403)
+            ->assertHasError(status: '403', code: 'ACCESS_DENIED');
+
+        $this->assertSecuredWidget(1, 'seeded', null);
+
+        $this->browser()
+            ->actingAs('admin')
+            ->patch('/securedWidgets/1', [
+                'data' => [
+                    'type' => 'securedWidgets',
+                    'id' => '1',
+                    'relationships' => ['lockedPartner' => ['data' => ['type' => 'securedWidgets', 'id' => '1']]],
+                ],
+            ])
+            ->assertFetchedOne();
+
+        $this->assertSecuredWidget(1, 'seeded', 1);
+    }
+
+    #[Test]
+    public function an_embedded_update_of_a_relation_without_its_own_gate_follows_the_update_gate(): void
+    {
+        $this->browser()
+            ->actingAs('user')
+            ->patch('/securedWidgets/1', [
+                'data' => [
+                    'type' => 'securedWidgets',
+                    'id' => '1',
+                    'relationships' => ['partner' => ['data' => ['type' => 'securedWidgets', 'id' => '1']]],
+                ],
+            ])
+            ->assertFetchedOne();
+
+        $this->assertSecuredWidget(1, 'seeded', 1);
+    }
+
+    #[Test]
+    public function an_embedded_create_of_a_relation_with_its_own_mutate_gate_requires_that_gate(): void
+    {
+        // openWidgets is ungated, so only the relation's own gate stands in the way.
+        $document = [
+            'data' => [
+                'type' => 'openWidgets',
+                'attributes' => ['name' => 'fresh'],
+                'relationships' => ['lockedPartner' => ['data' => ['type' => 'securedWidgets', 'id' => '1']]],
+            ],
+        ];
+
+        $this->browser()
+            ->actingAs('user')
+            ->post('/openWidgets', $document)
+            ->getErrors()
+            ->assertStatus(403)
+            ->assertHasError(status: '403', code: 'ACCESS_DENIED');
+
+        $this->assertOpenWidgetCount(1);
+
+        $this->browser()->actingAs('admin')->post('/openWidgets', $document)->assertCreated();
+
+        $this->assertOpenWidgetCount(2);
+    }
+
+    #[Test]
+    public function an_embedded_create_without_the_gated_relation_is_not_gated(): void
+    {
+        $this->browser()
+            ->actingAs('user')
+            ->post('/openWidgets', ['data' => ['type' => 'openWidgets', 'attributes' => ['name' => 'fresh']]])
+            ->assertCreated();
+    }
+
+    #[Test]
+    public function an_atomic_update_of_a_relation_with_its_own_mutate_gate_requires_that_gate(): void
+    {
+        $response = $this->atomic('user', [[
+            'op' => 'update',
+            'ref' => ['type' => 'securedWidgets', 'id' => '1'],
+            'data' => [
+                'type' => 'securedWidgets',
+                'id' => '1',
+                'attributes' => ['name' => 'renamed'],
+                'relationships' => ['lockedPartner' => ['data' => ['type' => 'securedWidgets', 'id' => '1']]],
+            ],
+        ]]);
+
+        self::assertSame(403, $response->getStatusCode(), (string) $response->getContent());
+        $this->assertSecuredWidget(1, 'seeded', null);
+
+        $response = $this->atomic('admin', [[
+            'op' => 'update',
+            'ref' => ['type' => 'securedWidgets', 'id' => '1'],
+            'data' => [
+                'type' => 'securedWidgets',
+                'id' => '1',
+                'relationships' => ['lockedPartner' => ['data' => ['type' => 'securedWidgets', 'id' => '1']]],
+            ],
+        ]]);
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $this->assertSecuredWidget(1, 'seeded', 1);
+    }
+
+    #[Test]
+    public function an_atomic_add_of_a_relation_with_its_own_mutate_gate_requires_that_gate(): void
+    {
+        $response = $this->atomic('user', [[
+            'op' => 'add',
+            'data' => [
+                'type' => 'openWidgets',
+                'attributes' => ['name' => 'fresh'],
+                'relationships' => ['lockedPartner' => ['data' => ['type' => 'securedWidgets', 'id' => '1']]],
+            ],
+        ]]);
+
+        self::assertSame(403, $response->getStatusCode(), (string) $response->getContent());
+        $this->assertOpenWidgetCount(1);
+    }
+
     // --- no security declared → ungated ---------------------------------------
 
     #[Test]
@@ -392,5 +524,39 @@ final class DoctrineResourceSecurityTest extends JsonApiFunctionalTestCase
         self::assertInstanceOf(OwnedWidgetEntity::class, $widget);
         self::assertSame($name, $widget->name);
         self::assertSame($owner, $widget->owner);
+    }
+
+    /**
+     * @param list<array<string, mixed>> $operations
+     */
+    private function atomic(string $user, array $operations): \Symfony\Component\HttpFoundation\Response
+    {
+        $media = 'application/vnd.api+json; ext="https://jsonapi.org/ext/atomic"';
+
+        return $this->browser()
+            ->actingAs($user)
+            ->post('/operations', ['atomic:operations' => $operations], ['CONTENT_TYPE' => $media, 'HTTP_ACCEPT' => $media])
+            ->getResponse();
+    }
+
+    private function assertSecuredWidget(int $id, string $name, ?int $partnerId): void
+    {
+        $entityManager = static::getContainer()->get('doctrine.orm.entity_manager');
+        \assert($entityManager instanceof EntityManagerInterface);
+        $entityManager->clear();
+
+        $widget = $entityManager->find(SecuredWidgetEntity::class, $id);
+        self::assertInstanceOf(SecuredWidgetEntity::class, $widget);
+        self::assertSame($name, $widget->name);
+        self::assertSame($partnerId, $widget->partner?->id);
+    }
+
+    private function assertOpenWidgetCount(int $count): void
+    {
+        $entityManager = static::getContainer()->get('doctrine.orm.entity_manager');
+        \assert($entityManager instanceof EntityManagerInterface);
+        $entityManager->clear();
+
+        self::assertCount($count, $entityManager->getRepository(OpenWidgetEntity::class)->findAll());
     }
 }
