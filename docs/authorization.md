@@ -232,6 +232,28 @@ public function fields(): array
 > evaluated against the loaded **parent** entity as `object` — the same subject a
 > relationship mutation already uses.
 
+### The read expression also guards rendered linkage and includes
+
+A relation's `read` expression applies wherever its data is rendered, not just at its
+own endpoints. When a resource is fetched, listed or included, each relationship whose
+`read` is an expression is checked against that resource. A caller who fails it sees the
+relationship's `links` and nothing else: no `data`, no `meta` such as a `?withCount`
+total, and nothing added to `included`. An `?include` path through it is dropped for
+that parent rather than refused for the request, so in a collection one member may show
+the data while another doesn't. A `null` read inherits the parent's read gate, which the
+caller already passed to see the parent, so the data renders; `true`/`false` only
+document the endpoints, so the data renders too.
+
+### Flattened writes need the related row's update gate
+
+A [flattened `on()` attribute](relationships.md#flattened-on-attributes-and-eager-loading)
+writes onto a related row. Before each such write the bundle checks the related type's
+`securityUpdate` (or `security`) against that row, the same check a `PATCH` to the row
+itself would run, and a refusal is a `403` with nothing saved. Relationships in the
+same body are applied first, so when a body re-links the to-one and writes through it
+in one go, the check runs against the row it was just linked to. A related type that
+declares no update expression lets the write through.
+
 ## How a denial renders
 
 A denied expression throws `AccessDeniedException`; the route-scoped
