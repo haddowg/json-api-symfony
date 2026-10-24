@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Testing;
 
 use haddowg\JsonApi\Response\DataResponse;
+use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApi\Testing\JsonApiDocument;
 use haddowg\JsonApi\Testing\JsonApiErrors;
 use haddowg\JsonApi\Testing\ResponseMeta;
+use haddowg\JsonApiBundle\DependencyInjection\Compiler\DoctrineEntityMapPass;
 use haddowg\JsonApiBundle\Operation\TargetResolver;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Server\ServerProvider;
@@ -437,9 +439,15 @@ class JsonApiBrowser extends KernelBrowser
      * relationships}` shape (#47). A model-aware convenience the framework-agnostic
      * core could not provide.
      *
+     * The type comes from `$type` when given. Otherwise it is the type whose
+     * `#[AsJsonApiResource(entity: …)]` names the model's class, or the nearest parent
+     * class, so an `Agency extends Advertiser` model resolves to the type mapped to
+     * `Agency`. A model no resource maps falls back to the first serializer, among
+     * the types with no entity mapping, whose `getType()` claims it. Pass `$type` when one class backs several types.
+     *
      * @return array<string, mixed> the expected primary resource object
      */
-    public function expectResource(object $entity, ?string $serverName = null): array
+    public function expectResource(object $entity, ?string $serverName = null, ?string $type = null): array
     {
         $container = $this->getContainer();
 
@@ -447,29 +455,14 @@ class JsonApiBrowser extends KernelBrowser
         \assert($servers instanceof ServerProvider);
         $server = $servers->get($serverName);
 
-        // Resolve the entity's type by matching it against each registered
-        // serializer: the serializer that serializes this object reports its own
-        // registered type from getType(). A foreign serializer that errors on the
-        // object is skipped, so only the genuine owner matches.
-        $type = null;
-        foreach ($server->resources()->types() as $candidate) {
-            if (!$server->hasSerializerFor($candidate)) {
-                continue;
-            }
-            try {
-                if ($server->serializerFor($candidate)->getType($entity) === $candidate) {
-                    $type = $candidate;
-
-                    break;
-                }
-            } catch (\Throwable) {
-                // Not this serializer's object — keep looking.
-            }
+        if ($type !== null) {
+            Assert::assertTrue(
+                $server->hasSerializerFor($type),
+                \sprintf('No JSON:API serializer is registered for type "%s".', $type),
+            );
+        } else {
+            $type = $this->typeOf($entity, $server);
         }
-        Assert::assertNotNull(
-            $type,
-            \sprintf('No registered JSON:API serializer recognises "%s".', $entity::class),
-        );
 
         $serializer = $server->serializerFor($type);
 
@@ -497,6 +490,125 @@ class JsonApiBrowser extends KernelBrowser
 
         /** @var array<string, mixed> $data */
         return $data;
+    }
+
+    /**
+     * The type `$entity` renders as on `$server`: the type mapped to its class or the
+     * nearest mapped parent, else the first type with no entity mapping whose
+     * serializer's `getType()` claims it.
+     */
+    private function typeOf(object $entity, Server $server): string
+    {
+        $registered = \array_values(\array_filter(
+            $server->resources()->types(),
+            static fn(string $candidate): bool => $server->hasSerializerFor($candidate),
+        ));
+        $map = $this->entityClassByType();
+
+        $mapped = $this->typesMappedTo($entity, $registered, $map);
+        if (\count($mapped) === 1) {
+            return $mapped[0];
+        }
+
+        if ($mapped !== []) {
+            $claimed = $this->typesClaiming($entity, $server, $mapped);
+            Assert::assertCount(1, $claimed, \sprintf(
+                'The class "%s" backs several JSON:API types (%s); pass the type to expectResource().',
+                $entity::class,
+                \implode(', ', $mapped),
+            ));
+
+            return $claimed[0];
+        }
+
+        // A type mapped to another class can't be this model's, whatever its
+        // class-blind getType() answers.
+        $unmapped = \array_values(\array_filter(
+            $registered,
+            static fn(string $candidate): bool => !isset($map[$candidate]),
+        ));
+        $claimed = $this->typesClaiming($entity, $server, $unmapped);
+        Assert::assertNotEmpty(
+            $claimed,
+            \sprintf('No registered JSON:API serializer recognises "%s".', $entity::class),
+        );
+
+        return $claimed[0];
+    }
+
+    /**
+     * The declared `type → entity class` map, empty when none is published.
+     *
+     * @return array<string, string>
+     */
+    private function entityClassByType(): array
+    {
+        $container = $this->getContainer();
+        if (!$container->hasParameter(DoctrineEntityMapPass::PARAMETER)) {
+            return [];
+        }
+
+        $map = $container->getParameter(DoctrineEntityMapPass::PARAMETER);
+        if (!\is_array($map)) {
+            return [];
+        }
+
+        return \array_filter($map, static fn(mixed $class, int|string $type): bool => \is_string($type) && \is_string($class), \ARRAY_FILTER_USE_BOTH);
+    }
+
+    /**
+     * The registered types whose declared entity is the nearest class to `$entity` in
+     * its class hierarchy: its own class first, then each parent in turn.
+     *
+     * @param list<string>          $registered
+     * @param array<string, string> $map
+     *
+     * @return list<string>
+     */
+    private function typesMappedTo(object $entity, array $registered, array $map): array
+    {
+        if ($map === []) {
+            return [];
+        }
+
+        for ($class = $entity::class; $class !== false; $class = \get_parent_class($class)) {
+            $types = [];
+            foreach ($registered as $type) {
+                if (($map[$type] ?? null) === $class) {
+                    $types[] = $type;
+                }
+            }
+
+            if ($types !== []) {
+                return $types;
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * The candidate types whose serializer reports that type for `$entity`. A
+     * serializer that errors on a foreign object is skipped.
+     *
+     * @param list<string> $candidates
+     *
+     * @return list<string>
+     */
+    private function typesClaiming(object $entity, Server $server, array $candidates): array
+    {
+        $claimed = [];
+        foreach ($candidates as $candidate) {
+            try {
+                if ($server->serializerFor($candidate)->getType($entity) === $candidate) {
+                    $claimed[] = $candidate;
+                }
+            } catch (\Throwable) {
+                // Not this serializer's object.
+            }
+        }
+
+        return $claimed;
     }
 
     /**

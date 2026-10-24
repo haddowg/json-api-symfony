@@ -35,9 +35,20 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
  * `EntityManagerInterface` but carries no entity-map argument, is removed on the
  * same empty-map condition (so the {@see \haddowg\JsonApiBundle\Server\ServerFactory}'s
  * optional dependency resolves to null in a non-Doctrine-integrated app).
+ *
+ * The declared mappings are also published as the {@see self::PARAMETER} container
+ * parameter, with or without Doctrine, so
+ * {@see \haddowg\JsonApiBundle\Testing\JsonApiBrowser::expectResource()} can tell
+ * which type a model belongs to. That copy skips, rather than rejects, an entry it
+ * cannot resolve, since the attribute stays inert without Doctrine.
  */
 final class DoctrineEntityMapPass implements CompilerPassInterface
 {
+    /**
+     * The container parameter holding the declared `type → entity class` map.
+     */
+    public const string PARAMETER = 'haddowg_json_api.entity_class_by_type';
+
     /**
      * The reference Doctrine adapter definitions the `type → entity` map is
      * shared across.
@@ -59,6 +70,8 @@ final class DoctrineEntityMapPass implements CompilerPassInterface
 
     public function process(ContainerBuilder $container): void
     {
+        $container->setParameter(self::PARAMETER, $this->declaredMap($container));
+
         $definitions = \array_values(\array_filter(
             self::MAPPED_DEFINITIONS,
             static fn(string $id): bool => $container->hasDefinition($id),
@@ -119,6 +132,36 @@ final class DoctrineEntityMapPass implements CompilerPassInterface
         foreach ($definitions as $id) {
             $container->getDefinition($id)->setArgument('$entityClassByType', $map);
         }
+    }
+
+    /**
+     * Every resolvable `type → entity class` mapping the resources declare, without
+     * the strict checks the Doctrine adapter needs.
+     *
+     * @return array<string, class-string>
+     */
+    private function declaredMap(ContainerBuilder $container): array
+    {
+        $map = [];
+        foreach ($container->findTaggedServiceIds(JsonApiBundle::RESOURCE_TAG) as $id => $tags) {
+            $definition = $container->findDefinition($id);
+            $class = $definition->getClass() ?? (\is_string($id) && \class_exists($id) ? $id : null);
+
+            foreach ($tags as $tag) {
+                $entity = $tag['entity'] ?? null;
+                if (!\is_string($entity) || !\class_exists($entity)) {
+                    continue;
+                }
+
+                try {
+                    $map[$this->typeFor($tag, $class, $id)] ??= $entity;
+                } catch (\LogicException) {
+                    continue;
+                }
+            }
+        }
+
+        return $map;
     }
 
     /**
