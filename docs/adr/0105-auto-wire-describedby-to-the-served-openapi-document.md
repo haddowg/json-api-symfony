@@ -1,6 +1,6 @@
 # Auto-wire `links.describedby` to the served OpenAPI document
 
-> Update: superseded by [ADR 0132](0132-built-links-point-into-the-served-openapi-document.md). A response's top-level `describedby` now names the operation that produced it, host-relative, and `DescribedbyListener` only points a response at the whole document when the document doesn't carry its operation.
+> Update: superseded by [ADR 0132](0132-built-links-point-into-the-served-openapi-document.md). A response's top-level `describedby` now names the operation that produced it, host-relative, and `DescribedbyListener` is gone.
 
 Core made the top-level `describedby` link first-class (a link to a description
 document, JSON:API 1.1). The bundle serves exactly such a document at the configured

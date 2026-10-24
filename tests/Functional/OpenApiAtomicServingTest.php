@@ -192,10 +192,8 @@ final class OpenApiAtomicServingTest extends \Symfony\Bundle\FrameworkBundle\Tes
     #[Test]
     #[Group('spec:openapi')]
     #[Group('spec:document-links')]
-    public function anAtomicResultIsDescribedByTheWholeDocument(): void
+    public function anAtomicResultIsDescribedByTheAtomicOperation(): void
     {
-        // Core has no operation pointer for the atomic endpoint, so the result document
-        // points at the whole served document instead.
         $kernel = new OpenApiMultiServerTestKernel('test', false, false, true);
         $kernel->boot();
 
@@ -211,7 +209,7 @@ final class OpenApiAtomicServingTest extends \Symfony\Bundle\FrameworkBundle\Tes
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
         $body = \json_decode((string) $response->getContent(), true, 512, \JSON_THROW_ON_ERROR);
         self::assertIsArray($body);
-        self::assertSame(['describedby' => ['href' => '/docs.json']], $body['links'] ?? null);
+        self::assertSame(['describedby' => ['href' => '/docs.json#/paths/~1operations/post']], $body['links'] ?? null);
 
         $kernel->shutdown();
     }

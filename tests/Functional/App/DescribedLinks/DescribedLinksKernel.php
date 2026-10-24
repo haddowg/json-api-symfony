@@ -29,6 +29,7 @@ trait DescribedLinksKernel
             'base_uri' => '',
             'version' => '1.1',
             'openapi' => ['expose_in_prod' => $this->environment !== 'unserved'],
+            'atomic_operations' => ['enabled' => true],
         ];
 
         if ($this->environment === 'strings') {

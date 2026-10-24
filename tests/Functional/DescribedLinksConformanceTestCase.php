@@ -24,6 +24,8 @@ abstract class DescribedLinksConformanceTestCase extends JsonApiFunctionalTestCa
 
     private const string DOCUMENT = '/api/docs.json';
 
+    private const string ATOMIC_MEDIA_TYPE = 'application/vnd.api+json; ext="https://jsonapi.org/ext/atomic"';
+
     #[Test]
     #[Group('spec:document-links')]
     public function aResourceAndItsDocumentLinksPointAtTheFetchOperation(): void
@@ -133,6 +135,31 @@ abstract class DescribedLinksConformanceTestCase extends JsonApiFunctionalTestCa
                 'describedby' => $this->pointer('/articles/{id}/-actions/publish', 'patch'),
             ],
             self::at($this->dataOf($document), 'links', 'publish'),
+        );
+
+        $this->assertEveryDescribedbyResolves($document);
+    }
+
+    #[Test]
+    #[Group('spec:document-links')]
+    #[Group('spec:atomic')]
+    public function anAtomicResultPointsAtTheAtomicOperation(): void
+    {
+        $response = $this->handleRaw(
+            '/api/operations',
+            \json_encode(['atomic:operations' => [
+                ['op' => 'update', 'ref' => ['type' => 'articles', 'id' => '1'], 'data' => ['type' => 'articles', 'id' => '1', 'attributes' => ['title' => 'Retitled']]],
+            ]], \JSON_THROW_ON_ERROR),
+            self::ATOMIC_MEDIA_TYPE,
+            extraServer: ['HTTP_ACCEPT' => self::ATOMIC_MEDIA_TYPE],
+        );
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $document = $this->decode($response);
+
+        self::assertSame(['href' => $this->pointer('/operations', 'post')], self::at($document, 'links', 'describedby'));
+        self::assertSame(
+            ['href' => self::BASE . '/articles/1', 'describedby' => $this->pointer('/articles/{id}')],
+            self::at($document, 'atomic:results', 0, 'data', 'links', 'self'),
         );
 
         $this->assertEveryDescribedbyResolves($document);
@@ -298,7 +325,7 @@ abstract class DescribedLinksConformanceTestCase extends JsonApiFunctionalTestCa
     /**
      * The value at `$path` inside `$value`, or null where the path runs out.
      */
-    private static function at(mixed $value, string ...$path): mixed
+    private static function at(mixed $value, int|string ...$path): mixed
     {
         foreach ($path as $key) {
             if (!\is_array($value) || !\array_key_exists($key, $value)) {

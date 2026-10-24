@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\OpenApi;
 
+use haddowg\JsonApi\OpenApi\SpecDescribedByResolver;
 use haddowg\JsonApiBundle\OpenApi\Serve\ServeArtifact;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
@@ -111,7 +112,7 @@ final class DocumentWarmer implements CacheWarmerInterface
         $document = $this->documents->forServer($server);
         $store->writeWithHash($server, $document->toJsonString(true));
         $store->writeServeArtifact($server, ServeArtifact::of($document));
-        $store->writeOperations($server, DescribedByResolverProvider::operationsOf($document));
+        $store->writeOperations($server, SpecDescribedByResolver::operationsOf($document));
 
         $schemas = $this->schemas->forServer($server);
         foreach ($schemas as $type => $schema) {
@@ -132,7 +133,7 @@ final class DocumentWarmer implements CacheWarmerInterface
         $document = $this->documents->combined();
         $store->writeWithHash(\haddowg\JsonApiBundle\Controller\OpenApiController::COMBINED_KEY, $document->toJsonString(true));
         $store->writeServeArtifact(\haddowg\JsonApiBundle\Controller\OpenApiController::COMBINED_KEY, ServeArtifact::of($document));
-        $store->writeOperations(\haddowg\JsonApiBundle\Controller\OpenApiController::COMBINED_KEY, DescribedByResolverProvider::operationsOf($document));
+        $store->writeOperations(\haddowg\JsonApiBundle\Controller\OpenApiController::COMBINED_KEY, SpecDescribedByResolver::operationsOf($document));
 
         $aggregate = $this->encodeSchemas((object) $this->schemas->combined());
         $store->writeSchemaAggregateWithHash(\haddowg\JsonApiBundle\Controller\OpenApiController::COMBINED_KEY, $aggregate);

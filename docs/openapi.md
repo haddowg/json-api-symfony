@@ -203,9 +203,14 @@ They stay link objects either way. To render bare URL strings instead, set
 `json_api.link_objects: false`, or the same key on a [named server](configuration.md#named-servers-json_apiservers).
 A string can't carry a `describedby`, but the document's own top-level one still renders.
 
-An [Atomic Operations](atomic-operations.md) result has no single operation in the
-document, so its top-level `describedby` points at the whole document. Error documents
-get none.
+An [Atomic Operations](atomic-operations.md) result's top-level `describedby` names the
+atomic endpoint's `POST` (`/docs.json#/paths/~1operations/post` with the default
+`atomic_operations.path`), and the resource objects inside it carry the same links as
+anywhere else. Error documents get none.
+
+A `describedby` set on the response with `withDescribedby()`, or one inside its
+`withLinks()`, replaces the per-operation one, so set it only when a response should
+point somewhere else.
 
 The generated document describes these links: each `<Type>ResourceLinks`,
 `<Type>DocumentLinks`, `<Type>CollectionLinks` and `<Type><Rel>RelationshipLinks`

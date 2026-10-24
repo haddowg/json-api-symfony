@@ -349,6 +349,7 @@ return static function (ContainerConfigurator $container): void {
     // registered the optional opis DocumentValidator.
     $services->set(RequestListener::class)
         ->arg('$schemaValidator', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApi\Validation\DocumentValidator::class)->nullOnInvalid())
+        ->arg('$atomicPath', '%haddowg_json_api.atomic_operations.path%')
         ->tag('kernel.event_listener', ['event' => 'kernel.request', 'method' => 'onKernelRequest', 'priority' => 4]);
 
     $services->set(ViewListener::class)

@@ -1113,17 +1113,6 @@ final class JsonApiBundle extends AbstractBundle
         $builder->getDefinition(\haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource::class)
             ->setArgument('$documentUrls', new \Symfony\Component\DependencyInjection\Reference(\haddowg\JsonApiBundle\OpenApi\DocumentUrlProvider::class));
 
-        // The document-level describedby fallback (bundle ADR 0132): core gives a response
-        // a top-level describedby naming the operation that produced it; this listener
-        // points the rest (an Atomic Operations result, a response naming no operation the
-        // document carries) at the whole document. Higher priority than the ViewListener
-        // (priority 0) so it augments the stashed response first.
-        $services->set(\haddowg\JsonApiBundle\EventListener\DescribedbyListener::class)
-            ->args([
-                '$urls' => service(\haddowg\JsonApiBundle\OpenApi\DocumentUrlProvider::class),
-            ])
-            ->tag('kernel.event_listener', ['event' => 'kernel.view', 'method' => 'onKernelView', 'priority' => 16]);
-
         // The two export commands (D13) — always available (independent of exposure).
         $services->set(\haddowg\JsonApiBundle\Command\OpenApiExportCommand::class)
             ->args(['$documents' => service(\haddowg\JsonApiBundle\OpenApi\DocumentFactory::class)])
