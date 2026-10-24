@@ -47,8 +47,9 @@ On top of the firewall, the bundle offers an **optional** declarative-authorizat
 layer: a resource declares Symfony Security expressions on `#[AsJsonApiResource]`
 (`security:`, `securityCreate:`, …) and the bundle evaluates them at the right
 lifecycle hook for each operation — denying a write *before* it persists, gating a
-single read, delegating `is_granted('EDIT', object)` to a Voter. It activates only
-when `symfony/security-core` is installed and a firewall is configured. See
+single read, delegating `is_granted('EDIT', object)` to a Voter. Expressions need
+`symfony/security-core`, `symfony/expression-language` and a configured firewall; the
+build fails if one is declared without them. See
 [authorization](authorization.md) for the full surface.
 
 ## Firewall failures still render as JSON:API

@@ -13,6 +13,7 @@ use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
 use haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource;
 use haddowg\JsonApiBundle\Operation\Operation;
+use haddowg\JsonApiBundle\Security\UnenforceableSecurityException;
 use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
 
 /**
@@ -55,6 +56,12 @@ use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
  *    reports that set and the OpenAPI projector refuses to build a document while it
  *    is non-empty; this raises the same {@see RelatedTypeNotRegistered} at warmup,
  *    where the message names the configured server rather than its document title.
+ *  - **A relation's security expression must be enforceable.** A relation's
+ *    `security(read:, mutate:)` lives in its resource's `fields()`, which the
+ *    {@see \haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceSecurityPass}
+ *    cannot read, so the pass hands over what the app lacks to evaluate an expression
+ *    and this check fails on any relation declaring one (bundle ADR 0130). The
+ *    documentation-only `true`/`false` need nothing.
  *
  * Gating is on the per-type operation allow-list, so an embedded-only standalone
  * serializer (no operations) and a relationship-only target (served through its
@@ -63,7 +70,8 @@ use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
 final class ServableResourceWarmer implements CacheWarmerInterface
 {
     /**
-     * @param list<string> $serverNames the declared server names (including the implicit `default`)
+     * @param list<string> $serverNames           the declared server names (including the implicit `default`)
+     * @param list<string> $unenforceableSecurity what the app lacks to evaluate a security expression, empty when it can (set by the ResourceSecurityPass)
      */
     public function __construct(
         private readonly ServerProvider $servers,
@@ -73,6 +81,7 @@ final class ServableResourceWarmer implements CacheWarmerInterface
         private readonly TypeMetadataResolver $typeMetadata,
         private readonly MetadataSource $metadata,
         private readonly array $serverNames,
+        private readonly array $unenforceableSecurity = [],
     ) {}
 
     /**
@@ -93,6 +102,7 @@ final class ServableResourceWarmer implements CacheWarmerInterface
      *                         polymorphic relation has a non-discriminating candidate
      *                         serializer, or a related endpoint points at a type the
      *                         server does not register
+     * @throws UnenforceableSecurityException when a relation declares a security expression the app cannot evaluate
      */
     public function warmUp(string $cacheDir, ?string $buildDir = null): array
     {
@@ -105,6 +115,7 @@ final class ServableResourceWarmer implements CacheWarmerInterface
                 $this->guardServability($type, $descriptor['operations']);
                 $this->guardExactlyOneId($serverName, $type);
                 $this->guardPolymorphicDiscrimination($serverName, $type);
+                $this->guardRelationSecurity($serverName, $type);
             }
 
             $this->guardRelatedEndpointTargets($serverName);
@@ -256,6 +267,30 @@ final class ServableResourceWarmer implements CacheWarmerInterface
                     ));
                 }
             }
+        }
+    }
+
+    /**
+     * Fails when a relation on `$type` declares a read or mutate security expression
+     * (a string) and the app lacks something needed to evaluate it.
+     */
+    private function guardRelationSecurity(string $serverName, string $type): void
+    {
+        if ($this->unenforceableSecurity === []) {
+            return;
+        }
+
+        $declarations = [];
+        foreach ($this->typeMetadata->relationsFor($this->servers->get($serverName), $type) as $relation) {
+            foreach (['read' => $relation->securityRead(), 'mutate' => $relation->securityMutate()] as $kind => $security) {
+                if (\is_string($security)) {
+                    $declarations[] = \sprintf('relationship "%s" on type "%s" (security %s)', $relation->name(), $type, $kind);
+                }
+            }
+        }
+
+        if ($declarations !== []) {
+            throw UnenforceableSecurityException::for($declarations, \array_values($this->unenforceableSecurity));
         }
     }
 }

@@ -638,32 +638,26 @@ final class JsonApiBundle extends AbstractBundle
 
         // Declarative resource authorization (bundle ADR 0043): the type-keyed
         // ResourceSecurityRegistry + the ResourceSecuritySubscriber that evaluates a
-        // type's security expression at the lifecycle hooks. Registered only when
-        // symfony/security-core (the AuthorizationChecker) and
-        // symfony/expression-language (the Expression syntax) are installed — both
-        // `suggest` dependencies; absent either, a declared `security` is inert. The
-        // ResourceSecurityPass (added in build()) fills the registry's map and is
-        // itself a no-op when the registry is undefined.
-        if (\interface_exists(\Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface::class)
-            && \class_exists(\Symfony\Component\ExpressionLanguage\Expression::class)
-        ) {
-            $services = $container->services();
+        // type's security expression at the lifecycle hooks. Always registered: the
+        // registry also feeds the OpenAPI projection, where the documentation-only
+        // `true`/`false` declarations need no optional package. The ResourceSecurityPass
+        // fills the registry and fails the build when a declared expression can't be
+        // evaluated (bundle ADR 0130): symfony/security-core or
+        // symfony/expression-language missing, or no security.authorization_checker
+        // (no SecurityBundle firewall). The checker stays optional so an app that
+        // declares no expression needs none of them; the subscriber refuses the
+        // request if it ever meets an expression without one.
+        $services = $container->services();
 
-            $services->set(\haddowg\JsonApiBundle\Security\ResourceSecurityRegistry::class)
-                ->args(['$expressions' => []]);
+        $services->set(\haddowg\JsonApiBundle\Security\ResourceSecurityRegistry::class)
+            ->args(['$expressions' => []]);
 
-            // security.authorization_checker exists only when a firewall is
-            // configured (SecurityBundle), not merely when symfony/security-core is
-            // on the classpath. So it is injected ->nullOnInvalid() and the
-            // subscriber is a no-op when absent — a JSON:API app without a firewall
-            // keeps working, and a declared `security` is inert until one is wired.
-            $services->set(\haddowg\JsonApiBundle\Security\ResourceSecuritySubscriber::class)
-                ->args([
-                    '$authorizationChecker' => service('security.authorization_checker')->nullOnInvalid(),
-                    '$registry' => service(\haddowg\JsonApiBundle\Security\ResourceSecurityRegistry::class),
-                ])
-                ->tag('kernel.event_subscriber');
-        }
+        $services->set(\haddowg\JsonApiBundle\Security\ResourceSecuritySubscriber::class)
+            ->args([
+                '$authorizationChecker' => service('security.authorization_checker')->nullOnInvalid(),
+                '$registry' => service(\haddowg\JsonApiBundle\Security\ResourceSecurityRegistry::class),
+            ])
+            ->tag('kernel.event_subscriber');
 
         // Declarative response headers (bundle ADR 0054): the type-keyed
         // ResponseHeadersRegistry seeded with the global `json_api.defaults`
@@ -750,8 +744,7 @@ final class JsonApiBundle extends AbstractBundle
                     'operations' => self::operationsTag($attribute),
                     // The declarative authorization expressions (bundle ADR 0043),
                     // recorded as scalar tag attributes the ResourceSecurityPass reads
-                    // into the type-keyed ResourceSecurityRegistry. Inert (never read)
-                    // when symfony/security-core is absent.
+                    // into the type-keyed ResourceSecurityRegistry.
                     'security_default' => $attribute->security,
                     'security_create' => $attribute->securityCreate,
                     'security_update' => $attribute->securityUpdate,

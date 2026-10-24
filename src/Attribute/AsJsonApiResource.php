@@ -128,8 +128,9 @@ use haddowg\JsonApiBundle\Operation\Operation;
  * (`GET /{type}/{id}`, against the loaded entity); `securityList` gates the collection
  * read (`GET /{type}`) as an all-or-nothing blanket gate evaluated **before** the query
  * with no subject (a role/attribute check) — row-level read filtering still belongs in
- * the query scope. A bool is a **documentation-only** declaration — only an expression is
- * enforced at runtime, and only when `symfony/security-core` is installed.
+ * the query scope. A bool is a **documentation-only** declaration; only an expression is
+ * enforced at runtime, and declaring one without symfony/security-core,
+ * symfony/expression-language and a firewall fails the build (bundle ADR 0130).
  */
 #[\Attribute(\Attribute::TARGET_CLASS)]
 final readonly class AsJsonApiResource

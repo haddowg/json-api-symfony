@@ -9,6 +9,7 @@ use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Routing\OpenApiRouteLoader;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
+use Symfony\Bundle\SecurityBundle\SecurityBundle;
 use Symfony\Component\Config\Loader\LoaderInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
@@ -37,6 +38,7 @@ final class OpenApiDecoratorOrderingTestKernel extends Kernel
     public function registerBundles(): iterable
     {
         yield new FrameworkBundle();
+        yield new SecurityBundle();
         yield new JsonApiBundle();
     }
 
@@ -69,6 +71,12 @@ final class OpenApiDecoratorOrderingTestKernel extends Kernel
             'handle_all_throwables' => true,
             'php_errors' => ['log' => true],
             'router' => ['utf8' => true],
+        ]);
+
+        // ProductResource declares security expressions, which need an authorization
+        // checker to build. This firewall only provides one; it authenticates nobody.
+        $container->extension('security', [
+            'firewalls' => ['main' => ['security' => false]],
         ]);
 
         $container->extension('json_api', [

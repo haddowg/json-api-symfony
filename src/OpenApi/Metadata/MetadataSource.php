@@ -470,8 +470,7 @@ final class MetadataSource
      * resolved from the {@see ResourceSecurityRegistry} exactly as the subscriber
      * enforces it: create/update/delete gate their like-named operation; read gates
      * FetchOne; and list (`securityList`) gates FetchCollection (the all-or-nothing
-     * collection-read gate). Empty when the registry is absent
-     * (no `symfony/security-core`) or the type declared no security.
+     * collection-read gate). Empty when the type declared no security.
      *
      * @param list<OperationType> $operations
      *
