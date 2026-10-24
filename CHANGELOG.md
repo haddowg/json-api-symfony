@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.8.0](https://github.com/haddowg/json-api-symfony/compare/v1.7.1...v1.8.0) (2026-10-24)
+
+
+### Features
+
+* evaluate a pivot field's hidden predicate per related member ([5489928](https://github.com/haddowg/json-api-symfony/commit/5489928dade5c63e7b1cd68573d72577b2d327bc))
+* **openapi:** render every readable pivot field to match the response pivot schema ([5489928](https://github.com/haddowg/json-api-symfony/commit/5489928dade5c63e7b1cd68573d72577b2d327bc))
+* **routing:** route a relation by its URI field name ([5489928](https://github.com/haddowg/json-api-symfony/commit/5489928dade5c63e7b1cd68573d72577b2d327bc))
+
 ## [1.7.1](https://github.com/haddowg/json-api-symfony/compare/v1.7.0...v1.7.1) (2026-10-24)
 
 
