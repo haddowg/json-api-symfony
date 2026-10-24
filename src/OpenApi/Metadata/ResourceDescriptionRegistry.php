@@ -22,6 +22,12 @@ use haddowg\JsonApi\OpenApi\Metadata\OperationType;
  * {@see \haddowg\JsonApi\Resource\AbstractResource::describeOperation()} method hooks
  * (the method wins), and core's projector supplies the generated default when both
  * resolve to `null`.
+ *
+ * It also carries the declared OpenAPI vendor extensions
+ * (`#[AsJsonApiResource(extensions: …, operationExtensions: …)]`, bundle ADR 0127):
+ * the type-wide set and the per-CRUD-operation sets, which core merges onto the
+ * type's operations. Core has no resource method hook for extensions, so the
+ * attribute is their only declaration site.
  */
 final class ResourceDescriptionRegistry
 {
@@ -31,11 +37,22 @@ final class ResourceDescriptionRegistry
     /** @var array<string, array<string, string>> */
     private array $operationDescriptionsByType = [];
 
+    /** @var array<string, array{type: array<string, mixed>, operations: array<string, array<string, mixed>>}> */
+    private array $extensionsByType = [];
+
     /**
-     * @param array<string, array{description?: string|null, operations?: array<string, string>}> $descriptions
+     * @param array<string, array{description?: string|null, operations?: array<string, string>}>                   $descriptions
+     * @param array<string, array{type?: array<string, mixed>, operations?: array<string, array<string, mixed>>}> $extensions
      */
-    public function __construct(array $descriptions = [])
+    public function __construct(array $descriptions = [], array $extensions = [])
     {
+        foreach ($extensions as $type => $set) {
+            $this->extensionsByType[$type] = [
+                'type' => $set['type'] ?? [],
+                'operations' => $set['operations'] ?? [],
+            ];
+        }
+
         foreach ($descriptions as $type => $set) {
             $description = $set['description'] ?? null;
             if (\is_string($description) && $description !== '') {
@@ -73,5 +90,26 @@ final class ResourceDescriptionRegistry
     public function operationDescriptionFor(string $type, OperationType $operation): ?string
     {
         return $this->operationDescriptionsByType[$type][$operation->value] ?? null;
+    }
+
+    /**
+     * The vendor extensions declared for every operation of `$type`; empty when none.
+     *
+     * @return array<string, mixed>
+     */
+    public function extensionsFor(string $type): array
+    {
+        return $this->extensionsByType[$type]['type'] ?? [];
+    }
+
+    /**
+     * The vendor extensions declared for one of `$type`'s CRUD operations, before the
+     * merge over {@see extensionsFor()} core applies; empty when none.
+     *
+     * @return array<string, mixed>
+     */
+    public function operationExtensionsFor(string $type, OperationType $operation): array
+    {
+        return $this->extensionsByType[$type]['operations'][$operation->value] ?? [];
     }
 }

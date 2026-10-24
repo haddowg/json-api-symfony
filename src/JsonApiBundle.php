@@ -778,6 +778,9 @@ final class JsonApiBundle extends AbstractBundle
                     // beneath the resource's own method hooks.
                     'description' => $attribute->description,
                     'operation_descriptions' => self::operationDescriptionsTag($attribute),
+                    // The OpenAPI vendor extensions (bundle ADR 0127), type-wide and
+                    // per-operation, JSON-encoded into one scalar for the same reason.
+                    'openapi_extensions' => self::extensionsTag($attribute),
                     // The per-operation OpenAPI response declarations (typed response
                     // objects): the five create/update/delete/fetchOne/fetchCollection
                     // sets JSON-encoded into a single scalar tag attribute the
@@ -1322,6 +1325,22 @@ final class JsonApiBundle extends AbstractBundle
         }
 
         return \json_encode($attribute->operationDescriptions, \JSON_THROW_ON_ERROR);
+    }
+
+    /**
+     * The declared OpenAPI vendor extensions (`#[AsJsonApiResource(extensions:,
+     * operationExtensions:)]`, bundle ADR 0127) as one JSON scalar of
+     * `{type: map, operations: map}`; `null` when none are declared. The attribute
+     * constructor has already validated every name and operation key.
+     */
+    private static function extensionsTag(AsJsonApiResource $attribute): ?string
+    {
+        $operations = \array_filter($attribute->operationExtensions, static fn(array $set): bool => $set !== []);
+        if ($attribute->extensions === [] && $operations === []) {
+            return null;
+        }
+
+        return \json_encode(['type' => $attribute->extensions, 'operations' => $operations], \JSON_THROW_ON_ERROR);
     }
 
     /**

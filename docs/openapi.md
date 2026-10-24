@@ -303,6 +303,38 @@ both, the method hook wins (it is the more specific, runtime surface). Returning
 (the method default) or omitting the attribute key leaves the generated default in place.
 An unknown `operationDescriptions` key fails the build with a clear error.
 
+### Vendor extensions
+
+`#[AsJsonApiResource(extensions: […], operationExtensions: […])]` adds OpenAPI `x-`
+extensions to a type's operations, for example to tell a client generator which feature
+gates a resource:
+
+```php
+use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
+use haddowg\JsonApiBundle\Operation\Operation;
+
+#[AsJsonApiResource(
+    extensions: ['x-feature' => 'agency'],
+    operationExtensions: [
+        Operation::Delete->name => ['x-feature' => 'agency-admin', 'x-rate-limit' => 10],
+    ],
+)]
+final class AgencyResource extends AbstractResource { /* … */ }
+```
+
+`extensions` goes on every operation the document emits for the type: the five CRUD
+operations, every related and relationship endpoint, and the type's custom actions.
+`operationExtensions` is keyed by the `Operation` case name and merged over `extensions`
+for that CRUD operation, so `DELETE /agencies/{id}` above carries
+`x-feature: agency-admin` and `x-rate-limit: 10`, and every other operation carries
+`x-feature: agency`. A type that declares neither renders exactly as before.
+
+Every key must be a full extension name starting with `x-`. A bare name such as
+`feature`, `x-` on its own, a name under the OAS-reserved `x-oai-`/`x-oas-` prefixes, or
+an unknown operation key fails the container build. Values can be any JSON-encodable
+scalar or array. There is no method hook for extensions, so when the value has to be
+computed, add it with a [decorator](#wholesale-customisation-the-decorator).
+
 ### Tagging (grouping operations)
 
 OAS tags drive how Swagger UI / ReDoc group operations. Each resource's operations are

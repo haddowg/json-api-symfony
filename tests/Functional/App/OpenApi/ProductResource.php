@@ -44,6 +44,13 @@ use haddowg\JsonApiBundle\Operation\Operation;
     operationDescriptions: [
         Operation::FetchCollection->name => 'Browse the product catalog.',
     ],
+    // Vendor extensions (bundle ADR 0127): x-feature on every products operation,
+    // overridden for Create and joined by x-rate-limit on Delete.
+    extensions: ['x-feature' => 'catalog'],
+    operationExtensions: [
+        Operation::Create->name => ['x-feature' => 'catalog-admin'],
+        Operation::Delete->name => ['x-rate-limit' => ['per-minute' => 10]],
+    ],
 )]
 final class ProductResource extends AbstractResource
 {
