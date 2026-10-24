@@ -161,7 +161,8 @@ return static function (ContainerConfigurator $container): void {
     // registerServers), resolving the server per request from `_jsonapi_server` so each
     // server contributes only its own asLink actions. The link map (server → type →
     // action link descriptors) is filled by the ResourceLocatorPass; the authorization
-    // checker is optional (no firewall → a `security`-gated action's link is suppressed).
+    // checker is optional (no firewall → a `security`-gated action's link is suppressed;
+    // the ResourceSecurityPass fails the build before that can happen).
     $services->set(\haddowg\JsonApiBundle\Action\ActionLinkContributor::class)
         ->arg('$authorizationChecker', \Symfony\Component\DependencyInjection\Loader\Configurator\service('security.authorization_checker')->nullOnInvalid())
         ->arg('$linksByServerType', []);

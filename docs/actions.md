@@ -338,10 +338,10 @@ delegates straight to an ordinary Symfony
 `BeforeActionEvent`, so it is evaluated per action (not per type) and needs no
 resource-level registration.
 
-> The `security` expression layer activates only when `symfony/security-core` and
-> `symfony/expression-language` are installed and a firewall is configured — the
-> same conditions as [declarative authorization](authorization.md). Without them a
-> declared `security` is inert.
+> A `security` expression needs `symfony/security-core`,
+> `symfony/expression-language` and a configured firewall, the same as
+> [declarative authorization](authorization.md). Without them the container build fails
+> and names the action.
 
 For authorization an expression can't capture — a multi-entity rule, a
 data-dependent check — subscribe to the `BeforeActionEvent` directly and throw a
@@ -393,14 +393,10 @@ included `articles` member too.
 
 > `asLink` is **resource scope only**: a collection-scope action has no resource to
 > hang a link on, so `asLink: true` on a `ActionScope::Collection` action is a
-> build-time error. The security-aware visibility uses the same `symfony/security-core`
-> + firewall wiring as the `security` gate; with no firewall configured, a
-> `security`-gated action's link is suppressed — the conservative choice, so the
-> document never advertises a link behind an unevaluable gate. Note this is *stricter*
-> than invocation: without a firewall the `security` gate is inert, so the same action
-> would actually be **allowed** if called (a declared `security` [fails
-> open](authorization.md#enabling-the-layer) when there is no firewall). Wire a
-> firewall and link visibility and invocation agree.
+> build-time error. The security-aware visibility uses the same authorization checker
+> as the `security` gate, so link visibility and invocation always agree. An action
+> with a `security` expression and no firewall [fails the
+> build](authorization.md#enabling-the-layer).
 
 ## Lifecycle events
 

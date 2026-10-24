@@ -54,12 +54,12 @@ use Symfony\Component\Security\Core\Exception\AccessDeniedException;
  * collection has no single subject, so use a role/attribute check). Row-level read
  * authorization — hiding individual rows — belongs instead in a query-scope (a
  * Doctrine extension filtering the collection), not this single gate. A type that
- * declared no security is never gated
- * (the subscriber is a no-op for it), and the whole seam is inert when
- * `symfony/security-core` is absent (the subscriber is not registered). It is
- * likewise a no-op when no firewall is configured — `security.authorization_checker`
- * exists only with a firewall, so the checker is injected optionally and a declared
- * `security` stays inert until one is wired.
+ * declared no security is never gated (the subscriber is a no-op for it).
+ *
+ * The authorization checker is injected optionally so an app that declares no
+ * expression needs no firewall. The build already fails when an expression is declared
+ * without one (bundle ADR 0130); if the subscriber still meets an expression it cannot
+ * evaluate, it throws rather than let the request through.
  */
 final class ResourceSecuritySubscriber implements EventSubscriberInterface
 {
@@ -98,11 +98,11 @@ final class ResourceSecuritySubscriber implements EventSubscriberInterface
     public function onBeforeFetchCollection(BeforeFetchCollectionEvent $event): void
     {
         $expression = $this->registry->securityFor($event->type)?->forList();
-        if (!\is_string($expression) || $this->authorizationChecker === null) {
+        if (!\is_string($expression)) {
             return;
         }
 
-        if (!$this->authorizationChecker->isGranted(new Expression($expression), null)) {
+        if (!$this->isGranted($expression, null)) {
             throw new AccessDeniedException(\sprintf(
                 'Access denied to the collection of the JSON:API type "%s".',
                 $event->type,
@@ -121,11 +121,11 @@ final class ResourceSecuritySubscriber implements EventSubscriberInterface
      */
     public function onBeforeAction(BeforeActionEvent $event): void
     {
-        if ($event->security === null || $this->authorizationChecker === null) {
+        if ($event->security === null) {
             return;
         }
 
-        if (!$this->authorizationChecker->isGranted(new Expression($event->security), $event->subject)) {
+        if (!$this->isGranted($event->security, $event->subject)) {
             throw new AccessDeniedException(\sprintf(
                 'Access denied to the JSON:API action "%s" on the type "%s".',
                 $event->action,
@@ -194,16 +194,33 @@ final class ResourceSecuritySubscriber implements EventSubscriberInterface
      */
     private function authorize(string $type, string|bool|null $expression, object $subject): void
     {
-        if (!\is_string($expression) || $this->authorizationChecker === null) {
+        if (!\is_string($expression)) {
             return;
         }
 
-        if (!$this->authorizationChecker->isGranted(new Expression($expression), $subject)) {
+        if (!$this->isGranted($expression, $subject)) {
             throw new AccessDeniedException(\sprintf(
                 'Access denied to %s on the JSON:API type "%s".',
                 $subject::class,
                 $type,
             ));
         }
+    }
+
+    /**
+     * Evaluates `$expression` through the authorization checker. Without a checker, or
+     * without symfony/expression-language, it throws instead of granting.
+     */
+    private function isGranted(string $expression, mixed $subject): bool
+    {
+        if ($this->authorizationChecker === null || !\class_exists(Expression::class)) {
+            throw new \LogicException(\sprintf(
+                'The JSON:API security expression "%s" cannot be evaluated: it needs symfony/security-core, '
+                . 'symfony/expression-language and a configured firewall (the security.authorization_checker service).',
+                $expression,
+            ));
+        }
+
+        return $this->authorizationChecker->isGranted(new Expression($expression), $subject);
     }
 }

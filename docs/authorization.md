@@ -9,9 +9,11 @@ a resource declares Symfony Security
 API-Platform-style `security:` convenience built on the hook keystone, so you get
 per-operation, per-object authorization without writing a subscriber or a handler.
 
-> This layer is **opt-in and optional**. It activates only when `symfony/security-core`
-> and `symfony/expression-language` are installed, and only gates when a firewall is
-> configured. A resource that declares no `security` is never affected. For the lower
+> This layer is **opt-in**. A security expression needs `symfony/security-core`,
+> `symfony/expression-language` and a configured firewall. If any of them is missing,
+> the container build fails and names the resource and what to install, so a declared
+> expression is never silently skipped. The `true`/`false` values need none of them, and
+> a resource that declares no `security` is never affected. For the lower
 > level — placing a firewall in front of JSON:API routes, `access_control`, and how
 > firewall failures render — see [security and deployment](security.md).
 
@@ -287,7 +289,23 @@ two compose: a resource can carry a `security` expression *and* a hook method.
 composer require symfony/security-core symfony/expression-language
 ```
 
-(`symfony/security-bundle`, which brings both, is what you install to get a firewall —
+(`symfony/security-bundle`, which brings both, is what you install to get a firewall,
 see [security and deployment](security.md).) With a firewall configured, declared
-`security` expressions take effect automatically. Without the packages — or without a
-firewall — a declared `security` is inert and a resource behaves as if it had none.
+`security` expressions take effect automatically.
+
+If a resource, relation or action declares an expression and the app lacks either
+package or the `security.authorization_checker` service (no SecurityBundle firewall),
+the build fails. Resource and action expressions fail the container compile; relation
+expressions fail the cache warm-up, which runs on every container build. The message
+names each declaration and what is missing:
+
+```text
+Declared JSON:API security cannot be enforced: symfony/expression-language is not
+installed (composer require symfony/expression-language). It is declared on type
+"albums" (securityCreate). ...
+```
+
+The documentation-only `true` and `false` values are never evaluated, so they build and
+project into the [OpenAPI document](openapi.md) without any of these packages. Use
+`true` when your own firewall or `access_control` secures an operation, and `false` to
+document it as public.
