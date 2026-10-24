@@ -64,6 +64,7 @@ use haddowg\JsonApiBundle\DataPersister\WriteTransactionContext;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
+use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 use haddowg\JsonApiBundle\DataProvider\PivotAwareProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\RelatedIncludeBatcher;
 use haddowg\JsonApiBundle\DataProvider\RelationCountBatcher;
@@ -615,6 +616,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // served document — which reports this read secured iff FetchOne is — stays
         // faithful). A relation declaring its own `security(read:)` OVERRIDES that gate.
         $this->gateRelatedRead($type, $parent, $relation, $operation->context());
+        $this->assertInMemoryRelatedObjects($type, [$parent], $this->jsonApiRequest($operation->context()), $server, [$relation]);
 
         // A polymorphic relation (MorphTo / MorphToMany) declares several related
         // types, so there is no single related type to resolve a serializer or a
@@ -1014,6 +1016,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // and the served document — which reports this read secured iff FetchOne is —
         // stays faithful). A relation declaring its own `security(read:)` OVERRIDES it.
         $this->gateRelationshipRead($type, $parent, $relation, $operation->context());
+        $this->assertInMemoryRelatedObjects($type, [$parent], $this->jsonApiRequest($operation->context()), $server, [$relation]);
 
         // The relationship-linkage/pagination seams are request-scoped singletons
         // (reset between messages). Clear any backing a prior render left so this
@@ -1502,6 +1505,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      */
     private function preloadIncludes(DataProviderInterface $provider, array $entities, string $type, ?JsonApiRequestInterface $request, ?Server $server = null): void
     {
+        if ($request !== null && $server !== null) {
+            $this->assertInMemoryRelatedObjects($type, $entities, $request, $server);
+        }
+
         if ($request === null || $entities === [] || $this->includeBatcher === null) {
             return;
         }
@@ -1515,6 +1522,27 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         }
 
         $this->relationshipLinkage?->setIncluded($linkage);
+    }
+
+    /**
+     * The in-memory store renders relations straight off its models, so a model holding
+     * a raw id where a related object belongs is caught here, before core renders it as
+     * an identifier with an empty `id`. Doctrine maps relations to associations, so it
+     * needs no such check.
+     *
+     * @param list<object>                  $entities
+     * @param list<RelationInterface>|null $relations the relations to check; every readable one when null
+     */
+    private function assertInMemoryRelatedObjects(string $type, array $entities, JsonApiRequestInterface $request, Server $server, ?array $relations = null): void
+    {
+        if ($entities === [] || !$this->providers->supportsType($type)) {
+            return;
+        }
+
+        $provider = $this->providers->forType($type);
+        if ($provider instanceof InMemoryDataProvider) {
+            $provider->assertRelatedObjects($entities, $relations ?? $this->types->readableRelationsFor($server, $type, $request), $request);
+        }
     }
 
     /**
@@ -1535,6 +1563,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             if ($serializer !== null) {
                 $groups[$serializer->getType($item)][] = $item;
             }
+        }
+        foreach ($groups as $type => $members) {
+            $this->assertInMemoryRelatedObjects($type, $members, $request, $server);
         }
 
         $linkage = $this->includeBatcher->preloadGrouped($groups, $request, $server);

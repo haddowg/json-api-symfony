@@ -19,7 +19,7 @@ final class OpenApiProviderFactory
 {
     public static function products(): InMemoryDataProvider
     {
-        $product = new Product('1', 'Widget', 'published', '1', ['1']);
+        $product = new Product('1', 'Widget', 'published', '1', [new Category('1', 'Tools')]);
 
         return new InMemoryDataProvider('products', [$product->id => $product], static function (object $item): string {
             \assert($item instanceof Product);

@@ -12,7 +12,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\OpenApi;
 final class Product
 {
     /**
-     * @param list<string> $tagIds the related `categories` linkage (a to-many)
+     * @param list<Category> $tagIds the related `categories` (a to-many, stored under a renamed property)
      */
     public function __construct(
         public string $id = '',
