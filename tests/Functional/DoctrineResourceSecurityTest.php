@@ -326,6 +326,22 @@ final class DoctrineResourceSecurityTest extends JsonApiFunctionalTestCase
     }
 
     #[Test]
+    public function a_relation_hidden_from_the_caller_is_a_404_before_the_read_gate_runs(): void
+    {
+        // Anonymous first: the shared browser keeps the last actingAs() token. The
+        // parent gate would answer 401, but the hidden relation reads as absent.
+        foreach (['/securedWidgets/1/staffPartner', '/securedWidgets/1/relationships/staffPartner'] as $endpoint) {
+            $this->browser()->get($endpoint)->getErrors()->assertStatus(404)->assertHasError(status: '404', code: 'RELATIONSHIP_NOT_EXISTS');
+        }
+        foreach (['/securedWidgets/1/staffPartner', '/securedWidgets/1/relationships/staffPartner'] as $endpoint) {
+            $this->browser()->actingAs('user')->get($endpoint)->getErrors()->assertStatus(404)->assertHasError(status: '404', code: 'RELATIONSHIP_NOT_EXISTS');
+        }
+
+        $this->browser()->actingAs('admin')->get('/securedWidgets/1/staffPartner')->assertStatus(200);
+        $this->browser()->actingAs('admin')->get('/securedWidgets/1/relationships/staffPartner')->assertStatus(200);
+    }
+
+    #[Test]
     public function an_admin_relation_read_overrides_the_parent_gate_to_be_more_restrictive(): void
     {
         // `adminPartner` declares security(read: ROLE_ADMIN) → a plain ROLE_USER may read

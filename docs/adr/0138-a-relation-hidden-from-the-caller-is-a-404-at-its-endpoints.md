@@ -1,0 +1,3 @@
+# A relation hidden from the caller is a 404 at its endpoints
+
+A `hidden($when)` relation left the rendered resource but its related and relationship `GET`s still served the data, because the predicate takes the parent and only the handler loads it. Both reads now call core's `Server::refuseHiddenRelationRead()` straight after loading the parent, before the read gate and before any related data is read, so a hidden relation answers `404 RELATIONSHIP_NOT_EXISTS` whether or not the caller passes the parent's read gate (core ADR 0169, Laravel ADR 0043). Checking it first means a `401` or `403` never shows that a relation the caller can't see exists. The mutation endpoints still resolve a conditionally hidden relation and answer their own `403`s.

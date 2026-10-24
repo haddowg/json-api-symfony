@@ -98,6 +98,12 @@ abstract class BaseBadgeResource extends AbstractResource
                 ->cannotBeIncluded(
                     static fn(mixed $model, JsonApiRequestInterface $request): bool => $request->getHeaderLine('X-Role') !== 'admin',
                 ),
+            // The same association again, hidden from a non-admin: absent from the
+            // rendered resource and a 404 at both of its read endpoints.
+            HasMany::make('staffMedals', 'medals')->storedAs('medals')->withData()
+                ->hidden(
+                    static fn(mixed $model, JsonApiRequestInterface $request): bool => $request->getHeaderLine('X-Role') !== 'admin',
+                ),
         ];
     }
 }

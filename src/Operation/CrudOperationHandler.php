@@ -613,6 +613,11 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return ErrorResponse::fromException(new ResourceNotFound());
         }
 
+        // A relation hidden from this caller (its `hidden($when)` predicate needs the
+        // parent) is a 404, as it is absent from the rendered resource. It runs before
+        // the read gate so a 403 can't show that the relation exists.
+        $server->refuseHiddenRelationRead($target, $parent, $this->jsonApiRequest($operation->context()));
+
         $relation = $this->resolveRelation($server, $type, $relationshipName);
         if ($relation === null) {
             return ErrorResponse::fromException(new RelationshipNotExists($relationshipName));
@@ -1012,6 +1017,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         if ($parent === null) {
             return ErrorResponse::fromException(new ResourceNotFound());
         }
+
+        $server->refuseHiddenRelationRead($target, $parent, $this->jsonApiRequest($operation->context()));
 
         $relation = $this->resolveRelation($server, $type, $relationshipName);
         if ($relation === null) {
