@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.8.1](https://github.com/haddowg/json-api-symfony/compare/v1.8.0...v1.8.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* **example:** reject an empty artist slug ([#186](https://github.com/haddowg/json-api-symfony/issues/186)) ([43b6dd8](https://github.com/haddowg/json-api-symfony/commit/43b6dd876db145d718fa65891d701fd753fe7141))
+
+
+### Miscellaneous Chores
+
+* **example:** serve publicOwner at a renamed URI segment ([#185](https://github.com/haddowg/json-api-symfony/issues/185)) ([5174069](https://github.com/haddowg/json-api-symfony/commit/5174069aed432afe0abada89a1c12bc37dd7cee5))
+
 ## [1.8.0](https://github.com/haddowg/json-api-symfony/compare/v1.7.1...v1.8.0) (2026-10-24)
 
 
