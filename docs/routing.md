@@ -82,6 +82,10 @@ resource-less type declaring `#[AsJsonApiRelations]`) the loader additionally em
 | Remove from linkage | `DELETE /{seg}/{id}/relationships/{relationship}` | `jsonapi.{type}.relationship.remove` |
 | Related resources | `GET /{seg}/{id}/{relationship}` | `jsonapi.{type}.related.show` |
 
+The three linkage mutation routes (`PATCH`/`POST`/`DELETE`) follow `Update`: a type
+whose operations leave out `Update`, such as a `readOnly: true` resource, gets only the
+two read routes, and a relationship write to it is a router-native `405`.
+
 The four-segment linkage path (`…/relationships/{relationship}`) and the
 three-segment related path (`…/{relationship}`) differ in segment count, so they
 never shadow one another — nor the two-segment `/{seg}/{id}` resource route. The

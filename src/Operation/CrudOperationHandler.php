@@ -99,6 +99,7 @@ use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipLinkage;
 use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipPagination;
 use haddowg\JsonApiBundle\Serializer\WindowedRelationshipLinkage;
 use haddowg\JsonApiBundle\Serializer\WindowedRelationshipPagination;
+use haddowg\JsonApiBundle\Server\RouteDescriptorRegistry;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
 use haddowg\JsonApiBundle\Validation\FilterValueValidator;
@@ -208,6 +209,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         private readonly ?RequestScopedOutputTimezone $outputTimezone = null,
         // Applies the related endpoint's scope to written linkage (bundle ADR 0126).
         private readonly ?ScopedLinkageGuard $linkageGuard = null,
+        // Each server's per-type operation allow-list, re-checked on writes that reach
+        // the handler without a route the loader gated.
+        private readonly ?RouteDescriptorRegistry $descriptors = null,
     ) {}
 
     public function handle(\haddowg\JsonApi\Operation\JsonApiOperationInterface $operation): DataResponse|RelatedResponse|IdentifierResponse|MetaResponse|NoContentResponse|AcceptedResponse|SeeOtherResponse|AtomicResultsResponse|ErrorResponse
@@ -1350,13 +1354,19 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $type = $target->type;
         $relationshipName = (string) $target->relationship;
 
+        // Mutating a relationship updates its parent: a type that does not expose
+        // Update has no relationship mutation, however the request got here.
+        if (!$this->exposes($type, Operation::Update, $this->jsonApiRequest($operation->context()))) {
+            return ErrorResponse::fromException(new ResourceNotFound());
+        }
+
         $parent = $this->loadParent($type, $target->id);
         if ($parent === null) {
             return ErrorResponse::fromException(new ResourceNotFound());
         }
 
         $relation = $this->resolveRelation($server, $type, $relationshipName);
-        if ($relation === null) {
+        if ($relation === null || !$relation->exposesRelationshipEndpoint()) {
             return ErrorResponse::fromException(new RelationshipNotExists($relationshipName));
         }
 
@@ -2465,6 +2475,21 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         }
 
         return $fire();
+    }
+
+    /**
+     * Whether `$type` exposes `$operation` on the request's server. Without the
+     * descriptor registry (a programmatic wiring) every operation counts as exposed.
+     */
+    private function exposes(string $type, Operation $operation, JsonApiRequestInterface $request): bool
+    {
+        if ($this->descriptors === null) {
+            return true;
+        }
+
+        $descriptor = $this->descriptors->forType($this->serverName($request), $type);
+
+        return $descriptor !== null && \in_array($operation->value, $descriptor['operations'], true);
     }
 
     /**

@@ -209,6 +209,9 @@ those two fetch operations without importing the enum:
 #[AsJsonApiResource(readOnly: true)] // GET /{type} and GET /{type}/{id} only
 ```
 
+A read-only type with relations keeps its relationship read endpoints but gets no
+relationship mutation routes, since those follow `Update`.
+
 `operations` stays the precise escape hatch for any other subset (a create-only ingest
 endpoint, say). The two are **mutually exclusive**: declaring `readOnly: true`
 *and* a non-empty `operations` list is a constructor `\LogicException`, so an

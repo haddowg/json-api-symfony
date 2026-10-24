@@ -20,7 +20,9 @@ namespace haddowg\JsonApiBundle\Operation;
  *  - {@see self::Update}          → `PATCH /{seg}/{id}`
  *  - {@see self::Delete}          → `DELETE /{seg}/{id}`
  *
- * Relationship endpoints are a separate slice and are not gated by this enum.
+ * The relationship read endpoints are always routed for a type with relations; the
+ * relationship mutation endpoints (`PATCH`/`POST`/`DELETE`
+ * `/{seg}/{id}/relationships/{rel}`) follow {@see self::Update}.
  */
 enum Operation: string
 {
