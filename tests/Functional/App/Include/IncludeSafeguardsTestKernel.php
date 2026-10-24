@@ -12,6 +12,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Include\Resource\CapResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\Include\Resource\NodeResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\Include\Resource\RootResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\Include\Resource\TagResource;
+use haddowg\JsonApiBundle\Tests\Functional\App\PinnedConfigDefaults;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Component\Config\Loader\LoaderInterface;
@@ -75,6 +76,7 @@ final class IncludeSafeguardsTestKernel extends Kernel
             'php_errors' => ['log' => true],
             'router' => ['utf8' => true],
         ]);
+        PinnedConfigDefaults::apply($container, $builder);
 
         // No max_include_depth key: the bundle default of 3 governs.
         $container->extension('json_api', [

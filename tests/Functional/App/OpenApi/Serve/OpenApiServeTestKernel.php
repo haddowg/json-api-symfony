@@ -12,6 +12,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\OpenApi\OpenApiProviderFactory;
 use haddowg\JsonApiBundle\Tests\Functional\App\OpenApi\ProductResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\OpenApi\RecalculatePrices;
 use haddowg\JsonApiBundle\Tests\Functional\App\OpenApi\SummarizeCatalog;
+use haddowg\JsonApiBundle\Tests\Functional\App\PinnedConfigDefaults;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Bundle\SecurityBundle\SecurityBundle;
@@ -86,6 +87,7 @@ final class OpenApiServeTestKernel extends Kernel
             'router' => ['utf8' => true],
             'session' => ['storage_factory_id' => 'session.storage.factory.mock_file'],
         ]);
+        PinnedConfigDefaults::apply($container, $builder);
 
         $container->extension('security', [
             'providers' => ['users' => ['memory' => null]],

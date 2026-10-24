@@ -8,6 +8,7 @@ use haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
+use haddowg\JsonApiBundle\Tests\Functional\App\PinnedConfigDefaults;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\ArticleResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\AuthorResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\CommentResource;
@@ -75,6 +76,7 @@ final class AtomicFailingCommitTestKernel extends Kernel
             'php_errors' => ['log' => true],
             'router' => ['utf8' => true],
         ]);
+        PinnedConfigDefaults::apply($container, $builder);
 
         $container->extension('json_api', [
             'base_uri' => 'https://example.test',

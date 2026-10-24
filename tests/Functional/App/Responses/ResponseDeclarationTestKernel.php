@@ -10,6 +10,7 @@ use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Routing\OpenApiRouteLoader;
 use haddowg\JsonApiBundle\Tests\Functional\App\Async\JobSerializer;
+use haddowg\JsonApiBundle\Tests\Functional\App\PinnedConfigDefaults;
 use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
@@ -72,6 +73,7 @@ final class ResponseDeclarationTestKernel extends Kernel
             'php_errors' => ['log' => true],
             'router' => ['utf8' => true],
         ]);
+        PinnedConfigDefaults::apply($container, $builder);
 
         $container->extension('json_api', [
             'base_uri' => 'https://example.test',

@@ -12,6 +12,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\IdSource\Doctrine\CounterResource
 use haddowg\JsonApiBundle\Tests\Functional\App\IdSource\Doctrine\MarkerResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\IdSource\Doctrine\SlugResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\IdSource\Doctrine\TokenResource;
+use haddowg\JsonApiBundle\Tests\Functional\App\PinnedConfigDefaults;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Component\Config\Loader\LoaderInterface;
@@ -74,6 +75,7 @@ final class IdSourceTestKernel extends Kernel
             'router' => ['utf8' => true],
             'validation' => ['enabled' => true],
         ]);
+        PinnedConfigDefaults::apply($container, $builder);
 
         $orm = [
             'auto_generate_proxy_classes' => true,

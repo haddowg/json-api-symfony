@@ -9,6 +9,7 @@ use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Routing\OpenApiRouteLoader;
 use haddowg\JsonApiBundle\Tests\Functional\App\OpenApi\MultiServer\AdminItemResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\OpenApi\MultiServer\PublicItemResource;
+use haddowg\JsonApiBundle\Tests\Functional\App\PinnedConfigDefaults;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Component\Config\Loader\LoaderInterface;
@@ -79,6 +80,7 @@ final class OpenApiMultiServerTestKernel extends Kernel
             'php_errors' => ['log' => true],
             'router' => ['utf8' => true],
         ]);
+        PinnedConfigDefaults::apply($container, $builder);
 
         $jsonApi = [
             'base_uri' => 'https://public.test',

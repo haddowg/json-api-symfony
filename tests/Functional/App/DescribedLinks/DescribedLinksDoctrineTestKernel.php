@@ -9,6 +9,7 @@ use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\DoctrineArticleResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\DoctrineAuthorResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\DoctrineCommentResource;
+use haddowg\JsonApiBundle\Tests\Functional\App\PinnedConfigDefaults;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Component\Config\Loader\LoaderInterface;
@@ -70,6 +71,7 @@ final class DescribedLinksDoctrineTestKernel extends Kernel
             'php_errors' => ['log' => true],
             'router' => ['utf8' => true],
         ]);
+        PinnedConfigDefaults::apply($container, $builder);
 
         $orm = [
             'auto_generate_proxy_classes' => true,

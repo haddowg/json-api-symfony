@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\Doctrine;
 use Doctrine\Bundle\DoctrineBundle\DoctrineBundle;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
+use haddowg\JsonApiBundle\Tests\Functional\App\PinnedConfigDefaults;
 use haddowg\JsonApiBundle\Tests\Functional\App\Query\DoctrineRelationCountFilterArm;
 use haddowg\JsonApiBundle\Tests\Functional\App\Query\DoctrineRelationCountSortArm;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
@@ -71,6 +72,7 @@ final class RelationCountArmDoctrineTestKernel extends Kernel
             'php_errors' => ['log' => true],
             'router' => ['utf8' => true],
         ]);
+        PinnedConfigDefaults::apply($container, $builder);
 
         $orm = [
             'auto_generate_proxy_classes' => true,
