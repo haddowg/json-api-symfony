@@ -30,6 +30,14 @@ namespace haddowg\JsonApiBundle\Attribute;
  * is grouped under in the generated OpenAPI document (design §4.7, D15). An empty
  * array means the default: a single tag named the humanized-type form. Tags carry
  * no JSON:API meaning.
+ *
+ * `extensions` and `operationExtensions` declare **OpenAPI vendor extensions**, as on
+ * {@see AsJsonApiResource} (bundle ADR 0127). `extensions` lands on every operation the
+ * document emits for the type, including custom actions mounted on it, so a
+ * serialize-only type can still mark its actions. `operationExtensions` is keyed by
+ * {@see \haddowg\JsonApiBundle\Operation\Operation} case name and may only name an
+ * operation in `operations`. The names are validated the same way as on the resource
+ * attribute.
  */
 #[\Attribute(\Attribute::TARGET_CLASS)]
 final readonly class AsJsonApiSerializer
@@ -38,11 +46,17 @@ final readonly class AsJsonApiSerializer
      * @param list<\haddowg\JsonApiBundle\Operation\Operation> $operations the exposed operation allow-list (empty = none)
      * @param string|list<string>|null                         $server     the server name(s) exposing this type (null = the implicit `default`)
      * @param list<string>                                     $tags       the OpenAPI tag names this type is grouped under (empty = the humanized-type default)
+     * @param array<string, mixed>                             $extensions OpenAPI vendor extensions (`x-…` keys) stamped on every operation of this type
+     * @param array<string, array<string, mixed>>              $operationExtensions per-operation OpenAPI vendor extensions, keyed by an exposed {@see \haddowg\JsonApiBundle\Operation\Operation} case name and merged over `extensions`
      */
     public function __construct(
         public string $type,
         public array $operations = [],
         public string|array|null $server = null,
         public array $tags = [],
-    ) {}
+        public array $extensions = [],
+        public array $operationExtensions = [],
+    ) {
+        VendorExtensions::assertValid('AsJsonApiSerializer', $extensions, $operationExtensions, \array_values($operations));
+    }
 }

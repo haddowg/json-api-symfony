@@ -39,6 +39,17 @@ final class OpenApiProviderFactory
         });
     }
 
+    public static function shelves(): InMemoryDataProvider
+    {
+        $shelf = new Shelf('1', 'Hardware');
+
+        return new InMemoryDataProvider('shelves', [$shelf->id => $shelf], static function (object $item): string {
+            \assert($item instanceof Shelf);
+
+            return $item->id;
+        });
+    }
+
     public static function productsPersister(InMemoryDataProvider $provider): InMemoryDataPersister
     {
         return new InMemoryDataPersister('products', $provider->store(), static fn(): Product => new Product());

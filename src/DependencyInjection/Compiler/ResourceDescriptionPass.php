@@ -28,6 +28,7 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
  *
  * The declared OpenAPI vendor extensions (bundle ADR 0127) ride the same way, as one
  * JSON `openapi_extensions` tag attribute, into the registry's `$extensions` argument.
+ * A standalone serializer ({@see JsonApiBundle::SERIALIZER_TAG}) can declare them too.
  */
 final class ResourceDescriptionPass implements CompilerPassInterface
 {
@@ -71,6 +72,14 @@ final class ResourceDescriptionPass implements CompilerPassInterface
             $declared = $this->extensionsFromTags($tags);
             if ($declared !== null) {
                 $extensions[$type] = $declared;
+            }
+        }
+
+        foreach ($container->findTaggedServiceIds(JsonApiBundle::SERIALIZER_TAG) as $tags) {
+            $type = $this->scalarFromTags($tags, 'type');
+            $declared = $this->extensionsFromTags($tags);
+            if ($type !== null && $declared !== null) {
+                $extensions[$type] ??= $declared;
             }
         }
 

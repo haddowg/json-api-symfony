@@ -22,7 +22,8 @@ use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
  * The single-server OpenAPI document witness kernel (Slice 4 stage B): two resources
  * (`products` — explicitly `Catalog`-tagged, enum attribute, filters/sorts, a to-one
  * + to-many relation, a security expression on read/create; `categories` — untagged,
- * humanized-default tag), a collection-scope custom action, and the `json_api.openapi`
+ * humanized-default tag), a collection-scope custom action, a standalone-serializer
+ * `shelves` type with its own vendor extensions and action, and the `json_api.openapi`
  * config (a configured `Catalog` tag definition + a `bearer` security scheme + default
  * requirement). It imports the docs routes (`jsonapi_openapi`), so `GET /docs.json`
  * serves the generated document — which the suite meta-validates and structurally
@@ -132,6 +133,8 @@ final class OpenApiTestKernel extends Kernel
         $services->set(CategoryResource::class);
         $services->set(RecalculatePrices::class);
         $services->set(SummarizeCatalog::class);
+        $services->set(ShelfSerializer::class);
+        $services->set(RestockShelves::class);
 
         // The decorator seam witness (ADR 0080): autoconfigured onto the OpenAPI factory
         // tag, it stamps a tag onto every built document, so the serving + warmer tests
@@ -149,6 +152,10 @@ final class OpenApiTestKernel extends Kernel
 
         $services->set('test.openapi.categories_provider', \haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider::class)
             ->factory([OpenApiProviderFactory::class, 'categories'])
+            ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+
+        $services->set('test.openapi.shelves_provider', \haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider::class)
+            ->factory([OpenApiProviderFactory::class, 'shelves'])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
 
         $services->set('test.openapi.categories_persister', \haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister::class)

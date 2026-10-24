@@ -429,9 +429,28 @@ for that CRUD operation, so `DELETE /agencies/{id}` above carries
 
 Every key must be a full extension name starting with `x-`. A bare name such as
 `feature`, `x-` on its own, a name under the OAS-reserved `x-oai-`/`x-oas-` prefixes, or
-an unknown operation key fails the container build. Values can be any JSON-encodable
+an unknown operation key fails the container build, and so does an `operationExtensions`
+entry for an operation the type doesn't expose (outside `operations`, or a write on a
+`readOnly: true` resource). Values can be any JSON-encodable
 scalar or array. There is no method hook for extensions, so when the value has to be
 computed, add it with a [decorator](#wholesale-customisation-the-decorator).
+
+A [standalone serializer](capability-composition.md) declares them the same way on
+`#[AsJsonApiSerializer]`. Its exposed operations are its `operations` list, so a
+serialize-only type can only declare `extensions`. Those still reach any custom action
+mounted on the type:
+
+```php
+use haddowg\JsonApiBundle\Attribute\AsJsonApiSerializer;
+
+#[AsJsonApiSerializer(
+    type: 'charts',
+    operations: [Operation::FetchCollection, Operation::FetchOne],
+    extensions: ['x-feature' => 'charts'],
+    operationExtensions: [Operation::FetchCollection->name => ['x-cache' => 'long']],
+)]
+final class ChartSerializer extends AbstractSerializer { /* … */ }
+```
 
 ### Tagging (grouping operations)
 

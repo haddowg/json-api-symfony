@@ -137,4 +137,13 @@ final class AsJsonApiResourceTest extends TestCase
 
         new AsJsonApiResource(extensions: $extensions, operationExtensions: $operationExtensions);
     }
+
+    #[Test]
+    public function operationExtensionsForAnOperationTheTypeDoesNotExposeAreRejected(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('operationExtensions["Create"] targets an operation this type does not expose');
+
+        new AsJsonApiResource(readOnly: true, operationExtensions: [Operation::Create->name => ['x-feature' => 'agency']]);
+    }
 }

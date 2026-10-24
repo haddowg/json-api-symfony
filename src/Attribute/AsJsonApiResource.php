@@ -95,8 +95,9 @@ use haddowg\JsonApiBundle\Operation\Operation;
  * `operationExtensions` is keyed by the {@see \haddowg\JsonApiBundle\Operation\Operation}
  * case name, like `operationDescriptions`, and is merged over `extensions` for that one
  * CRUD operation (the operation's value wins on a shared key). Every key must start
- * with `x-`; a bare `x-`, an OAS-reserved `x-oai-`/`x-oas-` name or an unknown
- * operation key is a constructor `\LogicException`. Values must be JSON-encodable.
+ * with `x-`; a bare `x-`, an OAS-reserved `x-oai-`/`x-oas-` name, an unknown
+ * operation key or an operation the type does not expose is a constructor
+ * `\LogicException`. Values must be JSON-encodable.
  *
  * `deprecation` and `sunset` declare **deprecation signalling** — the IETF
  * Deprecation header field (`draft-ietf-httpapi-deprecation-header`) plus the
@@ -237,69 +238,20 @@ final readonly class AsJsonApiResource
             }
         }
 
-        self::assertExtensionNames($extensions, 'extensions');
-        foreach ($operationExtensions as $key => $set) {
-            if (!\is_string($key) || Operation::tryFrom($key) === null) {
-                throw new \LogicException(\sprintf(
-                    'AsJsonApiResource operationExtensions has an unknown operation key "%s"; '
-                    . 'keys must be a %s case name: %s.',
-                    (string) $key,
-                    Operation::class,
-                    \implode(', ', \array_map(static fn(Operation $op): string => $op->name, Operation::cases())),
-                ));
-            }
-            if (!\is_array($set)) {
-                throw new \LogicException(\sprintf(
-                    'AsJsonApiResource operationExtensions["%s"] must be a map of x- extension names to values.',
-                    $key,
-                ));
-            }
-            self::assertExtensionNames($set, \sprintf('operationExtensions["%s"]', $key));
-        }
-
         // The operations this type exposes (the response-override target set): the
         // readOnly shorthand, an explicit allow-list, or the all-five default.
-        $allowed = $readOnly
-            ? [Operation::FetchCollection->value, Operation::FetchOne->value]
-            : ($operations !== []
-                ? \array_map(static fn(Operation $op): string => $op->value, $operations)
-                : \array_map(static fn(Operation $op): string => $op->value, Operation::cases()));
+        $exposed = $readOnly
+            ? [Operation::FetchCollection, Operation::FetchOne]
+            : ($operations !== [] ? \array_values($operations) : Operation::cases());
+        $allowed = \array_map(static fn(Operation $op): string => $op->value, $exposed);
+
+        VendorExtensions::assertValid('AsJsonApiResource', $extensions, $operationExtensions, $exposed);
 
         $this->create = self::normalizeResponses($create, OperationType::Create, $allowed);
         $this->update = self::normalizeResponses($update, OperationType::Update, $allowed);
         $this->delete = self::normalizeResponses($delete, OperationType::Delete, $allowed);
         $this->fetchOne = self::normalizeResponses($fetchOne, OperationType::FetchOne, $allowed);
         $this->fetchCollection = self::normalizeResponses($fetchCollection, OperationType::FetchCollection, $allowed);
-    }
-
-    /**
-     * Rejects an extension name the OpenAPI document can't carry. Core's withers would
-     * quietly prefix a bare name, but on a declaration a missing `x-` is more likely a
-     * typo than shorthand, so the attribute insists on the full name.
-     *
-     * @param array<mixed> $extensions
-     */
-    private static function assertExtensionNames(array $extensions, string $parameter): void
-    {
-        foreach ($extensions as $name => $value) {
-            $name = (string) $name;
-            if (!\str_starts_with($name, 'x-') || $name === 'x-') {
-                throw new \LogicException(\sprintf(
-                    'AsJsonApiResource %s declares "%s"; an OpenAPI vendor extension name must start with "x-" '
-                    . 'followed by a name, e.g. "x-%s".',
-                    $parameter,
-                    $name,
-                    $name === 'x-' ? 'feature' : $name,
-                ));
-            }
-            if (\str_starts_with($name, 'x-oai-') || \str_starts_with($name, 'x-oas-')) {
-                throw new \LogicException(\sprintf(
-                    'AsJsonApiResource %s declares "%s"; the "x-oai-" and "x-oas-" prefixes are reserved by the OpenAPI Initiative.',
-                    $parameter,
-                    $name,
-                ));
-            }
-        }
     }
 
     /**
