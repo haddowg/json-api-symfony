@@ -129,6 +129,16 @@ The response always advertises the extension on its `Content-Type`
     `application/vnd.api+json; ext="https://jsonapi.org/ext/atomic"`, returns `200` with an
     `atomic:results` array of the two created playlists, each with its server-minted UUID.
 
+## What a batch can write
+
+A batch writes only what its own server routes directly. A type registered only on
+another server is a `404` `ATOMIC_TARGET_TYPE_UNKNOWN`, even when an `href` names that
+server's URL. Each operation also needs the matching entry in the type's
+[operations](resources.md#the-operation-allow-list): `add` needs `Create`, `update` needs `Update`, `remove`
+needs `Delete`, and every relationship operation needs `Update`. Anything else is a
+`403` `ATOMIC_OPERATION_NOT_EXPOSED`, so a `readOnly: true` type can't be written
+through a batch.
+
 ## All or nothing
 
 The whole batch runs inside one transaction opened on every participating

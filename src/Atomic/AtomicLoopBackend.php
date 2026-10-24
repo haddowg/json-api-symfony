@@ -30,6 +30,9 @@ use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataPersister\TransactionalDataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\WriteTransactionContext;
 use haddowg\JsonApiBundle\Operation\CrudOperationHandler;
+use haddowg\JsonApiBundle\Operation\Operation;
+use haddowg\JsonApiBundle\Server\RouteDescriptorRegistry;
+use haddowg\JsonApiBundle\Server\ServerProvider;
 use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
 use haddowg\JsonApiBundle\Validation\ObjectView;
 use Psr\Log\LoggerInterface;
@@ -123,6 +126,9 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
         private readonly RouterInterface $router,
         private readonly TypeMetadataResolver $types,
         ?LoggerInterface $logger = null,
+        // The per-server operation allow-lists; null in a programmatic wiring, where
+        // every registered type and operation is writable.
+        private readonly ?RouteDescriptorRegistry $routeDescriptors = null,
     ) {
         $this->logger = $logger ?? new NullLogger();
 
@@ -191,6 +197,8 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
         // alone — an attribute-less resource object `{type, lid}` is indistinguishable from
         // a bare identifier — so the target drives it.
         $data = $this->resolveDataLids($op->data, $target->hasRelationship(), $lids);
+
+        $this->guardExposed($op->opCode, $target);
 
         // (c)/(d) build the matching core CRUD operation VO off a synthetic per-op
         // request carrying `{data: …}`, and dispatch it through the handler's own per-op
@@ -294,9 +302,10 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
      * Resolves the persister of every participating type and returns the transactional
      * ones, keyed by object hash (so one shared persister begins/commits/rolls back
      * once). The pre-flight scan refuses the whole batch up front when:
-     *  - a participating type has no registered persister — a client error (an unknown
-     *    type, {@see AtomicTargetTypeUnknown}, `404`), mirroring the routing miss a
-     *    direct CRUD call would hit (there is no routing step inside a batch);
+     *  - a participating type has no registered persister, or is not registered on the
+     *    batch's server — a client error (an unknown type, {@see AtomicTargetTypeUnknown},
+     *    `404`), mirroring the routing miss a direct CRUD call would hit (there is no
+     *    routing step inside a batch);
      *  - a participating type's persister is NOT a
      *    {@see TransactionalDataPersisterInterface} ({@see AtomicOperationsNotSupported}).
      *
@@ -314,7 +323,8 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
     {
         $transactional = [];
         foreach ($this->participatingTypes() as $type) {
-            if (!$this->persisters->supportsType($type)) {
+            // A type registered only on another server is unknown to this batch.
+            if (!$this->persisters->supportsType($type) || ($this->routeDescriptors !== null && $this->descriptor($type) === null)) {
                 throw new AtomicTargetTypeUnknown($type);
             }
 
@@ -327,6 +337,45 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
         }
 
         return $transactional;
+    }
+
+    /**
+     * Refuses an operation whose target type does not expose the matching write on
+     * this server: Create for an `add`, Update for an `update`, Delete for a `remove`,
+     * and Update for any relationship operation (it updates the parent).
+     *
+     * @throws AtomicOperationNotExposed
+     */
+    private function guardExposed(AtomicOperationCode $opCode, Target $target): void
+    {
+        if ($this->routeDescriptors === null) {
+            return;
+        }
+
+        $operation = match (true) {
+            $target->hasRelationship() => Operation::Update,
+            $opCode === AtomicOperationCode::Add => Operation::Create,
+            $opCode === AtomicOperationCode::Update => Operation::Update,
+            default => Operation::Delete,
+        };
+
+        if (!\in_array($operation->value, $this->descriptor($target->type)['operations'] ?? [], true)) {
+            throw new AtomicOperationNotExposed($target->type, $operation);
+        }
+    }
+
+    /**
+     * The route descriptor of `$type` on the batch's server, or null when the type is
+     * not registered there.
+     *
+     * @return array{operations: list<string>, ...}|null
+     */
+    private function descriptor(string $type): ?array
+    {
+        $server = $this->request->getAttribute('_jsonapi_server');
+        $server = \is_string($server) && $server !== '' ? $server : ServerProvider::DEFAULT_SERVER;
+
+        return $this->routeDescriptors?->forType($server, $type);
     }
 
     /**

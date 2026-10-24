@@ -22,9 +22,10 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
 /**
  * Doctrine entity-mapped types whose operations exclude Update (`wx-shelves` is
- * read-only, `wx-bins` lists its operations without Update), so the generic
- * Doctrine persister could write them if a request reached it. Seeded by
- * {@see \haddowg\JsonApiBundle\Tests\Functional\RelationshipWriteExposureTest}.
+ * read-only, `wx-bins` lists its operations without Update), plus `wx-vaults`
+ * registered only on the `internal` server, so the generic Doctrine persister could
+ * write any of them if a request reached it. Atomic Operations is enabled on both
+ * servers.
  */
 final class WriteExposureTestKernel extends Kernel
 {
@@ -97,6 +98,10 @@ final class WriteExposureTestKernel extends Kernel
         $container->extension('json_api', [
             'base_uri' => 'https://example.test',
             'version' => '1.1',
+            'atomic_operations' => ['enabled' => true],
+            'servers' => [
+                'internal' => ['base_uri' => 'https://example.test/internal'],
+            ],
         ]);
 
         // The router-native 405s are logged by the framework's ErrorListener; keep
@@ -111,11 +116,13 @@ final class WriteExposureTestKernel extends Kernel
         $services->set(WxPersonResource::class);
         $services->set(WxShelfResource::class);
         $services->set(WxBinResource::class);
+        $services->set(WxVaultResource::class);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void
     {
         $routes->import('.', JsonApiRouteLoader::ROUTE_TYPE);
+        $routes->import('internal', JsonApiRouteLoader::ROUTE_TYPE)->prefix('/internal');
 
         // A hand-written route onto the read-only type's relationship endpoint, so a
         // request reaches the handler without the loader's operation gating.

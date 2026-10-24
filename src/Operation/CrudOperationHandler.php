@@ -285,6 +285,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $this->router,
             $this->types,
             $this->logger,
+            $this->descriptors,
         );
 
         return (new AtomicLoop())->run($operation->descriptors(), $backend);
