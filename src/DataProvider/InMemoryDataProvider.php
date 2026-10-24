@@ -163,15 +163,9 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
         // (`$criteria->wantsCount` — the relation paginator's withCount() author
         // opt-in, or ?withCount=_self_ under a countable() relation); otherwise it
         // paginates count-free (no total, the page driven by a limit+1 probe).
-        // A to-many whose related value is null/absent (an unset association) is an
-        // empty collection here: the whole-association linkage render handled a null
-        // to-many gracefully, so the queryable related/relationship fetch path that
-        // now routes through here must too — normalise via asIterator() (null/scalar →
-        // empty), mirroring countRelated() rather than asserting is_iterable.
-        $related = $relation->readValue($parent, $request);
-        $items = \is_array($related)
-            ? \array_values($related)
-            : \iterator_to_array($this->asIterator($related), false);
+        // A null related value (an unset association) is an empty collection; a raw id
+        // where an object belongs throws rather than rendering an empty identifier.
+        $items = $this->relatedMembers($parent, $relation, $relation->readValue($parent, $request));
 
         // A cursor (keyset) window on the related endpoint runs the SAME keyset
         // execution as the primary collection — the parent scoping is already done
@@ -228,8 +222,7 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
             // A to-one relation reads a single object (or null) off the parent — wrap
             // it as a 0-or-1 result rather than asserting it is iterable.
             if (!$relation->isToMany()) {
-                $related = $relation->readValue($parent, $request);
-                $results[$wireId] = new CollectionResult(\is_object($related) ? [$related] : []);
+                $results[$wireId] = new CollectionResult($this->relatedMembers($parent, $relation, $relation->readValue($parent, $request)));
 
                 continue;
             }
@@ -330,10 +323,7 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
                 continue;
             }
 
-            $related = $relation->readValue($parent, $request);
-            $items = \is_array($related)
-                ? \array_values($related)
-                : \iterator_to_array($this->asIterator($related), false);
+            $items = $this->relatedMembers($parent, $relation, $relation->readValue($parent, $request));
 
             // Apply the relation's relatedQuery filters over the array exactly as a
             // related-collection fetch would; an empty criteria leaves the set whole.
@@ -392,8 +382,8 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
                 continue;
             }
 
-            $related = $relation->readValue($parent, $request);
-            $matches[$wireId] = \is_object($related) && $this->matchesOne($criteria, $related);
+            $related = $this->relatedMembers($parent, $relation, $relation->readValue($parent, $request))[0] ?? null;
+            $matches[$wireId] = $related !== null && $this->matchesOne($criteria, $related);
         }
 
         return $matches;
@@ -413,21 +403,74 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
     }
 
     /**
-     * Normalizes a relation's read value to an iterator so a non-countable Traversable
-     * can be drained by {@see \iterator_to_array()}. A non-iterable value (an empty
-     * to-many that read as null/scalar) becomes an empty iterator (count 0).
+     * Checks that every relation the read of `$entities` can render holds related
+     * objects, so a model that stores raw ids fails loudly instead of rendering
+     * identifiers with an empty `id`. A hidden relation renders nothing and is skipped.
+     *
+     * @param list<object>                $entities
+     * @param iterable<RelationInterface> $relations
+     *
+     * @throws \LogicException when a relation member is not an object
      */
-    private function asIterator(mixed $related): \Iterator
+    public function assertRelatedObjects(array $entities, iterable $relations, JsonApiRequestInterface $request): void
     {
-        if ($related instanceof \Iterator) {
-            return $related;
+        foreach ($relations as $relation) {
+            foreach ($entities as $entity) {
+                if ($relation->isHiddenFor($request, $entity)) {
+                    continue;
+                }
+                $this->relatedMembers($entity, $relation, $relation->readValue($entity, $request));
+            }
+        }
+    }
+
+    /**
+     * A relation's read value as its list of related objects: a to-one's object (or
+     * none), a to-many's members (none for a null value).
+     *
+     * @return list<object>
+     *
+     * @throws \LogicException when the value or a member is not an object; the store
+     *                          holds related objects, never their ids
+     */
+    private function relatedMembers(object $parent, RelationInterface $relation, mixed $value): array
+    {
+        if ($value === null) {
+            return [];
         }
 
-        if ($related instanceof \Traversable) {
-            return new \IteratorIterator($related);
+        if (!$relation->isToMany()) {
+            if (!\is_object($value)) {
+                throw $this->notAnObject($relation, $value);
+            }
+
+            return [$value];
         }
 
-        return new \ArrayIterator([]);
+        if (!\is_iterable($value)) {
+            throw $this->notAnObject($relation, $value);
+        }
+
+        $members = [];
+        foreach ($value as $member) {
+            if (!\is_object($member)) {
+                throw $this->notAnObject($relation, $member);
+            }
+            $members[] = $member;
+        }
+
+        return $members;
+    }
+
+    private function notAnObject(RelationInterface $relation, mixed $value): \LogicException
+    {
+        return new \LogicException(\sprintf(
+            'The in-memory "%s" store holds a %s for its "%s" relation where it needs the related object. '
+            . 'Store the related objects themselves on the model, not their ids.',
+            $this->type,
+            \get_debug_type($value),
+            $relation->name(),
+        ));
     }
 
     /**

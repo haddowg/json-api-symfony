@@ -415,6 +415,12 @@ A factory is needed because the seed objects can't be service-configuration argu
 literals. Both tags register at the default priority `0`, so this pair shadows the
 Doctrine fallback for `articles` with no further config.
 
+Seed relations with the related **objects**, not their ids: a to-one property holds the
+related object (or `null`), a to-many holds a list of them. The in-memory store renders
+relations straight off the model, so it can't look an id up. A model that holds an id
+where an object belongs fails the read with a `\LogicException` naming the type and the
+relation, rather than rendering an identifier with an empty `id`.
+
 ### The `$relatedResolver` requirement
 
 A persister with **no** `$relatedResolver` supports only whole-resource writes
