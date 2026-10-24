@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Tests;
 
+use haddowg\JsonApiBundle\Examples\MusicCatalog\DataFixtures\SeedManifest;
 use haddowg\JsonApiBundle\Testing\SchemaConformanceTrait;
 use haddowg\JsonApiBundle\Testing\SchemaDocumentKind;
 use PHPUnit\Framework\Attributes\Group;
@@ -85,6 +86,25 @@ final class OpenApiDocsTest extends MusicCatalogKernelTestCase
         $this->assertResponseMatchesGeneratedSchema($this->handle('/albums'), 'albums', SchemaDocumentKind::Collection);
         $this->assertResponseMatchesGeneratedSchema($this->handle('/albums/1/artist'), 'albums', SchemaDocumentKind::Related, 'artist');
         $this->assertResponseMatchesGeneratedSchema($this->handle('/albums/1/relationships/tracks'), 'albums', SchemaDocumentKind::Relationship, 'tracks');
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    public function aPivotRelationsResponsesMatchTheirGeneratedSchemas(): void
+    {
+        // Each linkage member's `meta.pivot` must carry every field the read pivot
+        // component requires, `null` where the join row holds none.
+        $id = SeedManifest::OWNED_PLAYLIST_ID;
+
+        $relationship = $this->handle('/playlists/' . $id . '/relationships/orderedTracks');
+        self::assertSame(200, $relationship->getStatusCode(), (string) $relationship->getContent());
+        self::assertStringContainsString('"pivot"', (string) $relationship->getContent());
+        $this->assertResponseMatchesGeneratedSchema($relationship, 'playlists', SchemaDocumentKind::Relationship, 'orderedTracks');
+
+        $compound = $this->handle('/playlists/' . $id . '?include=orderedTracks');
+        self::assertSame(200, $compound->getStatusCode(), (string) $compound->getContent());
+        self::assertStringContainsString('"pivot"', (string) $compound->getContent());
+        $this->assertResponseMatchesGeneratedSchema($compound, 'playlists', SchemaDocumentKind::Single);
     }
 
     #[Test]
@@ -230,27 +250,53 @@ final class OpenApiDocsTest extends MusicCatalogKernelTestCase
         $document = $this->decode($this->handle('/docs.json'));
 
         // orderedTracks (belongsToMany → tracks) renders its `position`/`weight`/`addedAt`
-        // pivot fields under each linkage identifier's `meta.pivot` at runtime; the
-        // projection types them — on BOTH the embedded relationship object and the
-        // relationship document (the latter shared by the read response and the
-        // relationship-mutation request body, so a generated client can read and write
-        // the pivot). The linkage is an `allOf` of the related identifier `$ref` plus the
-        // typed `meta.pivot`.
-        foreach (['PlaylistsOrderedTracksRelationship', 'PlaylistsOrderedTracksRelationshipDocument'] as $component) {
+        // pivot fields under each linkage identifier's `meta.pivot` at runtime. The
+        // response linkage (the embedded relationship object and the relationship
+        // document) types it through the `PlaylistsOrderedTracksPivot` read component,
+        // which requires every field it renders; the write bodies reach the
+        // `PlaylistsOrderedTracksWritePivot` request component, which leaves out the
+        // read-only `addedAt`. The linkage is an `allOf` of the related identifier `$ref`
+        // plus the typed `meta.pivot`.
+        $components = [
+            'PlaylistsOrderedTracksRelationship' => 'PlaylistsOrderedTracksPivot',
+            'PlaylistsOrderedTracksRelationshipDocument' => 'PlaylistsOrderedTracksPivot',
+            'PlaylistsOrderedTracksWriteRelationship' => 'PlaylistsOrderedTracksWritePivot',
+        ];
+        foreach ($components as $component => $pivotComponent) {
             $identifier = $this->nested($document, 'components', 'schemas', $component, 'properties', 'data', 'items');
             self::assertArrayHasKey('allOf', $identifier, $component);
 
             $base = $this->nested($identifier, 'allOf', '0');
             self::assertSame('#/components/schemas/TracksResourceIdentifier', $base['$ref'] ?? null, $component);
 
-            $props = $this->nested($identifier, 'allOf', '1', 'properties', 'meta', 'properties', 'pivot', 'properties');
-            self::assertSame('integer', $this->nested($props, 'position')['type'] ?? null, $component);
-            self::assertSame('integer', $this->nested($props, 'weight')['type'] ?? null, $component);
-
-            $addedAt = $this->nested($props, 'addedAt');
-            self::assertSame('string', $addedAt['type'] ?? null, $component);
-            self::assertSame('date-time', $addedAt['format'] ?? null, $component);
+            $pivotRef = $this->nested($identifier, 'allOf', '1', 'properties', 'meta', 'properties', 'pivot');
+            self::assertSame('#/components/schemas/' . $pivotComponent, $pivotRef['$ref'] ?? null, $component);
         }
+
+        $read = $this->nested($document, 'components', 'schemas', 'PlaylistsOrderedTracksPivot');
+        $props = $this->nested($read, 'properties');
+        self::assertSame(['addedAt', 'position', 'weight'], $this->sorted(\array_keys($props)));
+        self::assertSame(['addedAt', 'position', 'weight'], $this->sorted($this->nested($read, 'required')));
+
+        $addedAt = $this->nested($props, 'addedAt');
+        self::assertContains('string', (array) ($addedAt['type'] ?? null));
+        self::assertSame('date-time', $addedAt['format'] ?? null);
+
+        $write = $this->nested($document, 'components', 'schemas', 'PlaylistsOrderedTracksWritePivot');
+        self::assertSame(['position', 'weight'], $this->sorted(\array_keys($this->nested($write, 'properties'))));
+    }
+
+    /**
+     * @param array<array-key, mixed> $values
+     *
+     * @return list<mixed>
+     */
+    private function sorted(array $values): array
+    {
+        $values = \array_values($values);
+        \sort($values);
+
+        return $values;
     }
 
     #[Test]

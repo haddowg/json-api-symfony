@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Serializer;
 
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Schema\Link\ResourceLinks;
 use haddowg\JsonApi\Serializer\IncludeControlsInterface;
 use haddowg\JsonApi\Serializer\SerializerInterface;
-use haddowg\JsonApiBundle\DataProvider\PivotFields;
 
 /**
  * A {@see SerializerInterface} decorator that renders a `belongsToMany` pivot
@@ -32,11 +32,12 @@ use haddowg\JsonApiBundle\DataProvider\PivotFields;
  * member resource's own meta, and so a client can tell pivot data from intrinsic
  * meta.
  *
- * Given the relation, it renders only the pivot fields a response may carry: a
- * hidden field or one write-only for this request (`writeOnly()`, or a
- * `writeOnly(when:)` predicate evaluated against the request) stays out, the same
- * rule a top-level attribute follows. The map itself keeps them, because the
- * validator reads stored write-only values when it merges a partial pivot update.
+ * Given the relation, it renders core's {@see BelongsToMany::readablePivotFields()}
+ * (neither hidden nor write-only), less any field a `writeOnly(when:)` predicate makes
+ * write-only for this request, the same rule a top-level attribute follows. Each of
+ * them renders on every member, `null` when the row holds none, which is what the
+ * response pivot schema's `required` promises. The map itself keeps write-only
+ * values, because the validator reads them when it merges a partial pivot update.
  */
 final class PivotMetaSerializer implements SerializerInterface, IncludeControlsInterface
 {
@@ -85,12 +86,16 @@ final class PivotMetaSerializer implements SerializerInterface, IncludeControlsI
     {
         \assert($this->relation !== null);
 
+        if (!$this->relation instanceof BelongsToMany) {
+            return [];
+        }
+
         $readable = [];
-        foreach (PivotFields::byName($this->relation) as $name => $field) {
-            if (!\array_key_exists($name, $pivot) || $field->isHidden() || $field->isWriteOnlyFor($request)) {
+        foreach ($this->relation->readablePivotFields() as $field) {
+            if ($field->isWriteOnlyFor($request)) {
                 continue;
             }
-            $readable[$name] = $pivot[$name];
+            $readable[$field->name()] = $pivot[$field->name()] ?? null;
         }
 
         return $readable;

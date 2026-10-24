@@ -541,6 +541,12 @@ relationships block** — wherever that relation's linkage data renders, i.e. wh
 > Pivot is Doctrine-only (it needs an association entity): the in-memory provider never
 > renders it, on any endpoint or document.
 
+Each member's `meta.pivot` carries every pivot field a response may show (core's
+`BelongsToMany::readablePivotFields()`: neither hidden nor write-only, less any field a
+`writeOnly(when:)` predicate makes write-only for the request), with `null` for a field
+the join row holds no value for. That matches the response pivot schema in the
+[OpenAPI document](openapi.md), which lists those fields as `required`.
+
 A `DateTime` pivot field follows the server's
 [`output_timezone`](configuration.md#output_timezone) like an attribute does: it
 renders in the server zone unless it sets its own `outputTimezone()`, and `Date` and
