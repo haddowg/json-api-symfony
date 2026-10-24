@@ -8,6 +8,7 @@ use haddowg\JsonApiBundle\Controller\OpenApiController;
 use haddowg\JsonApiBundle\OpenApi\ArtifactStore;
 use haddowg\JsonApiBundle\OpenApi\DocumentRouteLocator;
 use haddowg\JsonApiBundle\OpenApi\DocumentUrlProvider;
+use haddowg\JsonApiBundle\Routing\JsonApiRoute;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Routing\Generator\UrlGenerator;
@@ -95,11 +96,38 @@ final class DocumentUrlProviderTest extends TestCase
         self::assertSame('/api/openapi.json', $this->provider($routes, ['default', 'admin'], combined: true)->forServer('admin'));
     }
 
-    /**
-     * @param list<string> $servers
-     */
-    private function provider(RouteCollection $routes, array $servers, bool $combined = false): DocumentUrlProvider
+    #[Test]
+    public function aServerWithNoJsonApiRoutesMountedIsNotLookedUp(): void
     {
+        $routes = new RouteCollection();
+        $routes->add('app_docs', new Route('/api/docs.json', ['_controller' => OpenApiController::class]));
+        $routes->add('app_v5_docs', new Route('/api/v5/docs.json', ['_controller' => OpenApiController::class, 'server' => 'v5']));
+
+        $urls = $this->provider($routes, ['default', 'v5'], mounted: ['v5']);
+
+        self::assertNull($urls->forServer());
+        self::assertSame('/api/v5/docs.json', $urls->forServer('v5'));
+    }
+
+    #[Test]
+    public function combinedModeHasNoDocumentRouteWhenNoServerIsMounted(): void
+    {
+        $routes = new RouteCollection();
+        $routes->add('app_docs', new Route('/api/openapi.json', ['_controller' => OpenApiController::class]));
+
+        self::assertNull($this->provider($routes, ['default', 'admin'], combined: true, mounted: [])->forServer('admin'));
+    }
+
+    /**
+     * @param list<string>      $servers
+     * @param list<string>|null $mounted the servers given a JSON:API route, every one when null
+     */
+    private function provider(RouteCollection $routes, array $servers, bool $combined = false, ?array $mounted = null): DocumentUrlProvider
+    {
+        foreach ($mounted ?? $servers as $server) {
+            $routes->add('jsonapi.' . $server . '.items.index', new Route('/' . $server . '/items', [JsonApiRoute::MARKER => true, '_jsonapi_server' => $server]));
+        }
+
         $router = $this->createStub(Router::class);
         $router->method('getRouteCollection')->willReturn($routes);
         $generator = new UrlGenerator($routes, new RequestContext());

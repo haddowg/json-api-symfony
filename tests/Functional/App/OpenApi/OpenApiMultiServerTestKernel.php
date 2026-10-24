@@ -36,7 +36,8 @@ use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
  * `$docsRoutes` picks who serves the documents: `bundle` imports the bundle's routes,
  * `custom` routes {@see OpenApiController} under the app's own names and paths
  * (`/api/docs.json`, and `/api/v5/docs.json` for `admin`), and `none` serves them nowhere.
- * `$exposed` sets `expose_in_prod` and `$documentUrl` sets `document_url`. The logger
+ * `$exposed` sets `expose_in_prod` and `$documentUrl` sets `document_url`. With
+ * `$mountDefault` off only the `admin` server's routes are imported. The logger
  * keeps warnings in {@see Serve\WarningLogger}.
  */
 final class OpenApiMultiServerTestKernel extends Kernel
@@ -51,6 +52,7 @@ final class OpenApiMultiServerTestKernel extends Kernel
         private readonly string $docsRoutes = 'bundle',
         private readonly bool $exposed = true,
         private readonly ?string $documentUrl = null,
+        private readonly bool $mountDefault = true,
     ) {
         parent::__construct($environment, $debug);
     }
@@ -78,7 +80,7 @@ final class OpenApiMultiServerTestKernel extends Kernel
     {
         return \sys_get_temp_dir() . '/json-api-symfony-tests/openapi-multi-cache/' . ($this->combined ? 'combined-' : '') . ($this->atomic ? 'atomic-' : '')
             . ($this->docsRoutes !== 'bundle' ? $this->docsRoutes . '-' : '') . ($this->exposed ? '' : 'hidden-')
-            . ($this->documentUrl !== null ? 'url-' : '') . $this->environment;
+            . ($this->documentUrl !== null ? 'url-' : '') . ($this->mountDefault ? '' : 'unmounted-') . $this->environment;
     }
 
     public function getLogDir(): string
@@ -149,7 +151,9 @@ final class OpenApiMultiServerTestKernel extends Kernel
 
     protected function configureRoutes(RoutingConfigurator $routes): void
     {
-        $routes->import('.', JsonApiRouteLoader::ROUTE_TYPE);
+        if ($this->mountDefault) {
+            $routes->import('.', JsonApiRouteLoader::ROUTE_TYPE);
+        }
         $routes->import('admin', JsonApiRouteLoader::ROUTE_TYPE)->prefix('/admin');
 
         if ($this->docsRoutes === 'bundle') {

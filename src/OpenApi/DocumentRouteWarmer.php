@@ -14,7 +14,8 @@ use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
  *
  * A server whose document no route serves gets no `describedby` on its links. That is
  * the intent when the expose gate is closed, so it passes silently; with the gate open
- * it's a misconfiguration, so it logs a warning naming the server. Like the
+ * it's a misconfiguration, so it logs a warning naming the server. A server with no
+ * JSON:API routes mounted renders no links, so the scan leaves it out and it never warns. Like the
  * {@see DocumentWarmer} it's optional and never fails the warmup, and it runs before it,
  * so the documents it builds link through this scan.
  */
