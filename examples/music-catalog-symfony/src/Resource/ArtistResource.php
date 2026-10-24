@@ -52,7 +52,9 @@ final class ArtistResource extends AbstractResource
         return [
             Id::make(),
             Str::make('name')->required()->maxLength(120)->sortable(),
-            Str::make('slug')->sortable()->guaranteed(),
+            // Optional on create (the entity derives it from `name`), but never empty:
+            // an empty slug would break the singular `filter[slug]` lookup.
+            Str::make('slug')->minLength(1)->sortable()->guaranteed(),
             Url::make('website')->nullable(),
             Str::make('bio')->nullable()->maxLength(1000),
             // Computed: no backing column on the wire (computed() nulls it), so read
