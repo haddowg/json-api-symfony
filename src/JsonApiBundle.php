@@ -388,11 +388,11 @@ final class JsonApiBundle extends AbstractBundle
                     ->defaultFalse()
                 ->end()
                 ->booleanNode('describedby')
-                    ->info('Give each built link object, and each document, a describedby pointing at the operation in the OpenAPI document that describes it, e.g. /docs.json#/paths/~1albums~1%7Bid%7D/get. The document is the one the bundle serves for the request\'s server, so this only takes effect when the document routes are registered (generation enabled and the expose gate open), unless document_url names one. Default true.')
+                    ->info('Give each built link object, and each document, a describedby pointing at the operation in the OpenAPI document that describes it, e.g. /docs.json#/paths/~1albums~1%7Bid%7D/get. The document is the one served for the request\'s server: by the bundle\'s document route, or by an app route to its OpenApiController when the bundle\'s isn\'t registered, so this only takes effect when a route serves the document, unless document_url names one. Default true.')
                     ->defaultTrue()
                 ->end()
                 ->scalarNode('document_url')
-                    ->info('The URL describedby points into, used as given, for a document published somewhere other than the bundle\'s own route (a docs site, or a CDN serving the public_path files). {server} is replaced by the server name, or by "combined" in combined mode. Null (the default) uses the path of the bundle\'s document route, host-relative and including any import prefix.')
+                    ->info('The URL describedby points into, used as given, for a document published somewhere other than the bundle\'s own route (a docs site, or a CDN serving the public_path files). {server} is replaced by the server name, or by "combined" in combined mode. Null (the default) uses the path of the route serving the document, host-relative and including any import prefix.')
                     ->defaultNull()
                     ->validate()
                         ->ifTrue(static fn(mixed $value): bool => $value !== null && (!\is_string($value) || \trim($value) === ''))
@@ -1119,15 +1119,39 @@ final class JsonApiBundle extends AbstractBundle
             ])
             ->tag('routing.loader');
 
+        // Finds the app's own route to the OpenAPI controller when the bundle's named
+        // document routes aren't registered. Its warmer writes the scan beside the
+        // documents and warns about a server no route serves while the gate is open.
+        $services->set(\haddowg\JsonApiBundle\OpenApi\DocumentRouteLocator::class)
+            ->args([
+                '$router' => service('router'),
+                '$store' => service(\haddowg\JsonApiBundle\OpenApi\ArtifactStore::class),
+                '$servers' => $serverNames,
+                '$combined' => $openApiConfig->combined,
+                '$debug' => '%kernel.debug%',
+            ]);
+
+        $services->set(\haddowg\JsonApiBundle\OpenApi\DocumentRouteWarmer::class)
+            ->args([
+                '$locator' => service(\haddowg\JsonApiBundle\OpenApi\DocumentRouteLocator::class),
+                '$store' => service(\haddowg\JsonApiBundle\OpenApi\ArtifactStore::class),
+                '$enabled' => $openApiConfig->enabled && $openApiConfig->describedby && $openApiConfig->documentUrl === null,
+                '$exposed' => $openApiConfig->exposeInProd ? true : '%kernel.debug%',
+                '$logger' => service('logger')->nullOnInvalid(),
+            ])
+            // Before the DocumentWarmer, whose documents link through this scan.
+            ->tag('kernel.cache_warmer', ['priority' => 10]);
+
         // The URL each server's describedby links point into: a configured document_url,
-        // else the path of the bundle's own document route. Null when describedby is off,
-        // generation is disabled, or the route isn't registered, so links then carry none.
+        // else the path of the route serving the document. Null when describedby is off,
+        // generation is disabled, or no route serves it, so links then carry none.
         $services->set(\haddowg\JsonApiBundle\OpenApi\DocumentUrlProvider::class)
             ->args([
                 '$urlGenerator' => service('router'),
                 '$enabled' => $openApiConfig->enabled && $openApiConfig->describedby,
                 '$combined' => $openApiConfig->combined,
                 '$configuredUrl' => $openApiConfig->documentUrl,
+                '$routes' => service(\haddowg\JsonApiBundle\OpenApi\DocumentRouteLocator::class),
             ]);
 
         // The per-server describedby resolver the ServerProvider sets on each request's

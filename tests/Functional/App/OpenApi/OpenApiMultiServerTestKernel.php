@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App\OpenApi;
 
+use haddowg\JsonApiBundle\Controller\OpenApiController;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Routing\OpenApiRouteLoader;
@@ -31,13 +32,26 @@ use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
  * assert the combined-mode single-document behaviour from the same fixtures. The
  * `$atomic` flag enables the (global) Atomic Operations extension so the suite can
  * assert each server's document gains the atomic `POST /operations` endpoint.
+ *
+ * `$docsRoutes` picks who serves the documents: `bundle` imports the bundle's routes,
+ * `custom` routes {@see OpenApiController} under the app's own names and paths
+ * (`/api/docs.json`, and `/api/v5/docs.json` for `admin`), and `none` serves them nowhere.
+ * `$exposed` sets `expose_in_prod` and `$documentUrl` sets `document_url`. The logger
+ * keeps warnings in {@see Serve\WarningLogger}.
  */
 final class OpenApiMultiServerTestKernel extends Kernel
 {
     use MicroKernelTrait;
 
-    public function __construct(string $environment, bool $debug, private readonly bool $combined = false, private readonly bool $atomic = false)
-    {
+    public function __construct(
+        string $environment,
+        bool $debug,
+        private readonly bool $combined = false,
+        private readonly bool $atomic = false,
+        private readonly string $docsRoutes = 'bundle',
+        private readonly bool $exposed = true,
+        private readonly ?string $documentUrl = null,
+    ) {
         parent::__construct($environment, $debug);
     }
 
@@ -62,7 +76,9 @@ final class OpenApiMultiServerTestKernel extends Kernel
 
     public function getCacheDir(): string
     {
-        return \sys_get_temp_dir() . '/json-api-symfony-tests/openapi-multi-cache/' . ($this->combined ? 'combined-' : '') . ($this->atomic ? 'atomic-' : '') . $this->environment;
+        return \sys_get_temp_dir() . '/json-api-symfony-tests/openapi-multi-cache/' . ($this->combined ? 'combined-' : '') . ($this->atomic ? 'atomic-' : '')
+            . ($this->docsRoutes !== 'bundle' ? $this->docsRoutes . '-' : '') . ($this->exposed ? '' : 'hidden-')
+            . ($this->documentUrl !== null ? 'url-' : '') . $this->environment;
     }
 
     public function getLogDir(): string
@@ -89,8 +105,9 @@ final class OpenApiMultiServerTestKernel extends Kernel
                 'admin' => ['base_uri' => 'https://admin.test'],
             ],
             'openapi' => [
-                'expose_in_prod' => true,
+                'expose_in_prod' => $this->exposed,
                 'multi_server' => $this->combined ? 'combined' : 'per_server',
+                'document_url' => $this->documentUrl,
             ],
         ];
 
@@ -107,7 +124,7 @@ final class OpenApiMultiServerTestKernel extends Kernel
             ->autowire()
             ->autoconfigure();
 
-        $services->set('logger', \Psr\Log\NullLogger::class);
+        $services->set('logger', Serve\WarningLogger::class);
         $services->set(PublicItemResource::class);
         $services->set(AdminItemResource::class);
 
@@ -134,6 +151,22 @@ final class OpenApiMultiServerTestKernel extends Kernel
     {
         $routes->import('.', JsonApiRouteLoader::ROUTE_TYPE);
         $routes->import('admin', JsonApiRouteLoader::ROUTE_TYPE)->prefix('/admin');
-        $routes->import('.', OpenApiRouteLoader::ROUTE_TYPE);
+
+        if ($this->docsRoutes === 'bundle') {
+            $routes->import('.', OpenApiRouteLoader::ROUTE_TYPE);
+        }
+
+        if ($this->docsRoutes === 'custom') {
+            $routes->add('app_docs', '/api/docs.json')
+                ->controller(OpenApiController::class . '::__invoke')
+                ->methods(['GET']);
+
+            if (!$this->combined) {
+                $routes->add('app_admin_docs', '/api/v5/docs.json')
+                    ->controller(OpenApiController::class)
+                    ->defaults(['server' => 'admin'])
+                    ->methods(['GET']);
+            }
+        }
     }
 }

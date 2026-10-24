@@ -184,6 +184,62 @@ final class ArtifactStore
     }
 
     /**
+     * The route serving each server's document, as the {@see DocumentRouteLocator} found
+     * it, or null when the map was never written or can't be read.
+     *
+     * @return array<string, array{route: string, parameters: array<string, string>}|null>|null
+     */
+    public function readDocumentRoutes(): ?array
+    {
+        $json = $this->get($this->baseDir() . '/document-routes.json');
+        if ($json === null) {
+            return null;
+        }
+
+        try {
+            $routes = \json_decode($json, true, 512, \JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            return null;
+        }
+
+        if (!\is_array($routes)) {
+            return null;
+        }
+
+        $map = [];
+        foreach ($routes as $server => $route) {
+            if (!\is_string($server)) {
+                return null;
+            }
+            if ($route === null) {
+                $map[$server] = null;
+
+                continue;
+            }
+            if (!\is_array($route) || !\is_string($route['route'] ?? null) || !\is_array($route['parameters'] ?? null)) {
+                return null;
+            }
+            $map[$server] = [
+                'route' => $route['route'],
+                'parameters' => \array_filter($route['parameters'], \is_string(...)),
+            ];
+        }
+
+        /** @var array<string, array{route: string, parameters: array<string, string>}|null> $map */
+        return $map;
+    }
+
+    /**
+     * @param array<string, array{route: string, parameters: array<string, string>}|null> $routes
+     */
+    public function writeDocumentRoutes(array $routes): void
+    {
+        $encoded = \array_map(static fn(?array $route): ?array => $route === null ? null : ['route' => $route['route'], 'parameters' => (object) $route['parameters']], $routes);
+
+        $this->put($this->baseDir() . '/document-routes.json', (string) \json_encode((object) $encoded, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES));
+    }
+
+    /**
      * The hash of the aggregate JSON Schema artifact, or null when it was never written.
      */
     public function readSchemaAggregateHash(string $server): ?string
