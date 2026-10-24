@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.1](https://github.com/haddowg/json-api-symfony/compare/v1.9.0...v1.9.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* **openapi:** find a custom docs route for describedby and warn when none serves the document ([#191](https://github.com/haddowg/json-api-symfony/issues/191)) ([a475da1](https://github.com/haddowg/json-api-symfony/commit/a475da1b7e6055a6803275f3211966839dc4caff))
+
 ## [1.9.0](https://github.com/haddowg/json-api-symfony/compare/v1.8.1...v1.9.0) (2026-10-24)
 
 
