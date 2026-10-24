@@ -56,6 +56,32 @@ final class AsJsonApiResourceTest extends TestCase
     }
 
     #[Test]
+    public function singularDefaultsToNullAndIsStoredAsDeclared(): void
+    {
+        self::assertNull((new AsJsonApiResource())->singular);
+        self::assertSame('media item', (new AsJsonApiResource(singular: 'media item'))->singular);
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function blankSingulars(): iterable
+    {
+        yield 'empty' => [''];
+        yield 'whitespace' => ['   '];
+    }
+
+    #[Test]
+    #[DataProvider('blankSingulars')]
+    public function aBlankSingularIsRejected(string $singular): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('singular must be a non-blank noun');
+
+        new AsJsonApiResource(singular: $singular);
+    }
+
+    #[Test]
     public function responseOverridesDefaultToEmptyAndNormaliseASingleToAList(): void
     {
         $attribute = new AsJsonApiResource(create: new Created());

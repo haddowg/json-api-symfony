@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\Tests\OpenApi\Metadata;
 use haddowg\JsonApi\OpenApi\Metadata\ActionInputMode;
 use haddowg\JsonApi\OpenApi\Metadata\ActionScope;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationExtensions;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresSingularName;
 use haddowg\JsonApi\OpenApi\Metadata\OperationResponseInterface;
 use haddowg\JsonApi\OpenApi\Metadata\OperationType;
 use haddowg\JsonApi\OpenApi\OpenApiProjector;
@@ -421,6 +422,24 @@ final class MetadataSourceTest extends TestCase
     }
 
     #[Test]
+    public function theAttributeRegistryCarriesTheDeclaredSingularOntoTheTypeMetadata(): void
+    {
+        $descriptions = new ResourceDescriptionRegistry([
+            'articles' => ['singular' => 'blog entry'],
+        ]);
+
+        $server = $this->source(descriptions: $descriptions)->forServer();
+        $articles = $this->typeNamed($server, 'articles');
+        $people = $this->typeNamed($server, 'people');
+
+        self::assertInstanceOf(DeclaresSingularName::class, $articles);
+        self::assertSame('blog entry', $articles->singularName());
+        // A type that declares none leaves core to inflect it.
+        self::assertInstanceOf(DeclaresSingularName::class, $people);
+        self::assertNull($people->singularName());
+    }
+
+    #[Test]
     public function aResourceMethodHookWinsOverTheAttributeRegistry(): void
     {
         // The DescribedArticleResource overrides getDescription()/describeOperation();
@@ -429,6 +448,7 @@ final class MetadataSourceTest extends TestCase
             'articles' => [
                 'description' => 'Attribute description (should lose).',
                 'operations' => [OperationType::FetchOne->value => 'Attribute operation (should lose).'],
+                'singular' => 'attribute noun',
             ],
         ]);
 
@@ -439,6 +459,8 @@ final class MetadataSourceTest extends TestCase
 
         self::assertSame('Method-hook resource description.', $articles->description());
         self::assertSame('Method-hook fetch-one description.', $articles->operationDescription(OperationType::FetchOne));
+        self::assertInstanceOf(DeclaresSingularName::class, $articles);
+        self::assertSame('method-hook noun', $articles->singularName());
         // An operation the method hook does not describe falls through to the registry.
         self::assertNull($articles->operationDescription(OperationType::Create));
     }
@@ -800,6 +822,11 @@ final class DescribedArticleResource extends ArticleResource
     public function describeOperation(OperationType $op): ?string
     {
         return $op === OperationType::FetchOne ? $this->fetchOneDescription : null;
+    }
+
+    public function getSingularName(): string
+    {
+        return 'method-hook noun';
     }
 }
 

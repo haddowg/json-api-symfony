@@ -89,6 +89,12 @@ use haddowg\JsonApiBundle\Operation\Operation;
  * surface). To describe a *relationship*'s related/relationship operations, call
  * `->describedAs('…')` on the relation field itself.
  *
+ * `singular` names one resource of the type in the generated OpenAPI prose ("Fetch a
+ * media item") when the inflected singular of the type name reads badly. It is the
+ * declaration-site equivalent of the resource's
+ * {@see \haddowg\JsonApi\Resource\AbstractResource::getSingularName()} method hook,
+ * which wins when both are present. A blank value is a constructor `\LogicException`.
+ *
  * `extensions` and `operationExtensions` declare **OpenAPI vendor extensions** (bundle
  * ADR 0127). `extensions` lands on every operation the document emits for the type:
  * its CRUD operations, its related and relationship endpoints, and its custom actions.
@@ -188,6 +194,7 @@ final readonly class AsJsonApiResource
      * @param DeleteResponse|list<DeleteResponse>|null                             $delete         the declared success responses for `DELETE` (null = the default `204`)
      * @param FetchOneResponse|list<FetchOneResponse>|null                         $fetchOne       the declared success responses for `GET /{type}/{id}` (null = the default `200`; add `new SeeOther()` for a `303` async-completion redirect)
      * @param FetchCollectionResponse|list<FetchCollectionResponse>|null           $fetchCollection the declared success responses for `GET /{type}` (null = the default `200`)
+     * @param string|null                                                          $singular       the noun the generated OpenAPI prose uses for one resource, as words without an article (null = inflected from the type name)
      */
     public function __construct(
         public ?string $type = null,
@@ -217,7 +224,15 @@ final readonly class AsJsonApiResource
         DeleteResponse|array|null $delete = null,
         FetchOneResponse|array|null $fetchOne = null,
         FetchCollectionResponse|array|null $fetchCollection = null,
+        public ?string $singular = null,
     ) {
+        if ($singular !== null && \trim($singular) === '') {
+            throw new \LogicException(
+                'AsJsonApiResource singular must be a non-blank noun (e.g. "media item"); '
+                . 'omit it to inflect the singular from the type name.',
+            );
+        }
+
         if ($readOnly && $operations !== []) {
             throw new \LogicException(
                 'AsJsonApiResource declares both readOnly: true and a non-empty operations list; '

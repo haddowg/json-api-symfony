@@ -23,7 +23,11 @@ use haddowg\JsonApi\OpenApi\Metadata\OperationType;
  * (the method wins), and core's projector supplies the generated default when both
  * resolve to `null`.
  *
- * It also carries the declared OpenAPI vendor extensions
+ * It also carries the declared singular noun (`singular:`), which the
+ * {@see MetadataSource} layers beneath the resource's
+ * {@see \haddowg\JsonApi\Resource\AbstractResource::getSingularName()} hook the same way.
+ *
+ * And it carries the declared OpenAPI vendor extensions
  * (`#[AsJsonApiResource(extensions: …, operationExtensions: …)]`, bundle ADR 0127):
  * the type-wide set and the per-CRUD-operation sets, which core merges onto the
  * type's operations. Core has no resource method hook for extensions, so the
@@ -37,11 +41,14 @@ final class ResourceDescriptionRegistry
     /** @var array<string, array<string, string>> */
     private array $operationDescriptionsByType = [];
 
+    /** @var array<string, string> */
+    private array $singularByType = [];
+
     /** @var array<string, array{type: array<string, mixed>, operations: array<string, array<string, mixed>>}> */
     private array $extensionsByType = [];
 
     /**
-     * @param array<string, array{description?: string|null, operations?: array<string, string>}>                   $descriptions
+     * @param array<string, array{description?: string|null, operations?: array<string, string>, singular?: string|null}> $descriptions
      * @param array<string, array{type?: array<string, mixed>, operations?: array<string, array<string, mixed>>}> $extensions
      */
     public function __construct(array $descriptions = [], array $extensions = [])
@@ -57,6 +64,11 @@ final class ResourceDescriptionRegistry
             $description = $set['description'] ?? null;
             if (\is_string($description) && $description !== '') {
                 $this->descriptionByType[$type] = $description;
+            }
+
+            $singular = $set['singular'] ?? null;
+            if (\is_string($singular) && \trim($singular) !== '') {
+                $this->singularByType[$type] = \trim($singular);
             }
 
             $operations = $set['operations'] ?? [];
@@ -90,6 +102,15 @@ final class ResourceDescriptionRegistry
     public function operationDescriptionFor(string $type, OperationType $operation): ?string
     {
         return $this->operationDescriptionsByType[$type][$operation->value] ?? null;
+    }
+
+    /**
+     * The declared singular noun for `$type`, or `null` when the attribute declares none
+     * (the resource method hook / the inflected singular then applies).
+     */
+    public function singularFor(string $type): ?string
+    {
+        return $this->singularByType[$type] ?? null;
     }
 
     /**

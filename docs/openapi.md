@@ -401,6 +401,23 @@ both, the method hook wins (it is the more specific, runtime surface). Returning
 (the method default) or omitting the attribute key leaves the generated default in place.
 An unknown `operationDescriptions` key fails the build with a clear error.
 
+The generated summaries and descriptions name one resource with the singular of its type
+name and the right article, so `agencies` reads "Fetch an agency" and `export-jobs`
+"Fetch an export job". Collections keep the plural ("List agencies"). When the
+inflection reads badly for your type, name the singular yourself, with
+`#[AsJsonApiResource(singular: 'media item')]` or the resource's
+`getSingularName(): ?string` hook. Give the noun without an article; the generator picks
+"a" or "an". The same precedence applies, the method hook first, and a blank `singular:`
+fails the build.
+
+```php
+#[AsJsonApiResource(singular: 'media item')]
+final class MediaResource extends AbstractResource
+{
+    public static string $type = 'media';
+}
+```
+
 ### Vendor extensions
 
 `#[AsJsonApiResource(extensions: […], operationExtensions: […])]` adds OpenAPI `x-`

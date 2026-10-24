@@ -288,7 +288,7 @@ final class OpenApiServingTest extends JsonApiFunctionalTestCase
         // products: an operation WITHOUT an override falls back to the generated default
         // (core's projector — fuller than the terse summary).
         self::assertSame(
-            'Creates a new `products` resource from the supplied attributes and relationships.',
+            'Creates a new catalog item from the supplied attributes and relationships.',
             $this->nested($document, 'paths', '/products', 'post')['description'] ?? null,
         );
 
@@ -299,9 +299,28 @@ final class OpenApiServingTest extends JsonApiFunctionalTestCase
         );
         // categories: an un-overridden operation keeps the generated default.
         self::assertSame(
-            'Returns a single `categories` resource by its `id`.',
+            'Returns a single product category by its `id`.',
             $this->nested($document, 'paths', '/categories/{id}', 'get')['description'] ?? null,
         );
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    public function theGeneratedProseNamesOneResourceWithTheDeclaredSingular(): void
+    {
+        $document = $this->fetchDocument();
+
+        // products declares singular: on the attribute, categories overrides getSingularName().
+        self::assertSame('Fetch a catalog item', $this->nested($document, 'paths', '/products/{id}', 'get')['summary'] ?? null);
+        self::assertSame(
+            'Fetch the related tags of a catalog item',
+            $this->nested($document, 'paths', '/products/{id}/tags', 'get')['summary'] ?? null,
+        );
+        self::assertSame('Create a product category', $this->nested($document, 'paths', '/categories', 'post')['summary'] ?? null);
+        // A collection keeps the plural type name.
+        self::assertSame('List categories', $this->nested($document, 'paths', '/categories', 'get')['summary'] ?? null);
+        // shelves declares neither, so its singular is inflected.
+        self::assertSame('Fetch a shelf', $this->nested($document, 'paths', '/shelves/{id}', 'get')['summary'] ?? null);
     }
 
     #[Test]

@@ -12,7 +12,7 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 
 /**
  * Collects the declarative OpenAPI description overrides a resource declares via
- * `#[AsJsonApiResource(description: …, operationDescriptions: …)]` (bundle ADR 0092)
+ * `#[AsJsonApiResource(description: …, operationDescriptions: …, singular: …)]` (bundle ADR 0092)
  * — the extension records the resource-object description as a scalar `description`
  * tag attribute and the per-operation overrides as one JSON-encoded
  * `operation_descriptions` tag attribute on the {@see JsonApiBundle::RESOURCE_TAG} —
@@ -38,7 +38,7 @@ final class ResourceDescriptionPass implements CompilerPassInterface
             return;
         }
 
-        /** @var array<string, array{description?: string, operations?: array<string, string>}> $descriptions */
+        /** @var array<string, array{description?: string, operations?: array<string, string>, singular?: string}> $descriptions */
         $descriptions = [];
         /** @var array<string, array{type: array<string, mixed>, operations: array<string, array<string, mixed>>}> $extensions */
         $extensions = [];
@@ -62,6 +62,11 @@ final class ResourceDescriptionPass implements CompilerPassInterface
             $description = $this->scalarFromTags($tags, 'description');
             if ($description !== null) {
                 $descriptions[$type]['description'] = $description;
+            }
+
+            $singular = $this->scalarFromTags($tags, 'singular');
+            if ($singular !== null) {
+                $descriptions[$type]['singular'] = $singular;
             }
 
             $operations = $this->operationDescriptionsFromTags($tags);

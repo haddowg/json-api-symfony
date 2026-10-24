@@ -827,6 +827,8 @@ final class JsonApiBundle extends AbstractBundle
                     // beneath the resource's own method hooks.
                     'description' => $attribute->description,
                     'operation_descriptions' => self::operationDescriptionsTag($attribute),
+                    // The singular noun for the generated prose, a plain scalar.
+                    'singular' => $attribute->singular,
                     // The OpenAPI vendor extensions (bundle ADR 0127), type-wide and
                     // per-operation, JSON-encoded into one scalar for the same reason.
                     'openapi_extensions' => self::extensionsTag($attribute->extensions, $attribute->operationExtensions),
