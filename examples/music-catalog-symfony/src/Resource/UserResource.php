@@ -67,7 +67,7 @@ final class UserResource extends AbstractResource
             Date::make('birthDate')->nullable(),
             // A dynamic-key JSON object (vs Map's declared columns); sorted by key on
             // serialization for a stable wire shape.
-            ArrayHash::make('preferences')->minProperties(0)->maxProperties(20)->sortKeys(),
+            ArrayHash::make('preferences')->minProperties(0)->maxProperties(20)->sortKeys()->guaranteed(),
             Ip::make('lastSeenIp')->nullable(),
             // A genuine write-only credential (Tier-0 G18, core ADR 0060): accepted on
             // BOTH create and update and still validated (required on create, min 8) —

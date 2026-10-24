@@ -65,7 +65,7 @@ final class PublicProfileResource extends AbstractResource
             // preferences / lastSeenIp / password columns are deliberately NOT
             // declared, so this view can never render them — the same row, a
             // strictly narrower projection than `users`.
-            Str::make('displayName')->sortable(),
+            Str::make('displayName')->sortable()->guaranteed(),
         ];
     }
 

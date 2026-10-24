@@ -385,6 +385,22 @@ final class OpenApiDocsTest extends MusicCatalogKernelTestCase
         self::assertStringContainsString('swagger', \strtolower((string) $response->getContent()));
     }
 
+    #[Test]
+    public function aServerFilledReadAttributeIsNonNullOnlyWhenGuaranteed(): void
+    {
+        $schemas = $this->nested($this->decode($this->handle('/docs.json')), 'components', 'schemas');
+
+        // Stamped or defaulted by the server, and marked guaranteed().
+        self::assertSame('string', $this->nested($schemas, 'PlaylistsAttributes', 'properties', 'slug')['type'] ?? null);
+        self::assertSame('string', $this->nested($schemas, 'ExportJobsAttributes', 'properties', 'state')['type'] ?? null);
+        self::assertSame('string', $this->nested($schemas, 'CatalogExportsAttributes', 'properties', 'status')['type'] ?? null);
+        self::assertSame('boolean', $this->nested($schemas, 'AlbumsAttributes', 'properties', 'explicit')['type'] ?? null);
+
+        // Read-only but only seeded, so an album created over the API can lack it.
+        $catalogueNumber = $this->nested($schemas, 'AlbumsAttributes', 'properties', 'releaseInfo', 'properties', 'catalogueNumber');
+        self::assertSame(['string', 'null'], $catalogueNumber['type'] ?? null);
+    }
+
     /**
      * Finds the OpenAPI parameter object with the given `name` in a parameter list.
      *
