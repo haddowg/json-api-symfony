@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.9.3](https://github.com/haddowg/json-api-symfony/compare/v1.9.2...v1.9.3) (2026-10-24)
+
+
+### Bug Fixes
+
+* answer 404 at the endpoints of a relation hidden from the caller ([#202](https://github.com/haddowg/json-api-symfony/issues/202)) ([2b2982e](https://github.com/haddowg/json-api-symfony/commit/2b2982e63b1809e983de5b24a89fa4e6582476c3))
+* require core 1.9 so read-only relations refuse relationship writes ([#201](https://github.com/haddowg/json-api-symfony/issues/201)) ([2950f92](https://github.com/haddowg/json-api-symfony/commit/2950f92a8bce1c5bd9e2fd4314b87fa8a7ee4dd4))
+
 ## [1.9.2](https://github.com/haddowg/json-api-symfony/compare/v1.9.1...v1.9.2) (2026-10-24)
 
 
