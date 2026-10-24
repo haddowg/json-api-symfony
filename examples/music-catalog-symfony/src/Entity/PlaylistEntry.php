@@ -44,33 +44,52 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\HasLifecycleCallbacks]
 class PlaylistEntry
 {
+    #[ORM\Id]
+    #[ORM\GeneratedValue(strategy: 'AUTO')]
+    #[ORM\Column]
+    public ?int $id = null;
+
+    #[ORM\ManyToOne(targetEntity: Playlist::class, inversedBy: 'entries')]
+    #[ORM\JoinColumn(name: 'playlist_id', referencedColumnName: 'id', nullable: false)]
+    public ?Playlist $playlist = null;
+
+    #[ORM\ManyToOne(targetEntity: Track::class)]
+    #[ORM\JoinColumn(name: 'track_id', referencedColumnName: 'id', nullable: false)]
+    public ?Track $track = null;
+
+    // The pivot columns a plain join table cannot hold: a 1-based ordering and
+    // the moment the track was added to the playlist.
+    #[ORM\Column(type: 'integer')]
+    public int $position = 0;
+
+    // A second WRITABLE pivot field the relation constrains to be >= `position`
+    // — a cross-pivot-field rule the merge-before-validate witness exercises over
+    // the MERGED pivot row (a partial update sending `weight` alone compares it
+    // against the stored `position`). Nullable so a row created without a `weight`
+    // in meta inserts cleanly through the constructor-less persister (bundle ADR
+    // 0029); the `weight >= position` rule simply does not fire when weight is
+    // absent (a comparison needs both values present).
+    #[ORM\Column(type: 'integer', nullable: true)]
+    public ?int $weight = null;
+
+    #[ORM\Column(name: 'added_at', type: 'datetime_immutable')]
+    public ?\DateTimeImmutable $addedAt = null;
+
     public function __construct(
-        #[ORM\Id]
-        #[ORM\GeneratedValue(strategy: 'AUTO')]
-        #[ORM\Column]
-        public ?int $id = null,
-        #[ORM\ManyToOne(targetEntity: Playlist::class, inversedBy: 'entries')]
-        #[ORM\JoinColumn(name: 'playlist_id', referencedColumnName: 'id', nullable: false)]
-        public ?Playlist $playlist = null,
-        #[ORM\ManyToOne(targetEntity: Track::class)]
-        #[ORM\JoinColumn(name: 'track_id', referencedColumnName: 'id', nullable: false)]
-        public ?Track $track = null,
-        // The pivot columns a plain join table cannot hold: a 1-based ordering and
-        // the moment the track was added to the playlist.
-        #[ORM\Column(type: 'integer')]
-        public int $position = 0,
-        // A second WRITABLE pivot field the relation constrains to be >= `position`
-        // — a cross-pivot-field rule the merge-before-validate witness exercises over
-        // the MERGED pivot row (a partial update sending `weight` alone compares it
-        // against the stored `position`). Nullable so a row created without a `weight`
-        // in meta inserts cleanly through the constructor-less persister (bundle ADR
-        // 0029); the `weight >= position` rule simply does not fire when weight is
-        // absent (a comparison needs both values present).
-        #[ORM\Column(type: 'integer', nullable: true)]
-        public ?int $weight = null,
-        #[ORM\Column(name: 'added_at', type: 'datetime_immutable')]
-        public ?\DateTimeImmutable $addedAt = null,
-    ) {}
+        ?int $id = null,
+        ?Playlist $playlist = null,
+        ?Track $track = null,
+        int $position = 0,
+        ?int $weight = null,
+        ?\DateTimeImmutable $addedAt = null,
+    ) {
+        $this->id = $id;
+        $this->playlist = $playlist;
+        $this->track = $track;
+        $this->position = $position;
+        $this->weight = $weight;
+        $this->addedAt = $addedAt;
+    }
 
     /**
      * Server-sets the `addedAt` pivot column when a NEW association row is

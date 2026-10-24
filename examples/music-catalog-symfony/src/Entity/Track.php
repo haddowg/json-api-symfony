@@ -43,6 +43,24 @@ class Track
     #[ORM\JoinTable(name: 'playlist_track')]
     public Collection $playlists;
 
+    // The storage column the `durationSeconds` field renames via storedAs().
+    #[ORM\Column(name: 'length_seconds', type: 'integer')]
+    public int $length_seconds = 0;
+
+    #[ORM\Column(type: 'boolean')]
+    public bool $explicit = false;
+
+    /** @var list<string> */
+    #[ORM\Column(type: 'json')]
+    public array $genres = [];
+
+    #[ORM\Column(name: 'preview_offset', nullable: true)]
+    public ?string $previewOffset = null;
+
+    #[ORM\ManyToOne(targetEntity: Album::class, inversedBy: 'tracks')]
+    #[ORM\JoinColumn(name: 'album_id', referencedColumnName: 'id', nullable: true)]
+    public ?Album $album = null;
+
     /**
      * @param list<string> $genres
      */
@@ -53,19 +71,17 @@ class Track
         // every create has to supply one (the API requires it too).
         #[ORM\Column(type: 'integer')]
         public int $trackNumber,
-        // The storage column the `durationSeconds` field renames via storedAs().
-        #[ORM\Column(name: 'length_seconds', type: 'integer')]
-        public int $length_seconds = 0,
-        #[ORM\Column(type: 'boolean')]
-        public bool $explicit = false,
-        #[ORM\Column(type: 'json')]
-        public array $genres = [],
-        #[ORM\Column(name: 'preview_offset', nullable: true)]
-        public ?string $previewOffset = null,
-        #[ORM\ManyToOne(targetEntity: Album::class, inversedBy: 'tracks')]
-        #[ORM\JoinColumn(name: 'album_id', referencedColumnName: 'id', nullable: true)]
-        public ?Album $album = null,
+        int $length_seconds = 0,
+        bool $explicit = false,
+        array $genres = [],
+        ?string $previewOffset = null,
+        ?Album $album = null,
     ) {
+        $this->length_seconds = $length_seconds;
+        $this->explicit = $explicit;
+        $this->genres = $genres;
+        $this->previewOffset = $previewOffset;
+        $this->album = $album;
         $this->playlists = new ArrayCollection();
     }
 }

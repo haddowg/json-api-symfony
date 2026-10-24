@@ -29,11 +29,18 @@ class Product
     #[ORM\Column(type: 'integer')]
     public ?int $id = null;
 
+    #[ORM\Column]
+    public string $name = '';
+
+    #[ORM\ManyToOne(targetEntity: self::class)]
+    #[ORM\JoinColumn(name: 'parent_id', referencedColumnName: 'id', nullable: true)]
+    public ?Product $parent = null;
+
     public function __construct(
-        #[ORM\Column]
-        public string $name = '',
-        #[ORM\ManyToOne(targetEntity: self::class)]
-        #[ORM\JoinColumn(name: 'parent_id', referencedColumnName: 'id', nullable: true)]
-        public ?Product $parent = null,
-    ) {}
+        string $name = '',
+        ?Product $parent = null,
+    ) {
+        $this->name = $name;
+        $this->parent = $parent;
+    }
 }

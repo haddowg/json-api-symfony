@@ -38,27 +38,49 @@ class User
     #[ORM\OneToMany(targetEntity: Playlist::class, mappedBy: 'owner')]
     public Collection $playlists;
 
+    #[ORM\Column(unique: true)]
+    public string $email = '';
+
+    #[ORM\Column(name: 'display_name')]
+    public string $displayName = '';
+
+    #[ORM\Column(name: 'birth_date', type: 'date_immutable', nullable: true)]
+    public ?\DateTimeImmutable $birthDate = null;
+
+    /** @var array<string, mixed> */
+    #[ORM\Column(type: 'json')]
+    public array $preferences = [];
+
+    #[ORM\Column(name: 'last_seen_ip', nullable: true)]
+    public ?string $lastSeenIp = null;
+
+    #[ORM\Column(nullable: true)]
+    public ?string $password = null;
+
+    // The owning side of the user↔library OneToOne (the FK lives here).
+    #[ORM\OneToOne(targetEntity: Library::class, inversedBy: 'owner')]
+    #[ORM\JoinColumn(name: 'library_id', referencedColumnName: 'id', nullable: true)]
+    public ?Library $library = null;
+
     /**
      * @param array<string, mixed> $preferences
      */
     public function __construct(
-        #[ORM\Column(unique: true)]
-        public string $email = '',
-        #[ORM\Column(name: 'display_name')]
-        public string $displayName = '',
-        #[ORM\Column(name: 'birth_date', type: 'date_immutable', nullable: true)]
-        public ?\DateTimeImmutable $birthDate = null,
-        #[ORM\Column(type: 'json')]
-        public array $preferences = [],
-        #[ORM\Column(name: 'last_seen_ip', nullable: true)]
-        public ?string $lastSeenIp = null,
-        #[ORM\Column(nullable: true)]
-        public ?string $password = null,
-        // The owning side of the user↔library OneToOne (the FK lives here).
-        #[ORM\OneToOne(targetEntity: Library::class, inversedBy: 'owner')]
-        #[ORM\JoinColumn(name: 'library_id', referencedColumnName: 'id', nullable: true)]
-        public ?Library $library = null,
+        string $email = '',
+        string $displayName = '',
+        ?\DateTimeImmutable $birthDate = null,
+        array $preferences = [],
+        ?string $lastSeenIp = null,
+        ?string $password = null,
+        ?Library $library = null,
     ) {
+        $this->email = $email;
+        $this->displayName = $displayName;
+        $this->birthDate = $birthDate;
+        $this->preferences = $preferences;
+        $this->lastSeenIp = $lastSeenIp;
+        $this->password = $password;
+        $this->library = $library;
         $this->playlists = new ArrayCollection();
     }
 }
