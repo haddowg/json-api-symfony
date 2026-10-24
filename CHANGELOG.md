@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1](https://github.com/haddowg/json-api-symfony/compare/v1.6.0...v1.6.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* **openapi:** keep the configured Cache-Control when the session was used ([#175](https://github.com/haddowg/json-api-symfony/issues/175)) ([477be10](https://github.com/haddowg/json-api-symfony/commit/477be1005430ce0b96ed6b486e165b0031e53985))
+
 ## [1.6.0](https://github.com/haddowg/json-api-symfony/compare/v1.5.1...v1.6.0) (2026-10-24)
 
 
