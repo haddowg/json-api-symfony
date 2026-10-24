@@ -17,6 +17,7 @@ use haddowg\JsonApi\Serializer\RelationshipLoadStateInterface;
 use haddowg\JsonApi\Serializer\ResourceLinkContributorInterface;
 use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\Event\ServingEvent;
+use haddowg\JsonApiBundle\Security\RelationAuthorizer;
 use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipCount;
 use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipLinkage;
 use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipPagination;
@@ -139,6 +140,10 @@ final class ServerFactory
         private readonly array $profiles = self::DEFAULT_PROFILES,
         private readonly ?string $outputTimezone = null,
         private readonly bool $linkObjects = true,
+        // Decides per parent whether a rendered relationship carries its data, and
+        // whether a flattened `on()` write may land on its related row (bundle ADR
+        // 0139). Bound to this server in create(); null asks nothing.
+        private readonly ?RelationAuthorizer $relationAuthorizer = null,
     ) {}
 
     /**
@@ -212,6 +217,10 @@ final class ServerFactory
             // Built links render as link objects (json_api.link_objects, or the named
             // server's own), which can carry a describedby; false renders bare strings.
             ->withLinkObjects($this->linkObjects)
+            // The relation authorizer (bundle ADR 0139), bound to this server so it can
+            // resolve a polymorphic relation's row type; read lazily, since the server
+            // it resolves through is the one being built here.
+            ->withRelationAuthorizer($this->relationAuthorizer?->forServer(fn(): ?Server => $this->server))
             ->withContainer($this->resources);
 
         // Register the JSON:API profiles this server recognizes, data-driven from

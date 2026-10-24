@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Serializer;
 
 use haddowg\JsonApi\Resource\ProvidesOutputTimezoneInterface;
+use haddowg\JsonApi\Resource\ProvidesRelationAuthorizerInterface;
+use haddowg\JsonApi\Resource\RelationAuthorizerInterface;
 use haddowg\JsonApi\Resource\SerializerResolverInterface;
 use haddowg\JsonApi\Serializer\RelationshipCountInterface;
 use haddowg\JsonApi\Serializer\RelationshipLinkageInterface;
@@ -27,10 +29,11 @@ use haddowg\JsonApi\Serializer\SerializerInterface;
  * its `meta.pivot` — riding core's existing identifier-meta render path with no core
  * change.
  *
- * It passes the inner resolver's output timezone through too, so anything that reads
- * the server default off this resolver sees the same zone the Server carries.
+ * It passes the inner resolver's output timezone and relation authorizer through, so
+ * the linkage it builds renders in the server's zone and is withheld from a caller the
+ * relation's read expression refuses.
  */
-final class PivotSubstitutingResolver implements SerializerResolverInterface, ProvidesOutputTimezoneInterface
+final class PivotSubstitutingResolver implements SerializerResolverInterface, ProvidesOutputTimezoneInterface, ProvidesRelationAuthorizerInterface
 {
     public function __construct(
         private readonly SerializerResolverInterface $inner,
@@ -76,5 +79,10 @@ final class PivotSubstitutingResolver implements SerializerResolverInterface, Pr
     public function outputTimezone(): ?string
     {
         return $this->inner instanceof ProvidesOutputTimezoneInterface ? $this->inner->outputTimezone() : null;
+    }
+
+    public function relationAuthorizer(): ?RelationAuthorizerInterface
+    {
+        return $this->inner instanceof ProvidesRelationAuthorizerInterface ? $this->inner->relationAuthorizer() : null;
     }
 }
