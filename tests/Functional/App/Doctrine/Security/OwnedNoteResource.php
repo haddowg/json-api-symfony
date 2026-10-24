@@ -28,6 +28,8 @@ final class OwnedNoteResource extends AbstractResource
             Id::make(),
             Str::make('owner'),
             BelongsTo::make('folder', 'ownedFolders')->nullable(),
+            // Flattened onto the linked folder, so a write lands on a row of another type.
+            Str::make('folderOwner')->storedAs('owner')->on('folder'),
         ];
     }
 }

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\Security;
 
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
 
 /**
@@ -18,6 +20,14 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Table(name: 'secured_widget')]
 class SecuredWidgetEntity
 {
+    /**
+     * Null on a widget the persister instantiates without its constructor.
+     *
+     * @var Collection<int, SecuredWidgetTagEntity>|null
+     */
+    #[ORM\OneToMany(targetEntity: SecuredWidgetTagEntity::class, mappedBy: 'widget')]
+    public ?Collection $widgetTags = null;
+
     public function __construct(
         #[ORM\Id]
         #[ORM\Column(type: 'integer')]
@@ -28,5 +38,7 @@ class SecuredWidgetEntity
         #[ORM\ManyToOne(targetEntity: self::class)]
         #[ORM\JoinColumn(name: 'partner_id', referencedColumnName: 'id', nullable: true)]
         public ?SecuredWidgetEntity $partner = null,
-    ) {}
+    ) {
+        $this->widgetTags = new ArrayCollection();
+    }
 }

@@ -15,6 +15,6 @@ final class InMemorySecuredWidget
     public function __construct(
         public ?int $id = null,
         public string $name = '',
-        public ?int $partnerId = null,
+        public ?InMemorySecuredWidget $partner = null,
     ) {}
 }

@@ -723,6 +723,16 @@ final class JsonApiBundle extends AbstractBundle
             ])
             ->tag('kernel.event_subscriber');
 
+        // The relation authorizer core asks before it renders a relationship's data or
+        // writes a flattened `on()` attribute onto a related row (bundle ADR 0139). It
+        // evaluates the same expressions as the subscriber; each server factory binds
+        // its own copy to its server.
+        $services->set(\haddowg\JsonApiBundle\Security\RelationAuthorizer::class)
+            ->args([
+                '$authorizationChecker' => service('security.authorization_checker')->nullOnInvalid(),
+                '$registry' => service(\haddowg\JsonApiBundle\Security\ResourceSecurityRegistry::class),
+            ]);
+
         // Declarative response headers (bundle ADR 0054): the type-keyed
         // ResponseHeadersRegistry seeded with the global `json_api.defaults`
         // cache/deprecation defaults, plus the ResponseHeadersListener (wired in
@@ -1317,6 +1327,9 @@ final class JsonApiBundle extends AbstractBundle
                     // or the named server's own); null leaves values in their own zone.
                     '$outputTimezone' => $settings['output_timezone'],
                     '$linkObjects' => $settings['link_objects'],
+                    // Asked before a relationship's data renders and before a flattened
+                    // write lands on a related row (bundle ADR 0139).
+                    '$relationAuthorizer' => service(\haddowg\JsonApiBundle\Security\RelationAuthorizer::class),
                 ]);
 
             $factoryRefs[$name] = service($id);
