@@ -40,17 +40,30 @@ class Favorite
      */
     public ?object $favoritable = null;
 
+    #[ORM\Column(name: 'favorited_at', type: 'datetime_immutable', nullable: true)]
+    public ?\DateTimeImmutable $favoritedAt = null;
+
+    // The polymorphic pointer: the JSON:API type and id of the favoritable
+    // member, stored as plain columns (no FK, since the target spans classes).
+    #[ORM\Column(name: 'target_type', nullable: true)]
+    public ?string $targetType = null;
+
+    #[ORM\Column(name: 'target_id', nullable: true)]
+    public ?string $targetId = null;
+
+    #[ORM\ManyToOne(targetEntity: User::class)]
+    #[ORM\JoinColumn(name: 'user_id', referencedColumnName: 'id', nullable: true)]
+    public ?User $user = null;
+
     public function __construct(
-        #[ORM\Column(name: 'favorited_at', type: 'datetime_immutable', nullable: true)]
-        public ?\DateTimeImmutable $favoritedAt = null,
-        // The polymorphic pointer: the JSON:API type and id of the favoritable
-        // member, stored as plain columns (no FK, since the target spans classes).
-        #[ORM\Column(name: 'target_type', nullable: true)]
-        public ?string $targetType = null,
-        #[ORM\Column(name: 'target_id', nullable: true)]
-        public ?string $targetId = null,
-        #[ORM\ManyToOne(targetEntity: User::class)]
-        #[ORM\JoinColumn(name: 'user_id', referencedColumnName: 'id', nullable: true)]
-        public ?User $user = null,
-    ) {}
+        ?\DateTimeImmutable $favoritedAt = null,
+        ?string $targetType = null,
+        ?string $targetId = null,
+        ?User $user = null,
+    ) {
+        $this->favoritedAt = $favoritedAt;
+        $this->targetType = $targetType;
+        $this->targetId = $targetId;
+        $this->user = $user;
+    }
 }

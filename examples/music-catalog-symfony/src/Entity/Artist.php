@@ -39,23 +39,41 @@ class Artist
     #[ORM\OneToMany(targetEntity: Album::class, mappedBy: 'artist')]
     public Collection $albums;
 
+    #[ORM\Column]
+    public string $name = '';
+
+    #[ORM\Column]
+    public string $slug = '';
+
+    #[ORM\Column(nullable: true)]
+    public ?string $website = null;
+
+    #[ORM\Column(nullable: true)]
+    public ?string $bio = null;
+
+    // Backs the computed read-only `trackCount` attribute (a column here so the
+    // entity carries the value the resource reads; core's in-memory domain holds
+    // it the same way).
+    #[ORM\Column(type: 'integer')]
+    public int $trackCount = 0;
+
+    #[ORM\Column(type: 'datetime_immutable', nullable: true)]
+    public ?\DateTimeImmutable $createdAt = null;
+
     public function __construct(
-        #[ORM\Column]
-        public string $name = '',
-        #[ORM\Column]
-        public string $slug = '',
-        #[ORM\Column(nullable: true)]
-        public ?string $website = null,
-        #[ORM\Column(nullable: true)]
-        public ?string $bio = null,
-        // Backs the computed read-only `trackCount` attribute (a column here so the
-        // entity carries the value the resource reads; core's in-memory domain holds
-        // it the same way).
-        #[ORM\Column(type: 'integer')]
-        public int $trackCount = 0,
-        #[ORM\Column(type: 'datetime_immutable', nullable: true)]
-        public ?\DateTimeImmutable $createdAt = null,
+        string $name = '',
+        string $slug = '',
+        ?string $website = null,
+        ?string $bio = null,
+        int $trackCount = 0,
+        ?\DateTimeImmutable $createdAt = null,
     ) {
+        $this->name = $name;
+        $this->slug = $slug;
+        $this->website = $website;
+        $this->bio = $bio;
+        $this->trackCount = $trackCount;
+        $this->createdAt = $createdAt;
         $this->albums = new ArrayCollection();
     }
 }

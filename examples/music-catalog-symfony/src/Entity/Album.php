@@ -42,44 +42,78 @@ class Album
     #[ORM\OneToMany(targetEntity: Track::class, mappedBy: 'album')]
     public Collection $tracks;
 
+    #[ORM\Column]
+    public string $title = '';
+
+    #[ORM\Column(type: 'float', nullable: true)]
+    public ?float $averageRating = null;
+
+    #[ORM\Column(type: 'datetime_immutable', nullable: true)]
+    public ?\DateTimeImmutable $releasedAt = null;
+
+    #[ORM\Column(type: 'boolean')]
+    public bool $published = true;
+
+    #[ORM\Column(type: 'boolean')]
+    public bool $explicit = false;
+
+    // The release lifecycle, stored as the backing scalar of the
+    // {@see \haddowg\JsonApiBundle\Examples\MusicCatalog\Model\AlbumStatus} backed
+    // enum — surfaced on the `albums.status` attribute via `->enum()` so the
+    // generated OpenAPI hoists a reusable, described `AlbumStatus` component.
+    #[ORM\Column(type: 'string', length: 16)]
+    public string $status = 'released';
+
+    #[ORM\Column(type: 'date_immutable', nullable: true)]
+    public ?\DateTimeImmutable $availableFrom = null;
+
+    #[ORM\Column(type: 'date_immutable', nullable: true)]
+    public ?\DateTimeImmutable $availableUntil = null;
+
+    // The structured `releaseInfo` Map persisted to a single JSON column (label
+    // + catalogueNumber children), mirroring the in-memory domain's structured
+    // sub-object as one stored value.
+    /** @var array<string, mixed>|null */
+    #[ORM\Column(type: 'json', nullable: true)]
+    public ?array $releaseInfo = null;
+
+    // Cover artwork, attached by the Raw-input `artwork` upload action (G13). It is
+    // never set through the CRUD write path — only the custom upload action fills
+    // it — so it stays null until uploaded.
+    #[ORM\Column(type: 'text', nullable: true)]
+    public ?string $artwork = null;
+
+    #[ORM\ManyToOne(targetEntity: Artist::class, inversedBy: 'albums')]
+    #[ORM\JoinColumn(name: 'artist_id', referencedColumnName: 'id', nullable: true)]
+    public ?Artist $artist = null;
+
     /**
      * @param array<string, mixed>|null $releaseInfo
      */
     public function __construct(
-        #[ORM\Column]
-        public string $title = '',
-        #[ORM\Column(type: 'float', nullable: true)]
-        public ?float $averageRating = null,
-        #[ORM\Column(type: 'datetime_immutable', nullable: true)]
-        public ?\DateTimeImmutable $releasedAt = null,
-        #[ORM\Column(type: 'boolean')]
-        public bool $published = true,
-        #[ORM\Column(type: 'boolean')]
-        public bool $explicit = false,
-        // The release lifecycle, stored as the backing scalar of the
-        // {@see \haddowg\JsonApiBundle\Examples\MusicCatalog\Model\AlbumStatus} backed
-        // enum — surfaced on the `albums.status` attribute via `->enum()` so the
-        // generated OpenAPI hoists a reusable, described `AlbumStatus` component.
-        #[ORM\Column(type: 'string', length: 16)]
-        public string $status = 'released',
-        #[ORM\Column(type: 'date_immutable', nullable: true)]
-        public ?\DateTimeImmutable $availableFrom = null,
-        #[ORM\Column(type: 'date_immutable', nullable: true)]
-        public ?\DateTimeImmutable $availableUntil = null,
-        // The structured `releaseInfo` Map persisted to a single JSON column (label
-        // + catalogueNumber children), mirroring the in-memory domain's structured
-        // sub-object as one stored value.
-        #[ORM\Column(type: 'json', nullable: true)]
-        public ?array $releaseInfo = null,
-        // Cover artwork, attached by the Raw-input `artwork` upload action (G13). It is
-        // never set through the CRUD write path — only the custom upload action fills
-        // it — so it stays null until uploaded.
-        #[ORM\Column(type: 'text', nullable: true)]
-        public ?string $artwork = null,
-        #[ORM\ManyToOne(targetEntity: Artist::class, inversedBy: 'albums')]
-        #[ORM\JoinColumn(name: 'artist_id', referencedColumnName: 'id', nullable: true)]
-        public ?Artist $artist = null,
+        string $title = '',
+        ?float $averageRating = null,
+        ?\DateTimeImmutable $releasedAt = null,
+        bool $published = true,
+        bool $explicit = false,
+        string $status = 'released',
+        ?\DateTimeImmutable $availableFrom = null,
+        ?\DateTimeImmutable $availableUntil = null,
+        ?array $releaseInfo = null,
+        ?string $artwork = null,
+        ?Artist $artist = null,
     ) {
+        $this->title = $title;
+        $this->averageRating = $averageRating;
+        $this->releasedAt = $releasedAt;
+        $this->published = $published;
+        $this->explicit = $explicit;
+        $this->status = $status;
+        $this->availableFrom = $availableFrom;
+        $this->availableUntil = $availableUntil;
+        $this->releaseInfo = $releaseInfo;
+        $this->artwork = $artwork;
+        $this->artist = $artist;
         $this->tracks = new ArrayCollection();
     }
 }

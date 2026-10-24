@@ -47,22 +47,40 @@ class Playlist
     #[ORM\OneToMany(targetEntity: PlaylistEntry::class, mappedBy: 'playlist')]
     public Collection $entries;
 
+    #[ORM\Id]
+    #[ORM\Column]
+    public string $id = '';
+
+    #[ORM\Column]
+    public string $title = '';
+
+    #[ORM\Column]
+    public string $slug = '';
+
+    #[ORM\Column(type: 'boolean')]
+    public bool $public = false;
+
+    #[ORM\Column(name: 'external_id', nullable: true)]
+    public ?string $externalId = null;
+
+    #[ORM\ManyToOne(targetEntity: User::class, inversedBy: 'playlists')]
+    #[ORM\JoinColumn(name: 'owner_id', referencedColumnName: 'id', nullable: true)]
+    public ?User $owner = null;
+
     public function __construct(
-        #[ORM\Id]
-        #[ORM\Column]
-        public string $id = '',
-        #[ORM\Column]
-        public string $title = '',
-        #[ORM\Column]
-        public string $slug = '',
-        #[ORM\Column(type: 'boolean')]
-        public bool $public = false,
-        #[ORM\Column(name: 'external_id', nullable: true)]
-        public ?string $externalId = null,
-        #[ORM\ManyToOne(targetEntity: User::class, inversedBy: 'playlists')]
-        #[ORM\JoinColumn(name: 'owner_id', referencedColumnName: 'id', nullable: true)]
-        public ?User $owner = null,
+        string $id = '',
+        string $title = '',
+        string $slug = '',
+        bool $public = false,
+        ?string $externalId = null,
+        ?User $owner = null,
     ) {
+        $this->id = $id;
+        $this->title = $title;
+        $this->slug = $slug;
+        $this->public = $public;
+        $this->externalId = $externalId;
+        $this->owner = $owner;
         $this->tracks = new ArrayCollection();
         $this->entries = new ArrayCollection();
     }

@@ -24,6 +24,34 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Table(name: 'album_release')]
 class Release
 {
+    #[ORM\Id]
+    #[ORM\GeneratedValue(strategy: 'AUTO')]
+    #[ORM\Column]
+    public ?int $id = null;
+
+    #[ORM\Column(length: 40)]
+    public string $catalogNumber = '';
+
+    /** @var array<string, mixed>|null */
+    #[ORM\Column(type: 'json', nullable: true)]
+    public ?array $format = null;
+
+    /** @var array<string, mixed>|null */
+    #[ORM\Column(type: 'json', nullable: true)]
+    public ?array $packaging = null;
+
+    /** @var array<string, mixed>|null */
+    #[ORM\Column(type: 'json', nullable: true)]
+    public ?array $availability = null;
+
+    /** @var array<string, mixed>|null */
+    #[ORM\Column(type: 'json', nullable: true)]
+    public ?array $dimensions = null;
+
+    #[ORM\ManyToOne(targetEntity: Album::class)]
+    #[ORM\JoinColumn(name: 'album_id', referencedColumnName: 'id', nullable: true)]
+    public ?Album $album = null;
+
     /**
      * @param array<string, mixed>|null $format
      * @param array<string, mixed>|null $packaging
@@ -31,22 +59,20 @@ class Release
      * @param array<string, mixed>|null $dimensions
      */
     public function __construct(
-        #[ORM\Id]
-        #[ORM\GeneratedValue(strategy: 'AUTO')]
-        #[ORM\Column]
-        public ?int $id = null,
-        #[ORM\Column(length: 40)]
-        public string $catalogNumber = '',
-        #[ORM\Column(type: 'json', nullable: true)]
-        public ?array $format = null,
-        #[ORM\Column(type: 'json', nullable: true)]
-        public ?array $packaging = null,
-        #[ORM\Column(type: 'json', nullable: true)]
-        public ?array $availability = null,
-        #[ORM\Column(type: 'json', nullable: true)]
-        public ?array $dimensions = null,
-        #[ORM\ManyToOne(targetEntity: Album::class)]
-        #[ORM\JoinColumn(name: 'album_id', referencedColumnName: 'id', nullable: true)]
-        public ?Album $album = null,
-    ) {}
+        ?int $id = null,
+        string $catalogNumber = '',
+        ?array $format = null,
+        ?array $packaging = null,
+        ?array $availability = null,
+        ?array $dimensions = null,
+        ?Album $album = null,
+    ) {
+        $this->id = $id;
+        $this->catalogNumber = $catalogNumber;
+        $this->format = $format;
+        $this->packaging = $packaging;
+        $this->availability = $availability;
+        $this->dimensions = $dimensions;
+        $this->album = $album;
+    }
 }
