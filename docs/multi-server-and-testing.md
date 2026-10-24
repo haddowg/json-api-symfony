@@ -337,6 +337,18 @@ and no `loginUser()`. A consumer whose stateless scheme differs overrides **one*
 protected seam — `authenticateAs(string $identifier)` (the header) or
 `tokenFor(string $identifier)` (the token).
 
+`expectResource()` works out the type from the `entity:` each
+`#[AsJsonApiResource]` declares. The model's own class wins, then its nearest mapped
+parent, so with `advertisers` mapped to `Advertiser` and `agencies` mapped to
+`Agency extends Advertiser`, an `Agency` renders as `agencies`. A Doctrine proxy
+resolves through the entity it extends. A model that no resource maps goes to the
+first unmapped type whose serializer's `getType()` claims it. When one class backs
+several types, or you want a different view of the same model, name the type:
+
+```php
+$this->browser()->expectResource($member, type: 'public-members');
+```
+
 Three browser behaviours mirror `handle()`'s fidelity guarantees, and one is the
 headline trap:
 
