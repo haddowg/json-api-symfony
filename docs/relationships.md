@@ -849,6 +849,27 @@ mismatch (a `POST`/`DELETE` against a to-one) is a separate `400`
 `RELATIONSHIP_TYPE_INAPPROPRIATE`; an unknown relation or missing parent is a
 `404`.
 
+### Write-only relations
+
+A relation declared `writeOnly()` is accepted on a write and never shown on a read.
+Core leaves it out of every response's `relationships`, rejects it in `?include` and
+`?withCount`, answers its related and relationship `GET`s with `404`, and answers its
+relationship mutations with `204`. The bundle follows that on its own read paths:
+
+- a read never loads it. The include preloader, the Relationship Queries window, the
+  `?withCount` batch and the pivot meta batch all skip it, so a `withData()` write-only
+  to-many costs no query;
+- `relatedQuery[<rel>]` (or `rQ[<rel>]`) naming it is the same `400`
+  `QUERY_PARAM_UNRECOGNIZED` an unknown relation gets;
+- the OpenAPI document drops it from the read schema and documents no related endpoint
+  or relationship `GET` for it, keeping the create/update schemas and the mutation
+  operations.
+
+`writeOnly(fn)` is judged per request, so the read paths skip the relation whenever the
+predicate holds for that request. The OpenAPI document describes the superset and keeps
+documenting reads of a predicate-gated relation, as it does for a predicate-gated
+attribute.
+
 ### The related endpoint's target must be registered on the server
 
 `GET /albums/1/artist` returns an `artists` resource object as primary data, so the server

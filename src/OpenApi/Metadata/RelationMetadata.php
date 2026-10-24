@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\OpenApi\Metadata;
 
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresWriteOnlyRelation;
 use haddowg\JsonApi\OpenApi\Metadata\RelationMetadataInterface;
 use haddowg\JsonApi\OpenApi\Schema;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
@@ -21,7 +22,7 @@ use haddowg\JsonApiBundle\DataProvider\PivotFields;
  * the {@see \haddowg\JsonApi\Server\Server} fallback chain + the relation graph) and
  * passed in.
  */
-final readonly class RelationMetadata implements RelationMetadataInterface
+final readonly class RelationMetadata implements RelationMetadataInterface, DeclaresWriteOnlyRelation
 {
     /**
      * @param list<string> $relatedIncludablePaths the related type's includable paths (resolved by the source)
@@ -50,6 +51,15 @@ final readonly class RelationMetadata implements RelationMetadataInterface
     public function description(): ?string
     {
         return $this->relation->getDescription();
+    }
+
+    /**
+     * Only an unconditional `writeOnly()`: a predicate-gated relation stays in the
+     * superset document, as a predicate-gated attribute does.
+     */
+    public function isWriteOnly(): bool
+    {
+        return $this->relation->isWriteOnly();
     }
 
     public function isIncludable(): bool

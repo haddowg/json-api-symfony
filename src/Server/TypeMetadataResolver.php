@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Server;
 
 use haddowg\JsonApi\Exception\NoResourceRegistered;
+use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Server\Server;
@@ -123,5 +124,22 @@ final class TypeMetadataResolver
         }
 
         return $this->relations->relationsFor($type) ?? [];
+    }
+
+    /**
+     * The relations of `$type` a read of this request renders: {@see relationsFor()}
+     * without the ones write-only for `$request`. A write-only relation never renders
+     * its linkage, so the read path must not window, count, batch or pivot-query it,
+     * and a `relatedQuery` path naming it is unknown (bundle ADR 0129). The write
+     * path keeps using {@see relationsFor()}.
+     *
+     * @return list<RelationInterface>
+     */
+    public function readableRelationsFor(Server $server, string $type, JsonApiRequestInterface $request): array
+    {
+        return \array_values(\array_filter(
+            $this->relationsFor($server, $type),
+            static fn(RelationInterface $relation): bool => !$relation->isWriteOnlyFor($request),
+        ));
     }
 }
