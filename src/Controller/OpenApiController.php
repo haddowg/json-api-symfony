@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Controller;
 
 use haddowg\JsonApi\OpenApi\Serve\ServeArtifact;
+use haddowg\JsonApi\OpenApi\Serve\UnserializableValue;
 use haddowg\JsonApiBundle\OpenApi\ArtifactStore;
 use haddowg\JsonApiBundle\OpenApi\DocumentFactory;
 use haddowg\JsonApiBundle\OpenApi\OpenApiServeCacheKeyInterface;
@@ -165,7 +166,7 @@ final class OpenApiController
             $this->store->writeWithHash($key, $json);
             try {
                 $this->store->writeServeArtifact($key, $artifact);
-            } catch (\LogicException) {
+            } catch (UnserializableValue) {
                 // The document holds an object the codec won't unserialize, so each
                 // decorated request builds it (json_api.openapi.serve_allowed_classes).
             }

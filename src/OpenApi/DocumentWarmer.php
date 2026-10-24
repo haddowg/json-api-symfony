@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\OpenApi;
 
 use haddowg\JsonApi\OpenApi\OpenApi;
 use haddowg\JsonApi\OpenApi\Serve\ServeArtifact;
+use haddowg\JsonApi\OpenApi\Serve\UnserializableValue;
 use haddowg\JsonApi\OpenApi\SpecDescribedByResolver;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
@@ -139,12 +140,11 @@ final class DocumentWarmer implements CacheWarmerInterface
     {
         try {
             $store->writeServeArtifact($key, ServeArtifact::of($document));
-        } catch (\LogicException $e) {
+        } catch (UnserializableValue $e) {
             $store->removeServeArtifact($key);
-            $class = \preg_match('/instance of "([^"]+)"/', $e->getMessage(), $match) === 1 ? $match[1] : '(unknown)';
             $this->logger?->warning('The OpenAPI document "{server}" holds an object of class {class} that the serve artifact can\'t unserialize, so each request with serve decorators builds the document. List the class under json_api.openapi.serve_allowed_classes to cache it.', [
                 'server' => $key,
-                'class' => $class,
+                'class' => $e->class,
                 'exception' => $e,
             ]);
         }
