@@ -208,7 +208,7 @@ final class OpenApiDocsTest extends MusicCatalogKernelTestCase
         self::assertSame('deepObject', $rating['style'] ?? null);
         self::assertTrue($rating['explode'] ?? null);
         self::assertSame(
-            'Matches values within the given inclusive numeric range (min/max, either optional).',
+            'Matches values within the given inclusive numeric range.',
             $rating['description'] ?? null,
         );
         $ratingSchema = $this->nested($rating, 'schema');
