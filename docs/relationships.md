@@ -769,12 +769,15 @@ already returns for a `POST /{type}` whose `data.type` does not match the endpoi
 A polymorphic relation (`MorphTo::make('pinned', ['notes', 'images'])`) accepts any
 of its declared types. The same check
 covers a relationship embedded in a whole-resource write (the error then points at
-`/data/relationships/{rel}/data/type`). This is distinct from the **cardinality**
-guard (a to-one sent an array → `400`), which is about the linkage *shape*, not the
-resource type of its identifiers.
+`/data/relationships/{rel}/data/type`). The check runs on every write path, Atomic
+Operations included, whether or not `symfony/validator` is installed. This is distinct
+from the **cardinality** guard (a to-one sent an array → `400`), which is about the
+linkage *shape*, not the resource type of its identifiers. A resource object whose
+`attributes`, `relationships` or `meta` is present but not an object is a `400`
+(`REQUEST_BODY_INVALID_JSON_API`, pointing at the member) before any of it is applied.
 
-The persister resolves the linkage's identifier ids to the actual related
-objects/references — the Doctrine reference to a managed reference + FK write, the
+The persister resolves each identifier id under that identifier's own type to the
+actual related objects/references — the Doctrine reference to a managed reference + FK write, the
 in-memory provider to the stored object via its `$relatedResolver`. An empty
 linkage clears the relationship. The **same seam** is reused for relationships
 embedded in whole-resource writes (a `data.relationships` member on a

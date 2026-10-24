@@ -12,6 +12,7 @@ use haddowg\JsonApi\Exception\FullReplacementProhibited;
 use haddowg\JsonApi\Exception\RelationshipNotExists;
 use haddowg\JsonApi\Exception\RelationshipTypeInappropriate;
 use haddowg\JsonApi\Exception\RemovalProhibited;
+use haddowg\JsonApi\Exception\RequestBodyInvalidJsonApi;
 use haddowg\JsonApi\Exception\ResourceNotFound;
 use haddowg\JsonApi\Hydrator\Relationship\ToManyRelationship;
 use haddowg\JsonApi\Hydrator\Relationship\ToOneRelationship;
@@ -221,6 +222,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $this->relationshipLinkage?->set(null);
         $this->relationshipLinkage?->setIncluded(null);
         $this->outputTimezone?->set($server instanceof \haddowg\JsonApi\Resource\ProvidesOutputTimezoneInterface ? $server->outputTimezone() : null);
+
+        if ($operation instanceof CreateResourceOperation || $operation instanceof UpdateResourceOperation) {
+            $this->assertObjectMembers($operation->body());
+        }
 
         return match (true) {
             $operation instanceof FetchResourceOperation => $this->fetch($operation),
@@ -1407,7 +1412,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         // Linkage naming a resource the related endpoint does not serve is rejected as
         // missing, and a replace keeps the members the scope hides (bundle ADR 0126).
-        $scopedLinkage = $this->linkageGuard?->scope($server, $parent, $relation, $linkage, $mode, $request) ?? $linkage;
+        $scopedLinkage = $this->linkageGuard?->scope($server, $parent, $relation, $linkage, $mode, $request, atEndpoint: true) ?? $linkage;
 
         // The response renders the relationship's scoped linkage, which a polymorphic
         // to-many cannot supply: refuse it before anything is written.
@@ -2138,6 +2143,38 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         }
 
         return $collected;
+    }
+
+    /**
+     * Rejects a resource object whose `attributes`, `relationships` or `meta`, or one of
+     * whose relationships, is present but not an object. The write path reads each of
+     * them as a map and would otherwise skip one it can't read.
+     *
+     * @throws RequestBodyInvalidJsonApi
+     */
+    private function assertObjectMembers(JsonApiRequestInterface $body): void
+    {
+        $data = $body->getResource();
+        if (!\is_array($data)) {
+            return;
+        }
+
+        $violations = [];
+        foreach (['attributes', 'relationships', 'meta'] as $member) {
+            if (\array_key_exists($member, $data) && !\is_array($data[$member])) {
+                $violations[] = ['message' => \sprintf('the "%s" member must be an object', $member), 'property' => '/data/' . $member];
+            }
+        }
+
+        foreach (\is_array($data['relationships'] ?? null) ? $data['relationships'] : [] as $name => $relationship) {
+            if (!\is_array($relationship)) {
+                $violations[] = ['message' => \sprintf('the "%s" relationship must be an object', $name), 'property' => '/data/relationships/' . \str_replace(['~', '/'], ['~0', '~1'], (string) $name)];
+            }
+        }
+
+        if ($violations !== []) {
+            throw new RequestBodyInvalidJsonApi($violations);
+        }
     }
 
     /**

@@ -8,7 +8,9 @@ use haddowg\JsonApi\Hydrator\Relationship\ToManyRelationship;
 use haddowg\JsonApi\Hydrator\Relationship\ToOneRelationship;
 use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Schema\ResourceIdentifier;
 use haddowg\JsonApiBundle\DataProvider\InMemoryStore;
+use haddowg\JsonApiBundle\Validation\RelationshipTypeUnacceptable;
 
 /**
  * The in-memory write witness: it persists through the same {@see InMemoryStore}
@@ -110,15 +112,15 @@ final class InMemoryDataPersister implements DataPersisterInterface, Transaction
         bool $flush = true,
     ): object {
         $property = $relation->column() ?? $relation->name();
-        $relatedType = $relation->relatedTypes()[0] ?? '';
 
         if ($linkage instanceof ToOneRelationship) {
             // Replace (or, when the linkage is empty, clear) the to-one reference.
-            $entity->{$property} = $linkage->resourceIdentifier?->id !== null
-                ? $this->resolveRelated($relatedType, $linkage->resourceIdentifier->id)
+            $identifier = $linkage->resourceIdentifier;
+            $entity->{$property} = $identifier?->id !== null
+                ? $this->resolveRelated($this->relatedTypeOf($relation, $identifier), $identifier->id)
                 : null;
         } else {
-            $entity->{$property} = $this->applyToMany($entity, $property, $relatedType, $linkage, $mode);
+            $entity->{$property} = $this->applyToMany($entity, $property, $relation, $linkage, $mode);
         }
 
         if ($flush) {
@@ -138,14 +140,17 @@ final class InMemoryDataPersister implements DataPersisterInterface, Transaction
     private function applyToMany(
         object $entity,
         string $property,
-        string $relatedType,
+        RelationInterface $relation,
         ToManyRelationship $linkage,
         Mode $mode,
     ): array {
-        $incomingIds = \array_values(\array_filter(
-            $linkage->getResourceIdentifierIds(),
-            static fn(?string $id): bool => $id !== null,
-        ));
+        $incoming = [];
+        foreach ($linkage->resourceIdentifiers as $identifier) {
+            if ($identifier->id !== null) {
+                $incoming[$identifier->id] = $this->relatedTypeOf($relation, $identifier);
+            }
+        }
+        $incomingIds = \array_map('strval', \array_keys($incoming));
 
         if ($mode === Mode::Remove) {
             $remove = \array_fill_keys($incomingIds, true);
@@ -157,7 +162,8 @@ final class InMemoryDataPersister implements DataPersisterInterface, Transaction
         }
 
         $resolved = [];
-        foreach ($incomingIds as $id) {
+        foreach ($incoming as $id => $relatedType) {
+            $id = (string) $id;
             $related = $this->resolveRelated($relatedType, $id);
             if ($related !== null) {
                 $resolved[$id] = $related;
@@ -194,6 +200,20 @@ final class InMemoryDataPersister implements DataPersisterInterface, Transaction
             \is_iterable($current) ? [...$current] : [],
             static fn(mixed $member): bool => \is_object($member),
         ));
+    }
+
+    /**
+     * The identifier's type, which must be one of the relation's related types.
+     *
+     * @throws RelationshipTypeUnacceptable
+     */
+    private function relatedTypeOf(RelationInterface $relation, ResourceIdentifier $identifier): string
+    {
+        if (!\in_array($identifier->type, $relation->relatedTypes(), true)) {
+            throw new RelationshipTypeUnacceptable([RelationshipTypeUnacceptable::error($relation, $identifier->type)]);
+        }
+
+        return $identifier->type;
     }
 
     private function resolveRelated(string $relatedType, string $id): ?object

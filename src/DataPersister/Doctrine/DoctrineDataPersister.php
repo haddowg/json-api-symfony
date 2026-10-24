@@ -23,6 +23,7 @@ use haddowg\JsonApiBundle\DataPersister\TransactionalDataPersisterInterface;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\PivotAssociation;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\PivotAssociationResolver;
 use haddowg\JsonApiBundle\Server\IdEncoderResolver;
+use haddowg\JsonApiBundle\Validation\RelationshipTypeUnacceptable;
 
 /**
  * The reference Doctrine ORM write persister — the write twin of the
@@ -177,8 +178,6 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
         bool $flush = true,
     ): object {
         $property = $relation->column() ?? $relation->name();
-        $relatedType = $relation->relatedTypes()[0] ?? '';
-        $relatedClass = $this->entityClassFor($relatedType);
 
         // A belongsToMany pivot relation is mutated as an association-entity DIFF, not
         // a plain collection write: the incoming linkage members carry pivot `meta`,
@@ -188,7 +187,8 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
         if ($linkage instanceof ToManyRelationship
             && $this->pivotAssociations !== null
             && $this->pivotAssociations->isPivotRelation($relation)) {
-            $this->mutatePivot($entity, $relation, $relatedType, $relatedClass, $linkage, $mode);
+            $relatedType = $relation->relatedTypes()[0] ?? '';
+            $this->mutatePivot($entity, $relation, $relatedType, $this->entityClassFor($relatedType), $linkage, $mode);
 
             if ($flush) {
                 $this->entityManager->flush();
@@ -198,13 +198,12 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
         }
 
         if ($linkage instanceof ToOneRelationship) {
-            $reference = $linkage->resourceIdentifier?->id !== null
-                ? $this->entityManager->getReference($relatedClass, $this->decodeLinkageId($relatedType, $linkage->resourceIdentifier->id))
+            $identifier = $linkage->resourceIdentifier;
+            $entity->{$property} = $identifier?->id !== null
+                ? $this->reference($relation, $identifier)
                 : null;
-
-            $entity->{$property} = $reference;
         } else {
-            $this->mutateToMany($entity, $property, $relatedType, $relatedClass, $linkage, $mode);
+            $this->mutateToMany($entity, $property, $relation, $linkage, $mode);
         }
 
         if ($flush) {
@@ -240,12 +239,12 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
         }
 
         $moved = [];
-        foreach ($linkage->getResourceIdentifierIds() as $id) {
-            if ($id === null) {
+        foreach ($linkage->resourceIdentifiers as $identifier) {
+            if ($identifier->id === null || $this->relatedTypeOf($relation, $identifier) !== $relatedType) {
                 continue;
             }
 
-            $member = $this->entityManager->find($relatedClass, $this->decodeLinkageId($relatedType, $id));
+            $member = $this->entityManager->find($relatedClass, $this->decodeLinkageId($relatedType, $identifier->id));
             if ($member === null) {
                 continue;
             }
@@ -261,14 +260,10 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
         return $moved;
     }
 
-    /**
-     * @param class-string $relatedClass
-     */
     private function mutateToMany(
         object $entity,
         string $property,
-        string $relatedType,
-        string $relatedClass,
+        RelationInterface $relation,
         ToManyRelationship $linkage,
         Mode $mode,
     ): void {
@@ -279,9 +274,9 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
 
         $owningField = $this->inverseOwningField($entity, $property);
 
-        $incomingIds = \array_values(\array_filter(
-            $linkage->getResourceIdentifierIds(),
-            static fn(?string $id): bool => $id !== null,
+        $incoming = \array_values(\array_filter(
+            $linkage->resourceIdentifiers,
+            static fn(ResourceIdentifier $identifier): bool => $identifier->id !== null,
         ));
 
         if ($mode === Mode::Replace) {
@@ -293,16 +288,16 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
                 }
             }
             $collection->clear();
-            foreach ($incomingIds as $id) {
-                $this->addMember($collection, $relatedType, $relatedClass, $id, $entity, $owningField);
+            foreach ($incoming as $identifier) {
+                $this->addMember($collection, $relation, $identifier, $entity, $owningField);
             }
 
             return;
         }
 
         if ($mode === Mode::Add) {
-            foreach ($incomingIds as $id) {
-                $this->addMember($collection, $relatedType, $relatedClass, $id, $entity, $owningField);
+            foreach ($incoming as $identifier) {
+                $this->addMember($collection, $relation, $identifier, $entity, $owningField);
             }
 
             return;
@@ -312,8 +307,8 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
         // (the owning-side FK for a single-valued inverse, or the join row for a
         // many-to-many inverse). A resource that is not a member is left alone: it may
         // belong to another parent, and removing a non-member is a no-op.
-        foreach ($incomingIds as $id) {
-            $reference = $this->entityManager->getReference($relatedClass, $this->decodeLinkageId($relatedType, $id));
+        foreach ($incoming as $identifier) {
+            $reference = $this->reference($relation, $identifier);
             if ($reference === null || !$collection->contains($reference)) {
                 continue;
             }
@@ -354,7 +349,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
         $association = $this->pivotAssociations->resolve($relation, $parent, $relatedClass);
         $existing = $this->existingPivotRows($parent, $association, $relatedClass);
 
-        $incomingMembers = $this->incomingPivotMembers($linkage, $relatedType, $relatedClass);
+        $incomingMembers = $this->incomingPivotMembers($relation, $linkage, $relatedType, $relatedClass);
 
         if ($mode === Mode::Remove) {
             foreach ($incomingMembers as [$storageKey]) {
@@ -481,7 +476,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
      *
      * @return list<array{0: mixed, 1: object, 2: array<string, mixed>}>
      */
-    private function incomingPivotMembers(ToManyRelationship $linkage, string $relatedType, string $relatedClass): array
+    private function incomingPivotMembers(RelationInterface $relation, ToManyRelationship $linkage, string $relatedType, string $relatedClass): array
     {
         $members = [];
         foreach ($linkage->resourceIdentifiers as $identifier) {
@@ -489,6 +484,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
             if ($identifier->id === null) {
                 continue;
             }
+            $this->relatedTypeOf($relation, $identifier);
             $storageKey = $this->decodeLinkageId($relatedType, $identifier->id);
             $reference = $this->entityManager->getReference($relatedClass, $storageKey);
             if ($reference === null) {
@@ -640,17 +636,15 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
      * owning side on it. A no-op when no reference resolves.
      *
      * @param Collection<int, object> $collection
-     * @param class-string            $relatedClass
      */
     private function addMember(
         Collection $collection,
-        string $relatedType,
-        string $relatedClass,
-        string $id,
+        RelationInterface $relation,
+        ResourceIdentifier $identifier,
         object $owner,
         ?string $owningField,
     ): void {
-        $reference = $this->entityManager->getReference($relatedClass, $this->decodeLinkageId($relatedType, $id));
+        $reference = $this->reference($relation, $identifier);
         if ($reference === null) {
             return;
         }
@@ -775,6 +769,31 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
         $value = $entity->{$property};
 
         return $value instanceof Collection ? $value : null;
+    }
+
+    /**
+     * A managed reference to the resource `$identifier` names, resolved under the
+     * identifier's own type.
+     */
+    private function reference(RelationInterface $relation, ResourceIdentifier $identifier): ?object
+    {
+        $type = $this->relatedTypeOf($relation, $identifier);
+
+        return $this->entityManager->getReference($this->entityClassFor($type), $this->decodeLinkageId($type, (string) $identifier->id));
+    }
+
+    /**
+     * The identifier's type, which must be one of the relation's related types.
+     *
+     * @throws RelationshipTypeUnacceptable
+     */
+    private function relatedTypeOf(RelationInterface $relation, ResourceIdentifier $identifier): string
+    {
+        if (!\in_array($identifier->type, $relation->relatedTypes(), true)) {
+            throw new RelationshipTypeUnacceptable([RelationshipTypeUnacceptable::error($relation, $identifier->type)]);
+        }
+
+        return $identifier->type;
     }
 
     /**

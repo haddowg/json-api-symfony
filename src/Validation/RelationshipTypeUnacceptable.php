@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Validation;
 
 use haddowg\JsonApi\Exception\AbstractJsonApiException;
+use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Schema\Error\Error;
+use haddowg\JsonApi\Schema\Error\ErrorSource;
 
 /**
  * Thrown when a relationship **linkage** identifier carries a resource `type` that
@@ -39,6 +41,22 @@ final class RelationshipTypeUnacceptable extends AbstractJsonApiException
     public function __construct(private readonly array $errors)
     {
         parent::__construct('The relationship linkage carries an unacceptable resource type.', 409);
+    }
+
+    /**
+     * The `409` error for one linkage identifier whose `type` is not among the
+     * relation's related types, pointing at that identifier's `type` when the pointer
+     * is known.
+     */
+    public static function error(RelationInterface $relation, string $type, ?string $pointer = null): Error
+    {
+        return new Error(
+            status: '409',
+            code: 'RESOURCE_TYPE_UNACCEPTABLE',
+            title: 'Resource type is unacceptable',
+            detail: \sprintf("Resource type '%s' is unacceptable for relationship '%s'!", $type, $relation->name()),
+            source: $pointer !== null ? ErrorSource::fromPointer($pointer) : null,
+        );
     }
 
     /**
