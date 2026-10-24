@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.9.0](https://github.com/haddowg/json-api-symfony/compare/v1.8.1...v1.9.0) (2026-10-24)
+
+
+### Features
+
+* **openapi:** default the ReDoc viewer to 3.0.1 with telemetry off ([ab43349](https://github.com/haddowg/json-api-symfony/commit/ab4334954981d3ed3ee5412fae46e048484e0957))
+* **openapi:** let a resource declare its singular noun ([ab43349](https://github.com/haddowg/json-api-symfony/commit/ab4334954981d3ed3ee5412fae46e048484e0957))
+
+
+### Bug Fixes
+
+* **testing:** follow an allOf-wrapped reference when relaxing a fieldset ([ab43349](https://github.com/haddowg/json-api-symfony/commit/ab4334954981d3ed3ee5412fae46e048484e0957))
+
 ## [1.8.1](https://github.com/haddowg/json-api-symfony/compare/v1.8.0...v1.8.1) (2026-10-24)
 
 
