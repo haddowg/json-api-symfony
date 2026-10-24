@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\Security;
 
+use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\BelongsTo;
 use haddowg\JsonApi\Resource\Field\Id;
@@ -46,6 +47,10 @@ final class SecuredWidgetResource extends AbstractResource
             BelongsTo::make('publicPartner', 'securedWidgets')->storedAs('partner')->nullable()->security(read: false),
             BelongsTo::make('adminPartner', 'securedWidgets')->storedAs('partner')->nullable()->security(read: "is_granted('ROLE_ADMIN')"),
             BelongsTo::make('lockedPartner', 'securedWidgets')->storedAs('partner')->nullable()->security(mutate: "is_granted('ROLE_ADMIN')"),
+            // Hidden from everyone but an admin, so a non-admin gets a 404 at its endpoints.
+            BelongsTo::make('staffPartner', 'securedWidgets')->storedAs('partner')->nullable()->hidden(
+                static fn(mixed $model, JsonApiRequestInterface $request): bool => $request->getHeaderLine('Authorization') !== 'Bearer admin',
+            ),
         ];
     }
 }

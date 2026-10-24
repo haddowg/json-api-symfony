@@ -304,6 +304,47 @@ abstract class RequestAwarePredicateConformanceTestCase extends JsonApiFunctiona
     }
 
     #[Test]
+    #[Group('spec:fetching-relationships')]
+    public function aRelationHiddenFromTheCallerIsAbsentAndA404AtBothEndpoints(): void
+    {
+        $guest = $this->fetchDocument('/badges/1');
+        $data = $guest['data'] ?? null;
+        self::assertIsArray($data);
+        $relationships = $data['relationships'] ?? null;
+        self::assertIsArray($relationships);
+        self::assertArrayNotHasKey('staffMedals', $relationships);
+
+        foreach (['/badges/1/staffMedals', '/badges/1/relationships/staffMedals'] as $endpoint) {
+            $response = $this->handle($endpoint);
+            self::assertSame(404, $response->getStatusCode(), $endpoint . ': ' . $response->getContent());
+            $errors = $this->decode($response)['errors'] ?? null;
+            self::assertIsArray($errors);
+            $first = $errors[0] ?? null;
+            self::assertIsArray($first);
+            self::assertSame('RELATIONSHIP_NOT_EXISTS', $first['code'] ?? null, $endpoint);
+        }
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    public function aRelationHiddenFromOthersIsReadableByTheCallerItIsShownTo(): void
+    {
+        $admin = $this->fetchDocument('/badges/1', self::ADMIN);
+        $data = $admin['data'] ?? null;
+        self::assertIsArray($data);
+        $relationships = $data['relationships'] ?? null;
+        self::assertIsArray($relationships);
+        self::assertArrayHasKey('staffMedals', $relationships);
+
+        $related = $this->fetchDocument('/badges/1/staffMedals', self::ADMIN)['data'] ?? null;
+        self::assertIsArray($related);
+        self::assertCount(1, $related);
+
+        $linkage = $this->fetchDocument('/badges/1/relationships/staffMedals', self::ADMIN)['data'] ?? null;
+        self::assertSame([['type' => 'medals', 'id' => '1']], $linkage);
+    }
+
+    #[Test]
     #[Group('spec:creating-resources')]
     public function aConditionallyRequiredAttributeIs422ForAdminOmittingItButAcceptedOtherwise(): void
     {

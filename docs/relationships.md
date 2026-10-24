@@ -878,6 +878,15 @@ unconditionally read-only, the OpenAPI document lists only the relationship `GET
 and leaves it out of the update request body; a `readOnly(fn)` predicate is judged per
 request, so the document keeps the mutations.
 
+### Hidden relations
+
+`hidden()` keeps a relation out of every response. `hidden(fn(mixed $model, JsonApiRequestInterface $request): bool => …)`
+decides per parent and request. When the predicate holds, the relation is left out of
+the resource, and its related and relationship `GET`s answer `404`
+(`RELATIONSHIP_NOT_EXISTS`), the same as an undeclared relation. The handler checks
+this before the read gate, so a caller the parent's gate would refuse also gets the
+`404`. The mutation endpoints still find the relation and keep their own `403`s.
+
 ### Write-only relations
 
 A relation declared `writeOnly()` is accepted on a write and never shown on a read.
