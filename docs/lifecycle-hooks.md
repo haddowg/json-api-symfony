@@ -56,6 +56,11 @@ update's target is loaded, before validation or any of the body is applied, carr
 the entity as stored. The bundle's security subscriber evaluates `securityUpdate`
 there as well as at `BeforeUpdate`.
 
+A create or update whose body carries `data.relationships` also dispatches
+`BeforeEmbeddedRelationshipWriteEvent` (an event only, no hook method) once per
+relationship, before the persister applies it. The bundle's security subscriber uses
+it to enforce a relation's `security(mutate:)`.
+
 ### `beforeUpdate` carries the pre-change snapshot
 
 The update *before* hook is the one with an extra argument: its signature is

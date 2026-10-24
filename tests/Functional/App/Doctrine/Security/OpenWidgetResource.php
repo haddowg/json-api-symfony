@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\Security;
 
 use haddowg\JsonApi\Resource\AbstractResource;
+use haddowg\JsonApi\Resource\Field\BelongsTo;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
@@ -23,6 +24,7 @@ final class OpenWidgetResource extends AbstractResource
         return [
             Id::make(),
             Str::make('name'),
+            BelongsTo::make('lockedPartner', 'securedWidgets')->nullable()->security(mutate: "is_granted('ROLE_ADMIN')"),
         ];
     }
 }

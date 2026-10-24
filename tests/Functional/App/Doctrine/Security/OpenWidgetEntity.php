@@ -22,5 +22,8 @@ class OpenWidgetEntity
         public ?int $id = null,
         #[ORM\Column]
         public string $name = '',
+        #[ORM\ManyToOne(targetEntity: SecuredWidgetEntity::class)]
+        #[ORM\JoinColumn(name: 'locked_partner_id', referencedColumnName: 'id', nullable: true)]
+        public ?SecuredWidgetEntity $lockedPartner = null,
     ) {}
 }
