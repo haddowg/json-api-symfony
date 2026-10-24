@@ -32,6 +32,8 @@ use haddowg\JsonApi\Schema\Error\ErrorSource;
 use haddowg\JsonApi\Validation\SchemaValueValidator;
 use haddowg\JsonApiBundle\Server\IdEncoderResolver;
 use Symfony\Component\Validator\Constraints\Collection;
+use Symfony\Component\Validator\Constraints\Count;
+use Symfony\Component\Validator\Constraints\Length;
 use Symfony\Component\Validator\Constraints\NotBlank;
 use Symfony\Component\Validator\Constraints\NotNull;
 use Symfony\Component\Validator\Constraints\Optional;
@@ -1178,7 +1180,7 @@ final class ResourceValidator
 
         if ($isRequired) {
             // Present on create, plus non-empty or non-null per the field's type.
-            \array_unshift($constraints, ...$this->requiredValue($field, $isNullable));
+            \array_unshift($constraints, ...$this->requiredValue($field, $isNullable, $constraints));
         } elseif (!$isNullable) {
             // A present optional field that is not nullable may not be explicit null.
             \array_unshift($constraints, new NotNull());
@@ -1197,20 +1199,41 @@ final class ResourceValidator
      * pass. `NotBlank` would reject `false`. A nullable required field accepts
      * `null` either way.
      *
+     * When the field's own value rules already demand at least one item, property or
+     * character, an empty value would fail both; the minimum's message is the more
+     * specific, so it alone reports the empty value and only `null` is left to check.
+     *
+     * @param list<\Symfony\Component\Validator\Constraint> $valueConstraints
+     *
      * @return list<\Symfony\Component\Validator\Constraint>
      */
-    private function requiredValue(FieldInterface $field, bool $nullable): array
+    private function requiredValue(FieldInterface $field, bool $nullable, array $valueConstraints): array
     {
         $nonEmpty = !($field instanceof Boolean
             || $field instanceof Integer
             || $field instanceof Decimal
-            || $field instanceof OneOf);
+            || $field instanceof OneOf
+            || $this->demandsNonEmpty($valueConstraints));
 
         if ($nonEmpty) {
             return [new NotBlank(allowNull: $nullable)];
         }
 
         return $nullable ? [] : [new NotNull()];
+    }
+
+    /**
+     * @param list<\Symfony\Component\Validator\Constraint> $constraints
+     */
+    private function demandsNonEmpty(array $constraints): bool
+    {
+        foreach ($constraints as $constraint) {
+            if (($constraint instanceof Count || $constraint instanceof Length) && ($constraint->min ?? 0) >= 1) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
