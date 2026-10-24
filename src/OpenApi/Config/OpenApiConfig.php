@@ -23,7 +23,8 @@ use haddowg\JsonApiBundle\OpenApi\Metadata\ServerDocumentConfig;
 final readonly class OpenApiConfig
 {
     /**
-     * @param array<string, ServerDocumentConfig> $serverDocuments the per-server document config, keyed by server name
+     * @param array<string, ServerDocumentConfig> $serverDocuments     the per-server document config, keyed by server name
+     * @param list<class-string>                  $serveAllowedClasses `serve_allowed_classes`
      */
     public function __construct(
         public bool $enabled,
@@ -39,5 +40,6 @@ final readonly class OpenApiConfig
         public bool $describedby = true,
         public ?string $cacheControl = null,
         public ?string $documentUrl = null,
+        public array $serveAllowedClasses = [],
     ) {}
 }

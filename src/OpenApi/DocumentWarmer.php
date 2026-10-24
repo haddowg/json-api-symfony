@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\OpenApi;
 
+use haddowg\JsonApi\OpenApi\OpenApi;
+use haddowg\JsonApi\OpenApi\Serve\ServeArtifact;
+use haddowg\JsonApi\OpenApi\Serve\UnserializableValue;
 use haddowg\JsonApi\OpenApi\SpecDescribedByResolver;
-use haddowg\JsonApiBundle\OpenApi\Serve\ServeArtifact;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
 
@@ -40,6 +42,8 @@ use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
  * document as serialized value objects, which a request with serve decorators loads
  * instead of rebuilding (bundle ADR 0131), and the operations the document carries,
  * which each link's `describedby` is checked against ({@see DescribedByResolverProvider}).
+ * A document whose values hold an object outside `json_api.openapi.serve_allowed_classes`
+ * gets no serialized copy and a logged warning.
  */
 final class DocumentWarmer implements CacheWarmerInterface
 {
@@ -111,7 +115,7 @@ final class DocumentWarmer implements CacheWarmerInterface
     {
         $document = $this->documents->forServer($server);
         $store->writeWithHash($server, $document->toJsonString(true));
-        $store->writeServeArtifact($server, ServeArtifact::of($document));
+        $this->writeServeArtifact($store, $server, $document);
         $store->writeOperations($server, SpecDescribedByResolver::operationsOf($document));
 
         $schemas = $this->schemas->forServer($server);
@@ -128,11 +132,29 @@ final class DocumentWarmer implements CacheWarmerInterface
         }
     }
 
+    /**
+     * Writes the serialized document serve decorators start from. A document holding an
+     * object the codec won't unserialize is logged and left to the per-request build.
+     */
+    private function writeServeArtifact(ArtifactStore $store, string $key, OpenApi $document): void
+    {
+        try {
+            $store->writeServeArtifact($key, ServeArtifact::of($document));
+        } catch (UnserializableValue $e) {
+            $store->removeServeArtifact($key);
+            $this->logger?->warning('The OpenAPI document "{server}" holds an object of class {class} that the serve artifact can\'t unserialize, so each request with serve decorators builds the document. List the class under json_api.openapi.serve_allowed_classes to cache it.', [
+                'server' => $key,
+                'class' => $e->class,
+                'exception' => $e,
+            ]);
+        }
+    }
+
     private function warmCombined(ArtifactStore $store): void
     {
         $document = $this->documents->combined();
         $store->writeWithHash(\haddowg\JsonApiBundle\Controller\OpenApiController::COMBINED_KEY, $document->toJsonString(true));
-        $store->writeServeArtifact(\haddowg\JsonApiBundle\Controller\OpenApiController::COMBINED_KEY, ServeArtifact::of($document));
+        $this->writeServeArtifact($store, \haddowg\JsonApiBundle\Controller\OpenApiController::COMBINED_KEY, $document);
         $store->writeOperations(\haddowg\JsonApiBundle\Controller\OpenApiController::COMBINED_KEY, SpecDescribedByResolver::operationsOf($document));
 
         $aggregate = $this->encodeSchemas((object) $this->schemas->combined());
