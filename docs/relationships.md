@@ -541,10 +541,12 @@ relationships block** — wherever that relation's linkage data renders, i.e. wh
 > Pivot is Doctrine-only (it needs an association entity): the in-memory provider never
 > renders it, on any endpoint or document.
 
-Each member's `meta.pivot` carries every pivot field a response may show (core's
-`BelongsToMany::readablePivotFields()`: neither hidden nor write-only, less any field a
-`writeOnly(when:)` predicate makes write-only for the request), with `null` for a field
-the join row holds no value for. That matches the response pivot schema in the
+Each member's `meta.pivot` carries the pivot fields core's
+`BelongsToMany::readablePivotFieldsFor($request, $member)` returns: those neither
+hidden nor write-only for the request. A `hidden(when:)` predicate on a pivot field
+receives the related member (the track, not the join row), so it can hide a field on
+one member and show it on another. Every field it returns renders, `null` when the join
+row holds no value for it. That matches the response pivot schema in the
 [OpenAPI document](openapi.md), which lists those fields as `required`.
 
 A `DateTime` pivot field follows the server's

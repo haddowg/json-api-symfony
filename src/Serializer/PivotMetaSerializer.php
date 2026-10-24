@@ -32,11 +32,11 @@ use haddowg\JsonApi\Serializer\SerializerInterface;
  * member resource's own meta, and so a client can tell pivot data from intrinsic
  * meta.
  *
- * Given the relation, it renders core's {@see BelongsToMany::readablePivotFields()}
- * (neither hidden nor write-only), less any field a `writeOnly(when:)` predicate makes
- * write-only for this request, the same rule a top-level attribute follows. Each of
- * them renders on every member, `null` when the row holds none, which is what the
- * response pivot schema's `required` promises. The map itself keeps write-only
+ * Given the relation, it renders the fields core's
+ * {@see BelongsToMany::readablePivotFieldsFor()} returns for the request and the member
+ * (neither hidden nor write-only, predicates included, the same rule a top-level
+ * attribute follows). Each renders `null` when the row holds no value for it, which is
+ * what the response pivot schema's `required` promises. The map itself keeps write-only
  * values, because the validator reads them when it merges a partial pivot update.
  */
 final class PivotMetaSerializer implements SerializerInterface, IncludeControlsInterface
@@ -68,7 +68,7 @@ final class PivotMetaSerializer implements SerializerInterface, IncludeControlsI
 
         $pivot = $this->pivotMap[$this->inner->getId($object)] ?? null;
         if ($pivot !== null && $this->relation !== null) {
-            $pivot = $this->readable($pivot, $request);
+            $pivot = $this->readable($pivot, $request, $object);
         }
         if ($pivot !== null && $pivot !== []) {
             $meta['pivot'] = $pivot;
@@ -82,19 +82,14 @@ final class PivotMetaSerializer implements SerializerInterface, IncludeControlsI
      *
      * @return array<string, mixed>
      */
-    private function readable(array $pivot, JsonApiRequestInterface $request): array
+    private function readable(array $pivot, JsonApiRequestInterface $request, mixed $member): array
     {
-        \assert($this->relation !== null);
-
         if (!$this->relation instanceof BelongsToMany) {
             return [];
         }
 
         $readable = [];
-        foreach ($this->relation->readablePivotFields() as $field) {
-            if ($field->isWriteOnlyFor($request)) {
-                continue;
-            }
+        foreach ($this->relation->readablePivotFieldsFor($request, $member) as $field) {
             $readable[$field->name()] = $pivot[$field->name()] ?? null;
         }
 

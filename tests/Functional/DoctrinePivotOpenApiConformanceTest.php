@@ -17,8 +17,9 @@ use PHPUnit\Framework\Attributes\Test;
  * provider holds no pivot data, so it renders no `meta.pivot` to check.
  *
  * `playlists.tracks` declares a nullable writable `weight`, a read-only `addedAt`, a
- * hidden `note`, a write-only `source` and a `curator` write-only by predicate, so the
- * check covers each way a pivot field reaches, or stays out of, the response.
+ * hidden `note`, a write-only `source`, a `curator` write-only by predicate and a
+ * `label` hidden by predicate for one member, so the check covers each way a pivot
+ * field reaches, or stays out of, the response.
  */
 final class DoctrinePivotOpenApiConformanceTest extends JsonApiFunctionalTestCase
 {
@@ -101,7 +102,7 @@ final class DoctrinePivotOpenApiConformanceTest extends JsonApiFunctionalTestCas
         }
 
         self::assertIsArray($pivot);
-        self::assertSame(['position', 'weight', 'addedAt'], \array_keys($pivot));
+        self::assertSame(['position', 'weight', 'addedAt', 'label'], \array_keys($pivot));
         self::assertNull($pivot['weight']);
 
         $this->assertResponseMatchesGeneratedSchema($response, 'playlists', SchemaDocumentKind::Relationship, 'tracks');
