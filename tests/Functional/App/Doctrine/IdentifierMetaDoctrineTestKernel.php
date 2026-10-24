@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\Doctrine;
 use Doctrine\Bundle\DoctrineBundle\DoctrineBundle;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
+use haddowg\JsonApiBundle\Tests\Functional\App\PinnedConfigDefaults;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Component\Config\Loader\LoaderInterface;
@@ -67,6 +68,7 @@ final class IdentifierMetaDoctrineTestKernel extends Kernel
             'php_errors' => ['log' => true],
             'router' => ['utf8' => true],
         ]);
+        PinnedConfigDefaults::apply($container, $builder);
 
         $orm = [
             'auto_generate_proxy_classes' => true,

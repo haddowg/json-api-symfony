@@ -9,6 +9,7 @@ use haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
+use haddowg\JsonApiBundle\Tests\Functional\App\PinnedConfigDefaults;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Component\Config\Loader\LoaderInterface;
@@ -79,6 +80,7 @@ final class EagerValidationDoctrineKernel extends Kernel
             'php_errors' => ['log' => true],
             'router' => ['utf8' => true],
         ]);
+        PinnedConfigDefaults::apply($container, $builder);
 
         $orm = [
             'auto_generate_proxy_classes' => true,

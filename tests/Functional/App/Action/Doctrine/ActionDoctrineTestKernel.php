@@ -18,6 +18,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Action\RenameCommandHydrator;
 use haddowg\JsonApiBundle\Tests\Functional\App\Action\RenameCommandSerializer;
 use haddowg\JsonApiBundle\Tests\Functional\App\Action\RenameWidget;
 use haddowg\JsonApiBundle\Tests\Functional\App\Action\UploadArtwork;
+use haddowg\JsonApiBundle\Tests\Functional\App\PinnedConfigDefaults;
 use haddowg\JsonApiBundle\Tests\Functional\App\Security\AccessTokenHandler;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
@@ -86,6 +87,7 @@ final class ActionDoctrineTestKernel extends Kernel
             'php_errors' => ['log' => true],
             'router' => ['utf8' => true],
         ]);
+        PinnedConfigDefaults::apply($container, $builder);
 
         $orm = [
             'auto_generate_proxy_classes' => true,

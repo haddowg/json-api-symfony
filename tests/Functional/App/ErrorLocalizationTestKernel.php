@@ -81,6 +81,7 @@ final class ErrorLocalizationTestKernel extends Kernel
                 'fallbacks' => ['en'],
             ],
         ]);
+        PinnedConfigDefaults::apply($container, $builder);
 
         $container->extension('json_api', [
             'base_uri' => 'https://example.test',

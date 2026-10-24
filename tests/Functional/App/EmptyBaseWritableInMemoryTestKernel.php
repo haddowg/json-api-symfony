@@ -71,6 +71,7 @@ final class EmptyBaseWritableInMemoryTestKernel extends Kernel
             'php_errors' => ['log' => true],
             'router' => ['utf8' => true],
         ]);
+        PinnedConfigDefaults::apply($container, $builder);
 
         // An empty base_uri: links and the create Location resolve from the request
         // origin (`<scheme>://<authority>`) rather than a configured base.

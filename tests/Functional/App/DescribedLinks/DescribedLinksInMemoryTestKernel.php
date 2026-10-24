@@ -8,6 +8,7 @@ use haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Tests\Functional\App\ArticleProviderFactory;
+use haddowg\JsonApiBundle\Tests\Functional\App\PinnedConfigDefaults;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\ArticleResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\AuthorResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\CommentResource;
@@ -69,6 +70,7 @@ final class DescribedLinksInMemoryTestKernel extends Kernel
             'php_errors' => ['log' => true],
             'router' => ['utf8' => true],
         ]);
+        PinnedConfigDefaults::apply($container, $builder);
 
         $this->configureJsonApi($container);
 

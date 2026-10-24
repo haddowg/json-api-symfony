@@ -70,6 +70,7 @@ final class MultiTypeInMemoryTestKernel extends Kernel
             'php_errors' => ['log' => true],
             'router' => ['utf8' => true],
         ]);
+        PinnedConfigDefaults::apply($container, $builder);
 
         $container->extension('json_api', [
             'base_uri' => 'https://example.test',
