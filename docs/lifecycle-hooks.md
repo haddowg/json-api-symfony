@@ -36,7 +36,7 @@ The full set, in the order each fires:
 serving                                                        (once per request, before any operation)
 
 create:  serving → BeforeSave → BeforeCreate → [persist] → AfterCreate → AfterSave
-update:  serving → BeforeSave → BeforeUpdate → [commit]  → AfterUpdate → AfterSave
+update:  serving → BeforeApplyUpdate → [apply body] → BeforeSave → BeforeUpdate → [commit]  → AfterUpdate → AfterSave
 delete:  serving → BeforeDelete → [delete] → AfterDelete
 PATCH/POST/DELETE …/relationships/{rel}:
          serving → BeforeRelationshipMutate → [apply] → AfterRelationshipMutate
@@ -50,6 +50,11 @@ request-wide authorization gate. The aggregate `BeforeSave` / `AfterSave` pair
 wraps **both** create and update (a `creating` flag distinguishes them), so a
 concern that applies to every write lives in one place; the more specific
 `BeforeCreate`/`BeforeUpdate` (and their `After` twins) fire inside that wrap.
+
+`BeforeApplyUpdate` is an event only (no resource hook method): it fires once the
+update's target is loaded, before validation or any of the body is applied, carrying
+the entity as stored. The bundle's security subscriber evaluates `securityUpdate`
+there as well as at `BeforeUpdate`.
 
 ### `beforeUpdate` carries the pre-change snapshot
 

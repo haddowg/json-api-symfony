@@ -78,6 +78,7 @@ use haddowg\JsonApiBundle\Event\AfterFetchOneEvent;
 use haddowg\JsonApiBundle\Event\AfterRelationshipMutateEvent;
 use haddowg\JsonApiBundle\Event\AfterSaveEvent;
 use haddowg\JsonApiBundle\Event\AfterUpdateEvent;
+use haddowg\JsonApiBundle\Event\BeforeApplyUpdateEvent;
 use haddowg\JsonApiBundle\Event\BeforeCreateEvent;
 use haddowg\JsonApiBundle\Event\BeforeDeleteEvent;
 use haddowg\JsonApiBundle\Event\BeforeFetchCollectionEvent;
@@ -1957,6 +1958,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         if ($entity === null) {
             return ErrorResponse::fromException(new ResourceNotFound());
         }
+
+        // The update gate first judges the resource as stored: once the body is
+        // applied, a caller could pass an ownership check by rewriting the owner.
+        $this->dispatch(new BeforeApplyUpdateEvent($type, $request, $entity, $this->serverName($request)));
 
         // A shallow clone of the loaded target taken before hydration, so a
         // before-update hook can diff the incoming change against the prior state.
