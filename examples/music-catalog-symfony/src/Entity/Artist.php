@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Entity;
 
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
+use Doctrine\ORM\Event\PrePersistEventArgs;
 use Doctrine\ORM\Mapping as ORM;
 
 /**
@@ -20,9 +21,14 @@ use Doctrine\ORM\Mapping as ORM;
  * default (the example's norm): a create sets nothing on the id and the DB assigns
  * it on flush, read back on the `201`. The JSON:API `id` is the integer as a string.
  * Not `final` so Doctrine may proxy it.
+ *
+ * `slug` is optional on create. A new artist sent without one gets it derived from
+ * `name` by the `#[ORM\PrePersist]` callback below, suffixed (`-2`, `-3`, ...) when
+ * another artist already holds it, so `filter[slug]` keeps matching one artist.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'artist')]
+#[ORM\HasLifecycleCallbacks]
 class Artist
 {
     #[ORM\Id]
@@ -75,5 +81,40 @@ class Artist
         $this->trackCount = $trackCount;
         $this->createdAt = $createdAt;
         $this->albums = new ArrayCollection();
+    }
+
+    #[ORM\PrePersist]
+    public function deriveSlug(PrePersistEventArgs $event): void
+    {
+        if ($this->slug !== '') {
+            return;
+        }
+
+        $base = \trim(\preg_replace('/[^a-z0-9]+/', '-', \strtolower($this->name)) ?? '', '-');
+        if ($base === '') {
+            $base = 'artist';
+        }
+
+        $manager = $event->getObjectManager();
+        $taken = $manager->createQueryBuilder()
+            ->select('a.slug')
+            ->from(self::class, 'a')
+            ->where('a.slug = :base OR a.slug LIKE :suffixed')
+            ->setParameter('base', $base)
+            ->setParameter('suffixed', $base . '-%')
+            ->getQuery()
+            ->getSingleColumnResult();
+        // Artists persisted earlier in the same flush are not in the table yet.
+        foreach ($manager->getUnitOfWork()->getScheduledEntityInsertions() as $pending) {
+            if ($pending instanceof self && $pending !== $this) {
+                $taken[] = $pending->slug;
+            }
+        }
+
+        $slug = $base;
+        for ($n = 2; \in_array($slug, $taken, true); ++$n) {
+            $slug = $base . '-' . $n;
+        }
+        $this->slug = $slug;
     }
 }
