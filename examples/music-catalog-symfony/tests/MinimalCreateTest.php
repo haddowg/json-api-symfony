@@ -32,7 +32,7 @@ final class MinimalCreateTest extends MusicCatalogKernelTestCase
         yield 'artists' => [
             '/artists',
             ['type' => 'artists', 'attributes' => ['name' => 'Minimal']],
-            ['slug' => '', 'trackCount' => 0, 'website' => null],
+            ['slug' => 'minimal', 'trackCount' => 0, 'website' => null],
         ];
         yield 'playlists' => [
             '/playlists',
