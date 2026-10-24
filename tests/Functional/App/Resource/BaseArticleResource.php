@@ -220,6 +220,7 @@ abstract class BaseArticleResource extends AbstractResource
             // silently skipped — a server-assigned association can't be overwritten
             // through the write body (the gate core enforces, reapplied bundle-side).
             BelongsTo::make('readOnlyAuthor', 'authors')->storedAs('author')->readOnly(),
+            HasMany::make('readOnlyComments', 'comments')->storedAs('comments')->readOnly(),
         ];
     }
 

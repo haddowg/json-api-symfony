@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use haddowg\JsonApiBundle\OpenApi\DocumentFactory;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Response;
@@ -409,6 +410,63 @@ abstract class RelationshipMutationConformanceTestCase extends JsonApiFunctional
 
     #[Test]
     #[Group('spec:updating-relationships')]
+    public function patchingAReadOnlyToOneIsForbidden(): void
+    {
+        $response = $this->handle('/articles/1/relationships/readOnlyAuthor', 'PATCH', [
+            'data' => ['type' => 'authors', 'id' => '2'],
+        ]);
+
+        $this->assertError($response, 403);
+        self::assertSame('FULL_REPLACEMENT_PROHIBITED', $this->errorCode($response));
+        self::assertSame(
+            ['type' => 'authors', 'id' => '1'],
+            $this->linkageOf('/articles/1/relationships/author'),
+        );
+    }
+
+    #[Test]
+    #[Group('spec:updating-relationships')]
+    public function patchingAReadOnlyToManyIsForbidden(): void
+    {
+        $this->assertReadOnlyToManyRefuses('PATCH', 'FULL_REPLACEMENT_PROHIBITED');
+    }
+
+    #[Test]
+    #[Group('spec:updating-relationships')]
+    public function postingToAReadOnlyToManyIsForbidden(): void
+    {
+        $this->assertReadOnlyToManyRefuses('POST', 'ADDITION_PROHIBITED');
+    }
+
+    #[Test]
+    #[Group('spec:updating-relationships')]
+    public function deletingFromAReadOnlyToManyIsForbidden(): void
+    {
+        $this->assertReadOnlyToManyRefuses('DELETE', 'REMOVAL_PROHIBITED');
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    public function theOpenApiDocumentListsOnlyTheReadOfAReadOnlyRelationship(): void
+    {
+        $factory = static::getContainer()->get(DocumentFactory::class);
+        self::assertInstanceOf(DocumentFactory::class, $factory);
+        $paths = $factory->forServer()->toArray()['paths'] ?? null;
+        self::assertIsArray($paths);
+
+        foreach (['readOnlyAuthor', 'readOnlyComments'] as $relation) {
+            $item = $paths['/articles/{id}/relationships/' . $relation] ?? null;
+            self::assertIsArray($item, $relation);
+            self::assertSame(['get'], \array_values(\array_intersect(['get', 'patch', 'post', 'delete'], \array_keys($item))), $relation);
+        }
+
+        $writable = $paths['/articles/{id}/relationships/comments'] ?? null;
+        self::assertIsArray($writable);
+        self::assertArrayHasKey('patch', $writable);
+    }
+
+    #[Test]
+    #[Group('spec:updating-relationships')]
     public function postingToAToOneIsACardinalityError(): void
     {
         $response = $this->handle('/articles/1/relationships/author', 'POST', [
@@ -571,5 +629,29 @@ abstract class RelationshipMutationConformanceTestCase extends JsonApiFunctional
         $firstError = $errors[0] ?? null;
         self::assertIsArray($firstError);
         self::assertSame((string) $status, $firstError['status'] ?? null);
+    }
+
+    private function assertReadOnlyToManyRefuses(string $method, string $code): void
+    {
+        $response = $this->handle('/articles/1/relationships/readOnlyComments', $method, [
+            'data' => [['type' => 'comments', 'id' => '1'], ['type' => 'comments', 'id' => '4']],
+        ]);
+
+        $this->assertError($response, 403);
+        self::assertSame($code, $this->errorCode($response));
+        self::assertSame(
+            ['1', '2'],
+            $this->commentIds($this->identifiersOf('/articles/1/relationships/comments')),
+        );
+    }
+
+    private function errorCode(Response $response): mixed
+    {
+        $errors = $this->decode($response)['errors'] ?? null;
+        self::assertIsArray($errors);
+        $first = $errors[0] ?? null;
+        self::assertIsArray($first);
+
+        return $first['code'] ?? null;
     }
 }
