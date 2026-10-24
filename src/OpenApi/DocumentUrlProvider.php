@@ -14,10 +14,11 @@ use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
  * A configured `json_api.openapi.document_url` is used as given, with `{server}`
  * replaced by the server name, so a document published elsewhere (a docs site, a CDN
  * serving the `public_path` files) can be named absolutely. Otherwise it is the path of
- * the bundle's own document route for the server, host-relative and including any
- * prefix the routes are imported under. Null when `describedby` is off, generation is
- * disabled, or the document route isn't registered (the expose gate is closed), so no
- * link points at a document nobody serves.
+ * the bundle's own document route for the server, or of the app's own route to the
+ * {@see \haddowg\JsonApiBundle\Controller\OpenApiController} for it when the bundle's
+ * isn't registered ({@see DocumentRouteLocator}), host-relative and including any prefix
+ * the routes are imported under. Null when `describedby` is off, generation is disabled,
+ * or no route serves the document, so no link points at a document nobody serves.
  */
 final readonly class DocumentUrlProvider
 {
@@ -33,6 +34,7 @@ final readonly class DocumentUrlProvider
         private bool $enabled = true,
         private bool $combined = false,
         private ?string $configuredUrl = null,
+        private ?DocumentRouteLocator $routes = null,
     ) {}
 
     public function forServer(?string $server = null): ?string
@@ -54,6 +56,16 @@ final readonly class DocumentUrlProvider
             }
 
             return $this->urlGenerator->generate('jsonapi.openapi.default');
+        } catch (RoutingException) {
+        }
+
+        $route = $this->routes?->find($server);
+        if ($route === null) {
+            return null;
+        }
+
+        try {
+            return $this->urlGenerator->generate($route['route'], $route['parameters']);
         } catch (RoutingException) {
             return null;
         }

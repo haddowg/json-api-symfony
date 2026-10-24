@@ -197,6 +197,37 @@ json_api:
     document_url: 'https://docs.music.example/openapi/{server}.json'
 ```
 
+The bundle picks the document URL for a server in this order:
+
+1. `document_url`, when it's set.
+2. The bundle's own document route, `jsonapi.openapi.default` or `jsonapi.openapi.server`.
+3. Any other route whose controller is `OpenApiController`, for an app that routes the
+   document itself rather than importing the `jsonapi_openapi` routes. The controller can
+   be written as the class, `OpenApiController::class . '::__invoke'` or the array form.
+   The route serves the server named by its `server` default, the default server when it
+   has none, or every server its `{server}` requirement accepts. A route that names the
+   server wins over a parametric one. In combined mode any such route serves every server.
+
+```php
+// config/routes.php
+use haddowg\JsonApiBundle\Controller\OpenApiController;
+
+$routes->add('api_v5_docs', '/api/v5/docs.json')
+    ->controller(OpenApiController::class)
+    ->defaults(['server' => 'v5']);
+```
+
+The third step reads the whole route collection, so it doesn't run per request. The
+warmer scans the routes at `cache:warmup` and writes the result beside the documents.
+Without one, the first request that needs it scans once and writes it; in debug the scan
+is kept only for the process, so a route you add is picked up without clearing the cache.
+
+When `describedby` is on, no `document_url` is set, the expose gate is open, and no route
+serves a server's document, the warmup logs a warning naming the server and suggesting
+`document_url` or a document route. Links for that server carry no `describedby`, and
+nothing fails, since `describedby` is optional. A closed expose gate is a deliberate
+choice, so it gets no warning.
+
 Links get no `describedby` when the document isn't served and no `document_url` is set
 (the expose gate is closed, or generation is disabled), or when `describedby: false`.
 They stay link objects either way. To render bare URL strings instead, set
