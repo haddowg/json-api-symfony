@@ -24,7 +24,8 @@ use Doctrine\ORM\Mapping as ORM;
  *
  * `slug` is optional on create. A new artist sent without one gets it derived from
  * `name` by the `#[ORM\PrePersist]` callback below, suffixed (`-2`, `-3`, ...) when
- * another artist already holds it, so `filter[slug]` keeps matching one artist.
+ * another artist already holds it, so `filter[slug]` keeps matching one artist. The
+ * resource declares `minLength(1)`, so a write that sends an empty slug is a `422`.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'artist')]

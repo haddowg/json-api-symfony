@@ -6,10 +6,12 @@ namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Tests;
 
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
  * An artist created without a `slug` gets one derived from its name, unique among
- * artists, so the singular `filter[slug]` still finds exactly that artist.
+ * artists, so the singular `filter[slug]` still finds exactly that artist. An empty
+ * slug is a `422` on create and update, so no write can store one.
  */
 #[Group('spec:creating-resources')]
 final class ArtistSlugTest extends MusicCatalogKernelTestCase
@@ -73,6 +75,35 @@ final class ArtistSlugTest extends MusicCatalogKernelTestCase
 
         self::assertSame('dummy', $artist['slug']);
         self::assertSame($artist['id'], $this->artistIdBySlug('dummy'));
+    }
+
+    #[Test]
+    #[Group('spec:updating-resources')]
+    public function anEmptySlugIsRejectedOnCreateAndUpdate(): void
+    {
+        $create = $this->handle('/artists', 'POST', [
+            'data' => ['type' => 'artists', 'attributes' => ['name' => 'Air', 'slug' => '']],
+        ]);
+        $this->assertEmptySlugRejected($create);
+
+        $update = $this->handle('/artists/1', 'PATCH', [
+            'data' => ['type' => 'artists', 'id' => '1', 'attributes' => ['slug' => '']],
+        ]);
+        $this->assertEmptySlugRejected($update);
+
+        // The stored slug is untouched, so the lookup still finds the artist.
+        self::assertSame('1', $this->artistIdBySlug('radiohead'));
+    }
+
+    private function assertEmptySlugRejected(Response $response): void
+    {
+        self::assertSame(422, $response->getStatusCode(), (string) $response->getContent());
+        $errors = $this->decode($response)['errors'] ?? null;
+        self::assertIsArray($errors);
+        self::assertCount(1, $errors);
+        $error = $errors[0] ?? null;
+        self::assertIsArray($error);
+        self::assertSame(['pointer' => '/data/attributes/slug'], $error['source'] ?? null);
     }
 
     /**
