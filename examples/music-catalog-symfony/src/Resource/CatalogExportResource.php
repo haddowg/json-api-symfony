@@ -38,7 +38,7 @@ final class CatalogExportResource extends AbstractResource
         return [
             Id::make(),
             Str::make('format')->required()->maxLength(16),
-            Str::make('status')->readOnly(),
+            Str::make('status')->readOnly()->guaranteed(),
         ];
     }
 }

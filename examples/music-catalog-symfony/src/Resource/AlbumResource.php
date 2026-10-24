@@ -68,13 +68,14 @@ final class AlbumResource extends AbstractResource
                 ->before(static fn(): \DateTimeImmutable => new \DateTimeImmutable())
                 ->useTimezone('UTC')
                 ->sortable(),
-            Boolean::make('explicit'),
+            Boolean::make('explicit')->guaranteed(),
             // Backed-enum attribute (design §4.8/D16): `->enum(AlbumStatus::class)`
             // constrains `status` to the enum's backing values and keeps the enum
             // class-string, so the OpenAPI projection emits a reusable, *described*
             // `#/components/schemas/AlbumStatus` component the docs viewer renders.
             Str::make('status')
                 ->enum(AlbumStatus::class)
+                ->guaranteed()
                 ->sortable()
                 ->describedAs('Where the album sits in its release lifecycle.'),
             Date::make('availableFrom')->nullable(),

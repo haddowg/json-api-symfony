@@ -60,17 +60,18 @@ final class TrackResource extends AbstractResource
         return [
             Id::make(),
             Str::make('title')->required()->sortable(),
-            Integer::make('trackNumber')->min(1)->sortable(),
+            Integer::make('trackNumber')->min(1)->sortable()->guaranteed(),
             // The JSON:API member `durationSeconds` is stored on the entity's
             // `length_seconds` column — a storedAs() rename round-trips transparently.
-            Integer::make('durationSeconds')->storedAs('length_seconds'),
-            Boolean::make('explicit'),
+            Integer::make('durationSeconds')->storedAs('length_seconds')->guaranteed(),
+            Boolean::make('explicit')->guaranteed(),
             // An array attribute with per-item rules: at least one genre, each a
             // non-empty string, no duplicates.
             ArrayList::make('genres')
                 ->minItems(1)
                 ->each(new MinLength(1))
-                ->uniqueItems(),
+                ->uniqueItems()
+                ->guaranteed(),
             Time::make('previewOffset')->nullable(),
             // Computed: no backing column, derived across trackNumber + title on read.
             Str::make('displayTitle')

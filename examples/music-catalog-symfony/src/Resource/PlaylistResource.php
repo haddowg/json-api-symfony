@@ -113,9 +113,10 @@ final class PlaylistResource extends AbstractResource implements ResourceLifecyc
             // (uuid() pins the route shape and validates a wire id).
             Id::make()->uuid()->generated()->build(),
             Str::make('title')->required(),
-            // Derived from title by the custom hydrator, so read-only on the wire.
-            Slug::make('slug')->readOnly(),
-            Boolean::make('public')->build(),
+            // Derived from title by the custom hydrator, so read-only on the wire. The
+            // entity column is a non-null string, so a read always carries a value.
+            Slug::make('slug')->readOnly()->guaranteed(),
+            Boolean::make('public')->guaranteed()->build(),
             Uuid::make('externalId')->nullable(),
 
             // Default relation reader: `owner` reads the ManyToOne and `tracks` the
@@ -187,7 +188,7 @@ final class PlaylistResource extends AbstractResource implements ResourceLifecyc
                     // the MERGED pivot (an incoming `weight` compared against the stored
                     // `position`), so `weight` may be set without re-sending `position`.
                     Integer::make('weight')->compareWith('position', Comparison::GreaterThanOrEqual)->build(),
-                    DateTime::make('addedAt')->readOnly()->build(),
+                    DateTime::make('addedAt')->readOnly()->guaranteed()->build(),
                 )
                 // Pivot filters are AUTHOR-DECLARED via the `pivot.` column prefix
                 // (bundle ADR 0067): a filter whose column starts with `pivot.` targets

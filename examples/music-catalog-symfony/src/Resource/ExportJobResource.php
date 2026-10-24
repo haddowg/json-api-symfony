@@ -34,7 +34,7 @@ final class ExportJobResource extends AbstractResource implements ResolvesComple
     {
         return [
             Id::make(),
-            Str::make('state')->readOnly(),
+            Str::make('state')->readOnly()->guaranteed(),
         ];
     }
 
