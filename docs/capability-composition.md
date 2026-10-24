@@ -38,7 +38,7 @@ extra wiring:
 
 | Attribute | Goes on | Tag | Constant |
 | --- | --- | --- | --- |
-| `#[AsJsonApiSerializer(type, operations, server)]` | a core `SerializerInterface` | `haddowg.json_api.serializer` | `JsonApiBundle::SERIALIZER_TAG` |
+| `#[AsJsonApiSerializer(type, operations, server, tags, extensions, operationExtensions)]` | a core `SerializerInterface` | `haddowg.json_api.serializer` | `JsonApiBundle::SERIALIZER_TAG` |
 | `#[AsJsonApiHydrator(type, server)]` | a core `HydratorInterface` | `haddowg.json_api.hydrator` | `JsonApiBundle::HYDRATOR_TAG` |
 | `#[AsJsonApiRelations(type, server)]` | a bundle `RelationsProviderInterface` | `haddowg.json_api.relations` | `JsonApiBundle::RELATIONS_TAG` |
 
@@ -88,6 +88,10 @@ wire shape) plus a small custom [`ChartProvider`](../examples/music-catalog-symf
 and the equivalent [`CountrySerializer`](../examples/music-catalog-symfony/src/Serializer/CountrySerializer.php)
 (a `symfony/intl`-sourced reference list — covered in
 [custom-data-providers](custom-data-providers.md)).
+
+A standalone serializer can also declare OpenAPI `tags` and
+[vendor extensions](openapi.md#vendor-extensions) (`extensions`,
+`operationExtensions`), with the same rules as `#[AsJsonApiResource]`.
 
 A class may carry more than one of these attributes: a single class that implements
 both `SerializerInterface` and `HydratorInterface` can bear `#[AsJsonApiSerializer]`

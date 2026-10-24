@@ -341,6 +341,23 @@ final class OpenApiServingTest extends JsonApiFunctionalTestCase
 
     #[Test]
     #[Group('spec:openapi')]
+    public function vendorExtensionsDeclaredOnAStandaloneSerializerLandOnItsOperations(): void
+    {
+        $document = $this->fetchDocument();
+
+        // The exposed FetchOne gets the type-wide set with its own merged over it.
+        $fetchOne = $this->nested($document, 'paths', '/shelves/{id}', 'get');
+        self::assertSame('shelving', $fetchOne['x-feature'] ?? null);
+        self::assertSame('long', $fetchOne['x-cache'] ?? null);
+
+        // A custom action mounted on the type carries only the type-wide set.
+        $action = $this->nested($document, 'paths', '/shelves/-actions/restock', 'post');
+        self::assertSame('shelving', $action['x-feature'] ?? null);
+        self::assertArrayNotHasKey('x-cache', $action);
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
     public function aRelationDescriptionFlowsOntoItsRelatedAndRelationshipOperations(): void
     {
         $document = $this->fetchDocument();

@@ -829,7 +829,7 @@ final class JsonApiBundle extends AbstractBundle
                     'operation_descriptions' => self::operationDescriptionsTag($attribute),
                     // The OpenAPI vendor extensions (bundle ADR 0127), type-wide and
                     // per-operation, JSON-encoded into one scalar for the same reason.
-                    'openapi_extensions' => self::extensionsTag($attribute),
+                    'openapi_extensions' => self::extensionsTag($attribute->extensions, $attribute->operationExtensions),
                     // The per-operation OpenAPI response declarations (typed response
                     // objects): the five create/update/delete/fetchOne/fetchCollection
                     // sets JSON-encoded into a single scalar tag attribute the
@@ -856,6 +856,8 @@ final class JsonApiBundle extends AbstractBundle
                     // Standalone-type OpenAPI tag refs (design §4.7); empty = the
                     // humanized-type default resolved by the MetadataSource.
                     'tags' => self::tagsTag($attribute->tags),
+                    // Vendor extensions (bundle ADR 0127), read by the ResourceDescriptionPass.
+                    'openapi_extensions' => self::extensionsTag($attribute->extensions, $attribute->operationExtensions),
                 ], static fn(mixed $value): bool => $value !== null));
             },
         );
@@ -1406,19 +1408,22 @@ final class JsonApiBundle extends AbstractBundle
     }
 
     /**
-     * The declared OpenAPI vendor extensions (`#[AsJsonApiResource(extensions:,
-     * operationExtensions:)]`, bundle ADR 0127) as one JSON scalar of
-     * `{type: map, operations: map}`; `null` when none are declared. The attribute
+     * The declared OpenAPI vendor extensions (`extensions:` / `operationExtensions:` on
+     * #[AsJsonApiResource] or #[AsJsonApiSerializer], bundle ADR 0127) as one JSON scalar
+     * of `{type: map, operations: map}`; `null` when none are declared. The attribute
      * constructor has already validated every name and operation key.
+     *
+     * @param array<string, mixed>                $extensions
+     * @param array<string, array<string, mixed>> $operationExtensions
      */
-    private static function extensionsTag(AsJsonApiResource $attribute): ?string
+    private static function extensionsTag(array $extensions, array $operationExtensions): ?string
     {
-        $operations = \array_filter($attribute->operationExtensions, static fn(array $set): bool => $set !== []);
-        if ($attribute->extensions === [] && $operations === []) {
+        $operations = \array_filter($operationExtensions, static fn(array $set): bool => $set !== []);
+        if ($extensions === [] && $operations === []) {
             return null;
         }
 
-        return \json_encode(['type' => $attribute->extensions, 'operations' => $operations], \JSON_THROW_ON_ERROR);
+        return \json_encode(['type' => $extensions, 'operations' => $operations], \JSON_THROW_ON_ERROR);
     }
 
     /**
