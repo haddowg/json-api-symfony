@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\OpenApi;
 
+use haddowg\JsonApiBundle\OpenApi\Serve\ServeArtifact;
+
 /**
  * The shared filesystem contract between the {@see DocumentWarmer} (which writes the
  * pre-built OpenAPI documents at `cache:warmup`) and the
@@ -72,6 +74,80 @@ final class ArtifactStore
     }
 
     /**
+     * The hash of the document artifact, written beside it so a conditional request costs
+     * one small read. Null when it was never written.
+     */
+    public function readHash(string $server): ?string
+    {
+        return $this->get($this->baseDir() . '/' . $this->safe($server) . '.hash');
+    }
+
+    /**
+     * Writes the document artifact and its hash together, returning the hash.
+     */
+    public function writeWithHash(string $server, string $json): string
+    {
+        $hash = self::hash($json);
+        $this->write($server, $json);
+        $this->put($this->baseDir() . '/' . $this->safe($server) . '.hash', $hash);
+
+        return $hash;
+    }
+
+    /**
+     * The warmed document as value objects (bundle ADR 0131), or null when it was never
+     * written or no longer unserializes into the current classes.
+     */
+    public function readServeArtifact(string $server): ?ServeArtifact
+    {
+        $bytes = $this->get($this->serveArtifactPath($server));
+        if ($bytes === null) {
+            return null;
+        }
+
+        try {
+            $artifact = @\unserialize($bytes);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return $artifact instanceof ServeArtifact ? $artifact : null;
+    }
+
+    public function writeServeArtifact(string $server, ServeArtifact $artifact): void
+    {
+        $this->put($this->serveArtifactPath($server), \serialize($artifact));
+    }
+
+    /**
+     * The hash of the aggregate JSON Schema artifact, or null when it was never written.
+     */
+    public function readSchemaAggregateHash(string $server): ?string
+    {
+        return $this->get($this->baseDir() . '/json-schema/' . $this->safe($server) . '.hash');
+    }
+
+    /**
+     * Writes the aggregate JSON Schema artifact and its hash together, returning the hash.
+     */
+    public function writeSchemaAggregateWithHash(string $server, string $json): string
+    {
+        $hash = self::hash($json);
+        $this->writeSchemaAggregate($server, $json);
+        $this->put($this->baseDir() . '/json-schema/' . $this->safe($server) . '.hash', $hash);
+
+        return $hash;
+    }
+
+    /**
+     * The content hash every artifact and served body is tagged with.
+     */
+    public static function hash(string $bytes): string
+    {
+        return \hash('xxh128', $bytes);
+    }
+
+    /**
      * The absolute path of a per-type standalone JSON Schema artifact for
      * `(server, type)`.
      */
@@ -122,6 +198,22 @@ final class ArtifactStore
     public function writeSchemaAggregate(string $server, string $json): void
     {
         $this->put($this->schemaAggregatePath($server), $json);
+    }
+
+    private function serveArtifactPath(string $server): string
+    {
+        return $this->baseDir() . '/' . $this->safe($server) . '.serve';
+    }
+
+    private function get(string $path): ?string
+    {
+        if (!\is_file($path)) {
+            return null;
+        }
+
+        $contents = \file_get_contents($path);
+
+        return $contents === false ? null : $contents;
     }
 
     private function baseDir(): string

@@ -82,6 +82,7 @@ final class OpenApiConfigResolver
             jsonSchemaEnabled: $this->jsonSchemaEnabled($openapi),
             jsonSchemaPath: $this->jsonSchemaPath($openapi),
             describedby: ($openapi['describedby'] ?? true) !== false,
+            cacheControl: $this->scalarOrNull($openapi, 'cache_control'),
         );
     }
 
