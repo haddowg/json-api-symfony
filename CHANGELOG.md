@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.7.0](https://github.com/haddowg/json-api-symfony/compare/v1.6.1...v1.7.0) (2026-10-24)
+
+
+### Features
+
+* **openapi:** declare vendor extensions on a standalone serializer ([#180](https://github.com/haddowg/json-api-symfony/issues/180)) ([17d361d](https://github.com/haddowg/json-api-symfony/commit/17d361dfe9209adbbede0939aff5c17360432115))
+
+
+### Bug Fixes
+
+* **example:** derive an artist's slug from its name when none is sent ([#178](https://github.com/haddowg/json-api-symfony/issues/178)) ([9eaf298](https://github.com/haddowg/json-api-symfony/commit/9eaf298c8df18e7f30e4b8cb09fc9399dca32751))
+* report an empty value once when a required field declares a minimum ([#177](https://github.com/haddowg/json-api-symfony/issues/177)) ([08a6439](https://github.com/haddowg/json-api-symfony/commit/08a64397b58b03d76f134409e4000a6d72767296))
+
 ## [1.6.1](https://github.com/haddowg/json-api-symfony/compare/v1.6.0...v1.6.1) (2026-10-24)
 
 
