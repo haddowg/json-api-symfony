@@ -703,7 +703,7 @@ switches that document kind to the body hash. The key mixes in each decorator's 
 name, so adding or removing a decorator changes it; a change inside `decorate()` doesn't,
 which is why the example carries a version.
 
-Set `Cache-Control` for both routes with `cache_control`:
+Set `Cache-Control` for the document, schemas and viewer routes with `cache_control`:
 
 ```yaml
 json_api:
@@ -719,10 +719,12 @@ decorator reads anything other than the host, such as a cookie or an `Authorizat
 header, keep `cache_control` private.
 
 Nothing on the docs, schemas or viewer routes starts a session or sets a cookie, and a
-lazy firewall leaves an anonymous request alone too. A firewall that does start a
-session (a request carrying a session cookie, say) makes Symfony mark the response
-private whatever `cache_control` says, so put these paths under a stateless firewall, or
-none, when an edge cache should keep them.
+lazy firewall leaves an anonymous request alone too. Under a stateful firewall,
+anything that reads the security token (a locale listener, say) marks the session as
+used, and Symfony's session listener would normally rewrite the response to `private`.
+When `cache_control` is set, these responses opt out of that rewrite, so the configured
+value is what the edge sees. A private document behind a login should therefore keep a
+private `cache_control`.
 
 ## The `servers` list
 

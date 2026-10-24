@@ -36,6 +36,8 @@ use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
  *
  * Every environment configures `cache_control` and runs behind a stateful, lazy firewall
  * with sessions enabled, so the no-cookie guarantee is tested where a cookie could appear.
+ * A listener reads the security token on every request, which marks the session as used,
+ * so `cache_control` is also tested where Symfony's session listener would rewrite it.
  */
 final class OpenApiServeTestKernel extends Kernel
 {
@@ -123,6 +125,7 @@ final class OpenApiServeTestKernel extends Kernel
         $services->set(SummarizeCatalog::class);
 
         $services->set(FeatureMarkingDecorator::class);
+        $services->set(TokenReadingListener::class);
 
         if ($this->environment !== 'plain') {
             $services->set(HostServersDecorator::class);

@@ -8,6 +8,7 @@ use haddowg\JsonApi\OpenApi\Serve\EntityTag;
 use haddowg\JsonApiBundle\OpenApi\OpenApiServeCacheKeyInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\EventListener\AbstractSessionListener;
 
 /**
  * The ETag, `If-None-Match` and `Cache-Control` handling shared by the `docs.json` and
@@ -80,8 +81,21 @@ final class ConditionalResponder
     {
         $response = new Response(null, Response::HTTP_OK, ['Content-Type' => 'application/json']);
         $response->setEtag($hash);
-        if ($this->cacheControl !== null) {
-            $response->headers->set('Cache-Control', $this->cacheControl);
+
+        return self::applyCacheControl($response, $this->cacheControl);
+    }
+
+    /**
+     * Sets the configured `Cache-Control` on a docs response. It also tells the session
+     * listener to leave the header alone: under a stateful firewall anything that reads
+     * the token marks the session as used, and the listener would otherwise rewrite the
+     * response to `private`.
+     */
+    public static function applyCacheControl(Response $response, ?string $cacheControl): Response
+    {
+        if ($cacheControl !== null) {
+            $response->headers->set('Cache-Control', $cacheControl);
+            $response->headers->set(AbstractSessionListener::NO_AUTO_CACHE_CONTROL_HEADER, 'true');
         }
 
         return $response;
