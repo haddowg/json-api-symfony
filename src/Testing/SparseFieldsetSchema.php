@@ -104,12 +104,19 @@ final class SparseFieldsetSchema
     }
 
     /**
-     * The schema object behind `$schema`, following one local component `$ref`.
+     * The schema object behind `$schema`, following one local component `$ref`, bare or
+     * wrapped in the single-entry `allOf` the generator writes when the reference carries
+     * an `example` or `default`.
      */
     private static function resolve(\stdClass $schemas, mixed $schema): ?\stdClass
     {
         if (!$schema instanceof \stdClass) {
             return null;
+        }
+
+        $allOf = $schema->allOf ?? null;
+        if (!isset($schema->{'$ref'}) && \is_array($allOf) && \count($allOf) === 1 && $allOf[0] instanceof \stdClass) {
+            $schema = $allOf[0];
         }
 
         $ref = $schema->{'$ref'} ?? null;

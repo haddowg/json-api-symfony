@@ -41,6 +41,14 @@ final class SparseFieldsetSchemaTest extends TestCase
     }
 
     #[Test]
+    public function followsAReferenceWrappedInASingleEntryAllOf(): void
+    {
+        $relaxed = SparseFieldsetSchema::relax($this->document(), ['tracks' => ['title']]);
+
+        self::assertSame(['title'], $relaxed->components->schemas->TracksAttributes->required);
+    }
+
+    #[Test]
     public function leavesTypesWithoutAFieldsetAndTheOriginalDocumentAlone(): void
     {
         $document = $this->document();
@@ -67,6 +75,13 @@ final class SparseFieldsetSchemaTest extends TestCase
                     }
                   },
                   "ArtistsAttributes": {"type": "object", "required": ["name"]},
+                  "TracksAttributes": {"type": "object", "required": ["title", "length"]},
+                  "TracksResource": {
+                    "type": "object",
+                    "properties": {
+                      "attributes": {"allOf": [{"$ref": "#/components/schemas/TracksAttributes"}], "example": {"title": "Intro"}}
+                    }
+                  },
                   "ArtistsResource": {
                     "type": "object",
                     "properties": {
