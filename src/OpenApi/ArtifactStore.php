@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\OpenApi;
 
-use haddowg\JsonApiBundle\OpenApi\Serve\ServeArtifact;
+use haddowg\JsonApi\OpenApi\Serve\EntityTag;
+use haddowg\JsonApi\OpenApi\Serve\ServeArtifact;
+use haddowg\JsonApi\OpenApi\Serve\ServeArtifactCodec;
 
 /**
  * The shared filesystem contract between the {@see DocumentWarmer} (which writes the
@@ -25,7 +27,19 @@ final class ArtifactStore
 {
     private const SUBDIR = 'json_api_openapi';
 
-    public function __construct(private readonly string $cacheDir) {}
+    public const string PACKAGE = 'haddowg/json-api-symfony';
+
+    private readonly ServeArtifactCodec $codec;
+
+    /**
+     * @param list<class-string> $allowedClasses `json_api.openapi.serve_allowed_classes`: classes a document's values may hold besides core's
+     */
+    public function __construct(
+        private readonly string $cacheDir,
+        private readonly array $allowedClasses = [],
+    ) {
+        $this->codec = new ServeArtifactCodec([self::PACKAGE], $allowedClasses);
+    }
 
     /**
      * A store rooted at a *different* cache dir — the warmer uses it to write into
@@ -35,7 +49,7 @@ final class ArtifactStore
      */
     public function withCacheDir(string $cacheDir): self
     {
-        return new self($cacheDir);
+        return new self($cacheDir, $this->allowedClasses);
     }
 
     /**
@@ -96,27 +110,34 @@ final class ArtifactStore
 
     /**
      * The warmed document as value objects (bundle ADR 0131), or null when it was never
-     * written or no longer unserializes into the current classes.
+     * written, was written by another installed version of core or this bundle, or
+     * doesn't decode.
      */
     public function readServeArtifact(string $server): ?ServeArtifact
     {
         $bytes = $this->get($this->serveArtifactPath($server));
-        if ($bytes === null) {
-            return null;
-        }
 
-        try {
-            $artifact = @\unserialize($bytes);
-        } catch (\Throwable) {
-            return null;
-        }
-
-        return $artifact instanceof ServeArtifact ? $artifact : null;
+        return $bytes === null ? null : $this->codec->decode($bytes);
     }
 
+    /**
+     * @throws \LogicException when the document holds an object outside the allow-list
+     */
     public function writeServeArtifact(string $server, ServeArtifact $artifact): void
     {
-        $this->put($this->serveArtifactPath($server), \serialize($artifact));
+        $this->put($this->serveArtifactPath($server), $this->codec->encode($artifact));
+    }
+
+    /**
+     * Removes the serialized document, so a request whose document can't be serialized
+     * never reads one an earlier warmup left behind.
+     */
+    public function removeServeArtifact(string $server): void
+    {
+        $path = $this->serveArtifactPath($server);
+        if (\is_file($path)) {
+            @\unlink($path);
+        }
     }
 
     /**
@@ -187,7 +208,7 @@ final class ArtifactStore
      */
     public static function hash(string $bytes): string
     {
-        return \hash('xxh128', $bytes);
+        return EntityTag::hash($bytes);
     }
 
     /**

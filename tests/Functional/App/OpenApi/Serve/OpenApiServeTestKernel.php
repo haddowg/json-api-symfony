@@ -29,7 +29,10 @@ use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
  *  - `plain`: none, so the raw artifact is served;
  *  - `keyed`: host servers + feature gate (OpenAPI) and the feature gate (schemas), every
  *    one with a cache key;
- *  - `unkeyed`: the keyed set plus one decorator without a key, per document kind.
+ *  - `unkeyed`: the keyed set plus one decorator without a key, per document kind;
+ *  - `objects`: the keyed set over a document holding a `DateTimeImmutable` value, which
+ *    the serve artifact can't cache, with a logger keeping the warmer's warnings;
+ *  - `objects_allowed`: the same, with `DateTimeImmutable` in `serve_allowed_classes`.
  *
  * Every environment configures `cache_control` and runs behind a stateful, lazy firewall
  * with sessions enabled, so the no-cookie guarantee is tested where a cookie could appear.
@@ -87,17 +90,22 @@ final class OpenApiServeTestKernel extends Kernel
             'firewalls' => ['main' => ['lazy' => true, 'provider' => 'users']],
         ]);
 
+        $openapi = [
+            'expose_in_prod' => true,
+            'cache_control' => self::CACHE_CONTROL,
+            'info' => ['title' => 'Catalog API', 'version' => '2.0.0'],
+            'tags' => [
+                ['name' => 'Catalog', 'description' => 'Products and catalog actions'],
+            ],
+        ];
+        if ($this->environment === 'objects_allowed') {
+            $openapi['serve_allowed_classes'] = [\DateTimeImmutable::class];
+        }
+
         $container->extension('json_api', [
             'base_uri' => 'https://catalog.test',
             'version' => '1.1',
-            'openapi' => [
-                'expose_in_prod' => true,
-                'cache_control' => self::CACHE_CONTROL,
-                'info' => ['title' => 'Catalog API', 'version' => '2.0.0'],
-                'tags' => [
-                    ['name' => 'Catalog', 'description' => 'Products and catalog actions'],
-                ],
-            ],
+            'openapi' => $openapi,
         ]);
 
         $services = $container->services()
@@ -105,7 +113,9 @@ final class OpenApiServeTestKernel extends Kernel
             ->autowire()
             ->autoconfigure();
 
-        $services->set('logger', \Psr\Log\NullLogger::class);
+        $objects = \in_array($this->environment, ['objects', 'objects_allowed'], true);
+
+        $services->set('logger', $objects ? WarningLogger::class : \Psr\Log\NullLogger::class);
 
         $services->set(ProductResource::class);
         $services->set(CategoryResource::class);
@@ -118,6 +128,9 @@ final class OpenApiServeTestKernel extends Kernel
             $services->set(HostServersDecorator::class);
             $services->set(FeatureGateDecorator::class);
             $services->set(FeatureGateSchemaDecorator::class);
+        }
+        if ($objects) {
+            $services->set(ObjectExtensionDecorator::class);
         }
         if ($this->environment === 'unkeyed') {
             $services->set(UnkeyedDecorator::class);

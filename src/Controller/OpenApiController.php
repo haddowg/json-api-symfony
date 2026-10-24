@@ -4,13 +4,12 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Controller;
 
+use haddowg\JsonApi\OpenApi\Serve\ServeArtifact;
 use haddowg\JsonApiBundle\OpenApi\ArtifactStore;
 use haddowg\JsonApiBundle\OpenApi\DocumentFactory;
 use haddowg\JsonApiBundle\OpenApi\OpenApiServeCacheKeyInterface;
 use haddowg\JsonApiBundle\OpenApi\OpenApiServeDecoratorInterface;
-use haddowg\JsonApiBundle\OpenApi\Serve\ComponentPruner;
 use haddowg\JsonApiBundle\OpenApi\Serve\ConditionalResponder;
-use haddowg\JsonApiBundle\OpenApi\Serve\ServeArtifact;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -121,7 +120,7 @@ final class OpenApiController
         foreach ($this->decorators as $decorator) {
             $document = $decorator->decorate($document, $request, $key);
         }
-        $body = (string) \json_encode(ComponentPruner::prune($document->toJson(), $artifact->baseline), ConditionalResponder::JSON_FLAGS);
+        $body = (string) \json_encode($artifact->prune($document), ConditionalResponder::JSON_FLAGS);
 
         if ($response === null) {
             $response = $this->responder->prepare(ArtifactStore::hash($body));
@@ -164,7 +163,12 @@ final class OpenApiController
         // prod filesystem from a request.
         if ($this->debug) {
             $this->store->writeWithHash($key, $json);
-            $this->store->writeServeArtifact($key, $artifact);
+            try {
+                $this->store->writeServeArtifact($key, $artifact);
+            } catch (\LogicException) {
+                // The document holds an object the codec won't unserialize, so each
+                // decorated request builds it (json_api.openapi.serve_allowed_classes).
+            }
         }
 
         return [$json, $artifact];

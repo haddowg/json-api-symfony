@@ -664,6 +664,27 @@ the schemas keyed by type (unset a key to hide a type). The schemas are standalo
 nothing is pruned. The CLI export commands and the static `public_path` files never run
 serve decorators: the exported spec stays the full contract for diffing and codegen.
 
+#### Objects in example and default values
+
+So decorators don't rebuild the document on every request, the warmer stores it beside
+the JSON as serialized PHP value objects, and a decorated request unserializes that copy.
+The copy records the installed versions of core and the bundle, so one left behind by a
+deploy reads as missing and the document is built again. Unserializing only allows
+core's OpenAPI value objects, `stdClass` and enums. If an `example()`, a default or an
+extension value holds another object (a `DateTimeImmutable` example, say), the warmer
+can't store the copy: it logs a warning naming the class, and each decorated request
+builds the document instead. List the class to cache it again:
+
+```yaml
+json_api:
+  openapi:
+    serve_allowed_classes:
+      - DateTimeImmutable
+```
+
+Only list classes you trust to be unserialized from your own cache directory. Without
+serve decorators the copy is never read, so the warning costs nothing.
+
 #### Caching at the edge
 
 Both `docs.json` and `schemas.json` always send an `ETag` and answer a matching

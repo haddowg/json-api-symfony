@@ -84,7 +84,24 @@ final class OpenApiConfigResolver
             describedby: ($openapi['describedby'] ?? true) !== false,
             cacheControl: $this->scalarOrNull($openapi, 'cache_control'),
             documentUrl: $this->scalarOrNull($openapi, 'document_url'),
+            serveAllowedClasses: $this->serveAllowedClasses($openapi),
         );
+    }
+
+    /**
+     * @param array<string, mixed> $openapi
+     *
+     * @return list<class-string>
+     */
+    private function serveAllowedClasses(array $openapi): array
+    {
+        $classes = $openapi['serve_allowed_classes'] ?? [];
+        if (!\is_array($classes)) {
+            return [];
+        }
+
+        /** @var list<class-string> */
+        return \array_values(\array_unique(\array_filter($classes, static fn(mixed $class): bool => \is_string($class) && $class !== '')));
     }
 
     /**
