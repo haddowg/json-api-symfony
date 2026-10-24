@@ -99,7 +99,11 @@ rewrites the `relationship` route attribute to the relation's name, so `TargetRe
 under. A relation declared as
 `HasMany::make('remarks', 'comments')->withUriFieldName('article-remarks')` is served
 at `/articles/{id}/article-remarks` and `/articles/{id}/relationships/article-remarks`,
-and its links and the [OpenAPI document](openapi.md) name only that segment.
+and its links and the [OpenAPI document](openapi.md) name only that segment. The
+example app's `PlaylistResource` serves its `publicOwner` relation this way, at
+`/playlists/{id}/public-owner`, and
+[`MultiTypeEntityTest`](../examples/music-catalog-symfony/tests/MultiTypeEntityTest.php)
+covers both segments.
 
 A request to the relation's name (`/articles/{id}/remarks`) is still answered when no
 relation is served under that segment, so a client written before the rename keeps

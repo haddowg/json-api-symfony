@@ -215,7 +215,7 @@ final class AuthorizationTest extends MusicCatalogKernelTestCase
         // inherits the (ungated) playlist read: anyone may read it, even unauthenticated.
         // This is the contrast — two relations off one resource, gated independently.
         $this->browser()
-            ->get('/playlists/' . self::OWNED_PLAYLIST_ID . '/relationships/publicOwner')
+            ->get('/playlists/' . self::OWNED_PLAYLIST_ID . '/relationships/public-owner')
             ->getDocument()
             ->assertStatus(200)
             ->assertHasType('public-profiles');
