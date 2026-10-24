@@ -25,6 +25,9 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
  * plain scalars (the container cannot dump value objects); the per-operation map rides
  * as one JSON string because a nested array is not a flat tag attribute. The pass only
  * runs when the registry is defined.
+ *
+ * The declared OpenAPI vendor extensions (bundle ADR 0127) ride the same way, as one
+ * JSON `openapi_extensions` tag attribute, into the registry's `$extensions` argument.
  */
 final class ResourceDescriptionPass implements CompilerPassInterface
 {
@@ -36,6 +39,8 @@ final class ResourceDescriptionPass implements CompilerPassInterface
 
         /** @var array<string, array{description?: string, operations?: array<string, string>}> $descriptions */
         $descriptions = [];
+        /** @var array<string, array{type: array<string, mixed>, operations: array<string, array<string, mixed>>}> $extensions */
+        $extensions = [];
 
         foreach ($container->findTaggedServiceIds(JsonApiBundle::RESOURCE_TAG) as $id => $tags) {
             $definition = $container->findDefinition($id);
@@ -62,9 +67,16 @@ final class ResourceDescriptionPass implements CompilerPassInterface
             if ($operations !== []) {
                 $descriptions[$type]['operations'] = $operations;
             }
+
+            $declared = $this->extensionsFromTags($tags);
+            if ($declared !== null) {
+                $extensions[$type] = $declared;
+            }
         }
 
-        $container->getDefinition(ResourceDescriptionRegistry::class)->setArgument('$descriptions', $descriptions);
+        $container->getDefinition(ResourceDescriptionRegistry::class)
+            ->setArgument('$descriptions', $descriptions)
+            ->setArgument('$extensions', $extensions);
     }
 
     /**
@@ -131,5 +143,43 @@ final class ResourceDescriptionPass implements CompilerPassInterface
         }
 
         return $map;
+    }
+
+    /**
+     * The vendor extensions decoded from the JSON `openapi_extensions` tag attribute,
+     * or `null` when the resource declares none.
+     *
+     * @param array<array<string, mixed>> $tags
+     *
+     * @return array{type: array<string, mixed>, operations: array<string, array<string, mixed>>}|null
+     */
+    private function extensionsFromTags(array $tags): ?array
+    {
+        $encoded = $this->scalarFromTags($tags, 'openapi_extensions');
+        if ($encoded === null) {
+            return null;
+        }
+
+        $decoded = \json_decode($encoded, true, 512, \JSON_THROW_ON_ERROR);
+        if (!\is_array($decoded)) {
+            return null;
+        }
+
+        $type = [];
+        foreach (\is_array($decoded['type'] ?? null) ? $decoded['type'] : [] as $name => $value) {
+            $type[(string) $name] = $value;
+        }
+
+        $operations = [];
+        foreach (\is_array($decoded['operations'] ?? null) ? $decoded['operations'] : [] as $operation => $set) {
+            if (!\is_array($set)) {
+                continue;
+            }
+            foreach ($set as $name => $value) {
+                $operations[(string) $operation][(string) $name] = $value;
+            }
+        }
+
+        return ['type' => $type, 'operations' => $operations];
     }
 }

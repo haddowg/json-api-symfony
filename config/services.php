@@ -104,12 +104,13 @@ return static function (ContainerConfigurator $container): void {
     $services->set(\haddowg\JsonApiBundle\OpenApi\Metadata\IncludePathResolver::class);
 
     // The type-keyed registry of declarative OpenAPI description overrides
-    // (#[AsJsonApiResource(description:, operationDescriptions:)], bundle ADR 0092);
-    // its argument is filled by the ResourceDescriptionPass. Layered by the
-    // MetadataSource beneath each resource's getDescription()/describeOperation()
-    // method hooks.
+    // (#[AsJsonApiResource(description:, operationDescriptions:)], bundle ADR 0092)
+    // and vendor extensions (extensions:, operationExtensions:, bundle ADR 0127);
+    // its arguments are filled by the ResourceDescriptionPass. Descriptions are
+    // layered by the MetadataSource beneath each resource's
+    // getDescription()/describeOperation() method hooks.
     $services->set(\haddowg\JsonApiBundle\OpenApi\Metadata\ResourceDescriptionRegistry::class)
-        ->args(['$descriptions' => []]);
+        ->args(['$descriptions' => [], '$extensions' => []]);
 
     // The bundle implementation of core's OpenAPI metadata contract: it builds a
     // ServerMetadataInterface (+ its TypeMetadataInterface family) per server from

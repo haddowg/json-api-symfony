@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\OpenApi\Metadata;
 
 use haddowg\JsonApi\OpenApi\Metadata\ActionMetadataInterface;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationExtensions;
 use haddowg\JsonApi\OpenApi\Metadata\OperationResponseInterface;
 use haddowg\JsonApi\OpenApi\Metadata\OperationResponses;
 use haddowg\JsonApi\OpenApi\Metadata\OperationType;
@@ -25,8 +26,12 @@ use haddowg\JsonApi\Resource\Sort\SortInterface;
  * `fields()`/`relations()`/`filters()`/`sorts()` are empty, and the projector emits
  * a permissive resource-object schema. Everything else — uriType, operations, tags,
  * the page schema — is sourced independently of the field inventory.
+ *
+ * It implements core's opt-in {@see DeclaresOperationExtensions} to carry the vendor
+ * extensions declared on `#[AsJsonApiResource]` (bundle ADR 0127); a type that
+ * declares none returns empty maps and the projector emits nothing.
  */
-final readonly class TypeMetadata implements TypeMetadataInterface
+final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOperationExtensions
 {
     /**
      * @param list<FieldInterface>            $fields
@@ -41,6 +46,8 @@ final readonly class TypeMetadata implements TypeMetadataInterface
      * @param array<string, ?string>          $operationDescriptions per-CRUD-operation description overrides, keyed by {@see OperationType::value}; a missing key (and a null value) means "no override" — the projector emits the generated default
      * @param array<string, non-empty-list<OperationResponseInterface>> $responseOverrides per-operation success-response overrides, keyed by {@see OperationType::value}; a missing key means "no override" — {@see responsesFor()} falls back to {@see OperationResponses::defaultFor()}
      * @param list<string>                    $includablePaths
+     * @param array<string, mixed>            $extensions          vendor extensions for every operation of the type
+     * @param array<string, array<string, mixed>> $operationExtensions per-CRUD-operation vendor extensions, keyed by {@see OperationType::value}
      */
     public function __construct(
         private string $type,
@@ -64,6 +71,8 @@ final readonly class TypeMetadata implements TypeMetadataInterface
         private array $operationDescriptions,
         private array $responseOverrides,
         private array $includablePaths,
+        private array $extensions = [],
+        private array $operationExtensions = [],
     ) {}
 
     public function type(): string
@@ -169,5 +178,15 @@ final readonly class TypeMetadata implements TypeMetadataInterface
     public function includablePaths(): array
     {
         return $this->includablePaths;
+    }
+
+    public function extensions(): array
+    {
+        return $this->extensions;
+    }
+
+    public function operationExtensions(OperationType $operation): array
+    {
+        return $this->operationExtensions[$operation->value] ?? [];
     }
 }

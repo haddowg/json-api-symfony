@@ -310,6 +310,41 @@ final class OpenApiServingTest extends JsonApiFunctionalTestCase
 
     #[Test]
     #[Group('spec:openapi')]
+    public function declaredVendorExtensionsLandOnEveryOperationOfTheType(): void
+    {
+        $document = $this->fetchDocument();
+
+        // The type-wide extension reaches the CRUD reads, the related and relationship
+        // endpoints and the custom actions.
+        foreach ([
+            ['/products', 'get'],
+            ['/products/{id}', 'get'],
+            ['/products/{id}', 'patch'],
+            ['/products/{id}/category', 'get'],
+            ['/products/{id}/relationships/category', 'get'],
+            ['/products/-actions/summarize', 'post'],
+        ] as [$path, $method]) {
+            self::assertSame(
+                'catalog',
+                $this->nested($document, 'paths', $path, $method)['x-feature'] ?? null,
+                \sprintf('%s %s carries the type-wide x-feature', \strtoupper($method), $path),
+            );
+        }
+
+        // A per-operation set merges over the type-wide one: Create's value wins on the
+        // shared key, and Delete keeps the type-wide key beside its own.
+        self::assertSame('catalog-admin', $this->nested($document, 'paths', '/products', 'post')['x-feature'] ?? null);
+        $delete = $this->nested($document, 'paths', '/products/{id}', 'delete');
+        self::assertSame('catalog', $delete['x-feature'] ?? null);
+        self::assertSame(['per-minute' => 10], $delete['x-rate-limit'] ?? null);
+        self::assertArrayNotHasKey('x-rate-limit', $this->nested($document, 'paths', '/products/{id}', 'get'));
+
+        // Another type declares nothing, so its operations carry no extension.
+        self::assertArrayNotHasKey('x-feature', $this->nested($document, 'paths', '/categories', 'get'));
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
     public function aRelationDescriptionFlowsOntoItsRelatedAndRelationshipOperations(): void
     {
         $document = $this->fetchDocument();

@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Tests\OpenApi\Metadata;
 
 use haddowg\JsonApi\OpenApi\Metadata\ActionInputMode;
 use haddowg\JsonApi\OpenApi\Metadata\ActionScope;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationExtensions;
 use haddowg\JsonApi\OpenApi\Metadata\OperationResponseInterface;
 use haddowg\JsonApi\OpenApi\Metadata\OperationType;
 use haddowg\JsonApi\OpenApi\OpenApiProjector;
@@ -387,6 +388,36 @@ final class MetadataSourceTest extends TestCase
         self::assertSame('Retire an article.', $articles->operationDescription(OperationType::Delete));
         // An operation without an override stays null (generated default applies).
         self::assertNull($articles->operationDescription(OperationType::Create));
+    }
+
+    #[Test]
+    public function theRegistryCarriesDeclaredVendorExtensionsOntoTheTypeMetadata(): void
+    {
+        $registry = new ResourceDescriptionRegistry([], [
+            'articles' => [
+                'type' => ['x-feature' => 'blog'],
+                'operations' => [OperationType::Delete->value => ['x-rate-limit' => 5]],
+            ],
+        ]);
+
+        $articles = $this->typeNamed($this->source(descriptions: $registry)->forServer(), 'articles');
+
+        self::assertInstanceOf(DeclaresOperationExtensions::class, $articles);
+        self::assertSame(['x-feature' => 'blog'], $articles->extensions());
+        self::assertSame(['x-rate-limit' => 5], $articles->operationExtensions(OperationType::Delete));
+        self::assertSame([], $articles->operationExtensions(OperationType::Create));
+    }
+
+    #[Test]
+    public function aTypeWithoutDeclaredVendorExtensionsReportsNone(): void
+    {
+        $articles = $this->typeNamed($this->source()->forServer(), 'articles');
+
+        self::assertInstanceOf(DeclaresOperationExtensions::class, $articles);
+        self::assertSame([], $articles->extensions());
+        foreach (OperationType::cases() as $operation) {
+            self::assertSame([], $articles->operationExtensions($operation));
+        }
     }
 
     #[Test]

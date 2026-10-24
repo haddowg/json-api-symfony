@@ -334,6 +334,11 @@ final class MetadataSource
             // override falls back to the core default in TypeMetadata::responsesFor().
             responseOverrides: $this->responseOverrides($descriptor['responses']),
             includablePaths: $resource !== null ? $this->includePaths->pathsFor($server, $type) : [],
+            // The declared vendor extensions (bundle ADR 0127). Core merges each CRUD
+            // operation's set over the type-wide one and stamps the type-wide set on
+            // every other operation the type emits.
+            extensions: $this->descriptions?->extensionsFor($type) ?? [],
+            operationExtensions: $this->operationExtensions($type),
         );
     }
 
@@ -360,6 +365,25 @@ final class MetadataSource
         }
 
         return $descriptions;
+    }
+
+    /**
+     * The per-CRUD-operation vendor extensions declared for `$type`, keyed by
+     * {@see OperationType::value}, omitting operations that declare none.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    private function operationExtensions(string $type): array
+    {
+        $extensions = [];
+        foreach (OperationType::cases() as $operation) {
+            $set = $this->descriptions?->operationExtensionsFor($type, $operation) ?? [];
+            if ($set !== []) {
+                $extensions[$operation->value] = $set;
+            }
+        }
+
+        return $extensions;
     }
 
     private function buildRelation(Server $server, RelationInterface $relation, ?PaginatorInterface $serverDefault): RelationMetadata

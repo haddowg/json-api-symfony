@@ -87,6 +87,15 @@ use haddowg\JsonApiBundle\Operation\Operation;
  * surface). To describe a *relationship*'s related/relationship operations, call
  * `->describedAs('…')` on the relation field itself.
  *
+ * `extensions` and `operationExtensions` declare **OpenAPI vendor extensions** (bundle
+ * ADR 0127). `extensions` lands on every operation the document emits for the type:
+ * its CRUD operations, its related and relationship endpoints, and its custom actions.
+ * `operationExtensions` is keyed by the {@see \haddowg\JsonApiBundle\Operation\Operation}
+ * case name, like `operationDescriptions`, and is merged over `extensions` for that one
+ * CRUD operation (the operation's value wins on a shared key). Every key must start
+ * with `x-`; a bare `x-`, an OAS-reserved `x-oai-`/`x-oas-` name or an unknown
+ * operation key is a constructor `\LogicException`. Values must be JSON-encodable.
+ *
  * `deprecation` and `sunset` declare **deprecation signalling** — the IETF
  * Deprecation header field (`draft-ietf-httpapi-deprecation-header`) plus the
  * RFC 8594 `Sunset` header (bundle ADR 0054, API-Platform gap G16), emitted on
@@ -168,6 +177,8 @@ final readonly class AsJsonApiResource
      * @param list<string>                                                         $tags           the OpenAPI tag names every operation of this type is grouped under (empty = the humanized-type default)
      * @param string|null                                                          $description    the OpenAPI description override for this type's resource-object schema (null = the generated default)
      * @param array<string, string>                                                $operationDescriptions per-CRUD-operation OpenAPI description overrides, keyed by the {@see \haddowg\JsonApiBundle\Operation\Operation} case name (e.g. `Operation::Create->name`); an unknown key is a constructor error
+     * @param array<string, mixed>                                                 $extensions     OpenAPI vendor extensions (`x-…` keys) stamped on every operation of this type
+     * @param array<string, array<string, mixed>>                                  $operationExtensions per-CRUD-operation OpenAPI vendor extensions, keyed by the {@see \haddowg\JsonApiBundle\Operation\Operation} case name and merged over `extensions`
      * @param CreateResponse|list<CreateResponse>|null                             $create         the declared success responses for `POST` create (single or list; null = the default `201`). `new Accepted($jobType)` documents an async `202`; `new NoContent()` a client-id `204`
      * @param UpdateResponse|list<UpdateResponse>|null                             $update         the declared success responses for `PATCH` update (null = the default `200`)
      * @param DeleteResponse|list<DeleteResponse>|null                             $delete         the declared success responses for `DELETE` (null = the default `204`)
@@ -195,6 +206,8 @@ final readonly class AsJsonApiResource
         public array $tags = [],
         public ?string $description = null,
         public array $operationDescriptions = [],
+        public array $extensions = [],
+        public array $operationExtensions = [],
         CreateResponse|array|null $create = null,
         UpdateResponse|array|null $update = null,
         DeleteResponse|array|null $delete = null,
@@ -221,6 +234,26 @@ final readonly class AsJsonApiResource
             }
         }
 
+        self::assertExtensionNames($extensions, 'extensions');
+        foreach ($operationExtensions as $key => $set) {
+            if (!\is_string($key) || Operation::tryFrom($key) === null) {
+                throw new \LogicException(\sprintf(
+                    'AsJsonApiResource operationExtensions has an unknown operation key "%s"; '
+                    . 'keys must be a %s case name: %s.',
+                    (string) $key,
+                    Operation::class,
+                    \implode(', ', \array_map(static fn(Operation $op): string => $op->name, Operation::cases())),
+                ));
+            }
+            if (!\is_array($set)) {
+                throw new \LogicException(\sprintf(
+                    'AsJsonApiResource operationExtensions["%s"] must be a map of x- extension names to values.',
+                    $key,
+                ));
+            }
+            self::assertExtensionNames($set, \sprintf('operationExtensions["%s"]', $key));
+        }
+
         // The operations this type exposes (the response-override target set): the
         // readOnly shorthand, an explicit allow-list, or the all-five default.
         $allowed = $readOnly
@@ -234,6 +267,36 @@ final readonly class AsJsonApiResource
         $this->delete = self::normalizeResponses($delete, OperationType::Delete, $allowed);
         $this->fetchOne = self::normalizeResponses($fetchOne, OperationType::FetchOne, $allowed);
         $this->fetchCollection = self::normalizeResponses($fetchCollection, OperationType::FetchCollection, $allowed);
+    }
+
+    /**
+     * Rejects an extension name the OpenAPI document can't carry. Core's withers would
+     * quietly prefix a bare name, but on a declaration a missing `x-` is more likely a
+     * typo than shorthand, so the attribute insists on the full name.
+     *
+     * @param array<mixed> $extensions
+     */
+    private static function assertExtensionNames(array $extensions, string $parameter): void
+    {
+        foreach ($extensions as $name => $value) {
+            $name = (string) $name;
+            if (!\str_starts_with($name, 'x-') || $name === 'x-') {
+                throw new \LogicException(\sprintf(
+                    'AsJsonApiResource %s declares "%s"; an OpenAPI vendor extension name must start with "x-" '
+                    . 'followed by a name, e.g. "x-%s".',
+                    $parameter,
+                    $name,
+                    $name === 'x-' ? 'feature' : $name,
+                ));
+            }
+            if (\str_starts_with($name, 'x-oai-') || \str_starts_with($name, 'x-oas-')) {
+                throw new \LogicException(\sprintf(
+                    'AsJsonApiResource %s declares "%s"; the "x-oai-" and "x-oas-" prefixes are reserved by the OpenAPI Initiative.',
+                    $parameter,
+                    $name,
+                ));
+            }
+        }
     }
 
     /**
