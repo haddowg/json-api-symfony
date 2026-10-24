@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.9.2](https://github.com/haddowg/json-api-symfony/compare/v1.9.1...v1.9.2) (2026-10-24)
+
+
+### Bug Fixes
+
+* apply a relation's mutate gate to relationships set in a write body ([#197](https://github.com/haddowg/json-api-symfony/issues/197)) ([806aac8](https://github.com/haddowg/json-api-symfony/commit/806aac86bdd7784e413451c096872c3322150ab5))
+* check the update gate against the stored resource ([#196](https://github.com/haddowg/json-api-symfony/issues/196)) ([cab09e4](https://github.com/haddowg/json-api-symfony/commit/cab09e45c024a6fd0f8cbc0bd002047ca42427f5))
+* limit an atomic batch to the types and operations its server exposes ([#200](https://github.com/haddowg/json-api-symfony/issues/200)) ([4b6b790](https://github.com/haddowg/json-api-symfony/commit/4b6b79051ec5c5571d4487c7b0a0d01e791b9f7d))
+* **openapi:** only warn about a missing docs route for servers that serve API routes ([#193](https://github.com/haddowg/json-api-symfony/issues/193)) ([a29fcd2](https://github.com/haddowg/json-api-symfony/commit/a29fcd23813e8bfa28a6fdabb42e0a3404c96046))
+* reject a relationship identifier whose type the relation doesn't accept ([#199](https://github.com/haddowg/json-api-symfony/issues/199)) ([3793d8c](https://github.com/haddowg/json-api-symfony/commit/3793d8cacb3c72862bf2ebe3062e6c22fa1d17ed))
+* route relationship mutations only for types that expose update ([#195](https://github.com/haddowg/json-api-symfony/issues/195)) ([928d358](https://github.com/haddowg/json-api-symfony/commit/928d358a4bd363cf6f43d776602131f9f82c2960))
+* scope inverse to-many writes to the members each parent owns ([#198](https://github.com/haddowg/json-api-symfony/issues/198)) ([d0c0cc6](https://github.com/haddowg/json-api-symfony/commit/d0c0cc60d3b8746d55c1bc1fbf071302853f47b9))
+
 ## [1.9.1](https://github.com/haddowg/json-api-symfony/compare/v1.9.0...v1.9.1) (2026-10-24)
 
 
