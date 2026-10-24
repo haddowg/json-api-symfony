@@ -25,13 +25,15 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Album;
  * before-action gate against the resolved album, so only an admin may reissue. The
  * change is persisted through the storage-agnostic {@see DataPersisterRegistry}
  * (handlers own their side-effects), then the updated album is rendered through the
- * default (mount) `albums` serializer.
+ * default (mount) `albums` serializer. `asLink` publishes it as the album's `reissue`
+ * link, shown only to a caller who passes that same gate.
  */
 #[AsJsonApiAction(
     type: 'albums',
     path: 'reissue',
     input: ActionInput::Document,
     security: "is_granted('ROLE_ADMIN')",
+    asLink: true,
 )]
 final class ReissueAlbum implements ActionHandlerInterface
 {
