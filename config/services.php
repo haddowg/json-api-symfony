@@ -352,6 +352,11 @@ return static function (ContainerConfigurator $container): void {
         ->arg('$atomicPath', '%haddowg_json_api.atomic_operations.path%')
         ->tag('kernel.event_listener', ['event' => 'kernel.request', 'method' => 'onKernelRequest', 'priority' => 4]);
 
+    // Runs right after the RouterListener (priority 32) so the `relationship` route
+    // attribute holds the relation's name, not its URI segment, for everything after.
+    $services->set(\haddowg\JsonApiBundle\EventListener\RelationshipSegmentListener::class)
+        ->tag('kernel.event_listener', ['event' => 'kernel.request', 'method' => 'onKernelRequest', 'priority' => 31]);
+
     $services->set(ViewListener::class)
         ->tag('kernel.event_listener', ['event' => 'kernel.view', 'method' => 'onKernelView']);
 
