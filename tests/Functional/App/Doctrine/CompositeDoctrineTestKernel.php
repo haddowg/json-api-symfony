@@ -111,6 +111,7 @@ final class CompositeDoctrineTestKernel extends Kernel
             ->autoconfigure();
 
         $services->set(DoctrineCompositeWidgetResource::class);
+        $services->set(DoctrineChecklistResource::class);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

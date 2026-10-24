@@ -425,6 +425,192 @@ abstract class CompositeConformanceTestCase extends JsonApiFunctionalTestCase
         return $id;
     }
 
+    #[Test]
+    #[Group('spec:crud')]
+    public function aRequiredBooleanAcceptsFalseOnCreate(): void
+    {
+        $response = $this->createChecklist(['done' => false]);
+
+        self::assertSame(201, $response->getStatusCode());
+        self::assertFalse($this->checklistAttribute($this->createdId($response), 'done'));
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function aRequiredBooleanAcceptsTrueOnCreate(): void
+    {
+        $response = $this->createChecklist(['done' => true]);
+
+        self::assertSame(201, $response->getStatusCode());
+        self::assertTrue($this->checklistAttribute($this->createdId($response), 'done'));
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function aRequiredBooleanMustBePresentOnCreate(): void
+    {
+        $attributes = $this->checklistAttributes();
+        unset($attributes['done']);
+
+        $response = $this->handle('/checklists', 'POST', [
+            'data' => ['type' => 'checklists', 'attributes' => $attributes],
+        ]);
+
+        self::assertSame(422, $response->getStatusCode());
+        self::assertSame(['/data/attributes/done'], $this->pointersOf($response));
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function aRequiredBooleanRejectsNull(): void
+    {
+        $response = $this->createChecklist(['done' => null]);
+
+        self::assertSame(422, $response->getStatusCode());
+        self::assertSame(['/data/attributes/done'], $this->pointersOf($response));
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function aRequiredBooleanAcceptsFalseOnUpdate(): void
+    {
+        $response = $this->handle('/checklists/1', 'PATCH', [
+            'data' => ['type' => 'checklists', 'id' => '1', 'attributes' => ['done' => false]],
+        ]);
+
+        self::assertSame(200, $response->getStatusCode());
+        self::assertFalse($this->checklistAttribute('1', 'done'));
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function aRequiredIntegerAcceptsZero(): void
+    {
+        $response = $this->createChecklist(['count' => 0]);
+
+        self::assertSame(201, $response->getStatusCode());
+        self::assertSame(0, $this->checklistAttribute($this->createdId($response), 'count'));
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function aRequiredStringRejectsAnEmptyString(): void
+    {
+        $response = $this->createChecklist(['title' => '']);
+
+        self::assertSame(422, $response->getStatusCode());
+        self::assertSame(['/data/attributes/title'], $this->pointersOf($response));
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function aRequiredListRejectsAnEmptyList(): void
+    {
+        $response = $this->createChecklist(['tags' => []]);
+
+        self::assertSame(422, $response->getStatusCode());
+        self::assertSame(['/data/attributes/tags'], $this->pointersOf($response));
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function aRequiredMapRejectsAnEmptyObject(): void
+    {
+        $response = $this->createChecklist(['settings' => new \stdClass()]);
+
+        self::assertSame(422, $response->getStatusCode());
+        self::assertSame(['/data/attributes/settings'], $this->pointersOf($response));
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function aRequiredNullableAttributeAcceptsNull(): void
+    {
+        $response = $this->createChecklist(['note' => null]);
+
+        self::assertSame(201, $response->getStatusCode());
+        self::assertNull($this->checklistAttribute($this->createdId($response), 'note'));
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function aRequiredNullableAttributeMustStillBePresentOnCreate(): void
+    {
+        $attributes = $this->checklistAttributes();
+        unset($attributes['note']);
+
+        $response = $this->handle('/checklists', 'POST', [
+            'data' => ['type' => 'checklists', 'attributes' => $attributes],
+        ]);
+
+        self::assertSame(422, $response->getStatusCode());
+        self::assertSame(['/data/attributes/note'], $this->pointersOf($response));
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function requiredNestedBooleanAndIntegerAcceptFalseAndZero(): void
+    {
+        $response = $this->createChecklist(['options' => ['enabled' => false, 'retries' => 0]]);
+
+        self::assertSame(201, $response->getStatusCode());
+        self::assertSame(
+            ['enabled' => false, 'retries' => 0],
+            $this->checklistAttribute($this->createdId($response), 'options'),
+        );
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function aRequiredNestedBooleanMustBePresentOnCreate(): void
+    {
+        $response = $this->createChecklist(['options' => ['retries' => 1]]);
+
+        self::assertSame(422, $response->getStatusCode());
+        self::assertSame(['/data/attributes/options/enabled'], $this->pointersOf($response));
+    }
+
+    /**
+     * Posts a checklist that is valid apart from the given overrides.
+     *
+     * @param array<string, mixed> $overrides
+     */
+    private function createChecklist(array $overrides): Response
+    {
+        return $this->handle('/checklists', 'POST', [
+            'data' => ['type' => 'checklists', 'attributes' => [...$this->checklistAttributes(), ...$overrides]],
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function checklistAttributes(): array
+    {
+        return [
+            'done' => true,
+            'count' => 1,
+            'title' => 'Groceries',
+            'tags' => ['home'],
+            'settings' => ['colour' => 'green'],
+            'note' => 'Before six',
+        ];
+    }
+
+    private function checklistAttribute(string $id, string $name): mixed
+    {
+        $response = $this->handle('/checklists/' . $id);
+        self::assertSame(200, $response->getStatusCode());
+
+        $data = $this->decode($response)['data'] ?? null;
+        self::assertIsArray($data);
+        $attributes = $data['attributes'] ?? null;
+        self::assertIsArray($attributes);
+        self::assertArrayHasKey($name, $attributes);
+
+        return $attributes[$name];
+    }
+
     /**
      * The error pointers with any trailing `/` dropped: opis reports a whole-value
      * violation at the instance root `/`, which core appends to the field pointer.

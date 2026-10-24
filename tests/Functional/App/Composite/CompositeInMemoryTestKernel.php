@@ -86,6 +86,17 @@ final class CompositeInMemoryTestKernel extends Kernel
             ->factory([CompositeWidgetFactory::class, 'createPersister'])
             ->args([service('test.composites_provider')])
             ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
+
+        $services->set(ChecklistResource::class);
+
+        $services->set('test.checklists_provider', InMemoryDataProvider::class)
+            ->factory([ChecklistFactory::class, 'createProvider'])
+            ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+
+        $services->set('test.checklists_persister', InMemoryDataPersister::class)
+            ->factory([ChecklistFactory::class, 'createPersister'])
+            ->args([service('test.checklists_provider')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

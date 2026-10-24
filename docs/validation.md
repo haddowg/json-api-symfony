@@ -99,9 +99,15 @@ Symfony `Collection` wrapper:
 
 | Field declaration | On create (`POST`) | On update (`PATCH`) |
 |---|---|---|
-| `->required()` | `Required` + `NotBlank` (present and non-empty) | `Optional` + `NotBlank` (may be omitted; if supplied, non-empty) |
-| present, non-nullable | `NotNull` prepended (an explicit `null` is rejected) | same |
-| `->nullable()` | `NotBlank(allowNull: true)` | same |
+| `->required()` on a string, list or object | `Required` + `NotBlank` (present and non-empty) | `Optional` + `NotBlank` (may be omitted; if supplied, non-empty) |
+| `->required()` on a `Boolean`, `Integer`, `Decimal` or `OneOf` | `Required` + `NotNull` (present; `false` and `0` are valid) | `Optional` + `NotNull` |
+| `->required()->nullable()` | as above, with `null` allowed | same |
+| not required, not nullable | `Optional` + `NotNull` (an explicit `null` is rejected) | same |
+
+Required means what core's OpenAPI projection says: `minLength: 1`, `minItems: 1`
+or `minProperties: 1` for a string, list or object, and nothing more than presence
+for a boolean or number. Date, time, email, URL and other string-typed fields count
+as strings, so `""` fails them.
 
 Presence is mandatory only on create; a `PATCH` never requires a member, so a
 partial update may legitimately omit a required attribute. The
