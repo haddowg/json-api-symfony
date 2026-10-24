@@ -1292,7 +1292,9 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *             enabled?: bool|Param, // Serve the viewer route. Default true (still subject to the expose gate). // Default: true
  *             renderer?: "swagger"|"redoc"|Param, // swagger (default) or redoc — one, not both. // Default: "swagger"
  *             path?: scalar|Param|null, // The viewer route path. Default /docs. // Default: "/docs"
- *             cdn?: scalar|Param|null, // Override the pinned CDN asset origin (self-host / air-gap). Null = the bundle-pinned jsDelivr URL. // Default: null
+ *             cdn?: scalar|Param|null, // Override the pinned CDN asset origin (self-host / air-gap): the directory that serves redoc.standalone.js, or the swagger-ui-dist files. Null = the bundle-pinned jsDelivr URL. // Default: null
+ *             redoc_version?: scalar|Param|null, // The exact ReDoc version the redoc renderer loads. A 3.x version loads the ES module build, a 2.x version (e.g. 2.5.4) the classic global script. Default 3.0.1. // Default: "3.0.1"
+ *             redoc_telemetry?: bool|Param, // Let ReDoc 3.x send its usage telemetry. Default false, which renders disable-telemetry="true" on the <redoc> tag. ReDoc 2.x sends none, so it ignores this. // Default: false
  *         },
  *         info?: array{ // The OpenAPI info block (G4/G5). Title/version default to JSON:API / 1.0.0 per server when omitted.
  *             title?: scalar|Param|null, // Default: null

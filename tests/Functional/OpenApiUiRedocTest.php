@@ -31,7 +31,8 @@ final class OpenApiUiRedocTest extends JsonApiFunctionalTestCase
 
         $body = (string) $response->getContent();
         // ReDoc markup, not Swagger UI (one renderer, not both).
-        self::assertStringContainsString('<redoc spec-url="/docs.json">', $body);
+        self::assertStringContainsString('<redoc spec-url="/docs.json" disable-telemetry="true"></redoc>', $body);
+        self::assertStringContainsString('<script type="module"', $body);
         self::assertStringNotContainsString('SwaggerUIBundle', $body);
     }
 

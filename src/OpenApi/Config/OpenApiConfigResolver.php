@@ -14,6 +14,7 @@ use haddowg\JsonApi\OpenApi\SecurityRequirement;
 use haddowg\JsonApi\OpenApi\SecurityScheme;
 use haddowg\JsonApi\OpenApi\Server;
 use haddowg\JsonApi\OpenApi\Tag;
+use haddowg\JsonApiBundle\Controller\OpenApiUiController;
 use haddowg\JsonApiBundle\OpenApi\Metadata\ServerDocumentConfig;
 
 /**
@@ -122,6 +123,8 @@ final class OpenApiConfigResolver
             renderer: $renderer,
             path: '/' . \ltrim($path, '/'),
             cdn: $this->scalarOrNull($ui, 'cdn'),
+            redocVersion: $this->scalarOrNull($ui, 'redoc_version') ?? OpenApiUiController::REDOC_VERSION,
+            redocTelemetry: ($ui['redoc_telemetry'] ?? false) === true,
         );
     }
 

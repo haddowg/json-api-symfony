@@ -457,7 +457,19 @@ final class JsonApiBundle extends AbstractBundle
                         ->booleanNode('enabled')->info('Serve the viewer route. Default true (still subject to the expose gate).')->defaultTrue()->end()
                         ->enumNode('renderer')->info('swagger (default) or redoc — one, not both.')->values(['swagger', 'redoc'])->defaultValue('swagger')->end()
                         ->scalarNode('path')->info('The viewer route path. Default /docs.')->defaultValue('/docs')->end()
-                        ->scalarNode('cdn')->info('Override the pinned CDN asset origin (self-host / air-gap). Null = the bundle-pinned jsDelivr URL.')->defaultNull()->end()
+                        ->scalarNode('cdn')->info('Override the pinned CDN asset origin (self-host / air-gap): the directory that serves redoc.standalone.js, or the swagger-ui-dist files. Null = the bundle-pinned jsDelivr URL.')->defaultNull()->end()
+                        ->scalarNode('redoc_version')
+                            ->info('The exact ReDoc version the redoc renderer loads. A 3.x version loads the ES module build, a 2.x version (e.g. 2.5.4) the classic global script. Default 3.0.1.')
+                            ->defaultValue(\haddowg\JsonApiBundle\Controller\OpenApiUiController::REDOC_VERSION)
+                            ->validate()
+                                ->ifTrue(static fn(mixed $v): bool => !\is_string($v) || \preg_match('/^[23]\.\d+\.\d+$/', $v) !== 1)
+                                ->thenInvalid('json_api.openapi.ui.redoc_version must be an exact 2.x or 3.x version such as "3.0.1" or "2.5.4", got %s.')
+                            ->end()
+                        ->end()
+                        ->booleanNode('redoc_telemetry')
+                            ->info('Let ReDoc 3.x send its usage telemetry. Default false, which renders disable-telemetry="true" on the <redoc> tag. ReDoc 2.x sends none, so it ignores this.')
+                            ->defaultFalse()
+                        ->end()
                     ->end()
                 ->end()
                 ->arrayNode('info')
@@ -1067,6 +1079,8 @@ final class JsonApiBundle extends AbstractBundle
                 '$jsonPath' => $openApiConfig->jsonPath,
                 '$cdn' => $openApiConfig->ui->cdn,
                 '$cacheControl' => $openApiConfig->cacheControl,
+                '$redocVersion' => $openApiConfig->ui->redocVersion,
+                '$redocTelemetry' => $openApiConfig->ui->redocTelemetry,
             ])
             ->public()
             ->tag('controller.service_arguments');
