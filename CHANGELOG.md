@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.5.1](https://github.com/haddowg/json-api-symfony/compare/v1.5.0...v1.5.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* **example:** keep entity defaults when the persister skips the constructor ([#168](https://github.com/haddowg/json-api-symfony/issues/168)) ([6939152](https://github.com/haddowg/json-api-symfony/commit/69391520a089b37ddfac23b92f00cf36374ce501))
+* fail the build when entity: is declared with no entity manager ([#167](https://github.com/haddowg/json-api-symfony/issues/167)) ([a62366f](https://github.com/haddowg/json-api-symfony/commit/a62366faf7caa3ad239388ff8ada931326d96c7c))
+* refuse related ids on in-memory models instead of rendering empty identifiers ([#169](https://github.com/haddowg/json-api-symfony/issues/169)) ([85472c8](https://github.com/haddowg/json-api-symfony/commit/85472c81bc2d0f28c40d62626e2e6c27beda4fe5))
+
+
+### Miscellaneous Chores
+
+* **example:** require a track number on create ([#165](https://github.com/haddowg/json-api-symfony/issues/165)) ([d6d7586](https://github.com/haddowg/json-api-symfony/commit/d6d7586a55187d785e593fd96912d807a40e9cc6))
+
 ## [1.5.0](https://github.com/haddowg/json-api-symfony/compare/v1.4.2...v1.5.0) (2026-10-24)
 
 
