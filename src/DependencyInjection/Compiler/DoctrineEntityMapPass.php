@@ -8,6 +8,7 @@ use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApiBundle\DataPersister\Doctrine\DoctrineDataPersister;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineDataProvider;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineServableWarmer;
+use haddowg\JsonApiBundle\DataProvider\Doctrine\PivotAssociationResolver;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Serializer\Doctrine\DoctrineRelationshipLoadState;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
@@ -26,15 +27,21 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
  * entities — fails the container build rather than a request.
  *
  * A no-op when the Doctrine services are not registered (no `doctrine/orm`), so
- * the attribute stays inert in non-Doctrine applications. With an **empty** map
- * those definitions are removed instead: they could never answer for a type, and
- * an application that has `doctrine/orm` in the vendor tree but no Doctrine
- * integration wired (no `EntityManagerInterface` service) must not keep a
+ * the attribute stays inert in an application without `doctrine/orm`. With an
+ * **empty** map those definitions are removed instead: they could never answer for
+ * a type, and an application that has `doctrine/orm` in the vendor tree but no
+ * Doctrine integration wired (no `EntityManagerInterface` service) must not keep a
  * definition referencing that absent service alive. The
- * {@see DoctrineRelationshipLoadState} predicate, which also depends on the
- * `EntityManagerInterface` but carries no entity-map argument, is removed on the
- * same empty-map condition (so the {@see \haddowg\JsonApiBundle\Server\ServerFactory}'s
- * optional dependency resolves to null in a non-Doctrine-integrated app).
+ * {@see DoctrineRelationshipLoadState} predicate and the {@see PivotAssociationResolver},
+ * which also depend on the `EntityManagerInterface` but carry no entity-map
+ * argument, are removed on the same empty-map condition (so the
+ * {@see \haddowg\JsonApiBundle\Server\ServerFactory}'s optional dependency resolves
+ * to null in a non-Doctrine-integrated app).
+ *
+ * A non-empty map with `doctrine/orm` installed but no `EntityManagerInterface`
+ * service fails the build: the adapter would otherwise keep definitions pointing at
+ * a service that doesn't exist, and the container would fail later with an error
+ * that doesn't mention `entity:`.
  *
  * The declared mappings are also published as the {@see self::PARAMETER} container
  * parameter, with or without Doctrine, so
@@ -66,6 +73,7 @@ final class DoctrineEntityMapPass implements CompilerPassInterface
      */
     private const array LIFECYCLE_ONLY_DEFINITIONS = [
         DoctrineRelationshipLoadState::class,
+        PivotAssociationResolver::class,
     ];
 
     public function process(ContainerBuilder $container): void
@@ -127,6 +135,23 @@ final class DoctrineEntityMapPass implements CompilerPassInterface
             }
 
             return;
+        }
+
+        if (!$container->has(\Doctrine\ORM\EntityManagerInterface::class)) {
+            $mappings = [];
+            foreach ($map as $type => $entity) {
+                $mappings[] = \sprintf('"%s" (%s)', $type, $entity);
+            }
+
+            throw new \LogicException(\sprintf(
+                '#[AsJsonApiResource(entity: ...)] maps %s to a Doctrine entity, but the container has no %s service. '
+                . 'Install and configure doctrine/doctrine-bundle so the reference Doctrine data layer can serve %s, '
+                . 'or remove `entity:` from %s.',
+                \count($mappings) === 1 ? 'type ' . $mappings[0] : 'types ' . \implode(', ', $mappings),
+                \Doctrine\ORM\EntityManagerInterface::class,
+                \count($mappings) === 1 ? 'it' : 'them',
+                \count($mappings) === 1 ? 'that resource' : 'those resources',
+            ));
         }
 
         foreach ($definitions as $id) {

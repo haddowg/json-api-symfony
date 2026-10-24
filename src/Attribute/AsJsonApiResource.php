@@ -32,7 +32,9 @@ use haddowg\JsonApiBundle\Operation\Operation;
  * {@see \haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineDataProvider} reads
  * (and, in later phases, writes) — co-located here because the resource
  * declaration is the one place that already knows what it represents. It is
- * inert unless the Doctrine provider is wired (`doctrine/orm` installed).
+ * inert when `doctrine/orm` is not installed; with `doctrine/orm` installed it
+ * needs an `EntityManagerInterface` service (doctrine-bundle), or the container
+ * build fails.
  *
  * `serializer` / `hydrator` override how this type is serialized / hydrated: a
  * resource declares a custom {@see \haddowg\JsonApi\Serializer\SerializerInterface}
