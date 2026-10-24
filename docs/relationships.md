@@ -860,6 +860,7 @@ endpoint, so a rendered `self`/`related` link never points at a 404:
 | `cannotAdd()` | `POST …/relationships/{rel}` | `403` `ADDITION_PROHIBITED` |
 | `cannotReplace()` | `PATCH …/relationships/{rel}` | `403` `FULL_REPLACEMENT_PROHIBITED` |
 | `cannotRemove()` | `DELETE` / to-one clear | `403` `REMOVAL_PROHIBITED` |
+| `readOnly()` / `readOnlyOnUpdate()` | `PATCH`/`POST`/`DELETE …/relationships/{rel}` | `403`, the code for the verb |
 
 The enforcement is in
 [`CrudOperationHandler::guardMutability()`](../src/Operation/CrudOperationHandler.php).
@@ -870,6 +871,12 @@ to-many is a `403` and the existing set is untouched — witnessed by
 mismatch (a `POST`/`DELETE` against a to-one) is a separate `400`
 `RELATIONSHIP_TYPE_INAPPROPRIATE`; an unknown relation or missing parent is a
 `404`.
+
+A relationship mutation is an update of the parent, so a relation that is read-only on
+update refuses all three verbs with the code that matches each one. When it is
+unconditionally read-only, the OpenAPI document lists only the relationship `GET` for it
+and leaves it out of the update request body; a `readOnly(fn)` predicate is judged per
+request, so the document keeps the mutations.
 
 ### Write-only relations
 
