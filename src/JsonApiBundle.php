@@ -1062,6 +1062,7 @@ final class JsonApiBundle extends AbstractBundle
                 '$renderer' => $openApiConfig->ui->renderer,
                 '$jsonPath' => $openApiConfig->jsonPath,
                 '$cdn' => $openApiConfig->ui->cdn,
+                '$cacheControl' => $openApiConfig->cacheControl,
             ])
             ->public()
             ->tag('controller.service_arguments');

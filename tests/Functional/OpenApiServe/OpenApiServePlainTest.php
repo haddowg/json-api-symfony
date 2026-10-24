@@ -8,6 +8,7 @@ use haddowg\JsonApiBundle\OpenApi\ArtifactStore;
 use haddowg\JsonApiBundle\Tests\Functional\App\OpenApi\Serve\OpenApiServeTestKernel;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
+use Symfony\Component\HttpKernel\EventListener\AbstractSessionListener;
 
 /**
  * With no serve decorator registered the warmed artifact is served byte for byte, tagged
@@ -74,6 +75,16 @@ final class OpenApiServePlainTest extends OpenApiServeTestCase
     {
         self::assertSame(OpenApiServeTestKernel::CACHE_CONTROL, $this->cacheControl($this->get('/docs.json')));
         self::assertSame(OpenApiServeTestKernel::CACHE_CONTROL, $this->cacheControl($this->get('/schemas.json')));
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    public function theViewerPageCarriesTheConfiguredCacheControl(): void
+    {
+        $response = $this->get('/docs');
+        self::assertSame(OpenApiServeTestKernel::CACHE_CONTROL, $this->cacheControl($response));
+        // The session listener strips its opt-out header before the response leaves.
+        self::assertFalse($response->headers->has(AbstractSessionListener::NO_AUTO_CACHE_CONTROL_HEADER));
     }
 
     #[Test]

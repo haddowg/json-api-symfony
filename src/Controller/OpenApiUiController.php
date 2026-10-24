@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Controller;
 
 use haddowg\JsonApiBundle\OpenApi\Config\OpenApiUiRenderer;
+use haddowg\JsonApiBundle\OpenApi\Serve\ConditionalResponder;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Exception\RouteNotFoundException;
@@ -69,14 +70,16 @@ final class OpenApiUiController
      * @param string  $jsonPath the configured `json_api.openapi.json.path` — a last-resort
      *                          fallback for the spec URL, used only if the document route is
      *                          not registered (the router-generated URL is preferred)
-     * @param ?string $cdn      the `json_api.openapi.ui.cdn` override (null = the pinned
-     *                          renderer default)
+     * @param ?string $cdn          the `json_api.openapi.ui.cdn` override (null = the pinned
+     *                              renderer default)
+     * @param ?string $cacheControl the `json_api.openapi.cache_control` value (null = off)
      */
     public function __construct(
         private readonly UrlGeneratorInterface $urlGenerator,
         private readonly OpenApiUiRenderer $renderer = OpenApiUiRenderer::Swagger,
         private readonly string $jsonPath = '/docs.json',
         private readonly ?string $cdn = null,
+        private readonly ?string $cacheControl = null,
     ) {}
 
     public function __invoke(Request $request): Response
@@ -87,7 +90,10 @@ final class OpenApiUiController
             ? $this->redocPage($specUrl)
             : $this->swaggerPage($specUrl);
 
-        return new Response($html, Response::HTTP_OK, ['Content-Type' => 'text/html; charset=UTF-8']);
+        return ConditionalResponder::applyCacheControl(
+            new Response($html, Response::HTTP_OK, ['Content-Type' => 'text/html; charset=UTF-8']),
+            $this->cacheControl,
+        );
     }
 
     /**
