@@ -154,7 +154,13 @@ final class PlaylistResource extends AbstractResource implements ResourceLifecyc
             // public-facing owner reference; `owner` above is the admin one. Choosing a
             // relationship's target type is exactly the `make()` type `'…'`. See
             // `docs/resources.md` ("One entity, two resource types").
-            BelongsTo::make('publicOwner', 'public-profiles')->storedAs('owner'),
+            //
+            // It is also the renamed-relation witness: `withUriFieldName()` serves it at
+            // `/playlists/{id}/public-owner` and `/playlists/{id}/relationships/public-owner`,
+            // and its links and the OpenAPI paths name that segment. The member name and
+            // `?include=publicOwner` keep the relation name, and a request to the old
+            // `publicOwner` segment is still answered. See `docs/routing.md`.
+            BelongsTo::make('publicOwner', 'public-profiles')->storedAs('owner')->withUriFieldName('public-owner'),
             BelongsToMany::make('tracks', 'tracks')
                 ->paginate(PagePaginator::make()->withDefaultPerPage(2))
                 // Countable (bundle ADR 0052): the related-collection endpoint emits

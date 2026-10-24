@@ -145,7 +145,7 @@ final class MultiTypeEntityTest extends MusicCatalogKernelTestCase
     public function theRelationshipEndpointRendersTheCuratedTypeLinkage(): void
     {
         // The dedicated relationship (linkage) endpoint resolves the same curated type.
-        $document = $this->fetchDocument('/playlists/' . self::PLAYLIST . '/relationships/publicOwner');
+        $document = $this->fetchDocument('/playlists/' . self::PLAYLIST . '/relationships/public-owner');
 
         self::assertSame(['type' => 'public-profiles', 'id' => '1'], $document['data'] ?? null);
     }
@@ -154,9 +154,9 @@ final class MultiTypeEntityTest extends MusicCatalogKernelTestCase
     #[Group('spec:fetching-relationships')]
     public function theRelatedEndpointRendersTheCuratedResource(): void
     {
-        // `GET /playlists/{id}/publicOwner` renders the full related resource AS the
+        // `GET /playlists/{id}/public-owner` renders the full related resource AS the
         // curated `public-profiles` type — the public view of the owner.
-        $data = $this->fetchResource('/playlists/' . self::PLAYLIST . '/publicOwner');
+        $data = $this->fetchResource('/playlists/' . self::PLAYLIST . '/public-owner');
 
         self::assertSame('public-profiles', $data['type'] ?? null);
         self::assertSame('1', $data['id'] ?? null);
@@ -165,6 +165,39 @@ final class MultiTypeEntityTest extends MusicCatalogKernelTestCase
         self::assertIsArray($attributes);
         self::assertSame('Ada', $attributes['displayName'] ?? null);
         self::assertArrayNotHasKey('email', $attributes);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    public function theRenamedRelationIsServedAndLinkedByItsUriFieldName(): void
+    {
+        // `publicOwner` declares `withUriFieldName('public-owner')`: the member keeps the
+        // relation name, its links name the URI segment.
+        $publicOwner = $this->relationshipsOf($this->fetchResource('/playlists/' . self::PLAYLIST))['publicOwner'] ?? null;
+        self::assertIsArray($publicOwner);
+        $links = $publicOwner['links'] ?? null;
+        self::assertIsArray($links);
+        $self = $links['self'] ?? null;
+        $related = $links['related'] ?? null;
+        self::assertIsArray($self);
+        self::assertIsArray($related);
+        self::assertSame('https://music.example/playlists/' . self::PLAYLIST . '/relationships/public-owner', $self['href'] ?? null);
+        self::assertSame('https://music.example/playlists/' . self::PLAYLIST . '/public-owner', $related['href'] ?? null);
+        self::assertSame('/docs.json#/paths/~1playlists~1%7Bid%7D~1public-owner/get', $related['describedby'] ?? null);
+
+        // A client written against the relation name still reaches both endpoints.
+        $legacy = $this->fetchDocument('/playlists/' . self::PLAYLIST . '/relationships/publicOwner');
+        self::assertSame(['type' => 'public-profiles', 'id' => '1'], $legacy['data'] ?? null);
+        $legacyRelated = $this->fetchResource('/playlists/' . self::PLAYLIST . '/publicOwner');
+        self::assertSame(['public-profiles', '1'], [$legacyRelated['type'] ?? null, $legacyRelated['id'] ?? null]);
+
+        // The OpenAPI document keys the paths by the URI segment only.
+        $paths = $this->decode($this->handle('/docs.json'))['paths'] ?? null;
+        self::assertIsArray($paths);
+        self::assertArrayHasKey('/playlists/{id}/public-owner', $paths);
+        self::assertArrayHasKey('/playlists/{id}/relationships/public-owner', $paths);
+        self::assertArrayNotHasKey('/playlists/{id}/publicOwner', $paths);
+        self::assertArrayNotHasKey('/playlists/{id}/relationships/publicOwner', $paths);
     }
 
     #[Test]
