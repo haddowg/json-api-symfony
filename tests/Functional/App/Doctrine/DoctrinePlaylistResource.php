@@ -69,6 +69,11 @@ final class DoctrinePlaylistResource extends AbstractResource
                     // may set them, but no response's meta.pivot carries them.
                     Str::make('source')->writeOnly()->build(),
                     Str::make('curator')->writeOnly(static fn(JsonApiRequestInterface $request): bool => true)->build(),
+                    // Hidden by predicate against the related member: rendered on every
+                    // track except the one titled "Outro".
+                    Str::make('label')->hidden(
+                        static fn(mixed $track, JsonApiRequestInterface $request): bool => $track instanceof TrackEntity && $track->title === 'Outro',
+                    )->build(),
                 )
                 // Pivot filters are AUTHOR-DECLARED via the `pivot.` column prefix
                 // (bundle ADR 0067): a filter whose column starts with `pivot.` targets

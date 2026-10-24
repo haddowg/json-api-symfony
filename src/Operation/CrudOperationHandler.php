@@ -270,6 +270,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $this->persisters,
             $this->txContext,
             $this->router,
+            $this->types,
             $this->logger,
         );
 

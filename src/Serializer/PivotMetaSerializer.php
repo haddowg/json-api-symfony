@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Serializer;
 
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Schema\Link\ResourceLinks;
 use haddowg\JsonApi\Serializer\IncludeControlsInterface;
 use haddowg\JsonApi\Serializer\SerializerInterface;
-use haddowg\JsonApiBundle\DataProvider\PivotFields;
 
 /**
  * A {@see SerializerInterface} decorator that renders a `belongsToMany` pivot
@@ -32,11 +32,12 @@ use haddowg\JsonApiBundle\DataProvider\PivotFields;
  * member resource's own meta, and so a client can tell pivot data from intrinsic
  * meta.
  *
- * Given the relation, it renders only the pivot fields a response may carry: a
- * hidden field or one write-only for this request (`writeOnly()`, or a
- * `writeOnly(when:)` predicate evaluated against the request) stays out, the same
- * rule a top-level attribute follows. The map itself keeps them, because the
- * validator reads stored write-only values when it merges a partial pivot update.
+ * Given the relation, it renders the fields core's
+ * {@see BelongsToMany::readablePivotFieldsFor()} returns for the request and the member
+ * (neither hidden nor write-only, predicates included, the same rule a top-level
+ * attribute follows). Each renders `null` when the row holds no value for it, which is
+ * what the response pivot schema's `required` promises. The map itself keeps write-only
+ * values, because the validator reads them when it merges a partial pivot update.
  */
 final class PivotMetaSerializer implements SerializerInterface, IncludeControlsInterface
 {
@@ -67,7 +68,7 @@ final class PivotMetaSerializer implements SerializerInterface, IncludeControlsI
 
         $pivot = $this->pivotMap[$this->inner->getId($object)] ?? null;
         if ($pivot !== null && $this->relation !== null) {
-            $pivot = $this->readable($pivot, $request);
+            $pivot = $this->readable($pivot, $request, $object);
         }
         if ($pivot !== null && $pivot !== []) {
             $meta['pivot'] = $pivot;
@@ -81,16 +82,15 @@ final class PivotMetaSerializer implements SerializerInterface, IncludeControlsI
      *
      * @return array<string, mixed>
      */
-    private function readable(array $pivot, JsonApiRequestInterface $request): array
+    private function readable(array $pivot, JsonApiRequestInterface $request, mixed $member): array
     {
-        \assert($this->relation !== null);
+        if (!$this->relation instanceof BelongsToMany) {
+            return [];
+        }
 
         $readable = [];
-        foreach (PivotFields::byName($this->relation) as $name => $field) {
-            if (!\array_key_exists($name, $pivot) || $field->isHidden() || $field->isWriteOnlyFor($request)) {
-                continue;
-            }
-            $readable[$name] = $pivot[$name];
+        foreach ($this->relation->readablePivotFieldsFor($request, $member) as $field) {
+            $readable[$field->name()] = $pivot[$field->name()] ?? null;
         }
 
         return $readable;

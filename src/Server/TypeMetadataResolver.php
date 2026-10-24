@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\Server;
 use haddowg\JsonApi\Exception\NoResourceRegistered;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
+use haddowg\JsonApi\Resource\Field\AbstractRelationValue;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Server\Server;
 
@@ -67,6 +68,33 @@ final class TypeMetadataResolver
         }
 
         return null;
+    }
+
+    /**
+     * The declared, non-hidden relation a `/{type}/{id}/{segment}` or
+     * `/{type}/{id}/relationships/{segment}` URL addresses, or `null` when none does.
+     *
+     * The segment is matched against each relation's URI field name first (its name
+     * unless `withUriFieldName()` set another), resource-first then standalone. When no
+     * relation is served under it, the segment is tried as a relation name, so a client
+     * still calling a renamed relation's old name-keyed URL keeps working; the links and
+     * the OpenAPI document only name the URI field name (bundle ADR 0133).
+     */
+    public function relationAtUriSegment(Server $server, string $type, string $segment): ?RelationInterface
+    {
+        $relation = $this->resourceFor($server, $type)?->relationAtUriFieldName($segment);
+        if ($relation !== null) {
+            return $relation;
+        }
+
+        foreach ($this->relations->relationsFor($type) ?? [] as $candidate) {
+            $uriFieldName = $candidate instanceof AbstractRelationValue ? $candidate->uriFieldName() : $candidate->name();
+            if ($uriFieldName === $segment) {
+                return $candidate;
+            }
+        }
+
+        return $this->relationNamed($server, $type, $segment);
     }
 
     /**

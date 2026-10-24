@@ -22,6 +22,7 @@ use haddowg\JsonApi\Operation\Target;
 use haddowg\JsonApi\Operation\UpdateRelationshipOperation;
 use haddowg\JsonApi\Operation\UpdateResourceOperation;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Resource\Field\AbstractRelationValue;
 use haddowg\JsonApi\Response\DataResponse;
 use haddowg\JsonApi\Response\NoContentResponse;
 use haddowg\JsonApi\Server\Server;
@@ -29,6 +30,7 @@ use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataPersister\TransactionalDataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\WriteTransactionContext;
 use haddowg\JsonApiBundle\Operation\CrudOperationHandler;
+use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
 use haddowg\JsonApiBundle\Validation\ObjectView;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -119,6 +121,7 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
         private readonly DataPersisterRegistry $persisters,
         private readonly WriteTransactionContext $context,
         private readonly RouterInterface $router,
+        private readonly TypeMetadataResolver $types,
         ?LoggerInterface $logger = null,
     ) {
         $this->logger = $logger ?? new NullLogger();
@@ -472,7 +475,9 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
             $path .= '/' . $target->id;
         }
         if ($target->relationship !== null) {
-            $path .= ($target->isRelationshipEndpoint ? '/relationships/' : '/') . $target->relationship;
+            $relation = $this->types->relationNamed($this->server, $target->type, $target->relationship);
+            $segment = $relation instanceof AbstractRelationValue ? $relation->uriFieldName() : $target->relationship;
+            $path .= ($target->isRelationshipEndpoint ? '/relationships/' : '/') . $segment;
         }
 
         return $path;
@@ -511,11 +516,17 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
 
         $id = $match['id'] ?? null;
         $relationship = $match['relationship'] ?? null;
+        $relationship = \is_string($relationship) && $relationship !== '' ? $relationship : null;
+        // The href names the relation by its URI segment; the Target carries its name
+        // (bundle ADR 0133). An unknown segment stays as it is and answers 404.
+        if ($relationship !== null) {
+            $relationship = $this->types->relationAtUriSegment($this->server, $type, $relationship)?->name() ?? $relationship;
+        }
 
         return new Target(
             $type,
             \is_string($id) ? $id : null,
-            \is_string($relationship) && $relationship !== '' ? $relationship : null,
+            $relationship,
             isRelationshipEndpoint: ($match['_jsonapi_relationship_endpoint'] ?? null) === true,
         );
     }

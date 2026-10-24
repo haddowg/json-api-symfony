@@ -92,6 +92,21 @@ see [related-endpoints](https://github.com/haddowg/json-api/blob/main/docs/relat
 and [relationship-mutation](https://github.com/haddowg/json-api/blob/main/docs/relationship-mutation.md);
 the bundle-side per-relation exposure gates are on [relationships](relationships.md).
 
+The `{relationship}` segment is the relation's **URI field name**: its name, unless
+the relation sets another with `withUriFieldName()`. Right after routing, the bundle
+rewrites the `relationship` route attribute to the relation's name, so `TargetResolver`,
+`JsonApiRoute::of()` and everything after them see the name the relation is declared
+under. A relation declared as
+`HasMany::make('remarks', 'comments')->withUriFieldName('article-remarks')` is served
+at `/articles/{id}/article-remarks` and `/articles/{id}/relationships/article-remarks`,
+and its links and the [OpenAPI document](openapi.md) name only that segment.
+
+A request to the relation's name (`/articles/{id}/remarks`) is still answered when no
+relation is served under that segment, so a client written before the rename keeps
+working. This fallback is not documented in the OpenAPI document and no link points at
+it. A segment that is neither a URI field name nor a relation name is a `404`, as it
+always was. An Atomic Operations `href` resolves its segment the same way.
+
 > Relationship and related routes are **not** gated by the `Operation` allow-list
 > below. Whether a given relation exposes a related or relationship endpoint is
 > governed per-relation (`withoutRelatedEndpoint()` / `withoutRelationshipEndpoint()`),
@@ -290,7 +305,10 @@ mapping primitive is `TargetResolver::resolveFromRequest(Request): ?Target`
 **pure mapper**: no container, no I/O. It reads the route attributes (`_jsonapi_type`,
 the optional `{id}` and `{relationship}` path parameters, and
 `_jsonapi_relationship_endpoint`) and returns a core `Target`, or `null` when the
-route carries no `_jsonapi_type`.
+route carries no `_jsonapi_type`. On a generated route the `{relationship}` attribute already
+holds the relation's name by the time it runs. A hand-written route with its own
+`{relationship}` parameter gets the same rewrite, since it carries the `_jsonapi`
+marker and `_jsonapi_type`.
 
 > **Calling `TargetResolver` alone is not enough.** It only builds the `Target`. A
 > hand-written route must *also* set every route default in the contract above

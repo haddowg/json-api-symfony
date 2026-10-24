@@ -57,6 +57,9 @@ class PlaylistTrackEntity
         public ?string $source = null,
         #[ORM\Column(type: 'string', nullable: true)]
         public ?string $curator = null,
+        // Hidden by predicate for one member only (see DoctrinePlaylistResource).
+        #[ORM\Column(type: 'string', nullable: true)]
+        public ?string $label = null,
     ) {}
 
     /**

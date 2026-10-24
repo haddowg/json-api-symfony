@@ -87,6 +87,7 @@ trait SeedsDoctrinePivot
                 // rendered them would show them.
                 source: 'import',
                 curator: 'staff',
+                label: 'tagged',
             ));
         }
 
