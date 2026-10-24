@@ -31,8 +31,8 @@ abstract class MountedServerLinksConformanceTestCase extends JsonApiFunctionalTe
     {
         $document = $this->fetch('/api/v5/articles/1');
 
-        self::assertSame(['self' => self::BASE . '/articles/1'], $document['links'] ?? null);
-        self::assertSame(['self' => self::BASE . '/articles/1'], $this->dataOf($document)['links'] ?? null);
+        self::assertSame(['self' => ['href' => self::BASE . '/articles/1']], $document['links'] ?? null);
+        self::assertSame(['self' => ['href' => self::BASE . '/articles/1']], $this->dataOf($document)['links'] ?? null);
     }
 
     #[Test]
@@ -46,8 +46,8 @@ abstract class MountedServerLinksConformanceTestCase extends JsonApiFunctionalTe
         self::assertIsArray($author);
         self::assertSame(
             [
-                'self' => self::BASE . '/articles/1/relationships/author',
-                'related' => self::BASE . '/articles/1/author',
+                'self' => ['href' => self::BASE . '/articles/1/relationships/author'],
+                'related' => ['href' => self::BASE . '/articles/1/author'],
             ],
             $author['links'] ?? null,
         );
@@ -63,7 +63,7 @@ abstract class MountedServerLinksConformanceTestCase extends JsonApiFunctionalTe
         self::assertIsArray($included);
         self::assertCount(1, $included);
         self::assertIsArray($included[0]);
-        self::assertSame(['self' => self::BASE . '/authors/1'], $included[0]['links'] ?? null);
+        self::assertSame(['self' => ['href' => self::BASE . '/authors/1']], $included[0]['links'] ?? null);
     }
 
     #[Test]
@@ -77,15 +77,16 @@ abstract class MountedServerLinksConformanceTestCase extends JsonApiFunctionalTe
 
         foreach (['self', 'first', 'prev', 'next'] as $name) {
             self::assertArrayHasKey($name, $links);
-            self::assertIsString($links[$name]);
-            self::assertStringStartsWith(self::BASE . '/articles?', $links[$name], $name);
+            self::assertIsArray($links[$name]);
+            self::assertIsString($links[$name]['href'] ?? null);
+            self::assertStringStartsWith(self::BASE . '/articles?', $links[$name]['href'], $name);
         }
 
-        self::assertSame(self::BASE . '/articles?page%5Bnumber%5D=3&page%5Bsize%5D=2', $links['next']);
+        self::assertSame(['href' => self::BASE . '/articles?page%5Bnumber%5D=3&page%5Bsize%5D=2'], $links['next']);
 
         foreach ($this->dataListOf($document) as $resource) {
             self::assertIsString($resource['id'] ?? null);
-            self::assertSame(['self' => self::BASE . '/articles/' . $resource['id']], $resource['links'] ?? null);
+            self::assertSame(['self' => ['href' => self::BASE . '/articles/' . $resource['id']]], $resource['links'] ?? null);
         }
     }
 
@@ -97,10 +98,10 @@ abstract class MountedServerLinksConformanceTestCase extends JsonApiFunctionalTe
 
         $links = $document['links'] ?? null;
         self::assertIsArray($links);
-        self::assertSame(self::BASE . '/articles/1/relationships/pagedComments', $links['self'] ?? null);
-        self::assertSame(self::BASE . '/articles/1/pagedComments', $links['related'] ?? null);
+        self::assertSame(['href' => self::BASE . '/articles/1/relationships/pagedComments'], $links['self'] ?? null);
+        self::assertSame(['href' => self::BASE . '/articles/1/pagedComments'], $links['related'] ?? null);
         self::assertSame(
-            self::BASE . '/articles/1/relationships/pagedComments?page%5Bnumber%5D=2&page%5Bsize%5D=1',
+            ['href' => self::BASE . '/articles/1/relationships/pagedComments?page%5Bnumber%5D=2&page%5Bsize%5D=1'],
             $links['next'] ?? null,
         );
     }
@@ -113,8 +114,8 @@ abstract class MountedServerLinksConformanceTestCase extends JsonApiFunctionalTe
 
         $links = $document['links'] ?? null;
         self::assertIsArray($links);
-        self::assertSame(self::BASE . '/articles/1/author', $links['self'] ?? null);
-        self::assertSame(['self' => self::BASE . '/authors/1'], $this->dataOf($document)['links'] ?? null);
+        self::assertSame(['href' => self::BASE . '/articles/1/author'], $links['self'] ?? null);
+        self::assertSame(['self' => ['href' => self::BASE . '/authors/1']], $this->dataOf($document)['links'] ?? null);
     }
 
     #[Test]
@@ -123,8 +124,8 @@ abstract class MountedServerLinksConformanceTestCase extends JsonApiFunctionalTe
     {
         $document = $this->fetch('https://tenant.example/api/v5/articles/1');
 
-        self::assertSame(['self' => 'https://tenant.example/api/v5/articles/1'], $document['links'] ?? null);
-        self::assertSame(['self' => 'https://tenant.example/api/v5/articles/1'], $this->dataOf($document)['links'] ?? null);
+        self::assertSame(['self' => ['href' => 'https://tenant.example/api/v5/articles/1']], $document['links'] ?? null);
+        self::assertSame(['self' => ['href' => 'https://tenant.example/api/v5/articles/1']], $this->dataOf($document)['links'] ?? null);
     }
 
     #[Test]
@@ -147,7 +148,7 @@ abstract class MountedServerLinksConformanceTestCase extends JsonApiFunctionalTe
         self::assertIsString($data['id'] ?? null);
 
         $expected = self::BASE . '/articles/' . $data['id'];
-        self::assertSame(['self' => $expected], $data['links'] ?? null);
+        self::assertSame(['self' => ['href' => $expected]], $data['links'] ?? null);
         self::assertSame($expected, $response->headers->get('Location'));
     }
 

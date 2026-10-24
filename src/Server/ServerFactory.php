@@ -138,6 +138,7 @@ final class ServerFactory
         private readonly ?ErrorMessageResolverInterface $errorMessageResolver = null,
         private readonly array $profiles = self::DEFAULT_PROFILES,
         private readonly ?string $outputTimezone = null,
+        private readonly bool $linkObjects = true,
     ) {}
 
     /**
@@ -208,6 +209,9 @@ final class ServerFactory
             // the registry every resource of this server reads it from; null renders
             // each value in the zone it carries.
             ->withOutputTimezone($this->outputTimezone)
+            // Built links render as link objects (json_api.link_objects, or the named
+            // server's own), which can carry a describedby; false renders bare strings.
+            ->withLinkObjects($this->linkObjects)
             ->withContainer($this->resources);
 
         // Register the JSON:API profiles this server recognizes, data-driven from

@@ -392,7 +392,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
         // server then by mount type: each is the link key (the action path), the route
         // name the URL generates from, and the action's optional security expression
         // (so the link renders only when the requester may invoke the action).
-        /** @var array<string, array<string, list<array{path: string, routeName: string, security: ?string}>>> $linksByServerType */
+        /** @var array<string, array<string, list<array{path: string, routeName: string, security: ?string, methods: list<string>}>>> $linksByServerType */
         $linksByServerType = [];
 
         foreach ($container->findTaggedServiceIds(JsonApiBundle::ACTION_TAG) as $id => $tags) {
@@ -561,6 +561,9 @@ final class ResourceLocatorPass implements CompilerPassInterface
                             'path' => $path,
                             'routeName' => $this->actionRouteName($server, $type, $scope, $path, $name),
                             'security' => $security,
+                            // The first method names the operation the link's
+                            // describedby points at, as the OpenAPI projection does.
+                            'methods' => $methods,
                         ];
                     }
                 }

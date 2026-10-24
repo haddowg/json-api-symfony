@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Action;
 
+use haddowg\JsonApi\OpenApi\Metadata\ActionScope;
+use haddowg\JsonApi\OpenApi\OperationReference;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
-use haddowg\JsonApi\Schema\Link\Link;
+use haddowg\JsonApi\Schema\Link\OperationLink;
 use haddowg\JsonApi\Serializer\ResourceLinkContributorInterface;
+use haddowg\JsonApi\Serializer\UriTypeAwareInterface;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use Symfony\Component\ExpressionLanguage\Expression;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
@@ -41,6 +44,10 @@ use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
  * request-host-absolute convention the by-convention `self` link follows, and core's
  * base-prefixing leaves an already-absolute href untouched.
  *
+ * Each link names the action's operation (its path under the type's URI segment and its
+ * first declared method), so where the server has a `describedby` resolver the link
+ * object carries a `describedby` pointing at the action in the OpenAPI document.
+ *
  * Resolved lazily through the resolver-aware resource (core reads it off the rendered
  * resource's serializer resolver), so a bare serializer that never opted into
  * resolver-awareness receives no contribution — exactly as for relationships.
@@ -48,7 +55,7 @@ use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 final readonly class ActionLinkContributor implements ResourceLinkContributorInterface
 {
     /**
-     * @param array<string, array<string, list<array{path: string, routeName: string, security: ?string}>>> $linksByServerType the `asLink` action link descriptors, keyed by server name then by mount JSON:API type
+     * @param array<string, array<string, list<array{path: string, routeName: string, security: ?string, methods?: list<string>}>>> $linksByServerType the `asLink` action link descriptors, keyed by server name then by mount JSON:API type
      */
     public function __construct(
         private ServerProvider $servers,
@@ -74,6 +81,10 @@ final readonly class ActionLinkContributor implements ResourceLinkContributorInt
             return [];
         }
 
+        $uriType = $serializer instanceof UriTypeAwareInterface && $serializer->uriType() !== ''
+            ? $serializer->uriType()
+            : $type;
+
         $links = [];
         foreach ($descriptors as $descriptor) {
             if (!$this->isVisible($descriptor['security'], $object)) {
@@ -86,7 +97,10 @@ final readonly class ActionLinkContributor implements ResourceLinkContributorInt
                 UrlGeneratorInterface::ABSOLUTE_URL,
             );
 
-            $links[$descriptor['path']] = new Link($url);
+            $links[$descriptor['path']] = new OperationLink(
+                $url,
+                OperationReference::action($uriType, $descriptor['path'], ActionScope::Resource, $descriptor['methods'][0] ?? 'POST'),
+            );
         }
 
         return $links;

@@ -38,5 +38,6 @@ final readonly class OpenApiConfig
         public string $jsonSchemaPath = '/schemas.json',
         public bool $describedby = true,
         public ?string $cacheControl = null,
+        public ?string $documentUrl = null,
     ) {}
 }

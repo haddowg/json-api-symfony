@@ -60,8 +60,14 @@ asserts:
   "album": {
     "data": { "type": "albums", "id": "1" },
     "links": {
-      "self": "https://music.example/tracks/1/relationships/album",
-      "related": "https://music.example/tracks/1/album"
+      "self": {
+        "href": "https://music.example/tracks/1/relationships/album",
+        "describedby": "/docs.json#/paths/~1tracks~1%7Bid%7D~1relationships~1album/get"
+      },
+      "related": {
+        "href": "https://music.example/tracks/1/album",
+        "describedby": "/docs.json#/paths/~1tracks~1%7Bid%7D~1album/get"
+      }
     }
   }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Server;
 
 use haddowg\JsonApi\Server\Server;
+use haddowg\JsonApiBundle\OpenApi\DescribedByResolverProvider;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -26,7 +27,10 @@ final class ServerProvider
     /**
      * @param \Psr\Container\ContainerInterface $factories a service locator keyed by server name, each entry a {@see ServerFactory}
      */
-    public function __construct(private readonly \Psr\Container\ContainerInterface $factories) {}
+    public function __construct(
+        private readonly \Psr\Container\ContainerInterface $factories,
+        private readonly ?DescribedByResolverProvider $describedBy = null,
+    ) {}
 
     /**
      * The Server for `$name`, or the `default` server when `$name` is null.
@@ -49,7 +53,7 @@ final class ServerProvider
 
     /**
      * The Server for the request's `_jsonapi_server` route default, with its links
-     * based where the request found it.
+     * based where the request found it and described by the server's OpenAPI document.
      *
      * A configured `base_uri` is returned as it is. An empty one would make core base
      * every link on the request origin alone, dropping the import prefix a server's
@@ -57,12 +61,21 @@ final class ServerProvider
      * controller lives below the web root) the Server is given the effective base
      * `origin + base path + mount` for this request instead (bundle ADR 0121).
      *
+     * The `describedby` resolver is set here rather than on the memoized Server because
+     * the default document URL is a path generated against this request's base path.
+     *
      * @throws \LogicException when the route names an unknown server
      */
     public function forRequest(Request $request): Server
     {
         $name = $request->attributes->get('_jsonapi_server');
-        $server = $this->get(\is_string($name) ? $name : null);
+        $name = \is_string($name) && $name !== '' ? $name : self::DEFAULT_SERVER;
+        $server = $this->get($name);
+
+        $describedBy = $this->describedBy?->forServer($name);
+        if ($describedBy !== null) {
+            $server = $server->withDescribedByResolver($describedBy);
+        }
 
         if ($server->baseUri() !== '') {
             return $server;

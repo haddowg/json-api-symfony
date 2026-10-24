@@ -17,6 +17,7 @@ use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\Action\ActionDescriptor;
 use haddowg\JsonApiBundle\Action\ActionRegistry;
 use haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory;
+use haddowg\JsonApiBundle\OpenApi\DocumentUrlProvider;
 use haddowg\JsonApiBundle\Operation\Operation;
 use haddowg\JsonApiBundle\Security\ResourceSecurity;
 use haddowg\JsonApiBundle\Security\ResourceSecurityRegistry;
@@ -83,6 +84,7 @@ final class MetadataSource
         private readonly string $atomicPath = '/operations',
         private readonly array $errorSources = [],
         private readonly ?MountServers $mountServers = null,
+        private readonly ?DocumentUrlProvider $documentUrls = null,
     ) {}
 
     /**
@@ -113,6 +115,8 @@ final class MetadataSource
             atomicOperations: $this->atomicOperations(),
             profiles: $this->profileUris($server),
             errorSources: $this->errorSources,
+            rendersLinkObjects: $server->rendersLinkObjects(),
+            documentUrl: $this->documentUrls?->forServer($serverName),
         );
     }
 
@@ -185,6 +189,10 @@ final class MetadataSource
             // and JSON:API version come from the default server).
             profiles: $this->profileUris($defaultServer),
             errorSources: $this->errorSources,
+            // Link form and document URL follow the default server too, as the info
+            // block does.
+            rendersLinkObjects: $defaultServer->rendersLinkObjects(),
+            documentUrl: $this->documentUrls?->forServer(ServerProvider::DEFAULT_SERVER),
         );
     }
 

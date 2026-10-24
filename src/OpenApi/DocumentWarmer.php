@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\OpenApi;
 
+use haddowg\JsonApi\OpenApi\SpecDescribedByResolver;
 use haddowg\JsonApiBundle\OpenApi\Serve\ServeArtifact;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
@@ -35,9 +36,10 @@ use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
  * `O(file read)`; a static `combined.json`/`.yaml` is also emitted when a
  * `public_path` is set.
  *
- * Beside each JSON artifact it writes the artifact's hash (the served ETag) and the
+ * Beside each JSON artifact it writes the artifact's hash (the served ETag), the
  * document as serialized value objects, which a request with serve decorators loads
- * instead of rebuilding (bundle ADR 0131).
+ * instead of rebuilding (bundle ADR 0131), and the operations the document carries,
+ * which each link's `describedby` is checked against ({@see DescribedByResolverProvider}).
  */
 final class DocumentWarmer implements CacheWarmerInterface
 {
@@ -110,6 +112,7 @@ final class DocumentWarmer implements CacheWarmerInterface
         $document = $this->documents->forServer($server);
         $store->writeWithHash($server, $document->toJsonString(true));
         $store->writeServeArtifact($server, ServeArtifact::of($document));
+        $store->writeOperations($server, SpecDescribedByResolver::operationsOf($document));
 
         $schemas = $this->schemas->forServer($server);
         foreach ($schemas as $type => $schema) {
@@ -130,6 +133,7 @@ final class DocumentWarmer implements CacheWarmerInterface
         $document = $this->documents->combined();
         $store->writeWithHash(\haddowg\JsonApiBundle\Controller\OpenApiController::COMBINED_KEY, $document->toJsonString(true));
         $store->writeServeArtifact(\haddowg\JsonApiBundle\Controller\OpenApiController::COMBINED_KEY, ServeArtifact::of($document));
+        $store->writeOperations(\haddowg\JsonApiBundle\Controller\OpenApiController::COMBINED_KEY, SpecDescribedByResolver::operationsOf($document));
 
         $aggregate = $this->encodeSchemas((object) $this->schemas->combined());
         $store->writeSchemaAggregateWithHash(\haddowg\JsonApiBundle\Controller\OpenApiController::COMBINED_KEY, $aggregate);

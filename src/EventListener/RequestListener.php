@@ -64,6 +64,9 @@ final class RequestListener
         private readonly OperationFactory $operationFactory = new OperationFactory(),
         private readonly ?DocumentValidator $schemaValidator = null,
         private readonly ?ActionRegistry $actions = null,
+        // The atomic endpoint's path in the OpenAPI document, so the result's
+        // `describedby` can name its `POST` operation.
+        private readonly string $atomicPath = '/operations',
     ) {}
 
     public function onKernelRequest(RequestEvent $event): void
@@ -198,6 +201,7 @@ final class RequestListener
             $descriptors,
             QueryParameters::fromRequest($jsonApiRequest),
             new OperationContext($server, $jsonApiRequest),
+            $this->atomicPath,
         );
 
         $response = $server->dispatch($operation);

@@ -25,6 +25,7 @@ json_api:
     version: '1.1'
     max_include_depth: 3
     strict_query_parameters: true
+    link_objects: true
     pagination:
         max_per_page: 50
     doctrine:
@@ -50,6 +51,7 @@ witness).
 | `version` | scalar | `'1.1'` | The JSON:API version the implicit `default` server advertises. Defaults to `'1.1'`, so set it **only** to pin a non-default version — most apps omit it (the example app's `'1.1'` above is just the explicit-version witness). |
 | `max_include_depth` | int | `3` | The cap on `?include` nesting depth (relationship hops from the primary resource). `0` is unlimited. A resource's own `maxIncludeDepth()` overrides it. |
 | `output_timezone` | scalar | `null` | The zone every `DateTime` attribute of the `default` server renders in, such as `UTC`, unless the field sets its own `outputTimezone()`. `Date` and `Time` attributes are left alone. `null` or `''` renders each value in the zone it carries. Named servers inherit it. See [`output_timezone`](#output_timezone). |
+| `link_objects` | bool | `true` | Render the links the server builds as JSON:API link objects (`{"href": …}`), which carry a [`describedby`](openapi.md#links-and-describedby) into the OpenAPI document. `false` renders bare URL strings. Named servers inherit it. |
 | `strict_query_parameters` | bool | `true` | Reject an unrecognized top-level query-parameter family — and an unknown [`fields[type]` sparse-fieldset member](#unknown-sparse-fieldset-members) — with a `400`. `false` restores the old silent-ignore behaviour. |
 | `pagination.max_per_page` | int | `100` | The page-size cap the built-in server default paginator clamps `page[size]`/`page[limit]` to. `0` installs no built-in default (those collections render unpaginated). |
 | `doctrine.window_functions` | bool | `true` | Use SQL window functions (`ROW_NUMBER`/`COUNT OVER`) for the bounded windowed-include batch. Requires MySQL ≥ 8, MariaDB ≥ 10.2, SQLite ≥ 3.25, or any PostgreSQL. On an older engine the default `true` throws a `500` at the first windowed include — set `false` for the per-parent bounded fallback. |
@@ -58,7 +60,7 @@ witness).
 | `schema_validation` | bool | `false` | Registers the optional opis structural linter. Enabling it without `opis/json-schema` **fails the build**. |
 | `defaults.cache_headers` | map | `{}` | Fleet-wide default HTTP cache directives for `GET` reads. A resource's own `cacheHeaders` overrides these. |
 | `defaults.deprecation` / `sunset` / `sunset_link` | scalar | `null` | Fleet-wide default deprecation/sunset headers. A resource's own `deprecation`/`sunset` overrides these. |
-| `servers` | map | `[]` | Additional **named** servers, keyed by name. Each takes `base_uri`, `version` and `output_timezone`. |
+| `servers` | map | `[]` | Additional **named** servers, keyed by name. Each takes `base_uri`, `version`, `output_timezone` and `link_objects`. |
 
 `base_uri` and `version` configure the implicit `default` server — link core
 [server.md](https://github.com/haddowg/json-api/blob/main/docs/server.md) for what
@@ -66,7 +68,7 @@ a core `Server` does with them. A single-API app sets just `base_uri` (and usual
 nothing else) and never touches `servers:`.
 
 > **Empty `base_uri` (the default) emits request-host-absolute links** — a request to
-> `https://albums.example/albums/1` renders `"self": "https://albums.example/albums/1"`,
+> `https://albums.example/albums/1` renders a `self` link with `"href": "https://albums.example/albums/1"`,
 > scheme and host taken from the incoming request's origin. That is the **multi-tenant /
 > multi-host recipe**: one deployment served under several hostnames emits correct
 > absolute self-links per host with no per-request configuration. Behind a TLS-terminating
@@ -477,6 +479,16 @@ json_api:
             output_timezone: Asia/Tokyo
         legacy:
             output_timezone: ''   # no conversion on this server
+```
+
+`link_objects` inherits the same way, so one server can keep bare string links (for a
+client that predates link objects, say) while the rest render objects:
+
+```yaml
+json_api:
+    servers:
+        legacy:
+            link_objects: false
 ```
 
 A type shared by several servers (`server: ['default', 'admin']`) renders in each

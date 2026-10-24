@@ -28,7 +28,7 @@ final class MountedMultiServerTest extends JsonApiFunctionalTestCase
     {
         $document = $this->fetch('/api/v5/public-widgets/p1');
 
-        self::assertSame(['self' => 'http://localhost/api/v5/public-widgets/p1'], $document['links'] ?? null);
+        self::assertSame(['self' => ['href' => 'http://localhost/api/v5/public-widgets/p1']], $document['links'] ?? null);
         self::assertSame(
             'http://localhost/api/v5/public-widgets/p1/relationships/related',
             $this->relationshipSelf($document, 'related'),
@@ -41,7 +41,7 @@ final class MountedMultiServerTest extends JsonApiFunctionalTestCase
     {
         $document = $this->fetch('/admin/admin-widgets/a1');
 
-        self::assertSame(['self' => 'http://localhost/admin/admin-widgets/a1'], $document['links'] ?? null);
+        self::assertSame(['self' => ['href' => 'http://localhost/admin/admin-widgets/a1']], $document['links'] ?? null);
         self::assertSame(
             'http://localhost/admin/admin-widgets/a1/relationships/related',
             $this->relationshipSelf($document, 'related'),
@@ -88,7 +88,9 @@ final class MountedMultiServerTest extends JsonApiFunctionalTestCase
         $links = $relation['links'] ?? null;
         self::assertIsArray($links);
 
-        return $links['self'] ?? null;
+        self::assertIsArray($links['self'] ?? null);
+
+        return $links['self']['href'] ?? null;
     }
 
     #[Test]

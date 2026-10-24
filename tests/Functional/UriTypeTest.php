@@ -62,7 +62,7 @@ final class UriTypeTest extends JsonApiFunctionalTestCase
         // (core ADR 0054).
         $dataLinks = $data['links'] ?? null;
         self::assertIsArray($dataLinks);
-        self::assertSame('https://example.test/books/1', $dataLinks['self'] ?? null);
+        self::assertSame(['href' => 'https://example.test/books/1'], $dataLinks['self'] ?? null);
 
         // The relationship convention links use the URI segment (`books`).
         $relationships = $data['relationships'] ?? null;
@@ -71,8 +71,8 @@ final class UriTypeTest extends JsonApiFunctionalTestCase
         self::assertIsArray($related);
         $links = $related['links'] ?? null;
         self::assertIsArray($links);
-        self::assertSame('https://example.test/books/1/relationships/related', $links['self'] ?? null);
-        self::assertSame('https://example.test/books/1/related', $links['related'] ?? null);
+        self::assertSame(['href' => 'https://example.test/books/1/relationships/related'], $links['self'] ?? null);
+        self::assertSame(['href' => 'https://example.test/books/1/related'], $links['related'] ?? null);
     }
 
     #[Test]

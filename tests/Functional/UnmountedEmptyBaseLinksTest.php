@@ -28,11 +28,11 @@ final class UnmountedEmptyBaseLinksTest extends JsonApiFunctionalTestCase
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
 
         $document = $this->decode($response);
-        self::assertSame(['self' => 'https://tenant.example/articles/1'], $document['links'] ?? null);
+        self::assertSame(['self' => ['href' => 'https://tenant.example/articles/1']], $document['links'] ?? null);
 
         $data = $document['data'] ?? null;
         self::assertIsArray($data);
-        self::assertSame(['self' => 'https://tenant.example/articles/1'], $data['links'] ?? null);
+        self::assertSame(['self' => ['href' => 'https://tenant.example/articles/1']], $data['links'] ?? null);
     }
 
     #[Test]
@@ -44,7 +44,7 @@ final class UnmountedEmptyBaseLinksTest extends JsonApiFunctionalTestCase
 
         $links = $this->decode($response)['links'] ?? null;
         self::assertIsArray($links);
-        self::assertSame('http://localhost/articles?page%5Bnumber%5D=2&page%5Bsize%5D=2', $links['next'] ?? null);
+        self::assertSame(['href' => 'http://localhost/articles?page%5Bnumber%5D=2&page%5Bsize%5D=2'], $links['next'] ?? null);
     }
 
     #[Test]

@@ -55,9 +55,9 @@ final class EmptyBaseWriteLocationTest extends JsonApiFunctionalTestCase
 
         $links = $data['links'] ?? null;
         self::assertIsArray($links);
-        self::assertSame($expected, $links['self'] ?? null);
+        self::assertSame(['href' => $expected], $links['self'] ?? null);
 
         self::assertSame($expected, $response->headers->get('Location'));
-        self::assertSame($links['self'], $response->headers->get('Location'));
+        self::assertSame($links['self']['href'], $response->headers->get('Location'));
     }
 }

@@ -130,6 +130,6 @@ final class EndpointExposureTest extends JsonApiFunctionalTestCase
 
         $links = $document['links'] ?? null;
         self::assertIsArray($links);
-        self::assertSame('https://example.test/gizmos/g1', $links['self'] ?? null);
+        self::assertSame(['href' => 'https://example.test/gizmos/g1'], $links['self'] ?? null);
     }
 }

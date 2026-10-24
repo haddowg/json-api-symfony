@@ -333,14 +333,14 @@ Accept: application/vnd.api+json
     }
   },
   "links": {
-    "first": "https://example.test/widgets?sort=priority,id&page[size]=2",
-    "next": "https://example.test/widgets?sort=priority,id&page[after]=eyJwcmlvcml0eSI6MTAsImlkIjo3LCJfcG9pbnRzVG9OZXh0SXRlbXMiOnRydWUsIl9kIjp7InByaW9yaXR5IjpmYWxzZSwiaWQiOmZhbHNlfX0&page[size]=2"
+    "first": { "href": "https://example.test/widgets?sort=priority,id&page[size]=2", "describedby": "/docs.json#/paths/~1widgets/get" },
+    "next": { "href": "https://example.test/widgets?sort=priority,id&page[after]=eyJwcmlvcml0eSI6MTAsImlkIjo3LCJfcG9pbnRzVG9OZXh0SXRlbXMiOnRydWUsIl9kIjp7InByaW9yaXR5IjpmYWxzZSwiaWQiOmZhbHNlfX0&page[size]=2", "describedby": "/docs.json#/paths/~1widgets/get" }
   }
 }
 ```
 
 The first page carries no `prev` (it is the head of the list) and no `last` (no
-total). Following the `next` link returns the next two rows; the cursor token is
+total). Following the `next` link's `href` returns the next two rows; the cursor token is
 opaque — the client just follows the link. The illustrative token above decodes to
 the boundary row's `priority`/`id` values and the keyset direction; the exact bytes
 are an implementation detail you never depend on.

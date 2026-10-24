@@ -45,7 +45,15 @@ final class SelfLinkTest extends MusicCatalogKernelTestCase
         // type itself, so the resource self is /albums/1.
         $data = $this->dataOf($this->fetch('/albums/1'));
 
-        self::assertSame(self::BASE_URI . '/albums/1', $this->selfOf($data));
+        $links = $data['links'] ?? null;
+        self::assertIsArray($links);
+        self::assertSame(
+            [
+                'href' => self::BASE_URI . '/albums/1',
+                'describedby' => '/docs.json#/paths/~1albums~1%7Bid%7D/get',
+            ],
+            $links['self'] ?? null,
+        );
     }
 
     #[Test]
@@ -271,7 +279,7 @@ final class SelfLinkTest extends MusicCatalogKernelTestCase
     }
 
     /**
-     * The `links.self` of a resource object.
+     * The `href` of a resource object's `links.self` link object.
      *
      * @param array<string, mixed> $resource
      */
@@ -279,12 +287,13 @@ final class SelfLinkTest extends MusicCatalogKernelTestCase
     {
         $links = $resource['links'] ?? null;
         self::assertIsArray($links);
+        self::assertIsArray($links['self'] ?? null);
 
-        return $links['self'] ?? null;
+        return $links['self']['href'] ?? null;
     }
 
     /**
-     * The top-level document `links.self`.
+     * The `href` of the top-level document `links.self` link object.
      *
      * @param array<string, mixed> $document
      */
@@ -292,8 +301,9 @@ final class SelfLinkTest extends MusicCatalogKernelTestCase
     {
         $links = $document['links'] ?? null;
         self::assertIsArray($links);
+        self::assertIsArray($links['self'] ?? null);
 
-        return $links['self'] ?? null;
+        return $links['self']['href'] ?? null;
     }
 
     /**

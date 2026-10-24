@@ -29,7 +29,7 @@ final class InMemoryMountedServerLinksTest extends MountedServerLinksConformance
         self::assertNotNull($article);
 
         $expected = $this->browser()->expectResource($article);
-        self::assertSame(['self' => 'http://localhost/api/v5/articles/1'], $expected['links'] ?? null);
+        self::assertSame(['self' => ['href' => 'http://localhost/api/v5/articles/1']], $expected['links'] ?? null);
 
         $this->browser()
             ->get('/api/v5/articles/1')
