@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.6.0](https://github.com/haddowg/json-api-symfony/compare/v1.5.1...v1.6.0) (2026-10-24)
+
+
+### Features
+
+* describe atomic results by their operation and drop the describedby listener ([1919a1f](https://github.com/haddowg/json-api-symfony/commit/1919a1f22b40eadbb82b7dd7163082ccb5d062dd))
+* **openapi:** customise the served document per request ([#170](https://github.com/haddowg/json-api-symfony/issues/170)) ([bec7075](https://github.com/haddowg/json-api-symfony/commit/bec707520b338c9f22d155597d673fa2c6271c90))
+* **openapi:** serve decorated documents through core's serve helpers ([#174](https://github.com/haddowg/json-api-symfony/issues/174)) ([66204fd](https://github.com/haddowg/json-api-symfony/commit/66204fd7537341b1027bd7127cdaa1ed51135abb))
+* point built links at their operation in the served OpenAPI document ([1919a1f](https://github.com/haddowg/json-api-symfony/commit/1919a1f22b40eadbb82b7dd7163082ccb5d062dd))
+
 ## [1.5.1](https://github.com/haddowg/json-api-symfony/compare/v1.5.0...v1.5.1) (2026-10-24)
 
 
