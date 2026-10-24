@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\OpenApi\Metadata;
 
 use haddowg\JsonApi\OpenApi\Metadata\ActionMetadataInterface;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationExtensions;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresSingularName;
 use haddowg\JsonApi\OpenApi\Metadata\OperationResponseInterface;
 use haddowg\JsonApi\OpenApi\Metadata\OperationResponses;
 use haddowg\JsonApi\OpenApi\Metadata\OperationType;
@@ -30,8 +31,11 @@ use haddowg\JsonApi\Resource\Sort\SortInterface;
  * It implements core's opt-in {@see DeclaresOperationExtensions} to carry the vendor
  * extensions declared on `#[AsJsonApiResource]` (bundle ADR 0127); a type that
  * declares none returns empty maps and the projector emits nothing.
+ *
+ * It also implements core's opt-in {@see DeclaresSingularName}: the noun the generated
+ * prose uses for one resource, or `null` to let core inflect it from the type name.
  */
-final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOperationExtensions
+final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOperationExtensions, DeclaresSingularName
 {
     /**
      * @param list<FieldInterface>            $fields
@@ -48,6 +52,7 @@ final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOper
      * @param list<string>                    $includablePaths
      * @param array<string, mixed>            $extensions          vendor extensions for every operation of the type
      * @param array<string, array<string, mixed>> $operationExtensions per-CRUD-operation vendor extensions, keyed by {@see OperationType::value}
+     * @param ?string                         $singularName        the declared singular noun for generated prose (null = inflected by core)
      */
     public function __construct(
         private string $type,
@@ -73,6 +78,7 @@ final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOper
         private array $includablePaths,
         private array $extensions = [],
         private array $operationExtensions = [],
+        private ?string $singularName = null,
     ) {}
 
     public function type(): string
@@ -188,5 +194,10 @@ final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOper
     public function operationExtensions(OperationType $operation): array
     {
         return $this->operationExtensions[$operation->value] ?? [];
+    }
+
+    public function singularName(): ?string
+    {
+        return $this->singularName;
     }
 }

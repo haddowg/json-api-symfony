@@ -51,6 +51,8 @@ use haddowg\JsonApiBundle\Operation\Operation;
         Operation::Create->name => ['x-feature' => 'catalog-admin'],
         Operation::Delete->name => ['x-rate-limit' => ['per-minute' => 10]],
     ],
+    // The singular noun the generated prose uses ("Fetch a catalog item").
+    singular: 'catalog item',
 )]
 final class ProductResource extends AbstractResource
 {

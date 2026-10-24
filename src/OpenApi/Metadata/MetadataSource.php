@@ -348,6 +348,9 @@ final class MetadataSource
             // every other operation the type emits.
             extensions: $this->descriptions?->extensionsFor($type) ?? [],
             operationExtensions: $this->operationExtensions($type),
+            // Same precedence as the descriptions: the resource's getSingularName()
+            // hook, then the #[AsJsonApiResource(singular:)] attribute.
+            singularName: $this->nonBlank($resource?->getSingularName()) ?? $this->descriptions?->singularFor($type),
         );
     }
 
@@ -669,5 +672,10 @@ final class MetadataSource
         return $serverName === ServerProvider::DEFAULT_SERVER
             ? 'JSON:API'
             : \sprintf('JSON:API (%s)', $serverName);
+    }
+
+    private function nonBlank(?string $value): ?string
+    {
+        return $value !== null && \trim($value) !== '' ? $value : null;
     }
 }

@@ -40,6 +40,12 @@ use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
  * `ui.enabled` is true **and** the expose gate passes (`kernel.debug` or
  * `expose_in_prod`), so this controller never re-checks exposure.
  *
+ * ReDoc defaults to the pinned 3.x release (bundle ADR 0134). Its standalone bundle is an
+ * ES module that initialises itself from the `<redoc spec-url>` tag, so the page loads
+ * it with `<script type="module">` and renders `disable-telemetry="true"` on the tag
+ * unless `ui.redoc_telemetry` opts in. `ui.redoc_version` set to an exact 2.x release
+ * switches to the classic global-script loader, which has no telemetry.
+ *
  * The page carries no JSON:API route marker (it is HTML, not a JSON:API operation), so
  * the bundle's exception listener does not own its errors.
  */
@@ -52,13 +58,18 @@ final class OpenApiUiController
     public const string SWAGGER_UI_VERSION = '5.17.14';
 
     /**
-     * The pinned ReDoc CDN version (the standalone bundle), used the same way.
+     * The default ReDoc version (the standalone ES module bundle), used when
+     * `json_api.openapi.ui.redoc_version` is not set.
      */
-    public const string REDOC_VERSION = '2.1.5';
+    public const string REDOC_VERSION = '3.0.1';
+
+    /**
+     * The last 2.x ReDoc release the bundle was checked against, for an app that sets
+     * `json_api.openapi.ui.redoc_version` back to the 2.x line.
+     */
+    public const string REDOC_VERSION_2 = '2.5.4';
 
     private const SWAGGER_CDN = 'https://cdn.jsdelivr.net/npm/swagger-ui-dist@' . self::SWAGGER_UI_VERSION;
-
-    private const REDOC_CDN = 'https://cdn.jsdelivr.net/npm/redoc@' . self::REDOC_VERSION . '/bundles';
 
     /**
      * The route name of the default-server / combined OpenAPI document, generated to
@@ -73,6 +84,8 @@ final class OpenApiUiController
      * @param ?string $cdn          the `json_api.openapi.ui.cdn` override (null = the pinned
      *                              renderer default)
      * @param ?string $cacheControl the `json_api.openapi.cache_control` value (null = off)
+     * @param string  $redocVersion   the exact ReDoc version to load (`json_api.openapi.ui.redoc_version`); its major picks the loader
+     * @param bool    $redocTelemetry whether ReDoc 3.x may send telemetry (`json_api.openapi.ui.redoc_telemetry`)
      */
     public function __construct(
         private readonly UrlGeneratorInterface $urlGenerator,
@@ -80,6 +93,8 @@ final class OpenApiUiController
         private readonly string $jsonPath = '/docs.json',
         private readonly ?string $cdn = null,
         private readonly ?string $cacheControl = null,
+        private readonly string $redocVersion = self::REDOC_VERSION,
+        private readonly bool $redocTelemetry = false,
     ) {}
 
     public function __invoke(Request $request): Response
@@ -157,10 +172,35 @@ final class OpenApiUiController
 
     private function redocPage(string $specUrl): string
     {
-        $base = $this->assetBase(self::REDOC_CDN);
+        $base = $this->assetBase('https://cdn.jsdelivr.net/npm/redoc@' . $this->redocVersion . '/bundles');
         $js = $this->attr($base . '/redoc.standalone.js');
         $spec = $this->attr($specUrl);
 
+        if (\str_starts_with($this->redocVersion, '2.')) {
+            return $this->redoc2Page($js, $spec);
+        }
+
+        $telemetry = $this->redocTelemetry ? '' : ' disable-telemetry="true"';
+
+        return <<<HTML
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1">
+              <title>API documentation</title>
+              <style>body { margin: 0; padding: 0; }</style>
+            </head>
+            <body>
+              <redoc spec-url="{$spec}"{$telemetry}></redoc>
+              <script type="module" src="{$js}" crossorigin></script>
+            </body>
+            </html>
+            HTML;
+    }
+
+    private function redoc2Page(string $js, string $spec): string
+    {
         return <<<HTML
             <!DOCTYPE html>
             <html lang="en">

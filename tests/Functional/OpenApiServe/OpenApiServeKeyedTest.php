@@ -61,13 +61,13 @@ final class OpenApiServeKeyedTest extends OpenApiServeTestCase
         $limitedSchemas = self::arr(self::arr($limitedDoc['components'] ?? null)['schemas'] ?? null);
 
         // Only the removed operations used these.
-        foreach (['CategoriesCreateRequest', 'CategoriesCreateAttributes', 'CategoriesUpdateRequest', 'CategoriesUpdateAttributes', 'CategoriesDocument', 'ProductsCreateRequest', 'ProductsCreateAttributes'] as $name) {
+        foreach (['CategoriesCreateRequest', 'CategoriesCreateAttributes', 'CategoriesUpdateRequest', 'CategoriesUpdateAttributes', 'CategoriesDocument', 'CategoriesCollection', 'ProductsCreateRequest', 'ProductsCreateAttributes'] as $name) {
             self::assertArrayHasKey($name, $fullSchemas);
             self::assertArrayNotHasKey($name, $limitedSchemas, $name);
         }
 
         // Products' related endpoints still return categories, so these stay.
-        foreach (['CategoriesResource', 'CategoriesCollection', 'CategoriesAttributes', 'ProductsResource', 'Meta', 'Links', 'ErrorDocument'] as $name) {
+        foreach (['CategoriesResource', 'ProductsTagsRelatedCollection', 'ProductsCategoryRelatedDocument', 'CategoriesAttributes', 'ProductsResource', 'Meta', 'Links', 'ErrorDocument'] as $name) {
             self::assertArrayHasKey($name, $limitedSchemas, $name);
         }
 

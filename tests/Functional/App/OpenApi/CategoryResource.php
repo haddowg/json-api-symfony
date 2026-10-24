@@ -19,6 +19,7 @@ use haddowg\JsonApi\Resource\Field\Str;
  * `getDescription()` overrides the resource-object schema description and
  * `describeOperation()` overrides one CRUD operation, while the others fall through to
  * the generated default — the method-hook twin of products' attribute-driven overrides.
+ * `getSingularName()` likewise twins products' `singular:` attribute.
  */
 final class CategoryResource extends AbstractResource
 {
@@ -36,6 +37,11 @@ final class CategoryResource extends AbstractResource
             Id::make(),
             Str::make('name')->required(),
         ];
+    }
+
+    public function getSingularName(): string
+    {
+        return 'product category';
     }
 
     public function getDescription(): ?string
