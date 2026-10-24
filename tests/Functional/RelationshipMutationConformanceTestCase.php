@@ -130,6 +130,22 @@ abstract class RelationshipMutationConformanceTestCase extends JsonApiFunctional
     }
 
     #[Test]
+    #[Group('spec:updating-relationships')]
+    public function deletingAMemberOfAnotherParentLeavesItWithThatParent(): void
+    {
+        // Comment 3 belongs to article 2, not article 1: removing it from article 1 is
+        // a no-op and article 2 keeps it.
+        $response = $this->handle('/articles/1/relationships/comments', 'DELETE', [
+            'data' => [['type' => 'comments', 'id' => '3']],
+        ]);
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $this->detachPersistedState();
+        self::assertSame(['1', '2'], $this->commentIds($this->identifiersOf('/articles/1/relationships/comments')));
+        self::assertSame(['3'], $this->commentIds($this->identifiersOf('/articles/2/relationships/comments')));
+    }
+
+    #[Test]
     #[Group('spec:creating-resources')]
     public function creatingAResourceWithRelationshipsSetsThemThroughThePersisterSeam(): void
     {

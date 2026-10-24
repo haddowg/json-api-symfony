@@ -60,6 +60,7 @@ use haddowg\JsonApiBundle\DataPersister\AcceptedForProcessing;
 use haddowg\JsonApiBundle\DataPersister\AsyncWriteNotAllowedInAtomicOperation;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
+use haddowg\JsonApiBundle\DataPersister\ReportsMovedMembersInterface;
 use haddowg\JsonApiBundle\DataPersister\WriteTransactionContext;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
@@ -85,6 +86,7 @@ use haddowg\JsonApiBundle\Event\BeforeEmbeddedRelationshipWriteEvent;
 use haddowg\JsonApiBundle\Event\BeforeFetchCollectionEvent;
 use haddowg\JsonApiBundle\Event\BeforeFetchRelatedEvent;
 use haddowg\JsonApiBundle\Event\BeforeFetchRelationshipEvent;
+use haddowg\JsonApiBundle\Event\BeforeMemberMoveEvent;
 use haddowg\JsonApiBundle\Event\BeforeRelationshipMutateEvent;
 use haddowg\JsonApiBundle\Event\BeforeSaveEvent;
 use haddowg\JsonApiBundle\Event\BeforeUpdateEvent;
@@ -1407,7 +1409,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             ));
         }
 
-        $parent = $this->persisters->forType($type)->mutateRelationship($type, $parent, $relation, $scopedLinkage, $mode);
+        $persister = $this->persisters->forType($type);
+        $this->guardMovedMembers($persister, $type, $request, $parent, $relation, $scopedLinkage, $mode);
+
+        $parent = $persister->mutateRelationship($type, $parent, $relation, $scopedLinkage, $mode);
 
         // Render the linkage `GET` on the relationship endpoint serves (unpaginated), not
         // the model's members, which still include the ones the scope hides.
@@ -2181,15 +2186,41 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $this->serverName($request),
             ));
 
+            $linkage = $this->linkageGuard?->scope($server, $entity, $relationship['relation'], $relationship['linkage'], Mode::Replace, $body, $creating)
+                ?? $relationship['linkage'];
+            $this->guardMovedMembers($persister, $type, $request, $entity, $relationship['relation'], $linkage, Mode::Replace);
+
             $persister->mutateRelationship(
                 $type,
                 $entity,
                 $relationship['relation'],
-                $this->linkageGuard?->scope($server, $entity, $relationship['relation'], $relationship['linkage'], Mode::Replace, $body, $creating)
-                    ?? $relationship['linkage'],
+                $linkage,
                 Mode::Replace,
                 flush: false,
             );
+        }
+    }
+
+    /**
+     * Dispatches {@see BeforeMemberMoveEvent} for each member a to-many add or replace
+     * would take from another parent (or attach from none), when the persister reports
+     * such moves, so the move can be refused before the persister applies it.
+     */
+    private function guardMovedMembers(
+        DataPersisterInterface $persister,
+        string $type,
+        JsonApiRequestInterface $request,
+        object $parent,
+        RelationInterface $relation,
+        ToOneRelationship|ToManyRelationship $linkage,
+        Mode $mode,
+    ): void {
+        if (!$persister instanceof ReportsMovedMembersInterface || !$linkage instanceof ToManyRelationship) {
+            return;
+        }
+
+        foreach ($persister->movedMembers($type, $parent, $relation, $linkage, $mode) as $moved) {
+            $this->dispatch(new BeforeMemberMoveEvent($type, $request, $parent, $relation, $moved->member, $moved->from, $this->serverName($request)));
         }
     }
 

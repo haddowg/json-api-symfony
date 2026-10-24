@@ -17,6 +17,8 @@ use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Schema\ResourceIdentifier;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
+use haddowg\JsonApiBundle\DataPersister\MovedMember;
+use haddowg\JsonApiBundle\DataPersister\ReportsMovedMembersInterface;
 use haddowg\JsonApiBundle\DataPersister\TransactionalDataPersisterInterface;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\PivotAssociation;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\PivotAssociationResolver;
@@ -59,7 +61,7 @@ use haddowg\JsonApiBundle\Server\IdEncoderResolver;
  * (`404`), rather than passing the raw wire string to `getReference` (which would
  * build a proxy that errors on initialization, surfacing as a `500`).
  */
-final class DoctrineDataPersister implements DataPersisterInterface, TransactionalDataPersisterInterface
+final class DoctrineDataPersister implements DataPersisterInterface, TransactionalDataPersisterInterface, ReportsMovedMembersInterface
 {
     /**
      * @param array<string, class-string>    $entityClassByType a `type → entity FQCN` map
@@ -213,6 +215,53 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
     }
 
     /**
+     * The members an add or replace on the inverse side of a one-to-many would take
+     * from the parent they currently reference (or attach from no parent). A
+     * many-to-many or pivot relation adds a member without taking it from anyone, so
+     * it reports none.
+     */
+    public function movedMembers(string $type, object $parent, RelationInterface $relation, ToManyRelationship $linkage, Mode $mode): array
+    {
+        if ($mode === Mode::Remove
+            || ($this->pivotAssociations !== null && $this->pivotAssociations->isPivotRelation($relation))) {
+            return [];
+        }
+
+        $owningField = $this->inverseOwningField($parent, $relation->column() ?? $relation->name());
+        $relatedType = $relation->relatedTypes()[0] ?? '';
+        if ($owningField === null || !isset($this->entityClassByType[$relatedType])) {
+            return [];
+        }
+
+        $relatedClass = $this->entityClassFor($relatedType);
+        $relatedMetadata = $this->entityManager->getClassMetadata($relatedClass);
+        if (!$relatedMetadata->isSingleValuedAssociation($owningField)) {
+            return [];
+        }
+
+        $moved = [];
+        foreach ($linkage->getResourceIdentifierIds() as $id) {
+            if ($id === null) {
+                continue;
+            }
+
+            $member = $this->entityManager->find($relatedClass, $this->decodeLinkageId($relatedType, $id));
+            if ($member === null) {
+                continue;
+            }
+
+            $from = $relatedMetadata->getFieldValue($member, $owningField);
+            if ($from === $parent) {
+                continue;
+            }
+
+            $moved[] = new MovedMember($member, \is_object($from) ? $from : null);
+        }
+
+        return $moved;
+    }
+
+    /**
      * @param class-string $relatedClass
      */
     private function mutateToMany(
@@ -261,10 +310,11 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
 
         // Mode::Remove — drop the incoming members and clear their owning side
         // (the owning-side FK for a single-valued inverse, or the join row for a
-        // many-to-many inverse).
+        // many-to-many inverse). A resource that is not a member is left alone: it may
+        // belong to another parent, and removing a non-member is a no-op.
         foreach ($incomingIds as $id) {
             $reference = $this->entityManager->getReference($relatedClass, $this->decodeLinkageId($relatedType, $id));
-            if ($reference === null) {
+            if ($reference === null || !$collection->contains($reference)) {
                 continue;
             }
             $collection->removeElement($reference);

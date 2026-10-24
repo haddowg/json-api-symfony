@@ -154,6 +154,8 @@ final class SecurityTestKernel extends Kernel
         $services->set(OwnedWidgetResource::class);
         $services->set(OpenWidgetResource::class);
         $services->set(OwnedWidgetVoter::class);
+        $services->set(OwnedFolderResource::class);
+        $services->set(OwnedNoteResource::class);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

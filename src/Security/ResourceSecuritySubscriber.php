@@ -13,6 +13,7 @@ use haddowg\JsonApiBundle\Event\BeforeEmbeddedRelationshipWriteEvent;
 use haddowg\JsonApiBundle\Event\BeforeFetchCollectionEvent;
 use haddowg\JsonApiBundle\Event\BeforeFetchRelatedEvent;
 use haddowg\JsonApiBundle\Event\BeforeFetchRelationshipEvent;
+use haddowg\JsonApiBundle\Event\BeforeMemberMoveEvent;
 use haddowg\JsonApiBundle\Event\BeforeRelationshipMutateEvent;
 use haddowg\JsonApiBundle\Event\BeforeUpdateEvent;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
@@ -43,6 +44,8 @@ use Symfony\Component\Security\Core\Exception\AccessDeniedException;
  *                                         → the parent (gated by the relation's own mutate
  *                                           expression only; the parent's create/update
  *                                           gate covers the rest of the write);
+ *  - {@see BeforeMemberMoveEvent}         → the member's previous parent, else the
+ *                                           member itself (see {@see onBeforeMemberMove()});
  *  - {@see BeforeDeleteEvent}             → the loaded entity;
  *  - {@see AfterFetchOneEvent}            → the loaded entity;
  *  - {@see BeforeFetchRelatedEvent} / {@see BeforeFetchRelationshipEvent}
@@ -92,6 +95,7 @@ final class ResourceSecuritySubscriber implements EventSubscriberInterface
             BeforeUpdateEvent::class => 'onBeforeUpdate',
             BeforeRelationshipMutateEvent::class => 'onBeforeRelationshipMutate',
             BeforeEmbeddedRelationshipWriteEvent::class => 'onBeforeEmbeddedRelationshipWrite',
+            BeforeMemberMoveEvent::class => 'onBeforeMemberMove',
             BeforeDeleteEvent::class => 'onBeforeDelete',
             AfterFetchOneEvent::class => 'onAfterFetchOne',
             BeforeFetchCollectionEvent::class => 'onBeforeFetchCollection',
@@ -183,6 +187,35 @@ final class ResourceSecuritySubscriber implements EventSubscriberInterface
         $this->authorize($event->type, $event->relation->securityMutate(), $event->parent);
     }
 
+    /**
+     * A to-many write that moves a member out of another parent changes that parent
+     * too, so the caller must be allowed to change it: either the relation's mutate (or
+     * the type's update) expression passes for the parent the member leaves, or the
+     * related type's update expression passes for the member itself. A member that
+     * belongs to no parent needs the latter. An expression that is not declared allows
+     * the move, as it would allow the direct write.
+     */
+    public function onBeforeMemberMove(BeforeMemberMoveEvent $event): void
+    {
+        if ($event->from !== null
+            && $this->allows($event->relation->securityMutate() ?? $this->registry->securityFor($event->type)?->forUpdate(), $event->from)) {
+            return;
+        }
+
+        $relatedType = $event->relation->relatedTypes()[0] ?? null;
+        $memberExpression = $relatedType !== null ? $this->registry->securityFor($relatedType)?->forUpdate() : null;
+        if ($this->allows($memberExpression, $event->member)) {
+            return;
+        }
+
+        throw new AccessDeniedException(\sprintf(
+            'Access denied to moving %s into the "%s" relationship of the JSON:API type "%s".',
+            $event->member::class,
+            $event->relation->name(),
+            $event->type,
+        ));
+    }
+
     public function onBeforeDelete(BeforeDeleteEvent $event): void
     {
         $this->authorize($event->type, $this->registry->securityFor($event->type)?->forDelete(), $event->entity);
@@ -235,6 +268,15 @@ final class ResourceSecuritySubscriber implements EventSubscriberInterface
                 $type,
             ));
         }
+    }
+
+    /**
+     * Whether `$expression` allows `$subject`: anything but a string expression (an
+     * undeclared or documentation-only value) allows it.
+     */
+    private function allows(string|bool|null $expression, object $subject): bool
+    {
+        return !\is_string($expression) || $this->isGranted($expression, $subject);
     }
 
     /**
