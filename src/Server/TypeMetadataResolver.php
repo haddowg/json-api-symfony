@@ -27,7 +27,7 @@ use haddowg\JsonApi\Server\Server;
  *
  * The {@see Server} is passed per call (it flows from the operation context, and
  * the architecture is multi-server-capable) rather than held; relations are sourced
- * resource-first then from the type-keyed {@see RelationsRegistry}, so a
+ * resource-first then from that server's entries in the {@see RelationsRegistry}, so a
  * resource-less type that declared standalone relations (ADR 0026) resolves the same
  * way as a resource.
  */
@@ -61,7 +61,7 @@ final class TypeMetadataResolver
             return $relation;
         }
 
-        foreach ($this->relations->relationsFor($type) ?? [] as $candidate) {
+        foreach ($this->relations->relationsFor($type, ServerName::of($server)) ?? [] as $candidate) {
             if ($candidate->name() === $name) {
                 return $candidate;
             }
@@ -87,7 +87,7 @@ final class TypeMetadataResolver
             return $relation;
         }
 
-        foreach ($this->relations->relationsFor($type) ?? [] as $candidate) {
+        foreach ($this->relations->relationsFor($type, ServerName::of($server)) ?? [] as $candidate) {
             $uriFieldName = $candidate instanceof AbstractRelationValue ? $candidate->uriFieldName() : $candidate->name();
             if ($uriFieldName === $segment) {
                 return $candidate;
@@ -116,7 +116,7 @@ final class TypeMetadataResolver
             return $relation;
         }
 
-        foreach ($this->relations->relationsFor($type) ?? [] as $candidate) {
+        foreach ($this->relations->relationsFor($type, ServerName::of($server)) ?? [] as $candidate) {
             if ($candidate->name() === $name) {
                 return $candidate;
             }
@@ -151,7 +151,7 @@ final class TypeMetadataResolver
             return $relations;
         }
 
-        return $this->relations->relationsFor($type) ?? [];
+        return $this->relations->relationsFor($type, ServerName::of($server)) ?? [];
     }
 
     /**

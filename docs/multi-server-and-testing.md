@@ -107,6 +107,15 @@ The example's `artists`, `tracks`, `playlists`, `libraries` and `public-profiles
 shared for that reason. See
 [relationships](relationships.md#the-related-endpoints-target-must-be-registered-on-the-server).
 
+Two servers can also serve the same type name through different classes, such as a
+`v1` and a `v2` resource for `albums`. Each server then reads only its own class's
+declarations: security, response headers, OpenAPI tags, descriptions, extensions and
+`singular`, the `uriType` its actions mount under, and for a resource-less type its
+standalone serializer, hydrator and `#[AsJsonApiRelations]` relations. A server whose
+class declares none of these gets the defaults, never the other server's values. A
+standalone serializer that renders its own relations should ask the
+`RelationsRegistry` for its server's, with `relationsFor($type, ServerName::of($resolver))`.
+
 A type assigned to a server that isn't declared in `json_api.servers` is a
 build-time `LogicException` naming the offending type and listing the declared
 servers — the assignment is validated against the config at compile time, never at

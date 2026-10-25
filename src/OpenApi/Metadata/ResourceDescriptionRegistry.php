@@ -5,9 +5,10 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\OpenApi\Metadata;
 
 use haddowg\JsonApi\OpenApi\Metadata\OperationType;
+use haddowg\JsonApiBundle\Server\ServerProvider;
 
 /**
- * The type-keyed registry of declarative OpenAPI **description overrides** declared
+ * The registry of declarative OpenAPI **description overrides** declared
  * via `#[AsJsonApiResource(description: …, operationDescriptions: …)]` (bundle ADR
  * 0092). Built from a plain scalar `type → {description, operations}` map the
  * {@see \haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceDescriptionPass}
@@ -15,8 +16,10 @@ use haddowg\JsonApi\OpenApi\Metadata\OperationType;
  * as scalars; the per-operation map is carried as one JSON string, like the response
  * headers, because a nested array is not a dumpable flat tag attribute).
  *
- * Descriptions are **type-keyed and server-independent** (like the security and
- * relations registries): a type that joins several servers carries one set. The
+ * Descriptions are keyed by server and type (bundle ADR 0144): each server holds only
+ * what its own resource class or standalone serializer declared, a class on several
+ * servers is held under each, and a server whose class declared nothing gets the
+ * generated default rather than another server's values. The
  * {@see MetadataSource} layers this registry *beneath* a resource's own
  * {@see \haddowg\JsonApi\Resource\AbstractResource::getDescription()} /
  * {@see \haddowg\JsonApi\Resource\AbstractResource::describeOperation()} method hooks
@@ -35,102 +38,114 @@ use haddowg\JsonApi\OpenApi\Metadata\OperationType;
  */
 final class ResourceDescriptionRegistry
 {
-    /** @var array<string, string> */
+    /** @var array<string, array<string, string>> */
     private array $descriptionByType = [];
 
-    /** @var array<string, array<string, string>> */
+    /** @var array<string, array<string, array<string, string>>> */
     private array $operationDescriptionsByType = [];
 
-    /** @var array<string, string> */
+    /** @var array<string, array<string, string>> */
     private array $singularByType = [];
 
-    /** @var array<string, array{type: array<string, mixed>, operations: array<string, array<string, mixed>>}> */
+    /** @var array<string, array<string, array{type: array<string, mixed>, operations: array<string, array<string, mixed>>}>> */
     private array $extensionsByType = [];
 
     /**
-     * @param array<string, array{description?: string|null, operations?: array<string, string>, singular?: string|null}> $descriptions
-     * @param array<string, array{type?: array<string, mixed>, operations?: array<string, array<string, mixed>>}> $extensions
+     * @param array<string, array{description?: string|null, operations?: array<string, string>, singular?: string|null}> $descriptions the default server's
+     * @param array<string, array{type?: array<string, mixed>, operations?: array<string, array<string, mixed>>}>       $extensions   the default server's
+     * @param array<string, array{
+     *     descriptions?: array<string, array{description?: string|null, operations?: array<string, string>, singular?: string|null}>,
+     *     extensions?: array<string, array{type?: array<string, mixed>, operations?: array<string, array<string, mixed>>}>,
+     * }> $servers every other server's, keyed by server name
      */
-    public function __construct(array $descriptions = [], array $extensions = [])
+    public function __construct(array $descriptions = [], array $extensions = [], array $servers = [])
     {
-        foreach ($extensions as $type => $set) {
-            $this->extensionsByType[$type] = [
-                'type' => $set['type'] ?? [],
-                'operations' => $set['operations'] ?? [],
-            ];
-        }
+        $default = $servers[ServerProvider::DEFAULT_SERVER] ?? [];
+        $servers[ServerProvider::DEFAULT_SERVER] = [
+            'descriptions' => ($default['descriptions'] ?? []) + $descriptions,
+            'extensions' => ($default['extensions'] ?? []) + $extensions,
+        ];
 
-        foreach ($descriptions as $type => $set) {
-            $description = $set['description'] ?? null;
-            if (\is_string($description) && $description !== '') {
-                $this->descriptionByType[$type] = $description;
+        foreach ($servers as $server => $declared) {
+            foreach ($declared['extensions'] ?? [] as $type => $set) {
+                $this->extensionsByType[$server][$type] = [
+                    'type' => $set['type'] ?? [],
+                    'operations' => $set['operations'] ?? [],
+                ];
             }
 
-            $singular = $set['singular'] ?? null;
-            if (\is_string($singular) && \trim($singular) !== '') {
-                $this->singularByType[$type] = \trim($singular);
-            }
+            foreach ($declared['descriptions'] ?? [] as $type => $set) {
+                $description = $set['description'] ?? null;
+                if (\is_string($description) && $description !== '') {
+                    $this->descriptionByType[$server][$type] = $description;
+                }
 
-            $operations = $set['operations'] ?? [];
-            $byOperation = [];
-            foreach ($operations as $operation => $value) {
-                if (\is_string($value) && $value !== '') {
-                    $byOperation[$operation] = $value;
+                $singular = $set['singular'] ?? null;
+                if (\is_string($singular) && \trim($singular) !== '') {
+                    $this->singularByType[$server][$type] = \trim($singular);
+                }
+
+                $byOperation = [];
+                foreach ($set['operations'] ?? [] as $operation => $value) {
+                    if (\is_string($value) && $value !== '') {
+                        $byOperation[$operation] = $value;
+                    }
+                }
+
+                if ($byOperation !== []) {
+                    $this->operationDescriptionsByType[$server][$type] = $byOperation;
                 }
             }
-
-            if ($byOperation !== []) {
-                $this->operationDescriptionsByType[$type] = $byOperation;
-            }
         }
     }
 
     /**
-     * The declared resource-object description for `$type`, or `null` when none was
-     * declared on the attribute (the resource method hook / the generated default then
-     * applies).
+     * The declared resource-object description for `$type` on `$server`, or `null` when
+     * none was declared on the attribute (the resource method hook / the generated
+     * default then applies).
      */
-    public function descriptionFor(string $type): ?string
+    public function descriptionFor(string $type, string $server = ServerProvider::DEFAULT_SERVER): ?string
     {
-        return $this->descriptionByType[$type] ?? null;
+        return $this->descriptionByType[$server][$type] ?? null;
     }
 
     /**
-     * The declared description override for one of `$type`'s CRUD operations, or
-     * `null` when none was declared on the attribute for that operation.
+     * The declared description override for one of `$type`'s CRUD operations on
+     * `$server`, or `null` when none was declared on the attribute for that operation.
      */
-    public function operationDescriptionFor(string $type, OperationType $operation): ?string
+    public function operationDescriptionFor(string $type, OperationType $operation, string $server = ServerProvider::DEFAULT_SERVER): ?string
     {
-        return $this->operationDescriptionsByType[$type][$operation->value] ?? null;
+        return $this->operationDescriptionsByType[$server][$type][$operation->value] ?? null;
     }
 
     /**
-     * The declared singular noun for `$type`, or `null` when the attribute declares none
-     * (the resource method hook / the inflected singular then applies).
+     * The declared singular noun for `$type` on `$server`, or `null` when the attribute
+     * declares none (the resource method hook / the inflected singular then applies).
      */
-    public function singularFor(string $type): ?string
+    public function singularFor(string $type, string $server = ServerProvider::DEFAULT_SERVER): ?string
     {
-        return $this->singularByType[$type] ?? null;
+        return $this->singularByType[$server][$type] ?? null;
     }
 
     /**
-     * The vendor extensions declared for every operation of `$type`; empty when none.
+     * The vendor extensions declared for every operation of `$type` on `$server`; empty
+     * when none.
      *
      * @return array<string, mixed>
      */
-    public function extensionsFor(string $type): array
+    public function extensionsFor(string $type, string $server = ServerProvider::DEFAULT_SERVER): array
     {
-        return $this->extensionsByType[$type]['type'] ?? [];
+        return $this->extensionsByType[$server][$type]['type'] ?? [];
     }
 
     /**
-     * The vendor extensions declared for one of `$type`'s CRUD operations, before the
-     * merge over {@see extensionsFor()} core applies; empty when none.
+     * The vendor extensions declared for one of `$type`'s CRUD operations on `$server`,
+     * before the merge over {@see extensionsFor()} core applies; empty when none.
      *
      * @return array<string, mixed>
      */
-    public function operationExtensionsFor(string $type, OperationType $operation): array
+    public function operationExtensionsFor(string $type, OperationType $operation, string $server = ServerProvider::DEFAULT_SERVER): array
     {
-        return $this->extensionsByType[$type]['operations'][$operation->value] ?? [];
+        return $this->extensionsByType[$server][$type]['operations'][$operation->value] ?? [];
     }
 }

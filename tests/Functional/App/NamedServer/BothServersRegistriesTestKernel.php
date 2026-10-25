@@ -1,0 +1,54 @@
+<?php
+
+declare(strict_types=1);
+
+namespace haddowg\JsonApiBundle\Tests\Functional\App\NamedServer;
+
+use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
+use haddowg\JsonApiBundle\JsonApiBundle;
+use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\Security\SecurityTestKernel;
+use Symfony\Component\Config\Loader\LoaderInterface;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
+
+/**
+ * The Doctrine per-server registry kernel: standalone `notes` relations, a standalone `labels` serializer per server, and a `segmentWidgets` served by a different class on each server. `notes` has no storage mapping, so it is served from memory here too.
+ */
+final class BothServersRegistriesTestKernel extends SecurityTestKernel
+{
+    use ServesOnBothServers {
+        configureContainer as private configureBothServers;
+    }
+
+    public function getCacheDir(): string
+    {
+        return parent::getCacheDir() . '-registries';
+    }
+
+    protected function ownServerResources(): array
+    {
+        return [
+            NoteSerializer::class,
+            DefaultServerLabelSerializer::class,
+            NamedServerLabelSerializer::class,
+            DefaultServerNoteRelations::class,
+            NamedServerNoteRelations::class,
+            PingSegmentWidget::class,
+            DefaultServerSegmentWidgetResource::class,
+            NamedServerSegmentWidgetResource::class,
+        ];
+    }
+
+    protected function configureContainer(ContainerConfigurator $container, LoaderInterface $loader, ContainerBuilder $builder): void
+    {
+        $this->configureBothServers($container, $loader, $builder);
+
+        $services = $container->services();
+        $services->set('test.notes_provider', InMemoryDataProvider::class)
+            ->factory([NamedServerProviders::class, 'notes'])
+            ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+        $services->set('test.labels_provider', InMemoryDataProvider::class)
+            ->factory([NamedServerProviders::class, 'labels'])
+            ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+    }
+}

@@ -858,7 +858,7 @@ final class JsonApiBundle extends AbstractBundle
                     // per-operation overrides JSON-encoded into a single scalar (a
                     // nested map does not survive as a flat tag attribute, like
                     // `response_headers`). The ResourceDescriptionPass reads both into
-                    // the type-keyed ResourceDescriptionRegistry the MetadataSource layers
+                    // the ResourceDescriptionRegistry, under each of the resource's servers, which the MetadataSource layers
                     // beneath the resource's own method hooks.
                     'description' => $attribute->description,
                     'operation_descriptions' => self::operationDescriptionsTag($attribute),
