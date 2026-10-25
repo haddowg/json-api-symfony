@@ -700,8 +700,8 @@ final class JsonApiBundle extends AbstractBundle
                 ->args(['$translator' => \Symfony\Component\DependencyInjection\Loader\Configurator\service('translator')]);
         }
 
-        // Declarative resource authorization (bundle ADR 0043): the type-keyed
-        // ResourceSecurityRegistry + the ResourceSecuritySubscriber that evaluates a
+        // Declarative resource authorization (bundle ADR 0043): the server- and
+        // type-keyed ResourceSecurityRegistry (bundle ADR 0142) + the ResourceSecuritySubscriber that evaluates a
         // type's security expression at the lifecycle hooks. Always registered: the
         // registry also feeds the OpenAPI projection, where the documentation-only
         // `true`/`false` declarations need no optional package. The ResourceSecurityPass
@@ -714,7 +714,7 @@ final class JsonApiBundle extends AbstractBundle
         $services = $container->services();
 
         $services->set(\haddowg\JsonApiBundle\Security\ResourceSecurityRegistry::class)
-            ->args(['$expressions' => []]);
+            ->args(['$expressions' => [], '$servers' => []]);
 
         $services->set(\haddowg\JsonApiBundle\Security\ResourceSecuritySubscriber::class)
             ->args([
@@ -831,7 +831,7 @@ final class JsonApiBundle extends AbstractBundle
                     'operations' => self::operationsTag($attribute),
                     // The declarative authorization expressions (bundle ADR 0043),
                     // recorded as scalar tag attributes the ResourceSecurityPass reads
-                    // into the type-keyed ResourceSecurityRegistry.
+                    // into the ResourceSecurityRegistry, under each of the resource's servers.
                     'security_default' => $attribute->security,
                     'security_create' => $attribute->securityCreate,
                     'security_update' => $attribute->securityUpdate,

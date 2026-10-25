@@ -12,6 +12,7 @@ use haddowg\JsonApi\Schema\Relationship\ToOneRelationshipLinkage;
 use haddowg\JsonApi\Serializer\RelationshipLinkageInterface;
 use haddowg\JsonApi\Serializer\ToOneRelationshipLinkageInterface;
 use haddowg\JsonApiBundle\Security\ReadableRows;
+use haddowg\JsonApiBundle\Server\ServerProvider;
 use Symfony\Contracts\Service\ResetInterface;
 
 /**
@@ -54,11 +55,11 @@ final class RequestScopedRelationshipLinkage implements ToOneRelationshipLinkage
     ) {}
 
     /**
-     * Starts an operation on `$server`, deciding every row afresh.
+     * Starts an operation on `$server`, named `$serverName`, deciding every row afresh.
      */
-    public function bind(?SerializerResolverInterface $server): void
+    public function bind(?SerializerResolverInterface $server, string $serverName = ServerProvider::DEFAULT_SERVER): void
     {
-        $this->rows?->bind($server);
+        $this->rows?->bind($server, $serverName);
     }
 
     /**
@@ -149,13 +150,18 @@ final class RequestScopedRelationshipLinkage implements ToOneRelationshipLinkage
                 : $linkage;
         }
 
-        if (!$this->rows->guardsRows($relation)) {
+        // The request's server picks the related type's gates; without one, the
+        // server the operation bound.
+        $serverName = $request->getAttribute('_jsonapi_server');
+        $serverName = \is_string($serverName) && $serverName !== '' ? $serverName : null;
+
+        if (!$this->rows->guardsRows($relation, $serverName)) {
             return $linkage;
         }
 
         $target = $linkage !== null ? $linkage->target : $relation->readValue($model, $request);
 
-        return \is_object($target) && !$this->rows->allows($target, $relation) ? ToOneRelationshipLinkage::none() : $linkage;
+        return \is_object($target) && !$this->rows->allows($target, $relation, $serverName) ? ToOneRelationshipLinkage::none() : $linkage;
     }
 
     /**

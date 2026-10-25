@@ -108,6 +108,30 @@ final class ResourceSecurityPassTest extends TestCase
         self::assertSame([], $container->getDefinition(ServableResourceWarmer::class)->getArgument('$unenforceableSecurity'));
     }
 
+    #[Test]
+    public function aResourceOnSeveralServersIsRecordedUnderEach(): void
+    {
+        $container = $this->container(['server' => 'default, v5', 'security_list' => "is_granted('ROLE_ADMIN')"], checker: true);
+
+        (new ResourceSecurityPass(expressionLanguageInstalled: true, securityCoreInstalled: true))->process($container);
+
+        $definition = $container->getDefinition(ResourceSecurityRegistry::class);
+        self::assertSame(['guard-gadgets' => ['list' => "is_granted('ROLE_ADMIN')"]], $definition->getArgument('$expressions'));
+        self::assertSame(['v5' => ['guard-gadgets' => ['list' => "is_granted('ROLE_ADMIN')"]]], $definition->getArgument('$servers'));
+    }
+
+    #[Test]
+    public function aResourceOnANamedServerLeavesTheDefaultServerUndeclared(): void
+    {
+        $container = $this->container(['server' => 'v5', 'security_list' => "is_granted('ROLE_ADMIN')"], checker: true);
+
+        (new ResourceSecurityPass(expressionLanguageInstalled: true, securityCoreInstalled: true))->process($container);
+
+        $definition = $container->getDefinition(ResourceSecurityRegistry::class);
+        self::assertSame([], $definition->getArgument('$expressions'));
+        self::assertSame(['v5' => ['guard-gadgets' => ['list' => "is_granted('ROLE_ADMIN')"]]], $definition->getArgument('$servers'));
+    }
+
     /**
      * @param array<string, string|bool> $security the `security_*` tag attributes of the one resource
      */

@@ -1,0 +1,7 @@
+# Resource security is keyed by server and type
+
+The `ResourceSecurityRegistry` keyed each resource's `security*` declarations by type name alone, so when two servers exposed the same type through different resource classes their declarations merged key by key, and one server could enforce or document a gate that only the other server's resource declared. Each declaration is now recorded under the server and type it belongs to, a resource assigned to several servers is recorded under each, and every check reads the entry for the server the operation runs on: the subscriber's gates, the relation authorizer, the related type's read and list gates from ADR 0140, and the OpenAPI projection. A server whose resource declares nothing for an operation leaves it ungated there whatever another server declares. When no request names a server, the check uses the server the operation's context was built for, and failing that the default server, which matches the single-server case. Custom action security was already keyed by server, and per-relation security lives on the relation, so neither changes.
+
+## Consequences
+
+An app that served one type name from different resource classes on several servers, and relied on the merged result, may find that type gated differently on one of its servers: an operation its resource declares nothing for is no longer gated by the other server's declaration, and the OpenAPI document for each server shows only its own declarations. Standalone relations declared with `#[AsJsonApiRelations]` are still held per type, not per server.

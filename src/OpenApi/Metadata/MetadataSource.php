@@ -311,8 +311,8 @@ final class MetadataSource
             fields: $resource !== null ? $resource->allFields() : [],
             relations: $relations,
             operations: $operations,
-            securedOperations: $this->securedOperations($type, $operations),
-            publicOperations: $this->publicOperations($type, $operations),
+            securedOperations: $this->securedOperations($serverName, $type, $operations),
+            publicOperations: $this->publicOperations($serverName, $type, $operations),
             allowsClientId: $this->idEncoders->allowsClientIdFor($type),
             requiresClientId: $this->idEncoders->requiresClientIdFor($type),
             // The type's {id} route requirement (the un-anchored regex fragment a
@@ -478,7 +478,7 @@ final class MetadataSource
 
     /**
      * The subset of `$operations` carrying a security expression (design §4.6/D8),
-     * resolved from the {@see ResourceSecurityRegistry} exactly as the subscriber
+     * resolved from the {@see ResourceSecurityRegistry} on `$serverName` exactly as the subscriber
      * enforces it: create/update/delete gate their like-named operation; read gates
      * FetchOne; and list (`securityList`) gates FetchCollection (the all-or-nothing
      * collection-read gate). Empty when the type declared no security.
@@ -487,11 +487,11 @@ final class MetadataSource
      *
      * @return list<OperationType>
      */
-    private function securedOperations(string $type, array $operations): array
+    private function securedOperations(string $serverName, string $type, array $operations): array
     {
         // Secured (documented with `security` + 401): an enforced expression OR the
         // documentation-only `true` (an external firewall enforces it).
-        return $this->securityOperations($type, $operations, static fn(string|bool|null $value): bool => \is_string($value) || $value === true);
+        return $this->securityOperations($serverName, $type, $operations, static fn(string|bool|null $value): bool => \is_string($value) || $value === true);
     }
 
     /**
@@ -502,9 +502,9 @@ final class MetadataSource
      *
      * @return list<OperationType>
      */
-    private function publicOperations(string $type, array $operations): array
+    private function publicOperations(string $serverName, string $type, array $operations): array
     {
-        return $this->securityOperations($type, $operations, static fn(string|bool|null $value): bool => $value === false);
+        return $this->securityOperations($serverName, $type, $operations, static fn(string|bool|null $value): bool => $value === false);
     }
 
     /**
@@ -519,9 +519,9 @@ final class MetadataSource
      *
      * @return list<OperationType>
      */
-    private function securityOperations(string $type, array $operations, \Closure $matches): array
+    private function securityOperations(string $serverName, string $type, array $operations, \Closure $matches): array
     {
-        $security = $this->security?->securityFor($type);
+        $security = $this->security?->securityFor($type, $serverName);
         if ($security === null) {
             return [];
         }
