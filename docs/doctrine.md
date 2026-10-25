@@ -425,6 +425,13 @@ no security declared moves children as before.
 A remove only detaches current members. Naming a child that belongs to another parent
 leaves it where it is, as the JSON:API spec requires of removing a non-member.
 
+A child whose foreign key to the parent is `NOT NULL` (`#[ORM\JoinColumn(nullable:
+false)]`) can't be left without a parent. A remove that names it, or a replace (at the
+relationship endpoint or in a whole-resource write) that leaves it out, is a `403`
+(`REMOVAL_PROHIBITED`, or `FULL_REPLACEMENT_PROHIBITED` for the replace), and nothing is
+written. When the inverse side declares `orphanRemoval: true` the child is deleted
+instead, so the write goes ahead.
+
 ### Constructor-less instantiation
 
 On create, the persister builds a blank instance via

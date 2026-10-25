@@ -33,6 +33,7 @@ final class OwnedFolderResource extends AbstractResource
             Id::make(),
             Str::make('owner'),
             HasMany::make('notes', 'ownedNotes'),
+            HasMany::make('labels', 'folderLabels'),
         ];
     }
 }

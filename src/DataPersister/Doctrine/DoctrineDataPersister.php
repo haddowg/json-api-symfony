@@ -8,6 +8,8 @@ use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Mapping\ClassMetadata;
+use haddowg\JsonApi\Exception\FullReplacementProhibited;
+use haddowg\JsonApi\Exception\RemovalProhibited;
 use haddowg\JsonApi\Exception\ResourceNotFound;
 use haddowg\JsonApi\Hydrator\Relationship\ToManyRelationship;
 use haddowg\JsonApi\Hydrator\Relationship\ToOneRelationship;
@@ -278,6 +280,8 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
             $linkage->resourceIdentifiers,
             static fn(ResourceIdentifier $identifier): bool => $identifier->id !== null,
         ));
+
+        $this->refuseOrphaningRequiredMembers($entity, $property, $collection, $relation, $owningField, $incoming, $mode);
 
         if ($mode === Mode::Replace) {
             // Detach the existing members (clear the owning-side FK / drop the join
@@ -705,6 +709,84 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
         }
 
         $member->{$owningField} = $owner;
+    }
+
+    /**
+     * Refuses a remove, or a replace that drops a current member, when a dropped member's
+     * foreign key to the parent is NOT NULL: the member can't be left without a parent,
+     * so the write is a 403 rather than a constraint error at flush. An inverse side that
+     * declares `orphanRemoval` deletes the member instead, so it is allowed.
+     *
+     * @param Collection<int, object>  $collection
+     * @param list<ResourceIdentifier>      $incoming
+     */
+    private function refuseOrphaningRequiredMembers(
+        object $entity,
+        string $property,
+        Collection $collection,
+        RelationInterface $relation,
+        ?string $owningField,
+        array $incoming,
+        Mode $mode,
+    ): void {
+        if ($owningField === null || $mode === Mode::Add
+            || $this->mappingValue($this->entityManager->getClassMetadata($entity::class)->getAssociationMapping($property), 'orphanRemoval') === true) {
+            return;
+        }
+
+        $named = [];
+        foreach ($incoming as $identifier) {
+            $reference = $this->reference($relation, $identifier);
+            if ($reference !== null) {
+                $named[\spl_object_id($reference)] = $reference;
+            }
+        }
+
+        $dropped = $mode === Mode::Remove
+            ? \array_filter($named, $collection->contains(...))
+            : \array_filter($collection->toArray(), static fn(mixed $member): bool => \is_object($member) && !isset($named[\spl_object_id($member)]));
+
+        foreach ($dropped as $member) {
+            if (\is_object($member) && $this->requiresParent($member, $owningField)) {
+                throw $mode === Mode::Remove
+                    ? new RemovalProhibited($relation->name())
+                    : new FullReplacementProhibited($relation->name());
+            }
+        }
+    }
+
+    /**
+     * Whether `$member`'s single-valued owning field to its parent has a NOT NULL join
+     * column.
+     */
+    private function requiresParent(object $member, string $owningField): bool
+    {
+        $metadata = $this->entityManager->getClassMetadata($member::class);
+        if (!$metadata->hasAssociation($owningField) || $metadata->isCollectionValuedAssociation($owningField)) {
+            return false;
+        }
+
+        $joinColumns = $this->mappingValue($metadata->getAssociationMapping($owningField), 'joinColumns');
+        foreach (\is_iterable($joinColumns) ? $joinColumns : [] as $joinColumn) {
+            if ($this->mappingValue($joinColumn, 'nullable') === false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Reads `$key` off a Doctrine mapping, which is an array on ORM 2 and an object on
+     * ORM 3.
+     */
+    private function mappingValue(mixed $mapping, string $key): mixed
+    {
+        if (\is_array($mapping)) {
+            return $mapping[$key] ?? null;
+        }
+
+        return \is_object($mapping) && \property_exists($mapping, $key) ? $mapping->{$key} : null;
     }
 
     /**
