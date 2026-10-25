@@ -9,6 +9,7 @@ use haddowg\JsonApi\Resource\Field\HasMany;
 use haddowg\JsonApi\Resource\Field\HasOne;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Str;
+use haddowg\JsonApi\Resource\Filter\Where;
 
 abstract class BaseScopingAgencyResource extends AbstractResource
 {
@@ -27,6 +28,13 @@ abstract class BaseScopingAgencyResource extends AbstractResource
             HasMany::make('members', static::PREFIX . 'members'),
             HasOne::make('lead', static::PREFIX . 'members'),
             HasOne::make('manager', static::PREFIX . 'members'),
+        ];
+    }
+
+    public function filters(): array
+    {
+        return [
+            Where::make('nameContains', 'name', 'like'),
         ];
     }
 }

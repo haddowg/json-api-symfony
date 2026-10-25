@@ -37,6 +37,39 @@ abstract class IncludeScopingConformanceTestCase extends JsonApiFunctionalTestCa
         $this->assertNoHiddenRow($document);
     }
 
+    /**
+     * A `relatedQuery` filter narrows the scoped set, never the raw association: the
+     * window's rows, `?withCount` and the related endpoint's rows and total all count the
+     * same filtered, scoped agencies. "Hidden" matches only the hidden agency, and "e"
+     * matches every agency.
+     *
+     * @param list<string> $first
+     * @param list<string> $second
+     */
+    #[Test]
+    #[TestWith(['', '', 'Hidden', [], []], 'default server, a filter only a hidden row matches')]
+    #[TestWith(['', '', 'e', ['1'], ['3']], 'default server, a filter every row matches')]
+    #[TestWith(['/partner', 'partner-', 'Hidden', [], []], 'named server, a filter only a hidden row matches')]
+    #[TestWith(['/partner', 'partner-', 'e', ['1'], ['3']], 'named server, a filter every row matches')]
+    public function aFilteredWindowItsCountAndTheRelatedEndpointAgree(string $mount, string $prefix, string $name, array $first, array $second): void
+    {
+        $base = $mount . '/' . $prefix . 'advertisers';
+        $accept = ['HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . CountableProfile::URI . ' ' . RelationshipQueriesProfile::URI . '"'];
+        $counts = ['HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . CountableProfile::URI . '"'];
+
+        $document = $this->get($base . '?include=agencies&withCount=agencies&relatedQuery[agencies][filter][nameContains]=' . $name, $accept);
+
+        foreach (['1' => $first, '2' => $second] as $id => $expected) {
+            self::assertSame($expected, $this->linkageIds($document, (string) $id, 'agencies'), 'window of ' . $id);
+            self::assertSame(\count($expected), $this->value($this->relationship($document, (string) $id, 'agencies'), 'meta', 'total'), 'withCount of ' . $id);
+
+            $related = $this->get($base . '/' . $id . '/agencies?withCount=_self_&filter[nameContains]=' . $name, $counts);
+            self::assertSame($expected, $this->ids($related['data'] ?? null), 'related rows of ' . $id);
+            self::assertSame(\count($expected), $this->value($related, 'meta', 'total'), 'related total of ' . $id);
+        }
+        $this->assertNoHiddenRow($document);
+    }
+
     #[Test]
     #[TestWith(['', ''], 'default server')]
     #[TestWith(['/partner', 'partner-'], 'named server')]

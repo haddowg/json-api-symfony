@@ -223,6 +223,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // Each operation installs its own linkage; never render another's.
         $this->relationshipLinkage?->set(null);
         $this->relationshipLinkage?->setIncluded(null);
+        // Nor another operation's counts.
+        $this->relationshipCount?->set(null);
         // Related rows are judged against their own read gate afresh per operation.
         $this->relationshipLinkage?->bind($server instanceof Server ? $server : null);
         $this->outputTimezone?->set($server instanceof \haddowg\JsonApi\Resource\ProvidesOutputTimezoneInterface ? $server->outputTimezone() : null);

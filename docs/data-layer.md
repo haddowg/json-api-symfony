@@ -97,7 +97,10 @@ interface DataProviderInterface
   counts its association rows; a polymorphic to-many is counted in memory but
   throws on the Doctrine reference ([relationships](relationships.md) covers
   `countable()`/`?withCount`). The `AbstractDataProvider` default is the **empty
-  count map** `[]` (the type reports no cardinalities).
+  count map** `[]` (the type reports no cardinalities). Each count must equal the rows
+  `fetchRelatedCollection()` would return for that parent with the same criteria, so
+  apply the same scoping there: a provider that hides rows from its related reads has
+  to leave them out of its counts too.
 - `fetchRelatedCollectionBatch()` is the page-at-a-time twin of
   `fetchRelatedCollection()`: it answers a whole page of `$parents` for one relation
   in a single store round-trip, returning a `RelatedBatch` keyed by parent wire id.
