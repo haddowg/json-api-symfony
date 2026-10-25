@@ -7,7 +7,9 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\Security;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\BelongsTo;
+use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\Id;
+use haddowg\JsonApi\Resource\Field\Integer;
 use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 
@@ -51,6 +53,16 @@ final class SecuredWidgetResource extends AbstractResource
             BelongsTo::make('staffPartner', 'securedWidgets')->storedAs('partner')->nullable()->hidden(
                 static fn(mixed $model, JsonApiRequestInterface $request): bool => $request->getHeaderLine('Authorization') !== 'Bearer admin',
             ),
+            // A pivot relation only an admin may read: its linkage is rebuilt through the
+            // pivot resolver, which has to carry the relation authorizer too.
+            BelongsToMany::make('adminTags', 'openWidgets')
+                ->through(SecuredWidgetTagEntity::class)
+                ->fields(Integer::make('position')->build())
+                ->extractUsing(static fn(mixed $widget): array => $widget instanceof SecuredWidgetEntity
+                    ? \array_values(\array_filter(\array_map(static fn(SecuredWidgetTagEntity $row): ?OpenWidgetEntity => $row->tag, ($widget->widgetTags?->toArray() ?? []))))
+                    : [])
+                ->withData()
+                ->security(read: "is_granted('ROLE_ADMIN')"),
         ];
     }
 }

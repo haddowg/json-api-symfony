@@ -25,7 +25,7 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
  *
  * Two further self-relations witness **per-relation security** (core ADR 0099 / bundle
  * ADR 0100) — a relation authorized independently of its parent. All three share the
- * `partnerId` backing (the linkage is identical); only the gate differs:
+ * `partner` backing (the linkage is identical); only the gate differs:
  *  - `publicPartner` declares `security(read: false)` — explicitly PUBLIC, so its read
  *    endpoints are reachable even unauthenticated, MORE permissive than the
  *    `ROLE_USER`-gated parent;
@@ -46,11 +46,11 @@ final class InMemorySecuredWidgetResource extends AbstractResource
         return [
             Id::make(),
             Str::make('name'),
-            BelongsTo::make('partner', 'securedWidgets')->storedAs('partnerId'),
-            BelongsTo::make('publicPartner', 'securedWidgets')->storedAs('partnerId')->security(read: false),
-            BelongsTo::make('adminPartner', 'securedWidgets')->storedAs('partnerId')->security(read: "is_granted('ROLE_ADMIN')"),
+            BelongsTo::make('partner', 'securedWidgets'),
+            BelongsTo::make('publicPartner', 'securedWidgets')->storedAs('partner')->security(read: false),
+            BelongsTo::make('adminPartner', 'securedWidgets')->storedAs('partner')->security(read: "is_granted('ROLE_ADMIN')"),
             // Hidden from everyone but an admin, so a non-admin gets a 404 at its endpoints.
-            BelongsTo::make('staffPartner', 'securedWidgets')->storedAs('partnerId')->hidden(
+            BelongsTo::make('staffPartner', 'securedWidgets')->storedAs('partner')->hidden(
                 static fn(mixed $model, JsonApiRequestInterface $request): bool => $request->getHeaderLine('Authorization') !== 'Bearer admin',
             ),
         ];
