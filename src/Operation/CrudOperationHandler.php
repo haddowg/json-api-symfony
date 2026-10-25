@@ -221,6 +221,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // Each operation installs its own linkage; never render another's.
         $this->relationshipLinkage?->set(null);
         $this->relationshipLinkage?->setIncluded(null);
+        // Related rows are judged against their own read gate afresh per operation.
+        $this->relationshipLinkage?->bind($server instanceof Server ? $server : null);
         $this->outputTimezone?->set($server instanceof \haddowg\JsonApi\Resource\ProvidesOutputTimezoneInterface ? $server->outputTimezone() : null);
 
         if ($operation instanceof CreateResourceOperation || $operation instanceof UpdateResourceOperation) {
@@ -636,6 +638,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // served document — which reports this read secured iff FetchOne is — stays
         // faithful). A relation declaring its own `security(read:)` OVERRIDES that gate.
         $this->gateRelatedRead($type, $parent, $relation, $operation->context());
+        $this->gateRelatedCollection($relation);
         $this->assertInMemoryRelatedObjects($type, [$parent], $this->jsonApiRequest($operation->context()), $server, [$relation]);
 
         // A polymorphic relation (MorphTo / MorphToMany) declares several related
@@ -927,6 +930,11 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             }
         }
 
+        // A target the caller may not read through its own type reads as absent.
+        if ($this->relationshipLinkage !== null) {
+            $related = $this->relationshipLinkage->readableTarget($related, $relation);
+        }
+
         $serializer = $relation->resolveSerializer($related, $server) ?? $server->serializerFor($relatedType);
 
         // Load the related resource's own rendered relations (a single related object
@@ -1038,6 +1046,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // and the served document — which reports this read secured iff FetchOne is —
         // stays faithful). A relation declaring its own `security(read:)` OVERRIDES it.
         $this->gateRelationshipRead($type, $parent, $relation, $operation->context());
+        $this->gateRelatedCollection($relation);
         $this->assertInMemoryRelatedObjects($type, [$parent], $this->jsonApiRequest($operation->context()), $server, [$relation]);
 
         // The relationship-linkage/pagination seams are request-scoped singletons
@@ -1436,6 +1445,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $this->guardMovedMembers($persister, $type, $request, $parent, $relation, $scopedLinkage, $mode);
 
         $parent = $persister->mutateRelationship($type, $parent, $relation, $scopedLinkage, $mode);
+        // The write may have changed whether a related row is readable.
+        $this->relationshipLinkage?->forgetReadDecisions();
 
         // Render the linkage `GET` on the relationship endpoint serves (unpaginated), not
         // the model's members, which still include the ones the scope hides.
@@ -1848,6 +1859,26 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
     }
 
     /**
+     * Refuses a to-many related or relationship read the way `GET /{type}` would refuse
+     * the related type's collection (bundle ADR 0140): a list is shown whole or not at
+     * all. A polymorphic to-many is refused when any of its types refuses the caller.
+     */
+    private function gateRelatedCollection(RelationInterface $relation): void
+    {
+        if (!$relation->isToMany()) {
+            return;
+        }
+
+        $refused = $this->relationshipLinkage?->refusedCollectionType($relation);
+        if ($refused !== null) {
+            throw new \Symfony\Component\Security\Core\Exception\AccessDeniedException(\sprintf(
+                'Access denied to the collection of the JSON:API type "%s".',
+                $refused,
+            ));
+        }
+    }
+
+    /**
      * Resolves the declared, non-hidden relation named `$name` on `$type`'s
      * resource, or `null` when the type is a bare pair (no field inventory) or has
      * no such relationship — the handler maps a `null` to a JSON:API `404`.
@@ -1917,6 +1948,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $this->dispatch(new BeforeCreateEvent($type, $request, $entity, $this->serverName($request)));
 
         $entity = $persister->create($type, $entity);
+        // The write may have changed whether a related row is readable.
+        $this->relationshipLinkage?->forgetReadDecisions();
 
         // The persister accepted the write for asynchronous processing (it dispatched
         // the work instead of committing) — render a `202 Accepted` pointing at the
@@ -2036,6 +2069,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $this->dispatch(new BeforeUpdateEvent($type, $request, $entity, $original, $this->serverName($request)));
 
         $entity = $persister->update($type, $entity);
+        // The write may have changed whether a related row is readable.
+        $this->relationshipLinkage?->forgetReadDecisions();
 
         // The persister accepted the update for asynchronous processing — render a
         // `202 Accepted` pointing at the job resource, as the async create does; the

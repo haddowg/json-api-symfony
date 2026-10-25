@@ -254,6 +254,29 @@ same body are applied first, so when a body re-links the to-one and writes throu
 in one go, the check runs against the row it was just linked to. A related type that
 declares no update expression lets the write through.
 
+## Related resources follow their own type's gates
+
+A response that shows resources of another type, through `?include`, linkage or a related
+endpoint, applies that type's own read gates, so a type can't be read around them:
+
+- **A single related resource** (a to-one) needs the related type's `securityRead` (or
+  `security`) with that resource as `object`, the check `GET /{type}/{id}` makes. A
+  resource it refuses reads as absent: the relationship's `data` is `null`, nothing is
+  added to `included`, the related and relationship endpoints answer `data: null`, and an
+  [`on()`](relationships.md#flattened-on-attributes-and-eager-loading) attribute through
+  it reads `null` and refuses a write with `422`, as for a missing resource.
+- **A to-many** shows exactly what its query returns, never filtered row by row, so pages
+  are full and totals match the rows you can page through. It is shown only when the
+  caller passes the `securityList` (or `security`) of every type it relates to, the check
+  `GET /{type}` makes. Otherwise it renders only its `links`, with no `data`, no `meta`
+  (so no `?withCount` total) and nothing in `included`, and its related and relationship
+  endpoints answer `403` (or `401`) as `GET /{type}` would.
+
+Which rows a list holds is decided by the query: use a
+[Doctrine extension](custom-data-providers.md) or a scoped provider for rows a caller
+should never see in any list. A row a to-one refuses can still appear through a to-many
+whose query returns it.
+
 ## How a denial renders
 
 A denied expression throws `AccessDeniedException`; the route-scoped

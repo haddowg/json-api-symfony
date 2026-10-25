@@ -8,6 +8,7 @@ use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\BelongsTo;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
+use haddowg\JsonApi\Resource\Field\HasMany;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Integer;
 use haddowg\JsonApi\Resource\Field\Str;
@@ -34,6 +35,8 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
     entity: SecuredWidgetEntity::class,
     security: "is_granted('ROLE_USER')",
     securityCreate: "is_granted('ROLE_ADMIN')",
+    securityRead: "is_granted('ROLE_USER') and (object.name != 'classified' or is_granted('ROLE_ADMIN'))",
+    securityList: "is_granted('ROLE_USER') and not is_granted('ROLE_NO_LIST')",
     securityDelete: "is_granted('ROLE_ADMIN')",
 )]
 final class SecuredWidgetResource extends AbstractResource
@@ -45,10 +48,14 @@ final class SecuredWidgetResource extends AbstractResource
         return [
             Id::make(),
             Str::make('name'),
+            // Flattened from the partner, so it reads null when the partner is a row the
+            // caller may not read.
+            Str::make('partnerName')->storedAs('name')->on('partner'),
             BelongsTo::make('partner', 'securedWidgets')->nullable(),
             BelongsTo::make('publicPartner', 'securedWidgets')->storedAs('partner')->nullable()->security(read: false),
             BelongsTo::make('adminPartner', 'securedWidgets')->storedAs('partner')->nullable()->security(read: "is_granted('ROLE_ADMIN')"),
             BelongsTo::make('lockedPartner', 'securedWidgets')->storedAs('partner')->nullable()->security(mutate: "is_granted('ROLE_ADMIN')"),
+            HasMany::make('partners', 'securedWidgets')->countable(),
             // Hidden from everyone but an admin, so a non-admin gets a 404 at its endpoints.
             BelongsTo::make('staffPartner', 'securedWidgets')->storedAs('partner')->nullable()->hidden(
                 static fn(mixed $model, JsonApiRequestInterface $request): bool => $request->getHeaderLine('Authorization') !== 'Bearer admin',
