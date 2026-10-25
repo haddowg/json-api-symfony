@@ -53,9 +53,18 @@ final class InstalledVersionsCheckTest extends TestCase
     public function theMessageTellsTheUserToClearThatEnvironmentsCache(): void
     {
         $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('"bin/console cache:clear --env=staging" or by deleting var/cache/staging');
+        $this->expectExceptionMessage('Delete var/cache/staging, or run "bin/console cache:clear --env=staging"');
 
         InstalledVersionsCheck::assertFresh($this->versions('v1.10.0', null), $this->versions('v1.11.0', null), 'staging');
+    }
+
+    #[Test]
+    public function aNonDebugContainerIsClearedWithNoDebug(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('Delete /app/var/cache/test, or run "bin/console cache:clear --env=test --no-debug"');
+
+        InstalledVersionsCheck::assertFresh($this->versions('v1.10.0', null), $this->versions('v1.11.0', null), 'test', [], false, '/app/var/cache/test');
     }
 
     #[Test]

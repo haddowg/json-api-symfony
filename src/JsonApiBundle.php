@@ -988,6 +988,8 @@ final class JsonApiBundle extends AbstractBundle
             InstalledVersionsCheck::installed(),
             \is_string($environment) ? $environment : 'prod',
             $argv,
+            $container->hasParameter('kernel.debug') && (bool) $container->getParameter('kernel.debug'),
+            $container->hasParameter('kernel.cache_dir') && \is_string($cacheDir = $container->getParameter('kernel.cache_dir')) ? $cacheDir : null,
         );
     }
 

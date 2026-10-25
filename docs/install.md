@@ -141,9 +141,11 @@ Outside debug mode Symfony checks a compiled container only when it first builds
 it, so a container cached before the upgrade would keep the old service wiring. The
 bundle records the versions of both packages when it compiles the container, and on
 boot it compares them with the installed ones from `Composer\InstalledVersions`. On
-a mismatch it throws a `LogicException` naming both sets of versions. Run
-`bin/console cache:clear --env=<env>`, or delete `var/cache/<env>`, and boot again.
-`cache:clear` itself is let through so it can replace the stale container.
+a mismatch it throws a `LogicException` naming both sets of versions. Delete
+`var/cache/<env>`, or run `bin/console cache:clear --env=<env>`, adding `--no-debug`
+when the stale container is a non-debug one such as the one tests boot by default.
+`cache:clear` only clears the container matching its own debug flag. `cache:clear`
+itself is let through so it can replace the stale container.
 
 A development install such as `dev-main` or a path repository compares the version
 only, since its commit moves while you work without the container needing a rebuild.
