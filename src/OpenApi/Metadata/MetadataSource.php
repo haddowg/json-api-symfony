@@ -313,13 +313,13 @@ final class MetadataSource
             operations: $operations,
             securedOperations: $this->securedOperations($serverName, $type, $operations),
             publicOperations: $this->publicOperations($serverName, $type, $operations),
-            allowsClientId: $this->idEncoders->allowsClientIdFor($type),
-            requiresClientId: $this->idEncoders->requiresClientIdFor($type),
+            allowsClientId: $this->idEncoders->allowsClientIdFor($type, $serverName),
+            requiresClientId: $this->idEncoders->requiresClientIdFor($type, $serverName),
             // The type's {id} route requirement (the un-anchored regex fragment a
             // uuid()/ulid()/numeric()/pattern()/matchAs() id declares), or null for an
             // unconstrained id (any non-empty string). Core's OperationProjector anchors
             // it onto the OAS {id} parameter as `^(?:<fragment>)$`.
-            idPattern: $this->idEncoders->routePatternFor($type),
+            idPattern: $this->idEncoders->routePatternFor($type, $serverName),
             pageSchema: $pageSchema,
             countable: $resource?->isCountable() ?? false,
             filters: $resource !== null ? $resource->allFilters() : [],

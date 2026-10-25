@@ -9,7 +9,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Http\HeaderWidget;
 
 /**
  * In-memory providers for the per-server registry suites: `notes` and `labels`, which
- * no storage maps, and the in-memory `segmentWidgets`.
+ * no storage maps, and the in-memory `segmentWidgets` and `patternedWidgets`.
  */
 final class NamedServerProviders
 {
@@ -29,6 +29,15 @@ final class NamedServerProviders
     {
         return new InMemoryDataProvider('labels', ['1' => new Note(1, 'label')], static function (object $item): string {
             \assert($item instanceof Note);
+
+            return (string) $item->id;
+        });
+    }
+
+    public static function patternedWidgets(): InMemoryDataProvider
+    {
+        return new InMemoryDataProvider('patternedWidgets', ['1' => new HeaderWidget(1, 'one')], static function (object $item): string {
+            \assert($item instanceof HeaderWidget);
 
             return (string) $item->id;
         });

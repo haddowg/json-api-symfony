@@ -212,7 +212,7 @@ final class JsonApiRouteLoader extends Loader
             // routing before any handler runs. The requirement always excludes the
             // reserved `-actions` segment (see {@see idRequirement()}) so an action
             // path is never shadowed by a generic {id} route on a non-action method.
-            $idRequirements = ['id' => $this->idRequirement($resourceType)];
+            $idRequirements = ['id' => $this->idRequirement($resourceType, $server)];
 
             // One route per declared operation: a type that omits an operation
             // never gets its route, so unexposed verbs are unrouted (the router
@@ -435,7 +435,7 @@ final class JsonApiRouteLoader extends Loader
                 // Constrain {id} with the type's declared id pattern (ADR 0038) so a
                 // malformed id 404s at routing, exactly as the CRUD resource routes;
                 // the requirement also excludes the reserved `-actions` segment.
-                $requirements['id'] = $this->idRequirement($type);
+                $requirements['id'] = $this->idRequirement($type, $server);
             } else {
                 $actionPath = \sprintf('/%s/-actions/%s', $uriType, $path);
             }
@@ -466,9 +466,10 @@ final class JsonApiRouteLoader extends Loader
      * single-segment default `[^/]+` (Symfony's implicit placeholder regex), now
      * minus `-actions`.
      */
-    private function idRequirement(string $type): string
+    private function idRequirement(string $type, string $server): string
     {
-        $authorPattern = $this->idEncoders?->routePatternFor($type);
+        // The pattern of the class this server serves the type with (bundle ADR 0145).
+        $authorPattern = $this->idEncoders?->routePatternFor($type, $server);
 
         // With no author pattern, keep Symfony's implicit single-segment placeholder
         // regex (`[^/]+`) so the {id} still cannot span a `/` boundary; the negative

@@ -12,7 +12,7 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 
 /**
- * The Doctrine per-server registry kernel: standalone `notes` relations, a standalone `labels` serializer per server, and a `segmentWidgets` served by a different class on each server. `notes` has no storage mapping, so it is served from memory here too.
+ * The Doctrine per-server registry kernel: standalone `notes` relations, a standalone `labels` serializer per server, and `segmentWidgets`, `patternedWidgets` and `codedWidgets` served by a different class on each server. `notes` has no storage mapping, so it is served from memory here too.
  */
 final class BothServersRegistriesTestKernel extends SecurityTestKernel
 {
@@ -34,6 +34,10 @@ final class BothServersRegistriesTestKernel extends SecurityTestKernel
             DefaultServerNoteRelations::class,
             NamedServerNoteRelations::class,
             PingSegmentWidget::class,
+            DefaultServerCodedWidgetResource::class,
+            NamedServerCodedWidgetResource::class,
+            DefaultServerPatternedWidgetResource::class,
+            NamedServerPatternedWidgetResource::class,
             DefaultServerSegmentWidgetResource::class,
             NamedServerSegmentWidgetResource::class,
         ];

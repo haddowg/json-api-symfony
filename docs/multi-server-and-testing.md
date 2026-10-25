@@ -110,7 +110,8 @@ shared for that reason. See
 Two servers can also serve the same type name through different classes, such as a
 `v1` and a `v2` resource for `albums`. Each server then reads only its own class's
 declarations: security, response headers, OpenAPI tags, descriptions, extensions and
-`singular`, the `uriType` its actions mount under, and for a resource-less type its
+`singular`, the `uriType` its actions mount under, its `Id` field's encoder, route
+pattern and client-id policy, and for a resource-less type its
 standalone serializer, hydrator and `#[AsJsonApiRelations]` relations. A server whose
 class declares none of these gets the defaults, never the other server's values. A
 standalone serializer that renders its own relations should ask the

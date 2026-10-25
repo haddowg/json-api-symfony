@@ -18,6 +18,7 @@ use haddowg\JsonApiBundle\Action\ActionScope;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Operation\Operation;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
+use haddowg\JsonApiBundle\Server\IdEncoderResolver;
 use haddowg\JsonApiBundle\Server\RelationsProviderInterface;
 use haddowg\JsonApiBundle\Server\RelationsRegistry;
 use haddowg\JsonApiBundle\Server\ResourceLocator;
@@ -306,6 +307,14 @@ final class ResourceLocatorPass implements CompilerPassInterface
         $definition = $container->getDefinition(ResourceLocator::class);
         $definition->setArgument('$services', $locator);
         $definition->setArgument('$classes', \array_values(\array_unique($classes)));
+
+        // The id encoder lookup resolves a type through the classes its server serves.
+        if ($container->hasDefinition(IdEncoderResolver::class)) {
+            $container->getDefinition(IdEncoderResolver::class)->setArgument(
+                '$classesByServer',
+                \array_map(static fn(array $classes): array => \array_values(\array_unique($classes)), $resourceClassesByServer),
+            );
+        }
 
         // The relations registry is keyed by server and type (relations are runtime
         // objects, not statically readable scalars), so it gets its own locator.
