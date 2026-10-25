@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.1](https://github.com/haddowg/json-api-symfony/compare/v1.11.0...v1.11.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* point the stale container error at the cache that needs clearing ([#221](https://github.com/haddowg/json-api-symfony/issues/221)) ([b1a94a8](https://github.com/haddowg/json-api-symfony/commit/b1a94a8e35845683adae27a0e259c83b1677529d))
+
 ## [1.11.0](https://github.com/haddowg/json-api-symfony/compare/v1.10.0...v1.11.0) (2026-10-25)
 
 
