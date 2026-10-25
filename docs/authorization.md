@@ -92,8 +92,14 @@ how you carve out the public ones (`securityRead: false` for the single read,
   applied, so a caller can't pass an ownership check by setting the owner to
   themselves in the same request. It is evaluated again against the changed resource,
   so a caller can't turn a resource into one the expression would refuse them, such as
-  handing it to another user. An Atomic Operations `update` is gated the same way. A
-  relationship mutation is gated once, against the parent before the change.
+  handing it to another user. A relationship mutation (`PATCH`/`POST`/`DELETE
+  …/relationships/{rel}`) is checked the same two ways, with the relation's `mutate`
+  expression or else `securityUpdate`: against the parent before the change, and
+  against the changed parent before it commits. Atomic Operations `update` operations,
+  on a resource or a relationship, are gated the same way. A refusal after the change
+  rolls it back when the data persister implements `TransactionalDataPersisterInterface`
+  (both bundled persisters do); a custom persister that can't transact has already
+  applied the relationship change when the second check refuses it.
 - **Moving a related resource out of another parent is gated.** On the inverse side
   of a Doctrine one-to-many, adding a member that belongs to another parent moves it.
   The move needs the caller to pass the update gate of the parent it leaves, or of the

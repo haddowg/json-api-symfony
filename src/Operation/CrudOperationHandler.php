@@ -62,6 +62,7 @@ use haddowg\JsonApiBundle\DataPersister\AsyncWriteNotAllowedInAtomicOperation;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataPersister\ReportsMovedMembersInterface;
+use haddowg\JsonApiBundle\DataPersister\TransactionalDataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\WriteTransactionContext;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
@@ -88,6 +89,7 @@ use haddowg\JsonApiBundle\Event\BeforeFetchCollectionEvent;
 use haddowg\JsonApiBundle\Event\BeforeFetchRelatedEvent;
 use haddowg\JsonApiBundle\Event\BeforeFetchRelationshipEvent;
 use haddowg\JsonApiBundle\Event\BeforeMemberMoveEvent;
+use haddowg\JsonApiBundle\Event\BeforeRelationshipCommitEvent;
 use haddowg\JsonApiBundle\Event\BeforeRelationshipMutateEvent;
 use haddowg\JsonApiBundle\Event\BeforeSaveEvent;
 use haddowg\JsonApiBundle\Event\BeforeUpdateEvent;
@@ -1444,7 +1446,15 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $persister = $this->persisters->forType($type);
         $this->guardMovedMembers($persister, $type, $request, $parent, $relation, $scopedLinkage, $mode);
 
-        $parent = $persister->mutateRelationship($type, $parent, $relation, $scopedLinkage, $mode);
+        // Applied and checked again before it commits: the update gate judges the parent
+        // as changed too, so a caller can't hand it to someone the gate would refuse them
+        // as (bundle ADR 0136). A refusal rolls the change back.
+        $parent = $this->withinWrite($persister, function () use ($persister, $type, $parent, $relation, $scopedLinkage, $mode, $request): object {
+            $parent = $persister->mutateRelationship($type, $parent, $relation, $scopedLinkage, $mode);
+            $this->dispatch(new BeforeRelationshipCommitEvent($type, $request, $parent, $relation, $scopedLinkage, $mode, $this->serverName($request)));
+
+            return $parent;
+        });
         // The write may have changed whether a related row is readable.
         $this->relationshipLinkage?->forgetReadDecisions();
 
@@ -2048,27 +2058,37 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // from the hydrate body, so core's hydrateRelationships() stays a no-op.
         $relationships = $this->extractRelationships($server, $type, $body, creating: false);
 
-        $this->applyRelationships($server, $persister, $type, $entity, $relationships, $body, $request, creating: false);
+        // Everything from here to the save runs in one write, so a refusal or a failure
+        // after the body's relationships are applied leaves nothing behind.
+        $entity = $this->withinWrite($persister, function () use ($server, $persister, $type, $entity, $relationships, $body, $request, $original): object {
+            $this->applyRelationships($server, $persister, $type, $entity, $relationships, $body, $request, creating: false);
 
-        // An `on()` attribute writes onto the target its relation's related endpoint
-        // serves: scope the hops this body did not just set (bundle ADR 0125).
-        if ($this->includeBatcher !== null) {
-            $this->relationshipLinkage?->setIncluded(
-                $this->includeBatcher->scopeEagerLoads($server, $type, $entity, $request, $this->bodyRelationshipNames($body)),
-            );
-        }
+            // An `on()` attribute writes onto the target its relation's related endpoint
+            // serves: scope the hops this body did not just set (bundle ADR 0125).
+            if ($this->includeBatcher !== null) {
+                $this->relationshipLinkage?->setIncluded(
+                    $this->includeBatcher->scopeEagerLoads($server, $type, $entity, $request, $this->bodyRelationshipNames($body)),
+                );
+            }
 
-        $entity = $server->hydratorFor($type)->hydrate($this->withoutRelationships($body), $entity);
-        \assert(\is_object($entity));
+            $entity = $server->hydratorFor($type)->hydrate($this->withoutRelationships($body), $entity);
+            \assert(\is_object($entity));
 
-        $this->validateEntity($server, $type, $entity, creating: false);
+            $this->validateEntity($server, $type, $entity, creating: false);
 
-        // Before-save then before-update gates (the entity is mutable, `$original`
-        // is the pre-change snapshot): a throw aborts before the persister commits.
-        $this->dispatch(new BeforeSaveEvent($type, $request, $entity, false, $this->serverName($request)));
-        $this->dispatch(new BeforeUpdateEvent($type, $request, $entity, $original, $this->serverName($request)));
+            // Before-save then before-update gates (the entity is mutable, `$original`
+            // is the pre-change snapshot): a throw aborts before the persister commits.
+            $this->dispatch(new BeforeSaveEvent($type, $request, $entity, false, $this->serverName($request)));
+            $this->dispatch(new BeforeUpdateEvent($type, $request, $entity, $original, $this->serverName($request)));
 
-        $entity = $persister->update($type, $entity);
+            // Each relationship the body set is checked against the changed resource too,
+            // as at the relationship endpoint.
+            foreach ($relationships as $relationship) {
+                $this->dispatch(new BeforeRelationshipCommitEvent($type, $request, $entity, $relationship['relation'], $relationship['linkage'], Mode::Replace, $this->serverName($request)));
+            }
+
+            return $persister->update($type, $entity);
+        });
         // The write may have changed whether a related row is readable.
         $this->relationshipLinkage?->forgetReadDecisions();
 
@@ -2105,6 +2125,36 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
             return $afterSave->response() ?? $response;
         }, $response);
+    }
+
+    /**
+     * Runs `$write` in the persister's transaction, rolling it back when `$write` throws,
+     * so a write a later check refuses commits nothing. Inside an Atomic Operations batch
+     * the batch owns the transaction, and a persister that can't transact runs it as is.
+     *
+     * @template T
+     *
+     * @param \Closure(): T $write
+     *
+     * @return T
+     */
+    private function withinWrite(DataPersisterInterface $persister, \Closure $write): mixed
+    {
+        if (!$persister instanceof TransactionalDataPersisterInterface || ($this->txContext?->isActive() ?? false)) {
+            return $write();
+        }
+
+        $persister->beginTransaction();
+        try {
+            $result = $write();
+        } catch (\Throwable $throwable) {
+            $persister->rollback();
+
+            throw $throwable;
+        }
+        $persister->commit();
+
+        return $result;
     }
 
     /**

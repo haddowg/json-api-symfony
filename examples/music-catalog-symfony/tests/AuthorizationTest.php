@@ -337,6 +337,59 @@ final class AuthorizationTest extends MusicCatalogKernelTestCase
         $this->assertPlaylistUnchanged();
     }
 
+    #[Test]
+    #[Group('spec:updating-relationships')]
+    public function theOwnerCannotGiveAPlaylistAwayAtTheRelationshipEndpoint(): void
+    {
+        $mallory = $this->persistUser(self::NON_OWNER);
+
+        $this->browser()
+            ->actingAs(self::OWNER)
+            ->patch('/playlists/' . self::OWNED_PLAYLIST_ID . '/relationships/public-owner', [
+                'data' => ['type' => 'public-profiles', 'id' => (string) $mallory],
+            ])
+            ->getErrors()
+            ->assertStatus(403)
+            ->assertHasError(status: '403', code: 'ACCESS_DENIED');
+
+        $this->assertPlaylistUnchanged();
+    }
+
+    #[Test]
+    #[Group('spec:updating-relationships')]
+    public function theOwnerCannotClearAPlaylistsOwnerAtTheRelationshipEndpoint(): void
+    {
+        $this->browser()
+            ->actingAs(self::OWNER)
+            ->patch('/playlists/' . self::OWNED_PLAYLIST_ID . '/relationships/public-owner', ['data' => null])
+            ->getErrors()
+            ->assertStatus(403)
+            ->assertHasError(status: '403', code: 'ACCESS_DENIED');
+
+        $this->assertPlaylistUnchanged();
+    }
+
+    #[Test]
+    public function theOwnerCannotGiveAPlaylistAwayInAnAtomicRelationshipUpdate(): void
+    {
+        $mallory = $this->persistUser(self::NON_OWNER);
+        $atomic = 'application/vnd.api+json; ext="https://jsonapi.org/ext/atomic"';
+
+        $response = $this->browser()
+            ->actingAs(self::OWNER)
+            ->post('/operations', [
+                'atomic:operations' => [[
+                    'op' => 'update',
+                    'ref' => ['type' => 'playlists', 'id' => self::OWNED_PLAYLIST_ID, 'relationship' => 'publicOwner'],
+                    'data' => ['type' => 'public-profiles', 'id' => (string) $mallory],
+                ]],
+            ], ['CONTENT_TYPE' => $atomic, 'HTTP_ACCEPT' => $atomic])
+            ->getResponse();
+
+        self::assertSame(403, $response->getStatusCode(), (string) $response->getContent());
+        $this->assertPlaylistUnchanged();
+    }
+
     // --- securityDelete: is_granted('ROLE_ADMIN') (a role gate) ----------------
 
     #[Test]
