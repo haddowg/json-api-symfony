@@ -18,6 +18,9 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 #[AsJsonApiResource(
     entity: OwnedFolderEntity::class,
     security: "is_granted('EDIT', object)",
+    // Any user may read a folder, so a flattened write onto one they can't edit is refused
+    // by the update gate rather than reading as a missing row.
+    securityRead: "is_granted('ROLE_USER')",
     securityList: "is_granted('ROLE_USER')",
 )]
 final class OwnedFolderResource extends AbstractResource

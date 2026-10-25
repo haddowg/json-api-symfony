@@ -87,6 +87,8 @@ final class InMemorySecurityTestKernel extends Kernel
                             // cascades to the collection) is reachable by an admin too.
                             'admin' => ['password' => 'pass', 'roles' => ['ROLE_ADMIN', 'ROLE_USER']],
                             'user' => ['password' => 'pass', 'roles' => ['ROLE_USER']],
+                            // May read a single widget but not list them.
+                            'reader' => ['password' => 'pass', 'roles' => ['ROLE_USER', 'ROLE_NO_LIST']],
                         ],
                     ],
                 ],

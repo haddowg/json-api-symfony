@@ -731,6 +731,15 @@ final class JsonApiBundle extends AbstractBundle
             ->args([
                 '$authorizationChecker' => service('security.authorization_checker')->nullOnInvalid(),
                 '$registry' => service(\haddowg\JsonApiBundle\Security\ResourceSecurityRegistry::class),
+                '$rows' => service(\haddowg\JsonApiBundle\Security\ReadableRows::class),
+            ]);
+
+        // Decides whether a related row may be shown through another type, by the
+        // related type's own read expression (bundle ADR 0140).
+        $services->set(\haddowg\JsonApiBundle\Security\ReadableRows::class)
+            ->args([
+                '$authorizationChecker' => service('security.authorization_checker')->nullOnInvalid(),
+                '$registry' => service(\haddowg\JsonApiBundle\Security\ResourceSecurityRegistry::class),
             ]);
 
         // Declarative response headers (bundle ADR 0054): the type-keyed

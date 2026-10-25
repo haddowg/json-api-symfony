@@ -28,6 +28,15 @@ class SecuredWidgetEntity
     #[ORM\OneToMany(targetEntity: SecuredWidgetTagEntity::class, mappedBy: 'widget')]
     public ?Collection $widgetTags = null;
 
+    /**
+     * Null on a widget the persister instantiates without its constructor.
+     *
+     * @var Collection<int, SecuredWidgetEntity>|null
+     */
+    #[ORM\ManyToMany(targetEntity: self::class)]
+    #[ORM\JoinTable(name: 'secured_widget_partners')]
+    public ?Collection $partners = null;
+
     public function __construct(
         #[ORM\Id]
         #[ORM\Column(type: 'integer')]
@@ -40,5 +49,6 @@ class SecuredWidgetEntity
         public ?SecuredWidgetEntity $partner = null,
     ) {
         $this->widgetTags = new ArrayCollection();
+        $this->partners = new ArrayCollection();
     }
 }

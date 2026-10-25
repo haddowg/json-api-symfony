@@ -272,7 +272,11 @@ return static function (ContainerConfigurator $container): void {
     // which the batcher supplies a windowed to-many's page-1 linkage data WITHOUT
     // writing it onto the parent property — so a relation sharing the backing column
     // renders its own membership rather than the windowed sibling's filtered page.
-    $services->set(\haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipLinkage::class);
+    $services->set(\haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipLinkage::class)
+        // Supplies a to-one target the caller may not read as none (bundle ADR 0140).
+        ->args([
+            '$rows' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Security\ReadableRows::class)->nullOnInvalid(),
+        ]);
     $services->set(\haddowg\JsonApiBundle\DataProvider\RelationshipWindowBatcher::class)
         // The optional filter-value validator: resolves to the FilterValueValidator
         // only when the Symfony Validator bridge is wired, else null — so a mistyped

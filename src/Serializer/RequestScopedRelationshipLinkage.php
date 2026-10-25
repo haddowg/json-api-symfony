@@ -6,10 +6,12 @@ namespace haddowg\JsonApiBundle\Serializer;
 
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\SerializerResolverInterface;
 use haddowg\JsonApi\Schema\Relationship\RelationshipLinkage;
 use haddowg\JsonApi\Schema\Relationship\ToOneRelationshipLinkage;
 use haddowg\JsonApi\Serializer\RelationshipLinkageInterface;
 use haddowg\JsonApi\Serializer\ToOneRelationshipLinkageInterface;
+use haddowg\JsonApiBundle\Security\ReadableRows;
 use Symfony\Contracts\Service\ResetInterface;
 
 /**
@@ -35,12 +37,54 @@ use Symfony\Contracts\Service\ResetInterface;
  * long-lived container a prior profile read could leave a backing set and a later render
  * could read a stale page. It therefore implements {@see ResetInterface} (auto-tagged
  * `kernel.reset`): the container resets it between messages.
+ *
+ * A to-one target the caller may not read through its own type's read gate is supplied
+ * as none ({@see ReadableRows}, bundle ADR 0140), so it is missing from `data` and from
+ * `included`. To-many linkage is never filtered here: a list holds what its query
+ * returned. When nothing is refused it answers as it would without the check.
  */
 final class RequestScopedRelationshipLinkage implements ToOneRelationshipLinkageInterface, ResetInterface
 {
     private ?RelationshipLinkageInterface $delegate = null;
 
     private ?RelationshipLinkageInterface $included = null;
+
+    public function __construct(
+        private readonly ?ReadableRows $rows = null,
+    ) {}
+
+    /**
+     * Starts an operation on `$server`, deciding every row afresh.
+     */
+    public function bind(?SerializerResolverInterface $server): void
+    {
+        $this->rows?->bind($server);
+    }
+
+    /**
+     * Decides every row afresh, after a write may have changed one.
+     */
+    public function forgetReadDecisions(): void
+    {
+        $this->rows?->forget();
+    }
+
+    /**
+     * The first type `$relation` relates to whose collection read gate refuses the
+     * caller, or `null` when every one admits them.
+     */
+    public function refusedCollectionType(RelationInterface $relation): ?string
+    {
+        return $this->rows?->refusedCollectionType($relation);
+    }
+
+    /**
+     * A related endpoint's to-one target, or `null` when the caller may not read it.
+     */
+    public function readableTarget(mixed $target, RelationInterface $relation): mixed
+    {
+        return \is_object($target) && $this->rows !== null && !$this->rows->allows($target, $relation) ? null : $target;
+    }
 
     /**
      * Installs (or clears, with `null`) the windowed linkage backing for the read
@@ -82,9 +126,17 @@ final class RequestScopedRelationshipLinkage implements ToOneRelationshipLinkage
             ? $this->delegate->toOneLinkageForRelationship($model, $relation, $request)
             : null;
 
-        return $windowed ?? ($this->included instanceof ToOneRelationshipLinkageInterface
+        $linkage = $windowed ?? ($this->included instanceof ToOneRelationshipLinkageInterface
             ? $this->included->toOneLinkageForRelationship($model, $relation, $request)
             : null);
+
+        if ($this->rows === null || !$this->rows->guardsRows($relation)) {
+            return $linkage;
+        }
+
+        $target = $linkage !== null ? $linkage->target : $relation->readValue($model, $request);
+
+        return \is_object($target) && !$this->rows->allows($target, $relation) ? ToOneRelationshipLinkage::none() : $linkage;
     }
 
     /**

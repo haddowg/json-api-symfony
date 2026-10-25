@@ -16,5 +16,7 @@ final class InMemorySecuredWidget
         public ?int $id = null,
         public string $name = '',
         public ?InMemorySecuredWidget $partner = null,
+        /** @var list<InMemorySecuredWidget> */
+        public array $partners = [],
     ) {}
 }
