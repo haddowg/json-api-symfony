@@ -70,6 +70,55 @@ abstract class IncludeScopingConformanceTestCase extends JsonApiFunctionalTestCa
         $this->assertNoHiddenRow($document);
     }
 
+    /**
+     * A computed relation's closure returns every agency, the hidden one included; the
+     * agency type's scope still decides which of them exist, everywhere the relation
+     * renders and in every count.
+     */
+    /**
+     * A computed to-one's closure returns each advertiser's first agency; advertiser 2's
+     * is the hidden one, so it reads as none.
+     */
+    #[Test]
+    #[TestWith(['', ''], 'default server')]
+    #[TestWith(['/partner', 'partner-'], 'named server')]
+    public function aComputedToOneIsNarrowedToTheScope(string $mount, string $prefix): void
+    {
+        $base = $mount . '/' . $prefix . 'advertisers';
+
+        $document = $this->get($base . '?include=firstAgency');
+        self::assertSame('1', $this->toOneId($document, '1', 'firstAgency'));
+        self::assertNull($this->toOneId($document, '2', 'firstAgency'));
+        self::assertSame(['1'], $this->includedIds($document, $prefix . 'agencies'));
+
+        self::assertNull($this->get($base . '/2/firstAgency')['data']);
+        self::assertNull($this->get($base . '/2/relationships/firstAgency')['data']);
+        self::assertSame('1', $this->value($this->get($base . '/1/firstAgency'), 'data', 'id'));
+        $this->assertNoHiddenRow($document);
+    }
+
+    #[Test]
+    #[TestWith(['', ''], 'default server')]
+    #[TestWith(['/partner', 'partner-'], 'named server')]
+    public function aComputedRelationIsNarrowedToTheScope(string $mount, string $prefix): void
+    {
+        $base = $mount . '/' . $prefix . 'advertisers';
+        $counts = ['HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . CountableProfile::URI . '"'];
+
+        $document = $this->get($base . '?include=allAgencies&withCount=allAgencies', $counts);
+        self::assertSame(['1', '3'], $this->includedIds($document, $prefix . 'agencies'));
+        foreach (['1' => ['1'], '2' => ['3']] as $id => $expected) {
+            self::assertSame($expected, $this->linkageIds($document, (string) $id, 'allAgencies'), 'linkage of ' . $id);
+            self::assertSame(\count($expected), $this->value($this->relationship($document, (string) $id, 'allAgencies'), 'meta', 'total'), 'withCount of ' . $id);
+
+            $related = $this->get($base . '/' . $id . '/allAgencies?withCount=_self_&page[number]=1&page[size]=1', $counts);
+            self::assertSame($expected, $this->ids($related['data'] ?? null), 'related page of ' . $id);
+            self::assertSame(\count($expected), $this->value($related, 'meta', 'total'), 'related total of ' . $id);
+            self::assertSame($expected, $this->ids($this->get($base . '/' . $id . '/relationships/allAgencies')['data'] ?? null), 'relationship of ' . $id);
+        }
+        $this->assertNoHiddenRow($document);
+    }
+
     #[Test]
     #[TestWith(['', ''], 'default server')]
     #[TestWith(['/partner', 'partner-'], 'named server')]

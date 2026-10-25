@@ -44,6 +44,19 @@ trait UserScopingConformance
         self::assertSame(2, $this->scopedValue($first, 'meta', 'total'));
     }
 
+    #[Test]
+    public function a_computed_relation_into_the_scoped_type_is_narrowed_to_the_scope(): void
+    {
+        // The closure returns all three memos; ada may see 1 and 3.
+        $this->assertScopedRelation('ada', $this->memoParent(), 'curatedMemos', ['1', '3']);
+
+        $first = $this->scopedDocument('ada', $this->memoParent() . '/curatedMemos?withCount=_self_&page[number]=1&page[size]=1');
+        $second = $this->scopedDocument('ada', $this->memoParent() . '/curatedMemos?withCount=_self_&page[number]=2&page[size]=1');
+        self::assertSame(['1'], $this->scopedIds($first['data'] ?? null));
+        self::assertSame(['3'], $this->scopedIds($second['data'] ?? null));
+        self::assertSame(2, $this->scopedValue($first, 'meta', 'total'));
+    }
+
     /**
      * The path of the resource holding the memos.
      */

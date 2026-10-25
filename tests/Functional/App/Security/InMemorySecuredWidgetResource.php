@@ -59,6 +59,11 @@ final class InMemorySecuredWidgetResource extends AbstractResource
             BelongsTo::make('adminPartner', 'securedWidgets')->storedAs('partner')->security(read: "is_granted('ROLE_ADMIN')"),
             HasMany::make('partners', 'securedWidgets')->countable(),
             HasMany::make('memos', 'memos')->countable(),
+            // Computed: the closure returns every memo the holder has, and the memos
+            // provider's scope still decides which of them exist.
+            HasMany::make('curatedMemos', 'memos')->countable()->extractUsing(
+                static fn(mixed $holder): array => \is_object($holder) ? \haddowg\JsonApiBundle\Tests\Functional\App\OwnedRows\Memo::heldBy($holder) : [],
+            ),
             // Relations that declare their own read permission, which replaces the
             // related type's gates: any user may read these, a reader included, and an
             // exposed partner shows even when it is "classified".

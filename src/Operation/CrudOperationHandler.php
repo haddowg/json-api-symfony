@@ -70,6 +70,7 @@ use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 use haddowg\JsonApiBundle\DataProvider\PivotAwareProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\RelatedIncludeBatcher;
+use haddowg\JsonApiBundle\DataProvider\RelatedReadRouter;
 use haddowg\JsonApiBundle\DataProvider\RelationCountBatcher;
 use haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory;
 use haddowg\JsonApiBundle\DataProvider\RelationshipWindowBatcher;
@@ -215,6 +216,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // Each server's per-type operation allow-list, re-checked on writes that reach
         // the handler without a route the loader gated.
         private readonly ?RouteDescriptorRegistry $descriptors = null,
+        // Reads a computed relation into a scoped type as the closure's value narrowed to
+        // that scope (bundle ADR 0125).
+        private readonly ?RelatedReadRouter $readRouter = null,
     ) {}
 
     public function handle(\haddowg\JsonApi\Operation\JsonApiOperationInterface $operation): DataResponse|RelatedResponse|IdentifierResponse|MetaResponse|NoContentResponse|AcceptedResponse|SeeOtherResponse|AtomicResultsResponse|ErrorResponse
@@ -793,8 +797,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                     ->withMeta(['total' => \count($items)]);
             }
 
-            $result = $relatedProvider
-                ->fetchRelatedCollection($relatedType, $parent, $relation, $criteria, $request);
+            $result = $this->readRouter?->readsComputed($relation) === true
+                ? $this->readRouter->fetchComputed($server, $parent, $relation, $criteria, $request)
+                : $relatedProvider->fetchRelatedCollection($relatedType, $parent, $relation, $criteria, $request);
 
             $serializer = $polymorphic
                 ? $this->polymorphicSerializer($relation, $server)
@@ -1251,7 +1256,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             );
             $this->validateFilterValues($operation->queryParameters()->filter, $criteria->filters);
 
-            $result = $relatedProvider->fetchRelatedCollection($relatedType, $parent, $relation, $criteria, $request);
+            $result = $this->readRouter?->readsComputed($relation) === true
+                ? $this->readRouter->fetchComputed($server, $parent, $relation, $criteria, $request)
+                : $relatedProvider->fetchRelatedCollection($relatedType, $parent, $relation, $criteria, $request);
             $items = \is_array($result->items) ? \array_values($result->items) : \iterator_to_array($result->items, false);
 
             // A relationship endpoint renders linkage only — an IdentifierResponse never

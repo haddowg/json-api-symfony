@@ -23,6 +23,7 @@ use haddowg\JsonApi\Resource\Filter\FilterDefaults;
 use haddowg\JsonApi\Resource\Filter\WhereDoesntHave;
 use haddowg\JsonApi\Resource\Filter\WhereHas;
 use haddowg\JsonApi\Resource\Sort\SortByField;
+use haddowg\JsonApiBundle\DataProvider\AdmitsRowsInterface;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\CriteriaApplier;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
@@ -81,7 +82,7 @@ use haddowg\JsonApiBundle\Server\IdEncoderResolver;
  * @implements DataProviderInterface<object>
  * @implements PivotAwareProviderInterface<object>
  */
-final class DoctrineDataProvider implements DataProviderInterface, PivotAwareProviderInterface, ScopesRelatedReadsInterface
+final class DoctrineDataProvider implements DataProviderInterface, PivotAwareProviderInterface, ScopesRelatedReadsInterface, AdmitsRowsInterface
 {
     /**
      * The root alias every generated QueryBuilder uses; handlers re-read it
@@ -2157,6 +2158,38 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
     {
         return $this->entityClassByType[$type]
             ?? throw new \LogicException(\sprintf('No Doctrine entity class is mapped for JSON:API type "%s".', $type));
+    }
+
+    /**
+     * One `WHERE id IN (…)` probe with the type's extensions applied, the same probe a
+     * scoped to-one uses.
+     */
+    public function admitRows(string $type, array $rows, JsonApiRequestInterface $request): array
+    {
+        if ($rows === []) {
+            return [];
+        }
+
+        $class = $this->entityClassFor($type);
+        $metadata = $this->entityManager->getClassMetadata($class);
+        $idField = $metadata->getSingleIdentifierFieldName();
+
+        $ids = [];
+        foreach ($rows as $row) {
+            $id = $metadata->getIdentifierValues($row)[$idField] ?? null;
+            if (\is_scalar($id)) {
+                $ids[(string) $id] = $id;
+            }
+        }
+
+        $criteria = new CollectionCriteria(new QueryParameters(fields: [], includes: [], sort: [], filter: [], pagination: []));
+        $admitted = $this->matchingToOneTargetIds($class, $type, $idField, $criteria, \array_values($ids), $request);
+
+        return \array_values(\array_filter($rows, static function (object $row) use ($metadata, $idField, $admitted): bool {
+            $id = $metadata->getIdentifierValues($row)[$idField] ?? null;
+
+            return \is_scalar($id) && isset($admitted[(string) $id]);
+        }));
     }
 
     /**
