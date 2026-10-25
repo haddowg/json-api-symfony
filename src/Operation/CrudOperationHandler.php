@@ -94,6 +94,7 @@ use haddowg\JsonApiBundle\Event\BeforeRelationshipCommitEvent;
 use haddowg\JsonApiBundle\Event\BeforeRelationshipMutateEvent;
 use haddowg\JsonApiBundle\Event\BeforeSaveEvent;
 use haddowg\JsonApiBundle\Event\BeforeUpdateEvent;
+use haddowg\JsonApiBundle\Security\RelationAuthorizer;
 use haddowg\JsonApiBundle\Serializer\PivotLinkageParentSerializer;
 use haddowg\JsonApiBundle\Serializer\PivotMetaSerializer;
 use haddowg\JsonApiBundle\Serializer\PivotParentSerializer;
@@ -237,7 +238,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // Nor another operation's counts.
         $this->relationshipCount?->set(null);
         // Related rows are judged against their own read gate afresh per operation.
-        $this->relationshipLinkage?->bind($server instanceof Server ? $server : null);
+        $this->relationshipLinkage?->bind($server instanceof Server ? $server : null, $this->contextServerName($operation->context()));
         $this->outputTimezone?->set($server instanceof \haddowg\JsonApi\Resource\ProvidesOutputTimezoneInterface ? $server->outputTimezone() : null);
 
         if ($operation instanceof CreateResourceOperation || $operation instanceof UpdateResourceOperation) {
@@ -2674,5 +2675,24 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $name = $request->getAttribute('_jsonapi_server');
 
         return \is_string($name) && $name !== '' ? $name : ServerProvider::DEFAULT_SERVER;
+    }
+
+    /**
+     * The server an operation runs on: the request's, else, for a programmatic dispatch,
+     * the one the context's server was built as (its bound relation authorizer knows),
+     * else the implicit `default` server.
+     */
+    private function contextServerName(OperationContext $context): string
+    {
+        $request = $context->httpRequest();
+        $name = $request?->getAttribute('_jsonapi_server');
+        if (\is_string($name) && $name !== '') {
+            return $name;
+        }
+
+        $server = $context->server;
+        $authorizer = $server instanceof \haddowg\JsonApi\Resource\ProvidesRelationAuthorizerInterface ? $server->relationAuthorizer() : null;
+
+        return $authorizer instanceof RelationAuthorizer ? $authorizer->serverName() : ServerProvider::DEFAULT_SERVER;
     }
 }

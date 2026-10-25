@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Security;
 
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\SerializerResolverInterface;
+use haddowg\JsonApiBundle\Server\ServerProvider;
 use Symfony\Component\ExpressionLanguage\Expression;
 use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 
@@ -24,12 +25,19 @@ use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
  * A relation that declares its own read permission replaces both for that relation
  * ({@see relationPermission()}); its data then shows under scoping alone.
  *
- * Answers are memoized per row and type, per type for a collection, and per parent and
- * relation for a permission, until the next {@see bind()} or {@see forget()}.
+ * The gates are the ones the related type declares on the server the operation runs on
+ * (bundle ADR 0142): the server named in the call, else the one {@see bind()} set, else
+ * the default server.
+ *
+ * Answers are memoized per row, server and type, per server and type for a collection,
+ * and per parent and relation for a permission, until the next {@see bind()} or
+ * {@see forget()}.
  */
 final class ReadableRows
 {
     private ?SerializerResolverInterface $server = null;
+
+    private string $serverName = ServerProvider::DEFAULT_SERVER;
 
     /**
      * @var \WeakMap<object, array<string, bool>>
@@ -55,12 +63,13 @@ final class ReadableRows
     }
 
     /**
-     * Sets the server whose serializers type a polymorphic relation's rows, and drops
-     * every memoized answer.
+     * Sets the server whose serializers type a polymorphic relation's rows and whose
+     * gates apply, and drops every memoized answer.
      */
-    public function bind(?SerializerResolverInterface $server): void
+    public function bind(?SerializerResolverInterface $server, string $serverName = ServerProvider::DEFAULT_SERVER): void
     {
         $this->server = $server;
+        $this->serverName = $serverName;
         $this->forget();
     }
 
@@ -101,10 +110,11 @@ final class ReadableRows
      * Whether any type `$relation` relates to declares a read expression, so its single
      * rows need checking at all.
      */
-    public function guardsRows(RelationInterface $relation): bool
+    public function guardsRows(RelationInterface $relation, ?string $serverName = null): bool
     {
+        $serverName ??= $this->serverName;
         foreach ($relation->relatedTypes() as $type) {
-            if (\is_string($this->registry->securityFor($type)?->forRead())) {
+            if (\is_string($this->registry->securityFor($type, $serverName)?->forRead())) {
                 return true;
             }
         }
@@ -115,37 +125,41 @@ final class ReadableRows
     /**
      * Whether the caller may see the single row `$row`, reached through `$relation`.
      */
-    public function allows(object $row, RelationInterface $relation): bool
+    public function allows(object $row, RelationInterface $relation, ?string $serverName = null): bool
     {
+        $serverName ??= $this->serverName;
         $type = $this->typeOf($row, $relation);
-        $expression = $type !== null ? $this->registry->securityFor($type)?->forRead() : null;
+        $expression = $type !== null ? $this->registry->securityFor($type, $serverName)?->forRead() : null;
         if ($type === null || !\is_string($expression)) {
             return true;
         }
 
+        $key = $serverName . '|' . $type;
         $answers = $this->memo[$row] ?? [];
-        if (!\array_key_exists($type, $answers)) {
-            $answers[$type] = $this->isGranted($expression, $row);
+        if (!\array_key_exists($key, $answers)) {
+            $answers[$key] = $this->isGranted($expression, $row);
             $this->memo[$row] = $answers;
         }
 
-        return $answers[$type];
+        return $answers[$key];
     }
 
     /**
      * The first type `$relation` relates to whose collection read gate refuses the
      * caller, or `null` when every one admits them.
      */
-    public function refusedCollectionType(RelationInterface $relation): ?string
+    public function refusedCollectionType(RelationInterface $relation, ?string $serverName = null): ?string
     {
+        $serverName ??= $this->serverName;
         foreach ($relation->relatedTypes() as $type) {
-            $expression = $this->registry->securityFor($type)?->forList();
+            $expression = $this->registry->securityFor($type, $serverName)?->forList();
             if (!\is_string($expression)) {
                 continue;
             }
 
-            $this->collections[$type] ??= $this->isGranted($expression, null);
-            if (!$this->collections[$type]) {
+            $key = $serverName . '|' . $type;
+            $this->collections[$key] ??= $this->isGranted($expression, null);
+            if (!$this->collections[$key]) {
                 return $type;
             }
         }

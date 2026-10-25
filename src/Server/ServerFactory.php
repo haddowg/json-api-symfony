@@ -218,9 +218,10 @@ final class ServerFactory
             // server's own), which can carry a describedby; false renders bare strings.
             ->withLinkObjects($this->linkObjects)
             // The relation authorizer (bundle ADR 0139), bound to this server so it can
-            // resolve a polymorphic relation's row type; read lazily, since the server
-            // it resolves through is the one being built here.
-            ->withRelationAuthorizer($this->relationAuthorizer?->forServer(fn(): ?Server => $this->server))
+            // resolve a polymorphic relation's row type and read this server's security
+            // declarations; read lazily, since the server it resolves through is the
+            // one being built here.
+            ->withRelationAuthorizer($this->relationAuthorizer?->forServer(fn(): ?Server => $this->server, $this->serverName))
             ->withContainer($this->resources);
 
         // Register the JSON:API profiles this server recognizes, data-driven from

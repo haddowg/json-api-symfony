@@ -73,6 +73,10 @@ use Symfony\Component\Security\Core\Exception\AccessDeniedException;
  * Doctrine extension filtering the collection), not this single gate. A type that
  * declared no security is never gated (the subscriber is a no-op for it).
  *
+ * Each gate reads the declarations of the server the event names (bundle ADR 0142), so
+ * a type served by different resource classes on two servers is gated by each server's
+ * own resource only.
+ *
  * The authorization checker is injected optionally so an app that declares no
  * expression needs no firewall. The build already fails when an expression is declared
  * without one (bundle ADR 0130); if the subscriber still meets an expression it cannot
@@ -118,7 +122,7 @@ final class ResourceSecuritySubscriber implements EventSubscriberInterface
      */
     public function onBeforeFetchCollection(BeforeFetchCollectionEvent $event): void
     {
-        $expression = $this->registry->securityFor($event->type)?->forList();
+        $expression = $this->registry->securityFor($event->type, $event->serverName)?->forList();
         if (!\is_string($expression)) {
             return;
         }
@@ -157,17 +161,17 @@ final class ResourceSecuritySubscriber implements EventSubscriberInterface
 
     public function onBeforeCreate(BeforeCreateEvent $event): void
     {
-        $this->authorize($event->type, $this->registry->securityFor($event->type)?->forCreate(), $event->entity);
+        $this->authorize($event->type, $this->registry->securityFor($event->type, $event->serverName)?->forCreate(), $event->entity);
     }
 
     public function onBeforeApplyUpdate(BeforeApplyUpdateEvent $event): void
     {
-        $this->authorize($event->type, $this->registry->securityFor($event->type)?->forUpdate(), $event->entity);
+        $this->authorize($event->type, $this->registry->securityFor($event->type, $event->serverName)?->forUpdate(), $event->entity);
     }
 
     public function onBeforeUpdate(BeforeUpdateEvent $event): void
     {
-        $this->authorize($event->type, $this->registry->securityFor($event->type)?->forUpdate(), $event->entity);
+        $this->authorize($event->type, $this->registry->securityFor($event->type, $event->serverName)?->forUpdate(), $event->entity);
     }
 
     public function onBeforeRelationshipMutate(BeforeRelationshipMutateEvent $event): void
@@ -175,7 +179,7 @@ final class ResourceSecuritySubscriber implements EventSubscriberInterface
         // The relation's own mutate security OVERRIDES the parent's update gate (it may
         // be more *or* less permissive); a relation declaring none falls back to the
         // parent's update expression. The subject is the parent resource in both cases.
-        $expression = $event->relation->securityMutate() ?? $this->registry->securityFor($event->type)?->forUpdate();
+        $expression = $event->relation->securityMutate() ?? $this->registry->securityFor($event->type, $event->serverName)?->forUpdate();
         $this->authorize($event->type, $expression, $event->parent);
     }
 
@@ -187,7 +191,7 @@ final class ResourceSecuritySubscriber implements EventSubscriberInterface
      */
     public function onBeforeRelationshipCommit(BeforeRelationshipCommitEvent $event): void
     {
-        $expression = $event->relation->securityMutate() ?? $this->registry->securityFor($event->type)?->forUpdate();
+        $expression = $event->relation->securityMutate() ?? $this->registry->securityFor($event->type, $event->serverName)?->forUpdate();
         $this->authorize($event->type, $expression, $event->parent);
     }
 
@@ -212,12 +216,12 @@ final class ResourceSecuritySubscriber implements EventSubscriberInterface
     public function onBeforeMemberMove(BeforeMemberMoveEvent $event): void
     {
         if ($event->from !== null
-            && $this->allows($event->relation->securityMutate() ?? $this->registry->securityFor($event->type)?->forUpdate(), $event->from)) {
+            && $this->allows($event->relation->securityMutate() ?? $this->registry->securityFor($event->type, $event->serverName)?->forUpdate(), $event->from)) {
             return;
         }
 
         $relatedType = $event->relation->relatedTypes()[0] ?? null;
-        $memberExpression = $relatedType !== null ? $this->registry->securityFor($relatedType)?->forUpdate() : null;
+        $memberExpression = $relatedType !== null ? $this->registry->securityFor($relatedType, $event->serverName)?->forUpdate() : null;
         if ($this->allows($memberExpression, $event->member)) {
             return;
         }
@@ -232,12 +236,12 @@ final class ResourceSecuritySubscriber implements EventSubscriberInterface
 
     public function onBeforeDelete(BeforeDeleteEvent $event): void
     {
-        $this->authorize($event->type, $this->registry->securityFor($event->type)?->forDelete(), $event->entity);
+        $this->authorize($event->type, $this->registry->securityFor($event->type, $event->serverName)?->forDelete(), $event->entity);
     }
 
     public function onAfterFetchOne(AfterFetchOneEvent $event): void
     {
-        $this->authorize($event->type, $this->registry->securityFor($event->type)?->forRead(), $event->entity);
+        $this->authorize($event->type, $this->registry->securityFor($event->type, $event->serverName)?->forRead(), $event->entity);
     }
 
     /**

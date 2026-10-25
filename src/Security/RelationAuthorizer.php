@@ -9,6 +9,7 @@ use haddowg\JsonApi\Resource\Field\FieldInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\RelationAuthorizerInterface;
 use haddowg\JsonApi\Server\Server;
+use haddowg\JsonApiBundle\Server\ServerProvider;
 use Symfony\Component\ExpressionLanguage\Expression;
 use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 
@@ -27,7 +28,9 @@ use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
  * and passes when that type declares none.
  *
  * The shared service is unbound; each server's factory binds its own copy to the server
- * through {@see forServer()}, which resolves the type of a polymorphic relation's row.
+ * through {@see forServer()}, which resolves the type of a polymorphic relation's row
+ * and names the server whose declarations apply (bundle ADR 0142). The unbound service
+ * reads the default server's.
  */
 final class RelationAuthorizer implements RelationAuthorizerInterface
 {
@@ -36,6 +39,8 @@ final class RelationAuthorizer implements RelationAuthorizerInterface
      */
     private ?\Closure $resolver = null;
 
+    private string $serverName = ServerProvider::DEFAULT_SERVER;
+
     public function __construct(
         private readonly ?AuthorizationCheckerInterface $authorizationChecker,
         private readonly ResourceSecurityRegistry $registry,
@@ -43,17 +48,26 @@ final class RelationAuthorizer implements RelationAuthorizerInterface
     ) {}
 
     /**
-     * A copy that resolves serializers through the server `$resolver` returns. It is
-     * read lazily, because the server is built with the copy.
+     * A copy for the server `$serverName` that resolves serializers through the server
+     * `$resolver` returns. It is read lazily, because the server is built with the copy.
      *
      * @param \Closure(): ?Server $resolver
      */
-    public function forServer(\Closure $resolver): self
+    public function forServer(\Closure $resolver, string $serverName = ServerProvider::DEFAULT_SERVER): self
     {
         $self = clone $this;
         $self->resolver = $resolver;
+        $self->serverName = $serverName;
 
         return $self;
+    }
+
+    /**
+     * The server this copy is bound to.
+     */
+    public function serverName(): string
+    {
+        return $this->serverName;
     }
 
     public function canReadRelationship(mixed $model, RelationInterface $relation, JsonApiRequestInterface $request): bool
@@ -70,7 +84,7 @@ final class RelationAuthorizer implements RelationAuthorizerInterface
 
         // A list holds what its query returned, so a to-many is shown whole or not at
         // all: not when any type it relates to refuses the caller its collection.
-        return !$relation->isToMany() || $this->rows?->refusedCollectionType($relation) === null;
+        return !$relation->isToMany() || $this->rows?->refusedCollectionType($relation, $this->serverName) === null;
     }
 
     public function canWriteRelatedAttribute(mixed $owner, RelationInterface $relation, FieldInterface $field, mixed $model, JsonApiRequestInterface $request): bool
@@ -84,7 +98,7 @@ final class RelationAuthorizer implements RelationAuthorizerInterface
             return false;
         }
 
-        $expression = $this->registry->securityFor($type)?->forUpdate();
+        $expression = $this->registry->securityFor($type, $this->serverName)?->forUpdate();
 
         return !\is_string($expression) || $this->isGranted($expression, $owner);
     }

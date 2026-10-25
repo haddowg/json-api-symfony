@@ -9,6 +9,7 @@ use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Security\ResourceSecurityRegistry;
 use haddowg\JsonApiBundle\Security\UnenforceableSecurityException;
 use haddowg\JsonApiBundle\Server\ServableResourceWarmer;
+use haddowg\JsonApiBundle\Server\ServerProvider;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 
@@ -16,15 +17,17 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
  * Collects the declarative authorization expressions a resource declares via
  * `#[AsJsonApiResource(security: …, securityCreate: …, …)]` (bundle ADR 0043) — the
  * extension records each of the six declarations as a tag attribute on the
- * {@see JsonApiBundle::RESOURCE_TAG} — and assembles a type-keyed
- * `type → {default, create, update, delete, read, list}` scalar map, injected into the
- * {@see ResourceSecurityRegistry} the {@see \haddowg\JsonApiBundle\Security\ResourceSecuritySubscriber}
- * queries.
+ * {@see JsonApiBundle::RESOURCE_TAG} — and assembles a
+ * `type → {default, create, update, delete, read, list}` scalar map per server,
+ * injected into the {@see ResourceSecurityRegistry} the
+ * {@see \haddowg\JsonApiBundle\Security\ResourceSecuritySubscriber} queries. The
+ * default server's map is the `$expressions` argument and every other server's goes
+ * under `$servers`. A resource assigned to several servers is recorded under each, and
+ * a server only ever holds what its own resource declared (bundle ADR 0142).
  *
- * The map flows as plain scalars (the container cannot dump value objects as a
+ * The maps flow as plain scalars (the container cannot dump value objects as a
  * service argument); the registry rebuilds the {@see \haddowg\JsonApiBundle\Security\ResourceSecurity}
- * objects from it. Security is type-keyed and server-independent, so the `server`
- * tag attribute is irrelevant here.
+ * objects from them.
  *
  * It also fails the build (bundle ADR 0130) when a resource or a custom action
  * declares an enforced expression (a string) the application cannot evaluate:
@@ -57,8 +60,8 @@ final class ResourceSecurityPass implements CompilerPassInterface
 
     public function process(ContainerBuilder $container): void
     {
-        /** @var array<string, array{default?: string|bool, create?: string|bool, update?: string|bool, delete?: string|bool, read?: string|bool, list?: string|bool}> $expressions */
-        $expressions = [];
+        /** @var array<string, array<string, array{default?: string|bool, create?: string|bool, update?: string|bool, delete?: string|bool, read?: string|bool, list?: string|bool}>> $byServer */
+        $byServer = [];
 
         /** @var list<string> $enforced */
         $enforced = [];
@@ -79,10 +82,14 @@ final class ResourceSecurityPass implements CompilerPassInterface
                 continue;
             }
 
+            $servers = $this->serversFromTags($tags);
+
             foreach (['default', 'create', 'update', 'delete', 'read', 'list'] as $key) {
                 $value = $this->securityFromTags($tags, $key);
                 if ($value !== null) {
-                    $expressions[$type][$key] = $value;
+                    foreach ($servers as $server) {
+                        $byServer[$server][$type][$key] = $value;
+                    }
                 }
                 if (\is_string($value)) {
                     $enforced[] = \sprintf('type "%s" (%s)', $type, self::ATTRIBUTE_NAMES[$key]);
@@ -115,7 +122,12 @@ final class ResourceSecurityPass implements CompilerPassInterface
         }
 
         if ($container->hasDefinition(ResourceSecurityRegistry::class)) {
-            $container->getDefinition(ResourceSecurityRegistry::class)->setArgument('$expressions', $expressions);
+            $expressions = $byServer[ServerProvider::DEFAULT_SERVER] ?? [];
+            unset($byServer[ServerProvider::DEFAULT_SERVER]);
+
+            $container->getDefinition(ResourceSecurityRegistry::class)
+                ->setArgument('$expressions', $expressions)
+                ->setArgument('$servers', $byServer);
         }
 
         if ($container->hasDefinition(ServableResourceWarmer::class)) {
@@ -139,6 +151,32 @@ final class ResourceSecurityPass implements CompilerPassInterface
         }
 
         return \is_a($class, AbstractResource::class, true) ? $class::$type : '';
+    }
+
+    /**
+     * The servers a resource is exposed on, read across all its tags the way the
+     * ResourceLocatorPass reads them (which also validates the names): the first tag
+     * carrying a `server` value, comma-split, else the implicit `default`.
+     *
+     * @param array<array<string, mixed>> $tags
+     *
+     * @return list<string>
+     */
+    private function serversFromTags(array $tags): array
+    {
+        foreach ($tags as $tag) {
+            if (!\array_key_exists('server', $tag)) {
+                continue;
+            }
+
+            $names = \is_string($tag['server'])
+                ? \array_values(\array_unique(\array_filter(\array_map('trim', \explode(',', $tag['server'])), static fn(string $name): bool => $name !== '')))
+                : [];
+
+            return $names !== [] ? $names : [ServerProvider::DEFAULT_SERVER];
+        }
+
+        return [ServerProvider::DEFAULT_SERVER];
     }
 
     /**

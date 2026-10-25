@@ -122,6 +122,12 @@ how you carve out the public ones (`securityRead: false` for the single read,
   subset), scope the collection with a [Doctrine extension](custom-data-providers.md)
   (or a custom provider) so forbidden rows simply never appear (a `404` for a hidden
   id, not a `403`). Use `securityList` to blanket-block; use a query scope to filter.
+- **Each server is gated by its own resource.** When two servers expose the same type
+  through different resource classes, each server enforces and documents only what its
+  own resource declares; a resource assigned to several servers applies its declarations
+  on each. A related type's gates are the ones it declares on the server the request is
+  on. An operation with no request naming a server, such as a programmatic dispatch,
+  uses the server its operation context was built for, else the default server.
 
 ## Narrowing the query surface per request
 

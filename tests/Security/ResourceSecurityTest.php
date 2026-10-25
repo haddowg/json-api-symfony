@@ -70,4 +70,21 @@ final class ResourceSecurityTest extends TestCase
         self::assertNull($registry->securityFor('unknown'));
         self::assertSame("is_granted('ROLE_USER')", $registry->securityFor('gadgets')?->forCreate());
     }
+
+    #[Test]
+    public function eachServerHoldsOnlyWhatItsOwnResourceDeclared(): void
+    {
+        $registry = new ResourceSecurityRegistry(
+            ['gadgets' => ['list' => "is_granted('ROLE_ADMIN')"]],
+            ['v5' => ['gadgets' => ['delete' => "is_granted('ROLE_USER')"]]],
+        );
+
+        self::assertSame("is_granted('ROLE_ADMIN')", $registry->securityFor('gadgets')?->forList());
+        self::assertNull($registry->securityFor('gadgets')->forDelete());
+
+        self::assertNull($registry->securityFor('gadgets', 'v5')?->forList());
+        self::assertSame("is_granted('ROLE_USER')", $registry->securityFor('gadgets', 'v5')?->forDelete());
+
+        self::assertNull($registry->securityFor('gadgets', 'v6'));
+    }
 }
