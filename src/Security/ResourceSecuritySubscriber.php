@@ -14,6 +14,7 @@ use haddowg\JsonApiBundle\Event\BeforeFetchCollectionEvent;
 use haddowg\JsonApiBundle\Event\BeforeFetchRelatedEvent;
 use haddowg\JsonApiBundle\Event\BeforeFetchRelationshipEvent;
 use haddowg\JsonApiBundle\Event\BeforeMemberMoveEvent;
+use haddowg\JsonApiBundle\Event\BeforeRelationshipCommitEvent;
 use haddowg\JsonApiBundle\Event\BeforeRelationshipMutateEvent;
 use haddowg\JsonApiBundle\Event\BeforeUpdateEvent;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
@@ -94,6 +95,7 @@ final class ResourceSecuritySubscriber implements EventSubscriberInterface
             BeforeApplyUpdateEvent::class => 'onBeforeApplyUpdate',
             BeforeUpdateEvent::class => 'onBeforeUpdate',
             BeforeRelationshipMutateEvent::class => 'onBeforeRelationshipMutate',
+            BeforeRelationshipCommitEvent::class => 'onBeforeRelationshipCommit',
             BeforeEmbeddedRelationshipWriteEvent::class => 'onBeforeEmbeddedRelationshipWrite',
             BeforeMemberMoveEvent::class => 'onBeforeMemberMove',
             BeforeDeleteEvent::class => 'onBeforeDelete',
@@ -173,6 +175,18 @@ final class ResourceSecuritySubscriber implements EventSubscriberInterface
         // The relation's own mutate security OVERRIDES the parent's update gate (it may
         // be more *or* less permissive); a relation declaring none falls back to the
         // parent's update expression. The subject is the parent resource in both cases.
+        $expression = $event->relation->securityMutate() ?? $this->registry->securityFor($event->type)?->forUpdate();
+        $this->authorize($event->type, $expression, $event->parent);
+    }
+
+    /**
+     * Checks the same expression as {@see onBeforeRelationshipMutate()} against the parent
+     * after the change is applied and before it commits, so a caller can't change a
+     * resource into one the expression would refuse them, such as handing it to another
+     * user (bundle ADR 0136).
+     */
+    public function onBeforeRelationshipCommit(BeforeRelationshipCommitEvent $event): void
+    {
         $expression = $event->relation->securityMutate() ?? $this->registry->securityFor($event->type)?->forUpdate();
         $this->authorize($event->type, $expression, $event->parent);
     }

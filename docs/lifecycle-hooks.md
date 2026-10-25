@@ -36,10 +36,10 @@ The full set, in the order each fires:
 serving                                                        (once per request, before any operation)
 
 create:  serving → BeforeSave → BeforeCreate → [persist] → AfterCreate → AfterSave
-update:  serving → BeforeApplyUpdate → [apply body] → BeforeSave → BeforeUpdate → [commit]  → AfterUpdate → AfterSave
+update:  serving → BeforeApplyUpdate → [apply body] → BeforeSave → BeforeUpdate → BeforeRelationshipCommit (per body relationship) → [commit]  → AfterUpdate → AfterSave
 delete:  serving → BeforeDelete → [delete] → AfterDelete
 PATCH/POST/DELETE …/relationships/{rel}:
-         serving → BeforeRelationshipMutate → [apply] → AfterRelationshipMutate
+         serving → BeforeRelationshipMutate → [apply] → BeforeRelationshipCommit → [commit] → AfterRelationshipMutate
 GET /{type}/{id}:  serving → AfterFetchOne
 GET /{type}:       serving → AfterFetchCollection
 ```
@@ -87,7 +87,7 @@ $context)`.
 ## Two semantics: *before* aborts, *after* replaces
 
 - A **before** hook (`serving`, `BeforeSave`, `BeforeCreate`, `BeforeUpdate`,
-  `BeforeDelete`, `BeforeRelationshipMutate`) receives the entity **mutable** and
+  `BeforeDelete`, `BeforeRelationshipMutate`, `BeforeRelationshipCommit`) receives the entity **mutable** and
   runs *before* the persister commits. Two things you can do:
   - **Mutate the entity** — a field you set is persisted by the ensuing flush.
   - **Abort** — `throw` a core `JsonApiExceptionInterface`. The route-scoped
