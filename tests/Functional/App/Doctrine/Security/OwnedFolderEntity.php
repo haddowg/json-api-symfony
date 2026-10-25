@@ -23,6 +23,14 @@ class OwnedFolderEntity
     #[ORM\OneToMany(targetEntity: OwnedNoteEntity::class, mappedBy: 'folder')]
     public Collection $notes;
 
+    /**
+     * Null on a folder the persister instantiates without its constructor.
+     *
+     * @var Collection<int, FolderLabelEntity>|null
+     */
+    #[ORM\OneToMany(targetEntity: FolderLabelEntity::class, mappedBy: 'folder')]
+    public ?Collection $labels = null;
+
     public function __construct(
         #[ORM\Id]
         #[ORM\Column(type: 'integer')]
@@ -32,5 +40,6 @@ class OwnedFolderEntity
         public string $owner = '',
     ) {
         $this->notes = new ArrayCollection();
+        $this->labels = new ArrayCollection();
     }
 }
