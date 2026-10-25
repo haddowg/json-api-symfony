@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.10.0](https://github.com/haddowg/json-api-symfony/compare/v1.9.2...v1.10.0) (2026-10-25)
+
+
+### Features
+
+* authorize the relation data core renders and flattened writes ([#204](https://github.com/haddowg/json-api-symfony/issues/204)) ([4b10d60](https://github.com/haddowg/json-api-symfony/commit/4b10d609cffc53f004ec0268e2f07a2e0b47751f))
+* let a relation declare its own read permission ([#209](https://github.com/haddowg/json-api-symfony/issues/209)) ([102e38e](https://github.com/haddowg/json-api-symfony/commit/102e38eb1be8ca4f8b53948d366c819652f40d9b))
+
+
+### Bug Fixes
+
+* answer 404 at the endpoints of a relation hidden from the caller ([#202](https://github.com/haddowg/json-api-symfony/issues/202)) ([2b2982e](https://github.com/haddowg/json-api-symfony/commit/2b2982e63b1809e983de5b24a89fa4e6582476c3))
+* apply a relatedQuery to a related endpoint's resources as on a primary one ([#212](https://github.com/haddowg/json-api-symfony/issues/212)) ([876eed6](https://github.com/haddowg/json-api-symfony/commit/876eed6494d7c5578f137211d6af80be0bad9266))
+* check the update gate on the changed parent at the relationship endpoints ([#206](https://github.com/haddowg/json-api-symfony/issues/206)) ([7224ab4](https://github.com/haddowg/json-api-symfony/commit/7224ab44a17e60f7c8f23d73e1bc2289ee936cde))
+* keep relationship counts to the rows a caller can page through ([#208](https://github.com/haddowg/json-api-symfony/issues/208)) ([1c8156a](https://github.com/haddowg/json-api-symfony/commit/1c8156a683e66a0074090d731d6ed4fb3ed60f43))
+* narrow a computed relation's rows to its related type's scope ([#210](https://github.com/haddowg/json-api-symfony/issues/210)) ([25d8c8a](https://github.com/haddowg/json-api-symfony/commit/25d8c8a8ee12dc62ef0acad4394ca5a37e94d360))
+* narrow a polymorphic to-many's members per member type to their scope ([#213](https://github.com/haddowg/json-api-symfony/issues/213)) ([07f7f44](https://github.com/haddowg/json-api-symfony/commit/07f7f440298e217020b51b6170b0f15f7dfd8d9e))
+* refuse to detach a child whose foreign key is not null ([#207](https://github.com/haddowg/json-api-symfony/issues/207)) ([d6c2b99](https://github.com/haddowg/json-api-symfony/commit/d6c2b99c0e9ea621458607e277e0df969b84c441))
+* require core 1.9 so read-only relations refuse relationship writes ([#201](https://github.com/haddowg/json-api-symfony/issues/201)) ([2950f92](https://github.com/haddowg/json-api-symfony/commit/2950f92a8bce1c5bd9e2fd4314b87fa8a7ee4dd4))
+* show another type's resources under that type's own read gates ([#205](https://github.com/haddowg/json-api-symfony/issues/205)) ([cbec097](https://github.com/haddowg/json-api-symfony/commit/cbec09703d2ba437f5554a167b79a89ee395fb4c))
+
 ## [1.9.2](https://github.com/haddowg/json-api-symfony/compare/v1.9.1...v1.9.2) (2026-10-24)
 
 
