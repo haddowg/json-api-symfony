@@ -18,5 +18,7 @@ final class InMemorySecuredWidget
         public ?InMemorySecuredWidget $partner = null,
         /** @var list<InMemorySecuredWidget> */
         public array $partners = [],
+        /** @var list<object> Served by the memos provider, which reads a widget's memos itself. */
+        public array $memos = [],
     ) {}
 }

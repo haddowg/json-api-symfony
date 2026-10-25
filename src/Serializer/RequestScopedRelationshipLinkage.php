@@ -83,6 +83,12 @@ final class RequestScopedRelationshipLinkage implements ToOneRelationshipLinkage
      */
     public function readableTarget(mixed $target, RelationInterface $relation): mixed
     {
+        // The endpoint has already enforced a permission the relation declares, which
+        // replaces the target type's per-row gate (bundle ADR 0141).
+        if ($relation->securityRead() !== null) {
+            return $target;
+        }
+
         return \is_object($target) && $this->rows !== null && !$this->rows->allows($target, $relation) ? null : $target;
     }
 
@@ -130,7 +136,20 @@ final class RequestScopedRelationshipLinkage implements ToOneRelationshipLinkage
             ? $this->included->toOneLinkageForRelationship($model, $relation, $request)
             : null);
 
-        if ($this->rows === null || !$this->rows->guardsRows($relation)) {
+        if ($this->rows === null) {
+            return $linkage;
+        }
+
+        // A permission the relation declares replaces the target type's per-row gate:
+        // refused, the target reads as none (an `on()` hop included); allowed, it shows
+        // under scoping alone (bundle ADR 0141).
+        if ($relation->securityRead() !== null) {
+            return \is_object($model) && $this->rows->relationPermission($model, $relation) === false
+                ? ToOneRelationshipLinkage::none()
+                : $linkage;
+        }
+
+        if (!$this->rows->guardsRows($relation)) {
             return $linkage;
         }
 

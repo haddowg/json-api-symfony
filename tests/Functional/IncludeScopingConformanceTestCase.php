@@ -73,6 +73,26 @@ abstract class IncludeScopingConformanceTestCase extends JsonApiFunctionalTestCa
     #[Test]
     #[TestWith(['', ''], 'default server')]
     #[TestWith(['/partner', 'partner-'], 'named server')]
+    public function aRelationPermissionNeverBypassesTheScope(string $mount, string $prefix): void
+    {
+        $base = $mount . '/' . $prefix . 'advertisers';
+        $counts = ['HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . CountableProfile::URI . '"'];
+
+        $document = $this->get($base . '?include=openAgencies&withCount=openAgencies', $counts);
+        self::assertSame(['1', '3'], $this->includedIds($document, $prefix . 'agencies'));
+        self::assertSame(['1'], $this->linkageIds($document, '1', 'openAgencies'));
+        self::assertSame(1, $this->value($this->relationship($document, '1', 'openAgencies'), 'meta', 'total'));
+        $this->assertNoHiddenRow($document);
+
+        $related = $this->get($base . '/1/openAgencies?withCount=_self_', $counts);
+        self::assertSame(['1'], $this->ids($related['data'] ?? null));
+        self::assertSame(1, $this->value($related, 'meta', 'total'));
+        self::assertSame(['1'], $this->ids($this->get($base . '/1/relationships/openAgencies')['data'] ?? null));
+    }
+
+    #[Test]
+    #[TestWith(['', ''], 'default server')]
+    #[TestWith(['/partner', 'partner-'], 'named server')]
     public function aSingleResourceIncludeOfAToManyIsScoped(string $mount, string $prefix): void
     {
         $document = $this->get($mount . '/' . $prefix . 'advertisers/1?include=agencies');

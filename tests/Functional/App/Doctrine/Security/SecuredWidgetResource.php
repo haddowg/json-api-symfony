@@ -51,11 +51,22 @@ final class SecuredWidgetResource extends AbstractResource
             // Flattened from the partner, so it reads null when the partner is a row the
             // caller may not read.
             Str::make('partnerName')->storedAs('name')->on('partner'),
+            Str::make('exposedPartnerName')->storedAs('name')->on('exposedPartner'),
+            Str::make('adminPartnerName')->storedAs('name')->on('adminPartner'),
             BelongsTo::make('partner', 'securedWidgets')->nullable(),
             BelongsTo::make('publicPartner', 'securedWidgets')->storedAs('partner')->nullable()->security(read: false),
             BelongsTo::make('adminPartner', 'securedWidgets')->storedAs('partner')->nullable()->security(read: "is_granted('ROLE_ADMIN')"),
             BelongsTo::make('lockedPartner', 'securedWidgets')->storedAs('partner')->nullable()->security(mutate: "is_granted('ROLE_ADMIN')"),
             HasMany::make('partners', 'securedWidgets')->countable(),
+            // Relations that declare their own read permission, which replaces the
+            // related type's gates: any user may read these, a reader included, and an
+            // exposed partner shows even when it is "classified".
+            HasMany::make('exposedPartners', 'securedWidgets')->storedAs('partners')->countable()->security(read: "is_granted('ROLE_USER')"),
+            BelongsTo::make('exposedPartner', 'securedWidgets')->storedAs('partner')->nullable()->security(read: "is_granted('ROLE_USER')"),
+            // Only an admin may read this one, though any user may list widgets.
+            HasMany::make('blockedPartners', 'securedWidgets')->storedAs('partners')->countable()->security(read: "is_granted('ROLE_ADMIN')"),
+            // A bool read declares the relation and enforces nothing.
+            HasMany::make('publicPartners', 'securedWidgets')->storedAs('partners')->countable()->security(read: false),
             // Hidden from everyone but an admin, so a non-admin gets a 404 at its endpoints.
             BelongsTo::make('staffPartner', 'securedWidgets')->storedAs('partner')->nullable()->hidden(
                 static fn(mixed $model, JsonApiRequestInterface $request): bool => $request->getHeaderLine('Authorization') !== 'Bearer admin',

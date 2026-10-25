@@ -231,8 +231,9 @@ public function fields(): array
   (the default) **inherits** the parent's `securityRead` / `securityUpdate`.
 - A declared value **replaces** the parent's gate for that relation, so a public
   resource can carry one privileged relationship, or a read-gated resource one
-  openly-readable one. The OpenAPI document reflects the override on the relation's
-  operations.
+  openly-readable one. A declared `read` also replaces the related type's own gates
+  for that relation (see [Relation read permissions](#relation-read-permissions)). The
+  OpenAPI document reflects the override on the relation's operations.
 
 > **Subject is the parent.** A relationship hangs off its owner, so the expression is
 > evaluated against the loaded **parent** entity as `object` — the same subject a
@@ -263,7 +264,8 @@ declares no update expression lets the write through.
 ## Related resources follow their own type's gates
 
 A response that shows resources of another type, through `?include`, linkage or a related
-endpoint, applies that type's own read gates, so a type can't be read around them:
+endpoint, applies that type's own read gates, so a type can't be read around them, unless
+the relation [declares its own read permission](#relation-read-permissions):
 
 - **A single related resource** (a to-one) needs the related type's `securityRead` (or
   `security`) with that resource as `object`, the check `GET /{type}/{id}` makes. A
@@ -282,6 +284,205 @@ Which rows a list holds is decided by the query: use a
 [Doctrine extension](custom-data-providers.md) or a scoped provider for rows a caller
 should never see in any list. A row a to-one refuses can still appear through a to-many
 whose query returns it.
+
+## Relation read permissions
+
+A relation's `security(read: …)` is its **read permission**, and it replaces the related
+type's gates for that relation only: `securityList` for a to-many, `securityRead` for a
+to-one. A string expression is evaluated with the **parent** as `object`. A bool declares
+the relation and enforces nothing, so it skips the related type's gates as it skips the
+parent's. With nothing declared, the related type's gates apply as above.
+
+When the permission allows, the relation's data renders under [scoping](#scoping-access-per-user)
+alone: linkage, `included`, both endpoints, `?withCount`, the Relationship Queries window
+and `on()` attributes through a to-one. When it refuses, the relationship renders only its
+`links`, both endpoints answer `403`, and an `on()` attribute through a refused to-one
+reads `null` and refuses a write with `422 RELATED_ATTRIBUTE_OWNER_MISSING`. A polymorphic
+to-many's permission stands in for every member type at once. Writes are unchanged.
+
+**Exposing a relation of a type the caller can't list.** `securedWidgets` refuses its
+collection to a caller with `ROLE_NO_LIST`, so its `partners` to-many is withheld from
+them. A sibling relation that declares its own permission shows them the same rows:
+
+```php
+#[AsJsonApiResource(
+    security: "is_granted('ROLE_USER')",
+    securityList: "is_granted('ROLE_USER') and not is_granted('ROLE_NO_LIST')",
+)]
+final class SecuredWidgetResource extends AbstractResource
+{
+    public function fields(): array
+    {
+        return [
+            // ...
+            HasMany::make('partners', 'securedWidgets')->countable(),
+            HasMany::make('exposedPartners', 'securedWidgets')->storedAs('partners')->countable()
+                ->security(read: "is_granted('ROLE_USER')"),
+        ];
+    }
+}
+```
+
+**Blocking one relation of a type the caller can list.** Any user may list widgets, but
+only an admin sees this relation's data:
+
+```php
+HasMany::make('blockedPartners', 'securedWidgets')->storedAs('partners')
+    ->security(read: "is_granted('ROLE_ADMIN')"),
+```
+
+Both run in `RelatedRowReadGateConformance`, on the Doctrine and in-memory kernels.
+
+## Scoping access per user
+
+Permission and scope are different questions.
+
+- **Permission** decides whether data shows at all: `securityList`, `securityRead` and
+  a relation's `security(read: …)`. A refusal withholds a whole list or a whole row.
+- **Scope** decides which rows exist. It always applies, it can leave zero rows, and it
+  is the only thing that should hide individual rows from a list. A scope narrows the
+  query, so pages stay full and every count matches the rows a caller can page through.
+
+### With a Doctrine extension
+
+An extension that limits a type's rows to the signed-in user:
+
+```php
+use Doctrine\ORM\QueryBuilder;
+use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineExtensionInterface;
+use haddowg\JsonApiBundle\DataProvider\Doctrine\ExtensionContext;
+use Symfony\Bundle\SecurityBundle\Security;
+
+final class OwnNotesExtension implements DoctrineExtensionInterface
+{
+    public function __construct(private readonly Security $security) {}
+
+    public function supports(string $type): bool
+    {
+        return $type === 'ownedNotes';
+    }
+
+    public function apply(QueryBuilder $builder, ExtensionContext $context): QueryBuilder
+    {
+        $alias = $builder->getRootAliases()[0];
+        $user = $this->security->getUser();
+        if ($user === null) {
+            return $builder->andWhere('1 = 0');
+        }
+
+        return $builder
+            ->andWhere(\sprintf('%s.owner = :own_notes_owner', $alias))
+            ->setParameter('own_notes_owner', $user->getUserIdentifier());
+    }
+}
+```
+
+It applies to every query for the type, so it limits:
+
+- `GET /ownedNotes` and its `meta.page.total`;
+- every relationship that reaches `ownedNotes`: the related and relationship endpoints'
+  pages and totals, linkage, `included`, `?withCount`, and the Relationship Queries
+  window and its count.
+
+Folder 1 holds notes 1 and 3 by ada and note 2 by grace. Signed in as ada:
+
+```http
+GET /ownedFolders/1?include=notes&withCount=notes
+Accept: application/vnd.api+json;profile="https://haddowg.github.io/json-api/profiles/countable/"
+```
+
+The response, trimmed to the parts that matter:
+
+```json
+{
+  "data": {
+    "type": "ownedFolders",
+    "id": "1",
+    "relationships": {
+      "notes": {
+        "data": [{"type": "ownedNotes", "id": "1"}, {"type": "ownedNotes", "id": "3"}],
+        "meta": {"total": 2}
+      }
+    }
+  },
+  "included": [
+    {"type": "ownedNotes", "id": "1", "attributes": {"owner": "ada"}},
+    {"type": "ownedNotes", "id": "3", "attributes": {"owner": "ada"}}
+  ]
+}
+```
+
+`GET /ownedFolders/1/notes?withCount=_self_` answers the same two notes with
+`meta.total` 2, and grace sees only note 2 everywhere.
+
+### With a custom scoped provider
+
+For a type that isn't on Doctrine, scope the rows in the provider, before the request's
+criteria run, so filters, sorting, pages and counts all work over the caller's rows:
+
+```php
+use haddowg\JsonApi\Collection\CollectionResult;
+use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApiBundle\DataProvider\AbstractDataProvider;
+use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
+use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
+use Symfony\Bundle\SecurityBundle\Security;
+
+final class OwnMemosProvider extends AbstractDataProvider
+{
+    public function __construct(private readonly Security $security) {}
+
+    public function supports(string $type): bool
+    {
+        return $type === 'memos';
+    }
+
+    public function scopesRelatedReads(RelationInterface $relation): bool
+    {
+        return true;
+    }
+
+    public function fetchOne(string $type, string $id): ?object
+    {
+        foreach ($this->own(Memo::all()) as $memo) {
+            if ((string) $memo->id === $id) {
+                return $memo;
+            }
+        }
+
+        return null;
+    }
+
+    public function fetchCollection(string $type, CollectionCriteria $criteria): CollectionResult
+    {
+        return $this->query($this->own(Memo::all()), $criteria);
+    }
+
+    public function fetchRelatedCollection(string $relatedType, object $parent, RelationInterface $relation, CollectionCriteria $criteria, JsonApiRequestInterface $request): CollectionResult
+    {
+        return $this->query($this->own(Memo::heldBy($parent)), $criteria);
+    }
+
+    // Scope first, then let the in-memory provider apply the request's criteria.
+    private function query(array $memos, CollectionCriteria $criteria): CollectionResult
+    {
+        return (new InMemoryDataProvider('memos', $memos))->fetchCollection('memos', $criteria);
+    }
+
+    private function own(iterable $memos): array
+    {
+        $user = $this->security->getUser()?->getUserIdentifier();
+
+        return \array_values(\array_filter([...$memos], static fn(mixed $memo): bool => $memo instanceof Memo && $user !== null && $memo->owner === $user));
+    }
+}
+```
+
+Returning `true` from `scopesRelatedReads()` makes the bundle read every relation that
+reaches `memos` through this provider, so linkage, `included`, `?withCount` and both
+related endpoints follow the same scope. Both examples run in `DoctrineUserScopingTest`
+and `InMemoryUserScopingTest`.
 
 ## How a denial renders
 

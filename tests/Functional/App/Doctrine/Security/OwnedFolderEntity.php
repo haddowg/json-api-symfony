@@ -31,6 +31,13 @@ class OwnedFolderEntity
     #[ORM\OneToMany(targetEntity: FolderLabelEntity::class, mappedBy: 'folder')]
     public ?Collection $labels = null;
 
+    /**
+     * Not mapped: the memos provider serves a folder's memos.
+     *
+     * @var list<object>
+     */
+    public array $memos = [];
+
     public function __construct(
         #[ORM\Id]
         #[ORM\Column(type: 'integer')]

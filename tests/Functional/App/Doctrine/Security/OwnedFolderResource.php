@@ -32,7 +32,9 @@ final class OwnedFolderResource extends AbstractResource
         return [
             Id::make(),
             Str::make('owner'),
-            HasMany::make('notes', 'ownedNotes'),
+            HasMany::make('notes', 'ownedNotes')->countable(),
+            // Served by the memos provider, which reads a folder's memos itself.
+            HasMany::make('memos', 'memos')->countable(),
             HasMany::make('labels', 'folderLabels'),
         ];
     }

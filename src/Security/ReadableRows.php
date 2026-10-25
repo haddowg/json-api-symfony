@@ -21,8 +21,11 @@ use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
  *    makes. Its rows are never filtered one by one: which rows a list holds is the query's
  *    business.
  *
- * Answers are memoized per row and type, and per type for a collection, until the next
- * {@see bind()} or {@see forget()}.
+ * A relation that declares its own read permission replaces both for that relation
+ * ({@see relationPermission()}); its data then shows under scoping alone.
+ *
+ * Answers are memoized per row and type, per type for a collection, and per parent and
+ * relation for a permission, until the next {@see bind()} or {@see forget()}.
  */
 final class ReadableRows
 {
@@ -38,11 +41,17 @@ final class ReadableRows
      */
     private array $collections = [];
 
+    /**
+     * @var \WeakMap<object, array<string, bool|null>>
+     */
+    private \WeakMap $permissions;
+
     public function __construct(
         private readonly ?AuthorizationCheckerInterface $authorizationChecker,
         private readonly ResourceSecurityRegistry $registry,
     ) {
         $this->memo = new \WeakMap();
+        $this->permissions = new \WeakMap();
     }
 
     /**
@@ -61,7 +70,31 @@ final class ReadableRows
     public function forget(): void
     {
         $this->memo = new \WeakMap();
+        $this->permissions = new \WeakMap();
         $this->collections = [];
+    }
+
+    /**
+     * The read permission `$relation` declares on `$parent` (bundle ADR 0141), which
+     * replaces the related type's own gates for that relation: `true` or `false`, or
+     * `null` when it declares none. A string `security(read:)` is evaluated with the
+     * parent as subject; a bool only documents the relation, so it allows.
+     */
+    public function relationPermission(object $parent, RelationInterface $relation): ?bool
+    {
+        $read = $relation->securityRead();
+        if (!\is_string($read)) {
+            return \is_bool($read) ? true : null;
+        }
+
+        $answers = $this->permissions[$parent] ?? [];
+        $name = $relation->name();
+        if (!\array_key_exists($name, $answers)) {
+            $answers[$name] = $this->isGranted($read, $parent);
+            $this->permissions[$parent] = $answers;
+        }
+
+        return $answers[$name];
     }
 
     /**
