@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\DataProvider;
 
 use haddowg\JsonApi\Collection\CollectionResult;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Resource\Field\AbstractFieldValue;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Server\Server;
 
@@ -97,6 +98,16 @@ final class RelatedReadRouter
      */
     public function batch(Server $server, string $type, array $parents, RelationInterface $relation, CollectionCriteria $criteria, JsonApiRequestInterface $request): RelatedBatch
     {
+        if ($this->readsComputed($relation)) {
+            $serializer = $server->serializerFor($type);
+            $results = [];
+            foreach ($this->admitComputed($server, $parents, $relation, $request) as $index => $members) {
+                $results[$serializer->getId($parents[$index])] = $this->queryMembers($relation, $members, $criteria);
+            }
+
+            return new RelatedBatch($results);
+        }
+
         if (!$this->readsThroughRelatedProvider($type, $relation)) {
             $relatedType = $relation->relatedTypes()[0] ?? $type;
 
@@ -138,6 +149,17 @@ final class RelatedReadRouter
      */
     public function counts(Server $server, string $type, array $parents, RelationInterface $relation, CollectionCriteria $criteria, JsonApiRequestInterface $request): array
     {
+        if ($this->readsComputed($relation)) {
+            $serializer = $server->serializerFor($type);
+            $counts = [];
+            foreach ($this->admitComputed($server, $parents, $relation, $request) as $index => $members) {
+                $items = $this->queryMembers($relation, $members, $criteria)->items;
+                $counts[$serializer->getId($parents[$index])] = \is_array($items) ? \count($items) : \iterator_count($items);
+            }
+
+            return $counts;
+        }
+
         if (!$this->readsThroughRelatedProvider($type, $relation)) {
             return $this->providers->forType($type)->countRelated($type, $parents, $relation, $criteria, $request);
         }
@@ -187,5 +209,156 @@ final class RelatedReadRouter
         }
 
         return $matches;
+    }
+
+    /**
+     * Whether `$relation`'s value comes from an `extractUsing()` closure. Core keeps the
+     * closure on the field's protected state, so this reads it by reflection. A pivot
+     * `belongsToMany` is not counted: its closure only feeds core's model read, and the
+     * provider's pivot query is what its related endpoint serves.
+     */
+    public function isComputed(RelationInterface $relation): bool
+    {
+        if (!$relation instanceof AbstractFieldValue || $this->isPivot($relation)) {
+            return false;
+        }
+
+        static $state = null;
+        $state ??= new \ReflectionProperty(AbstractFieldValue::class, 'state');
+        $fieldState = $state->getValue($relation);
+
+        return \is_object($fieldState) && \property_exists($fieldState, 'extractUsing') && $fieldState->extractUsing !== null;
+    }
+
+    /**
+     * Whether `$relation` is computed and any type it relates to is scoped, so its
+     * members are the closure's value narrowed to the rows that type's provider admits
+     * (bundle ADR 0125). An unscoped computed relation renders the closure's value as is.
+     */
+    public function readsComputed(RelationInterface $relation): bool
+    {
+        if (!$this->isComputed($relation)) {
+            return false;
+        }
+
+        foreach ($relation->relatedTypes() as $type) {
+            if ($this->isScopedType($type, $relation)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * A computed relation's members on `$parent`, narrowed to the scope and run through
+     * `$criteria`: the related endpoint's page.
+     *
+     * @return CollectionResult<object>
+     */
+    public function fetchComputed(Server $server, object $parent, RelationInterface $relation, CollectionCriteria $criteria, JsonApiRequestInterface $request): CollectionResult
+    {
+        return $this->queryMembers($relation, $this->admitComputed($server, [$parent], $relation, $request)[0], $criteria);
+    }
+
+    /**
+     * A computed to-one's target on `$parent`, or `null` when the scope hides it.
+     */
+    public function computedTarget(Server $server, object $parent, RelationInterface $relation, JsonApiRequestInterface $request): ?object
+    {
+        return $this->admitComputed($server, [$parent], $relation, $request)[0][0] ?? null;
+    }
+
+    /**
+     * Each parent's computed members (the closure's value), keeping only the rows the
+     * provider of their type admits: one probe per type across all the parents, before
+     * any criteria run, so pages and counts are of the narrowed set.
+     *
+     * @param list<object> $parents
+     *
+     * @return list<list<object>>
+     */
+    private function admitComputed(Server $server, array $parents, RelationInterface $relation, JsonApiRequestInterface $request): array
+    {
+        $types = $relation->relatedTypes();
+        if ($relation->isToMany() && \count($types) > 1) {
+            throw new \LogicException(\sprintf(
+                'Relationship "%s" is a computed polymorphic to-many reaching a type its data provider scopes, so its members cannot be narrowed to that scope. Make it monomorphic or serve its types without a scope.',
+                $relation->name(),
+            ));
+        }
+
+        $candidates = [];
+        $byType = [];
+        foreach ($parents as $index => $parent) {
+            $value = $relation->readValue($parent, $request);
+            $members = \is_iterable($value) ? $value : [$value];
+            $candidates[$index] = [];
+            foreach ($members as $member) {
+                if (!\is_object($member)) {
+                    continue;
+                }
+                $candidates[$index][] = $member;
+                $type = \count($types) === 1 ? $types[0] : $relation->resolveSerializer($member, $server)?->getType($member);
+                if ($type !== null) {
+                    $byType[$type][\spl_object_id($member)] = $member;
+                }
+            }
+        }
+
+        $admitted = [];
+        foreach ($byType as $type => $rows) {
+            foreach ($this->admitRows($server, $type, \array_values($rows), $relation, $request) as $row) {
+                $admitted[\spl_object_id($row)] = true;
+            }
+        }
+
+        return \array_map(
+            static fn(array $members): array => \array_values(\array_filter($members, static fn(object $member): bool => isset($admitted[\spl_object_id($member)]))),
+            \array_values($candidates),
+        );
+    }
+
+    /**
+     * The rows of `$type` its provider's scope admits: all of them when it doesn't scope,
+     * one probe when it can say so in one, and otherwise one `fetchOne()` per row.
+     *
+     * @param list<object> $rows
+     *
+     * @return list<object>
+     */
+    private function admitRows(Server $server, string $type, array $rows, RelationInterface $relation, JsonApiRequestInterface $request): array
+    {
+        if (!$this->isScopedType($type, $relation)) {
+            return $rows;
+        }
+
+        $provider = $this->providers->forType($type);
+        if ($provider instanceof AdmitsRowsInterface) {
+            return $provider->admitRows($type, $rows, $request);
+        }
+
+        $serializer = $server->serializerFor($type);
+
+        return \array_values(\array_filter($rows, static fn(object $row): bool => $provider->fetchOne($type, $serializer->getId($row)) !== null));
+    }
+
+    /**
+     * Runs `$criteria` (filters, sorting, the page and any count) over already-narrowed
+     * members.
+     *
+     * @param list<object> $members
+     *
+     * @return CollectionResult<object>
+     */
+    private function queryMembers(RelationInterface $relation, array $members, CollectionCriteria $criteria): CollectionResult
+    {
+        if (!$relation->isToMany()) {
+            return new CollectionResult($members === [] ? [] : [$members[0]]);
+        }
+
+        $type = $relation->relatedTypes()[0] ?? '';
+
+        return (new InMemoryDataProvider($type, $members))->fetchCollection($type, $criteria);
     }
 }

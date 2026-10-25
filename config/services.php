@@ -213,6 +213,7 @@ return static function (ContainerConfigurator $container): void {
         // fetchRelatedCollectionBatch SPI, for every batching provider (Doctrine AND
         // in-memory). Always wired; a relation/provider that cannot batch falls to lazy.
         ->arg('$includeBatcher', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataProvider\RelatedIncludeBatcher::class))
+        ->arg('$readRouter', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataProvider\RelatedReadRouter::class))
         // The custom-action invoker (bundle ADR 0076): the optional collaborator the
         // CustomActionOperation arm delegates to. Always wired in the bundle (a null
         // would 404 every action); an app with no actions simply registers none.

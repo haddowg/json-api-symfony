@@ -7,7 +7,6 @@ namespace haddowg\JsonApiBundle\DataProvider;
 use haddowg\JsonApi\Collection\CollectionResult;
 use haddowg\JsonApi\Operation\QueryParameters;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
-use haddowg\JsonApi\Resource\Field\AbstractFieldValue;
 use haddowg\JsonApi\Resource\Field\Accessor;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Schema\Relationship\RelationshipLinkage;
@@ -395,12 +394,16 @@ final class RelatedIncludeBatcher
         bool $descends,
         array &$linkages,
     ): array {
-        // An extractUsing() relation renders whatever its closure returns: the author owns
-        // that value, and it is not the model's association. A pivot belongsToMany is the
-        // exception: its closure only feeds core's model read, and the provider's pivot
-        // query is what its related endpoint serves.
-        if ($this->isComputed($relation) && !$this->router->isPivot($relation)) {
-            return $descends ? $this->readTargets($entities, $relation, $request) : [];
+        // An extractUsing() relation's closure picks its candidates. Into a scoped type the
+        // scope still decides which of them exist, so they are narrowed through the router
+        // (bundle ADR 0125); otherwise they render as the closure returns them. A pivot
+        // belongsToMany is not computed: the provider's pivot query is what it serves.
+        if ($this->router->isComputed($relation)) {
+            if (!$this->router->readsComputed($relation)) {
+                return $descends ? $this->readTargets($entities, $relation, $request) : [];
+            }
+
+            return $this->supply($server, $type, $entities, $relation, true, [], $request, $linkages);
         }
 
         $relatedTypes = $relation->relatedTypes();
@@ -465,6 +468,37 @@ final class RelatedIncludeBatcher
             return $descends ? $this->unique([...$targets, ...$this->readTargets($entities, $relation, $request)]) : [];
         }
 
+        return $this->fill($server, $type, $entities, $relation, $scoped, $targets, $batch, $linkages);
+    }
+
+    /**
+     * Loads `$relation` for `$entities` through the router and supplies what it loaded.
+     *
+     * @param list<object>                                   $entities
+     * @param list<object>                                   $targets
+     * @param array<int, array<string, RelationshipLinkage>> $linkages
+     *
+     * @return list<object>
+     */
+    private function supply(Server $server, string $type, array $entities, RelationInterface $relation, bool $scoped, array $targets, JsonApiRequestInterface $request, array &$linkages): array
+    {
+        $batch = $this->router->batch($server, $type, $entities, $relation, $this->plainIncludeCriteria($request), $request);
+
+        return $this->fill($server, $type, $entities, $relation, $scoped, $targets, $batch, $linkages);
+    }
+
+    /**
+     * Supplies a loaded batch to core: each parent's to-many linkage, or its to-one
+     * target when the relation is scoped.
+     *
+     * @param list<object>                                   $entities
+     * @param list<object>                                   $targets
+     * @param array<int, array<string, RelationshipLinkage>> $linkages
+     *
+     * @return list<object>
+     */
+    private function fill(Server $server, string $type, array $entities, RelationInterface $relation, bool $scoped, array $targets, RelatedBatch $batch, array &$linkages): array
+    {
         $serializer = $server->serializerFor($type);
 
         foreach ($entities as $entity) {
@@ -690,23 +724,6 @@ final class RelatedIncludeBatcher
     private function isScoped(RelationInterface $relation): bool
     {
         return $this->router->isScoped($relation);
-    }
-
-    /**
-     * Whether the relation's value comes from an `extractUsing()` closure. Core keeps
-     * the closure on the field's protected state, so this reads it by reflection.
-     */
-    private function isComputed(RelationInterface $relation): bool
-    {
-        if (!$relation instanceof AbstractFieldValue) {
-            return false;
-        }
-
-        static $state = null;
-        $state ??= new \ReflectionProperty(AbstractFieldValue::class, 'state');
-        $fieldState = $state->getValue($relation);
-
-        return \is_object($fieldState) && \property_exists($fieldState, 'extractUsing') && $fieldState->extractUsing !== null;
     }
 
     /**

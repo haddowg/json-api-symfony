@@ -35,6 +35,11 @@ final class OwnedFolderResource extends AbstractResource
             HasMany::make('notes', 'ownedNotes')->countable(),
             // Served by the memos provider, which reads a folder's memos itself.
             HasMany::make('memos', 'memos')->countable(),
+            // Computed: the closure returns every memo the holder has, and the memos
+            // provider's scope still decides which of them exist.
+            HasMany::make('curatedMemos', 'memos')->countable()->extractUsing(
+                static fn(mixed $holder): array => \is_object($holder) ? \haddowg\JsonApiBundle\Tests\Functional\App\OwnedRows\Memo::heldBy($holder) : [],
+            ),
             HasMany::make('labels', 'folderLabels'),
         ];
     }

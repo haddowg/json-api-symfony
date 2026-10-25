@@ -1006,18 +1006,23 @@ flattens to `null` through an `on()` attribute, and a write to such an attribute
 `422` `RELATED_ATTRIBUTE_OWNER_MISSING`. A `MorphTo` target is checked against the
 provider of the type it renders as.
 
-Two kinds of relation render their own value instead:
+A relation with `extractUsing()` gets its candidates from the closure, and when its
+related type is scoped the scope still decides which of them exist: the bundle keeps only
+the rows the related type's provider admits, before any filter, sort or page runs, so
+linkage, `included`, both endpoints, `?withCount`, the Relationship Queries window and
+`on()` through a to-one all show the narrowed set and every count matches it. The
+Doctrine provider admits rows with one `WHERE id IN (…)` query per relation per level,
+with its extensions applied; a custom provider can do the same by implementing
+`AdmitsRowsInterface`, and is otherwise asked through `fetchOne()` one row at a time.
+When the related type isn't scoped the closure's value renders as it is, at no extra
+cost. A pivot `belongsToMany` always loads through the provider's pivot query.
 
-- a relation with `extractUsing()` renders what its closure returns, and the walk
-  continues into those targets (a pivot `belongsToMany` is the exception: it always
-  loads through the provider's pivot query);
-- a relation stored on a getter or property that is not a Doctrine association renders
-  what the model returns.
-
-Your code owns the scoping of those. Anything else that cannot be loaded through a
+A relation stored on a getter or property that is not a Doctrine association renders
+what the model returns; your code owns its scoping. Anything else that cannot be loaded through a
 scoping provider is refused with a `500` (a `\LogicException` naming the relation)
 rather than rendered from the model: a polymorphic to-many whose first related type is
-scoped (core reads polymorphic to-many linkage straight off the model), or an
+scoped (core reads polymorphic to-many linkage straight off the model; a computed one is
+refused when any of its types is scoped), or an
 association the provider cannot batch, such as one with a composite-key target.
 
 A provider tells the bundle whether its related reads are scoped by implementing

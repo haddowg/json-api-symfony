@@ -1,5 +1,7 @@
 # Included and linkage data load through the related endpoint's provider
 
+> Update: a computed relation no longer bypasses the scope. Its `extractUsing()` closure computes the candidates, and when its related type is scoped the router keeps only the rows that type's provider admits, before any criteria run, so linkage, `included`, both endpoints, `?withCount`, the Relationship Queries window and `on()` through a to-one all use the narrowed set and every count matches it. The probe is one `WHERE id IN (…)` query per relation per level on Doctrine (`AdmitsRowsInterface`), one `fetchOne()` per row on a scoped provider that can't do better, and nothing at all when the related type isn't scoped. A computed polymorphic to-many into a scoped type is refused, like any polymorphic to-many into one. The Laravel adapter's ADR 0050 covers the same case.
+
 The include batcher resolved metadata on the default server only, so a type served on a
 named server rendered its includes and linkage straight off the entity, and it batched
 through the parent type's provider, so a related type served by its own scoping
