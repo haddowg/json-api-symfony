@@ -341,6 +341,11 @@ GET /albums/1?include=tracks&relatedQuery[tracks][sort]=-duration&relatedQuery[t
 GET /albums/1?include=tracks&rQ[tracks][sort]=duration
 ```
 
+On a related endpoint the paths address the related resources' relations, and each
+related resource's linkage, included members and `?withCount` total follow them exactly
+as a primary document's do: `GET /artists/1/albums?include=tracks&relatedQuery[tracks][filter][longerThan]=300`
+renders each album's tracks narrowed by the filter.
+
 - The client addresses a **top-level** relation of the request's primary resource by
   its name. A dotted path (`relatedQuery[tracks.album]`) is legal family **grammar** —
   it parses without error — but the bundle windows only top-level relations, so a

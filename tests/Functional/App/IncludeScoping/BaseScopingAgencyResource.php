@@ -25,7 +25,7 @@ abstract class BaseScopingAgencyResource extends AbstractResource
         return [
             Id::make(),
             Str::make('name')->sortable(),
-            HasMany::make('members', static::PREFIX . 'members'),
+            HasMany::make('members', static::PREFIX . 'members')->countable(),
             HasOne::make('lead', static::PREFIX . 'members'),
             HasOne::make('manager', static::PREFIX . 'members'),
         ];

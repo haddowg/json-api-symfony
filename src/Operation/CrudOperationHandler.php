@@ -187,6 +187,13 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  */
 final class CrudOperationHandler implements \haddowg\JsonApi\Operation\OperationHandlerInterface
 {
+    /**
+     * The profiles the related endpoint's windowing activated, surfaced on its response.
+     *
+     * @var list<\haddowg\JsonApi\Schema\Profile\ProfileInterface>
+     */
+    private array $relatedActivatedProfiles = [];
+
     public function __construct(
         private readonly DataProviderRegistry $providers,
         private readonly DataPersisterRegistry $persisters,
@@ -613,6 +620,29 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      */
     private function fetchRelated(FetchRelatedOperation $operation): RelatedResponse|ErrorResponse
     {
+        $response = $this->fetchRelatedResponse($operation);
+        $activated = $this->relatedActivatedProfiles;
+        $this->relatedActivatedProfiles = [];
+
+        return $response instanceof RelatedResponse && $activated !== []
+            ? $response->withActivatedProfiles(...$activated)
+            : $response;
+    }
+
+    /**
+     * Windows the related items' own to-many relations under the Relationship Queries
+     * profile, as a primary fetch does, so each related item's linkage, included members
+     * and counts come from the same filtered, scoped set.
+     *
+     * @param list<object> $items
+     */
+    private function windowRelatedItems(Server $server, string $relatedType, array $items, JsonApiRequestInterface $request): void
+    {
+        $this->relatedActivatedProfiles = $this->applyRelationshipWindows($server, $relatedType, $items, $request);
+    }
+
+    private function fetchRelatedResponse(FetchRelatedOperation $operation): RelatedResponse|ErrorResponse
+    {
         $server = $this->server($operation->context());
         $target = $operation->target();
         $type = $target->type;
@@ -739,6 +769,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
                 $serializer = new PivotMetaSerializer($server->serializerFor($relatedType), $pivotResult->pivotMap, $relation);
                 $items = \is_array($pivotResult->items) ? \array_values($pivotResult->items) : \iterator_to_array($pivotResult->items, false);
+                $this->windowRelatedItems($server, $relatedType, $items, $request);
                 $this->preloadIncludes($relatedProvider, $items, $relatedType, $request, $server);
                 $this->applyRelationshipCounts($server, $relatedType, $items, $request);
 
@@ -811,6 +842,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             if ($polymorphic) {
                 $this->preloadPolymorphic($relation, $items, $request, $server);
             } else {
+                $this->windowRelatedItems($server, $relatedType, $items, $request);
                 $this->preloadIncludes($relatedProvider, $items, $relatedType, $request, $server);
                 // ?withCount on a related collection counts the RELATED type's own
                 // countable relations across the related page (bundle ADR 0052); a
@@ -951,6 +983,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // N+1 (ADRs 0035, 0125). Grouped by the object's own type, so a polymorphic
         // to-one is covered too.
         if (\is_object($related)) {
+            if (!$polymorphic) {
+                $this->windowRelatedItems($server, $relatedType, [$related], $request);
+            }
             $this->preloadPolymorphic($relation, [$related], $request, $server);
         }
 
