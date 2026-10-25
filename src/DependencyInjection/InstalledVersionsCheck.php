@@ -66,17 +66,19 @@ final class InstalledVersionsCheck
      * @param mixed                                                         $compiled  the recorded parameter: null when Composer's runtime API was unavailable at compile, false when the container has none
      * @param array<string, array{version: string, reference: ?string}|null>|null $installed what {@see installed()} returns
      * @param list<mixed>                                                   $argv      the command line, to recognise cache:clear
+     * @param bool                                                          $debug     whether the stale container is the debug one, so the hint clears the right one
+     * @param string|null                                                   $cacheDir  the environment's cache directory, named in the hint
      *
      * @throws \LogicException when the container was compiled against other versions
      */
-    public static function assertFresh(mixed $compiled, ?array $installed, string $environment, array $argv = []): void
+    public static function assertFresh(mixed $compiled, ?array $installed, string $environment, array $argv = [], bool $debug = true, ?string $cacheDir = null): void
     {
         if ($compiled === null || $installed === null || self::clearsTheCache($argv)) {
             return;
         }
 
         if (!\is_array($compiled)) {
-            throw self::stale($environment, 'a version of haddowg/json-api-symfony that did not record them', self::describe($installed));
+            throw self::stale($environment, 'a version of haddowg/json-api-symfony that did not record them', self::describe($installed), $debug, $cacheDir);
         }
 
         foreach ($installed as $package => $now) {
@@ -98,21 +100,23 @@ final class InstalledVersionsCheck
                     $compiled,
                 );
 
-                throw self::stale($environment, self::describe($recorded), self::describe($installed));
+                throw self::stale($environment, self::describe($recorded), self::describe($installed), $debug, $cacheDir);
             }
         }
     }
 
-    private static function stale(string $environment, string $compiled, string $installed): \LogicException
+    private static function stale(string $environment, string $compiled, string $installed, bool $debug, ?string $cacheDir): \LogicException
     {
+        // cache:clear only clears the container matching its own debug flag, which defaults to on.
         return new \LogicException(\sprintf(
             'The "%1$s" container was compiled against %2$s, but %3$s is installed. It is a cached '
-            . 'container from before an upgrade and still runs the old service wiring. Clear the cache '
-            . 'for this environment, for example with "bin/console cache:clear --env=%1$s" or by deleting '
-            . 'var/cache/%1$s.',
+            . 'container from before an upgrade and still runs the old service wiring. Delete %4$s, '
+            . 'or run "bin/console cache:clear --env=%1$s%5$s", and boot again.',
             $environment,
             $compiled,
             $installed,
+            $cacheDir ?? 'var/cache/' . $environment,
+            $debug ? '' : ' --no-debug',
         ));
     }
 
