@@ -22,6 +22,11 @@ abstract class BaseScopingAdvertiserResource extends AbstractResource
 {
     protected const string PREFIX = '';
 
+    public function getType(mixed $object): string
+    {
+        return $object instanceof ScopingAgency ? static::PREFIX . 'agencies' : static::$type;
+    }
+
     public function fields(): array
     {
         return [

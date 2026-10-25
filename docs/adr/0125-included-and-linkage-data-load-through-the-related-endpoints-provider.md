@@ -1,6 +1,8 @@
 # Included and linkage data load through the related endpoint's provider
 
-> Update: a computed relation now follows its related type's scope. Its `extractUsing()` closure computes the candidates, and when its related type is scoped the router keeps only the rows that type's provider admits, before any criteria run, so linkage, `included`, both endpoints, `?withCount`, the Relationship Queries window and `on()` through a to-one all use the narrowed set and every count matches it. The probe is one `WHERE id IN (…)` query per relation per level on Doctrine (`AdmitsRowsInterface`), one `fetchOne()` per row on a scoped provider that can't do better, and nothing at all when the related type isn't scoped. A computed polymorphic to-many into a scoped type is refused, like any polymorphic to-many into one. The Laravel adapter's ADR 0050 covers the same case.
+> Update: a computed relation now follows its related type's scope. Its `extractUsing()` closure computes the candidates, and when its related type is scoped the router keeps only the rows that type's provider admits, before any criteria run, so linkage, `included`, both endpoints, `?withCount`, the Relationship Queries window and `on()` through a to-one all use the narrowed set and every count matches it. The probe is one `WHERE id IN (…)` query per relation per level on Doctrine (`AdmitsRowsInterface`), one `fetchOne()` per row on a scoped provider that can't do better, and nothing at all when the related type isn't scoped. The Laravel adapter's ADR 0050 covers the same case.
+
+> Update: a polymorphic to-many is no longer refused. A relation is scoped when any of its member types is. Its members load as before (the model's value for linkage and includes, the first type's provider, unpaged, for the related endpoint), are grouped by member type, and the rows of each scoped type are kept only when that type's provider admits them, with the same probe: one `admitRows()` call per scoped type for all the parents a level renders, or one `fetchOne()` per row. Unscoped member types are kept without a probe. Narrowing happens before any page, sort or count, so linkage, `included`, both related endpoints and `?withCount` show the narrowed set with full pages and exact totals; the members reach core through the out-of-band linkage seam, which `MorphToMany` reads from core 1.10. A write checks every identifier against its own type's scope, so a hidden id is a `404`, and a replace keeps the current members its type's scope hides attached, as for a monomorphic relation. Computed polymorphic to-manys narrow the same way. The relation permission and the per-type collection gate apply unchanged.
 
 The include batcher resolved metadata on the default server only, so a type served on a
 named server rendered its includes and linkage straight off the entity, and it batched
@@ -37,8 +39,5 @@ non-association getter). Anything else fails with a `\LogicException`.
   targets the document already renders.
 - An update scopes the `on()` hops the body does not set before it hydrates, so a
   flattened attribute is written onto the target the related endpoint serves.
-- A polymorphic to-many to a scoped type is refused: core reads its linkage off the
-  model.
 - A custom provider that does not implement `ScopesRelatedReadsInterface` has its
-  relations loaded through it, and a polymorphic to-many or an unsupported batch on it
-  is refused.
+  relations loaded through it, and an unsupported batch on it is refused.

@@ -1023,12 +1023,17 @@ When the related type isn't scoped the closure's value renders as it is, at no e
 cost. A pivot `belongsToMany` always loads through the provider's pivot query.
 
 A relation stored on a getter or property that is not a Doctrine association renders
-what the model returns; your code owns its scoping. Anything else that cannot be loaded through a
-scoping provider is refused with a `500` (a `\LogicException` naming the relation)
-rather than rendered from the model: a polymorphic to-many whose first related type is
-scoped (core reads polymorphic to-many linkage straight off the model; a computed one is
-refused when any of its types is scoped), or an
-association the provider cannot batch, such as one with a composite-key target.
+what the model returns; your code owns its scoping.
+
+A polymorphic to-many is scoped when any of its member types is. Its members are
+grouped by type and the rows of each scoped type are kept only when that type's provider
+admits them, with the same probe, before any page, sort or count, so linkage,
+`included`, both related endpoints and `?withCount` show the narrowed set with full pages
+and exact totals. Rows of an unscoped type cost nothing extra.
+
+An association the provider cannot batch, such as one with a composite-key target, is
+refused with a `500` (a `\LogicException` naming the relation) rather than rendered from
+the model.
 
 A provider tells the bundle whether its related reads are scoped by implementing
 [`ScopesRelatedReadsInterface`](custom-data-providers.md#saying-whether-related-reads-are-scoped).
@@ -1069,9 +1074,9 @@ writing a flattened attribute through a hidden target is a `422`
 `RELATED_ATTRIBUTE_OWNER_MISSING`, as on an update.
 
 A relation whose types are unscoped keeps resolving ids straight through the persister,
-unchecked. A relationship endpoint mutation of a polymorphic to-many reaching a scoped
-type is refused with a `500` before it writes, since its linkage cannot be rendered
-scoped. The decision is recorded in
+unchecked. A polymorphic relation checks each id against its own type's scope, so a hidden
+id is a `404` and a replace keeps the hidden current members attached, as above. The
+decision is recorded in
 [ADR 0126](adr/0126-written-linkage-resolves-through-the-related-endpoints-scope.md).
 
 ## Polymorphic relationships
