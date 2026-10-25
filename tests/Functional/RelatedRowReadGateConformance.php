@@ -130,6 +130,80 @@ trait RelatedRowReadGateConformance
         self::assertSame('classified', $this->readGateAttributes('admin', '/securedWidgets/3')['name'] ?? null);
     }
 
+    #[Test]
+    public function a_relation_permission_exposes_a_to_many_of_a_type_the_caller_may_not_list(): void
+    {
+        $document = $this->readGateDocument('reader', '/securedWidgets/1?include=exposedPartners&withCount=exposedPartners', counts: true);
+        $relationship = $this->readGateRelationship($document['data'] ?? null, 'exposedPartners');
+        self::assertSame([['type' => 'securedWidgets', 'id' => '2'], ['type' => 'securedWidgets', 'id' => '3']], $relationship['data'] ?? null);
+        self::assertSame(2, \is_array($relationship['meta'] ?? null) ? $relationship['meta']['total'] ?? null : null);
+        self::assertSame(['securedWidgets:2', 'securedWidgets:3'], $this->readGateIncluded($document));
+
+        $related = $this->readGateDocument('reader', '/securedWidgets/1/exposedPartners?withCount=_self_', counts: true);
+        self::assertSame(['securedWidgets:2', 'securedWidgets:3'], $this->readGateIdentities($related['data'] ?? null));
+        self::assertSame(2, \is_array($related['meta'] ?? null) ? $related['meta']['total'] ?? null : null);
+        self::assertSame(
+            [['type' => 'securedWidgets', 'id' => '2'], ['type' => 'securedWidgets', 'id' => '3']],
+            $this->readGateData($this->readGateDocument('reader', '/securedWidgets/1/relationships/exposedPartners')),
+        );
+    }
+
+    #[Test]
+    public function a_relation_permission_exposes_a_to_one_the_type_would_refuse(): void
+    {
+        $document = $this->readGateDocument('user', '/securedWidgets/1?include=exposedPartner');
+        self::assertSame(['type' => 'securedWidgets', 'id' => '3'], $this->readGateData($this->readGateRelationship($document['data'] ?? null, 'exposedPartner')));
+        self::assertSame(['securedWidgets:3'], $this->readGateIncluded($document));
+        self::assertSame('classified', $this->readGateAttributes('user', '/securedWidgets/1')['exposedPartnerName'] ?? null);
+
+        self::assertSame(['securedWidgets:3'], $this->readGateIdentities([$this->readGateData($this->readGateDocument('user', '/securedWidgets/1/exposedPartner'))]));
+        self::assertSame(['type' => 'securedWidgets', 'id' => '3'], $this->readGateData($this->readGateDocument('user', '/securedWidgets/1/relationships/exposedPartner')));
+    }
+
+    #[Test]
+    public function a_relation_permission_blocks_a_to_many_of_a_type_the_caller_may_list(): void
+    {
+        $document = $this->readGateDocument('user', '/securedWidgets/1?include=blockedPartners&withCount=blockedPartners', counts: true);
+        $relationship = $this->readGateRelationship($document['data'] ?? null, 'blockedPartners');
+        self::assertArrayNotHasKey('data', $relationship);
+        self::assertArrayNotHasKey('meta', $relationship);
+        self::assertSame([], $this->readGateIncluded($document));
+
+        foreach (['/securedWidgets/1/blockedPartners', '/securedWidgets/1/relationships/blockedPartners'] as $path) {
+            $response = $this->handle($path, 'GET', null, ['HTTP_AUTHORIZATION' => 'Bearer user']);
+            self::assertSame(403, $response->getStatusCode(), $path . ': ' . $response->getContent());
+        }
+
+        $admin = $this->readGateDocument('admin', '/securedWidgets/1?include=blockedPartners');
+        self::assertSame(['securedWidgets:2', 'securedWidgets:3'], $this->readGateIncluded($admin));
+    }
+
+    #[Test]
+    public function a_relation_permission_blocks_a_to_one_and_the_flattened_attribute_through_it(): void
+    {
+        $user = $this->readGateAttributes('user', '/securedWidgets/4');
+        self::assertArrayHasKey('adminPartnerName', $user);
+        self::assertNull($user['adminPartnerName']);
+        self::assertSame('one', $this->readGateAttributes('admin', '/securedWidgets/4')['adminPartnerName'] ?? null);
+
+        $response = $this->handle('/securedWidgets/4', 'PATCH', [
+            'data' => ['type' => 'securedWidgets', 'id' => '4', 'attributes' => ['adminPartnerName' => 'renamed']],
+        ], ['HTTP_AUTHORIZATION' => 'Bearer user']);
+        self::assertSame(422, $response->getStatusCode(), (string) $response->getContent());
+        self::assertStringContainsString('"code":"RELATED_ATTRIBUTE_OWNER_MISSING"', (string) $response->getContent());
+        self::assertSame('one', $this->readGateAttributes('admin', '/securedWidgets/1')['name'] ?? null);
+    }
+
+    #[Test]
+    public function a_bool_relation_permission_skips_the_types_collection_gate(): void
+    {
+        $document = $this->readGateDocument('reader', '/securedWidgets/1?include=publicPartners&withCount=publicPartners', counts: true);
+        $relationship = $this->readGateRelationship($document['data'] ?? null, 'publicPartners');
+        self::assertSame([['type' => 'securedWidgets', 'id' => '2'], ['type' => 'securedWidgets', 'id' => '3']], $relationship['data'] ?? null);
+        self::assertSame(2, \is_array($relationship['meta'] ?? null) ? $relationship['meta']['total'] ?? null : null);
+        self::assertSame(['securedWidgets:2', 'securedWidgets:3'], $this->readGateIdentities($this->readGateDocument('reader', '/securedWidgets/1/publicPartners')['data'] ?? null));
+    }
+
     /**
      * @return array<mixed>
      */

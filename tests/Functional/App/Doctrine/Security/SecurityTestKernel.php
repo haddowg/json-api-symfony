@@ -31,7 +31,7 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
  * and `openWidgets` (no security — ungated). The schema is created and seeded by the
  * test.
  */
-final class SecurityTestKernel extends Kernel
+class SecurityTestKernel extends Kernel
 {
     use MicroKernelTrait;
 
@@ -159,6 +159,8 @@ final class SecurityTestKernel extends Kernel
         $services->set(OwnedFolderResource::class);
         $services->set(OwnedNoteResource::class);
         $services->set(FolderLabelResource::class);
+        $services->set(\haddowg\JsonApiBundle\Tests\Functional\App\OwnedRows\MemoResource::class);
+        $services->set(\haddowg\JsonApiBundle\Tests\Functional\App\OwnedRows\OwnMemosProvider::class);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

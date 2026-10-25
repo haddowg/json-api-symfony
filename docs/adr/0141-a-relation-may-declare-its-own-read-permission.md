@@ -1,0 +1,7 @@
+# A relation may declare its own read permission
+
+Since ADR 0140 a relation's data passes the related type's own gates, `securityList` for a to-many and `securityRead` for each to-one row, which left no way to expose one relation of a type the caller can't list, or to block one relation of a type they can. We split the question in two. Permission is whether this caller may see a relation's data at all. Scoping, from Doctrine extensions and scoped providers, is which rows exist; it always applies and every count follows it. A relation's `security(read:)` now replaces the related type's gates for that relation: a string expression is evaluated with the parent as subject, and a bool declares the relation and enforces nothing, so it skips the related type's gates the way it already skipped the parent's. When it allows, the data renders under scoping alone everywhere it appears, including `?withCount`, the window and `on()` through a to-one; when it refuses, the relation is withheld to its links, its endpoints answer `403`, and `on()` through a refused to-one reads `null` and refuses a write with `422 RELATED_ATTRIBUTE_OWNER_MISSING`. A polymorphic to-many's permission replaces every member type's gate at once. With nothing declared, ADR 0140 stands. This matches the Laravel adapter's ADR 0049, except that the bundle has no naming convention for a relation's permission, so only an explicit `security(read:)` declares one.
+
+## Consequences
+
+The answer is memoized per parent and relation for each operation. Writes are unchanged.

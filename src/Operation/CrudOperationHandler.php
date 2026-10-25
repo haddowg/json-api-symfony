@@ -1877,7 +1877,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      */
     private function gateRelatedCollection(RelationInterface $relation): void
     {
-        if (!$relation->isToMany()) {
+        // A read permission the relation declares replaces the related type's collection
+        // gate, and the relation's own read gate has already enforced it (bundle ADR 0141).
+        if (!$relation->isToMany() || $relation->securityRead() !== null) {
             return;
         }
 

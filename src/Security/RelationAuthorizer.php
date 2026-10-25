@@ -58,9 +58,14 @@ final class RelationAuthorizer implements RelationAuthorizerInterface
 
     public function canReadRelationship(mixed $model, RelationInterface $relation, JsonApiRequestInterface $request): bool
     {
-        $expression = $relation->securityRead();
-        if (\is_string($expression) && (!\is_object($model) || !$this->isGranted($expression, $model))) {
-            return false;
+        // A permission the relation declares replaces the related type's own gates
+        // (bundle ADR 0141).
+        $read = $relation->securityRead();
+        if (\is_bool($read)) {
+            return true;
+        }
+        if (\is_string($read)) {
+            return \is_object($model) && ($this->rows?->relationPermission($model, $relation) ?? $this->isGranted($read, $model));
         }
 
         // A list holds what its query returned, so a to-many is shown whole or not at

@@ -34,6 +34,9 @@ abstract class BaseScopingAdvertiserResource extends AbstractResource
                     : [],
             ),
             BelongsToMany::make('partners', static::PREFIX . 'agencies'),
+            // Declares its own read permission, which replaces the agency type's gates
+            // but never its scope.
+            BelongsToMany::make('openAgencies', static::PREFIX . 'agencies')->storedAs('agencies')->countable()->security(read: false),
         ];
     }
 }
