@@ -28,6 +28,7 @@ use haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceDescriptionPass;
 use haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceLocatorPass;
 use haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceSecurityPass;
 use haddowg\JsonApiBundle\DependencyInjection\Compiler\ResponseHeadersPass;
+use haddowg\JsonApiBundle\DependencyInjection\InstalledVersionsCheck;
 use haddowg\JsonApiBundle\EventListener\ConfiguredExceptionMapper;
 use haddowg\JsonApiBundle\EventListener\ExceptionMapperInterface;
 use haddowg\JsonApiBundle\Operation\CrudOperationHandler;
@@ -621,6 +622,8 @@ final class JsonApiBundle extends AbstractBundle
 
         [$atomicEnabled, $atomicPath] = $this->atomicOperationsConfig($config);
 
+        // The versions this container is compiled against, compared at boot().
+        $builder->setParameter(InstalledVersionsCheck::PARAMETER, InstalledVersionsCheck::installed());
         $builder->setParameter('haddowg_json_api.base_uri', $baseUri);
         $builder->setParameter('haddowg_json_api.version', $version);
         $builder->setParameter('haddowg_json_api.pagination.max_per_page', $maxPerPage);
@@ -959,6 +962,32 @@ final class JsonApiBundle extends AbstractBundle
         // commands. The MetadataSource (registered in services.php) is given the
         // per-server document config (info / servers / security / tags) here.
         $this->registerOpenApi($config, $container, $builder, \array_keys($servers));
+    }
+
+    /**
+     * Refuses to run a cached container compiled against other versions of this bundle or
+     * of haddowg/json-api (bundle ADR 0143), which Symfony does not rebuild by itself
+     * outside debug mode.
+     */
+    public function boot(): void
+    {
+        parent::boot();
+
+        $container = $this->container;
+        if ($container === null) {
+            return;
+        }
+
+        $parameter = InstalledVersionsCheck::PARAMETER;
+        $environment = $container->hasParameter('kernel.environment') ? $container->getParameter('kernel.environment') : null;
+        $argv = \PHP_SAPI === 'cli' && \is_array($_SERVER['argv'] ?? null) ? \array_values($_SERVER['argv']) : [];
+
+        InstalledVersionsCheck::assertFresh(
+            $container->hasParameter($parameter) ? $container->getParameter($parameter) : false,
+            InstalledVersionsCheck::installed(),
+            \is_string($environment) ? $environment : 'prod',
+            $argv,
+        );
     }
 
     public function build(ContainerBuilder $container): void
