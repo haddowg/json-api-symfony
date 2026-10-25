@@ -34,6 +34,14 @@ class ScopingAdvertiser
     public iterable $partners;
 
     /**
+     * Not mapped: an advertiser's contacts mix advertisers and agencies, for a
+     * polymorphic relation whose scoped type is its second.
+     *
+     * @var list<object>
+     */
+    public array $contacts = [];
+
+    /**
      * @var Collection<int, ScopingPlacement>
      */
     #[ORM\OneToMany(targetEntity: ScopingPlacement::class, mappedBy: 'advertiser')]

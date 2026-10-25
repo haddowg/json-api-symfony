@@ -310,7 +310,8 @@ seam per included relation over the level's parents. Return
 Included and linkage data always match the related endpoint (see
 [relationships → included data is scoped like the related endpoint](relationships.md#included-data-is-scoped-like-the-related-endpoint)).
 To know when it may read a relation straight off the parent, the bundle asks the
-provider of the relation's first related type through
+provider of each of the relation's related types (a polymorphic relation is scoped when
+any of them is) through
 [`ScopesRelatedReadsInterface`](../src/DataProvider/ScopesRelatedReadsInterface.php):
 
 ```php
@@ -328,8 +329,10 @@ final class TenantAgencyProvider implements DataProviderInterface, ScopesRelated
 Return `false` only when your related reads return exactly what the parent model
 holds. A provider that does not implement the interface is treated as scoping every
 relation: its relations are loaded through it, per parent when the parent type has a
-different provider, and one it cannot load (a polymorphic relation, or an
-`unsupported()` batch) is refused with a `500`. `AbstractDataProvider` implements it
+different provider, and one it cannot load (an `unsupported()` batch) is refused with a
+`500`. A polymorphic relation's members are kept per member type: the rows of a type
+your provider scopes render only when your `admitRows()` (from `AdmitsRowsInterface`)
+or your `fetchOne()` returns them. `AbstractDataProvider` implements it
 and returns `false`, so override it there when your reads filter.
 
 The answer governs writes too: linkage naming a scoped type is checked through your

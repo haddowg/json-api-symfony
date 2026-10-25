@@ -52,6 +52,7 @@ final class ScopingFixtures
         $advertiser1 = new ScopingAdvertiser(1, 'Advertiser One', [$agency1, $agency2]);
         $advertiser2 = new ScopingAdvertiser(2, 'Advertiser Two', [$agency2, $agency3]);
         $advertiser2->partners = new ArrayCollection([$agency3]);
+        $advertiser1->contacts = [$advertiser2, $agency2];
 
         return [
             'advertisers' => [$advertiser1, $advertiser2],

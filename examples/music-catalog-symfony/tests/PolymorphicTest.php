@@ -72,6 +72,31 @@ final class PolymorphicTest extends MusicCatalogKernelTestCase
     }
 
     #[Test]
+    public function anUnpublishedAlbumInALibraryIsLeftOutOfItsItemsEverywhere(): void
+    {
+        // Library 1 also holds album 3, which the published-albums extension hides; the
+        // items relation is narrowed per member type, so album 3 is absent everywhere.
+        $expected = [['tracks', '1'], ['albums', '2'], ['artists', '1']];
+
+        self::assertSame($expected, $this->members($this->decode($this->handle('/libraries/1/items'))));
+        // Pages are full: the hidden album never takes a slot.
+        self::assertSame([['tracks', '1'], ['albums', '2']], $this->members($this->decode($this->handle('/libraries/1/items?page[number]=1&page[size]=2'))));
+        self::assertSame([['artists', '1']], $this->members($this->decode($this->handle('/libraries/1/items?page[number]=2&page[size]=2'))));
+
+        self::assertSame($expected, $this->members($this->decode($this->handle('/libraries/1/relationships/items'))));
+
+        $document = $this->decode($this->handle('/libraries/1?include=items'));
+        $data = $document['data'] ?? null;
+        self::assertIsArray($data);
+        $relationships = $data['relationships'] ?? null;
+        self::assertIsArray($relationships);
+        $items = $relationships['items'] ?? null;
+        self::assertIsArray($items);
+        self::assertSame($expected, $this->members(['data' => $items['data'] ?? null]));
+        self::assertSame($expected, $this->members(['data' => $document['included'] ?? null]));
+    }
+
+    #[Test]
     public function aMorphToToManyRendersMixedMemberTypesAcrossRepositories(): void
     {
         // The Doctrine provider throws on this polymorphic to-many; the custom

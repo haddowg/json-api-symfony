@@ -23,6 +23,9 @@ abstract class BaseScopingMixedAdvertiserResource extends AbstractResource
             Id::make(),
             Str::make('name'),
             MorphToMany::make('mixedPartners', [static::PREFIX . 'agencies', static::PREFIX . 'members'])->storedAs('partners'),
+            // Its first type is served unscoped and its second scoped: the agencies among
+            // its members are narrowed to the ones the agency scope admits.
+            MorphToMany::make('contacts', [static::PREFIX . 'advertisers', static::PREFIX . 'agencies'])->countable(),
         ];
     }
 }

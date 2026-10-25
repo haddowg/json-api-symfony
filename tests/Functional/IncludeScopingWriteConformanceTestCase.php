@@ -158,14 +158,24 @@ abstract class IncludeScopingWriteConformanceTestCase extends JsonApiFunctionalT
     #[Test]
     #[TestWith(['', ''], 'default server')]
     #[TestWith(['/partner', 'partner-'], 'named server')]
-    public function aMorphToManyRelationshipEndpointIsRefusedBeforeItWrites(string $mount, string $prefix): void
+    public function aMorphToManyRelationshipEndpointScopesEachMemberByItsType(string $mount, string $prefix): void
     {
-        $response = $this->handle($mount . '/' . $prefix . 'mixed-advertisers/2/relationships/mixedPartners', 'POST', [
-            'data' => [['type' => $prefix . 'agencies', 'id' => '1']],
-        ]);
+        $endpoint = $mount . '/' . $prefix . 'mixed-advertisers/%d/relationships/mixedPartners';
 
-        self::assertSame(500, $response->getStatusCode(), (string) $response->getContent());
+        $hidden = $this->handle(\sprintf($endpoint, 2), 'POST', ['data' => [['type' => $prefix . 'agencies', 'id' => '2']]]);
+        self::assertSame(404, $hidden->getStatusCode(), (string) $hidden->getContent());
         self::assertSame([3], $this->storedPartnerIds($prefix, 2));
+
+        $added = $this->handle(\sprintf($endpoint, 2), 'POST', ['data' => [['type' => $prefix . 'agencies', 'id' => '1']]]);
+        self::assertSame(200, $added->getStatusCode(), (string) $added->getContent());
+        self::assertSame([1, 3], $this->storedPartnerIds($prefix, 2));
+
+        // Advertiser 1 holds agency 1 and the hidden agency 2: a replace with nothing
+        // keeps the hidden one attached and renders none of it.
+        $replaced = $this->handle(\sprintf($endpoint, 1), 'PATCH', ['data' => []]);
+        self::assertSame(200, $replaced->getStatusCode(), (string) $replaced->getContent());
+        self::assertSame([], $this->decode($replaced)['data'] ?? null);
+        self::assertSame([2], $this->storedPartnerIds($prefix, 1));
     }
 
     #[Test]

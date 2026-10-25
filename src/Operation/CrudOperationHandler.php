@@ -828,9 +828,13 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                     ->withMeta(['total' => \count($items)]);
             }
 
-            $result = $this->readRouter?->readsComputed($relation) === true
-                ? $this->readRouter->fetchComputed($server, $parent, $relation, $criteria, $request)
-                : $relatedProvider->fetchRelatedCollection($relatedType, $parent, $relation, $criteria, $request);
+            $result = match (true) {
+                $this->readRouter?->readsComputed($relation) === true => $this->readRouter->fetchComputed($server, $parent, $relation, $criteria, $request),
+                // A polymorphic to-many reaching a scoped type serves its members narrowed
+                // per member type (bundle ADR 0125).
+                $polymorphic && $this->readRouter?->isScoped($relation) === true => $this->readRouter->fetchPolymorphic($server, $parent, $relation, $criteria, $request),
+                default => $relatedProvider->fetchRelatedCollection($relatedType, $parent, $relation, $criteria, $request),
+            };
 
             $serializer = $polymorphic
                 ? $this->polymorphicSerializer($relation, $server)
@@ -1477,16 +1481,6 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // missing, and a replace keeps the members the scope hides (bundle ADR 0126).
         $scopedLinkage = $this->linkageGuard?->scope($server, $parent, $relation, $linkage, $mode, $request, atEndpoint: true) ?? $linkage;
 
-        // The response renders the relationship's scoped linkage, which a polymorphic
-        // to-many cannot supply: refuse it before anything is written.
-        if ($this->linkageGuard?->isScopedPolymorphicToMany($relation) === true) {
-            throw new \LogicException(\sprintf(
-                'Relationship "%s" of type "%s" is a polymorphic to-many reaching a type its data provider scopes, so its linkage cannot be rendered after a mutation.',
-                $relationshipName,
-                $type,
-            ));
-        }
-
         $persister = $this->persisters->forType($type);
         $this->guardMovedMembers($persister, $type, $request, $parent, $relation, $scopedLinkage, $mode);
 
@@ -1508,7 +1502,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $members = $this->linkageGuard?->scopedMembers($parent, $relation, $request);
         $this->relationshipLinkage?->setIncluded(match (true) {
             $members !== null => new WindowedRelationshipLinkage([\spl_object_id($parent) => [$relationshipName => new RelationshipLinkage($members)]]),
-            !$relation->isToMany() => $this->includeBatcher?->scopeRelationship($server, $type, $parent, $relation, $request),
+            !$relation->isToMany() || \count($relation->relatedTypes()) > 1 => $this->includeBatcher?->scopeRelationship($server, $type, $parent, $relation, $request),
             default => null,
         });
 

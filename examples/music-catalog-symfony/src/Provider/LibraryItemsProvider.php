@@ -76,6 +76,8 @@ final class LibraryItemsProvider implements DataProviderInterface, PivotAwarePro
             ['type' => 'tracks', 'id' => '1'],
             ['type' => 'albums', 'id' => '2'],
             ['type' => 'artists', 'id' => '1'],
+            // Album 3 is unpublished, so the albums scope leaves it out of every read.
+            ['type' => 'albums', 'id' => '3'],
         ],
     ];
 

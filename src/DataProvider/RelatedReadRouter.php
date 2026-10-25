@@ -29,19 +29,19 @@ final class RelatedReadRouter
     public function __construct(private readonly DataProviderRegistry $providers) {}
 
     /**
-     * Whether the provider serving `$relation`'s related endpoint scopes its reads. A
-     * related type with no provider has nothing to scope by.
+     * Whether the provider of any type `$relation` reaches scopes its reads, so a
+     * polymorphic relation is scoped when any of its types is. A related type with no
+     * provider has nothing to scope by.
      */
     public function isScoped(RelationInterface $relation): bool
     {
-        $relatedType = $relation->relatedTypes()[0] ?? null;
-        if ($relatedType === null || !$this->providers->supportsType($relatedType)) {
-            return false;
+        foreach ($relation->relatedTypes() as $relatedType) {
+            if ($this->isScopedType($relatedType, $relation)) {
+                return true;
+            }
         }
 
-        $provider = $this->providers->forType($relatedType);
-
-        return !$provider instanceof ScopesRelatedReadsInterface || $provider->scopesRelatedReads($relation);
+        return false;
     }
 
     /**
@@ -160,6 +160,19 @@ final class RelatedReadRouter
             return $counts;
         }
 
+        // A polymorphic to-many reaching a scoped type counts the members its related
+        // endpoint would page through, narrowed per member type.
+        if ($relation->isToMany() && \count($relation->relatedTypes()) > 1 && $this->isScoped($relation)) {
+            $serializer = $server->serializerFor($type);
+            $counts = [];
+            foreach ($parents as $parent) {
+                $items = $this->fetchPolymorphic($server, $parent, $relation, $criteria, $request)->items;
+                $counts[$serializer->getId($parent)] = \is_array($items) ? \count($items) : \iterator_count($items);
+            }
+
+            return $counts;
+        }
+
         if (!$this->readsThroughRelatedProvider($type, $relation)) {
             return $this->providers->forType($type)->countRelated($type, $parents, $relation, $criteria, $request);
         }
@@ -270,9 +283,7 @@ final class RelatedReadRouter
     }
 
     /**
-     * Each parent's computed members (the closure's value), keeping only the rows the
-     * provider of their type admits: one probe per type across all the parents, before
-     * any criteria run, so pages and counts are of the narrowed set.
+     * Each parent's computed members (the closure's value), narrowed to the scope.
      *
      * @param list<object> $parents
      *
@@ -280,25 +291,61 @@ final class RelatedReadRouter
      */
     private function admitComputed(Server $server, array $parents, RelationInterface $relation, JsonApiRequestInterface $request): array
     {
-        $types = $relation->relatedTypes();
-        if ($relation->isToMany() && \count($types) > 1) {
-            throw new \LogicException(\sprintf(
-                'Relationship "%s" is a computed polymorphic to-many reaching a type its data provider scopes, so its members cannot be narrowed to that scope. Make it monomorphic or serve its types without a scope.',
-                $relation->name(),
-            ));
+        return $this->admitMembers($server, $parents, $relation, $request);
+    }
+
+    /**
+     * Each parent's members as its model holds them, keeping only the rows the provider
+     * of their type admits: the members are grouped by type and each scoped type is asked
+     * once across all the parents, before any criteria run, so pages and counts are of the
+     * narrowed set. Rows of an unscoped type are kept without a probe.
+     *
+     * @param list<object> $parents
+     *
+     * @return list<list<object>>
+     */
+    public function admitMembers(Server $server, array $parents, RelationInterface $relation, JsonApiRequestInterface $request): array
+    {
+        $candidates = [];
+        foreach ($parents as $parent) {
+            $value = $relation->readValue($parent, $request);
+            $candidates[] = \is_iterable($value) ? $this->objects($value) : (\is_object($value) ? [$value] : []);
         }
 
-        $candidates = [];
+        return $this->narrow($server, $candidates, $relation, $request);
+    }
+
+    /**
+     * A polymorphic to-many's related page: the members its first type's provider loads,
+     * unpaged, narrowed per member type to the rows each scoped type's provider admits,
+     * then paged and counted, so the page is full and its total is of the narrowed set.
+     *
+     * @return CollectionResult<object>
+     */
+    public function fetchPolymorphic(Server $server, object $parent, RelationInterface $relation, CollectionCriteria $criteria, JsonApiRequestInterface $request): CollectionResult
+    {
+        if ($this->readsComputed($relation)) {
+            return $this->fetchComputed($server, $parent, $relation, $criteria, $request);
+        }
+
+        $relatedType = $relation->relatedTypes()[0] ?? '';
+        $unpaged = new CollectionCriteria($criteria->queryParameters, $criteria->filters, $criteria->sorts, null, $criteria->defaultSort, $criteria->aliasOf);
+        $result = $this->providers->forType($relatedType)->fetchRelatedCollection($relatedType, $parent, $relation, $unpaged, $request);
+
+        return $this->queryMembers($relation, $this->narrow($server, [$this->objects($result->items)], $relation, $request)[0], $criteria);
+    }
+
+    /**
+     * @param list<list<object>> $candidates each parent's candidate members
+     *
+     * @return list<list<object>>
+     */
+    private function narrow(Server $server, array $candidates, RelationInterface $relation, JsonApiRequestInterface $request): array
+    {
+        $types = $relation->relatedTypes();
         $byType = [];
-        foreach ($parents as $index => $parent) {
-            $value = $relation->readValue($parent, $request);
-            $members = \is_iterable($value) ? $value : [$value];
-            $candidates[$index] = [];
+        foreach ($candidates as $members) {
             foreach ($members as $member) {
-                if (!\is_object($member)) {
-                    continue;
-                }
-                $candidates[$index][] = $member;
                 $type = \count($types) === 1 ? $types[0] : $relation->resolveSerializer($member, $server)?->getType($member);
                 if ($type !== null) {
                     $byType[$type][\spl_object_id($member)] = $member;
@@ -315,8 +362,25 @@ final class RelatedReadRouter
 
         return \array_map(
             static fn(array $members): array => \array_values(\array_filter($members, static fn(object $member): bool => isset($admitted[\spl_object_id($member)]))),
-            \array_values($candidates),
+            $candidates,
         );
+    }
+
+    /**
+     * @param iterable<mixed> $value
+     *
+     * @return list<object>
+     */
+    private function objects(iterable $value): array
+    {
+        $objects = [];
+        foreach ($value as $member) {
+            if (\is_object($member)) {
+                $objects[] = $member;
+            }
+        }
+
+        return $objects;
     }
 
     /**

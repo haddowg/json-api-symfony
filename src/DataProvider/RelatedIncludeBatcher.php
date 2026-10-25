@@ -414,13 +414,23 @@ final class RelatedIncludeBatcher
                 return $this->loadPolymorphicToOne($server, $entities, $relation, $request, $descends);
             }
 
-            // Core reads polymorphic to-many linkage off the model, so a scoped one cannot
-            // be supplied out of band.
-            if ($scoped) {
-                throw $this->refused($type, $relation, 'it is a polymorphic to-many, which core reads off the model');
+            if (!$scoped) {
+                return $descends ? $this->readTargets($entities, $relation, $request) : [];
             }
 
-            return $descends ? $this->readTargets($entities, $relation, $request) : [];
+            // A polymorphic to-many reaching a scoped type renders its members narrowed per
+            // member type to the rows each scoped type's provider admits (bundle ADR 0125).
+            $targets = [];
+            foreach ($this->router->admitMembers($server, $entities, $relation, $request) as $index => $members) {
+                $linkages[\spl_object_id($entities[$index])][$relation->name()] = new RelationshipLinkage($members);
+                foreach ($members as $member) {
+                    $targets[] = $member;
+                }
+            }
+            $targets = $this->unique($targets);
+            $this->remember($targets);
+
+            return $targets;
         }
 
         $relatedType = $relatedTypes[0];

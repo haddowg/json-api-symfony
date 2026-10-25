@@ -157,25 +157,6 @@ final class ScopedLinkageGuard
     }
 
     /**
-     * Whether `$relation` is a polymorphic to-many reaching a scoped type. Core reads its
-     * linkage off the model, so its relationship endpoint cannot render the scoped set.
-     */
-    public function isScopedPolymorphicToMany(RelationInterface $relation): bool
-    {
-        if (!$relation->isToMany() || \count($relation->relatedTypes()) < 2) {
-            return false;
-        }
-
-        foreach ($relation->relatedTypes() as $type) {
-            if ($this->router->isScopedType($type, $relation)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
      * @throws RelationshipTypeUnacceptable when an identifier names a type the relation does not accept
      */
     private function assertAcceptedTypes(RelationInterface $relation, ToOneRelationship|ToManyRelationship $linkage, bool $atEndpoint): void
