@@ -22,7 +22,7 @@ use PHPUnit\Framework\Attributes\Test;
  * Seeded: folder 1 (ada) holds notes 1 (ada), 2 (grace) and 3 (ada), and memos 1 (ada),
  * 2 (grace) and 3 (ada).
  */
-final class DoctrineUserScopingTest extends JsonApiFunctionalTestCase
+class DoctrineUserScopingTest extends JsonApiFunctionalTestCase
 {
     use UserScopingConformance;
 

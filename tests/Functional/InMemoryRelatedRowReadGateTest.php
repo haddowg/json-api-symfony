@@ -12,7 +12,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Security\InMemorySecurityTestKern
 /**
  * {@see RelatedRowReadGateConformance} on the in-memory provider.
  */
-final class InMemoryRelatedRowReadGateTest extends JsonApiFunctionalTestCase
+class InMemoryRelatedRowReadGateTest extends JsonApiFunctionalTestCase
 {
     use RelatedRowReadGateConformance;
 

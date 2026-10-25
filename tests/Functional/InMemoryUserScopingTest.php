@@ -10,7 +10,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Security\InMemorySecurityTestKern
 /**
  * {@see UserScopingConformance} on the in-memory kernel, where widget 1 holds the memos.
  */
-final class InMemoryUserScopingTest extends JsonApiFunctionalTestCase
+class InMemoryUserScopingTest extends JsonApiFunctionalTestCase
 {
     use UserScopingConformance;
 

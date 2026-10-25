@@ -12,7 +12,7 @@ use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigura
  * The security kernel with `ownedNotes` limited to the signed-in user's notes by
  * {@see OwnNotesExtension}, backing the authorization guide's scoping examples.
  */
-final class UserScopingTestKernel extends SecurityTestKernel
+class UserScopingTestKernel extends SecurityTestKernel
 {
     public function getCacheDir(): string
     {
