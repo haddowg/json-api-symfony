@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.11.0](https://github.com/haddowg/json-api-symfony/compare/v1.10.0...v1.11.0) (2026-10-25)
+
+
+### Features
+
+* refuse to boot a container compiled against other package versions ([#217](https://github.com/haddowg/json-api-symfony/issues/217)) ([acc664d](https://github.com/haddowg/json-api-symfony/commit/acc664d0380ee6c637c11cf1f7f765d1aa245d43))
+
+
+### Bug Fixes
+
+* key resource security by server and type ([#215](https://github.com/haddowg/json-api-symfony/issues/215)) ([6c4db9c](https://github.com/haddowg/json-api-symfony/commit/6c4db9c5d57d12c614b2197ca694a0c453fb2c66))
+* key response headers and action tags by server and type ([#218](https://github.com/haddowg/json-api-symfony/issues/218)) ([ddaebef](https://github.com/haddowg/json-api-symfony/commit/ddaebef750ae7dcab27c69d3424b7aef08c9c5c0))
+* key standalone capabilities and OpenAPI declarations by server ([#219](https://github.com/haddowg/json-api-symfony/issues/219)) ([a542b5e](https://github.com/haddowg/json-api-symfony/commit/a542b5e197e11b1c9d492d29ce21ecf167299c49))
+* resolve id encoding from each server's resource class ([#220](https://github.com/haddowg/json-api-symfony/issues/220)) ([795d991](https://github.com/haddowg/json-api-symfony/commit/795d991f96ccd294766644c32efee5c5cea22114))
+
 ## [1.10.0](https://github.com/haddowg/json-api-symfony/compare/v1.9.2...v1.10.0) (2026-10-25)
 
 
