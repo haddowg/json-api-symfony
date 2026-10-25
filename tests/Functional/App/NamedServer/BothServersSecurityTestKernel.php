@@ -14,8 +14,8 @@ final class BothServersSecurityTestKernel extends SecurityTestKernel
 {
     use ServesOnBothServers;
 
-    protected function defaultServerResource(): string
+    protected function ownServerResources(): array
     {
-        return DefaultServerSecuredWidgetResource::class;
+        return [DefaultServerSecuredWidgetResource::class];
     }
 }

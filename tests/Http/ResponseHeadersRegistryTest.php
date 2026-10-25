@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Http;
 
+use haddowg\JsonApiBundle\DependencyInjection\Compiler\ResponseHeadersPass;
 use haddowg\JsonApiBundle\Http\ResponseHeaderOperation;
 use haddowg\JsonApiBundle\Http\ResponseHeadersRegistry;
+use haddowg\JsonApiBundle\JsonApiBundle;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\Definition;
 
 /**
  * Characterizes the {@see ResponseHeadersRegistry} resolution (bundle ADR 0054):
@@ -74,5 +78,43 @@ final class ResponseHeadersRegistryTest extends TestCase
 
         self::assertNull($registry->cacheFor('widgets', ResponseHeaderOperation::Read));
         self::assertNull($registry->deprecationFor('widgets'));
+    }
+
+    #[Test]
+    public function eachServerHoldsOnlyWhatItsOwnClassDeclared(): void
+    {
+        $registry = new ResponseHeadersRegistry(
+            byType: ['widgets' => ['cache' => ['max_age' => 10, 'private' => true]]],
+            defaultCache: ['max_age' => 120],
+            servers: [
+                'v5' => ['widgets' => ['cache' => ['max_age' => 60, 'public' => true], 'deprecation' => ['deprecation' => true]]],
+                'v6' => [],
+            ],
+        );
+
+        self::assertSame(10, $registry->cacheFor('widgets', ResponseHeaderOperation::Read)?->maxAge);
+        self::assertNull($registry->deprecationFor('widgets'));
+        self::assertSame(60, $registry->cacheFor('widgets', ResponseHeaderOperation::Read, 'v5')?->maxAge);
+        self::assertTrue($registry->deprecationFor('widgets', 'v5')?->deprecation);
+        self::assertSame(120, $registry->cacheFor('widgets', ResponseHeaderOperation::Read, 'v6')?->maxAge);
+    }
+
+    #[Test]
+    public function thePassRecordsAClassOnSeveralServersUnderEach(): void
+    {
+        $container = new ContainerBuilder();
+        $container->setDefinition(ResponseHeadersRegistry::class, (new Definition(ResponseHeadersRegistry::class))->setArgument('$byType', []));
+        $container->setDefinition('widgets', (new Definition(\stdClass::class))
+            ->addTag(JsonApiBundle::RESOURCE_TAG, [
+                'type' => 'widgets',
+                'server' => 'default,v5',
+                'response_headers' => '{"cache":{"max_age":60}}',
+            ]));
+
+        (new ResponseHeadersPass())->process($container);
+
+        $definition = $container->getDefinition(ResponseHeadersRegistry::class);
+        self::assertSame(['widgets' => ['cache' => ['max_age' => 60]]], $definition->getArgument('$byType'));
+        self::assertSame(['v5' => ['widgets' => ['cache' => ['max_age' => 60]]]], $definition->getArgument('$servers'));
     }
 }

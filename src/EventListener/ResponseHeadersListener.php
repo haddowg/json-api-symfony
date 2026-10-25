@@ -8,6 +8,7 @@ use haddowg\JsonApiBundle\Http\ResponseHeaderOperation;
 use haddowg\JsonApiBundle\Http\ResponseHeadersRegistry;
 use haddowg\JsonApiBundle\Operation\TargetResolver;
 use haddowg\JsonApiBundle\Routing\JsonApiRoute;
+use haddowg\JsonApiBundle\Server\ServerProvider;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Event\ResponseEvent;
@@ -60,11 +61,15 @@ final class ResponseHeadersListener
             return;
         }
 
+        // Each server emits only what its own resource class declares (bundle ADR 0144).
+        $server = $request->attributes->get('_jsonapi_server');
+        $server = \is_string($server) && $server !== '' ? $server : ServerProvider::DEFAULT_SERVER;
+
         $response = $event->getResponse();
 
         // Deprecation/Sunset are emitted on every response for the type, reads and
         // writes alike (each header is only written when the app has not set it).
-        $this->registry->deprecationFor($type)?->applyTo($response);
+        $this->registry->deprecationFor($type, $server)?->applyTo($response);
 
         // Cache headers apply only to a safe (GET) successful read — never a write
         // verb and never an error document (2xx only).
@@ -82,7 +87,7 @@ final class ResponseHeadersListener
             return;
         }
 
-        $cache = $this->registry->cacheFor($type, $this->operationFor($request));
+        $cache = $this->registry->cacheFor($type, $this->operationFor($request), $server);
         $cache?->applyTo($response);
     }
 

@@ -14,8 +14,8 @@ final class BothServersInMemorySecurityTestKernel extends InMemorySecurityTestKe
 {
     use ServesOnBothServers;
 
-    protected function defaultServerResource(): string
+    protected function ownServerResources(): array
     {
-        return InMemoryDefaultServerSecuredWidgetResource::class;
+        return [InMemoryDefaultServerSecuredWidgetResource::class];
     }
 }

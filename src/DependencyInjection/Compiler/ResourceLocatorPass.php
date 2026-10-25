@@ -345,7 +345,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
         // mount type's uriType resolves from its resource descriptor when present
         // (else the type itself), so an action hangs off the same URI segment as the
         // resource it mounts on (ADR 0022).
-        $this->collectActions($container, $declaredServers, $descriptors);
+        $this->collectActions($container, $declaredServers, $descriptors, $descriptorsByServer);
 
         if ($container->hasDefinition(JsonApiRouteLoader::class)) {
             $container->getDefinition(JsonApiRouteLoader::class)->setArgument('$routeDescriptorsByServer', $descriptorsByServer);
@@ -376,8 +376,9 @@ final class ResourceLocatorPass implements CompilerPassInterface
      *
      * @param list<string>                                                                                                                             $declaredServers
      * @param array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string}>>}> $descriptors the resource/standalone descriptors, read for each mount type's uriType
+     * @param array<string, array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string}>>}>> $descriptorsByServer the same per server, read for each mount type's tags
      */
-    private function collectActions(ContainerBuilder $container, array $declaredServers, array $descriptors): void
+    private function collectActions(ContainerBuilder $container, array $declaredServers, array $descriptors, array $descriptorsByServer): void
     {
         if (!$container->hasDefinition(ActionRegistry::class)) {
             return;
@@ -493,17 +494,17 @@ final class ResourceLocatorPass implements CompilerPassInterface
                 $name = \is_string($tag['name'] ?? null) && $tag['name'] !== '' ? $tag['name'] : null;
 
                 // The action's OpenAPI tag refs (design §4.7): explicit refs on the
-                // action, else inherit the mount type's resource tags so the action
-                // groups with its resource. Empty when the mount type declared none —
-                // the MetadataSource then resolves the humanized-type default. Carried
-                // through the descriptor as a comma-joined scalar (not a list) so it
-                // survives the compiled container, like every other action field.
-                $actionTags = $this->parseTags($tag['tags'] ?? null);
-                if ($actionTags === []) {
-                    $actionTags = $descriptors[$type]['tags'] ?? [];
-                }
+                // action, else inherit the tags of the mount type's resource on each
+                // server (bundle ADR 0144) so the action groups with its resource there.
+                // Empty when that resource declared none — the MetadataSource then
+                // resolves the humanized-type default. Carried through the descriptor as
+                // a comma-joined scalar (not a list) so it survives the compiled
+                // container, like every other action field.
+                $explicitTags = $this->parseTags($tag['tags'] ?? null);
 
                 foreach ($servers as $server) {
+                    $actionTags = $explicitTags !== [] ? $explicitTags : ($descriptorsByServer[$server][$type]['tags'] ?? []);
+
                     $key = ActionRegistry::key($server, $type, $scope, $path);
                     if (isset($actionDescriptors[$key])) {
                         throw new \LogicException(\sprintf(

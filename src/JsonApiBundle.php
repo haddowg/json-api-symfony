@@ -745,8 +745,8 @@ final class JsonApiBundle extends AbstractBundle
                 '$registry' => service(\haddowg\JsonApiBundle\Security\ResourceSecurityRegistry::class),
             ]);
 
-        // Declarative response headers (bundle ADR 0054): the type-keyed
-        // ResponseHeadersRegistry seeded with the global `json_api.defaults`
+        // Declarative response headers (bundle ADR 0054): the server- and type-keyed
+        // ResponseHeadersRegistry (bundle ADR 0144) seeded with the global `json_api.defaults`
         // cache/deprecation defaults, plus the ResponseHeadersListener (wired in
         // services.php) that emits them per request. The per-type map is filled by
         // the ResponseHeadersPass (added in build()) from each resource's
@@ -759,6 +759,7 @@ final class JsonApiBundle extends AbstractBundle
                 '$byType' => [],
                 '$defaultCache' => $defaultCache,
                 '$defaultDeprecation' => $defaultDeprecation,
+                '$servers' => [],
             ]);
 
         // Any service extending AbstractResource is auto-tagged for registration;
@@ -844,7 +845,7 @@ final class JsonApiBundle extends AbstractBundle
                     // The declarative response-header config (bundle ADR 0054) —
                     // cache directives + deprecation/sunset headers — JSON-encoded
                     // into a single scalar tag attribute the ResponseHeadersPass
-                    // decodes into the type-keyed ResponseHeadersRegistry. A nested
+                    // decodes into the ResponseHeadersRegistry, under each of the resource's servers. A nested
                     // structure (the per-operation cache overrides) does not survive
                     // as a flat tag attribute, so it is carried as one JSON string.
                     'response_headers' => self::responseHeadersTag($attribute),

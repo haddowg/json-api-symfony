@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\DependencyInjection\Compiler;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApiBundle\Http\ResponseHeadersRegistry;
 use haddowg\JsonApiBundle\JsonApiBundle;
+use haddowg\JsonApiBundle\Server\ServerProvider;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 
@@ -14,10 +15,11 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
  * Collects the declarative response-header config a resource declares via
  * `#[AsJsonApiResource(cacheHeaders: …, deprecation: …, sunset: …)]` (bundle ADR
  * 0054) — the extension JSON-encodes it into the `response_headers` tag attribute
- * on the {@see JsonApiBundle::RESOURCE_TAG} — and assembles a type-keyed scalar
- * `type → {cache, cache_operations, deprecation}` map, injected into the
+ * on the {@see JsonApiBundle::RESOURCE_TAG} — and assembles a scalar
+ * `type → {cache, cache_operations, deprecation}` map per server, injected into the
  * {@see ResponseHeadersRegistry} the {@see \haddowg\JsonApiBundle\EventListener\ResponseHeadersListener}
- * queries.
+ * queries. The default server's map is `$byType` and every other server's goes under
+ * `$servers`; a resource on several servers is recorded under each (bundle ADR 0144).
  *
  * The map flows as plain scalars (the container cannot dump value objects as a
  * service argument); the registry rebuilds the {@see \haddowg\JsonApiBundle\Http\CacheHeaders}
@@ -55,8 +57,8 @@ final class ResponseHeadersPass implements CompilerPassInterface
             return;
         }
 
-        /** @var array<string, array{cache?: array<string, mixed>, cache_operations?: array<string, array<string, mixed>>, deprecation?: array<string, mixed>}> $byType */
-        $byType = [];
+        /** @var array<string, array<string, array{cache?: array<string, mixed>, cache_operations?: array<string, array<string, mixed>>, deprecation?: array<string, mixed>}>> $byServer */
+        $byServer = [];
 
         foreach ($container->findTaggedServiceIds(JsonApiBundle::RESOURCE_TAG) as $id => $tags) {
             $definition = $container->findDefinition($id);
@@ -72,11 +74,44 @@ final class ResponseHeadersPass implements CompilerPassInterface
 
             $config = $this->configFromTags($tags);
             if ($config !== []) {
-                $byType[$type] = $config;
+                foreach ($this->serversFromTags($tags) as $server) {
+                    $byServer[$server][$type] = $config;
+                }
             }
         }
 
-        $container->getDefinition(ResponseHeadersRegistry::class)->setArgument('$byType', $byType);
+        $byType = $byServer[ServerProvider::DEFAULT_SERVER] ?? [];
+        unset($byServer[ServerProvider::DEFAULT_SERVER]);
+
+        $container->getDefinition(ResponseHeadersRegistry::class)
+            ->setArgument('$byType', $byType)
+            ->setArgument('$servers', $byServer);
+    }
+
+    /**
+     * The servers a resource is exposed on, read across all its tags the way the
+     * ResourceLocatorPass reads them (which also validates the names): the first tag
+     * carrying a `server` value, comma-split, else the implicit `default`.
+     *
+     * @param array<array<string, mixed>> $tags
+     *
+     * @return list<string>
+     */
+    private function serversFromTags(array $tags): array
+    {
+        foreach ($tags as $tag) {
+            if (!\array_key_exists('server', $tag)) {
+                continue;
+            }
+
+            $names = \is_string($tag['server'])
+                ? \array_values(\array_unique(\array_filter(\array_map('trim', \explode(',', $tag['server'])), static fn(string $name): bool => $name !== '')))
+                : [];
+
+            return $names !== [] ? $names : [ServerProvider::DEFAULT_SERVER];
+        }
+
+        return [ServerProvider::DEFAULT_SERVER];
     }
 
     /**

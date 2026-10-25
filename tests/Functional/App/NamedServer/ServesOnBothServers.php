@@ -12,8 +12,8 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
 /**
  * Serves a kernel's resources from the named server, as {@see ServesOnNamedServer}
- * does, and a second `securedWidgets` resource class from the default server, so the
- * same type name carries different security on each.
+ * does, plus resource classes that name their own server, so the same type name can
+ * be served by a different class on each server.
  */
 trait ServesOnBothServers
 {
@@ -28,9 +28,11 @@ trait ServesOnBothServers
     }
 
     /**
-     * @return class-string
+     * The resource and action classes that name their own server.
+     *
+     * @return list<class-string>
      */
-    abstract protected function defaultServerResource(): string;
+    abstract protected function ownServerResources(): array;
 
     protected function configureContainer(ContainerConfigurator $container, LoaderInterface $loader, ContainerBuilder $builder): void
     {
@@ -42,7 +44,10 @@ trait ServesOnBothServers
             'default_requirement' => 'bearer',
         ]]]);
 
-        $container->services()->defaults()->autowire()->autoconfigure()->set($this->defaultServerResource());
+        $services = $container->services()->defaults()->autowire()->autoconfigure();
+        foreach ($this->ownServerResources() as $resource) {
+            $services->set($resource);
+        }
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void
