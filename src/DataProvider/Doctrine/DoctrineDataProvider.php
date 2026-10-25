@@ -2140,10 +2140,10 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
         if ($distinct) {
             $counter->resetDQLPart('groupBy');
-            $counter->select(\sprintf('COUNT(DISTINCT %s)', self::ROOT_ALIAS));
-        } else {
-            $counter->select(\sprintf('COUNT(%s)', self::ROOT_ALIAS));
         }
+        // Distinct even off the pivot path: an extension may join a to-many, and the
+        // hydrated rows are one per resource, so the total has to be too.
+        $counter->select(\sprintf('COUNT(DISTINCT %s)', self::ROOT_ALIAS));
 
         $total = $counter->getQuery()->getSingleScalarResult();
 

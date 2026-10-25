@@ -146,9 +146,15 @@ final class RelatedReadRouter
         $provider = $this->providers->forType($relatedType);
         $serializer = $server->serializerFor($type);
 
+        // The pivot query when the related endpoint would run it, so the count is of the
+        // same rows.
+        $pivot = $provider instanceof PivotAwareProviderInterface && $provider->supportsPivot($relatedType, $relation);
+
         $counts = [];
         foreach ($parents as $parent) {
-            $result = $provider->fetchRelatedCollection($relatedType, $parent, $relation, $criteria, $request);
+            $result = $pivot
+                ? $provider->fetchRelatedPivotCollection($relatedType, $parent, $relation, $criteria, $request)
+                : $provider->fetchRelatedCollection($relatedType, $parent, $relation, $criteria, $request);
             $counts[$serializer->getId($parent)] = \is_array($result->items) ? \count($result->items) : \iterator_count($result->items);
         }
 
