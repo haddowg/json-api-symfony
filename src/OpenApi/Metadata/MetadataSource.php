@@ -336,8 +336,8 @@ final class MetadataSource
             // projector then supplies the generated default). A standalone serializer
             // has no resource and serves no CRUD operations, so both are naturally
             // empty for it.
-            description: $resource?->getDescription() ?? $this->descriptions?->descriptionFor($type),
-            operationDescriptions: $this->operationDescriptions($resource, $type),
+            description: $resource?->getDescription() ?? $this->descriptions?->descriptionFor($type, $serverName),
+            operationDescriptions: $this->operationDescriptions($resource, $type, $serverName),
             // The per-operation response overrides declared on #[AsJsonApiResource]
             // (rehydrated from the descriptor's scalar form); an operation with no
             // override falls back to the core default in TypeMetadata::responsesFor().
@@ -346,11 +346,11 @@ final class MetadataSource
             // The declared vendor extensions (bundle ADR 0127). Core merges each CRUD
             // operation's set over the type-wide one and stamps the type-wide set on
             // every other operation the type emits.
-            extensions: $this->descriptions?->extensionsFor($type) ?? [],
-            operationExtensions: $this->operationExtensions($type),
+            extensions: $this->descriptions?->extensionsFor($type, $serverName) ?? [],
+            operationExtensions: $this->operationExtensions($type, $serverName),
             // Same precedence as the descriptions: the resource's getSingularName()
             // hook, then the #[AsJsonApiResource(singular:)] attribute.
-            singularName: $this->nonBlank($resource?->getSingularName()) ?? $this->descriptions?->singularFor($type),
+            singularName: $this->nonBlank($resource?->getSingularName()) ?? $this->descriptions?->singularFor($type, $serverName),
         );
     }
 
@@ -365,12 +365,12 @@ final class MetadataSource
      *
      * @return array<string, ?string>
      */
-    private function operationDescriptions(?AbstractResource $resource, string $type): array
+    private function operationDescriptions(?AbstractResource $resource, string $type, string $serverName): array
     {
         $descriptions = [];
         foreach (OperationType::cases() as $operation) {
             $value = $resource?->describeOperation($operation)
-                ?? $this->descriptions?->operationDescriptionFor($type, $operation);
+                ?? $this->descriptions?->operationDescriptionFor($type, $operation, $serverName);
             if ($value !== null) {
                 $descriptions[$operation->value] = $value;
             }
@@ -385,11 +385,11 @@ final class MetadataSource
      *
      * @return array<string, array<string, mixed>>
      */
-    private function operationExtensions(string $type): array
+    private function operationExtensions(string $type, string $serverName): array
     {
         $extensions = [];
         foreach (OperationType::cases() as $operation) {
-            $set = $this->descriptions?->operationExtensionsFor($type, $operation) ?? [];
+            $set = $this->descriptions?->operationExtensionsFor($type, $operation, $serverName) ?? [];
             if ($set !== []) {
                 $extensions[$operation->value] = $set;
             }

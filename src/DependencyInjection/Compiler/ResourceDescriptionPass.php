@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\DependencyInjection\Compiler;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\OpenApi\Metadata\ResourceDescriptionRegistry;
+use haddowg\JsonApiBundle\Server\ServerProvider;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 
@@ -16,12 +17,13 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
  * — the extension records the resource-object description as a scalar `description`
  * tag attribute and the per-operation overrides as one JSON-encoded
  * `operation_descriptions` tag attribute on the {@see JsonApiBundle::RESOURCE_TAG} —
- * and assembles a type-keyed `type → {description, operations}` scalar map injected
+ * and assembles a `type → {description, operations}` scalar map per server injected
  * into the {@see ResourceDescriptionRegistry} the
  * {@see \haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource} reads.
  *
- * Descriptions are type-keyed and server-independent, so the `server` tag attribute is
- * irrelevant here (mirroring the {@see ResourceSecurityPass}). The values flow as
+ * Each class is recorded under each of its servers only (bundle ADR 0144): the default
+ * server's maps are the `$descriptions` and `$extensions` arguments and every other
+ * server's go under `$servers`. The values flow as
  * plain scalars (the container cannot dump value objects); the per-operation map rides
  * as one JSON string because a nested array is not a flat tag attribute. The pass only
  * runs when the registry is defined.
@@ -38,10 +40,8 @@ final class ResourceDescriptionPass implements CompilerPassInterface
             return;
         }
 
-        /** @var array<string, array{description?: string, operations?: array<string, string>, singular?: string}> $descriptions */
-        $descriptions = [];
-        /** @var array<string, array{type: array<string, mixed>, operations: array<string, array<string, mixed>>}> $extensions */
-        $extensions = [];
+        /** @var array<string, array{descriptions: array<string, array{description?: string, operations?: array<string, string>, singular?: string}>, extensions: array<string, array{type: array<string, mixed>, operations: array<string, array<string, mixed>>}>}> $byServer */
+        $byServer = [];
 
         foreach ($container->findTaggedServiceIds(JsonApiBundle::RESOURCE_TAG) as $id => $tags) {
             $definition = $container->findDefinition($id);
@@ -59,38 +59,82 @@ final class ResourceDescriptionPass implements CompilerPassInterface
                 continue;
             }
 
+            $set = [];
             $description = $this->scalarFromTags($tags, 'description');
             if ($description !== null) {
-                $descriptions[$type]['description'] = $description;
+                $set['description'] = $description;
             }
 
             $singular = $this->scalarFromTags($tags, 'singular');
             if ($singular !== null) {
-                $descriptions[$type]['singular'] = $singular;
+                $set['singular'] = $singular;
             }
 
             $operations = $this->operationDescriptionsFromTags($tags);
             if ($operations !== []) {
-                $descriptions[$type]['operations'] = $operations;
+                $set['operations'] = $operations;
             }
 
             $declared = $this->extensionsFromTags($tags);
-            if ($declared !== null) {
-                $extensions[$type] = $declared;
+
+            // Each class is recorded only under its own servers (bundle ADR 0144).
+            foreach ($this->serversFromTags($tags) as $server) {
+                $byServer[$server] ??= ['descriptions' => [], 'extensions' => []];
+                if ($set !== []) {
+                    $byServer[$server]['descriptions'][$type] = $set;
+                }
+                if ($declared !== null) {
+                    $byServer[$server]['extensions'][$type] = $declared;
+                }
             }
         }
 
         foreach ($container->findTaggedServiceIds(JsonApiBundle::SERIALIZER_TAG) as $tags) {
             $type = $this->scalarFromTags($tags, 'type');
             $declared = $this->extensionsFromTags($tags);
-            if ($type !== null && $declared !== null) {
-                $extensions[$type] ??= $declared;
+            if ($type === null || $declared === null) {
+                continue;
+            }
+
+            foreach ($this->serversFromTags($tags) as $server) {
+                $byServer[$server] ??= ['descriptions' => [], 'extensions' => []];
+                $byServer[$server]['extensions'][$type] ??= $declared;
             }
         }
 
+        $default = $byServer[ServerProvider::DEFAULT_SERVER] ?? ['descriptions' => [], 'extensions' => []];
+        unset($byServer[ServerProvider::DEFAULT_SERVER]);
+
         $container->getDefinition(ResourceDescriptionRegistry::class)
-            ->setArgument('$descriptions', $descriptions)
-            ->setArgument('$extensions', $extensions);
+            ->setArgument('$descriptions', $default['descriptions'])
+            ->setArgument('$extensions', $default['extensions'])
+            ->setArgument('$servers', $byServer);
+    }
+
+    /**
+     * The servers a resource or serializer is exposed on, read across all its tags the
+     * way the ResourceLocatorPass reads them (which also validates the names): the first
+     * tag carrying a `server` value, comma-split, else the implicit `default`.
+     *
+     * @param array<array<string, mixed>> $tags
+     *
+     * @return list<string>
+     */
+    private function serversFromTags(array $tags): array
+    {
+        foreach ($tags as $tag) {
+            if (!\array_key_exists('server', $tag)) {
+                continue;
+            }
+
+            $names = \is_string($tag['server'])
+                ? \array_values(\array_unique(\array_filter(\array_map('trim', \explode(',', $tag['server'])), static fn(string $name): bool => $name !== '')))
+                : [];
+
+            return $names !== [] ? $names : [ServerProvider::DEFAULT_SERVER];
+        }
+
+        return [ServerProvider::DEFAULT_SERVER];
     }
 
     /**

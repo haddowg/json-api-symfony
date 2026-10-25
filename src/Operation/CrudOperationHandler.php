@@ -94,7 +94,6 @@ use haddowg\JsonApiBundle\Event\BeforeRelationshipCommitEvent;
 use haddowg\JsonApiBundle\Event\BeforeRelationshipMutateEvent;
 use haddowg\JsonApiBundle\Event\BeforeSaveEvent;
 use haddowg\JsonApiBundle\Event\BeforeUpdateEvent;
-use haddowg\JsonApiBundle\Security\RelationAuthorizer;
 use haddowg\JsonApiBundle\Serializer\PivotLinkageParentSerializer;
 use haddowg\JsonApiBundle\Serializer\PivotMetaSerializer;
 use haddowg\JsonApiBundle\Serializer\PivotParentSerializer;
@@ -105,6 +104,7 @@ use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipPagination;
 use haddowg\JsonApiBundle\Serializer\WindowedRelationshipLinkage;
 use haddowg\JsonApiBundle\Serializer\WindowedRelationshipPagination;
 use haddowg\JsonApiBundle\Server\RouteDescriptorRegistry;
+use haddowg\JsonApiBundle\Server\ServerName;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
 use haddowg\JsonApiBundle\Validation\FilterValueValidator;
@@ -2690,9 +2690,6 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return $name;
         }
 
-        $server = $context->server;
-        $authorizer = $server instanceof \haddowg\JsonApi\Resource\ProvidesRelationAuthorizerInterface ? $server->relationAuthorizer() : null;
-
-        return $authorizer instanceof RelationAuthorizer ? $authorizer->serverName() : ServerProvider::DEFAULT_SERVER;
+        return ServerName::of($context->server);
     }
 }
