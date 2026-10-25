@@ -9,6 +9,7 @@ use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
+use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 use haddowg\JsonApiBundle\DataProvider\RelatedBatch;
 use haddowg\JsonApiBundle\DataProvider\ScopesRelatedReadsInterface;
 
@@ -54,19 +55,19 @@ final class HidingProvider implements DataProviderInterface, ScopesRelatedReadsI
 
     public function fetchCollection(string $type, CollectionCriteria $criteria): CollectionResult
     {
-        return $this->visible($this->inner->fetchCollection($type, $criteria));
+        return $this->page($type, $this->inner->fetchCollection($type, self::unpaged($criteria)), $criteria);
     }
 
     public function fetchRelatedCollection(string $relatedType, object $parent, RelationInterface $relation, CollectionCriteria $criteria, JsonApiRequestInterface $request): CollectionResult
     {
-        return $this->visible($this->inner->fetchRelatedCollection($relatedType, $parent, $relation, $criteria, $request));
+        return $this->page($relatedType, $this->inner->fetchRelatedCollection($relatedType, $parent, $relation, self::unpaged($criteria), $request), $criteria);
     }
 
     public function fetchRelatedCollectionBatch(string $parentType, array $parents, RelationInterface $relation, CollectionCriteria $criteria, JsonApiRequestInterface $request): RelatedBatch
     {
         $results = [];
         foreach ($parents as $parent) {
-            $id = \property_exists($parent, 'id') && \is_int($parent->id) ? (string) $parent->id : null;
+            $id = self::idOf($parent);
             if ($id === null) {
                 continue;
             }
@@ -86,7 +87,18 @@ final class HidingProvider implements DataProviderInterface, ScopesRelatedReadsI
 
     public function countRelated(string $type, array $parents, RelationInterface $relation, CollectionCriteria $criteria, JsonApiRequestInterface $request): array
     {
-        return $this->inner->countRelated($type, $parents, $relation, $criteria, $request);
+        $relatedType = $relation->relatedTypes()[0] ?? $type;
+        $counts = [];
+        foreach ($parents as $parent) {
+            $id = self::idOf($parent);
+            if ($id === null) {
+                continue;
+            }
+            $items = $this->fetchRelatedCollection($relatedType, $parent, $relation, self::unpaged($criteria), $request)->items;
+            $counts[$id] = \is_array($items) ? \count($items) : \iterator_count($items);
+        }
+
+        return $counts;
     }
 
     public function relatedToOneMatches(string $relatedType, object $related, RelationInterface $relation, CollectionCriteria $criteria, JsonApiRequestInterface $request): bool
@@ -96,7 +108,16 @@ final class HidingProvider implements DataProviderInterface, ScopesRelatedReadsI
 
     public function relatedToOneMatchesBatch(string $parentType, array $parents, RelationInterface $relation, CollectionCriteria $criteria, JsonApiRequestInterface $request): array
     {
-        return $this->inner->relatedToOneMatchesBatch($parentType, $parents, $relation, $criteria, $request);
+        $matches = $this->inner->relatedToOneMatchesBatch($parentType, $parents, $relation, $criteria, $request);
+        foreach ($parents as $parent) {
+            $id = self::idOf($parent);
+            $target = $relation->readValue($parent, $request);
+            if ($id !== null && \is_object($target) && self::hidden($target)) {
+                $matches[$id] = false;
+            }
+        }
+
+        return $matches;
     }
 
     public function fetchRelationshipPivot(string $type, object $parent, RelationInterface $relation): array
@@ -105,15 +126,32 @@ final class HidingProvider implements DataProviderInterface, ScopesRelatedReadsI
     }
 
     /**
+     * The visible rows of an unpaged result, run through `$criteria` so the page is full
+     * and any count is of the visible rows.
+     *
      * @param CollectionResult<object> $result
      *
      * @return CollectionResult<object>
      */
-    private function visible(CollectionResult $result): CollectionResult
+    private function page(string $type, CollectionResult $result, CollectionCriteria $criteria): CollectionResult
     {
         $items = \is_array($result->items) ? $result->items : \iterator_to_array($result->items, false);
+        $visible = \array_values(\array_filter($items, static fn(object $item): bool => !self::hidden($item)));
 
-        return new CollectionResult(\array_values(\array_filter($items, static fn(object $item): bool => !self::hidden($item))));
+        return (new InMemoryDataProvider($type, $visible))->fetchCollection($type, $criteria);
+    }
+
+    /**
+     * `$criteria` without its page or count, so the scope runs before any paging.
+     */
+    private static function unpaged(CollectionCriteria $criteria): CollectionCriteria
+    {
+        return new CollectionCriteria($criteria->queryParameters, $criteria->filters, $criteria->sorts, null, $criteria->defaultSort, $criteria->aliasOf);
+    }
+
+    private static function idOf(object $parent): ?string
+    {
+        return \property_exists($parent, 'id') && \is_int($parent->id) ? (string) $parent->id : null;
     }
 
     private static function hidden(object $item): bool

@@ -9,6 +9,7 @@ use haddowg\JsonApi\Resource\Field\BelongsTo;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\MorphTo;
 use haddowg\JsonApi\Resource\Field\Str;
+use haddowg\JsonApi\Resource\Filter\Where;
 
 /**
  * The member declaration. `agencyName` flattens the agency's name, and `party` is a
@@ -36,6 +37,13 @@ abstract class BaseScopingMemberResource extends AbstractResource
             Str::make('teamName')->storedAs('name')->on('team'),
             Str::make('teamManagerName')->storedAs('name')->on('team.manager'),
             MorphTo::make('side', [static::PREFIX . 'agencies', static::PREFIX . 'members'])->storedAs('team'),
+        ];
+    }
+
+    public function filters(): array
+    {
+        return [
+            Where::make('nameContains', 'name', 'like'),
         ];
     }
 }

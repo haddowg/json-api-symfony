@@ -139,6 +139,36 @@ abstract class IncludeScopingConformanceTestCase extends JsonApiFunctionalTestCa
         self::assertSame(['1'], $this->ids($this->get($base . '/1/relationships/openAgencies')['data'] ?? null));
     }
 
+    /**
+     * On the related endpoint, each related agency's members follow a `relatedQuery`
+     * filter and the scope exactly as they do on a primary document: the linkage, the
+     * included members and the count come from the same set. Agency 1 holds member 1 and
+     * the hidden member 2; "One" matches member 1, "Three" matches neither.
+     *
+     * @param list<string> $expected
+     */
+    #[Test]
+    #[TestWith(['', '', 'One', ['1']], 'default server, a filter a visible member matches')]
+    #[TestWith(['', '', 'Three', []], 'default server, a filter no member of agency 1 matches')]
+    #[TestWith(['', '', 'Hidden', []], 'default server, a filter only the hidden member matches')]
+    #[TestWith(['/partner', 'partner-', 'One', ['1']], 'named server, a filter a visible member matches')]
+    #[TestWith(['/partner', 'partner-', 'Hidden', []], 'named server, a filter only the hidden member matches')]
+    public function aRelatedEndpointsItemsFollowARelatedQueryLikeAPrimaryDocument(string $mount, string $prefix, string $name, array $expected): void
+    {
+        $accept = ['HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . CountableProfile::URI . ' ' . RelationshipQueriesProfile::URI . '"'];
+        $query = '?include=members&withCount=members&relatedQuery[members][filter][nameContains]=' . $name;
+
+        $primary = $this->get($mount . '/' . $prefix . 'agencies/1' . $query, $accept);
+        $related = $this->get($mount . '/' . $prefix . 'advertisers/1/agencies' . $query, $accept);
+
+        foreach (['primary' => $primary, 'related' => $related] as $label => $document) {
+            self::assertSame($expected, $this->linkageIds($document, '1', 'members'), $label . ' linkage');
+            self::assertSame(\count($expected), $this->value($this->relationship($document, '1', 'members'), 'meta', 'total'), $label . ' count');
+            self::assertSame($expected, $this->includedIds($document, $prefix . 'members'), $label . ' included');
+            $this->assertNoHiddenRow($document);
+        }
+    }
+
     #[Test]
     #[TestWith(['', ''], 'default server')]
     #[TestWith(['/partner', 'partner-'], 'named server')]
