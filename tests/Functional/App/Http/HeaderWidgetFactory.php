@@ -44,6 +44,16 @@ final class HeaderWidgetFactory
         return self::persister('deprecatedWidgets');
     }
 
+    public static function createTaggedProvider(): InMemoryDataProvider
+    {
+        return self::provider('taggedWidgets');
+    }
+
+    public static function createTaggedPersister(): InMemoryDataPersister
+    {
+        return self::persister('taggedWidgets');
+    }
+
     public static function createPlainProvider(): InMemoryDataProvider
     {
         return self::provider('plainWidgets');

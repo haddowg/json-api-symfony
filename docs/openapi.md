@@ -537,7 +537,9 @@ final class ProductResource extends AbstractResource { /* … */ }
 final class RecalculatePrices implements ActionHandlerInterface { /* … */ }
 ```
 
-An action with no `tags` inherits the resource tag of the type it mounts on. The
+An action with no `tags` inherits the resource tag of the type it mounts on. When the
+type is served by a different resource class on each server, each server's document
+uses that server's class's tags, for the resource and for its untagged actions. The
 top-level tag **definitions** (description, externalDocs, order) are config-authoritative;
 any tag referenced but not defined is auto-synthesized (name only):
 

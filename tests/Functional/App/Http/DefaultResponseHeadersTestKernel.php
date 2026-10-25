@@ -24,7 +24,7 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
  * (declares `max_age: 60`) overrides the default cache — proving the resource-level
  * value merges over / wins against the global default.
  */
-final class DefaultResponseHeadersTestKernel extends Kernel
+class DefaultResponseHeadersTestKernel extends Kernel
 {
     use MicroKernelTrait;
 

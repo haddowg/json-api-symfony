@@ -411,6 +411,12 @@ resource-level value **merges over** the default directive-by-directive (your
 override merges over the resource-level value. An app that set `Cache-Control`
 itself (e.g. in an after-hook) is never clobbered.
 
+Response headers belong to the resource class, not the type name. When two servers
+serve the same type through different classes, each server emits only its own
+class's cache, deprecation and sunset headers, and a server whose class declares
+none gets the global defaults. A class assigned to several servers applies its
+headers on each.
+
 ```yaml
 json_api:
     defaults:
