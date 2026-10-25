@@ -13,7 +13,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Security\InMemorySecurityTestKern
  * The relation authorizer on the in-memory provider: widgets 1 and 2 are each other's
  * partner, so the admin-only `adminPartner` has data to withhold.
  */
-final class InMemoryRelationAuthorizerTest extends JsonApiFunctionalTestCase
+class InMemoryRelationAuthorizerTest extends JsonApiFunctionalTestCase
 {
     use RelationAuthorizerConformance;
 

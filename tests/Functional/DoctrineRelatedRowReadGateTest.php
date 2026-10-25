@@ -12,7 +12,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\Security\SecurityTestKer
 /**
  * {@see RelatedRowReadGateConformance} on the Doctrine provider.
  */
-final class DoctrineRelatedRowReadGateTest extends JsonApiFunctionalTestCase
+class DoctrineRelatedRowReadGateTest extends JsonApiFunctionalTestCase
 {
     use RelatedRowReadGateConformance;
 

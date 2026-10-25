@@ -23,7 +23,7 @@ use PHPUnit\Framework\Attributes\Test;
  * openWidget 1 through the `adminTags` pivot. Folders 1 and 3 belong to ada, folder 2
  * to grace; note 1 (ada) is in folder 1 and note 2 (ada) in grace's folder 2.
  */
-final class DoctrineRelationAuthorizerTest extends JsonApiFunctionalTestCase
+class DoctrineRelationAuthorizerTest extends JsonApiFunctionalTestCase
 {
     use RelationAuthorizerConformance;
 

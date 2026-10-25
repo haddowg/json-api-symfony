@@ -23,7 +23,7 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
  * but over the in-memory provider/persister — proving authorization is
  * provider-agnostic and nothing in the seam couples to Doctrine.
  */
-final class InMemorySecurityTestKernel extends Kernel
+class InMemorySecurityTestKernel extends Kernel
 {
     use MicroKernelTrait;
 
