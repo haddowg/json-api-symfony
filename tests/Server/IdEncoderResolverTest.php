@@ -66,6 +66,31 @@ final class IdEncoderResolverTest extends TestCase
         self::assertNull($resolver->routePatternFor('nonexistent'));
     }
 
+    #[Test]
+    public function eachServerResolvesTheClassItServesTheTypeWith(): void
+    {
+        // Builds the locator over both classes.
+        $this->resolverFor(new EncodedTypeResource(), new OtherEncodedTypeResource());
+        $resolver = new IdEncoderResolver($this->locator, [
+            'default' => [EncodedTypeResource::class],
+            'v5' => [OtherEncodedTypeResource::class],
+        ]);
+
+        // Before an operation binds a server, the default server answers.
+        self::assertSame('enc-[0-9a-f]+', $resolver->routePatternFor('encoded'));
+        self::assertSame('other-[0-9]+', $resolver->routePatternFor('encoded', 'v5'));
+
+        $resolver->bind('v5');
+        self::assertSame('other-[0-9]+', $resolver->routePatternFor('encoded'));
+        self::assertSame('enc-[0-9a-f]+', $resolver->routePatternFor('encoded', 'default'));
+
+        // A server that does not serve the type falls back to the first declaring class.
+        $resolver->bind('v6');
+        self::assertSame('enc-[0-9a-f]+', $resolver->routePatternFor('encoded'));
+    }
+
+    private ResourceLocator $locator;
+
     private function resolverFor(AbstractResource ...$resources): IdEncoderResolver
     {
         $byClass = [];
@@ -92,7 +117,9 @@ final class IdEncoderResolverTest extends TestCase
             }
         };
 
-        return new IdEncoderResolver(new ResourceLocator($container, $classes));
+        $this->locator = new ResourceLocator($container, $classes);
+
+        return new IdEncoderResolver($this->locator);
     }
 }
 
@@ -108,6 +135,22 @@ final class EncodedTypeResource extends AbstractResource
     {
         return [
             Id::make()->encodeUsing(new PrefixHexEncoder())->matchAs('enc-[0-9a-f]+'),
+            Str::make('name'),
+        ];
+    }
+}
+
+/**
+ * Another class for the `encoded` type, as a second server would serve it.
+ */
+final class OtherEncodedTypeResource extends AbstractResource
+{
+    public static string $type = 'encoded';
+
+    public function fields(): array
+    {
+        return [
+            Id::make()->matchAs('other-[0-9]+'),
             Str::make('name'),
         ];
     }

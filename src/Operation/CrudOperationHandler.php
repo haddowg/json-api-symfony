@@ -103,6 +103,7 @@ use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipLinkage;
 use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipPagination;
 use haddowg\JsonApiBundle\Serializer\WindowedRelationshipLinkage;
 use haddowg\JsonApiBundle\Serializer\WindowedRelationshipPagination;
+use haddowg\JsonApiBundle\Server\IdEncoderResolver;
 use haddowg\JsonApiBundle\Server\RouteDescriptorRegistry;
 use haddowg\JsonApiBundle\Server\ServerName;
 use haddowg\JsonApiBundle\Server\ServerProvider;
@@ -227,6 +228,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // Reads a computed relation into a scoped type as the closure's value narrowed to
         // that scope (bundle ADR 0125).
         private readonly ?RelatedReadRouter $readRouter = null,
+        // Resolves a type's id encoder from the class the operation's server serves it
+        // with; bound per operation (bundle ADR 0145).
+        private readonly ?IdEncoderResolver $idEncoders = null,
     ) {}
 
     public function handle(\haddowg\JsonApi\Operation\JsonApiOperationInterface $operation): DataResponse|RelatedResponse|IdentifierResponse|MetaResponse|NoContentResponse|AcceptedResponse|SeeOtherResponse|AtomicResultsResponse|ErrorResponse
@@ -238,7 +242,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // Nor another operation's counts.
         $this->relationshipCount?->set(null);
         // Related rows are judged against their own read gate afresh per operation.
-        $this->relationshipLinkage?->bind($server instanceof Server ? $server : null, $this->contextServerName($operation->context()));
+        $serverName = $this->contextServerName($operation->context());
+        $this->relationshipLinkage?->bind($server instanceof Server ? $server : null, $serverName);
+        // Storage decodes ids with the encoder of the class this server serves.
+        $this->idEncoders?->bind($serverName);
         $this->outputTimezone?->set($server instanceof \haddowg\JsonApi\Resource\ProvidesOutputTimezoneInterface ? $server->outputTimezone() : null);
 
         if ($operation instanceof CreateResourceOperation || $operation instanceof UpdateResourceOperation) {

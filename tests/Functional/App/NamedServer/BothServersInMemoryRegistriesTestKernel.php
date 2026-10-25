@@ -12,7 +12,7 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 
 /**
- * The in-memory per-server registry kernel: standalone `notes` relations, a standalone `labels` serializer per server, and a `segmentWidgets` served by a different class on each server.
+ * The in-memory per-server registry kernel: standalone `notes` relations, a standalone `labels` serializer per server, and `segmentWidgets` and `patternedWidgets` served by a different class on each server.
  */
 final class BothServersInMemoryRegistriesTestKernel extends InMemorySecurityTestKernel
 {
@@ -34,6 +34,8 @@ final class BothServersInMemoryRegistriesTestKernel extends InMemorySecurityTest
             DefaultServerNoteRelations::class,
             NamedServerNoteRelations::class,
             PingSegmentWidget::class,
+            InMemoryDefaultServerPatternedWidgetResource::class,
+            InMemoryNamedServerPatternedWidgetResource::class,
             InMemoryDefaultServerSegmentWidgetResource::class,
             InMemoryNamedServerSegmentWidgetResource::class,
         ];
@@ -52,6 +54,9 @@ final class BothServersInMemoryRegistriesTestKernel extends InMemorySecurityTest
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
         $services->set('test.segment_widgets_provider', InMemoryDataProvider::class)
             ->factory([NamedServerProviders::class, 'segmentWidgets'])
+            ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+        $services->set('test.patterned_widgets_provider', InMemoryDataProvider::class)
+            ->factory([NamedServerProviders::class, 'patternedWidgets'])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
     }
 }

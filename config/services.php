@@ -172,7 +172,9 @@ return static function (ContainerConfigurator $container): void {
     // (the SPI stays wire-id; the in-memory provider has no encoder so wire ==
     // storage and is untouched); the route loader reads the route pattern. It
     // resolves through the global ResourceLocator (autowired).
-    $services->set(IdEncoderResolver::class);
+    // Each server's resource classes are filled in by the ResourceLocatorPass.
+    $services->set(IdEncoderResolver::class)
+        ->arg('$classesByServer', []);
 
     // --- Operations + data providers -----------------------------------------
 
@@ -214,6 +216,9 @@ return static function (ContainerConfigurator $container): void {
         // in-memory). Always wired; a relation/provider that cannot batch falls to lazy.
         ->arg('$includeBatcher', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataProvider\RelatedIncludeBatcher::class))
         ->arg('$readRouter', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataProvider\RelatedReadRouter::class))
+        // Bound to each operation's server so storage decodes ids with the encoder of
+        // the class that server serves (bundle ADR 0145).
+        ->arg('$idEncoders', \Symfony\Component\DependencyInjection\Loader\Configurator\service(IdEncoderResolver::class))
         // The custom-action invoker (bundle ADR 0076): the optional collaborator the
         // CustomActionOperation arm delegates to. Always wired in the bundle (a null
         // would 404 every action); an app with no actions simply registers none.

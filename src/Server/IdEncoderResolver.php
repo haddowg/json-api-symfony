@@ -26,12 +26,16 @@ use haddowg\JsonApi\Resource\Field\IdEncoderInterface;
  * Doctrine provider, persister and route loader read the encoder/route pattern
  * through.
  *
- * It resolves a type to its resource through the global {@see ResourceLocator} — the
- * registration-ordered union of every server's resource class-strings — by matching
+ * Two servers may serve one type through different resource classes with different
+ * {@see Id} fields, so a type resolves to the class its server serves it with (bundle
+ * ADR 0145): the server a caller names, else the one the current operation
+ * {@see bind() bound}, else the default server. When that server does not serve the
+ * type, the first class that declares it anywhere answers. The class is matched by
  * the {@see AbstractResource}'s static `$type` (read without instantiating, exactly
- * how core's `ResourceRegistry` resolves a type) and then asking the locator for that
- * one instance. A type with no resource, no {@see Id} field, or no encoder yields
- * `null` — i.e. wire == storage, today's behaviour. Resolutions are memoised.
+ * how core's `ResourceRegistry` resolves a type) and then fetched from the
+ * {@see ResourceLocator}. A type with no resource, no {@see Id} field, or no encoder
+ * yields `null` — i.e. wire == storage, today's behaviour. Resolutions are memoised
+ * per server and type.
  */
 final class IdEncoderResolver
 {
@@ -60,32 +64,53 @@ final class IdEncoderResolver
      */
     private array $requiresClientIdCache = [];
 
-    public function __construct(private readonly ResourceLocator $resources) {}
+    private string $boundServer = ServerProvider::DEFAULT_SERVER;
+
+    /**
+     * @param array<string, list<class-string>> $classesByServer each server's resource classes, in registration order
+     */
+    public function __construct(
+        private readonly ResourceLocator $resources,
+        private readonly array $classesByServer = [],
+    ) {}
+
+    /**
+     * Sets the server the current operation runs on, which answers every lookup that
+     * names no server. Before any operation binds one, the default server answers.
+     */
+    public function bind(string $server): void
+    {
+        $this->boundServer = $server;
+    }
 
     /**
      * The id encoder declared by `$type`'s resource, or `null` when the type has no
      * resource / no {@see Id} field / no encoder (wire == storage).
      */
-    public function encoderFor(string $type): ?IdEncoderInterface
+    public function encoderFor(string $type, ?string $server = null): ?IdEncoderInterface
     {
-        if (!\array_key_exists($type, $this->encoderCache)) {
-            $this->encoderCache[$type] = $this->idFieldFor($type)?->encoder();
+        $server ??= $this->boundServer;
+        $key = $server . "\0" . $type;
+        if (!\array_key_exists($key, $this->encoderCache)) {
+            $this->encoderCache[$key] = $this->idFieldFor($type, $server)?->encoder();
         }
 
-        return $this->encoderCache[$type];
+        return $this->encoderCache[$key];
     }
 
     /**
      * The route `{id}` requirement declared by `$type`'s resource id field
      * ({@see Id::matchAs()} / the format shortcuts), or `null` when unconstrained.
      */
-    public function routePatternFor(string $type): ?string
+    public function routePatternFor(string $type, ?string $server = null): ?string
     {
-        if (!\array_key_exists($type, $this->routePatternCache)) {
-            $this->routePatternCache[$type] = $this->idFieldFor($type)?->routePattern();
+        $server ??= $this->boundServer;
+        $key = $server . "\0" . $type;
+        if (!\array_key_exists($key, $this->routePatternCache)) {
+            $this->routePatternCache[$key] = $this->idFieldFor($type, $server)?->routePattern();
         }
 
-        return $this->routePatternCache[$type];
+        return $this->routePatternCache[$key];
     }
 
     /**
@@ -99,13 +124,15 @@ final class IdEncoderResolver
      *
      * @return list<ConstraintInterface>
      */
-    public function formatConstraintsFor(string $type): array
+    public function formatConstraintsFor(string $type, ?string $server = null): array
     {
-        if (!\array_key_exists($type, $this->constraintsCache)) {
-            $this->constraintsCache[$type] = $this->idFieldFor($type)?->constraints() ?? [];
+        $server ??= $this->boundServer;
+        $key = $server . "\0" . $type;
+        if (!\array_key_exists($key, $this->constraintsCache)) {
+            $this->constraintsCache[$key] = $this->idFieldFor($type, $server)?->constraints() ?? [];
         }
 
-        return $this->constraintsCache[$type];
+        return $this->constraintsCache[$key];
     }
 
     /**
@@ -117,13 +144,15 @@ final class IdEncoderResolver
      * any supplied id is core's `403`, irrespective of its format (`Id::idField()` is
      * protected, so the policy is surfaced here).
      */
-    public function allowsClientIdFor(string $type): bool
+    public function allowsClientIdFor(string $type, ?string $server = null): bool
     {
-        if (!\array_key_exists($type, $this->allowsClientIdCache)) {
-            $this->allowsClientIdCache[$type] = $this->idFieldFor($type)?->allowsClientId() ?? false;
+        $server ??= $this->boundServer;
+        $key = $server . "\0" . $type;
+        if (!\array_key_exists($key, $this->allowsClientIdCache)) {
+            $this->allowsClientIdCache[$key] = $this->idFieldFor($type, $server)?->allowsClientId() ?? false;
         }
 
-        return $this->allowsClientIdCache[$type];
+        return $this->allowsClientIdCache[$key];
     }
 
     /**
@@ -132,22 +161,24 @@ final class IdEncoderResolver
      * no id field defaults to `false`. The OpenAPI metadata reads this so the create
      * request schema marks `id` as required (a create without it is core's `403`).
      */
-    public function requiresClientIdFor(string $type): bool
+    public function requiresClientIdFor(string $type, ?string $server = null): bool
     {
-        if (!\array_key_exists($type, $this->requiresClientIdCache)) {
-            $this->requiresClientIdCache[$type] = $this->idFieldFor($type)?->requiresClientId() ?? false;
+        $server ??= $this->boundServer;
+        $key = $server . "\0" . $type;
+        if (!\array_key_exists($key, $this->requiresClientIdCache)) {
+            $this->requiresClientIdCache[$key] = $this->idFieldFor($type, $server)?->requiresClientId() ?? false;
         }
 
-        return $this->requiresClientIdCache[$type];
+        return $this->requiresClientIdCache[$key];
     }
 
     /**
      * The {@see Id} field of `$type`'s resource, or `null` when the type has no
      * resource or no id field.
      */
-    private function idFieldFor(string $type): ?Id
+    private function idFieldFor(string $type, string $server): ?Id
     {
-        $resource = $this->resourceFor($type);
+        $resource = $this->resourceFor($type, $server);
         if ($resource === null) {
             return null;
         }
@@ -162,21 +193,23 @@ final class IdEncoderResolver
     }
 
     /**
-     * The resource registered for `$type`: the discovered resource class whose
-     * static `$type` matches (read without instantiating), resolved to its service
-     * instance through the locator. `null` when no resource declares the type (e.g.
-     * a bare serializer/hydrator pair).
+     * The resource `$server` serves `$type` with: the first of that server's classes
+     * whose static `$type` matches (read without instantiating), else the first such
+     * class on any server, resolved to its service instance through the locator.
+     * `null` when no resource declares the type (e.g. a bare serializer/hydrator pair).
      */
-    private function resourceFor(string $type): ?AbstractResource
+    private function resourceFor(string $type, string $server): ?AbstractResource
     {
-        foreach ($this->resources->classes() as $class) {
-            if ($class::$type !== $type) {
-                continue;
+        foreach ([$this->classesByServer[$server] ?? [], $this->resources->classes()] as $classes) {
+            foreach ($classes as $class) {
+                if (!\is_a($class, AbstractResource::class, true) || $class::$type !== $type) {
+                    continue;
+                }
+
+                $instance = $this->resources->get($class);
+
+                return $instance instanceof AbstractResource ? $instance : null;
             }
-
-            $instance = $this->resources->get($class);
-
-            return $instance instanceof AbstractResource ? $instance : null;
         }
 
         return null;
