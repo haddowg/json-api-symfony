@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Tests;
 
+use haddowg\JsonApiBundle\OpenApi\DocumentFactory;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Response;
@@ -177,6 +178,33 @@ final class CustomActionTest extends MusicCatalogKernelTestCase
         $meta = $this->decode($document)['meta'] ?? null;
         self::assertIsArray($meta);
         self::assertSame(['published' => 2, 'unpublished' => 1], $meta['albums'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    public function eachActionDocumentsTheSafetyItDeclares(): void
+    {
+        $factory = static::getContainer()->get(DocumentFactory::class);
+        self::assertInstanceOf(DocumentFactory::class, $factory);
+        $document = $factory->forServer()->toArray();
+
+        self::assertSame(['readOnly' => true], self::at($document, 'paths', '/albums/-actions/export', 'get', 'x-safety'));
+        self::assertSame(['readOnly' => true], self::at($document, 'paths', '/albums/-actions/summary', 'post', 'x-safety'));
+        self::assertSame(['idempotent' => true], self::at($document, 'paths', '/albums/{id}/-actions/artwork', 'post', 'x-safety'));
+        foreach (['/albums/-actions/import', '/albums/{id}/-actions/reissue'] as $path) {
+            self::assertIsArray(self::at($document, 'paths', $path, 'post'), $path);
+            self::assertNull(self::at($document, 'paths', $path, 'post', 'x-safety'), $path);
+        }
+        self::assertSame(15, self::at($document, 'info', 'x-generator', 'contract'));
+    }
+
+    private static function at(mixed $value, string ...$keys): mixed
+    {
+        foreach ($keys as $key) {
+            $value = \is_array($value) ? ($value[$key] ?? null) : null;
+        }
+
+        return $value;
     }
 
     /**

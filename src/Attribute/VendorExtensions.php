@@ -8,7 +8,8 @@ use haddowg\JsonApiBundle\Operation\Operation;
 
 /**
  * Validates the `extensions` / `operationExtensions` declared on
- * {@see AsJsonApiResource} and {@see AsJsonApiSerializer} (bundle ADR 0127). Core's
+ * {@see AsJsonApiResource} and {@see AsJsonApiSerializer} (bundle ADR 0127), and the
+ * `extensions` declared on {@see AsJsonApiAction}. Core's
  * withers would quietly prefix a bare name, but on a declaration a missing `x-` is
  * more likely a typo than shorthand, so the attributes insist on the full name.
  *

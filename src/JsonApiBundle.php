@@ -994,6 +994,12 @@ final class JsonApiBundle extends AbstractBundle
                     // The OpenAPI example override (core ADR 0176), JSON-encoded; absent
                     // keeps the generated example.
                     'example' => OperationExampleCodec::encodeOne('AsJsonApiAction', $attribute->example),
+                    // The declared safety flags (core ADR 0179), each carried only when set.
+                    'readOnly' => $attribute->readOnly,
+                    'destructive' => $attribute->destructive,
+                    'idempotent' => $attribute->idempotent,
+                    // The action's own OpenAPI vendor extensions, JSON-encoded.
+                    'extensions' => $attribute->extensions !== [] ? \json_encode($attribute->extensions, \JSON_THROW_ON_ERROR) : null,
                 ], static fn(mixed $value): bool => $value !== null));
             },
         );

@@ -34,6 +34,32 @@ final class ActionMetadataExampleTest extends TestCase
         self::assertEquals(new OperationExample(request: false, responses: [200 => ['meta' => ['ok' => true]]]), $metadata->example());
     }
 
+    #[Test]
+    public function theDescriptorsSafetyAndExtensionsAreDeclared(): void
+    {
+        $metadata = new ActionMetadata(new ActionDescriptor(
+            type: 'widgets',
+            path: 'purge',
+            methods: ['POST'],
+            scope: ActionScope::Resource,
+            input: ActionInput::None,
+            inputType: 'widgets',
+            outputType: 'widgets',
+            responds: [['kind' => 'nocontent']],
+            security: null,
+            handlerServiceId: 'app.purge',
+            server: 'default',
+            destructive: true,
+            idempotent: true,
+            extensions: ['x-workflows' => ['workflowId' => 'purgeWidget']],
+        ));
+
+        self::assertNull($metadata->readOnly());
+        self::assertTrue($metadata->destructive());
+        self::assertTrue($metadata->idempotent());
+        self::assertSame(['x-workflows' => ['workflowId' => 'purgeWidget']], $metadata->extensions());
+    }
+
     /**
      * @param array{request: mixed, responses: array<int|string, mixed>}|false|null $example
      */

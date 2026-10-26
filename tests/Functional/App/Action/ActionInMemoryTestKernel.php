@@ -149,6 +149,7 @@ final class ActionInMemoryTestKernel extends Kernel
         $services->set(ArchiveWidget::class);
         $services->set(RecalculateWidgets::class);
         $services->set(PinWidget::class);
+        $services->set(LabelWidget::class);
 
         // The serving-gate witness.
         $services->set(DenyingServingSubscriber::class);

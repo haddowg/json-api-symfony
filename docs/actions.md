@@ -63,6 +63,10 @@ use haddowg\JsonApi\Response\NoContentResponse;
     security: "is_granted('PUBLISH', subject)",   // optional authz expression (see Authorization)
     name: null,                     // optional route-name override
     asLink: false,                  // expose as a security-aware `links` member (resource scope only)
+    readOnly: null,                 // declared safety, stamped as OpenAPI x-safety; null leaves a flag out
+    destructive: null,
+    idempotent: null,
+    extensions: [],                 // OpenAPI x- extensions for this action's operation only
 )]
 final class PublishArticle implements ActionHandlerInterface
 {
@@ -345,6 +349,72 @@ written:
     description: 'Reprices the whole catalogue from the current cost and margin rules.',
 )]
 ```
+
+### Operation ids
+
+Each action operation in the document gets the id `action.<type>.<path>`. An action that
+answers to more than one method gets one id per method, with the lower-case method on the
+end, so a `methods: ['PUT', 'DELETE']` `label` action on `widgets` is
+`action.widgets.label.put` and `action.widgets.label.delete`. The route is still one route
+answering to every declared method.
+
+Client generators and tools that turn operation ids into names usually drop case and
+punctuation, so the bundle checks a type's actions when the container is built and fails
+the build, naming the handler class, when:
+
+- one path is declared at both the resource and the collection scope, since both would
+  get the same id;
+- an action path flattens to one of the words the type's other operation ids use:
+  `fetchCollection`, `fetchOne`, `create`, `update`, `delete`, `fetchRelated`,
+  `fetchRelationship`, `updateRelationship`, `addRelationship` or `removeRelationship`.
+  So `delete` and `fetch-one` are refused, but an `owner` action beside an `owner`
+  relation is fine;
+- two of the type's action ids differ only in case or punctuation, such as `export-all`
+  and `exportAll`.
+
+The check runs per server, on the actions each server exposes.
+
+### Declaring how safe an action is
+
+The method alone doesn't tell a client whether an action changes anything. A search sent
+as `POST` reads like a write. `readOnly`, `destructive` and `idempotent` say it outright,
+and the document stamps the ones you set on the action's operation as one `x-safety`
+object:
+
+```php
+#[AsJsonApiAction(
+    type: 'albums',
+    path: 'summary',
+    scope: ActionScope::Collection,
+    responds: [new MetaResult()],
+    readOnly: true,
+)]
+```
+
+That operation carries `x-safety: {readOnly: true}`. A flag left `null`
+is left out, an action that sets none gets no `x-safety`, and CRUD operations never get
+one. `readOnly` together with `destructive` fails the container build, since an action
+that changes nothing can't destroy anything.
+
+`extensions` adds OpenAPI vendor extensions to the action's own operation, such as a link
+to the [Arazzo](https://spec.openapis.org/arazzo/latest.html) workflow it belongs to:
+
+```php
+#[AsJsonApiAction(
+    type: 'files',
+    path: 'purge',
+    destructive: true,
+    extensions: ['x-workflows' => ['workflowId' => 'purgeFile']],
+)]
+```
+
+They are merged over the mount type's [type-wide extensions](openapi.md#vendor-extensions),
+and the action's value wins on a shared name. The names follow the same rules as the
+type's: a full `x-` name, outside the reserved `x-oai-` and `x-oas-` prefixes, or the
+build fails. A declared `x-safety` wins over an extension of that name.
+
+A document that uses any of these, a multi-method action, declared safety or an action's
+own extensions, is stamped generator contract 15 in `info.x-generator`.
 
 ### Raw responses (CSV, PDF, plain JSON)
 

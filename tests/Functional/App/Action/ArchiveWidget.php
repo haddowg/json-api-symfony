@@ -23,7 +23,7 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiAction;
  * /actionWidgets/{id}` only for a requester who would pass the same `ROLE_ADMIN`
  * gate — present for `admin`, absent for `user`.
  */
-#[AsJsonApiAction(type: 'actionWidgets', path: 'archive', responds: [new NoContent()], security: "is_granted('ROLE_ADMIN')", asLink: true)]
+#[AsJsonApiAction(type: 'actionWidgets', path: 'archive', responds: [new NoContent()], security: "is_granted('ROLE_ADMIN')", asLink: true, destructive: true)]
 final class ArchiveWidget implements ActionHandlerInterface
 {
     public function handle(ActionContext $context): NoContentResponse

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\DependencyInjection\Compiler;
 
 use haddowg\JsonApi\Hydrator\HydratorInterface;
+use haddowg\JsonApi\OpenApi\Metadata\ActionDeclarations;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Response\MetaResponse;
 use haddowg\JsonApi\Response\NoContentResponse;
@@ -16,6 +17,7 @@ use haddowg\JsonApiBundle\Action\ActionLinkContributor;
 use haddowg\JsonApiBundle\Action\ActionRegistry;
 use haddowg\JsonApiBundle\Action\ActionScope;
 use haddowg\JsonApiBundle\JsonApiBundle;
+use haddowg\JsonApiBundle\OpenApi\Metadata\ActionMetadata;
 use haddowg\JsonApiBundle\OpenApi\Metadata\OperationExampleCodec;
 use haddowg\JsonApiBundle\Operation\Operation;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
@@ -88,6 +90,8 @@ use Symfony\Component\DependencyInjection\Reference;
  * under the servers that class is assigned to (bundle ADRs 0142 and 0144), so two
  * servers can serve one type name through different classes without either seeing the
  * other's declarations.
+ *
+ * @phpstan-import-type ActionDescriptorArray from ActionRegistry
  */
 final class ResourceLocatorPass implements CompilerPassInterface
 {
@@ -395,8 +399,11 @@ final class ResourceLocatorPass implements CompilerPassInterface
         }
 
         $handlerReferences = [];
-        /** @var array<string, array{type: string, path: string, methods: list<string>, scope: string, input: string, inputType: string, outputType: string, responds: list<array{kind: string, type?: string, jobType?: string, raw?: array<string, mixed>}>, security: ?string, handlerServiceId: string, server: string, tags: string, asLink: bool, summary: ?string, description: ?string, accepts: list<array{mediaType: string, input: string, schema: array<string, mixed>|string|null, binary: bool}>, example: array{request: mixed, responses: array<int|string, mixed>}|false|null}> $actionDescriptors */
+        /** @var array<string, array{type: string, path: string, methods: list<string>, scope: string, input: string, inputType: string, outputType: string, responds: list<array{kind: string, type?: string, jobType?: string, raw?: array<string, mixed>}>, security: ?string, handlerServiceId: string, server: string, tags: string, asLink: bool, summary: ?string, description: ?string, accepts: list<array{mediaType: string, input: string, schema: array<string, mixed>|string|null, binary: bool}>, example: array{request: mixed, responses: array<int|string, mixed>}|false|null, readOnly: ?bool, destructive: ?bool, idempotent: ?bool, extensions: array<string, mixed>}> $actionDescriptors */
         $actionDescriptors = [];
+        // The handler class behind each descriptor key, so a declaration error can name it.
+        /** @var array<string, string> $actionClasses */
+        $actionClasses = [];
         /** @var array<string, list<array{uriType: string, type: string, path: string, methods: list<string>, scope: string, name: string}>> $routeDescriptorsByServer */
         $routeDescriptorsByServer = [];
         // The asLink action link descriptors the ActionLinkContributor renders, keyed by
@@ -503,6 +510,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
                 $description = \is_string($tag['description'] ?? null) && $tag['description'] !== '' ? $tag['description'] : null;
                 $accepts = $this->parseActionAccepts($tag['accepts'] ?? null);
                 $example = OperationExampleCodec::decodeOne($tag['example'] ?? null);
+                $extensions = $this->parseActionExtensions($tag['extensions'] ?? null);
 
                 // The action's OpenAPI tag refs (design §4.7): explicit refs on the
                 // action, else inherit the tags of the mount type's resource on each
@@ -560,7 +568,12 @@ final class ResourceLocatorPass implements CompilerPassInterface
                         'description' => $description,
                         'accepts' => $accepts,
                         'example' => $example,
+                        'readOnly' => \is_bool($tag['readOnly'] ?? null) ? $tag['readOnly'] : null,
+                        'destructive' => \is_bool($tag['destructive'] ?? null) ? $tag['destructive'] : null,
+                        'idempotent' => \is_bool($tag['idempotent'] ?? null) ? $tag['idempotent'] : null,
+                        'extensions' => $extensions,
                     ];
+                    $actionClasses[$key] = $class;
 
                     $routeDescriptorsByServer[$server][] = [
                         'uriType' => $uriType,
@@ -589,6 +602,8 @@ final class ResourceLocatorPass implements CompilerPassInterface
             }
         }
 
+        $this->validateActionDeclarations($actionDescriptors, $actionClasses);
+
         $handlerLocator = ServiceLocatorTagPass::register($container, $handlerReferences);
         $registry = $container->getDefinition(ActionRegistry::class);
         $registry->setArgument('$handlers', $handlerLocator);
@@ -605,6 +620,37 @@ final class ResourceLocatorPass implements CompilerPassInterface
         if ($container->hasDefinition(ActionLinkContributor::class)) {
             $container->getDefinition(ActionLinkContributor::class)
                 ->setArgument('$linksByServerType', $linksByServerType);
+        }
+    }
+
+    /**
+     * Runs core's {@see ActionDeclarations} check on every type's actions, per server, so
+     * a colliding operation id, a reserved action name, a read-only destructive action or
+     * a bad extension name fails the container build rather than the first document
+     * generation. The actions are checked one at a time in registration order, so the
+     * error names the class whose declaration broke the set.
+     *
+     * @param array<string, ActionDescriptorArray> $descriptors keyed by {@see ActionRegistry::key()}
+     * @param array<string, string>                $classes     the handler class behind each key
+     */
+    private function validateActionDeclarations(array $descriptors, array $classes): void
+    {
+        /** @var array<string, list<ActionMetadata>> $checked */
+        $checked = [];
+        foreach ($descriptors as $key => $descriptor) {
+            $group = $descriptor['server'] . "\0" . $descriptor['type'];
+            $checked[$group][] = new ActionMetadata(ActionRegistry::rehydrate($descriptor));
+
+            try {
+                ActionDeclarations::validate($descriptor['type'], $checked[$group]);
+            } catch (\LogicException|\InvalidArgumentException $e) {
+                throw new \LogicException(\sprintf(
+                    'The #[AsJsonApiAction] on %s is invalid on server "%s": %s',
+                    $classes[$key] ?? $descriptor['handlerServiceId'],
+                    $descriptor['server'],
+                    $e->getMessage(),
+                ), 0, $e);
+            }
         }
     }
 
@@ -1058,6 +1104,31 @@ final class ResourceLocatorPass implements CompilerPassInterface
             if ($entries !== []) {
                 $out[$operation] = $entries;
             }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Decodes the JSON `extensions` action-tag string; `[]` when absent. The attribute
+     * already validated the names.
+     *
+     * @return array<string, mixed>
+     */
+    private function parseActionExtensions(mixed $extensions): array
+    {
+        if (!\is_string($extensions) || $extensions === '') {
+            return [];
+        }
+
+        $decoded = \json_decode($extensions, true, flags: \JSON_THROW_ON_ERROR);
+        if (!\is_array($decoded)) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($decoded as $name => $value) {
+            $out[(string) $name] = $value;
         }
 
         return $out;

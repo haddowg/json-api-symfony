@@ -41,6 +41,10 @@ use Psr\Container\ContainerInterface;
  *     description?: ?string,
  *     accepts?: list<array{mediaType: string, input: string, schema: array<string, mixed>|string|null, binary: bool}>,
  *     example?: array{request: mixed, responses: array<int|string, mixed>}|false|null,
+ *     readOnly?: ?bool,
+ *     destructive?: ?bool,
+ *     idempotent?: ?bool,
+ *     extensions?: array<string, mixed>,
  * }
  */
 final class ActionRegistry
@@ -67,7 +71,7 @@ final class ActionRegistry
             return null;
         }
 
-        return $this->rehydrate($descriptor);
+        return self::rehydrate($descriptor);
     }
 
     /**
@@ -84,7 +88,7 @@ final class ActionRegistry
         $matches = [];
         foreach ($this->descriptors as $descriptor) {
             if ($descriptor['server'] === $server && $descriptor['type'] === $type) {
-                $matches[] = $this->rehydrate($descriptor);
+                $matches[] = self::rehydrate($descriptor);
             }
         }
 
@@ -95,9 +99,11 @@ final class ActionRegistry
      * Rebuilds an {@see ActionDescriptor} value object from its stored scalar array
      * (enums reconstructed by name, the comma-joined `tags` split back into a list).
      *
+     * Public so the compiler pass can check a type's declarations at build time.
+     *
      * @param ActionDescriptorArray $descriptor
      */
-    private function rehydrate(array $descriptor): ActionDescriptor
+    public static function rehydrate(array $descriptor): ActionDescriptor
     {
         return new ActionDescriptor(
             $descriptor['type'],
@@ -111,12 +117,16 @@ final class ActionRegistry
             $descriptor['security'],
             $descriptor['handlerServiceId'],
             $descriptor['server'],
-            $this->splitTags($descriptor['tags'] ?? ''),
+            self::splitTags($descriptor['tags'] ?? ''),
             $descriptor['asLink'] ?? false,
             $descriptor['summary'] ?? null,
             $descriptor['description'] ?? null,
             $descriptor['accepts'] ?? [],
             $descriptor['example'] ?? null,
+            $descriptor['readOnly'] ?? null,
+            $descriptor['destructive'] ?? null,
+            $descriptor['idempotent'] ?? null,
+            $descriptor['extensions'] ?? [],
         );
     }
 
@@ -126,7 +136,7 @@ final class ActionRegistry
      *
      * @return list<string>
      */
-    private function splitTags(string $tags): array
+    private static function splitTags(string $tags): array
     {
         if ($tags === '') {
             return [];

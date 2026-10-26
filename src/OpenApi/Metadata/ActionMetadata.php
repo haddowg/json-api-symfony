@@ -12,7 +12,9 @@ use haddowg\JsonApi\OpenApi\Metadata\ActionResponse;
 use haddowg\JsonApi\OpenApi\Metadata\ActionScope;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresAcceptedBodies;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresActionExample;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresActionExtensions;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresActionLink;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresActionSafety;
 use haddowg\JsonApi\OpenApi\Metadata\MetaResult;
 use haddowg\JsonApi\OpenApi\Metadata\NoContent;
 use haddowg\JsonApi\OpenApi\Metadata\OperationExample;
@@ -38,7 +40,7 @@ use haddowg\JsonApiBundle\Action\RawResults;
  * projector switches on to advertise a `200` resource document, a `200` meta document,
  * a `204`, a `202` async accept, or a `303` redirect (core ADR 0127).
  */
-final readonly class ActionMetadata implements DeclaresActionLink, DeclaresAcceptedBodies, DeclaresActionExample
+final readonly class ActionMetadata implements DeclaresActionLink, DeclaresAcceptedBodies, DeclaresActionExample, DeclaresActionSafety, DeclaresActionExtensions
 {
     public function __construct(private ActionDescriptor $descriptor) {}
 
@@ -138,5 +140,25 @@ final readonly class ActionMetadata implements DeclaresActionLink, DeclaresAccep
         $example = $this->descriptor->example;
 
         return $example === null ? null : OperationExampleCodec::toExample($example);
+    }
+
+    public function readOnly(): ?bool
+    {
+        return $this->descriptor->readOnly;
+    }
+
+    public function destructive(): ?bool
+    {
+        return $this->descriptor->destructive;
+    }
+
+    public function idempotent(): ?bool
+    {
+        return $this->descriptor->idempotent;
+    }
+
+    public function extensions(): array
+    {
+        return $this->descriptor->extensions;
     }
 }

@@ -582,6 +582,10 @@ entry for an operation the type doesn't expose (outside `operations`, or a write
 scalar or array. There is no method hook for extensions, so when the value has to be
 computed, add it with a [decorator](#wholesale-customisation-the-decorator).
 
+A custom action can carry its own on `#[AsJsonApiAction(extensions: […])]`, merged over the
+type's set for that action's operation; see
+[declaring how safe an action is](actions.md#declaring-how-safe-an-action-is).
+
 A [standalone serializer](capability-composition.md) declares them the same way on
 `#[AsJsonApiSerializer]`. Its exposed operations are its `operations` list, so a
 serialize-only type can only declare `extensions`. Those still reach any custom action
