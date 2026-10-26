@@ -33,8 +33,8 @@ final class ExportJobResource extends AbstractResource implements ResolvesComple
     public function fields(): array
     {
         return [
-            Id::make(),
-            Str::make('state')->readOnly()->guaranteed(),
+            Id::make()->example('job-processing'),
+            Str::make('state')->example('processing')->readOnly()->guaranteed(),
         ];
     }
 

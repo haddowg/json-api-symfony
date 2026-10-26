@@ -10,6 +10,7 @@ use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
+use Symfony\Component\Console\Output\ConsoleOutputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 use Symfony\Component\Yaml\Yaml;
@@ -22,6 +23,11 @@ use Symfony\Component\Yaml\Yaml;
  *
  * `--format=yaml` requires `symfony/yaml` (a suggested dependency); without it the
  * command fails with a clear message rather than emitting broken output.
+ *
+ * Each operation example the projector could not build (core ADR 0176) is printed as a
+ * warning on stderr, so stdout stays a clean document. An output with no separate stderr
+ * gets them only when the document goes to a file. `--strict` turns any of them into a
+ * failure and writes no document.
  */
 #[AsCommand(
     name: 'json-api:openapi:export',
@@ -39,7 +45,8 @@ final class OpenApiExportCommand extends Command
         $this
             ->addOption('server', null, InputOption::VALUE_REQUIRED, 'The JSON:API server name to export.', ServerProvider::DEFAULT_SERVER)
             ->addOption('format', null, InputOption::VALUE_REQUIRED, 'Output format: json or yaml.', 'json')
-            ->addOption('output', 'o', InputOption::VALUE_REQUIRED, 'Write to this file instead of stdout.');
+            ->addOption('output', 'o', InputOption::VALUE_REQUIRED, 'Write to this file instead of stdout.')
+            ->addOption('strict', null, InputOption::VALUE_NONE, 'Fail, writing no document, when any operation is missing its generated example.');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -67,9 +74,31 @@ final class OpenApiExportCommand extends Command
         }
 
         try {
-            $document = $this->documents->forServer($server);
+            $projection = $this->documents->projectionForServer($server);
         } catch (\Throwable $e) {
             $io->error(\sprintf('Could not build the OpenAPI document for server "%s": %s', $server, $e->getMessage()));
+
+            return Command::FAILURE;
+        }
+
+        $document = $projection->document;
+        $missing = $projection->missingExamples;
+        $strict = $input->getOption('strict') === true;
+        // Without a separate stderr a warning would land in a document piped to stdout,
+        // so it is only printed there when the document goes to a file or none is written.
+        $warnings = $output instanceof ConsoleOutputInterface || $outputFile !== null || $strict
+            ? $io->getErrorStyle()
+            : null;
+        if ($missing !== [] && $warnings !== null) {
+            $warnings->warning(\sprintf(
+                '%d value(s) have no declared example, so the operations that need them have no generated example:',
+                \count($missing),
+            ));
+            $warnings->listing(\array_map(static fn(\Stringable $miss): string => (string) $miss, $missing));
+        }
+
+        if ($missing !== [] && $strict) {
+            $io->getErrorStyle()->error('Wrote no document: --strict fails on a missing example. Declare the examples listed above, or switch the operation\'s example off.');
 
             return Command::FAILURE;
         }

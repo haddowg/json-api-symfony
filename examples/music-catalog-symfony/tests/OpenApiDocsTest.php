@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Tests;
 
 use haddowg\JsonApiBundle\Examples\MusicCatalog\DataFixtures\SeedManifest;
+use haddowg\JsonApiBundle\OpenApi\DocumentFactory;
 use haddowg\JsonApiBundle\Testing\SchemaConformanceTrait;
 use haddowg\JsonApiBundle\Testing\SchemaDocumentKind;
 use PHPUnit\Framework\Attributes\Group;
@@ -448,6 +449,43 @@ final class OpenApiDocsTest extends MusicCatalogKernelTestCase
         // Read-only but only seeded, so an album created over the API can lack it.
         $catalogueNumber = $this->nested($schemas, 'AlbumsAttributes', 'properties', 'releaseInfo', 'properties', 'catalogueNumber');
         self::assertSame(['string', 'null'], $catalogueNumber['type'] ?? null);
+    }
+
+    #[Test]
+    public function theOperationsCarryWorkedExamplesBuiltFromTheFieldExamples(): void
+    {
+        $document = $this->decode($this->handle('/docs.json'));
+        $mediaType = 'application/vnd.api+json';
+
+        $album = $this->nested($document, 'paths', '/albums/{id}', 'get', 'responses', '200', 'content', $mediaType, 'example');
+        self::assertSame('Abbey Road', $this->nested($album, 'data', 'attributes')['title'] ?? null);
+        $this->assertResponseMatchesGeneratedSchema((string) \json_encode($album), 'albums', SchemaDocumentKind::Single);
+
+        // The summary action's meta document is spelled out on its attribute.
+        self::assertSame(
+            ['meta' => ['albums' => ['published' => 12, 'unpublished' => 3, 'total' => 15]]],
+            $this->nested($document, 'paths', '/albums/-actions/summary', 'post', 'responses', '200', 'content', $mediaType, 'example'),
+        );
+
+        // `playlists.owner` links to `users`, which the default server does not register,
+        // so its linkage is spelled out on the resource attribute.
+        self::assertSame(
+            ['data' => ['type' => 'users', 'id' => '1']],
+            $this->nested($document, 'paths', '/playlists/{id}/relationships/owner', 'get', 'responses', '200', 'content', $mediaType, 'example'),
+        );
+
+        // The standalone serializers switch theirs off.
+        self::assertArrayNotHasKey('example', $this->nested($document, 'paths', '/charts', 'get', 'responses', '200', 'content', $mediaType));
+    }
+
+    #[Test]
+    public function everyFieldTheDocumentsNeedDeclaresAnExample(): void
+    {
+        $factory = static::getContainer()->get(DocumentFactory::class);
+        self::assertInstanceOf(DocumentFactory::class, $factory);
+
+        self::assertSame([], $factory->projectionForServer('default')->missingExamples);
+        self::assertSame([], $factory->projectionForServer('admin')->missingExamples);
     }
 
     /**

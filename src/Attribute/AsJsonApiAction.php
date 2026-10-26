@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\Attribute;
 use haddowg\JsonApi\OpenApi\Metadata\AcceptedBody;
 use haddowg\JsonApi\OpenApi\Metadata\ActionResponse;
 use haddowg\JsonApi\OpenApi\Metadata\ActionResponses;
+use haddowg\JsonApi\OpenApi\Metadata\OperationExample;
 use haddowg\JsonApiBundle\Action\AcceptedMediaTypes;
 use haddowg\JsonApiBundle\Action\ActionInput;
 use haddowg\JsonApiBundle\Action\ActionScope;
@@ -90,6 +91,11 @@ use haddowg\JsonApiBundle\Action\ActionScope;
  * link to an action it cannot invoke. It is **resource-scope only** — a
  * {@see ActionScope::Collection} action has no resource to hang a link on, so
  * `asLink: true` with a collection scope is a build-time error.
+ *
+ * `example` replaces or switches off the worked example the OpenAPI document generates
+ * for the action's operation (core ADR 0176): `null` keeps the generated one, `false`
+ * emits none, and a core `OperationExample` replaces the request and the per-status
+ * responses it names.
  */
 #[\Attribute(\Attribute::TARGET_CLASS)]
 final readonly class AsJsonApiAction
@@ -119,6 +125,7 @@ final readonly class AsJsonApiAction
      * @param ?string                            $summary  the OpenAPI operation summary, a short line; omitted from the document when null
      * @param ?string                            $description the OpenAPI operation description; omitted from the document when null
      * @param array<int|string, string|ActionInput|AcceptedBody> $accepts the request media types the action accepts: a media type read in the action's input mode, a media type key mapped to the ActionInput it is read in, or a core AcceptedBody that also carries the body's schema
+     * @param OperationExample|false|null        $example  replaces parts of the OpenAPI example generated for the action's operation; `false` emits none, null keeps the generated one
      */
     public function __construct(
         public string $type,
@@ -136,6 +143,7 @@ final readonly class AsJsonApiAction
         public ?string $summary = null,
         public ?string $description = null,
         array $accepts = [],
+        public OperationExample|false|null $example = null,
     ) {
         $this->accepts = AcceptedMediaTypes::normalise($accepts, $input, $path);
 

@@ -31,7 +31,13 @@ use haddowg\JsonApiBundle\Operation\Operation;
  * methods are hand-written — `getAttributes()` returns a map of callables, each
  * invoked only for the members that survive sparse-fieldset filtering.
  */
-#[AsJsonApiSerializer(type: 'charts', operations: [Operation::FetchCollection, Operation::FetchOne])]
+#[AsJsonApiSerializer(
+    type: 'charts',
+    operations: [Operation::FetchCollection, Operation::FetchOne],
+    // A hand-written serializer declares no fields, so there is no id example to build
+    // the OpenAPI operation examples from; switch them off rather than leave a gap.
+    operationExamples: ['fetchCollection' => false, 'fetchOne' => false],
+)]
 final class ChartSerializer extends AbstractSerializer implements UriTypeAwareInterface
 {
     public function uriType(): string

@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\DependencyInjection\Compiler;
 
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApiBundle\JsonApiBundle;
+use haddowg\JsonApiBundle\OpenApi\Metadata\OperationExampleCodec;
 use haddowg\JsonApiBundle\OpenApi\Metadata\ResourceDescriptionRegistry;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
@@ -31,6 +32,10 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
  * The declared OpenAPI vendor extensions (bundle ADR 0127) ride the same way, as one
  * JSON `openapi_extensions` tag attribute, into the registry's `$extensions` argument.
  * A standalone serializer ({@see JsonApiBundle::SERIALIZER_TAG}) can declare them too.
+ *
+ * The operation example overrides (core ADR 0176) ride as one JSON `operation_examples`
+ * tag attribute, from a resource or a standalone serializer, into the registry's
+ * `$examples` argument.
  */
 final class ResourceDescriptionPass implements CompilerPassInterface
 {
@@ -40,7 +45,7 @@ final class ResourceDescriptionPass implements CompilerPassInterface
             return;
         }
 
-        /** @var array<string, array{descriptions: array<string, array{description?: string, operations?: array<string, string>, singular?: string}>, extensions: array<string, array{type: array<string, mixed>, operations: array<string, array<string, mixed>>}>}> $byServer */
+        /** @var array<string, array{descriptions: array<string, array{description?: string, operations?: array<string, string>, singular?: string}>, extensions: array<string, array{type: array<string, mixed>, operations: array<string, array<string, mixed>>}>, examples: array<string, array<string, array{request: mixed, responses: array<int|string, mixed>}|false>>}> $byServer */
         $byServer = [];
 
         foreach ($container->findTaggedServiceIds(JsonApiBundle::RESOURCE_TAG) as $id => $tags) {
@@ -76,15 +81,19 @@ final class ResourceDescriptionPass implements CompilerPassInterface
             }
 
             $declared = $this->extensionsFromTags($tags);
+            $examples = OperationExampleCodec::decodeMap($this->scalarFromTags($tags, 'operation_examples'));
 
             // Each class is recorded only under its own servers (bundle ADR 0144).
             foreach ($this->serversFromTags($tags) as $server) {
-                $byServer[$server] ??= ['descriptions' => [], 'extensions' => []];
+                $byServer[$server] ??= ['descriptions' => [], 'extensions' => [], 'examples' => []];
                 if ($set !== []) {
                     $byServer[$server]['descriptions'][$type] = $set;
                 }
                 if ($declared !== null) {
                     $byServer[$server]['extensions'][$type] = $declared;
+                }
+                if ($examples !== []) {
+                    $byServer[$server]['examples'][$type] = $examples;
                 }
             }
         }
@@ -92,23 +101,30 @@ final class ResourceDescriptionPass implements CompilerPassInterface
         foreach ($container->findTaggedServiceIds(JsonApiBundle::SERIALIZER_TAG) as $tags) {
             $type = $this->scalarFromTags($tags, 'type');
             $declared = $this->extensionsFromTags($tags);
-            if ($type === null || $declared === null) {
+            $examples = OperationExampleCodec::decodeMap($this->scalarFromTags($tags, 'operation_examples'));
+            if ($type === null || ($declared === null && $examples === [])) {
                 continue;
             }
 
             foreach ($this->serversFromTags($tags) as $server) {
-                $byServer[$server] ??= ['descriptions' => [], 'extensions' => []];
-                $byServer[$server]['extensions'][$type] ??= $declared;
+                $byServer[$server] ??= ['descriptions' => [], 'extensions' => [], 'examples' => []];
+                if ($declared !== null) {
+                    $byServer[$server]['extensions'][$type] ??= $declared;
+                }
+                if ($examples !== []) {
+                    $byServer[$server]['examples'][$type] ??= $examples;
+                }
             }
         }
 
-        $default = $byServer[ServerProvider::DEFAULT_SERVER] ?? ['descriptions' => [], 'extensions' => []];
+        $default = $byServer[ServerProvider::DEFAULT_SERVER] ?? ['descriptions' => [], 'extensions' => [], 'examples' => []];
         unset($byServer[ServerProvider::DEFAULT_SERVER]);
 
         $container->getDefinition(ResourceDescriptionRegistry::class)
             ->setArgument('$descriptions', $default['descriptions'])
             ->setArgument('$extensions', $default['extensions'])
-            ->setArgument('$servers', $byServer);
+            ->setArgument('$servers', $byServer)
+            ->setArgument('$examples', $default['examples']);
     }
 
     /**

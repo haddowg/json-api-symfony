@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\OpenApi\Metadata;
 
+use haddowg\JsonApi\OpenApi\Metadata\OperationExample;
 use haddowg\JsonApi\OpenApi\Metadata\OperationType;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 
@@ -35,6 +36,10 @@ use haddowg\JsonApiBundle\Server\ServerProvider;
  * the type-wide set and the per-CRUD-operation sets, which core merges onto the
  * type's operations. Core has no resource method hook for extensions, so the
  * attribute is their only declaration site.
+ *
+ * Last, it carries the declared operation example overrides
+ * (`#[AsJsonApiResource(operationExamples: …)]`, core ADR 0176), held as scalars and
+ * rebuilt into core's {@see OperationExample} on read.
  */
 final class ResourceDescriptionRegistry
 {
@@ -50,23 +55,33 @@ final class ResourceDescriptionRegistry
     /** @var array<string, array<string, array{type: array<string, mixed>, operations: array<string, array<string, mixed>>}>> */
     private array $extensionsByType = [];
 
+    /** @var array<string, array<string, array<string, array{request: mixed, responses: array<int|string, mixed>}|false>>> */
+    private array $examplesByType = [];
+
     /**
      * @param array<string, array{description?: string|null, operations?: array<string, string>, singular?: string|null}> $descriptions the default server's
      * @param array<string, array{type?: array<string, mixed>, operations?: array<string, array<string, mixed>>}>       $extensions   the default server's
      * @param array<string, array{
      *     descriptions?: array<string, array{description?: string|null, operations?: array<string, string>, singular?: string|null}>,
      *     extensions?: array<string, array{type?: array<string, mixed>, operations?: array<string, array<string, mixed>>}>,
+     *     examples?: array<string, array<string, array{request: mixed, responses: array<int|string, mixed>}|false>>,
      * }> $servers every other server's, keyed by server name
+     * @param array<string, array<string, array{request: mixed, responses: array<int|string, mixed>}|false>> $examples the default server's operation example overrides, by type then operation name
      */
-    public function __construct(array $descriptions = [], array $extensions = [], array $servers = [])
+    public function __construct(array $descriptions = [], array $extensions = [], array $servers = [], array $examples = [])
     {
         $default = $servers[ServerProvider::DEFAULT_SERVER] ?? [];
         $servers[ServerProvider::DEFAULT_SERVER] = [
             'descriptions' => ($default['descriptions'] ?? []) + $descriptions,
             'extensions' => ($default['extensions'] ?? []) + $extensions,
+            'examples' => ($default['examples'] ?? []) + $examples,
         ];
 
         foreach ($servers as $server => $declared) {
+            foreach ($declared['examples'] ?? [] as $type => $set) {
+                $this->examplesByType[$server][$type] = $set;
+            }
+
             foreach ($declared['extensions'] ?? [] as $type => $set) {
                 $this->extensionsByType[$server][$type] = [
                     'type' => $set['type'] ?? [],
@@ -147,5 +162,16 @@ final class ResourceDescriptionRegistry
     public function operationExtensionsFor(string $type, OperationType $operation, string $server = ServerProvider::DEFAULT_SERVER): array
     {
         return $this->extensionsByType[$server][$type]['operations'][$operation->value] ?? [];
+    }
+
+    /**
+     * The operation example overrides declared for `$type` on `$server`, keyed by core's
+     * operation name; empty when none.
+     *
+     * @return array<string, OperationExample|false>
+     */
+    public function operationExamplesFor(string $type, string $server = ServerProvider::DEFAULT_SERVER): array
+    {
+        return \array_map(OperationExampleCodec::toExample(...), $this->examplesByType[$server][$type] ?? []);
     }
 }

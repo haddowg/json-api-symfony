@@ -60,12 +60,12 @@ final class PublicProfileResource extends AbstractResource
     public function fields(): array
     {
         return [
-            Id::make(),
+            Id::make()->example('1'),
             // The ONLY public attribute. The User entity's email / birthDate /
             // preferences / lastSeenIp / password columns are deliberately NOT
             // declared, so this view can never render them — the same row, a
             // strictly narrower projection than `users`.
-            Str::make('displayName')->sortable()->guaranteed(),
+            Str::make('displayName')->example('Ada')->sortable()->guaranteed(),
         ];
     }
 

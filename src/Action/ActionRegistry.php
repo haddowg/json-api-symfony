@@ -40,6 +40,7 @@ use Psr\Container\ContainerInterface;
  *     summary?: ?string,
  *     description?: ?string,
  *     accepts?: list<array{mediaType: string, input: string, schema: array<string, mixed>|string|null, binary: bool}>,
+ *     example?: array{request: mixed, responses: array<int|string, mixed>}|false|null,
  * }
  */
 final class ActionRegistry
@@ -115,6 +116,7 @@ final class ActionRegistry
             $descriptor['summary'] ?? null,
             $descriptor['description'] ?? null,
             $descriptor['accepts'] ?? [],
+            $descriptor['example'] ?? null,
         );
     }
 

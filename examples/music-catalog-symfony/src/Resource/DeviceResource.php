@@ -58,8 +58,8 @@ final class DeviceResource extends AbstractResource
     public function fields(): array
     {
         return [
-            Id::make()->ulid()->generated(),
-            Str::make('label')->required(),
+            Id::make()->example('01J9Z8K4QK3V6W2X9Y5T7R1M0N')->ulid()->generated(),
+            Str::make('label')->example('Living room speaker')->required(),
         ];
     }
 }

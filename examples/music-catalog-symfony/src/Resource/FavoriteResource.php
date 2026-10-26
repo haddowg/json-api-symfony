@@ -38,8 +38,8 @@ final class FavoriteResource extends AbstractResource
             // keyed by a database-assigned auto-increment integer, so a plain
             // `Id::make()` sets nothing on create and the DB assigns the id — read back
             // on the `201`.
-            Id::make(),
-            DateTime::make('favoritedAt')->readOnlyOnUpdate(),
+            Id::make()->example('1'),
+            DateTime::make('favoritedAt')->example('2024-06-01T09:30:00+00:00')->readOnlyOnUpdate(),
 
             // Default relation reader: `user` reads the ManyToOne straight off the
             // entity. The target type is `public-profiles`, not `users`: `favorites`

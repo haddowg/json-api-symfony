@@ -43,8 +43,8 @@ final class ReleaseResource extends AbstractResource
     public function fields(): array
     {
         return [
-            Id::make(),
-            Str::make('catalogNumber')->required()->maxLength(40)->sortable(),
+            Id::make()->example('1'),
+            Str::make('catalogNumber')->example('PCS 7088')->required()->maxLength(40)->sortable(),
 
             // A discriminated union: the `medium` key picks the variant, and only
             // that variant's children validate. An unknown medium is a 422 at
@@ -52,8 +52,8 @@ final class ReleaseResource extends AbstractResource
             OneOf::make('format')->nullable()->discriminator('medium')
                 ->variant(
                     'vinyl',
-                    Integer::make('rpm')->required()->min(16)->max(78),
-                    Boolean::make('coloured'),
+                    Integer::make('rpm')->example(33)->required()->min(16)->max(78),
+                    Boolean::make('coloured')->example(false),
                 )
                 ->variant(
                     'cd',
@@ -68,13 +68,13 @@ final class ReleaseResource extends AbstractResource
             // A typed object in one value: children declare their own constraints
             // and cascade to /data/attributes/packaging/<child> on violation.
             Obj::make('packaging')->nullable()->fields(
-                Str::make('material')->required()->maxLength(40),
-                Boolean::make('gatefold'),
+                Str::make('material')->example('card')->required()->maxLength(40),
+                Boolean::make('gatefold')->example(true),
             ),
 
             // Assertional shapes over free-form maps: `availability` must match at
             // least one branch (worldwide flag or an explicit region list) …
-            ArrayHash::make('availability')->nullable()->constrain(
+            ArrayHash::make('availability')->example(['worldwide' => true])->nullable()->constrain(
                 Shape::anyOf(
                     Schema::ofType('object')
                         ->withProperties(['worldwide' => Schema::ofType('boolean')->withConst(true)])
@@ -89,7 +89,7 @@ final class ReleaseResource extends AbstractResource
 
             // … while `dimensions` must satisfy every aspect schema at once (the
             // measurements and the unit are independent facets of one value).
-            ArrayHash::make('dimensions')->nullable()->constrain(
+            ArrayHash::make('dimensions')->example(['widthMm' => 315, 'heightMm' => 315, 'depthMm' => 4])->nullable()->constrain(
                 Shape::allOf(
                     Schema::ofType('object')
                         ->withProperties([

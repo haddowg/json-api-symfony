@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\Tests\Attribute;
 use haddowg\JsonApi\OpenApi\Metadata\Accepted;
 use haddowg\JsonApi\OpenApi\Metadata\Created;
 use haddowg\JsonApi\OpenApi\Metadata\Ok;
+use haddowg\JsonApi\OpenApi\Metadata\OperationExample;
 use haddowg\JsonApi\OpenApi\Metadata\SeeOther;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 use haddowg\JsonApiBundle\Operation\Operation;
@@ -171,5 +172,32 @@ final class AsJsonApiResourceTest extends TestCase
         $this->expectExceptionMessage('operationExtensions["Create"] targets an operation this type does not expose');
 
         new AsJsonApiResource(readOnly: true, operationExtensions: [Operation::Create->name => ['x-feature' => 'agency']]);
+    }
+
+    #[Test]
+    public function operationExamplesAreCarriedAsDeclared(): void
+    {
+        $example = new OperationExample(responses: [200 => ['meta' => ['ok' => true]]]);
+        $attribute = new AsJsonApiResource(operationExamples: ['fetchOne' => $example, 'fetchRelated.author' => false]);
+
+        self::assertSame(['fetchOne' => $example, 'fetchRelated.author' => false], $attribute->operationExamples);
+    }
+
+    #[Test]
+    public function anOperationExampleForAnOperationTheTypeDoesNotExposeIsRejected(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('operationExamples["create"] targets an operation this type does not expose');
+
+        new AsJsonApiResource(readOnly: true, operationExamples: ['create' => false]);
+    }
+
+    #[Test]
+    public function anOperationExampleKeyedByTheBundleCaseNameIsRejected(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('unknown operation key "Create"');
+
+        new AsJsonApiResource(operationExamples: [Operation::Create->name => false]);
     }
 }

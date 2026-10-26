@@ -8,6 +8,7 @@ use haddowg\JsonApi\OpenApi\EnumDescriptionMode;
 use haddowg\JsonApi\OpenApi\OpenApi;
 use haddowg\JsonApi\OpenApi\OpenApiProjector;
 use haddowg\JsonApi\OpenApi\OperationProjector;
+use haddowg\JsonApi\OpenApi\Projection;
 use haddowg\JsonApi\OpenApi\SchemaProjector;
 use haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource;
 use haddowg\JsonApiBundle\Server\ServerProvider;
@@ -82,12 +83,22 @@ final class DocumentFactory
      */
     public function forServer(?string $serverName = null): OpenApi
     {
-        $serverName ??= ServerProvider::DEFAULT_SERVER;
+        return $this->projectionForServer($serverName)->document;
+    }
 
-        return $this->decorate(
-            $this->projector->project($this->metadata->forServer($serverName)),
-            $serverName,
-        );
+    /**
+     * The decorated document for `$serverName` with the operation examples the projector
+     * could not build, one {@see \haddowg\JsonApi\OpenApi\MissingExample} per missing
+     * declared value (core ADR 0176). The export command prints them.
+     *
+     * @throws \LogicException when an unknown server name is requested
+     */
+    public function projectionForServer(?string $serverName = null): Projection
+    {
+        $serverName ??= ServerProvider::DEFAULT_SERVER;
+        $projection = $this->projector->projectWithDiagnostics($this->metadata->forServer($serverName));
+
+        return new Projection($this->decorate($projection->document, $serverName), $projection->missingExamples);
     }
 
     /**

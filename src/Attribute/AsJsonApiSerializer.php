@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Attribute;
 
+use haddowg\JsonApi\OpenApi\Metadata\OperationExample;
+use haddowg\JsonApiBundle\OpenApi\Metadata\OperationExampleCodec;
+
 /**
  * Registers the annotated {@see \haddowg\JsonApi\Serializer\SerializerInterface}
  * as the serializer for a JSON:API `type`, **without** an
@@ -38,6 +41,9 @@ namespace haddowg\JsonApiBundle\Attribute;
  * {@see \haddowg\JsonApiBundle\Operation\Operation} case name and may only name an
  * operation in `operations`. The names are validated the same way as on the resource
  * attribute.
+ *
+ * `operationExamples` replaces or switches off the type's generated OpenAPI operation
+ * examples, as on {@see AsJsonApiResource}.
  */
 #[\Attribute(\Attribute::TARGET_CLASS)]
 final readonly class AsJsonApiSerializer
@@ -48,6 +54,7 @@ final readonly class AsJsonApiSerializer
      * @param list<string>                                     $tags       the OpenAPI tag names this type is grouped under (empty = the humanized-type default)
      * @param array<string, mixed>                             $extensions OpenAPI vendor extensions (`x-…` keys) stamped on every operation of this type
      * @param array<string, array<string, mixed>>              $operationExtensions per-operation OpenAPI vendor extensions, keyed by an exposed {@see \haddowg\JsonApiBundle\Operation\Operation} case name and merged over `extensions`
+     * @param array<string, OperationExample|false|null>       $operationExamples per-operation OpenAPI example overrides, as on {@see AsJsonApiResource}
      */
     public function __construct(
         public string $type,
@@ -56,7 +63,9 @@ final readonly class AsJsonApiSerializer
         public array $tags = [],
         public array $extensions = [],
         public array $operationExtensions = [],
+        public array $operationExamples = [],
     ) {
         VendorExtensions::assertValid('AsJsonApiSerializer', $extensions, $operationExtensions, \array_values($operations));
+        OperationExampleCodec::assertValid('AsJsonApiSerializer', $operationExamples, \array_values($operations));
     }
 }

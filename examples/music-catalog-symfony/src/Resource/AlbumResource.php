@@ -55,42 +55,43 @@ final class AlbumResource extends AbstractResource
     public function fields(): array
     {
         return [
-            Id::make(),
-            Str::make('title')->required()->maxLength(200)->sortable(),
-            Decimal::make('averageRating')->readOnly()->nullable(),
+            Id::make()->example('1'),
+            Str::make('title')->example('Abbey Road')->required()->maxLength(200)->sortable(),
+            Decimal::make('averageRating')->example(4.5)->readOnly()->nullable(),
             // Cover artwork — read-only on the CRUD path; only the Raw-input `artwork`
             // upload action (G13) ever fills it. Surfaced here so the upload's
             // side-effect is observable through a normal fetch.
-            Str::make('artwork')->readOnly()->nullable(),
+            Str::make('artwork')->example('/uploads/artwork/1.png')->readOnly()->nullable(),
             // Closure bound: no future release dates, resolved at validation time so
             // it reflects "now" per request. Hydrated values normalise to UTC.
-            DateTime::make('releasedAt')
+            DateTime::make('releasedAt')->example('1969-09-26T00:00:00+00:00')
                 ->before(static fn(): \DateTimeImmutable => new \DateTimeImmutable())
                 ->useTimezone('UTC')
                 ->sortable(),
-            Boolean::make('explicit')->guaranteed(),
+            Boolean::make('explicit')->example(false)->guaranteed(),
             // Backed-enum attribute (design §4.8/D16): `->enum(AlbumStatus::class)`
             // constrains `status` to the enum's backing values and keeps the enum
             // class-string, so the OpenAPI projection emits a reusable, *described*
             // `#/components/schemas/AlbumStatus` component the docs viewer renders.
-            Str::make('status')
+            Str::make('status')->example('released')
                 ->enum(AlbumStatus::class)
                 ->guaranteed()
                 ->sortable()
                 ->describedAs('Where the album sits in its release lifecycle.'),
-            Date::make('availableFrom')->nullable(),
+            Date::make('availableFrom')->example('2024-01-01')->nullable(),
             // Directional CompareField: the operator reads `availableUntil >
             // availableFrom` — this field is the LEFT operand.
-            Date::make('availableUntil')
+            Date::make('availableUntil')->example('2026-12-31')
                 ->nullable()
                 ->compareWith('availableFrom', Comparison::GreaterThan),
             // The `releaseInfo` Map round-trips through a single JSON column (rather
             // than flat columns), via the Map-level serialize/fill hooks. The child
             // constraints still cascade to /data/attributes/releaseInfo/<child>
             // (catalogueNumber is read-only, so it never hydrates).
-            Map::make('releaseInfo')->nullable()->fields(
-                Str::make('label'),
-                Str::make('catalogueNumber')->readOnly(),
+            // The read hook shapes the value itself, so the map needs its own example.
+            Map::make('releaseInfo')->example(['label' => 'Apple Records', 'catalogueNumber' => 'PCS 7088'])->nullable()->fields(
+                Str::make('label')->example('Apple Records'),
+                Str::make('catalogueNumber')->example('PCS 7088')->readOnly(),
             )->serializeUsing(static function (mixed $model): mixed {
                 $info = $model instanceof Album ? ($model->releaseInfo ?? null) : null;
 

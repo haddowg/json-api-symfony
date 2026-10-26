@@ -16,6 +16,7 @@ use haddowg\JsonApiBundle\Action\ActionLinkContributor;
 use haddowg\JsonApiBundle\Action\ActionRegistry;
 use haddowg\JsonApiBundle\Action\ActionScope;
 use haddowg\JsonApiBundle\JsonApiBundle;
+use haddowg\JsonApiBundle\OpenApi\Metadata\OperationExampleCodec;
 use haddowg\JsonApiBundle\Operation\Operation;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Server\IdEncoderResolver;
@@ -394,7 +395,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
         }
 
         $handlerReferences = [];
-        /** @var array<string, array{type: string, path: string, methods: list<string>, scope: string, input: string, inputType: string, outputType: string, responds: list<array{kind: string, type?: string, jobType?: string, raw?: array<string, mixed>}>, security: ?string, handlerServiceId: string, server: string, tags: string, asLink: bool, summary: ?string, description: ?string, accepts: list<array{mediaType: string, input: string, schema: array<string, mixed>|string|null, binary: bool}>}> $actionDescriptors */
+        /** @var array<string, array{type: string, path: string, methods: list<string>, scope: string, input: string, inputType: string, outputType: string, responds: list<array{kind: string, type?: string, jobType?: string, raw?: array<string, mixed>}>, security: ?string, handlerServiceId: string, server: string, tags: string, asLink: bool, summary: ?string, description: ?string, accepts: list<array{mediaType: string, input: string, schema: array<string, mixed>|string|null, binary: bool}>, example: array{request: mixed, responses: array<int|string, mixed>}|false|null}> $actionDescriptors */
         $actionDescriptors = [];
         /** @var array<string, list<array{uriType: string, type: string, path: string, methods: list<string>, scope: string, name: string}>> $routeDescriptorsByServer */
         $routeDescriptorsByServer = [];
@@ -501,6 +502,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
                 $summary = \is_string($tag['summary'] ?? null) && $tag['summary'] !== '' ? $tag['summary'] : null;
                 $description = \is_string($tag['description'] ?? null) && $tag['description'] !== '' ? $tag['description'] : null;
                 $accepts = $this->parseActionAccepts($tag['accepts'] ?? null);
+                $example = OperationExampleCodec::decodeOne($tag['example'] ?? null);
 
                 // The action's OpenAPI tag refs (design §4.7): explicit refs on the
                 // action, else inherit the tags of the mount type's resource on each
@@ -557,6 +559,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
                         'summary' => $summary,
                         'description' => $description,
                         'accepts' => $accepts,
+                        'example' => $example,
                     ];
 
                     $routeDescriptorsByServer[$server][] = [

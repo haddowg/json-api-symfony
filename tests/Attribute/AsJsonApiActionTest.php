@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\Tests\Attribute;
 use haddowg\JsonApi\OpenApi\Metadata\Accepted;
 use haddowg\JsonApi\OpenApi\Metadata\ActionResource;
 use haddowg\JsonApi\OpenApi\Metadata\MetaResult;
+use haddowg\JsonApi\OpenApi\Metadata\OperationExample;
 use haddowg\JsonApi\OpenApi\Metadata\SeeOther;
 use haddowg\JsonApiBundle\Action\ActionScope;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiAction;
@@ -78,5 +79,15 @@ final class AsJsonApiActionTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
 
         new AsJsonApiAction(type: 'widgets', path: 'publish', responds: [new ActionResource('widgets'), new MetaResult()]);
+    }
+
+    #[Test]
+    public function exampleDefaultsToNullAndCarriesAnOverrideOrFalse(): void
+    {
+        self::assertNull((new AsJsonApiAction(type: 'widgets', path: 'publish'))->example);
+        self::assertFalse((new AsJsonApiAction(type: 'widgets', path: 'publish', example: false))->example);
+
+        $example = new OperationExample(responses: [200 => ['meta' => ['published' => true]]]);
+        self::assertSame($example, (new AsJsonApiAction(type: 'widgets', path: 'publish', example: $example))->example);
     }
 }
