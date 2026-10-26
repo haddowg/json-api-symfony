@@ -39,6 +39,7 @@ use haddowg\JsonApi\Resource\Constraint\UuidFormat;
 use haddowg\JsonApi\Resource\Constraint\When;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApiBundle\Validation\Constraint\NativeConstraints;
+use haddowg\JsonApiBundle\Validation\Constraint\NativeEntityConstraints;
 use haddowg\JsonApiBundle\Validation\Constraint\UniqueEntity;
 use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity as DoctrineUniqueEntity;
 use Symfony\Component\Validator\Constraint;
@@ -154,15 +155,31 @@ final class ConstraintTranslator
             $constraint instanceof After => [$this->dateBound($constraint->bound, true, 'This value should be after {{ limit }}.')],
             $constraint instanceof Before => [$this->dateBound($constraint->bound, false, 'This value should be before {{ limit }}.')],
             $constraint instanceof Between => [$this->dateRange($constraint->min, $constraint->max)],
-            $constraint instanceof UniqueEntity => [new DoctrineUniqueEntity(
-                fields: $constraint->fields,
-                message: $constraint->message ?? 'This value is already used.',
-            )],
+            $constraint instanceof UniqueEntity => [$this->uniqueEntity($constraint)],
+            $constraint instanceof NativeEntityConstraints => $constraint->constraints,
             // A NativeConstraints carrier holds ready-made Symfony constraints — run them
             // directly; the OpenAPI half rides core's ProvidesJsonSchema (contribute()).
             $constraint instanceof NativeConstraints => $constraint->constraints,
             default => $this->translateExtension($constraint),
         };
+    }
+
+    /**
+     * Symfony's doctrine-bridge `UniqueEntity`, passing only the options the bundle's
+     * constraint sets so each unset one keeps Symfony's default.
+     */
+    private function uniqueEntity(UniqueEntity $constraint): DoctrineUniqueEntity
+    {
+        $options = \array_filter([
+            'fields' => $constraint->fields,
+            'message' => $constraint->message ?? 'This value is already used.',
+            'repositoryMethod' => $constraint->repositoryMethod,
+            'errorPath' => $constraint->errorPath,
+            'ignoreNull' => $constraint->ignoreNull,
+            'entityClass' => $constraint->entityClass,
+        ], static fn(mixed $value): bool => $value !== null);
+
+        return new DoctrineUniqueEntity(...$options);
     }
 
     /**

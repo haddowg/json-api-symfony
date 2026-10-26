@@ -269,6 +269,7 @@ for the vocabulary; this table documents only the Symfony mapping.
 | `When` | `Callback` | see below |
 | `After` / `Before` / `Between` | `Callback` | see below |
 | `UniqueEntity` | doctrine-bridge `UniqueEntity` | entity-level pass — see below |
+| `NativeEntityConstraints` | the wrapped Symfony constraints | entity-level pass — see below |
 | *anything else* | extension translator | first `supports()` match; else `LogicException` |
 
 `Required` and `Nullable` are deliberately **absent** from this table — they are
@@ -381,6 +382,50 @@ repository and — on update — excludes the current record by its identifier:
 // POST /admin/users with a seeded email → 422 at /data/attributes/email
 // PATCH /admin/users/1 re-supplying the user's own email → 200 (excludes self)
 ```
+
+The other options of Symfony's constraint pass through, and each one left unset keeps
+Symfony's default:
+
+```php
+new UniqueEntity(
+    ['name'],
+    repositoryMethod: 'findVisible', // the repository method that finds clashing rows
+    errorPath: 'name',               // the field the 422 points at
+    ignoreNull: true,                // skip the check when the field is null
+    entityClass: Advertiser::class,  // check against another class, such as an inheritance root
+),
+```
+
+A `repositoryMethod` is how to say "unique among the visible advertisers": it receives
+the criteria Symfony built from the fields and returns the rows that count as a clash.
+
+### Resource-level entity constraints
+
+A rule about the whole entity, rather than one field, belongs on the resource.
+Implement
+[`DeclaresEntityConstraintsInterface`](../src/Validation/DeclaresEntityConstraintsInterface.php)
+and return entity constraints from `entityConstraints()`. They run in this pass with
+the field-attached ones.
+[`NativeEntityConstraints`](../src/Validation/Constraint/NativeEntityConstraints.php)
+is the class-level counterpart of `NativeConstraints`: it carries ready-made Symfony
+class constraints, so an application's own constraint needs no translator:
+
+```php
+final class AdvertiserResource extends AbstractResource implements DeclaresEntityConstraintsInterface
+{
+    public function entityConstraints(): array
+    {
+        return [
+            NativeEntityConstraints::make(new AdvertiserLimit())->onCreate(),
+            new UniqueEntity(['name', 'agency'], errorPath: 'name'),
+        ];
+    }
+}
+```
+
+Each violation is a `422`. One without a property path points at `/data`, one whose
+path names a relationship at `/data/relationships/<name>`, and any other at
+`/data/attributes/<path>`.
 
 > **`UniqueEntity` requires `symfony/doctrine-bridge` at runtime** — that package
 > ships Symfony's `UniqueEntity` constraint and validator, which `ConstraintTranslator`
