@@ -90,4 +90,42 @@ final class AsJsonApiActionTest extends TestCase
         $example = new OperationExample(responses: [200 => ['meta' => ['published' => true]]]);
         self::assertSame($example, (new AsJsonApiAction(type: 'widgets', path: 'publish', example: $example))->example);
     }
+
+    #[Test]
+    public function safetyAndExtensionsDefaultToUndeclared(): void
+    {
+        $attribute = new AsJsonApiAction(type: 'widgets', path: 'publish');
+
+        self::assertNull($attribute->readOnly);
+        self::assertNull($attribute->destructive);
+        self::assertNull($attribute->idempotent);
+        self::assertSame([], $attribute->extensions);
+    }
+
+    #[Test]
+    public function safetyAndExtensionsArePassedThrough(): void
+    {
+        $attribute = new AsJsonApiAction(
+            type: 'widgets',
+            path: 'purge',
+            readOnly: false,
+            destructive: true,
+            idempotent: true,
+            extensions: ['x-workflows' => ['workflowId' => 'purgeWidget']],
+        );
+
+        self::assertFalse($attribute->readOnly);
+        self::assertTrue($attribute->destructive);
+        self::assertTrue($attribute->idempotent);
+        self::assertSame(['x-workflows' => ['workflowId' => 'purgeWidget']], $attribute->extensions);
+    }
+
+    #[Test]
+    public function anExtensionNameWithoutTheXPrefixIsRejected(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('AsJsonApiAction extensions declares "workflows"');
+
+        new AsJsonApiAction(type: 'widgets', path: 'purge', extensions: ['workflows' => []]);
+    }
 }

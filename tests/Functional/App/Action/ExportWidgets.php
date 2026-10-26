@@ -28,6 +28,8 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiAction;
         new RawResult('application/pdf', binary: true),
         new RawResult('application/json', schema: WidgetExportSummary::class),
     ],
+    readOnly: true,
+    idempotent: true,
 )]
 final class ExportWidgets implements ActionHandlerInterface
 {

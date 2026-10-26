@@ -96,6 +96,15 @@ use haddowg\JsonApiBundle\Action\ActionScope;
  * for the action's operation (core ADR 0176): `null` keeps the generated one, `false`
  * emits none, and a core `OperationExample` replaces the request and the per-status
  * responses it names.
+ *
+ * `readOnly`, `destructive` and `idempotent` say how safe the action is to call (core ADR
+ * 0179). The OpenAPI document stamps whichever are declared on the action's operation as
+ * one `x-safety` object; `null` leaves a flag out. An action declared both read-only and
+ * destructive fails the container build.
+ *
+ * `extensions` are OpenAPI vendor extensions (`x-…` keys) for the action's own
+ * operation, merged over the mount type's type-wide `extensions` so the action's value
+ * wins on a shared key.
  */
 #[\Attribute(\Attribute::TARGET_CLASS)]
 final readonly class AsJsonApiAction
@@ -126,6 +135,10 @@ final readonly class AsJsonApiAction
      * @param ?string                            $description the OpenAPI operation description; omitted from the document when null
      * @param array<int|string, string|ActionInput|AcceptedBody> $accepts the request media types the action accepts: a media type read in the action's input mode, a media type key mapped to the ActionInput it is read in, or a core AcceptedBody that also carries the body's schema
      * @param OperationExample|false|null        $example  replaces parts of the OpenAPI example generated for the action's operation; `false` emits none, null keeps the generated one
+     * @param ?bool                              $readOnly    whether the action leaves server state unchanged; null leaves it undeclared
+     * @param ?bool                              $destructive whether the action may delete or irreversibly change data; null leaves it undeclared
+     * @param ?bool                              $idempotent  whether calling the action again with the same input has no further effect; null leaves it undeclared
+     * @param array<string, mixed>               $extensions  OpenAPI vendor extensions (`x-…` keys) for the action's own operation
      */
     public function __construct(
         public string $type,
@@ -144,7 +157,13 @@ final readonly class AsJsonApiAction
         public ?string $description = null,
         array $accepts = [],
         public OperationExample|false|null $example = null,
+        public ?bool $readOnly = null,
+        public ?bool $destructive = null,
+        public ?bool $idempotent = null,
+        public array $extensions = [],
     ) {
+        VendorExtensions::assertValid('AsJsonApiAction', $extensions, [], []);
+
         $this->accepts = AcceptedMediaTypes::normalise($accepts, $input, $path);
 
         $responds = $responds === null ? [] : (\is_array($responds) ? \array_values($responds) : [$responds]);

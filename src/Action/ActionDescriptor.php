@@ -31,6 +31,10 @@ namespace haddowg\JsonApiBundle\Action;
  * `example` is the declared OpenAPI example override in the same scalar form: `null`
  * keeps the generated example, `false` emits none, and `{request, responses}` replaces
  * those parts.
+ *
+ * `readOnly`, `destructive` and `idempotent` are the declared safety flags (core ADR
+ * 0179), `null` when undeclared, and `extensions` the action's own OpenAPI vendor
+ * extensions.
  */
 final readonly class ActionDescriptor
 {
@@ -43,6 +47,7 @@ final readonly class ActionDescriptor
      * @param ?string                                                   $description the OpenAPI operation description; omitted from the document when null
      * @param list<array{mediaType: string, input: string, schema: array<string, mixed>|string|null, binary: bool}> $accepts the accepted request media types (see {@see AcceptedMediaTypes}); empty keeps the input mode's default
      * @param array{request: mixed, responses: array<int|string, mixed>}|false|null $example the OpenAPI example override (null keeps the generated example)
+     * @param array<string, mixed>                                      $extensions the action's own OpenAPI vendor extensions
      */
     public function __construct(
         public string $type,
@@ -62,5 +67,9 @@ final readonly class ActionDescriptor
         public ?string $description = null,
         public array $accepts = [],
         public array|false|null $example = null,
+        public ?bool $readOnly = null,
+        public ?bool $destructive = null,
+        public ?bool $idempotent = null,
+        public array $extensions = [],
     ) {}
 }

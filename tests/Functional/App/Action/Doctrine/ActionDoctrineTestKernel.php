@@ -12,6 +12,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Action\DenyingServingSubscriber;
 use haddowg\JsonApiBundle\Tests\Functional\App\Action\ExportWidgets;
 use haddowg\JsonApiBundle\Tests\Functional\App\Action\ImportWidgets;
 use haddowg\JsonApiBundle\Tests\Functional\App\Action\IngestWidgets;
+use haddowg\JsonApiBundle\Tests\Functional\App\Action\LabelWidget;
 use haddowg\JsonApiBundle\Tests\Functional\App\Action\MisdeclaredExport;
 use haddowg\JsonApiBundle\Tests\Functional\App\Action\PinWidget;
 use haddowg\JsonApiBundle\Tests\Functional\App\Action\PublishWidget;
@@ -177,6 +178,7 @@ final class ActionDoctrineTestKernel extends Kernel
         $services->set(ArchiveWidget::class);
         $services->set(RecalculateWidgets::class);
         $services->set(PinWidget::class);
+        $services->set(LabelWidget::class);
 
         $services->set(DenyingServingSubscriber::class);
     }

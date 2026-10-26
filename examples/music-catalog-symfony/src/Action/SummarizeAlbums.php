@@ -23,7 +23,8 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Album;
  * generated OpenAPI document advertises a `200` meta document rather than an albums body.
  *
  * A meta document has no fields to build an example from, so `example` supplies the
- * response the generated OpenAPI document shows.
+ * response the generated OpenAPI document shows. The summary changes nothing, so the
+ * action declares itself read-only.
  */
 #[AsJsonApiAction(
     type: 'albums',
@@ -34,6 +35,7 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Album;
     example: new OperationExample(responses: [
         200 => ['meta' => ['albums' => ['published' => 12, 'unpublished' => 3, 'total' => 15]]],
     ]),
+    readOnly: true,
 )]
 final class SummarizeAlbums implements ActionHandlerInterface
 {

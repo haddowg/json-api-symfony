@@ -19,7 +19,8 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\OpenApi\AlbumCatalogueStats;
 /**
  * `GET /albums/-actions/export` answers in the format the client's `Accept` asks for: a
  * JSON:API meta document, a CSV of the albums, a PDF report or plain JSON counts. The
- * CSV and PDF come back as downloads.
+ * CSV and PDF come back as downloads. It changes nothing, so it declares itself read-only,
+ * which the OpenAPI document shows as `x-safety`.
  */
 #[AsJsonApiAction(
     type: 'albums',
@@ -35,6 +36,7 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\OpenApi\AlbumCatalogueStats;
     tags: ['Catalog'],
     summary: 'Export the album catalogue',
     description: 'Exports every album in the format the Accept header asks for: a JSON:API meta document with counts, a CSV of ids and titles, a PDF report, or the counts as plain JSON.',
+    readOnly: true,
 )]
 final class ExportAlbums implements ActionHandlerInterface
 {

@@ -492,6 +492,74 @@ abstract class CustomActionConformanceTestCase extends JsonApiFunctionalTestCase
         self::assertNotNull(self::at($document, 'paths', '/actionWidgets/-actions/export', 'get', 'responses', '200', 'headers', 'Content-Disposition'));
     }
 
+    #[Test]
+    #[Group('spec:openapi')]
+    public function anActionStampsOnlyTheSafetyItDeclares(): void
+    {
+        $document = $this->document();
+
+        self::assertSame(['readOnly' => true, 'idempotent' => true], self::at($document, 'paths', '/actionWidgets/-actions/export', 'get', 'x-safety'));
+        self::assertSame(['destructive' => true], self::at($document, 'paths', '/actionWidgets/{id}/-actions/archive', 'post', 'x-safety'));
+        self::assertSame(['idempotent' => true], self::at($document, 'paths', '/actionWidgets/{id}/-actions/label', 'put', 'x-safety'));
+
+        $publish = self::at($document, 'paths', '/actionWidgets/{id}/-actions/publish', 'post');
+        self::assertIsArray($publish);
+        self::assertArrayNotHasKey('x-safety', $publish);
+
+        $contract = self::at($document, 'info', 'x-generator', 'contract');
+        self::assertSame(15, $contract);
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    public function anActionCarriesItsOwnExtensions(): void
+    {
+        $document = $this->document();
+
+        foreach (['put', 'delete'] as $method) {
+            self::assertSame(['workflowId' => 'labelWidget'], self::at($document, 'paths', '/actionWidgets/{id}/-actions/label', $method, 'x-workflows'), $method);
+        }
+
+        $publish = self::at($document, 'paths', '/actionWidgets/{id}/-actions/publish', 'post');
+        self::assertIsArray($publish);
+        self::assertArrayNotHasKey('x-workflows', $publish);
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    public function aMultiMethodActionGetsAnOperationIdPerMethod(): void
+    {
+        $document = $this->document();
+
+        self::assertSame('action.actionWidgets.label.put', self::at($document, 'paths', '/actionWidgets/{id}/-actions/label', 'put', 'operationId'));
+        self::assertSame('action.actionWidgets.label.delete', self::at($document, 'paths', '/actionWidgets/{id}/-actions/label', 'delete', 'operationId'));
+        // A single-method action keeps the id without a method.
+        self::assertSame('action.actionWidgets.publish', self::at($document, 'paths', '/actionWidgets/{id}/-actions/publish', 'post', 'operationId'));
+    }
+
+    #[Test]
+    #[Group('spec:actions')]
+    public function aMultiMethodActionAnswersEveryDeclaredMethod(): void
+    {
+        foreach (['PUT', 'DELETE'] as $method) {
+            $response = $this->action('/actionWidgets/1/-actions/label', $method);
+            self::assertSame(204, $response->getStatusCode(), $method . ': ' . (string) $response->getContent());
+        }
+
+        self::assertSame(405, $this->action('/actionWidgets/1/-actions/label', 'PATCH')->getStatusCode());
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function document(): array
+    {
+        $factory = static::getContainer()->get(DocumentFactory::class);
+        self::assertInstanceOf(DocumentFactory::class, $factory);
+
+        return $factory->forServer()->toArray();
+    }
+
     private function export(string $accept): Response
     {
         return $this->action('/actionWidgets/-actions/export', 'GET', null, ['HTTP_ACCEPT' => $accept]);

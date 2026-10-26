@@ -617,6 +617,10 @@ final class MetadataSource
             $action->description,
             $action->accepts,
             $action->example,
+            $action->readOnly,
+            $action->destructive,
+            $action->idempotent,
+            $action->extensions,
         );
     }
 
