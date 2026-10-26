@@ -172,14 +172,18 @@ fresh input object and hydrates the body into it:
 ### `Raw` — a non-JSON:API body (uploads, blobs)
 
 `Raw` is the escape hatch for bodies that aren't JSON:API — a file upload, a CSV,
-a binary blob. The request content-type assertion is relaxed and **nothing** is
-parsed or validated; the handler reads the request directly:
+a binary blob. **Nothing** is parsed or validated; the handler reads the request
+directly. With no `accepts` list, a `Raw` action takes a body of any media type except
+the three a browser can send cross-origin without a preflight: `multipart/form-data`,
+`application/x-www-form-urlencoded` and `text/plain`. An upload sent as a form must
+therefore list `multipart/form-data` in `accepts`:
 
 ```php
 #[AsJsonApiAction(
     type: 'tracks',
     path: 'waveform',
     input: ActionInput::Raw,
+    accepts: ['multipart/form-data'],
     responds: [new NoContent()],
 )]
 final class UploadWaveform implements ActionHandlerInterface
@@ -187,7 +191,7 @@ final class UploadWaveform implements ActionHandlerInterface
     public function handle(ActionContext $context): NoContentResponse
     {
         $track  = $context->entity();
-        $upload = $context->request()->getUploadedFile('file');   // raw multipart upload
+        $upload = $context->request()->getUploadedFiles()['file'] ?? null;
         // …store the file, attach it to $track…
 
         return $context->noContent();
@@ -199,6 +203,48 @@ final class UploadWaveform implements ActionHandlerInterface
 POST /tracks/7/-actions/waveform
 Content-Type: multipart/form-data; boundary=…
 ```
+
+### Accepting several request media types (`accepts`)
+
+`accepts` lists the request media types an action takes, and each one can be read in
+its own mode:
+
+```php
+#[AsJsonApiAction(
+    type: 'tracks',
+    path: 'import',
+    scope: ActionScope::Collection,
+    input: ActionInput::Raw,
+    accepts: [
+        'text/csv',                                             // read in the action's mode, Raw
+        'image/*',                                              // any image type
+        'application/vnd.api+json' => ActionInput::Document,    // a JSON:API document, hydrated
+        new AcceptedBody('application/json', schema: TrackRows::class),
+    ],
+)]
+```
+
+An entry is a media type read in the action's own `input` mode, a media type key
+mapped to the `ActionInput` it is read in, or core's `AcceptedBody`, which also gives
+the OpenAPI document the body's schema. Wildcards such as `image/*` match any subtype,
+and parameters such as `charset` or a multipart `boundary` never stop a match. The three
+cross-origin form types match only when listed by name, never through a wildcard.
+
+A body whose `Content-Type` matches nothing listed is a `415`. The handler reads the
+matched type from `$context->requestMediaType()` (`image/png` for an upload matched by
+`image/*`), and a body read as a `Document` arrives hydrated on `$context->input()`. In
+the OpenAPI document each entry becomes its own `requestBody.content` member, and the
+operation lists the `415`.
+
+### The request `Content-Type`
+
+Every `POST` must send a `Content-Type`, even one with no body, and so must a `PATCH`,
+`PUT` or `DELETE` that has a body. For CRUD writes, Atomic Operations and `None` or
+`Document` actions it must be `application/vnd.api+json`; anything else is a `415`
+(core ADR 0172). A bodyless `POST` sent as `application/vnd.api+json` passes any action,
+whatever its `accepts`, and the handler sees no body: clients send that type on every
+`POST`, and it cannot be sent cross-origin without a preflight. A bodyless `PATCH`,
+`PUT` or `DELETE` needs no `Content-Type`.
 
 ## Custom input and output types
 

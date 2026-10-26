@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Attribute;
 
+use haddowg\JsonApi\OpenApi\Metadata\AcceptedBody;
 use haddowg\JsonApi\OpenApi\Metadata\ActionResponse;
 use haddowg\JsonApi\OpenApi\Metadata\ActionResponses;
+use haddowg\JsonApiBundle\Action\AcceptedMediaTypes;
 use haddowg\JsonApiBundle\Action\ActionInput;
 use haddowg\JsonApiBundle\Action\ActionScope;
 
@@ -102,12 +104,21 @@ final readonly class AsJsonApiAction
     public array $responds;
 
     /**
+     * The request media types the action accepts, normalised; `[]` keeps the input
+     * mode's default.
+     *
+     * @var list<array{mediaType: string, input: string, schema: array<string, mixed>|string|null, binary: bool}>
+     */
+    public array $accepts;
+
+    /**
      * @param list<string>                       $methods  the author-declared HTTP method allow-list (default `['POST']`)
      * @param ActionResponse|list<ActionResponse>|null $responds the action's success response set (single or list); omitted = a `200` resource document of the mount type
      * @param list<string>                       $tags     the OpenAPI tag names this action is grouped under (empty = inherit the mount type's resource tags)
      * @param bool                               $asLink   expose the action as a security-aware `links` member on the mount type's resources (resource scope only)
      * @param ?string                            $summary  the OpenAPI operation summary, a short line; omitted from the document when null
      * @param ?string                            $description the OpenAPI operation description; omitted from the document when null
+     * @param array<int|string, string|ActionInput|AcceptedBody> $accepts the request media types the action accepts: a media type read in the action's input mode, a media type key mapped to the ActionInput it is read in, or a core AcceptedBody that also carries the body's schema
      */
     public function __construct(
         public string $type,
@@ -124,7 +135,10 @@ final readonly class AsJsonApiAction
         public bool $asLink = false,
         public ?string $summary = null,
         public ?string $description = null,
+        array $accepts = [],
     ) {
+        $this->accepts = AcceptedMediaTypes::normalise($accepts, $input, $path);
+
         $responds = $responds === null ? [] : (\is_array($responds) ? \array_values($responds) : [$responds]);
         if ($responds !== []) {
             ActionResponses::validate($responds);

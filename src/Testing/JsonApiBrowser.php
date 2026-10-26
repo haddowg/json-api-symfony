@@ -640,8 +640,8 @@ class JsonApiBrowser extends KernelBrowser
 
     /**
      * The per-request `$_SERVER` defaults seam: the JSON:API content negotiation
-     * headers applied to every request. `$hasBody` is true for a write, so a
-     * `Content-Type` is added only when a body is sent. Override to negotiate a
+     * headers applied to every request. `$hasBody` is true when a body is sent and for
+     * every `POST`, so a `Content-Type` is added for those. Override to negotiate a
      * different media-type profile or to add standing headers.
      *
      * @return array<string, mixed>
@@ -664,7 +664,8 @@ class JsonApiBrowser extends KernelBrowser
      */
     private function jsonApiRequest(string $method, string $uri, ?array $document, array $server): void
     {
-        $server += $this->defaultRequestServer($document !== null);
+        // Every POST carries the JSON:API Content-Type, with a body or not (core ADR 0172).
+        $server += $this->defaultRequestServer($document !== null || \strtoupper($method) === 'POST');
         $content = $document !== null
             ? \json_encode($document, \JSON_THROW_ON_ERROR)
             : null;

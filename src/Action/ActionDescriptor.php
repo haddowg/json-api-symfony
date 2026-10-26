@@ -37,6 +37,7 @@ final readonly class ActionDescriptor
      * @param bool                                                      $asLink   expose the action as a security-aware `links` member on the mount type's resources (resource scope only)
      * @param ?string                                                   $summary  the OpenAPI operation summary, a short line; omitted from the document when null
      * @param ?string                                                   $description the OpenAPI operation description; omitted from the document when null
+     * @param list<array{mediaType: string, input: string, schema: array<string, mixed>|string|null, binary: bool}> $accepts the accepted request media types (see {@see AcceptedMediaTypes}); empty keeps the input mode's default
      */
     public function __construct(
         public string $type,
@@ -54,5 +55,6 @@ final readonly class ActionDescriptor
         public bool $asLink = false,
         public ?string $summary = null,
         public ?string $description = null,
+        public array $accepts = [],
     ) {}
 }

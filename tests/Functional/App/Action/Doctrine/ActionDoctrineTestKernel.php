@@ -10,6 +10,7 @@ use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Tests\Functional\App\Action\ArchiveWidget;
 use haddowg\JsonApiBundle\Tests\Functional\App\Action\DenyingServingSubscriber;
 use haddowg\JsonApiBundle\Tests\Functional\App\Action\ImportWidgets;
+use haddowg\JsonApiBundle\Tests\Functional\App\Action\IngestWidgets;
 use haddowg\JsonApiBundle\Tests\Functional\App\Action\PinWidget;
 use haddowg\JsonApiBundle\Tests\Functional\App\Action\PublishWidget;
 use haddowg\JsonApiBundle\Tests\Functional\App\Action\RecalculateWidgets;
@@ -166,6 +167,7 @@ final class ActionDoctrineTestKernel extends Kernel
         // The custom-action handlers (the same fixtures the in-memory kernel uses).
         $services->set(PublishWidget::class);
         $services->set(ImportWidgets::class);
+        $services->set(IngestWidgets::class);
         $services->set(UploadArtwork::class);
         $services->set(RenameWidget::class);
         $services->set(ArchiveWidget::class);
