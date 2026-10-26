@@ -144,6 +144,7 @@ final class ServerFactory
         // whether a flattened `on()` write may land on its related row (bundle ADR
         // 0139). Bound to this server in create(); null asks nothing.
         private readonly ?RelationAuthorizer $relationAuthorizer = null,
+        private readonly bool $rejectReadOnlyAttributes = false,
     ) {}
 
     /**
@@ -217,6 +218,9 @@ final class ServerFactory
             // Built links render as link objects (json_api.link_objects, or the named
             // server's own), which can carry a describedby; false renders bare strings.
             ->withLinkObjects($this->linkObjects)
+            // A write sending an attribute the client cannot write is a 403 rather than
+            // ignored (json_api.reject_read_only_attributes, or the named server's own).
+            ->withReadOnlyAttributesRejected($this->rejectReadOnlyAttributes)
             // The relation authorizer (bundle ADR 0139), bound to this server so it can
             // resolve a polymorphic relation's row type and read this server's security
             // declarations; read lazily, since the server it resolves through is the

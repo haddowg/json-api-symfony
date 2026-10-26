@@ -26,6 +26,7 @@ json_api:
     max_include_depth: 3
     strict_query_parameters: true
     link_objects: true
+    reject_read_only_attributes: false
     pagination:
         max_per_page: 50
     doctrine:
@@ -60,7 +61,8 @@ witness).
 | `schema_validation` | bool | `false` | Registers the optional opis structural linter. Enabling it without `opis/json-schema` **fails the build**. |
 | `defaults.cache_headers` | map | `{}` | Fleet-wide default HTTP cache directives for `GET` reads. A resource's own `cacheHeaders` overrides these. |
 | `defaults.deprecation` / `sunset` / `sunset_link` | scalar | `null` | Fleet-wide default deprecation/sunset headers. A resource's own `deprecation`/`sunset` overrides these. |
-| `servers` | map | `[]` | Additional **named** servers, keyed by name. Each takes `base_uri`, `version`, `output_timezone` and `link_objects`. |
+| `reject_read_only_attributes` | bool | `false` | Answer a create or update that sends an attribute the client cannot write in that request, such as a `readOnly()` or computed one, with a `403 ATTRIBUTE_WRITE_PROHIBITED` pointing at each such attribute, instead of ignoring it. The check runs before validation, so it wins over a `422`. Named servers inherit it. |
+| `servers` | map | `[]` | Additional **named** servers, keyed by name. Each takes `base_uri`, `version`, `output_timezone`, `link_objects` and `reject_read_only_attributes`. |
 
 `base_uri` and `version` configure the implicit `default` server — link core
 [server.md](https://github.com/haddowg/json-api/blob/main/docs/server.md) for what
@@ -496,6 +498,19 @@ json_api:
         legacy:
             link_objects: false
 ```
+
+`reject_read_only_attributes` inherits too, so a newer API version can refuse what an
+older one silently drops:
+
+```yaml
+json_api:
+    servers:
+        v2:
+            reject_read_only_attributes: true
+```
+
+That server's OpenAPI document then lists the `ATTRIBUTE_WRITE_PROHIBITED` error; the
+others don't.
 
 A type shared by several servers (`server: ['default', 'admin']`) renders in each
 server's own zone. Every server builds its own instance of the resource service, so
