@@ -1008,6 +1008,17 @@ final class ResourceValidator
             }
         }
 
+        if ($resource instanceof DeclaresEntityConstraintsInterface) {
+            foreach ($resource->entityConstraints() as $constraint) {
+                if (!$constraint->context()->appliesTo($creating)) {
+                    continue;
+                }
+                foreach ($this->translator->translate($constraint) as $symfonyConstraint) {
+                    $constraints[] = $symfonyConstraint;
+                }
+            }
+        }
+
         if ($constraints === []) {
             return;
         }
@@ -1019,12 +1030,30 @@ final class ResourceValidator
 
         $errors = [];
         foreach ($violations as $violation) {
-            // An entity violation's path is a bare property name (e.g. `email`);
-            // wrap it so the pointer builder maps it to /data/attributes/<name>.
-            $errors[] = $this->error((string) $violation->getMessage(), '[' . (string) $violation->getPropertyPath() . ']');
+            $errors[] = $this->entityError($resource, (string) $violation->getMessage(), (string) $violation->getPropertyPath());
         }
 
         throw new ValidationFailed($errors);
+    }
+
+    /**
+     * An entity violation's error. Its path is a bare property name (e.g. `email`), so
+     * a class-level violation with none points at the resource object, one naming a
+     * relationship at that relationship, and any other at the attribute.
+     */
+    private function entityError(AbstractResource $resource, string $detail, string $path): Error
+    {
+        if ($path !== '' && $resource->relationNamed($path) === null) {
+            return $this->error($detail, '[' . $path . ']');
+        }
+
+        return new Error(
+            status: '422',
+            code: 'VALIDATION_FAILED',
+            title: 'Unprocessable Entity',
+            detail: $detail,
+            source: ErrorSource::fromPointer($path === '' ? '/data' : '/data/relationships/' . \str_replace(['~', '/'], ['~0', '~1'], $path)),
+        );
     }
 
     private function error(string $detail, string $bracketedPath): Error
