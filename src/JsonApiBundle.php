@@ -243,6 +243,10 @@ final class JsonApiBundle extends AbstractBundle
                     ->info('Render the links the server builds (resource, relationship, top-level self, pagination and action links) as JSON:API link objects, {"href": ...}, which carry a describedby into the OpenAPI document. False renders them as bare URL strings, with no describedby. Named servers inherit it. Default true.')
                     ->defaultTrue()
                 ->end()
+                ->booleanNode('reject_read_only_attributes')
+                    ->info('Answer a write that sends an attribute the client cannot write in that request, such as a read-only or computed one, with a 403 ATTRIBUTE_WRITE_PROHIBITED pointing at it, instead of ignoring the member. It runs before validation, so it wins over a 422. Named servers inherit it. Default false.')
+                    ->defaultFalse()
+                ->end()
                 ->booleanNode('strict_query_parameters')
                     ->info('Reject an unrecognized top-level query-parameter family with a 400 (bundle ADR 0055, core ADR 0059). A param is recognized when its base name is a reserved JSON:API family (include/fields/filter/sort/page), a key the primary resource declares, a negotiated profile keyword (relatedQuery/rQ for the Relationship Queries profile, withCount for the Countable profile), or an app-registered custom param. The default is true; set false to restore the old silent-ignore behaviour.')
                     ->defaultTrue()
@@ -328,6 +332,14 @@ final class JsonApiBundle extends AbstractBundle
                                 ->validate()
                                     ->ifTrue(static fn(mixed $value): bool => $value !== null && !\is_bool($value))
                                     ->thenInvalid('A server\'s link_objects must be true, false or null, got %s.')
+                                ->end()
+                            ->end()
+                            ->scalarNode('reject_read_only_attributes')
+                                ->info('Whether this server answers a write that sends an attribute the client cannot write with a 403. Null (the default) inherits the top-level reject_read_only_attributes.')
+                                ->defaultNull()
+                                ->validate()
+                                    ->ifTrue(static fn(mixed $value): bool => $value !== null && !\is_bool($value))
+                                    ->thenInvalid('A server\'s reject_read_only_attributes must be true, false or null, got %s.')
                                 ->end()
                             ->end()
                             ->scalarNode('output_timezone')
@@ -1236,17 +1248,18 @@ final class JsonApiBundle extends AbstractBundle
     /**
      * The full server map: the implicit `default` server plus each named server
      * from `json_api.servers`. A named server inherits the top-level base_uri /
-     * version / output_timezone / link_objects when its own is omitted; a named server may not be
+     * version / output_timezone / link_objects / reject_read_only_attributes when its own is omitted; a named server may not be
      * literally `default` (that name is reserved for the implicit, top-level server).
      *
      * @param array<string, mixed> $config
      *
-     * @return array<string, array{base_uri: string, version: string, output_timezone: ?string, link_objects: bool}>
+     * @return array<string, array{base_uri: string, version: string, output_timezone: ?string, link_objects: bool, reject_read_only_attributes: bool}>
      */
     private function serverMap(array $config, string $baseUri, string $version, ?string $outputTimezone): array
     {
         $linkObjects = ($config['link_objects'] ?? true) !== false;
-        $servers = [ServerProvider::DEFAULT_SERVER => ['base_uri' => $baseUri, 'version' => $version, 'output_timezone' => $outputTimezone, 'link_objects' => $linkObjects]];
+        $rejectReadOnly = ($config['reject_read_only_attributes'] ?? false) === true;
+        $servers = [ServerProvider::DEFAULT_SERVER => ['base_uri' => $baseUri, 'version' => $version, 'output_timezone' => $outputTimezone, 'link_objects' => $linkObjects, 'reject_read_only_attributes' => $rejectReadOnly]];
 
         $named = $config['servers'] ?? [];
         if (!\is_array($named)) {
@@ -1271,6 +1284,7 @@ final class JsonApiBundle extends AbstractBundle
                     ? $this->outputTimezoneConfig($settings)
                     : $outputTimezone,
                 'link_objects' => \is_bool($settings['link_objects'] ?? null) ? $settings['link_objects'] : $linkObjects,
+                'reject_read_only_attributes' => \is_bool($settings['reject_read_only_attributes'] ?? null) ? $settings['reject_read_only_attributes'] : $rejectReadOnly,
             ];
         }
 
@@ -1285,7 +1299,7 @@ final class JsonApiBundle extends AbstractBundle
      * {@see ServerProvider} resolves a server by name through a locator over these
      * factories.
      *
-     * @param array<string, array{base_uri: string, version: string, output_timezone: ?string, link_objects: bool}> $servers
+     * @param array<string, array{base_uri: string, version: string, output_timezone: ?string, link_objects: bool, reject_read_only_attributes: bool}> $servers
      * @param list<class-string<ProfileInterface>>                                               $profiles the JSON:API profiles every server registers, in order (bundle ADR 0117)
      */
     private function registerServers(ContainerConfigurator $container, array $servers, int $maxPerPage, int $maxIncludeDepth, bool $strictQueryParameters, array $profiles): void
@@ -1371,6 +1385,7 @@ final class JsonApiBundle extends AbstractBundle
                     // or the named server's own); null leaves values in their own zone.
                     '$outputTimezone' => $settings['output_timezone'],
                     '$linkObjects' => $settings['link_objects'],
+                    '$rejectReadOnlyAttributes' => $settings['reject_read_only_attributes'],
                     // Asked before a relationship's data renders and before a flattened
                     // write lands on a related row (bundle ADR 0139).
                     '$relationAuthorizer' => service(\haddowg\JsonApiBundle\Security\RelationAuthorizer::class),

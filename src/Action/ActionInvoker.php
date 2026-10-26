@@ -21,6 +21,7 @@ use haddowg\JsonApiBundle\Event\AfterActionEvent;
 use haddowg\JsonApiBundle\Event\BeforeActionEvent;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
+use haddowg\JsonApiBundle\Validation\ReadOnlyAttributeGuard;
 use haddowg\JsonApiBundle\Validation\ResourceValidator;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
@@ -154,12 +155,13 @@ final readonly class ActionInvoker
      */
     private function validate(ResolvingServerInterface $server, string $inputType, JsonApiRequestInterface $body): void
     {
-        if ($this->validator === null || !$server instanceof Server) {
+        if (!$server instanceof Server) {
             return;
         }
 
         $resource = $this->types->resourceFor($server, $inputType);
-        if ($resource === null) {
+        ReadOnlyAttributeGuard::check($server, $resource, $body, creating: true);
+        if ($this->validator === null || $resource === null) {
             return;
         }
 

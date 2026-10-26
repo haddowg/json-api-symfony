@@ -113,6 +113,7 @@ use haddowg\JsonApiBundle\Server\ServerName;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
 use haddowg\JsonApiBundle\Validation\FilterValueValidator;
+use haddowg\JsonApiBundle\Validation\ReadOnlyAttributeGuard;
 use haddowg\JsonApiBundle\Validation\ResourceValidator;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
@@ -1978,6 +1979,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $body = $operation->body();
         $request = $this->jsonApiRequest($operation->context());
 
+        ReadOnlyAttributeGuard::check($server, $this->types->resourceFor($server, $type), $body, creating: true);
         $this->validate($server, $type, $body, creating: true);
 
         $persister = $this->persisters->forType($type);
@@ -2106,6 +2108,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // rule that depends on a stored sibling absent from the body evaluates
         // correctly, and a required-on-update field present in stored state but
         // not re-sent does not spuriously 422 (ADR 0049).
+        ReadOnlyAttributeGuard::check($server, $this->types->resourceFor($server, $type), $body, creating: false);
         $this->validate($server, $type, $body, creating: false, existingObject: $entity);
 
         $serializer = $server->serializerFor($type);

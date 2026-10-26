@@ -117,6 +117,7 @@ final class MetadataSource
             errorSources: $this->errorSources,
             rendersLinkObjects: $server->rendersLinkObjects(),
             documentUrl: $this->documentUrls?->forServer($serverName),
+            rejectsReadOnlyAttributes: $server->rejectsReadOnlyAttributes(),
         );
     }
 
@@ -193,6 +194,7 @@ final class MetadataSource
             // block does.
             rendersLinkObjects: $defaultServer->rendersLinkObjects(),
             documentUrl: $this->documentUrls?->forServer(ServerProvider::DEFAULT_SERVER),
+            rejectsReadOnlyAttributes: $defaultServer->rejectsReadOnlyAttributes(),
         );
     }
 

@@ -11,6 +11,7 @@ use haddowg\JsonApi\OpenApi\License;
 use haddowg\JsonApi\OpenApi\Metadata\AtomicOperationsMetadataInterface;
 use haddowg\JsonApi\OpenApi\Metadata\ContributesErrorCodes;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresLinkObjects;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresReadOnlyAttributeRejection;
 use haddowg\JsonApi\OpenApi\Metadata\ServerMetadataInterface;
 use haddowg\JsonApi\OpenApi\Metadata\TypeMetadataInterface;
 use haddowg\JsonApi\OpenApi\SecurityRequirement;
@@ -37,7 +38,7 @@ use haddowg\JsonApi\OpenApi\Tag;
  * the form the server renders its links in and each example `describedby` points into
  * the same document URL the server's links do.
  */
-final readonly class ServerMetadata implements ContributesErrorCodes, DeclaresLinkObjects
+final readonly class ServerMetadata implements ContributesErrorCodes, DeclaresLinkObjects, DeclaresReadOnlyAttributeRejection
 {
     /**
      * @param list<Server>                      $servers
@@ -66,7 +67,13 @@ final readonly class ServerMetadata implements ContributesErrorCodes, DeclaresLi
         private array $errorSources = [],
         private bool $rendersLinkObjects = true,
         private ?string $documentUrl = null,
+        private bool $rejectsReadOnlyAttributes = false,
     ) {}
+
+    public function rejectsReadOnlyAttributes(): bool
+    {
+        return $this->rejectsReadOnlyAttributes;
+    }
 
     public function rendersLinkObjects(): bool
     {
