@@ -17,15 +17,15 @@ use Psr\Http\Message\UploadedFileInterface;
 /**
  * `POST /albums/{id}/-actions/artwork` — a **Raw-input** custom action (G13, bundle
  * ADR 0076, design §3): a binary cover-artwork upload, the escape hatch for a
- * non-JSON:API body. Because the upload is `multipart/form-data` / an
- * `application/octet-stream` blob (NOT `application/vnd.api+json`), the request
- * content-type negotiation is relaxed and no JSON:API body parsing runs; the handler
+ * non-JSON:API body. It accepts a `multipart/form-data` form or a bare image blob
+ * (`image/*`), so the request content type is matched against those two and no
+ * JSON:API body parsing runs; a form type has to be listed to be accepted. The handler
  * reads the raw body / uploaded file straight off {@see ActionContext::request()} (the
  * PSR-7 request), attaches it to the resolved album, persists, and returns a bodyless
  * `204` (so it declares `responds: [new NoContent()]` — the generated document advertises
  * a `204`, not a `200` albums body).
  */
-#[AsJsonApiAction(type: 'albums', path: 'artwork', input: ActionInput::Raw, responds: [new NoContent()])]
+#[AsJsonApiAction(type: 'albums', path: 'artwork', input: ActionInput::Raw, responds: [new NoContent()], accepts: ['multipart/form-data', 'image/*'])]
 final class UploadAlbumArtwork implements ActionHandlerInterface
 {
     public function __construct(private readonly DataPersisterRegistry $persisters) {}

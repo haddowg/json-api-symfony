@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Controller;
 
 use haddowg\JsonApi\Response\AbstractResponse;
+use haddowg\JsonApi\Response\RawResponse;
 use haddowg\JsonApiBundle\EventListener\RequestListener;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -21,11 +22,11 @@ use Symfony\Component\HttpFoundation\Request;
  */
 final class JsonApiController
 {
-    public function __invoke(Request $request): AbstractResponse
+    public function __invoke(Request $request): AbstractResponse|RawResponse
     {
         $response = $request->attributes->get(RequestListener::RESPONSE_ATTRIBUTE);
 
-        if (!$response instanceof AbstractResponse) {
+        if (!$response instanceof AbstractResponse && !$response instanceof RawResponse) {
             throw new \LogicException('The JSON:API request listener did not produce a response for this route.');
         }
 

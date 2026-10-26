@@ -70,6 +70,7 @@ final class CustomActionTest extends MusicCatalogKernelTestCase
         $response = $this->handleRaw(
             '/albums/2/-actions/artwork',
             'COVER-ART-BINARY',
+            'image/png',
             extraServer: ['HTTP_AUTHORIZATION' => 'Bearer admin'],
         );
 
@@ -99,12 +100,27 @@ final class CustomActionTest extends MusicCatalogKernelTestCase
     }
 
     #[Test]
+    public function theArtworkUploadAcceptsAFormAndRefusesOtherTypes(): void
+    {
+        $form = $this->handleRaw(
+            '/albums/2/-actions/artwork',
+            "--b\r\nContent-Disposition: form-data; name=\"artwork\"; filename=\"cover.png\"\r\nContent-Type: image/png\r\n\r\nFORM-ART\r\n--b--\r\n",
+            'multipart/form-data; boundary=b',
+            extraServer: ['HTTP_AUTHORIZATION' => 'Bearer admin'],
+        );
+        self::assertSame(204, $form->getStatusCode(), (string) $form->getContent());
+
+        $blob = $this->handleRaw('/albums/2/-actions/artwork', 'X', 'application/octet-stream', extraServer: ['HTTP_AUTHORIZATION' => 'Bearer admin']);
+        self::assertSame(415, $blob->getStatusCode());
+    }
+
+    #[Test]
     public function anActionPathDoesNotShadowANormalFetch(): void
     {
         // Route ordering: the resource-scope action path (4 segments) and a normal
         // /albums/{id} fetch (2 segments) both resolve correctly side by side — the
         // -actions segment is never captured as an {id} or a {relationship}.
-        $artwork = $this->handleRaw('/albums/2/-actions/artwork', 'X', extraServer: ['HTTP_AUTHORIZATION' => 'Bearer admin']);
+        $artwork = $this->handleRaw('/albums/2/-actions/artwork', 'X', 'image/png', extraServer: ['HTTP_AUTHORIZATION' => 'Bearer admin']);
         self::assertSame(204, $artwork->getStatusCode(), (string) $artwork->getContent());
 
         // The collection-scope action (3 segments) likewise coexists with the resource
@@ -139,14 +155,38 @@ final class CustomActionTest extends MusicCatalogKernelTestCase
         self::assertSame(415, $refused->getStatusCode());
     }
 
+    #[Test]
+    public function theExportAnswersInTheNegotiatedMediaType(): void
+    {
+        $csv = $this->action('/albums/-actions/export', 'GET', user: 'admin', accept: 'text/csv');
+        self::assertSame(200, $csv->getStatusCode(), (string) $csv->getContent());
+        self::assertStringStartsWith('text/csv', (string) $csv->headers->get('Content-Type'));
+        self::assertSame('attachment; filename="albums.csv"', $csv->headers->get('Content-Disposition'));
+        self::assertStringStartsWith("id,title\n1,", (string) $csv->getContent());
+
+        $json = $this->action('/albums/-actions/export', 'GET', user: 'admin', accept: 'application/json');
+        self::assertSame('{"published":2,"unpublished":1}', $json->getContent());
+
+        $pdf = $this->action('/albums/-actions/export', 'GET', user: 'admin', accept: 'application/pdf');
+        self::assertSame('application/pdf', $pdf->headers->get('Content-Type'));
+        \ob_start();
+        $pdf->sendContent();
+        self::assertStringStartsWith('%PDF-1.7', (string) \ob_get_clean());
+
+        $document = $this->action('/albums/-actions/export', 'GET', user: 'admin');
+        $meta = $this->decode($document)['meta'] ?? null;
+        self::assertIsArray($meta);
+        self::assertSame(['published' => 2, 'unpublished' => 1], $meta['albums'] ?? null);
+    }
+
     /**
      * Issues an authenticated action request (Bearer token = the user identifier).
      *
      * @param array<string, mixed>|null $body
      */
-    private function action(string $path, string $method = 'POST', ?array $body = null, string $user = 'admin'): Response
+    private function action(string $path, string $method = 'POST', ?array $body = null, string $user = 'admin', string $accept = 'application/vnd.api+json'): Response
     {
-        return $this->handle($path, $method, $body, ['HTTP_AUTHORIZATION' => 'Bearer ' . $user]);
+        return $this->handle($path, $method, $body, ['HTTP_AUTHORIZATION' => 'Bearer ' . $user, 'HTTP_ACCEPT' => $accept]);
     }
 
     /**

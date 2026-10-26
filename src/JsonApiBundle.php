@@ -1593,8 +1593,9 @@ final class JsonApiBundle extends AbstractBundle
                 $response instanceof MetaResult => ['kind' => 'meta'],
                 $response instanceof NoContent => ['kind' => 'nocontent'],
                 $response instanceof SeeOther => ['kind' => 'seeother'],
+                $response instanceof \haddowg\JsonApi\OpenApi\Metadata\RawResult => ['kind' => 'raw', 'raw' => \haddowg\JsonApiBundle\Action\RawResults::toArray($response)],
                 default => throw new \LogicException(\sprintf(
-                    'Unsupported action response %s on action "%s"; declare responds with ActionResource / MetaResult / NoContent / Accepted / SeeOther.',
+                    'Unsupported action response %s on action "%s"; declare responds with ActionResource / MetaResult / NoContent / Accepted / SeeOther / RawResult.',
                     $response::class,
                     $attribute->path,
                 )),

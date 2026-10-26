@@ -142,6 +142,8 @@ final class ActionInMemoryTestKernel extends Kernel
         $services->set(PublishWidget::class);
         $services->set(ImportWidgets::class);
         $services->set(IngestWidgets::class);
+        $services->set(ExportWidgets::class);
+        $services->set(MisdeclaredExport::class);
         $services->set(UploadArtwork::class);
         $services->set(RenameWidget::class);
         $services->set(ArchiveWidget::class);

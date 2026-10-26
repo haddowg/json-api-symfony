@@ -10,6 +10,7 @@ use haddowg\JsonApi\Response\AcceptedResponse;
 use haddowg\JsonApi\Response\DataResponse;
 use haddowg\JsonApi\Response\MetaResponse;
 use haddowg\JsonApi\Response\NoContentResponse;
+use haddowg\JsonApi\Response\RawResponse;
 use haddowg\JsonApi\Response\SeeOtherResponse;
 use haddowg\JsonApi\Serializer\SerializerInterface;
 use haddowg\JsonApi\Server\ResolvingServerInterface;
@@ -42,6 +43,13 @@ final readonly class ActionContext
      * @internal
      */
     public const string REQUEST_MEDIA_TYPE_ATTRIBUTE = '_jsonapi_action_request_media_type';
+
+    /**
+     * The request attribute carrying the response media type the `Accept` header picked.
+     *
+     * @internal
+     */
+    public const string RESPONSE_MEDIA_TYPE_ATTRIBUTE = '_jsonapi_action_response_media_type';
 
     public function __construct(
         private ResolvingServerInterface $server,
@@ -85,6 +93,18 @@ final readonly class ActionContext
     public function requestMediaType(): ?string
     {
         $mediaType = $this->request->getAttribute(self::REQUEST_MEDIA_TYPE_ATTRIBUTE);
+
+        return \is_string($mediaType) ? $mediaType : null;
+    }
+
+    /**
+     * The media type the response must be sent in, picked from the action's declared
+     * responses by the request's `Accept` header: `application/vnd.api+json` for a
+     * JSON:API answer, or a raw result's type such as `text/csv`.
+     */
+    public function responseMediaType(): ?string
+    {
+        $mediaType = $this->request->getAttribute(self::RESPONSE_MEDIA_TYPE_ATTRIBUTE);
 
         return \is_string($mediaType) ? $mediaType : null;
     }
@@ -169,6 +189,19 @@ final readonly class ActionContext
      * the completion half of the async lifecycle: a job-status action returns this,
      * once the queued work is done, pointing at the produced resource.
      */
+    /**
+     * A raw (non-JSON:API) body, sent as it is: a string, a stream resource or a PSR-7
+     * stream. The media type defaults to the one the request negotiated, and must be
+     * one of the action's declared raw results.
+     *
+     * @param string|resource|\Psr\Http\Message\StreamInterface $body
+     * @param array<string, string>                              $headers such as `Content-Disposition`
+     */
+    public function raw(mixed $body, ?string $mediaType = null, int $status = 200, array $headers = []): RawResponse
+    {
+        return new RawResponse($body, $mediaType ?? $this->responseMediaType() ?? 'application/octet-stream', $status, $headers);
+    }
+
     public function seeOther(string $location): SeeOtherResponse
     {
         return SeeOtherResponse::to($location);

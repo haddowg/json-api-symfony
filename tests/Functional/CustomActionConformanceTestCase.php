@@ -413,6 +413,98 @@ abstract class CustomActionConformanceTestCase extends JsonApiFunctionalTestCase
         return $value;
     }
 
+    #[Test]
+    #[Group('spec:content-negotiation')]
+    public function theAcceptHeaderPicksARawResult(): void
+    {
+        $csv = $this->export('text/csv');
+        self::assertSame(200, $csv->getStatusCode(), (string) $csv->getContent());
+        // Symfony adds the charset to a text type.
+        self::assertStringStartsWith('text/csv', (string) $csv->headers->get('Content-Type'));
+        self::assertSame('attachment; filename="widgets.csv"', $csv->headers->get('Content-Disposition'));
+        self::assertStringContainsString('Accept', (string) $csv->headers->get('Vary'));
+        self::assertSame("id,name\n1,Gear\n", $this->body($csv));
+
+        $pdf = $this->export('application/pdf');
+        self::assertSame('application/pdf', $pdf->headers->get('Content-Type'));
+        self::assertSame('%PDF-1.7 widgets', $this->body($pdf));
+
+        $json = $this->export('application/json');
+        self::assertSame('application/json', $json->headers->get('Content-Type'));
+        self::assertSame('{"count":1}', $this->body($json));
+    }
+
+    #[Test]
+    #[Group('spec:content-negotiation')]
+    public function jsonApiWinsATieAndAnswersAsADocument(): void
+    {
+        foreach (['application/vnd.api+json', '*/*', 'text/csv, application/vnd.api+json'] as $accept) {
+            $response = $this->export($accept);
+
+            self::assertSame(200, $response->getStatusCode(), $accept);
+            self::assertStringStartsWith('application/vnd.api+json', (string) $response->headers->get('Content-Type'), $accept);
+            self::assertSame(['count' => 1], $this->decode($response)['meta'] ?? null);
+        }
+    }
+
+    #[Test]
+    #[Group('spec:content-negotiation')]
+    public function anAcceptNoDeclaredResponseMatchesIs406(): void
+    {
+        $response = $this->export('image/png');
+
+        self::assertSame(406, $response->getStatusCode());
+        self::assertStringStartsWith('application/vnd.api+json', (string) $response->headers->get('Content-Type'));
+    }
+
+    #[Test]
+    #[Group('spec:content-negotiation')]
+    public function anErrorAfterARawNegotiationIsStillAJsonApiDocument(): void
+    {
+        $response = $this->action('/actionWidgets/999/-actions/sheet', 'GET', null, ['HTTP_ACCEPT' => 'text/csv']);
+
+        self::assertSame(404, $response->getStatusCode());
+        self::assertStringStartsWith('application/vnd.api+json', (string) $response->headers->get('Content-Type'));
+    }
+
+    #[Test]
+    #[Group('spec:content-negotiation')]
+    public function aRawBodyInATypeTheRequestDidNotNegotiateIsRefused(): void
+    {
+        $response = $this->action('/actionWidgets/1/-actions/sheet', 'GET', null, ['HTTP_ACCEPT' => 'text/csv']);
+
+        self::assertSame(500, $response->getStatusCode());
+        self::assertStringStartsWith('application/vnd.api+json', (string) $response->headers->get('Content-Type'));
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    public function eachRawResultIsAResponseMediaType(): void
+    {
+        $factory = static::getContainer()->get(DocumentFactory::class);
+        self::assertInstanceOf(DocumentFactory::class, $factory);
+        $document = $factory->forServer()->toArray();
+
+        $content = self::at($document, 'paths', '/actionWidgets/-actions/export', 'get', 'responses', '200', 'content');
+        self::assertIsArray($content);
+        self::assertSame(['application/vnd.api+json', 'text/csv', 'application/pdf', 'application/json'], \array_keys($content));
+        self::assertSame(['$ref' => '#/components/schemas/WidgetExportSummary'], self::at($content, 'application/json', 'schema'));
+        self::assertNotNull(self::at($document, 'paths', '/actionWidgets/-actions/export', 'get', 'responses', '200', 'headers', 'Content-Disposition'));
+    }
+
+    private function export(string $accept): Response
+    {
+        return $this->action('/actionWidgets/-actions/export', 'GET', null, ['HTTP_ACCEPT' => $accept]);
+    }
+
+    private function body(Response $response): string
+    {
+        \ob_start();
+        $response->sendContent();
+
+        return (string) \ob_get_clean();
+    }
+
     /**
      * Issues an action request: an authenticated (default `user`) JSON:API request.
      * A JSON `$body` array is sent as an `application/vnd.api+json` document (Document
