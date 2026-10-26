@@ -8,10 +8,12 @@ use haddowg\JsonApi\OpenApi\Metadata\CreateResponse;
 use haddowg\JsonApi\OpenApi\Metadata\DeleteResponse;
 use haddowg\JsonApi\OpenApi\Metadata\FetchCollectionResponse;
 use haddowg\JsonApi\OpenApi\Metadata\FetchOneResponse;
+use haddowg\JsonApi\OpenApi\Metadata\OperationExample;
 use haddowg\JsonApi\OpenApi\Metadata\OperationResponseInterface;
 use haddowg\JsonApi\OpenApi\Metadata\OperationResponses;
 use haddowg\JsonApi\OpenApi\Metadata\OperationType;
 use haddowg\JsonApi\OpenApi\Metadata\UpdateResponse;
+use haddowg\JsonApiBundle\OpenApi\Metadata\OperationExampleCodec;
 use haddowg\JsonApiBundle\Operation\Operation;
 
 /**
@@ -114,6 +116,17 @@ use haddowg\JsonApiBundle\Operation\Operation;
  * per the RFC). `sunset: '<HTTP-date>'` emits `Sunset: <HTTP-date>`, plus — when
  * `sunsetLink` is set — a companion `Link: <uri>; rel="sunset"`.
  *
+ * `operationExamples` replaces or switches off the worked examples the OpenAPI document
+ * generates for the type's operations from its fields' declared examples (core ADR
+ * 0176). It is keyed by core's operation name: `fetchCollection`, `fetchOne`, `create`,
+ * `update`, `delete`, or for a relation `fetchRelated.<relation>`,
+ * `fetchRelationship.<relation>`, `updateRelationship.<relation>`,
+ * `addRelationship.<relation>` and `removeRelationship.<relation>`. A `false` value
+ * emits no example for that operation, and a core `OperationExample` replaces the
+ * request and the per-status responses it names. An unknown key, or a CRUD operation
+ * the type does not expose, is a constructor `\LogicException`; core fails the
+ * projection for a relation the type does not have.
+ *
  * `security` (and the per-operation overrides) declare **declarative authorization**
  * for the type (bundle ADR 0043). Each accepts an **expression**, a **bool**, or null:
  *  - a Symfony Security
@@ -195,6 +208,7 @@ final readonly class AsJsonApiResource
      * @param FetchOneResponse|list<FetchOneResponse>|null                         $fetchOne       the declared success responses for `GET /{type}/{id}` (null = the default `200`; add `new SeeOther()` for a `303` async-completion redirect)
      * @param FetchCollectionResponse|list<FetchCollectionResponse>|null           $fetchCollection the declared success responses for `GET /{type}` (null = the default `200`)
      * @param string|null                                                          $singular       the noun the generated OpenAPI prose uses for one resource, as words without an article (null = inflected from the type name)
+     * @param array<string, OperationExample|false|null>                           $operationExamples per-operation OpenAPI example overrides, keyed by core's operation name (`create`, `fetchRelated.<relation>`, ...); `false` or `null` emits none
      */
     public function __construct(
         public ?string $type = null,
@@ -225,6 +239,7 @@ final readonly class AsJsonApiResource
         FetchOneResponse|array|null $fetchOne = null,
         FetchCollectionResponse|array|null $fetchCollection = null,
         public ?string $singular = null,
+        public array $operationExamples = [],
     ) {
         if ($singular !== null && \trim($singular) === '') {
             throw new \LogicException(
@@ -261,6 +276,7 @@ final readonly class AsJsonApiResource
         $allowed = \array_map(static fn(Operation $op): string => $op->value, $exposed);
 
         VendorExtensions::assertValid('AsJsonApiResource', $extensions, $operationExtensions, $exposed);
+        OperationExampleCodec::assertValid('AsJsonApiResource', $operationExamples, $exposed);
 
         $this->create = self::normalizeResponses($create, OperationType::Create, $allowed);
         $this->update = self::normalizeResponses($update, OperationType::Update, $allowed);

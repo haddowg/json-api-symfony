@@ -68,6 +68,7 @@ final class MetadataSource
      * @param bool                                 $atomicEnabled  whether the global Atomic Operations extension is enabled (`json_api.atomic_operations.enabled`); when true every server's document gains the atomic endpoint, mirroring the route loader
      * @param string                               $atomicPath     the path the per-server atomic endpoint is served at (`json_api.atomic_operations.path`, default `/operations`)
      * @param list<ErrorCatalogSourceInterface>    $errorSources   the application's described-error sources, filled by the {@see \haddowg\JsonApiBundle\DependencyInjection\Compiler\ErrorCatalogPass}; every declared server contributes the same set, since an exception class is not server-scoped
+     * @param array<string, bool>                  $exampleGeneration whether each server's document carries generated operation examples, keyed by server name; a server left out gets them
      */
     public function __construct(
         private readonly ServerProvider $servers,
@@ -85,6 +86,7 @@ final class MetadataSource
         private readonly array $errorSources = [],
         private readonly ?MountServers $mountServers = null,
         private readonly ?DocumentUrlProvider $documentUrls = null,
+        private readonly array $exampleGeneration = [],
     ) {}
 
     /**
@@ -118,6 +120,7 @@ final class MetadataSource
             rendersLinkObjects: $server->rendersLinkObjects(),
             documentUrl: $this->documentUrls?->forServer($serverName),
             rejectsReadOnlyAttributes: $server->rejectsReadOnlyAttributes(),
+            generatesExamples: $this->exampleGeneration[$serverName] ?? true,
         );
     }
 
@@ -195,6 +198,7 @@ final class MetadataSource
             rendersLinkObjects: $defaultServer->rendersLinkObjects(),
             documentUrl: $this->documentUrls?->forServer(ServerProvider::DEFAULT_SERVER),
             rejectsReadOnlyAttributes: $defaultServer->rejectsReadOnlyAttributes(),
+            generatesExamples: $this->exampleGeneration[ServerProvider::DEFAULT_SERVER] ?? true,
         );
     }
 
@@ -353,6 +357,7 @@ final class MetadataSource
             // Same precedence as the descriptions: the resource's getSingularName()
             // hook, then the #[AsJsonApiResource(singular:)] attribute.
             singularName: $this->nonBlank($resource?->getSingularName()) ?? $this->descriptions?->singularFor($type, $serverName),
+            operationExamples: $this->descriptions?->operationExamplesFor($type, $serverName) ?? [],
         );
     }
 
@@ -596,6 +601,7 @@ final class MetadataSource
             $action->summary,
             $action->description,
             $action->accepts,
+            $action->example,
         );
     }
 

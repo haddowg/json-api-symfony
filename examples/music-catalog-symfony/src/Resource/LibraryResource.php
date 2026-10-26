@@ -37,7 +37,7 @@ final class LibraryResource extends AbstractResource
     public function fields(): array
     {
         return [
-            Id::make(),
+            Id::make()->example('1'),
 
             // Default relation reader: `owner` reads the OneToOne inverse straight off
             // the entity; `items` reads the resolved mixed list (filled by the custom

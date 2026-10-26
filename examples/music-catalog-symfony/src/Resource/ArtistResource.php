@@ -50,20 +50,20 @@ final class ArtistResource extends AbstractResource
     public function fields(): array
     {
         return [
-            Id::make(),
-            Str::make('name')->required()->maxLength(120)->sortable(),
+            Id::make()->example('1'),
+            Str::make('name')->example('The Beatles')->required()->maxLength(120)->sortable(),
             // Optional on create (the entity derives it from `name`), but never empty:
             // an empty slug would break the singular `filter[slug]` lookup.
-            Str::make('slug')->minLength(1)->sortable()->guaranteed(),
-            Url::make('website')->nullable(),
-            Str::make('bio')->nullable()->maxLength(1000),
+            Str::make('slug')->example('the-beatles')->minLength(1)->sortable()->guaranteed(),
+            Url::make('website')->example('https://www.thebeatles.com')->nullable(),
+            Str::make('bio')->example('Rock band formed in Liverpool in 1960.')->nullable()->maxLength(1000),
             // Computed: no backing column on the wire (computed() nulls it), so read
             // the value off the entity's trackCount property explicitly.
-            Integer::make('trackCount')
+            Integer::make('trackCount')->example(17)
                 ->computed()
                 ->readOnly()
                 ->extractUsing(static fn(mixed $artist): int => $artist instanceof Artist ? $artist->trackCount : 0),
-            DateTime::make('createdAt')->readOnlyOnUpdate()->sortable(),
+            DateTime::make('createdAt')->example('2024-03-01T12:00:00+00:00')->readOnlyOnUpdate()->sortable(),
 
             // Default relation reader: `albums` reads the OneToMany association
             // straight off the entity (load-aware linkage so a lazy collection emits

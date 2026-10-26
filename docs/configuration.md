@@ -62,7 +62,7 @@ witness).
 | `defaults.cache_headers` | map | `{}` | Fleet-wide default HTTP cache directives for `GET` reads. A resource's own `cacheHeaders` overrides these. |
 | `defaults.deprecation` / `sunset` / `sunset_link` | scalar | `null` | Fleet-wide default deprecation/sunset headers. A resource's own `deprecation`/`sunset` overrides these. |
 | `reject_read_only_attributes` | bool | `false` | Answer a create or update that sends an attribute the client cannot write in that request, such as a `readOnly()` or computed one, with a `403 ATTRIBUTE_WRITE_PROHIBITED` pointing at each such attribute, instead of ignoring it. The check runs before validation, so it wins over a `422`. Named servers inherit it. |
-| `servers` | map | `[]` | Additional **named** servers, keyed by name. Each takes `base_uri`, `version`, `output_timezone`, `link_objects` and `reject_read_only_attributes`. |
+| `servers` | map | `[]` | Additional **named** servers, keyed by name. Each takes `base_uri`, `version`, `output_timezone`, `link_objects`, `reject_read_only_attributes` and `openapi_examples`. |
 
 `base_uri` and `version` configure the implicit `default` server — link core
 [server.md](https://github.com/haddowg/json-api/blob/main/docs/server.md) for what
@@ -511,6 +511,17 @@ json_api:
 
 That server's OpenAPI document then lists the `ATTRIBUTE_WRITE_PROHIBITED` error; the
 others don't.
+
+`openapi_examples` overrides `json_api.openapi.examples` for one server's document, so an
+internal API can drop the [generated operation examples](openapi.md#operation-examples)
+while the public one keeps them:
+
+```yaml
+json_api:
+    servers:
+        internal:
+            openapi_examples: false
+```
 
 A type shared by several servers (`server: ['default', 'admin']`) renders in each
 server's own zone. Every server builds its own instance of the resource service, so

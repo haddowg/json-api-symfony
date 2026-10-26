@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Attribute;
 
+use haddowg\JsonApi\OpenApi\Metadata\OperationExample;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiSerializer;
 use haddowg\JsonApiBundle\Operation\Operation;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -67,5 +68,17 @@ final class AsJsonApiSerializerTest extends TestCase
         $this->expectExceptionMessage($message);
 
         new AsJsonApiSerializer(type: 'shelves', operations: $operations, extensions: $extensions, operationExtensions: $operationExtensions);
+    }
+
+    #[Test]
+    public function operationExamplesMayOnlyNameAnExposedOperation(): void
+    {
+        $attribute = new AsJsonApiSerializer(type: 'shelves', operations: [Operation::FetchOne], operationExamples: ['fetchOne' => new OperationExample()]);
+        self::assertArrayHasKey('fetchOne', $attribute->operationExamples);
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('does not expose');
+
+        new AsJsonApiSerializer(type: 'shelves', operations: [Operation::FetchOne], operationExamples: ['fetchCollection' => false]);
     }
 }

@@ -52,8 +52,8 @@ final class GenreResource extends AbstractResource
     public function fields(): array
     {
         return [
-            Id::make()->requireClientId()->pattern('^[a-z0-9]+(?:-[a-z0-9]+)*$'),
-            Str::make('name')->required(),
+            Id::make()->example('rock')->requireClientId()->pattern('^[a-z0-9]+(?:-[a-z0-9]+)*$'),
+            Str::make('name')->example('Rock')->required(),
         ];
     }
 }

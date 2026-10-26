@@ -46,10 +46,10 @@ final class ProductResource extends AbstractResource
             // The id is the wire form of the integer storage key. matchAs() pins the
             // route {id} to the codec's token shape; the format constraint side is
             // not needed here because the id is server-assigned (no client id).
-            Id::make()
+            Id::make()->example('prod-7b')
                 ->encodeUsing(new ProductIdCodec())
                 ->matchAs('prod-[0-9a-f]+'),
-            Str::make('name')->required(),
+            Str::make('name')->example('Turntable')->required(),
 
             // A self-referential to-one: its linkage id is itself an encoded
             // `products` wire id, so a relationship write decodes it (keyed by the

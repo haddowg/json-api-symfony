@@ -31,6 +31,7 @@ use haddowg\JsonApiBundle\DependencyInjection\Compiler\ResponseHeadersPass;
 use haddowg\JsonApiBundle\DependencyInjection\InstalledVersionsCheck;
 use haddowg\JsonApiBundle\EventListener\ConfiguredExceptionMapper;
 use haddowg\JsonApiBundle\EventListener\ExceptionMapperInterface;
+use haddowg\JsonApiBundle\OpenApi\Metadata\OperationExampleCodec;
 use haddowg\JsonApiBundle\Operation\CrudOperationHandler;
 use haddowg\JsonApiBundle\Operation\Operation;
 use haddowg\JsonApiBundle\Serializer\Doctrine\DoctrineRelationshipLoadState;
@@ -342,6 +343,14 @@ final class JsonApiBundle extends AbstractBundle
                                     ->thenInvalid('A server\'s reject_read_only_attributes must be true, false or null, got %s.')
                                 ->end()
                             ->end()
+                            ->scalarNode('openapi_examples')
+                                ->info('Whether this server\'s OpenAPI document carries generated operation examples. Null (the default) inherits json_api.openapi.examples.')
+                                ->defaultNull()
+                                ->validate()
+                                    ->ifTrue(static fn(mixed $value): bool => $value !== null && !\is_bool($value))
+                                    ->thenInvalid('A server\'s openapi_examples must be true, false or null, got %s.')
+                                ->end()
+                            ->end()
                             ->scalarNode('output_timezone')
                                 ->info('The timezone this server\'s DateTime attributes render in. Null (the default) inherits the top-level output_timezone; an empty string renders each value in the zone it carries.')
                                 ->defaultNull()
@@ -416,6 +425,10 @@ final class JsonApiBundle extends AbstractBundle
                     ->info('per_server (default): one document per server, served at /{server}/docs.json. combined: a single document spanning every server at the json path only (D5).')
                     ->values(['per_server', 'combined'])
                     ->defaultValue('per_server')
+                ->end()
+                ->booleanNode('examples')
+                    ->info('Give every operation\'s request body and success responses, and each shared error response, a worked example built from the examples your fields and error codes declare. An operation missing one of those values gets no example, and json-api:openapi:export lists it. A named server can override it with its own openapi_examples. Default true.')
+                    ->defaultTrue()
                 ->end()
                 ->enumNode('enum_value_descriptions')
                     ->info('How a backed enum\'s per-value descriptions are surfaced (D16): both (markdown table + x-enum-* extensions), extensions (only the extensions), or description (only the markdown table). Default both.')
@@ -682,6 +695,10 @@ final class JsonApiBundle extends AbstractBundle
         // class-strings and serializer/hydrator maps are filled by the pass.
         $this->registerServers($container, $servers, $maxPerPage, $maxIncludeDepth, $strictQueryParameters, $profiles);
 
+        // Whether each server's OpenAPI document carries generated operation examples.
+        $builder->getDefinition(\haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource::class)
+            ->setArgument('$exampleGeneration', \array_map(static fn(array $settings): bool => $settings['openapi_examples'], $servers));
+
         // The optional opis structural linter: registered (so the RequestListener
         // picks it up) only when explicitly enabled. opis/json-schema is a
         // `suggest` dependency, so a misconfiguration (enabled without it) fails
@@ -879,6 +896,9 @@ final class JsonApiBundle extends AbstractBundle
                     // The OpenAPI vendor extensions (bundle ADR 0127), type-wide and
                     // per-operation, JSON-encoded into one scalar for the same reason.
                     'openapi_extensions' => self::extensionsTag($attribute->extensions, $attribute->operationExtensions),
+                    // The OpenAPI operation example overrides (core ADR 0176), JSON-encoded
+                    // because a nested map and core's OperationExample are not dumpable.
+                    'operation_examples' => OperationExampleCodec::encodeMap('AsJsonApiResource', $attribute->operationExamples),
                     // The per-operation OpenAPI response declarations (typed response
                     // objects): the five create/update/delete/fetchOne/fetchCollection
                     // sets JSON-encoded into a single scalar tag attribute the
@@ -907,6 +927,7 @@ final class JsonApiBundle extends AbstractBundle
                     'tags' => self::tagsTag($attribute->tags),
                     // Vendor extensions (bundle ADR 0127), read by the ResourceDescriptionPass.
                     'openapi_extensions' => self::extensionsTag($attribute->extensions, $attribute->operationExtensions),
+                    'operation_examples' => OperationExampleCodec::encodeMap('AsJsonApiSerializer', $attribute->operationExamples),
                 ], static fn(mixed $value): bool => $value !== null));
             },
         );
@@ -970,6 +991,9 @@ final class JsonApiBundle extends AbstractBundle
                     // The accepted request media types, JSON-encoded; absent keeps the
                     // input mode's default negotiation.
                     'accepts' => $attribute->accepts !== [] ? \json_encode($attribute->accepts, \JSON_THROW_ON_ERROR) : null,
+                    // The OpenAPI example override (core ADR 0176), JSON-encoded; absent
+                    // keeps the generated example.
+                    'example' => OperationExampleCodec::encodeOne('AsJsonApiAction', $attribute->example),
                 ], static fn(mixed $value): bool => $value !== null));
             },
         );
@@ -1251,18 +1275,20 @@ final class JsonApiBundle extends AbstractBundle
     /**
      * The full server map: the implicit `default` server plus each named server
      * from `json_api.servers`. A named server inherits the top-level base_uri /
-     * version / output_timezone / link_objects / reject_read_only_attributes when its own is omitted; a named server may not be
+     * version / output_timezone / link_objects / reject_read_only_attributes / openapi_examples when its own is omitted; a named server may not be
      * literally `default` (that name is reserved for the implicit, top-level server).
      *
      * @param array<string, mixed> $config
      *
-     * @return array<string, array{base_uri: string, version: string, output_timezone: ?string, link_objects: bool, reject_read_only_attributes: bool}>
+     * @return array<string, array{base_uri: string, version: string, output_timezone: ?string, link_objects: bool, reject_read_only_attributes: bool, openapi_examples: bool}>
      */
     private function serverMap(array $config, string $baseUri, string $version, ?string $outputTimezone): array
     {
         $linkObjects = ($config['link_objects'] ?? true) !== false;
         $rejectReadOnly = ($config['reject_read_only_attributes'] ?? false) === true;
-        $servers = [ServerProvider::DEFAULT_SERVER => ['base_uri' => $baseUri, 'version' => $version, 'output_timezone' => $outputTimezone, 'link_objects' => $linkObjects, 'reject_read_only_attributes' => $rejectReadOnly]];
+        $openApi = \is_array($config['openapi'] ?? null) ? $config['openapi'] : [];
+        $examples = ($openApi['examples'] ?? true) !== false;
+        $servers = [ServerProvider::DEFAULT_SERVER => ['base_uri' => $baseUri, 'version' => $version, 'output_timezone' => $outputTimezone, 'link_objects' => $linkObjects, 'reject_read_only_attributes' => $rejectReadOnly, 'openapi_examples' => $examples]];
 
         $named = $config['servers'] ?? [];
         if (!\is_array($named)) {
@@ -1288,6 +1314,7 @@ final class JsonApiBundle extends AbstractBundle
                     : $outputTimezone,
                 'link_objects' => \is_bool($settings['link_objects'] ?? null) ? $settings['link_objects'] : $linkObjects,
                 'reject_read_only_attributes' => \is_bool($settings['reject_read_only_attributes'] ?? null) ? $settings['reject_read_only_attributes'] : $rejectReadOnly,
+                'openapi_examples' => \is_bool($settings['openapi_examples'] ?? null) ? $settings['openapi_examples'] : $examples,
             ];
         }
 
@@ -1302,7 +1329,7 @@ final class JsonApiBundle extends AbstractBundle
      * {@see ServerProvider} resolves a server by name through a locator over these
      * factories.
      *
-     * @param array<string, array{base_uri: string, version: string, output_timezone: ?string, link_objects: bool, reject_read_only_attributes: bool}> $servers
+     * @param array<string, array{base_uri: string, version: string, output_timezone: ?string, link_objects: bool, reject_read_only_attributes: bool, openapi_examples: bool}> $servers
      * @param list<class-string<ProfileInterface>>                                               $profiles the JSON:API profiles every server registers, in order (bundle ADR 0117)
      */
     private function registerServers(ContainerConfigurator $container, array $servers, int $maxPerPage, int $maxIncludeDepth, bool $strictQueryParameters, array $profiles): void

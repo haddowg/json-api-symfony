@@ -11,9 +11,11 @@ use haddowg\JsonApi\OpenApi\Metadata\ActionResource;
 use haddowg\JsonApi\OpenApi\Metadata\ActionResponse;
 use haddowg\JsonApi\OpenApi\Metadata\ActionScope;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresAcceptedBodies;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresActionExample;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresActionLink;
 use haddowg\JsonApi\OpenApi\Metadata\MetaResult;
 use haddowg\JsonApi\OpenApi\Metadata\NoContent;
+use haddowg\JsonApi\OpenApi\Metadata\OperationExample;
 use haddowg\JsonApi\OpenApi\Metadata\SeeOther;
 use haddowg\JsonApiBundle\Action\AcceptedMediaTypes;
 use haddowg\JsonApiBundle\Action\ActionDescriptor;
@@ -36,7 +38,7 @@ use haddowg\JsonApiBundle\Action\RawResults;
  * projector switches on to advertise a `200` resource document, a `200` meta document,
  * a `204`, a `202` async accept, or a `303` redirect (core ADR 0127).
  */
-final readonly class ActionMetadata implements DeclaresActionLink, DeclaresAcceptedBodies
+final readonly class ActionMetadata implements DeclaresActionLink, DeclaresAcceptedBodies, DeclaresActionExample
 {
     public function __construct(private ActionDescriptor $descriptor) {}
 
@@ -129,5 +131,12 @@ final readonly class ActionMetadata implements DeclaresActionLink, DeclaresAccep
     public function linkName(): ?string
     {
         return $this->descriptor->asLink ? $this->descriptor->path : null;
+    }
+
+    public function example(): OperationExample|false|null
+    {
+        $example = $this->descriptor->example;
+
+        return $example === null ? null : OperationExampleCodec::toExample($example);
     }
 }

@@ -58,29 +58,29 @@ final class UserResource extends AbstractResource
     public function fields(): array
     {
         return [
-            Id::make(),
+            Id::make()->example('1'),
             // Email::make() pre-attaches a (lax) EmailFormat; ->strict() reconciles
             // that to a single strict EmailFormat. The UniqueEntity is the
             // entity-level rule (queried against the repository post-hydration).
-            Email::make('email')->required()->strict()->constrain(new UniqueEntity(['email'])),
-            Str::make('displayName')->required(),
-            Date::make('birthDate')->nullable(),
+            Email::make('email')->example('ada@example.com')->required()->strict()->constrain(new UniqueEntity(['email'])),
+            Str::make('displayName')->example('Ada')->required(),
+            Date::make('birthDate')->example('1990-12-10')->nullable(),
             // A dynamic-key JSON object (vs Map's declared columns); sorted by key on
             // serialization for a stable wire shape.
-            ArrayHash::make('preferences')->minProperties(0)->maxProperties(20)->sortKeys()->guaranteed(),
-            Ip::make('lastSeenIp')->nullable(),
+            ArrayHash::make('preferences')->example(['theme' => 'dark'])->minProperties(0)->maxProperties(20)->sortKeys()->guaranteed(),
+            Ip::make('lastSeenIp')->example('203.0.113.7')->nullable(),
             // A genuine write-only credential (Tier-0 G18, core ADR 0060): accepted on
             // BOTH create and update and still validated (required on create, min 8) —
             // but skipped in the attribute render, so it appears on NO read (single,
             // collection, included, related) and a `fields[users]=password` cannot
             // resurrect it. The exact inverse of `readOnly()`; no `serializeUsing`
             // null-hook is needed.
-            Str::make('password')->writeOnly()->minLength(8)->requiredOnCreate(),
+            Str::make('password')->example('correct-horse-9')->writeOnly()->minLength(8)->requiredOnCreate(),
             // Computed (no backing column) AND write-only: validated but never
             // persisted, never echoed. Carries the composition demos — an AtLeastOneOf
             // alternative, a When rule, and the equality CompareField against
             // `password`.
-            Str::make('passwordConfirm')
+            Str::make('passwordConfirm')->example('correct-horse-9')
                 ->computed()
                 ->writeOnly()
                 ->atLeastOneOf(

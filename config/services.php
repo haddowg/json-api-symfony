@@ -105,12 +105,13 @@ return static function (ContainerConfigurator $container): void {
 
     // The type-keyed registry of declarative OpenAPI description overrides
     // (#[AsJsonApiResource(description:, operationDescriptions:)], bundle ADR 0092)
-    // and vendor extensions (extensions:, operationExtensions:, bundle ADR 0127);
+    // and vendor extensions (extensions:, operationExtensions:, bundle ADR 0127)
+    // and operation example overrides (operationExamples:, core ADR 0176);
     // its arguments are filled by the ResourceDescriptionPass. Descriptions are
     // layered by the MetadataSource beneath each resource's
     // getDescription()/describeOperation() method hooks.
     $services->set(\haddowg\JsonApiBundle\OpenApi\Metadata\ResourceDescriptionRegistry::class)
-        ->args(['$descriptions' => [], '$extensions' => [], '$servers' => []]);
+        ->args(['$descriptions' => [], '$extensions' => [], '$servers' => [], '$examples' => []]);
 
     // The bundle implementation of core's OpenAPI metadata contract: it builds a
     // ServerMetadataInterface (+ its TypeMetadataInterface family) per server from

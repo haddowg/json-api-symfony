@@ -366,6 +366,7 @@ namespace.
 # The OpenAPI document (JSON to stdout, or a file; YAML needs symfony/yaml):
 php bin/console json-api:openapi:export
 php bin/console json-api:openapi:export --server=admin --format=yaml --output=openapi.yaml
+php bin/console json-api:openapi:export --strict > openapi.json   # fail on a missing example
 
 # Standalone per-type JSON Schema 2020-12 documents:
 php bin/console json-api:json-schema:export --type=articles            # one type → stdout
@@ -375,6 +376,12 @@ php bin/console json-api:json-schema:export --output=build/schemas/    # every t
 The standalone JSON Schemas are projected by the **same** core projector the OpenAPI
 document uses, so a standalone `<type>.json` and the in-document `<Type>Resource`
 component agree.
+
+The OpenAPI export lists every [operation example](#operation-examples) it could not
+build as a warning on stderr, one line per missing value, so the document on stdout stays
+valid to pipe. `--strict` turns any of them into a non-zero exit and writes no document,
+which suits a CI step that guards the examples. The served document and the cache warmer
+never report them.
 
 ## Customisation
 
@@ -397,6 +404,57 @@ The constraints you already declare (`minLength`, `pattern`, `in`, `min`/`max`, 
 3.1. The few constraints with no lossless keyword (`When` with a dynamic condition,
 `CompareField`, the `After`/`Before`/`Between` date bounds) degrade to a human-readable
 note in the schema `description` rather than emitting a wrong schema.
+
+### Operation examples
+
+Every operation's request body and success responses, and each shared error response,
+carry a whole worked `example` built from the `->example()` values your fields declare
+(core's [operation examples](https://github.com/haddowg/json-api/blob/main/docs/openapi.md#operation-examples)).
+Nothing is invented: an operation that needs a value with no declared example gets no
+example, and `json-api:openapi:export` names the type and field it was missing. Declare
+an `Id` example too, since every resource object and linkage needs one.
+
+`operationExamples` on `#[AsJsonApiResource]` (or `#[AsJsonApiSerializer]`) replaces or
+switches off an operation's example. Keys are core's operation names: `fetchCollection`,
+`fetchOne`, `create`, `update`, `delete`, and for a relation `fetchRelated.<relation>`,
+`fetchRelationship.<relation>`, `updateRelationship.<relation>`,
+`addRelationship.<relation>` and `removeRelationship.<relation>`. A core
+`OperationExample` replaces the request and the responses it names and leaves the rest
+generated; `false` emits none:
+
+```php
+use haddowg\JsonApi\OpenApi\Metadata\OperationExample;
+use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
+
+#[AsJsonApiResource(operationExamples: [
+    'fetchRelationship.owner' => new OperationExample(responses: [200 => ['data' => ['type' => 'users', 'id' => '1']]]),
+    'update' => false,
+])]
+final class PlaylistResource extends AbstractResource { /* … */ }
+```
+
+An unknown key, or a CRUD operation the type doesn't expose, fails the container build;
+a relation the type doesn't have fails the projection. A hand-written serializer declares
+no fields, so its operations have nothing to build from; switch them off with `false` or
+write them out.
+
+A custom action takes one `example` on `#[AsJsonApiAction]`, with the same meaning, which
+is the way to show a meta document:
+
+```php
+#[AsJsonApiAction(
+    type: 'albums',
+    path: 'summary',
+    scope: ActionScope::Collection,
+    responds: [new MetaResult()],
+    example: new OperationExample(responses: [200 => ['meta' => ['albums' => ['total' => 15]]]]),
+)]
+```
+
+Example documents are written as PHP arrays and stored in the compiled container as
+JSON, so an empty array always renders as `[]`. `json_api.openapi.examples: false` turns
+generation off for every server, and a named server's own `openapi_examples` overrides
+it.
 
 ### Describing types, operations & relationships
 

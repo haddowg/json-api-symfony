@@ -58,24 +58,24 @@ final class TrackResource extends AbstractResource
     public function fields(): array
     {
         return [
-            Id::make(),
-            Str::make('title')->required()->sortable(),
-            Integer::make('trackNumber')->required()->min(1)->sortable(),
+            Id::make()->example('1'),
+            Str::make('title')->example('Come Together')->required()->sortable(),
+            Integer::make('trackNumber')->example(1)->required()->min(1)->sortable(),
             // The JSON:API member `durationSeconds` is stored on the entity's
             // `length_seconds` column — a storedAs() rename round-trips transparently.
-            Integer::make('durationSeconds')->storedAs('length_seconds')->guaranteed(),
-            Boolean::make('explicit')->guaranteed(),
+            Integer::make('durationSeconds')->example(259)->storedAs('length_seconds')->guaranteed(),
+            Boolean::make('explicit')->example(false)->guaranteed(),
             // An array attribute with per-item rules: at least one genre, each a
             // non-empty string, no duplicates. There is no sensible default, so a
             // create must send a non-empty list and an update can't empty it.
-            ArrayList::make('genres')
+            ArrayList::make('genres')->example(['rock'])
                 ->required()
                 ->minItems(1)
                 ->each(new MinLength(1))
                 ->uniqueItems(),
-            Time::make('previewOffset')->nullable(),
+            Time::make('previewOffset')->example('00:00:30')->nullable(),
             // Computed: no backing column, derived across trackNumber + title on read.
-            Str::make('displayTitle')
+            Str::make('displayTitle')->example('1. Come Together')
                 ->computed()
                 ->readOnly()
                 ->extractUsing(static fn(mixed $track): string => $track instanceof Track

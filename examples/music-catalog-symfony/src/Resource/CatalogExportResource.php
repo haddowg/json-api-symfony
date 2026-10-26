@@ -36,9 +36,9 @@ final class CatalogExportResource extends AbstractResource
     public function fields(): array
     {
         return [
-            Id::make(),
-            Str::make('format')->required()->maxLength(16),
-            Str::make('status')->readOnly()->guaranteed(),
+            Id::make()->example('1'),
+            Str::make('format')->example('csv')->required()->maxLength(16),
+            Str::make('status')->example('ready')->readOnly()->guaranteed(),
         ];
     }
 }

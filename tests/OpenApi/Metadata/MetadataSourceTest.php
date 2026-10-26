@@ -6,8 +6,11 @@ namespace haddowg\JsonApiBundle\Tests\OpenApi\Metadata;
 
 use haddowg\JsonApi\OpenApi\Metadata\ActionInputMode;
 use haddowg\JsonApi\OpenApi\Metadata\ActionScope;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresExampleGeneration;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationExamples;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationExtensions;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresSingularName;
+use haddowg\JsonApi\OpenApi\Metadata\OperationExample;
 use haddowg\JsonApi\OpenApi\Metadata\OperationResponseInterface;
 use haddowg\JsonApi\OpenApi\Metadata\OperationType;
 use haddowg\JsonApi\OpenApi\OpenApiProjector;
@@ -410,6 +413,45 @@ final class MetadataSourceTest extends TestCase
     }
 
     #[Test]
+    public function theRegistryCarriesDeclaredOperationExamplesOntoTheTypeMetadata(): void
+    {
+        $registry = new ResourceDescriptionRegistry(examples: [
+            'articles' => [
+                'fetchOne' => ['request' => null, 'responses' => [200 => ['data' => null]]],
+                'update' => false,
+            ],
+        ]);
+
+        $server = $this->source(descriptions: $registry)->forServer();
+        $articles = $this->typeNamed($server, 'articles');
+        $people = $this->typeNamed($server, 'people');
+
+        self::assertInstanceOf(DeclaresOperationExamples::class, $articles);
+        self::assertEquals(
+            ['fetchOne' => new OperationExample(responses: [200 => ['data' => null]]), 'update' => false],
+            $articles->operationExamples(),
+        );
+        self::assertInstanceOf(DeclaresOperationExamples::class, $people);
+        self::assertSame([], $people->operationExamples());
+    }
+
+    #[Test]
+    public function eachServerSaysWhetherItGeneratesExamples(): void
+    {
+        $on = $this->source()->forServer();
+        self::assertInstanceOf(DeclaresExampleGeneration::class, $on);
+        self::assertTrue($on->generatesExamples());
+
+        $off = $this->source(exampleGeneration: [ServerProvider::DEFAULT_SERVER => false]);
+        $server = $off->forServer();
+        self::assertInstanceOf(DeclaresExampleGeneration::class, $server);
+        self::assertFalse($server->generatesExamples());
+        $combined = $off->combined();
+        self::assertInstanceOf(DeclaresExampleGeneration::class, $combined);
+        self::assertFalse($combined->generatesExamples());
+    }
+
+    #[Test]
     public function aTypeWithoutDeclaredVendorExtensionsReportsNone(): void
     {
         $articles = $this->typeNamed($this->source()->forServer(), 'articles');
@@ -517,8 +559,9 @@ final class MetadataSourceTest extends TestCase
     /**
      * @param array<string, list<array{status: int, jobType?: string}>>               $articleResponses per-operation response overrides for the articles descriptor
      * @param list<class-string<\haddowg\JsonApi\Schema\Profile\ProfileInterface>>|null $profiles         the profiles the server registers; null uses the ServerFactory default
+     * @param array<string, bool>                                                       $exampleGeneration whether each server generates operation examples, by server name
      */
-    private function source(?ResourceSecurityRegistry $security = null, ?ServerDocumentConfig $config = null, bool $atomicEnabled = false, string $atomicPath = '/operations', ?ResourceDescriptionRegistry $descriptions = null, bool $describedArticle = false, array $articleResponses = [], ?array $profiles = null): MetadataSource
+    private function source(?ResourceSecurityRegistry $security = null, ?ServerDocumentConfig $config = null, bool $atomicEnabled = false, string $atomicPath = '/operations', ?ResourceDescriptionRegistry $descriptions = null, bool $describedArticle = false, array $articleResponses = [], ?array $profiles = null, array $exampleGeneration = []): MetadataSource
     {
         $article = $describedArticle ? new DescribedArticleResource() : new ArticleResource();
         $person = new PersonResource();
@@ -570,6 +613,7 @@ final class MetadataSourceTest extends TestCase
             $config !== null ? [ServerProvider::DEFAULT_SERVER => $config] : [],
             $atomicEnabled,
             $atomicPath,
+            exampleGeneration: $exampleGeneration,
         );
     }
 
