@@ -140,15 +140,20 @@ final class ScopedLinkageGuard
      *
      * @return list<object>|null
      */
-    public function scopedMembers(object $parent, RelationInterface $relation, JsonApiRequestInterface $request): ?array
+    public function scopedMembers(Server $server, object $parent, RelationInterface $relation, JsonApiRequestInterface $request): ?array
     {
         $relatedType = $relation->relatedTypes()[0] ?? null;
         if ($relatedType === null || !$relation->isToMany() || \count($relation->relatedTypes()) !== 1 || !$this->router->isScoped($relation)) {
             return null;
         }
 
-        $provider = $this->providers->forType($relatedType);
         $criteria = new CollectionCriteria(new QueryParameters(fields: [], includes: [], sort: [], filter: [], pagination: []));
+        // A computed relation's members are its closure's value, narrowed as GET narrows them.
+        if ($this->router->readsComputed($relation)) {
+            return $this->members($this->router->fetchComputed($server, $parent, $relation, $criteria, $request)->items);
+        }
+
+        $provider = $this->providers->forType($relatedType);
         $result = $provider instanceof PivotAwareProviderInterface && $provider->supportsPivot($relatedType, $relation)
             ? $provider->fetchRelatedPivotCollection($relatedType, $parent, $relation, $criteria, $request)
             : $provider->fetchRelatedCollection($relatedType, $parent, $relation, $criteria, $request);

@@ -809,6 +809,32 @@ carrying `album` replaces the association.
 > hydrates id+attributes, then applies each relationship through
 > `mutateRelationship(... Mode::Replace, flush: false)`. See [data-layer.md](data-layer.md).
 
+### Relations written by `fillUsing()`
+
+A relation that declares `fillUsing()` is written by that hook, never by the
+persister. Use it when the relation is not a plain association, such as a `MorphTo`
+stored as a type column and an id column:
+
+```php
+MorphTo::make('target', ['advertisers', 'agencies'])
+    ->extractUsing(fn(File $file): ?object => $this->targets->find($file->targetType, $file->targetId))
+    ->fillUsing(static function (File $file, ToOneRelationship $linkage): File {
+        $file->targetType = $linkage->resourceIdentifier?->type;
+        $file->targetId = $linkage->resourceIdentifier?->id;
+
+        return $file;
+    }),
+```
+
+The hook runs on a create, an update, the relationship endpoints and Atomic
+Operations, with the arguments core's own hydration passes. A whole-resource write
+calls it with an empty `$data` array. The relationship endpoints pass a to-many's
+mode as `$data['mode']`, so a `POST` adds and a `DELETE` removes. Everything else
+around the write still applies. The linkage is checked against the related types'
+scope first, so an id the caller can't see is a `404`. The mutability and update
+gates run before and after the hook, and the persister then saves the parent, so a
+refusal after the hook rolls the write back.
+
 ### Request-aware mutation guards
 
 The `cannotReplace()`/`cannotAdd()`/`cannotRemove()` flags also accept a **closure**,
