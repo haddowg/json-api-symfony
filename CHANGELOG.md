@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.0](https://github.com/haddowg/json-api-symfony/compare/v1.12.0...v1.13.0) (2026-10-26)
+
+
+### Features
+
+* declare and report generated OpenAPI operation examples ([#233](https://github.com/haddowg/json-api-symfony/issues/233)) ([6ade4a2](https://github.com/haddowg/json-api-symfony/commit/6ade4a210b106b464996e3b5972de119b3692494))
+
 ## [1.12.0](https://github.com/haddowg/json-api-symfony/compare/v1.11.1...v1.12.0) (2026-10-26)
 
 
