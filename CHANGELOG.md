@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.0](https://github.com/haddowg/json-api-symfony/compare/v1.14.0...v1.15.0) (2026-10-26)
+
+
+### Features
+
+* wire declared resource links into the bundle ([#237](https://github.com/haddowg/json-api-symfony/issues/237)) ([9fde56a](https://github.com/haddowg/json-api-symfony/commit/9fde56a953054037cb5fb056ccabf37f2c3fe42e))
+
 ## [1.14.0](https://github.com/haddowg/json-api-symfony/compare/v1.13.0...v1.14.0) (2026-10-26)
 
 
