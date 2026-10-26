@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.16.0](https://github.com/haddowg/json-api-symfony/compare/v1.15.0...v1.16.0) (2026-10-26)
+
+
+### Features
+
+* wire action safety, extensions and operation id checks ([#239](https://github.com/haddowg/json-api-symfony/issues/239)) ([e63f55d](https://github.com/haddowg/json-api-symfony/commit/e63f55d94338fadaeaa7105071487c0cb450ed85))
+
 ## [1.15.0](https://github.com/haddowg/json-api-symfony/compare/v1.14.0...v1.15.0) (2026-10-26)
 
 
