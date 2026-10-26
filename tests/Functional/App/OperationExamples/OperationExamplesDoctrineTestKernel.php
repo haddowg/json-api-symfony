@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Functional\App\OperationExamples;
 
 use Doctrine\Bundle\DoctrineBundle\DoctrineBundle;
+use haddowg\JsonApi\Pagination\PagePaginator;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Tests\Functional\App\PinnedConfigDefaults;
@@ -18,8 +19,9 @@ use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
 /**
- * Serves `notes` on the default server and on `plain` under `/plain`, and `scraps` on
- * `gappy` under `/gappy`. The default server generates operation examples and `plain`
+ * Serves `notes` on the default server and on `plain` under `/plain`, `scraps` on
+ * `gappy` under `/gappy`, and `tallies` and `jottings` on `counted` under `/counted`,
+ * whose default paginator always counts. The default server generates operation examples and `plain`
  * switches them off. In the `off` environment the top-level switch is off and `plain`
  * turns them back on.
  */
@@ -85,6 +87,7 @@ class OperationExamplesDoctrineTestKernel extends Kernel
             'servers' => [
                 'plain' => ['openapi_examples' => $off],
                 'gappy' => [],
+                'counted' => [],
             ],
         ]);
 
@@ -96,6 +99,8 @@ class OperationExamplesDoctrineTestKernel extends Kernel
         $services->set('logger', \Psr\Log\NullLogger::class);
         $services->set(PinNote::class);
         $services->set(ArchiveNote::class);
+        $services->set(JsonApiBundle::defaultPaginatorId('counted'), PagePaginator::class)
+            ->factory([self::class, 'countingPaginator']);
 
         $this->configureData($container, $services);
     }
@@ -126,6 +131,13 @@ class OperationExamplesDoctrineTestKernel extends Kernel
 
         $services->set(DoctrineNoteResource::class);
         $services->set(DoctrineScrapResource::class);
+        $services->set(DoctrineTallyResource::class);
+        $services->set(DoctrineJottingResource::class);
+    }
+
+    public static function countingPaginator(): PagePaginator
+    {
+        return PagePaginator::make()->withCount();
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void
@@ -133,5 +145,6 @@ class OperationExamplesDoctrineTestKernel extends Kernel
         $routes->import('.', JsonApiRouteLoader::ROUTE_TYPE);
         $routes->import('plain', JsonApiRouteLoader::ROUTE_TYPE)->prefix('/plain');
         $routes->import('gappy', JsonApiRouteLoader::ROUTE_TYPE)->prefix('/gappy');
+        $routes->import('counted', JsonApiRouteLoader::ROUTE_TYPE)->prefix('/counted');
     }
 }

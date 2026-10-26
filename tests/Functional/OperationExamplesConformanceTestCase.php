@@ -20,6 +20,8 @@ use Symfony\Component\Console\Tester\CommandTester;
  * Doctrine ({@see DoctrineOperationExamplesTest}) kernels. Note 1 is seeded. `notes`
  * declares an example on every field, overrides `fetchOne` and `create`, and switches
  * `update` and `fetchRelationship.parent` off; `scraps` on `gappy` declares none.
+ * `tallies` and `jottings` on `counted` cover the paginators that always count and a
+ * relation's declared example id.
  */
 #[Group('spec:openapi')]
 abstract class OperationExamplesConformanceTestCase extends JsonApiFunctionalTestCase
@@ -138,6 +140,73 @@ abstract class OperationExamplesConformanceTestCase extends JsonApiFunctionalTes
 
         self::assertSame(Command::SUCCESS, $tester->getStatusCode());
         self::assertSame('', $tester->getErrorOutput());
+    }
+
+    #[Test]
+    public function aCollectionWhosePaginatorAlwaysCountsShowsItsTotalWithoutWithCount(): void
+    {
+        $document = $this->document('counted');
+
+        // `tallies` takes the server default paginator, which always counts.
+        $example = $this->responseExample($document, '/tallies', 'get', '200');
+        $this->assertCountedWithoutWithCount($example);
+
+        // The served page carries the same members.
+        $served = $this->decode($this->handle('/counted/tallies'));
+        self::assertIsInt($this->member($served, 'meta', 'total'));
+        self::assertNotNull($this->member($served, 'links', 'last'));
+
+        // `jottings` overrides the default with a count-free paginator.
+        $this->assertCountFree($this->responseExample($document, '/jottings', 'get', '200'));
+    }
+
+    #[Test]
+    public function aRelationWhosePaginatorAlwaysCountsShowsItsTotalWithoutWithCount(): void
+    {
+        $document = $this->document('counted');
+
+        $this->assertCountedWithoutWithCount($this->responseExample($document, '/tallies/{id}/countedChildren', 'get', '200'));
+        $this->assertCountedWithoutWithCount($this->responseExample($document, '/tallies/{id}/relationships/countedChildren', 'get', '200'));
+
+        // `children` takes the count-free paginator of `jottings`.
+        $this->assertCountFree($this->responseExample($document, '/tallies/{id}/children', 'get', '200'));
+        $this->assertCountFree($this->responseExample($document, '/tallies/{id}/relationships/children', 'get', '200'));
+    }
+
+    #[Test]
+    public function aRelationExampleIdFillsLinkageToAnUnregisteredType(): void
+    {
+        $document = $this->document('counted');
+        $linkage = ['type' => 'notes', 'id' => '9'];
+
+        self::assertSame($linkage, $this->member($this->responseExample($document, '/tallies/{id}/relationships/parent', 'get', '200'), 'data'));
+        self::assertSame($linkage, $this->member($this->responseExample($document, '/tallies/{id}', 'get', '200'), 'data', 'relationships', 'parent', 'data'));
+    }
+
+    #[Test]
+    public function theExportReportsNothingForTheCountedServer(): void
+    {
+        $tester = $this->export(['--server' => 'counted', '--strict' => true]);
+
+        self::assertSame(Command::SUCCESS, $tester->getStatusCode());
+        self::assertSame('', $tester->getErrorOutput());
+    }
+
+    private function assertCountedWithoutWithCount(mixed $example): void
+    {
+        self::assertIsInt($this->member($example, 'meta', 'total'));
+        self::assertIsInt($this->member($example, 'meta', 'page', 'total'));
+        self::assertNotNull($this->member($example, 'links', 'last'));
+        self::assertStringNotContainsString('withCount', (string) \json_encode($this->member($example, 'links')));
+        self::assertNull($this->member($example, 'jsonapi', 'profile'));
+    }
+
+    private function assertCountFree(mixed $example): void
+    {
+        self::assertIsArray($example);
+        self::assertNull($this->member($example, 'meta', 'total'));
+        self::assertNull($this->member($example, 'meta', 'page', 'total'));
+        self::assertNull($this->member($example, 'links', 'last'));
     }
 
     /**

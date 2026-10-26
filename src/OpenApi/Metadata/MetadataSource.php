@@ -10,6 +10,7 @@ use haddowg\JsonApi\OpenApi\Metadata\OperationType;
 use haddowg\JsonApi\OpenApi\Metadata\ServerMetadataInterface;
 use haddowg\JsonApi\OpenApi\Metadata\TypeMetadataInterface;
 use haddowg\JsonApi\OpenApi\Tag;
+use haddowg\JsonApi\Pagination\CursorPaginator;
 use haddowg\JsonApi\Pagination\PaginatorInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
@@ -308,7 +309,8 @@ final class MetadataSource
         // menu for a MultiPaginator); `null` when the type is unpaginated (no `page`
         // parameter at all). The projector emits the whole `page` family as one
         // deepObject parameter carrying this schema — no central paginator switch.
-        $pageSchema = $resource?->pagination($serverDefaultPaginator)?->describePageSchema();
+        $paginator = $resource?->pagination($serverDefaultPaginator);
+        $pageSchema = $paginator?->describePageSchema();
 
         return new TypeMetadata(
             type: $type,
@@ -328,6 +330,7 @@ final class MetadataSource
             idPattern: $this->idEncoders->routePatternFor($type, $serverName),
             pageSchema: $pageSchema,
             countable: $resource?->isCountable() ?? false,
+            alwaysCounts: self::alwaysCounts($paginator),
             filters: $resource !== null ? $resource->allFilters() : [],
             // allSorts(), not sorts(): the runtime accepts the field-derived sortables
             // (every `->sortable()` field) UNION the explicit sorts() overrides, so the
@@ -411,18 +414,29 @@ final class MetadataSource
         // schema comes from the paginator the related and relationship endpoints
         // serve: the relation's own, else the related resource's, else the server
         // default. A polymorphic to-many has no single related resource, as at runtime.
-        $pageSchema = null;
+        $paginator = null;
         if ($relation->isToMany()) {
             $relatedTypes = $relation->relatedTypes();
             $relatedResource = \count($relatedTypes) === 1 ? $this->types->resourceFor($server, $relatedTypes[0]) : null;
-            $pageSchema = RelationCriteriaFactory::resolvePaginator($relation, $relatedResource, $serverDefault)?->describePageSchema();
+            $paginator = RelationCriteriaFactory::resolvePaginator($relation, $relatedResource, $serverDefault);
         }
 
         return new RelationMetadata(
             $relation,
-            $pageSchema,
+            $paginator?->describePageSchema(),
             $this->includePaths->relatedPathsFor($server, $relation),
+            self::alwaysCounts($paginator),
         );
+    }
+
+    /**
+     * Whether a collection served by `$paginator` carries its total on every request,
+     * by the same rule the {@see \haddowg\JsonApiBundle\Operation\CrudOperationHandler}
+     * applies: the paginator's `withCount()` opt-in, and never for a cursor window.
+     */
+    private static function alwaysCounts(?PaginatorInterface $paginator): bool
+    {
+        return $paginator !== null && !$paginator instanceof CursorPaginator && $paginator->wantsCount();
     }
 
     /**

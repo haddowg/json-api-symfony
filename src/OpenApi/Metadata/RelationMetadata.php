@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\OpenApi\Metadata;
 
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresAlwaysCounted;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresRelationExampleId;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresRelationUriFieldName;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresWriteOnlyRelation;
 use haddowg\JsonApi\OpenApi\Metadata\RelationMetadataInterface;
 use haddowg\JsonApi\OpenApi\Schema;
 use haddowg\JsonApi\Resource\Field\AbstractRelationValue;
+use haddowg\JsonApi\Resource\Field\ExemplifiedRelationInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApiBundle\DataProvider\PivotFields;
 
@@ -22,9 +25,9 @@ use haddowg\JsonApiBundle\DataProvider\PivotFields;
  * derived facts — the related-collection page {@see Schema} and the related-
  * endpoint includable paths — are resolved by the {@see MetadataSource} (which has
  * the {@see \haddowg\JsonApi\Server\Server} fallback chain + the relation graph) and
- * passed in.
+ * passed in, as is whether that paginator counts on every request.
  */
-final readonly class RelationMetadata implements RelationMetadataInterface, DeclaresWriteOnlyRelation, DeclaresRelationUriFieldName
+final readonly class RelationMetadata implements RelationMetadataInterface, DeclaresWriteOnlyRelation, DeclaresRelationUriFieldName, DeclaresAlwaysCounted, DeclaresRelationExampleId
 {
     /**
      * @param list<string> $relatedIncludablePaths the related type's includable paths (resolved by the source)
@@ -33,6 +36,7 @@ final readonly class RelationMetadata implements RelationMetadataInterface, Decl
         private RelationInterface $relation,
         private ?Schema $pageSchema,
         private array $relatedIncludablePaths,
+        private bool $alwaysCounts = false,
     ) {}
 
     public function name(): string
@@ -117,6 +121,16 @@ final readonly class RelationMetadata implements RelationMetadataInterface, Decl
     public function pageSchema(): ?Schema
     {
         return $this->pageSchema;
+    }
+
+    public function alwaysCounts(): bool
+    {
+        return $this->alwaysCounts;
+    }
+
+    public function exampleId(): ?string
+    {
+        return $this->relation instanceof ExemplifiedRelationInterface ? $this->relation->exampleId() : null;
     }
 
     public function filters(): array

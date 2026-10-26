@@ -468,10 +468,14 @@ final class OpenApiDocsTest extends MusicCatalogKernelTestCase
         );
 
         // `playlists.owner` links to `users`, which the default server does not register,
-        // so its linkage is spelled out on the resource attribute.
+        // so its linkage takes the id the relation declares with exampleId().
         self::assertSame(
-            ['data' => ['type' => 'users', 'id' => '1']],
-            $this->nested($document, 'paths', '/playlists/{id}/relationships/owner', 'get', 'responses', '200', 'content', $mediaType, 'example'),
+            ['type' => 'users', 'id' => '1'],
+            $this->nested($document, 'paths', '/playlists/{id}/relationships/owner', 'get', 'responses', '200', 'content', $mediaType, 'example', 'data'),
+        );
+        self::assertSame(
+            ['type' => 'users', 'id' => '1'],
+            $this->nested($document, 'paths', '/playlists/{id}/relationships/owner', 'patch', 'requestBody', 'content', $mediaType, 'example', 'data'),
         );
 
         // The standalone serializers switch theirs off.
