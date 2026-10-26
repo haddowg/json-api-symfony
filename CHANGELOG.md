@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.12.0](https://github.com/haddowg/json-api-symfony/compare/v1.11.1...v1.12.0) (2026-10-26)
+
+
+### Features
+
+* add summary and description to custom actions ([9e8543d](https://github.com/haddowg/json-api-symfony/commit/9e8543d38c5097bb26bc84fb8e50d7ad4dfe3b3b))
+* let a custom action answer with a raw response body ([#232](https://github.com/haddowg/json-api-symfony/issues/232)) ([7b7005f](https://github.com/haddowg/json-api-symfony/commit/7b7005fa3019513b172abcb96a1e3d4542a12156))
+* let a resource instantiate and delete its own entities ([#227](https://github.com/haddowg/json-api-symfony/issues/227)) ([f733c18](https://github.com/haddowg/json-api-symfony/commit/f733c18e7d0dc5c3e52ce282e1b52b622ce4d2e4))
+* let a server reject read-only attributes in write bodies ([#230](https://github.com/haddowg/json-api-symfony/issues/230)) ([a03d843](https://github.com/haddowg/json-api-symfony/commit/a03d843f1912d3cef036ed9f4ff963b90dcca290))
+* pass UniqueEntity options through and add resource-level entity constraints ([#228](https://github.com/haddowg/json-api-symfony/issues/228)) ([5a680d0](https://github.com/haddowg/json-api-symfony/commit/5a680d0b70bab3244e8d88a995662ff5ca4bc7db))
+* require haddowg/json-api 1.11 ([#226](https://github.com/haddowg/json-api-symfony/issues/226)) ([9e661e4](https://github.com/haddowg/json-api-symfony/commit/9e661e4e0b9041e3c4e594a8405950fd6eed95a2))
+
+
+### Bug Fixes
+
+* bind Doctrine ids through their mapped type ([#223](https://github.com/haddowg/json-api-symfony/issues/223)) ([5287c28](https://github.com/haddowg/json-api-symfony/commit/5287c285d3a350e58ea52116d5825cbc82bc4852))
+* require the JSON:API Content-Type on writes and negotiate action bodies ([1544187](https://github.com/haddowg/json-api-symfony/commit/1544187eeb5e4006303e42c0995cc9143229edc4))
+* write a relation with fillUsing through its hook ([#225](https://github.com/haddowg/json-api-symfony/issues/225)) ([9668e74](https://github.com/haddowg/json-api-symfony/commit/9668e7412db10d344c4cb87d170e77384a0feda3))
+
 ## [1.11.1](https://github.com/haddowg/json-api-symfony/compare/v1.11.0...v1.11.1) (2026-10-25)
 
 
