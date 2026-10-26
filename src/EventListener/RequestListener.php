@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\EventListener;
 
 use haddowg\JsonApi\Atomic\AtomicExtension;
 use haddowg\JsonApi\Atomic\AtomicOperationsParser;
+use haddowg\JsonApi\Negotiation\AcceptNegotiator;
 use haddowg\JsonApi\Negotiation\RequestValidator;
 use haddowg\JsonApi\Operation\AtomicOperationsOperation;
 use haddowg\JsonApi\Operation\CustomActionOperation;
@@ -23,6 +24,7 @@ use haddowg\JsonApiBundle\Action\ActionDescriptor;
 use haddowg\JsonApiBundle\Action\ActionInput;
 use haddowg\JsonApiBundle\Action\ActionRegistry;
 use haddowg\JsonApiBundle\Action\ActionScope;
+use haddowg\JsonApiBundle\Action\RawResults;
 use haddowg\JsonApiBundle\Operation\TargetResolver;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Server\ServerProvider;
@@ -267,15 +269,26 @@ final class RequestListener
         $scope = $this->actionScope($request);
         $descriptor = $this->actionDescriptor($request, $target->type, $scope, $actionName);
 
+        // The response media type comes first: an Accept that picks a raw result names no
+        // JSON:API type, so the JSON:API Accept rules then run as if it had asked for one.
+        $responseMediaType = AcceptNegotiator::negotiate(
+            $jsonApiRequest->getHeaderLine('accept'),
+            RawResults::mediaTypes($descriptor->responds ?? [['kind' => 'resource']]),
+        );
+        $negotiated = $responseMediaType === self::JSON_API_MEDIA_TYPE
+            ? $jsonApiRequest
+            : $jsonApiRequest->withHeader('accept', self::JSON_API_MEDIA_TYPE);
+
         $validator = new RequestValidator();
-        [$input, $mediaType] = $this->negotiateActionBody($validator, $jsonApiRequest, $descriptor);
+        [$input, $mediaType] = $this->negotiateActionBody($validator, $negotiated, $descriptor);
         $validator->validateQueryParams($jsonApiRequest);
 
         // The mode the body is read in and the media type it matched, for the invoker
         // and the handler's ActionContext.
         $jsonApiRequest = $jsonApiRequest
             ->withAttribute(ActionContext::INPUT_ATTRIBUTE, $input)
-            ->withAttribute(ActionContext::REQUEST_MEDIA_TYPE_ATTRIBUTE, $mediaType);
+            ->withAttribute(ActionContext::REQUEST_MEDIA_TYPE_ATTRIBUTE, $mediaType)
+            ->withAttribute(ActionContext::RESPONSE_MEDIA_TYPE_ATTRIBUTE, $responseMediaType);
 
         // Only a body read as a Document is parsed and validated as JSON:API; None and
         // Raw carry no document, so the operation body stays null.

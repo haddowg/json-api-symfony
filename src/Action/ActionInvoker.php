@@ -7,11 +7,13 @@ namespace haddowg\JsonApiBundle\Action;
 use haddowg\JsonApi\Exception\ResourceNotFound;
 use haddowg\JsonApi\Operation\CustomActionOperation;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Request\MediaType;
 use haddowg\JsonApi\Response\AcceptedResponse;
 use haddowg\JsonApi\Response\DataResponse;
 use haddowg\JsonApi\Response\ErrorResponse;
 use haddowg\JsonApi\Response\MetaResponse;
 use haddowg\JsonApi\Response\NoContentResponse;
+use haddowg\JsonApi\Response\RawResponse;
 use haddowg\JsonApi\Response\SeeOtherResponse;
 use haddowg\JsonApi\Server\ResolvingServerInterface;
 use haddowg\JsonApi\Server\Server;
@@ -57,7 +59,7 @@ final readonly class ActionInvoker
         private ?EventDispatcherInterface $dispatcher = null,
     ) {}
 
-    public function invoke(CustomActionOperation $operation): DataResponse|MetaResponse|NoContentResponse|AcceptedResponse|SeeOtherResponse|ErrorResponse
+    public function invoke(CustomActionOperation $operation): DataResponse|MetaResponse|NoContentResponse|AcceptedResponse|SeeOtherResponse|ErrorResponse|RawResponse
     {
         $server = $operation->context()->server;
         $target = $operation->target();
@@ -112,6 +114,17 @@ final readonly class ActionInvoker
         );
 
         $response = $handler->handle($context);
+
+        // A raw body is sent only in the media type the client's Accept picked.
+        if ($response instanceof RawResponse && MediaType::essence($response->contentType()) !== $context->responseMediaType()) {
+            throw new \LogicException(\sprintf(
+                'The action "%s" on type "%s" answered with a raw "%s" body, but the request negotiated "%s". Answer in $context->responseMediaType().',
+                $descriptor->path,
+                $type,
+                $response->contentType(),
+                $context->responseMediaType() ?? 'none',
+            ));
+        }
 
         $this->dispatch(new AfterActionEvent($type, $descriptor->path, $entity));
 

@@ -1,0 +1,3 @@
+# Actions negotiate raw responses before the handler runs
+
+An action may declare core `RawResult`s, so the bundle has to know which body to send before the handler builds one. It negotiates the `Accept` header against the declared media types ahead of the handler and hands the result over on `ActionContext::responseMediaType()`, rather than letting the handler read `Accept` itself, so the `406`, the tie that favours JSON:API and the `Vary: Accept` header behave the same for every action. A handler that answers in a type the request did not negotiate is a server error rather than a silently mismatched body, and errors stay JSON:API documents because a client parsing a failed export needs the error format it already knows.

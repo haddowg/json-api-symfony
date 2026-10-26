@@ -281,7 +281,7 @@ final class MetadataSource
     /**
      * Assembles one type's metadata from its route descriptor + the live registry.
      *
-     * @param array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string}>>} $descriptor
+     * @param array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string, raw?: array<string, mixed>}>>} $descriptor
      */
     private function buildType(Server $server, string $serverName, string $type, array $descriptor): TypeMetadata
     {
@@ -452,7 +452,7 @@ final class MetadataSource
      * {@see OperationType::value}. An operation with no override is absent (TypeMetadata
      * then falls back to the core default); a malformed entry is dropped defensively.
      *
-     * @param array<string, list<array{status: int, jobType?: string}>> $responses
+     * @param array<string, list<array{status: int, jobType?: string, raw?: array<string, mixed>}>> $responses
      *
      * @return array<string, non-empty-list<OperationResponseInterface>>
      */

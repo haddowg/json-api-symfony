@@ -346,6 +346,50 @@ written:
 )]
 ```
 
+### Raw responses (CSV, PDF, plain JSON)
+
+An action can answer with a body that is not JSON:API by declaring a core `RawResult`
+per media type in `responds`, beside or instead of its JSON:API response. The request's
+`Accept` header picks one before the handler runs, and `$context->responseMediaType()`
+says which; `$context->raw()` builds the response in that type:
+
+```php
+#[AsJsonApiAction(
+    type: 'albums',
+    path: 'export',
+    methods: ['GET'],
+    scope: ActionScope::Collection,
+    responds: [
+        new MetaResult(),
+        new RawResult('text/csv', schema: ['type' => 'string'], headers: ['Content-Disposition' => 'Names the downloaded file.']),
+        new RawResult('application/pdf', binary: true),
+        new RawResult('application/json', schema: AlbumCatalogueStats::class),
+    ],
+)]
+final class ExportAlbums implements ActionHandlerInterface
+{
+    public function handle(ActionContext $context): MetaResponse|RawResponse
+    {
+        return match ($context->responseMediaType()) {
+            'text/csv' => $context->raw($csv, headers: ['Content-Disposition' => 'attachment; filename="albums.csv"']),
+            'application/pdf' => $context->raw($pdfStream),
+            'application/json' => $context->raw(\json_encode($counts)),
+            default => $context->meta(['albums' => $counts]),
+        };
+    }
+}
+```
+
+A tie in the `Accept` weights goes to JSON:API, so `*/*` or no `Accept` still gets the
+document. An `Accept` that matches none of the declared types is a `406`. A body can be
+a string, a stream resource or a PSR-7 stream; a stream is sent with Symfony's
+`StreamedResponse`. Every raw response carries `Vary: Accept`, and the type's cache and
+deprecation headers apply as they do to a document. Answering in a media type the request
+did not negotiate is a `500`, and an error is always a JSON:API document, whatever the
+`Accept` picked. In the OpenAPI document each raw result is a media type under its
+status, and a `DescribesRawBody` schema class becomes a component named by its short
+class name.
+
 ### The `ActionContext`
 
 The handler is handed an `ActionContext` so it never has to thread the server. It

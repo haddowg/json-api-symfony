@@ -5,9 +5,13 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\EventListener;
 
 use haddowg\JsonApi\Response\AbstractResponse;
+use haddowg\JsonApi\Response\RawResponse;
 use haddowg\JsonApi\Server\Server;
 use Psr\Http\Message\ServerRequestInterface;
+use Psr\Http\Message\StreamInterface;
 use Symfony\Bridge\PsrHttpMessage\Factory\HttpFoundationFactory;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\HttpKernel\Event\ViewEvent;
 
 /**
@@ -30,6 +34,12 @@ final class ViewListener
         $request = $event->getRequest();
 
         $response = $request->attributes->get(RequestListener::RESPONSE_ATTRIBUTE);
+        if ($response instanceof RawResponse) {
+            $event->setResponse(self::raw($response));
+
+            return;
+        }
+
         if (!$response instanceof AbstractResponse) {
             return;
         }
@@ -43,5 +53,35 @@ final class ViewListener
         $psrResponse = $response->toPsrResponse($server, $psrRequest);
 
         $event->setResponse($this->httpFoundationFactory->createResponse($psrResponse));
+    }
+
+    /**
+     * A raw action body as a Symfony response: a string as it is, a stream resource or
+     * PSR-7 stream streamed out, under its `Content-Type` with `Vary: Accept`, then the
+     * headers the action set.
+     */
+    private static function raw(RawResponse $raw): Response
+    {
+        $body = $raw->body();
+        $headers = ['Content-Type' => $raw->contentType(), 'Vary' => 'Accept', ...$raw->headers()];
+
+        if (\is_string($body)) {
+            return new Response($body, $raw->status(), $headers);
+        }
+
+        return new StreamedResponse(static function () use ($body): void {
+            if ($body instanceof StreamInterface) {
+                if ($body->isSeekable()) {
+                    $body->rewind();
+                }
+                while (!$body->eof()) {
+                    echo $body->read(8192);
+                }
+
+                return;
+            }
+
+            \fpassthru($body);
+        }, $raw->status(), $headers);
     }
 }

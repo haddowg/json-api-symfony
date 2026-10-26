@@ -139,14 +139,38 @@ final class CustomActionTest extends MusicCatalogKernelTestCase
         self::assertSame(415, $refused->getStatusCode());
     }
 
+    #[Test]
+    public function theExportAnswersInTheNegotiatedMediaType(): void
+    {
+        $csv = $this->action('/albums/-actions/export', 'GET', user: 'admin', accept: 'text/csv');
+        self::assertSame(200, $csv->getStatusCode(), (string) $csv->getContent());
+        self::assertStringStartsWith('text/csv', (string) $csv->headers->get('Content-Type'));
+        self::assertSame('attachment; filename="albums.csv"', $csv->headers->get('Content-Disposition'));
+        self::assertStringStartsWith("id,title\n1,", (string) $csv->getContent());
+
+        $json = $this->action('/albums/-actions/export', 'GET', user: 'admin', accept: 'application/json');
+        self::assertSame('{"published":2,"unpublished":1}', $json->getContent());
+
+        $pdf = $this->action('/albums/-actions/export', 'GET', user: 'admin', accept: 'application/pdf');
+        self::assertSame('application/pdf', $pdf->headers->get('Content-Type'));
+        \ob_start();
+        $pdf->sendContent();
+        self::assertStringStartsWith('%PDF-1.7', (string) \ob_get_clean());
+
+        $document = $this->action('/albums/-actions/export', 'GET', user: 'admin');
+        $meta = $this->decode($document)['meta'] ?? null;
+        self::assertIsArray($meta);
+        self::assertSame(['published' => 2, 'unpublished' => 1], $meta['albums'] ?? null);
+    }
+
     /**
      * Issues an authenticated action request (Bearer token = the user identifier).
      *
      * @param array<string, mixed>|null $body
      */
-    private function action(string $path, string $method = 'POST', ?array $body = null, string $user = 'admin'): Response
+    private function action(string $path, string $method = 'POST', ?array $body = null, string $user = 'admin', string $accept = 'application/vnd.api+json'): Response
     {
-        return $this->handle($path, $method, $body, ['HTTP_AUTHORIZATION' => 'Bearer ' . $user]);
+        return $this->handle($path, $method, $body, ['HTTP_AUTHORIZATION' => 'Bearer ' . $user, 'HTTP_ACCEPT' => $accept]);
     }
 
     /**

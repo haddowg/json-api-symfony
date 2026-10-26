@@ -17,6 +17,7 @@ use haddowg\JsonApi\OpenApi\Metadata\NoContent;
 use haddowg\JsonApi\OpenApi\Metadata\SeeOther;
 use haddowg\JsonApiBundle\Action\AcceptedMediaTypes;
 use haddowg\JsonApiBundle\Action\ActionDescriptor;
+use haddowg\JsonApiBundle\Action\RawResults;
 
 /**
  * Adapts a bundle {@see ActionDescriptor} (a resolved `#[AsJsonApiAction]`) to the
@@ -77,6 +78,7 @@ final readonly class ActionMetadata implements DeclaresActionLink, DeclaresAccep
                 'nocontent' => new NoContent(),
                 'accepted' => new Accepted($entry['jobType'] ?? ''),
                 'seeother' => new SeeOther(),
+                'raw' => RawResults::fromArray($entry['raw'] ?? []),
                 default => throw new \LogicException(\sprintf(
                     'Unknown action response kind "%s" for action "%s" on type "%s".',
                     $entry['kind'],
