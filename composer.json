@@ -55,12 +55,14 @@
         "symfony/security-bundle": "^6.4 || ^7.0 || ^8.0",
         "symfony/security-core": "^6.4 || ^7.0 || ^8.0",
         "symfony/translation": "^6.4 || ^7.0 || ^8.0",
+        "symfony/uid": "^6.4 || ^7.0 || ^8.0",
         "symfony/validator": "^6.4 || ^7.0 || ^8.0",
         "symfony/var-exporter": "^6.4 || ^7.0 || ^8.0",
         "symfony/yaml": "^6.4 || ^7.0 || ^8.0",
         "zenstruck/foundry": "^2.10"
     },
     "conflict": {
+        "doctrine/dbal": "<3.6",
         "doctrine/orm": "<2.20 || >=4.0"
     },
     "suggest": {

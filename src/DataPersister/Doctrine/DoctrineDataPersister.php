@@ -22,6 +22,7 @@ use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\MovedMember;
 use haddowg\JsonApiBundle\DataPersister\ReportsMovedMembersInterface;
 use haddowg\JsonApiBundle\DataPersister\TransactionalDataPersisterInterface;
+use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineIdentifiers;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\PivotAssociation;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\PivotAssociationResolver;
 use haddowg\JsonApiBundle\Server\IdEncoderResolver;
@@ -66,6 +67,8 @@ use haddowg\JsonApiBundle\Validation\RelationshipTypeUnacceptable;
  */
 final class DoctrineDataPersister implements DataPersisterInterface, TransactionalDataPersisterInterface, ReportsMovedMembersInterface
 {
+    private readonly DoctrineIdentifiers $ids;
+
     /**
      * @param array<string, class-string>    $entityClassByType a `type → entity FQCN` map
      * @param IdEncoderResolver               $idEncoders        resolves a related type's id encoder (linkage decode)
@@ -76,7 +79,9 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
         private readonly array $entityClassByType,
         private readonly IdEncoderResolver $idEncoders,
         private readonly ?PivotAssociationResolver $pivotAssociations = null,
-    ) {}
+    ) {
+        $this->ids = new DoctrineIdentifiers($entityManager);
+    }
 
     /**
      * Opens the `EntityManager`'s transaction. The existing per-operation flushes
@@ -357,7 +362,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
 
         if ($mode === Mode::Remove) {
             foreach ($incomingMembers as [$storageKey]) {
-                $row = $existing[$this->mapKey($storageKey)] ?? null;
+                $row = $existing[$this->mapKey($relatedClass, $storageKey)] ?? null;
                 if ($row !== null) {
                     $this->removePivotRow($parent, $association, $row);
                 }
@@ -368,7 +373,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
 
         $keptKeys = [];
         foreach ($incomingMembers as [$storageKey, $reference, $meta]) {
-            $mapKey = $this->mapKey($storageKey);
+            $mapKey = $this->mapKey($relatedClass, $storageKey);
             $keptKeys[$mapKey] = true;
 
             $row = $existing[$mapKey] ?? null;
@@ -432,7 +437,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
             }
             $storageKey = $this->entityManager->getClassMetadata($far::class)->getIdentifierValues($far)[$farIdField] ?? null;
             if ($storageKey !== null) {
-                $byFar[$this->mapKey($storageKey)] = $row;
+                $byFar[$this->mapKey($relatedClass, $storageKey)] = $row;
             }
         }
 
@@ -621,14 +626,18 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
     }
 
     /**
-     * The stable string map key for a far member's storage key (scalar id → its string
-     * form; a non-scalar id → its object hash), so existing rows and incoming members
-     * pair on the same far member.
+     * The stable string map key for a far member's storage key, the same for every form
+     * of one id ({@see DoctrineIdentifiers::key()}), so existing rows and incoming
+     * members pair on the same far member. An id its type cannot key falls back to its
+     * object hash.
+     *
+     * @param class-string $relatedClass
      */
-    private function mapKey(mixed $storageKey): string
+    private function mapKey(string $relatedClass, mixed $storageKey): string
     {
-        if (\is_scalar($storageKey)) {
-            return (string) $storageKey;
+        $key = $this->ids->key($this->entityManager->getClassMetadata($relatedClass), $storageKey);
+        if ($key !== null) {
+            return $key;
         }
 
         return \is_object($storageKey) ? \spl_object_hash($storageKey) : \serialize($storageKey);
@@ -880,22 +889,20 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
 
     /**
      * Decodes a linkage wire id to the related type's storage key when that type
-     * declares an id encoder; otherwise (no encoder, wire == storage) returns it
-     * unchanged. A well-formed but undecodable wire id has no storage key — no entity
-     * holds it — so it is a bad linkage target: it raises {@see ResourceNotFound}
-     * (`404`), the controlled error a genuinely-missing reference produces, rather
-     * than passing the raw wire string to `getReference` (which would build a proxy
-     * that errors on initialization — e.g. a `TypeError` assigning a non-integer key
-     * to an int-PK entity — surfacing as a `500`; ADR 0038).
+     * declares an id encoder (otherwise wire == storage), then converts it through the
+     * id's Doctrine type to the form the entity holds, which `getReference` needs: a
+     * `uuid` id becomes its Uuid object. A wire id that does not decode or convert has
+     * no storage key, so no entity holds it: it is a bad linkage target and raises
+     * {@see ResourceNotFound} (`404`), rather than reaching `getReference`, whose proxy
+     * would error on initialization and surface as a `500` (ADR 0038).
      */
     private function decodeLinkageId(string $relatedType, string $id): mixed
     {
         $encoder = $this->idEncoders->encoderFor($relatedType);
-        if ($encoder === null) {
-            return $id;
-        }
+        $storageKey = $encoder !== null ? $encoder->decode($id) : $id;
 
-        return $encoder->decode($id) ?? throw new ResourceNotFound();
+        return $this->ids->toPhp($this->entityManager->getClassMetadata($this->entityClassFor($relatedType)), $storageKey)
+            ?? throw new ResourceNotFound();
     }
 
     /**

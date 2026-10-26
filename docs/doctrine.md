@@ -196,6 +196,28 @@ unchanged (wire == storage), and the **in-memory** provider has no encoder at al
 encoding is a Doctrine-only concern — encoders are entirely user-supplied (no encoder
 dependency is added to the bundle).
 
+## Ids that are not an int or a string
+
+The Doctrine layer reads each identifier's mapped type and converts ids through it.
+A Doctrine `uuid` id, for example, is a `Uuid` object on the entity, 16 bytes in the
+database on a platform without a native UUID type, and its RFC 4122 string on the
+wire. With such an id:
+
+- the provider binds the route `{id}` and every `IN (...)` list of ids in the
+  database form, with the type's binding type, so an id stored as `BINARY(16)`
+  matches. This covers `fetchOne`, include batching, related and relationship
+  endpoints, `withCount`, the `relatedQuery` windows and the scoped id-IN probes;
+- the persister converts each linkage id to the form the entity holds before
+  `getReference()`, so a relationship write sets a `Uuid` rather than a string. A
+  linkage id the type cannot convert is a `404`, as an undecodable one is;
+- rows are matched up by id in their database form, so an id read off an entity, one
+  a query projected and one decoded from the wire all key the same row.
+
+A `uuid` id needs no encoder: `Id::make()->uuid()` is enough, and the wire id is the
+canonical UUID string. Rendering the entity's own `Uuid` as that string is core's job,
+and needs a core release that renders a `Stringable` id as its string. An encoder still
+works: when its `decode()` returns the 16-byte form, the `uuid` type accepts that too.
+
 ## Eager-loading includes (no N+1)
 
 Eager-loading of a read's `?include` tree is **automatic and built in** — there is

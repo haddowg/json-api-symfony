@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\DataProvider\Doctrine;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Mapping\ClassMetadata;
 use Doctrine\ORM\QueryBuilder;
 use haddowg\JsonApi\Collection\CollectionResult;
 use haddowg\JsonApi\Collection\CursorCollectionResult;
@@ -111,6 +112,8 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
     private readonly WindowedRelationBatch $windowedBatch;
 
+    private readonly DoctrineIdentifiers $ids;
+
     /**
      * @param array<string, class-string>            $entityClassByType a `type → entity FQCN` map
      * @param IdEncoderResolver                      $idEncoders        resolves a type's id encoder (route `{id}` decode)
@@ -137,7 +140,8 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $this->windowExecutor = new WindowExecutor();
         $this->filterHandler = new DoctrineFilterHandler($filterArms);
         $this->sortHandler = new DoctrineSortHandler($sortArms);
-        $this->relationScope = new RelationScope($this->entityManager);
+        $this->ids = new DoctrineIdentifiers($this->entityManager);
+        $this->relationScope = new RelationScope($this->entityManager, $this->ids);
         $this->keysetResolver = new KeysetResolver();
         $this->minter = new CursorTokenMinter(new CursorCodec());
         $this->windowedBatch = new WindowedRelationBatch(
@@ -148,6 +152,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             $this->sortHandler,
             $this->keysetResolver,
             $this->minter,
+            $this->ids,
         );
     }
 
@@ -173,6 +178,14 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             $storageKey = $id;
         }
 
+        // The key in the form the entity holds it (a `uuid` id's Uuid object); a key
+        // its id type cannot convert matches no row.
+        $metadata = $this->entityManager->getClassMetadata($entityClass);
+        $storageKey = $this->ids->toPhp($metadata, $storageKey);
+        if ($storageKey === null) {
+            return null;
+        }
+
         $extensions = $this->extensionsFor($type);
         if ($extensions === []) {
             return $this->entityManager->find($entityClass, $storageKey);
@@ -184,10 +197,9 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
         // String-id lookups imply a single-field identifier (composite ids
         // cannot round-trip through one JSON:API id segment anyway).
-        $idField = $this->entityManager->getClassMetadata($entityClass)->getSingleIdentifierFieldName();
-        $builder
-            ->andWhere(\sprintf('%s.%s = :jsonapi_id', self::ROOT_ALIAS, $idField))
-            ->setParameter('jsonapi_id', $storageKey);
+        $idField = $metadata->getSingleIdentifierFieldName();
+        $builder->andWhere(\sprintf('%s.%s = :jsonapi_id', self::ROOT_ALIAS, $idField));
+        $this->ids->bind($builder, 'jsonapi_id', $metadata, $storageKey);
 
         foreach ($extensions as $extension) {
             // The SPI fetchOne carries no request, so the context's request is null.
@@ -757,7 +769,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             $targetId = $this->toOneTargetId($parent, $property, $relatedMetadata, $relatedIdField);
             $parentTargetId[$wireId] = $targetId;
             if ($targetId !== null) {
-                $targetIds[(string) $targetId] = $targetId;
+                $targetIds[$targetId] = $targetId;
             }
         }
 
@@ -766,7 +778,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         // Partition each parent to its single target (0-or-1 members), keyed by wire id.
         $results = [];
         foreach ($parentTargetId as $wireId => $targetId) {
-            $target = $targetId !== null ? ($targetsById[(string) $targetId] ?? null) : null;
+            $target = $targetId !== null ? ($targetsById[$targetId] ?? null) : null;
             $results[$wireId] = new CollectionResult($target !== null ? [$target] : []);
         }
 
@@ -775,30 +787,25 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
     /**
      * The wire id of a managed `$parent` (encoded when the parent type declares an
-     * encoder), or null when its identifier is not a single scalar.
+     * encoder), or null when it has no single identifier.
      *
      * @param \Doctrine\ORM\Mapping\ClassMetadata<object> $parentMetadata
      */
     private function parentWireId(object $parent, \Doctrine\ORM\Mapping\ClassMetadata $parentMetadata, ?IdEncoderInterface $encoder): ?string
     {
-        $parentIdField = $parentMetadata->getSingleIdentifierFieldName();
-        $key = $parentMetadata->getIdentifierValues($parent)[$parentIdField] ?? null;
-        if (!\is_scalar($key)) {
-            return null;
-        }
-
-        return $encoder !== null ? $encoder->encode($key) : (string) $key;
+        return $this->ids->wireId($parentMetadata, $this->ids->valueOf($parentMetadata, $parent), $encoder);
     }
 
     /**
-     * The single-id of a to-one target read off the managed `$parent` WITHOUT initialising
-     * it (a Doctrine proxy exposes its identifier), or null when the to-one is unset. Reads
-     * the association value via the parent metadata's reflection, then the target's id via
-     * the related metadata — a proxy returns its id field without a database round-trip.
+     * The id key ({@see DoctrineIdentifiers::key()}) of a to-one target read off the
+     * managed `$parent` WITHOUT initialising it (a Doctrine proxy exposes its identifier),
+     * or null when the to-one is unset. Reads the association value via the parent
+     * metadata's reflection, then the target's id via the related metadata — a proxy
+     * returns its id field without a database round-trip.
      *
      * @param \Doctrine\ORM\Mapping\ClassMetadata<object> $relatedMetadata
      */
-    private function toOneTargetId(object $parent, string $property, \Doctrine\ORM\Mapping\ClassMetadata $relatedMetadata, string $relatedIdField): int|string|null
+    private function toOneTargetId(object $parent, string $property, \Doctrine\ORM\Mapping\ClassMetadata $relatedMetadata, string $relatedIdField): ?string
     {
         $reflection = $this->entityManager->getClassMetadata($parent::class)->getReflectionProperty($property);
         if ($reflection === null || !$reflection->isInitialized($parent)) {
@@ -810,12 +817,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             return null;
         }
 
-        $key = $relatedMetadata->getIdentifierValues($target)[$relatedIdField] ?? null;
-        if (\is_int($key) || \is_string($key)) {
-            return $key;
-        }
-
-        return null;
+        return $this->ids->key($relatedMetadata, $relatedMetadata->getIdentifierValues($target)[$relatedIdField] ?? null);
     }
 
     /**
@@ -845,8 +847,8 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $builder = $this->entityManager
             ->getRepository($relatedClass)
             ->createQueryBuilder(self::ROOT_ALIAS)
-            ->where(\sprintf('%s.%s IN (:jsonapi_target_ids)', self::ROOT_ALIAS, $relatedIdField))
-            ->setParameter('jsonapi_target_ids', $targetIds);
+            ->where(\sprintf('%s.%s IN (:jsonapi_target_ids)', self::ROOT_ALIAS, $relatedIdField));
+        $this->ids->bindList($builder, 'jsonapi_target_ids', $relatedMetadata, $targetIds);
 
         foreach ($this->extensionsFor($relatedType) as $extension) {
             $builder = $extension->apply($builder, new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request));
@@ -860,9 +862,9 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             if (!\is_object($entity)) {
                 continue;
             }
-            $key = $relatedMetadata->getIdentifierValues($entity)[$relatedIdField] ?? null;
-            if (\is_scalar($key)) {
-                $targetsById[(string) $key] = $entity;
+            $key = $this->ids->key($relatedMetadata, $relatedMetadata->getIdentifierValues($entity)[$relatedIdField] ?? null);
+            if ($key !== null) {
+                $targetsById[$key] = $entity;
             }
         }
 
@@ -973,9 +975,10 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
     private function partitionByParent(QueryBuilder $builder, BatchScope $scope, string $parentType): array
     {
         $encoder = $this->idEncoders->encoderFor($parentType);
+        $parentMetadata = $this->entityManager->getClassMetadata($this->entityClassFor($parentType));
 
         if ($scope->relatedClass !== null && $scope->relatedIdField !== null) {
-            return $this->partitionPairs($builder, $scope->relatedClass, $scope->relatedIdField, $encoder);
+            return $this->partitionPairs($builder, $scope->relatedClass, $scope->relatedIdField, $parentMetadata, $encoder);
         }
 
         /** @var list<array<int|string, mixed>> $rows */
@@ -984,12 +987,11 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $partitions = [];
         foreach ($rows as $row) {
             $related = $row[0] ?? null;
-            $storageKey = $row[BatchScope::PARENT_DISCRIMINATOR_ALIAS] ?? null;
-            if (!\is_object($related) || !\is_scalar($storageKey)) {
+            $wireId = $this->ids->wireId($parentMetadata, $row[BatchScope::PARENT_DISCRIMINATOR_ALIAS] ?? null, $encoder);
+            if (!\is_object($related) || $wireId === null) {
                 continue;
             }
 
-            $wireId = $encoder !== null ? $encoder->encode($storageKey) : (string) $storageKey;
             $partitions[$wireId][] = $related;
         }
 
@@ -1004,43 +1006,44 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
      * its parent's partition in the query's order. Two scalar+load queries, still O(N)
      * per relation.
      *
-     * @param class-string         $relatedClass
-     * @param ?IdEncoderInterface  $encoder the parent type's id encoder, or null
+     * @param class-string           $relatedClass
+     * @param ClassMetadata<object>  $parentMetadata
+     * @param ?IdEncoderInterface    $encoder the parent type's id encoder, or null
      *
      * @return array<string, list<object>> `parentWireId => related entities`, query order preserved per parent
      */
-    private function partitionPairs(QueryBuilder $builder, string $relatedClass, string $relatedIdField, ?IdEncoderInterface $encoder): array
+    private function partitionPairs(QueryBuilder $builder, string $relatedClass, string $relatedIdField, ClassMetadata $parentMetadata, ?IdEncoderInterface $encoder): array
     {
         /** @var list<array<string, mixed>> $pairs */
         $pairs = $builder->getQuery()->getResult();
+        $relatedMetadata = $this->entityManager->getClassMetadata($relatedClass);
 
         $relatedIds = [];
         foreach ($pairs as $pair) {
-            $relatedId = $pair[BatchScope::RELATED_DISCRIMINATOR_ALIAS] ?? null;
-            if (\is_scalar($relatedId)) {
-                $relatedIds[(string) $relatedId] = $relatedId;
+            $key = $this->ids->key($relatedMetadata, $pair[BatchScope::RELATED_DISCRIMINATOR_ALIAS] ?? null);
+            if ($key !== null) {
+                $relatedIds[$key] = $key;
             }
         }
 
         // Load the distinct related entities by id in one IN-query, keyed by id.
         $entitiesById = [];
         if ($relatedIds !== []) {
-            $loaded = $this->entityManager->getRepository($relatedClass)
+            $loader = $this->entityManager->getRepository($relatedClass)
                 ->createQueryBuilder('related')
-                ->where(\sprintf('related.%s IN (:ids)', $relatedIdField))
-                ->setParameter('ids', \array_values($relatedIds))
+                ->where(\sprintf('related.%s IN (:ids)', $relatedIdField));
+            $loaded = $this->ids->bindList($loader, 'ids', $relatedMetadata, $relatedIds)
                 ->getQuery()
                 ->getResult();
 
             \assert(\is_array($loaded));
-            $relatedMetadata = $this->entityManager->getClassMetadata($relatedClass);
             foreach ($loaded as $entity) {
                 if (!\is_object($entity)) {
                     continue;
                 }
-                $key = $relatedMetadata->getIdentifierValues($entity)[$relatedIdField] ?? null;
-                if (\is_scalar($key)) {
-                    $entitiesById[(string) $key] = $entity;
+                $key = $this->ids->key($relatedMetadata, $relatedMetadata->getIdentifierValues($entity)[$relatedIdField] ?? null);
+                if ($key !== null) {
+                    $entitiesById[$key] = $entity;
                 }
             }
         }
@@ -1048,16 +1051,15 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         // Re-associate each ordered pair to its parent's partition.
         $partitions = [];
         foreach ($pairs as $pair) {
-            $parentKey = $pair[BatchScope::PARENT_DISCRIMINATOR_ALIAS] ?? null;
-            $relatedId = $pair[BatchScope::RELATED_DISCRIMINATOR_ALIAS] ?? null;
-            if (!\is_scalar($parentKey) || !\is_scalar($relatedId)) {
+            $wireId = $this->ids->wireId($parentMetadata, $pair[BatchScope::PARENT_DISCRIMINATOR_ALIAS] ?? null, $encoder);
+            $relatedKey = $this->ids->key($relatedMetadata, $pair[BatchScope::RELATED_DISCRIMINATOR_ALIAS] ?? null);
+            if ($wireId === null || $relatedKey === null) {
                 continue;
             }
-            $entity = $entitiesById[(string) $relatedId] ?? null;
+            $entity = $entitiesById[$relatedKey] ?? null;
             if ($entity === null) {
                 continue;
             }
-            $wireId = $encoder !== null ? $encoder->encode($parentKey) : (string) $parentKey;
             $partitions[$wireId][] = $entity;
         }
 
@@ -1137,13 +1139,14 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $encoder = $this->idEncoders->encoderFor($type);
         $storageToWire = [];
         foreach ($parents as $parent) {
-            $storageKey = $parentMetadata->getIdentifierValues($parent)[$parentIdField] ?? null;
-            if (!\is_scalar($storageKey)) {
+            $storageKey = $this->ids->valueOf($parentMetadata, $parent);
+            $key = $this->ids->key($parentMetadata, $storageKey);
+            $wireId = $this->ids->wireId($parentMetadata, $storageKey, $encoder);
+            if ($key === null || $wireId === null) {
                 continue;
             }
 
-            $wireId = $encoder !== null ? $encoder->encode($storageKey) : (string) $storageKey;
-            $storageToWire[(string) $storageKey] = $wireId;
+            $storageToWire[$key] = $wireId;
         }
 
         if ($storageToWire === []) {
@@ -1178,8 +1181,8 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
                 ->from($parentClass, 'parent')
                 ->leftJoin(\sprintf('parent.%s', $property), 'related')
                 ->where(\sprintf('parent.%s IN (:jsonapi_parent_ids)', $parentIdField))
-                ->setParameter('jsonapi_parent_ids', $parentIds)
                 ->groupBy(\sprintf('parent.%s', $parentIdField));
+            $this->ids->bindList($builder, 'jsonapi_parent_ids', $parentMetadata, $parentIds);
 
             // Apply the relation's relatedQuery filters on the `related` JOIN alias
             // (the default alias the count passes), never the `parent` root.
@@ -1203,11 +1206,11 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $counts = \array_fill_keys(\array_values($storageToWire), 0);
 
         foreach ($rows as $row) {
-            $storageKey = $row['parent_id'] ?? null;
-            if (!\is_scalar($storageKey)) {
+            $key = $this->ids->key($parentMetadata, $row['parent_id'] ?? null);
+            if ($key === null) {
                 continue;
             }
-            $wireId = $storageToWire[(string) $storageKey] ?? null;
+            $wireId = $storageToWire[$key] ?? null;
             if ($wireId === null) {
                 continue;
             }
@@ -1274,16 +1277,16 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $relatedMetadata = $this->entityManager->getClassMetadata($relatedClass);
         $relatedIdField = $relatedMetadata->getSingleIdentifierFieldName();
 
-        $targetId = $relatedMetadata->getIdentifierValues($related)[$relatedIdField] ?? null;
-        if (!\is_scalar($targetId)) {
+        $targetId = $this->ids->toPhp($relatedMetadata, $relatedMetadata->getIdentifierValues($related)[$relatedIdField] ?? null);
+        if ($targetId === null) {
             return false;
         }
 
         $builder = $this->entityManager
             ->getRepository($relatedClass)
             ->createQueryBuilder(self::ROOT_ALIAS)
-            ->andWhere(\sprintf('%s.%s = :jsonapi_to_one_id', self::ROOT_ALIAS, $relatedIdField))
-            ->setParameter('jsonapi_to_one_id', $targetId);
+            ->andWhere(\sprintf('%s.%s = :jsonapi_to_one_id', self::ROOT_ALIAS, $relatedIdField));
+        $this->ids->bind($builder, 'jsonapi_to_one_id', $relatedMetadata, $targetId);
 
         foreach ($this->extensionsFor($relatedType) as $extension) {
             $builder = $extension->apply($builder, new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request));
@@ -1348,7 +1351,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             $targetId = $this->toOneTargetId($parent, $property, $relatedMetadata, $relatedIdField);
             $parentTargetId[$wireId] = $targetId;
             if ($targetId !== null) {
-                $targetIds[(string) $targetId] = $targetId;
+                $targetIds[$targetId] = $targetId;
             }
         }
 
@@ -1356,15 +1359,15 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
         $matches = [];
         foreach ($parentTargetId as $wireId => $targetId) {
-            $matches[$wireId] = $targetId !== null && isset($survivingIds[(string) $targetId]);
+            $matches[$wireId] = $targetId !== null && isset($survivingIds[$targetId]);
         }
 
         return $matches;
     }
 
     /**
-     * The set of `$targetIds` that survive `$criteria`'s filters, as a `storageId => true`
-     * lookup, loaded in ONE `SELECT related.<idField> … WHERE related.<idField> IN
+     * The set of `$targetIds` that survive `$criteria`'s filters, as an id-key `=> true`
+     * lookup ({@see DoctrineIdentifiers::key()}), loaded in ONE `SELECT related.<idField> … WHERE related.<idField> IN
      * (:ids) AND <filters>` query driving the shared {@see DoctrineFilterHandler} (so the
      * filter semantics match the single probe and the to-many endpoint). Empty when there
      * are no target ids. The related type's query extensions apply too.
@@ -1386,12 +1389,13 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             return [];
         }
 
+        $relatedMetadata = $this->entityManager->getClassMetadata($relatedClass);
         $builder = $this->entityManager
             ->getRepository($relatedClass)
             ->createQueryBuilder(self::ROOT_ALIAS)
             ->select(\sprintf('%s.%s', self::ROOT_ALIAS, $relatedIdField))
-            ->andWhere(\sprintf('%s.%s IN (:jsonapi_to_one_ids)', self::ROOT_ALIAS, $relatedIdField))
-            ->setParameter('jsonapi_to_one_ids', $targetIds);
+            ->andWhere(\sprintf('%s.%s IN (:jsonapi_to_one_ids)', self::ROOT_ALIAS, $relatedIdField));
+        $this->ids->bindList($builder, 'jsonapi_to_one_ids', $relatedMetadata, $targetIds);
 
         foreach ($this->extensionsFor($relatedType) as $extension) {
             $builder = $extension->apply($builder, new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request));
@@ -1404,9 +1408,9 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
         $surviving = [];
         foreach ($rows as $row) {
-            $id = \is_array($row) ? \reset($row) : $row;
-            if (\is_scalar($id)) {
-                $surviving[(string) $id] = true;
+            $key = $this->ids->key($relatedMetadata, \is_array($row) ? \reset($row) : $row);
+            if ($key !== null) {
+                $surviving[$key] = true;
             }
         }
 
@@ -1469,7 +1473,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
      * the query is the unchanged distinct-member count (the budget is preserved for the
      * common case).
      *
-     * @param list<int|string> $parentIds the parent storage keys (the IN-clause binds them)
+     * @param list<string> $parentIds the parent id keys (the IN-clause binds them)
      */
     private function pivotCountQuery(RelationInterface $relation, object $parent, string $relatedType, array $parentIds, CollectionCriteria $criteria): QueryBuilder
     {
@@ -1482,7 +1486,8 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $parentClass = $this->entityManager
             ->getClassMetadata($association->entityClass)
             ->getAssociationTargetClass($association->parentProperty);
-        $parentIdField = $this->entityManager->getClassMetadata($parentClass)->getSingleIdentifierFieldName();
+        $parentMetadata = $this->entityManager->getClassMetadata($parentClass);
+        $parentIdField = $parentMetadata->getSingleIdentifierFieldName();
 
         $builder = $this->entityManager->createQueryBuilder()
             ->select(\sprintf('parent.%s AS parent_id', $parentIdField))
@@ -1492,8 +1497,8 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             ->from($association->entityClass, 'pivot')
             ->innerJoin(\sprintf('pivot.%s', $association->parentProperty), 'parent')
             ->where(\sprintf('parent.%s IN (:jsonapi_parent_ids)', $parentIdField))
-            ->setParameter('jsonapi_parent_ids', $parentIds)
             ->groupBy(\sprintf('parent.%s', $parentIdField));
+        $this->ids->bindList($builder, 'jsonapi_parent_ids', $parentMetadata, $parentIds);
 
         // A related filter needs the far member to scope against, so join it as
         // `related` (the count's default alias) and apply the filters there — the far
@@ -1864,7 +1869,6 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             ->select(\sprintf('IDENTITY(pivot.%s) AS jsonapi_parent_id', $association->parentProperty))
             ->addSelect(\sprintf('IDENTITY(pivot.%s) AS jsonapi_far_id', $association->farProperty))
             ->andWhere(\sprintf('pivot.%s IN (:jsonapi_parents)', $association->parentProperty))
-            ->setParameter('jsonapi_parents', $parents)
             // One row per distinct (parent, far member) — the per-parent twin of the
             // single-parent query's per-far-member grouping (duplicate membership renders
             // a representative pivot row per member, see {@see pivotQuery()}). DQL requires
@@ -1881,6 +1885,9 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             }
             $builder->addSelect(\sprintf('pivot.%s AS pivot_%s', $field->column() ?? $field->name(), $field->name()));
         }
+
+        $parentMetadata = $this->entityManager->getClassMetadata($parents[0]::class);
+        $this->ids->bindList($builder, 'jsonapi_parents', $parentMetadata, \array_map(fn(object $parent): mixed => $this->ids->valueOf($parentMetadata, $parent), $parents));
 
         return $this->pivotMapByParent(
             $this->pivotRows($builder),
@@ -1912,17 +1919,16 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $pivotFields = PivotFields::byName($relation);
         $relatedEncoder = $this->idEncoders->encoderFor($relatedType);
         $parentEncoder = $this->idEncoders->encoderFor($parentType);
+        $relatedMetadata = $this->entityManager->getClassMetadata($this->entityClassFor($relatedType));
+        $parentMetadata = $this->entityManager->getClassMetadata($this->entityClassFor($parentType));
 
         $map = [];
         foreach ($rows as $row) {
-            $parentStorageId = $row['jsonapi_parent_id'] ?? null;
-            $farStorageId = $row['jsonapi_far_id'] ?? null;
-            if (!\is_scalar($parentStorageId) || !\is_scalar($farStorageId)) {
+            $parentWireId = $this->ids->wireId($parentMetadata, $row['jsonapi_parent_id'] ?? null, $parentEncoder);
+            $farWireId = $this->ids->wireId($relatedMetadata, $row['jsonapi_far_id'] ?? null, $relatedEncoder);
+            if ($parentWireId === null || $farWireId === null) {
                 continue;
             }
-
-            $parentWireId = $parentEncoder !== null ? $parentEncoder->encode($parentStorageId) : (string) $parentStorageId;
-            $farWireId = $relatedEncoder !== null ? $relatedEncoder->encode($farStorageId) : (string) $farStorageId;
 
             $values = [];
             foreach ($pivotFields as $name => $field) {
@@ -2000,9 +2006,10 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
                 \sprintf('pivot.%s = %s', $association->farProperty, self::ROOT_ALIAS),
             )
             ->andWhere(\sprintf('pivot.%s = :jsonapi_parent', $association->parentProperty))
-            ->setParameter('jsonapi_parent', $parent)
             // One row per distinct far member — see the docblock (duplicate membership).
             ->groupBy(\sprintf('%s.%s', self::ROOT_ALIAS, $idField));
+        $parentMetadata = $this->entityManager->getClassMetadata($parent::class);
+        $this->ids->bind($builder, 'jsonapi_parent', $parentMetadata, $this->ids->valueOf($parentMetadata, $parent));
 
         foreach (PivotFields::declaredFor($relation) as $field) {
             // A hidden pivot field (core hidden()) is never rendered in the pivot
@@ -2067,16 +2074,8 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             $items[] = $far;
 
             $identifierValues = $this->entityManager->getClassMetadata($far::class)->getIdentifierValues($far);
-            $storageKey = $identifierValues[$idField] ?? null;
-            if ($storageKey === null) {
-                continue;
-            }
-
-            if ($encoder !== null) {
-                $wireId = $encoder->encode($storageKey);
-            } elseif (\is_scalar($storageKey)) {
-                $wireId = (string) $storageKey;
-            } else {
+            $wireId = $this->ids->wireId($relatedMetadata, $identifierValues[$idField] ?? null, $encoder);
+            if ($wireId === null) {
                 continue;
             }
 
@@ -2176,19 +2175,19 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
         $ids = [];
         foreach ($rows as $row) {
-            $id = $metadata->getIdentifierValues($row)[$idField] ?? null;
-            if (\is_scalar($id)) {
-                $ids[(string) $id] = $id;
+            $key = $this->ids->key($metadata, $this->ids->valueOf($metadata, $row));
+            if ($key !== null) {
+                $ids[$key] = $key;
             }
         }
 
         $criteria = new CollectionCriteria(new QueryParameters(fields: [], includes: [], sort: [], filter: [], pagination: []));
         $admitted = $this->matchingToOneTargetIds($class, $type, $idField, $criteria, \array_values($ids), $request);
 
-        return \array_values(\array_filter($rows, static function (object $row) use ($metadata, $idField, $admitted): bool {
-            $id = $metadata->getIdentifierValues($row)[$idField] ?? null;
+        return \array_values(\array_filter($rows, function (object $row) use ($metadata, $admitted): bool {
+            $key = $this->ids->key($metadata, $this->ids->valueOf($metadata, $row));
 
-            return \is_scalar($id) && isset($admitted[(string) $id]);
+            return $key !== null && isset($admitted[$key]);
         }));
     }
 

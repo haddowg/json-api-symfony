@@ -31,9 +31,14 @@ use haddowg\JsonApi\Resource\Field\RelationInterface;
  */
 final class RelationScope
 {
+    private readonly DoctrineIdentifiers $ids;
+
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
-    ) {}
+        ?DoctrineIdentifiers $ids = null,
+    ) {
+        $this->ids = $ids ?? new DoctrineIdentifiers($entityManager);
+    }
 
     /**
      * Applies the parent-membership predicate to `$builder` (rooted at
@@ -59,10 +64,13 @@ final class RelationScope
         // carries the owning FK). A many-to-many *inverse* side also has a
         // non-null mappedBy, but it points to a COLLECTION — the
         // isSingleValuedAssociation guard routes it to the subquery instead.
+        // The parent binds by its id through the id's Doctrine type, so an id such as a
+        // binary `uuid` compares in its database form.
+        $parentMetadata = $this->entityManager->getClassMetadata($parent::class);
+
         if ($owningField !== null && $relatedMetadata->isSingleValuedAssociation($owningField)) {
-            $builder
-                ->andWhere(\sprintf('%s.%s = :jsonapi_parent', $rootAlias, $owningField))
-                ->setParameter('jsonapi_parent', $parent);
+            $builder->andWhere(\sprintf('%s.%s = :jsonapi_parent', $rootAlias, $owningField));
+            $this->bindParent($builder, $parentMetadata, $parent);
 
             return;
         }
@@ -71,7 +79,7 @@ final class RelationScope
         // by membership with an IN subquery that keeps the related entity as
         // the outer query root. getClassMetadata resolves a proxy class to
         // its real entity name.
-        $parentClass = $this->entityManager->getClassMetadata($parent::class)->getName();
+        $parentClass = $parentMetadata->getName();
         $relatedIdField = $relatedMetadata->getSingleIdentifierFieldName();
 
         $sub = $this->entityManager->createQueryBuilder()
@@ -80,12 +88,11 @@ final class RelationScope
             ->innerJoin(\sprintf('parent_scope.%s', $property), 'related_scope')
             ->where('parent_scope = :jsonapi_parent');
 
-        $builder
-            ->andWhere($builder->expr()->in(
-                \sprintf('%s.%s', $rootAlias, $relatedIdField),
-                $sub->getDQL(),
-            ))
-            ->setParameter('jsonapi_parent', $parent); // bind on the OUTER builder, which executes
+        $builder->andWhere($builder->expr()->in(
+            \sprintf('%s.%s', $rootAlias, $relatedIdField),
+            $sub->getDQL(),
+        ));
+        $this->bindParent($builder, $parentMetadata, $parent); // bind on the OUTER builder, which executes
     }
 
     /**
@@ -134,8 +141,8 @@ final class RelationScope
                 ->getRepository($relatedClass)
                 ->createQueryBuilder('related')
                 ->addSelect(\sprintf('IDENTITY(related.%s) AS %s', $owningField, BatchScope::PARENT_DISCRIMINATOR_ALIAS))
-                ->andWhere(\sprintf('related.%s IN (:jsonapi_parents)', $owningField))
-                ->setParameter('jsonapi_parents', $parents);
+                ->andWhere(\sprintf('related.%s IN (:jsonapi_parents)', $owningField));
+            $this->bindParents($builder, $parents);
 
             return new BatchScope($builder, 'related');
         }
@@ -163,10 +170,49 @@ final class RelationScope
             ->addSelect(\sprintf('related.%s AS %s', $relatedIdField, BatchScope::RELATED_DISCRIMINATOR_ALIAS))
             ->from($parentClass, 'parent')
             ->innerJoin(\sprintf('parent.%s', $property), 'related')
-            ->where('parent IN (:jsonapi_parents)')
-            ->setParameter('jsonapi_parents', $parents);
+            ->where('parent IN (:jsonapi_parents)');
+        $this->bindParents($builder, $parents);
 
         return new BatchScope($builder, 'related', relatedClass: $relatedClass, relatedIdField: $relatedIdField);
+    }
+
+    /**
+     * Binds `:jsonapi_parent` to the parent's id, or to the entity itself when it has a
+     * composite id, which Doctrine binds column by column.
+     *
+     * @param \Doctrine\ORM\Mapping\ClassMetadata<object> $parentMetadata
+     */
+    private function bindParent(QueryBuilder $builder, \Doctrine\ORM\Mapping\ClassMetadata $parentMetadata, object $parent): void
+    {
+        if ($parentMetadata->isIdentifierComposite) {
+            $builder->setParameter('jsonapi_parent', $parent);
+
+            return;
+        }
+
+        $this->ids->bind($builder, 'jsonapi_parent', $parentMetadata, $this->ids->valueOf($parentMetadata, $parent));
+    }
+
+    /**
+     * Binds `:jsonapi_parents` to the page of parents' ids (see {@see bindParent()}).
+     *
+     * @param list<object> $parents
+     */
+    private function bindParents(QueryBuilder $builder, array $parents): void
+    {
+        $parentMetadata = $this->entityManager->getClassMetadata($parents[0]::class);
+        if ($parentMetadata->isIdentifierComposite) {
+            $builder->setParameter('jsonapi_parents', $parents);
+
+            return;
+        }
+
+        $this->ids->bindList(
+            $builder,
+            'jsonapi_parents',
+            $parentMetadata,
+            \array_map(fn(object $parent): mixed => $this->ids->valueOf($parentMetadata, $parent), $parents),
+        );
     }
 
     /**
