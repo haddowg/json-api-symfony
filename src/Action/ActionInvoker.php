@@ -87,7 +87,7 @@ final readonly class ActionInvoker
         // Document input: validate then hydrate the request document into a fresh
         // inputType instance (None/Raw carry no document, so input stays null).
         $input = null;
-        if ($descriptor->input === ActionInput::Document) {
+        if ($this->inputMode($operation, $descriptor) === ActionInput::Document) {
             $body = $operation->body();
             if ($body === null) {
                 return ErrorResponse::fromException(new ResourceNotFound());
@@ -116,6 +116,17 @@ final readonly class ActionInvoker
         $this->dispatch(new AfterActionEvent($type, $descriptor->path, $entity));
 
         return $response;
+    }
+
+    /**
+     * The mode the request body was read in: the media type it matched picks it when
+     * the action lists accepted types, otherwise the action's declared input.
+     */
+    private function inputMode(CustomActionOperation $operation, ActionDescriptor $descriptor): ActionInput
+    {
+        $input = $this->request($operation)->getAttribute(ActionContext::INPUT_ATTRIBUTE);
+
+        return $input instanceof ActionInput ? $input : $descriptor->input;
     }
 
     /**

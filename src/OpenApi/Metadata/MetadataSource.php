@@ -595,6 +595,7 @@ final class MetadataSource
             $action->asLink,
             $action->summary,
             $action->description,
+            $action->accepts,
         );
     }
 

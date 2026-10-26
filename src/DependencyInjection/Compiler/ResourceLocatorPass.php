@@ -394,7 +394,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
         }
 
         $handlerReferences = [];
-        /** @var array<string, array{type: string, path: string, methods: list<string>, scope: string, input: string, inputType: string, outputType: string, responds: list<array{kind: string, type?: string, jobType?: string}>, security: ?string, handlerServiceId: string, server: string, tags: string, asLink: bool, summary: ?string, description: ?string}> $actionDescriptors */
+        /** @var array<string, array{type: string, path: string, methods: list<string>, scope: string, input: string, inputType: string, outputType: string, responds: list<array{kind: string, type?: string, jobType?: string}>, security: ?string, handlerServiceId: string, server: string, tags: string, asLink: bool, summary: ?string, description: ?string, accepts: list<array{mediaType: string, input: string, schema: array<string, mixed>|string|null, binary: bool}>}> $actionDescriptors */
         $actionDescriptors = [];
         /** @var array<string, list<array{uriType: string, type: string, path: string, methods: list<string>, scope: string, name: string}>> $routeDescriptorsByServer */
         $routeDescriptorsByServer = [];
@@ -500,6 +500,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
                 $name = \is_string($tag['name'] ?? null) && $tag['name'] !== '' ? $tag['name'] : null;
                 $summary = \is_string($tag['summary'] ?? null) && $tag['summary'] !== '' ? $tag['summary'] : null;
                 $description = \is_string($tag['description'] ?? null) && $tag['description'] !== '' ? $tag['description'] : null;
+                $accepts = $this->parseActionAccepts($tag['accepts'] ?? null);
 
                 // The action's OpenAPI tag refs (design §4.7): explicit refs on the
                 // action, else inherit the tags of the mount type's resource on each
@@ -555,6 +556,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
                         'asLink' => $asLink,
                         'summary' => $summary,
                         'description' => $description,
+                        'accepts' => $accepts,
                     ];
 
                     $routeDescriptorsByServer[$server][] = [
@@ -1056,6 +1058,41 @@ final class ResourceLocatorPass implements CompilerPassInterface
         }
 
         return $out;
+    }
+
+    /**
+     * Parses the JSON `accepts` action-tag string into the descriptor shape (see
+     * {@see \haddowg\JsonApiBundle\Action\AcceptedMediaTypes}); `[]` when absent.
+     *
+     * @return list<array{mediaType: string, input: string, schema: array<string, mixed>|string|null, binary: bool}>
+     */
+    private function parseActionAccepts(mixed $accepts): array
+    {
+        if (!\is_string($accepts) || $accepts === '') {
+            return [];
+        }
+
+        $decoded = \json_decode($accepts, true, 512, \JSON_THROW_ON_ERROR);
+        if (!\is_array($decoded)) {
+            return [];
+        }
+
+        $entries = [];
+        foreach ($decoded as $entry) {
+            if (!\is_array($entry) || !\is_string($entry['mediaType'] ?? null) || !\is_string($entry['input'] ?? null)) {
+                continue;
+            }
+            $schema = $entry['schema'] ?? null;
+            $entries[] = [
+                'mediaType' => $entry['mediaType'],
+                'input' => $entry['input'],
+                'schema' => \is_string($schema) || \is_array($schema) ? $schema : null,
+                'binary' => ($entry['binary'] ?? false) === true,
+            ];
+        }
+
+        /** @var list<array{mediaType: string, input: string, schema: array<string, mixed>|string|null, binary: bool}> $entries */
+        return $entries;
     }
 
     /**

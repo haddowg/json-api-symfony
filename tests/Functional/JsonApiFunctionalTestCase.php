@@ -72,6 +72,10 @@ abstract class JsonApiFunctionalTestCase extends KernelTestCase
         // overrides it, so a caller can drive content negotiation.
         $server = $extraServer + ['HTTP_ACCEPT' => 'application/vnd.api+json'];
         $content = null;
+        // A client sends the JSON:API Content-Type on every POST, with a body or not.
+        if ($method === 'POST') {
+            $server['CONTENT_TYPE'] ??= 'application/vnd.api+json';
+        }
         if ($body !== null) {
             $server['CONTENT_TYPE'] = 'application/vnd.api+json';
             $content = \json_encode($body, \JSON_THROW_ON_ERROR);

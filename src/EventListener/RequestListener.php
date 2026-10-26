@@ -15,8 +15,11 @@ use haddowg\JsonApi\Operation\QueryParameters;
 use haddowg\JsonApi\Operation\Target;
 use haddowg\JsonApi\Request\JsonApiRequest;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Request\MediaType;
 use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApi\Validation\DocumentValidator;
+use haddowg\JsonApiBundle\Action\ActionContext;
+use haddowg\JsonApiBundle\Action\ActionDescriptor;
 use haddowg\JsonApiBundle\Action\ActionInput;
 use haddowg\JsonApiBundle\Action\ActionRegistry;
 use haddowg\JsonApiBundle\Action\ActionScope;
@@ -56,6 +59,8 @@ final class RequestListener
     public const string SERVER_ATTRIBUTE = '_jsonapi_resolved_server';
 
     public const string PSR_REQUEST_ATTRIBUTE = '_jsonapi_psr_request';
+
+    private const string JSON_API_MEDIA_TYPE = 'application/vnd.api+json';
 
     public function __construct(
         private readonly ServerProvider $servers,
@@ -107,7 +112,8 @@ final class RequestListener
             $operation = $this->actionOperation($request, $jsonApiRequest, $target, $server, $actionName);
         } else {
             $validator = new RequestValidator();
-            $validator->negotiate($jsonApiRequest);
+            // A write must send the JSON:API Content-Type (core ADR 0172).
+            $validator->negotiate($jsonApiRequest, strictContentType: self::carriesDocument($jsonApiRequest));
             $validator->validateQueryParams($jsonApiRequest);
 
             // A write body must be well-formed JSON before core's hydrator reads it —
@@ -189,7 +195,7 @@ final class RequestListener
         // ext is rejected. Then REQUIRE the atomic ext on both headers — the extension's
         // media-type contract (an atomic request MUST carry ext on Content-Type AND Accept).
         $validator = new RequestValidator(AtomicExtension::URI);
-        $validator->negotiate($jsonApiRequest);
+        $validator->negotiate($jsonApiRequest, strictContentType: true);
         $this->requireAtomicExtension($jsonApiRequest);
 
         $validator->validateQueryParams($jsonApiRequest);
@@ -259,14 +265,20 @@ final class RequestListener
         string $actionName,
     ): CustomActionOperation {
         $scope = $this->actionScope($request);
-        $input = $this->actionInput($request, $target->type, $scope, $actionName);
+        $descriptor = $this->actionDescriptor($request, $target->type, $scope, $actionName);
 
         $validator = new RequestValidator();
-        $validator->negotiate($jsonApiRequest, requireJsonApiContentType: $input !== ActionInput::Raw);
+        [$input, $mediaType] = $this->negotiateActionBody($validator, $jsonApiRequest, $descriptor);
         $validator->validateQueryParams($jsonApiRequest);
 
-        // Only a Document-input action reads + validates a JSON:API body; None/Raw
-        // carry no document, so the operation body stays null.
+        // The mode the body is read in and the media type it matched, for the invoker
+        // and the handler's ActionContext.
+        $jsonApiRequest = $jsonApiRequest
+            ->withAttribute(ActionContext::INPUT_ATTRIBUTE, $input)
+            ->withAttribute(ActionContext::REQUEST_MEDIA_TYPE_ATTRIBUTE, $mediaType);
+
+        // Only a body read as a Document is parsed and validated as JSON:API; None and
+        // Raw carry no document, so the operation body stays null.
         $body = null;
         if ($input === ActionInput::Document) {
             $validator->validateJsonBody($jsonApiRequest);
@@ -300,28 +312,92 @@ final class RequestListener
     }
 
     /**
-     * The declared input mode for the addressed action, read from its
-     * {@see ActionRegistry} descriptor; {@see ActionInput::None} when the registry is
-     * absent or no action matches (the invoker renders the `404`, so the body is not
-     * read). The descriptor lookup uses the route's `_jsonapi_server` name — the same
-     * composite key the route loader keyed the per-server descriptors with, and the
-     * one the {@see \haddowg\JsonApiBundle\Action\ActionInvoker} resolves at dispatch.
+     * The addressed action's {@see ActionRegistry} descriptor, or null when the registry
+     * is absent or no action matches (the invoker renders the `404`). The lookup uses
+     * the route's `_jsonapi_server` name, the same composite key the route loader keyed
+     * the per-server descriptors with and the one the
+     * {@see \haddowg\JsonApiBundle\Action\ActionInvoker} resolves at dispatch.
      */
-    private function actionInput(\Symfony\Component\HttpFoundation\Request $request, string $type, ActionScope $scope, string $action): ActionInput
+    private function actionDescriptor(\Symfony\Component\HttpFoundation\Request $request, string $type, ActionScope $scope, string $action): ?ActionDescriptor
     {
         if ($this->actions === null) {
-            return ActionInput::None;
+            return null;
         }
 
         $serverName = $request->attributes->get('_jsonapi_server');
         $serverName = \is_string($serverName) && $serverName !== '' ? $serverName : ServerProvider::DEFAULT_SERVER;
 
-        $descriptor = $this->actions->descriptorFor($serverName, $type, $scope, $action);
-        if ($descriptor === null) {
-            return ActionInput::None;
+        return $this->actions->descriptorFor($serverName, $type, $scope, $action);
+    }
+
+    /**
+     * Negotiates an action request's headers and picks the mode its body is read in,
+     * returning that mode and the media type the body matched (null when it has none).
+     *
+     * An action with neither `accepts` nor `Raw` input takes a JSON:API body, so a
+     * request that carries one must say so (core ADR 0172). Otherwise the body's
+     * `Content-Type` is matched against the accepted media types, `Raw` input with no
+     * `accepts` taking any type but the three cross-origin form types, and the matched
+     * entry's mode wins. A bodyless `POST` sent with the JSON:API `Content-Type` passes
+     * any action and carries no body: that type cannot reach the server cross-origin
+     * without a preflight, and clients send it on every `POST`.
+     *
+     * @return array{0: ActionInput, 1: ?string}
+     */
+    private function negotiateActionBody(RequestValidator $validator, JsonApiRequestInterface $request, ?ActionDescriptor $descriptor): array
+    {
+        $input = $descriptor->input ?? ActionInput::None;
+        $accepts = $descriptor->accepts ?? [];
+        $carriesDocument = self::carriesDocument($request);
+
+        if ($accepts === [] && $input !== ActionInput::Raw) {
+            $validator->negotiate($request, strictContentType: $carriesDocument);
+
+            return [$input, $carriesDocument && self::hasBody($request) ? self::JSON_API_MEDIA_TYPE : null];
         }
 
-        return $descriptor->input;
+        $contentType = $request->getHeaderLine('content-type');
+        if (!self::hasBody($request) && ($request->getMethod() !== 'POST' || MediaType::isJsonApi($contentType))) {
+            $validator->negotiate($request, strictContentType: $request->getMethod() === 'POST');
+
+            return [ActionInput::None, null];
+        }
+
+        $entries = $accepts !== [] ? $accepts : [['mediaType' => '*/*', 'input' => ActionInput::Raw->name]];
+        $match = $validator->negotiateContentType($request, \array_column($entries, 'mediaType'));
+        $mode = ActionInput::Raw;
+        foreach ($entries as $entry) {
+            if ($entry['mediaType'] === $match->accepted) {
+                $mode = ActionInput::{$entry['input']};
+
+                break;
+            }
+        }
+
+        // A JSON:API body still has its media type parameters negotiated.
+        $validator->negotiate($request, requireJsonApiContentType: $match->mediaType === self::JSON_API_MEDIA_TYPE);
+
+        return [$mode, $match->mediaType];
+    }
+
+    /**
+     * Whether the request must carry a JSON:API `Content-Type` if it is a JSON:API
+     * write: every `POST`, even a bodyless one, and any other unsafe method with a body.
+     * The same rule as core's `ContentNegotiationMiddleware` (core ADR 0172).
+     */
+    private static function carriesDocument(JsonApiRequestInterface $request): bool
+    {
+        $method = \strtoupper($request->getMethod());
+        if (\in_array($method, ['GET', 'HEAD', 'OPTIONS', 'TRACE'], true)) {
+            return false;
+        }
+
+        return $method === 'POST' || self::hasBody($request);
+    }
+
+    private static function hasBody(JsonApiRequestInterface $request): bool
+    {
+        return (string) $request->getBody() !== '';
     }
 
     /**

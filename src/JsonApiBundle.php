@@ -967,6 +967,9 @@ final class JsonApiBundle extends AbstractBundle
                     // The OpenAPI operation summary and description, carried only when set.
                     'summary' => $attribute->summary,
                     'description' => $attribute->description,
+                    // The accepted request media types, JSON-encoded; absent keeps the
+                    // input mode's default negotiation.
+                    'accepts' => $attribute->accepts !== [] ? \json_encode($attribute->accepts, \JSON_THROW_ON_ERROR) : null,
                 ], static fn(mixed $value): bool => $value !== null));
             },
         );

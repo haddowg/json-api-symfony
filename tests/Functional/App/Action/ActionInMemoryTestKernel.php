@@ -141,6 +141,7 @@ final class ActionInMemoryTestKernel extends Kernel
         // The custom-action handlers — discovered by #[AsJsonApiAction] autoconfiguration.
         $services->set(PublishWidget::class);
         $services->set(ImportWidgets::class);
+        $services->set(IngestWidgets::class);
         $services->set(UploadArtwork::class);
         $services->set(RenameWidget::class);
         $services->set(ArchiveWidget::class);

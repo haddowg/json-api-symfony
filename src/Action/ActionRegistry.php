@@ -39,6 +39,7 @@ use Psr\Container\ContainerInterface;
  *     asLink?: bool,
  *     summary?: ?string,
  *     description?: ?string,
+ *     accepts?: list<array{mediaType: string, input: string, schema: array<string, mixed>|string|null, binary: bool}>,
  * }
  */
 final class ActionRegistry
@@ -113,6 +114,7 @@ final class ActionRegistry
             $descriptor['asLink'] ?? false,
             $descriptor['summary'] ?? null,
             $descriptor['description'] ?? null,
+            $descriptor['accepts'] ?? [],
         );
     }
 

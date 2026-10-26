@@ -123,6 +123,22 @@ final class CustomActionTest extends MusicCatalogKernelTestCase
         self::assertSame('2', $this->dataOf($fetch)['id'] ?? null);
     }
 
+    #[Test]
+    public function theImportReadsEachAcceptedMediaType(): void
+    {
+        foreach ([['text/csv', "title\nKind of Blue\n"], ['image/jpeg', 'JPEG'], ['application/json', '[{"title":"Blue Train"}]']] as [$contentType, $body]) {
+            $response = $this->handleRaw('/albums/-actions/import', $body, $contentType, extraServer: ['HTTP_AUTHORIZATION' => 'Bearer admin']);
+
+            self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+            $meta = $this->decode($response)['meta'] ?? null;
+            self::assertIsArray($meta);
+            self::assertSame(['mediaType' => $contentType, 'bytes' => \strlen($body)], $meta['import'] ?? null);
+        }
+
+        $refused = $this->handleRaw('/albums/-actions/import', 'title=x', 'application/x-www-form-urlencoded', extraServer: ['HTTP_AUTHORIZATION' => 'Bearer admin']);
+        self::assertSame(415, $refused->getStatusCode());
+    }
+
     /**
      * Issues an authenticated action request (Bearer token = the user identifier).
      *

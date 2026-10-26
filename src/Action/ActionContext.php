@@ -29,6 +29,20 @@ use haddowg\JsonApi\Server\ResolvingServerInterface;
  */
 final readonly class ActionContext
 {
+    /**
+     * The request attribute carrying the {@see ActionInput} the body was read in.
+     *
+     * @internal
+     */
+    public const string INPUT_ATTRIBUTE = '_jsonapi_action_input';
+
+    /**
+     * The request attribute carrying the media type the request body matched.
+     *
+     * @internal
+     */
+    public const string REQUEST_MEDIA_TYPE_ATTRIBUTE = '_jsonapi_action_request_media_type';
+
     public function __construct(
         private ResolvingServerInterface $server,
         private ActionDescriptor $descriptor,
@@ -63,6 +77,18 @@ final readonly class ActionContext
      * {@see ActionInput::Raw} action this exposes the raw body and the uploaded
      * files (via the PSR-7 `getBody()`/`getUploadedFiles()` it extends).
      */
+    /**
+     * The media type of the request body, without parameters, as matched against the
+     * action's accepted types: `text/csv` for a CSV upload to an action accepting
+     * `text/*`. Null when the request has no body.
+     */
+    public function requestMediaType(): ?string
+    {
+        $mediaType = $this->request->getAttribute(self::REQUEST_MEDIA_TYPE_ATTRIBUTE);
+
+        return \is_string($mediaType) ? $mediaType : null;
+    }
+
     public function request(): JsonApiRequestInterface
     {
         return $this->request;

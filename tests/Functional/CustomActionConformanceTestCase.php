@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use haddowg\JsonApiBundle\OpenApi\DocumentFactory;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Response;
@@ -280,6 +281,136 @@ abstract class CustomActionConformanceTestCase extends JsonApiFunctionalTestCase
 
         // The ungated link is unaffected by the security gate — it shows for `user` too.
         self::assertArrayHasKey('pin', $userLinks);
+    }
+
+    #[Test]
+    #[Group('spec:content-negotiation')]
+    public function anAcceptedMediaTypeIsMatchedAndReportedToTheHandler(): void
+    {
+        foreach ([
+            ['text/csv; charset=utf-8', "a,b\n", 'text/csv'],
+            ['image/png', 'PNG-BYTES', 'image/png'],
+            ['multipart/form-data; boundary=x', "--x--\r\n", 'multipart/form-data'],
+            ['application/json', '["a","b"]', 'application/json'],
+        ] as [$contentType, $body, $matched]) {
+            $response = $this->handleRaw('/actionWidgets/-actions/ingest', $body, $contentType, extraServer: ['HTTP_AUTHORIZATION' => 'Bearer user']);
+
+            self::assertSame(200, $response->getStatusCode(), $contentType . ': ' . $response->getContent());
+            self::assertSame(['mediaType' => $matched, 'document' => false, 'bytes' => \strlen($body)], $this->decode($response)['meta'] ?? null);
+        }
+    }
+
+    #[Test]
+    #[Group('spec:content-negotiation')]
+    public function aJsonApiEntryReadsTheBodyAsADocument(): void
+    {
+        $response = $this->action('/actionWidgets/-actions/ingest', 'POST', ['data' => ['type' => 'actionWidgets', 'attributes' => ['name' => 'Ingested']]]);
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $meta = $this->decode($response)['meta'] ?? null;
+        self::assertIsArray($meta);
+        self::assertSame('application/vnd.api+json', $meta['mediaType'] ?? null);
+        self::assertTrue($meta['document'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:content-negotiation')]
+    public function aMediaTypeTheActionDoesNotAcceptIs415(): void
+    {
+        foreach (['text/plain', 'application/x-www-form-urlencoded', 'application/xml'] as $contentType) {
+            $response = $this->handleRaw('/actionWidgets/-actions/ingest', 'x=1', $contentType, extraServer: ['HTTP_AUTHORIZATION' => 'Bearer user']);
+
+            self::assertSame(415, $response->getStatusCode(), $contentType);
+        }
+    }
+
+    #[Test]
+    #[Group('spec:content-negotiation')]
+    public function aBodylessPostWithTheJsonApiTypePassesAnyAction(): void
+    {
+        $response = $this->action('/actionWidgets/-actions/ingest');
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['mediaType' => null, 'document' => false, 'bytes' => 0], $this->decode($response)['meta'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:content-negotiation')]
+    public function aPostWithNoContentTypeIs415(): void
+    {
+        foreach (['/actionWidgets/-actions/ingest', '/actionWidgets/-actions/import', '/actionWidgets/1/-actions/artwork'] as $path) {
+            $response = $this->handleRaw($path, '', '', extraServer: ['HTTP_AUTHORIZATION' => 'Bearer user']);
+
+            self::assertSame(415, $response->getStatusCode(), $path);
+        }
+    }
+
+    #[Test]
+    #[Group('spec:content-negotiation')]
+    public function aRawActionWithoutAcceptsRefusesTheFormTypes(): void
+    {
+        foreach (['text/plain', 'multipart/form-data; boundary=x', 'application/x-www-form-urlencoded'] as $contentType) {
+            $response = $this->handleRaw('/actionWidgets/1/-actions/artwork', 'x=1', $contentType, extraServer: ['HTTP_AUTHORIZATION' => 'Bearer user']);
+
+            self::assertSame(415, $response->getStatusCode(), $contentType);
+        }
+    }
+
+    #[Test]
+    #[Group('spec:content-negotiation')]
+    public function aNoneActionPostMustSendTheJsonApiType(): void
+    {
+        $response = $this->handleRaw('/actionWidgets/-actions/import', '', 'text/plain', extraServer: ['HTTP_AUTHORIZATION' => 'Bearer user']);
+
+        self::assertSame(415, $response->getStatusCode());
+    }
+
+    #[Test]
+    #[Group('spec:content-negotiation')]
+    public function aCrudWriteMustSendTheJsonApiType(): void
+    {
+        $document = '{"data":{"type":"actionWidgets","id":"1","attributes":{}}}';
+        foreach ([['POST', '/actionWidgets', 'text/plain'], ['POST', '/actionWidgets', ''], ['PATCH', '/actionWidgets/1', 'application/json'], ['PATCH', '/actionWidgets/1', '']] as [$method, $path, $contentType]) {
+            $response = $this->handleRaw($path, $document, $contentType, $method, ['HTTP_AUTHORIZATION' => 'Bearer user']);
+
+            self::assertSame(415, $response->getStatusCode(), $method . ' ' . $contentType);
+        }
+
+        // A bodyless DELETE needs no Content-Type.
+        $delete = $this->handleRaw('/actionWidgets/2', '', '', 'DELETE', ['HTTP_AUTHORIZATION' => 'Bearer user']);
+        self::assertNotSame(415, $delete->getStatusCode());
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    public function eachAcceptedMediaTypeIsARequestBodyEntry(): void
+    {
+        $factory = static::getContainer()->get(DocumentFactory::class);
+        self::assertInstanceOf(DocumentFactory::class, $factory);
+        $document = $factory->forServer()->toArray();
+
+        $operation = ['paths', '/actionWidgets/-actions/ingest', 'post'];
+        $content = self::at($document, ...$operation, ...['requestBody', 'content']);
+        self::assertIsArray($content);
+        self::assertSame(['text/csv', 'image/*', 'multipart/form-data', 'application/vnd.api+json', 'application/json'], \array_keys($content));
+        self::assertSame(['type' => 'string', 'format' => 'binary'], self::at($content, 'image/*', 'schema'));
+        self::assertSame(['type' => 'object'], self::at($content, 'multipart/form-data', 'schema'));
+        self::assertSame(['type' => 'array', 'items' => ['type' => 'string']], self::at($content, 'application/json', 'schema'));
+        self::assertNotNull(self::at($document, ...$operation, ...['responses', '415']));
+
+        // An action without accepts keeps its input mode's body.
+        $artwork = self::at($document, 'paths', '/actionWidgets/{id}/-actions/artwork', 'post', 'requestBody', 'content');
+        self::assertIsArray($artwork);
+        self::assertSame(['application/octet-stream'], \array_keys($artwork));
+    }
+
+    private static function at(mixed $value, string ...$keys): mixed
+    {
+        foreach ($keys as $key) {
+            $value = \is_array($value) ? ($value[$key] ?? null) : null;
+        }
+
+        return $value;
     }
 
     /**
