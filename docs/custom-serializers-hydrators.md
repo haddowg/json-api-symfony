@@ -97,6 +97,39 @@ opts into so the registry injects the resolver after construction — implement 
 **only** if your serializer renders relationships or included resources (those need
 the resolver to find sibling serializers); a flat attribute-only serializer does not.
 
+### Declared links on an overriding serializer
+
+A resource's [declared links](resources.md#declared-links) are rendered by the resource,
+through core's `RendersDeclaredLinksInterface`. An overriding serializer replaces the
+resource for reads, so it renders them only if it implements that interface too. The
+OpenAPI document still reads the declarations off the resource, so a serializer that
+skips them leaves the document describing links the responses never carry.
+
+`TrackResource` declares its `preview` link in a static method, returns it from
+`links()`, and `TrackSerializer` resolves the same declaration:
+
+```php
+final class TrackSerializer extends AbstractSerializer implements SerializerResolverAwareInterface, RendersDeclaredLinksInterface
+{
+    private ?DeclaredLink $previewLink = null;
+
+    public function renderDeclaredLinks(mixed $object, JsonApiRequestInterface $request): array
+    {
+        $this->previewLink ??= TrackResource::previewLink()->build();
+        $outputTimezone = $this->serializerResolver instanceof ProvidesOutputTimezoneInterface
+            ? $this->serializerResolver->outputTimezone()
+            : null;
+
+        $preview = $this->previewLink->resolve($object, $request, $outputTimezone);
+
+        return $preview !== null ? ['preview' => $preview] : [];
+    }
+}
+```
+
+Passing the resolver's output zone keeps a `DateTime` meta member in the server's zone,
+as the resource would render it.
+
 ### The override must be a registered service
 
 This is the headline Symfony difference from core. Core registers a serializer with a

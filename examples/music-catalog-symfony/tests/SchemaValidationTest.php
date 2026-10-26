@@ -32,6 +32,8 @@ use PHPUnit\Framework\Attributes\Test;
  */
 final class SchemaValidationTest extends JsonApiFunctionalTestCase
 {
+    use PinsTheClock;
+
     protected static function getKernelClass(): string
     {
         return SchemaValidationKernel::class;

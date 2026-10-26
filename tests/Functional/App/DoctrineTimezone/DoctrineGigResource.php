@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\DoctrineTimezone;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\Date;
 use haddowg\JsonApi\Resource\Field\DateTime;
+use haddowg\JsonApi\Resource\Link\DeclaredLink;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\BaseGigResource;
 
@@ -15,7 +16,8 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Resource\BaseGigResource;
  * (pivot meta is Doctrine-only). `bookedAt` takes the server zone, `confirmedAt` keeps
  * its own, `contractOn` is a `Date` the server zone leaves alone. `bookedPerformers`
  * is the same association with `withData()`, so its linkage and pivot meta render on
- * the primary document.
+ * the primary document, which puts the bundle's pivot parent serializer in front of
+ * this resource. Its declared `poster` link has to get through that serializer.
  */
 #[AsJsonApiResource(entity: GigEntity::class, readOnly: true)]
 final class DoctrineGigResource extends BaseGigResource
@@ -33,6 +35,16 @@ final class DoctrineGigResource extends BaseGigResource
                 ->fields(...self::pivotFields())
                 ->extractUsing(self::extractPerformers())
                 ->withData(),
+        ];
+    }
+
+    public function links(): array
+    {
+        return [
+            DeclaredLink::make('poster')
+                ->hrefUsing(static fn(mixed $gig): ?string => $gig instanceof GigEntity
+                    ? '/gigs/' . $gig->id . '/poster'
+                    : null),
         ];
     }
 

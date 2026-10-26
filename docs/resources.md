@@ -431,6 +431,101 @@ Both links are storage-agnostic — they derive from the base URI (your configur
 so they are identical on every provider. The behaviour lives in core; the bundle witnesses it
 across the dual-provider conformance suites.
 
+## Declared links
+
+A link that every resource of a type carries, and that clients should find in the
+OpenAPI document, belongs in `links()`, next to `fields()`. Core renders it and the
+[generated document](openapi.md#links-and-describedby) lists it by name with its `meta`
+members. The API is core's; read its
+[declared links](https://github.com/haddowg/json-api/blob/main/docs/links-and-meta.md#declared-links)
+page for every builder method.
+
+A resource is a container service, so the closures can use whatever you inject. A file
+whose bytes go to a signed upload URL is the usual case. The URL, the method, the
+headers and the expiry belong in the file's `links`, not its attributes:
+
+```php
+use App\Entity\File;
+use App\Storage\UploadSigner;
+use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Resource\AbstractResource;
+use haddowg\JsonApi\Resource\Field\ArrayHash;
+use haddowg\JsonApi\Resource\Field\DateTime;
+use haddowg\JsonApi\Resource\Field\Str;
+use haddowg\JsonApi\Resource\Link\DeclaredLink;
+use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
+use Symfony\Bundle\SecurityBundle\Security;
+
+#[AsJsonApiResource(entity: File::class)]
+final class FileResource extends AbstractResource
+{
+    public static string $type = 'files';
+
+    public function __construct(
+        private readonly UploadSigner $uploads,
+        private readonly Security $security,
+    ) {}
+
+    public function fields(): array { /* … */ }
+
+    public function links(): array
+    {
+        return [
+            DeclaredLink::make('upload')
+                ->describedAs('Where to PUT the file\'s bytes, until it is uploaded.')
+                ->meta(
+                    Str::make('method')->in(['PUT'])->guaranteed()
+                        ->describedAs('The HTTP method to upload with.')->example('PUT'),
+                    ArrayHash::make('headers')->guaranteed()
+                        ->describedAs('Headers the upload must send.')->example(['Content-Type' => 'image/png']),
+                    DateTime::make('expiresAt')->guaranteed()
+                        ->describedAs('When the URL stops working.')->example('2026-10-26T12:00:00+00:00'),
+                )
+                ->linkUsing(function (mixed $file, JsonApiRequestInterface $request): ?array {
+                    \assert($file instanceof File);
+                    if ($file->isUploaded() || !$this->security->isGranted('EDIT', $file)) {
+                        return null;
+                    }
+                    $signed = $this->uploads->sign($file);
+
+                    return [
+                        'href' => $signed->url,
+                        'meta' => ['method' => 'PUT', 'headers' => $signed->headers, 'expiresAt' => $signed->expiresAt],
+                    ];
+                })
+                ->example('https://uploads.example.com/f-1?signature=abc'),
+            DeclaredLink::make('download')
+                ->hrefUsing(fn(mixed $file): ?string => $file instanceof File && $file->isUploaded()
+                    ? '/files/' . $file->id . '/content'
+                    : null)
+                ->example('https://api.example.com/files/f-1/content'),
+        ];
+    }
+}
+```
+
+A `null` href leaves the link out of that resource's `links`, which is how you hide one
+per viewer or per state. A relative href gets the server's `base_uri`, and a `DateTime`
+meta member renders in the server's [output zone](configuration.md#output_timezone), so a resource on
+two servers renders each with that server's base and zone. A link with no meta and no
+static member such as `type()` or `title()` is a bare URL string; anything else is a link
+object on every response.
+
+Declared links render wherever the resource does, on every data provider: primary data,
+`included` and related endpoints. On Doctrine that includes the members of a
+[pivot relation](relationships.md#pivot-belongstomany-data), whose serializer passes the
+links through. A name `getLinks()` returns wins over a declared link, and a declared link wins
+over an [action link](actions.md#exposing-an-action-as-a-resource-link-aslink) of the same
+name, though the OpenAPI document refuses that last clash. `self` can't be declared.
+
+The music catalog declares two. `albums` has a bare `store` link and `tracks` a `preview`
+link object with a media type and `format`/`expiresAt` meta, left out for a track with no
+duration
+([`AlbumResource`](../examples/music-catalog-symfony/src/Resource/AlbumResource.php),
+[`TrackResource`](../examples/music-catalog-symfony/src/Resource/TrackResource.php)).
+`tracks` reads through a hand-written serializer, which has to render the links itself;
+see [custom serializers](custom-serializers-hydrators.md#declared-links-on-an-overriding-serializer).
+
 ## Sourcing the resource id
 
 Where a new resource's `id` comes from is governed by two orthogonal axes on the

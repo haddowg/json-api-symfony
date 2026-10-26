@@ -15,17 +15,21 @@ use haddowg\JsonApi\Resource\Field\ArrayList;
 use haddowg\JsonApi\Resource\Field\BelongsTo;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\Boolean;
+use haddowg\JsonApi\Resource\Field\DateTime;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Integer;
 use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApi\Resource\Field\Time;
 use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Filter\WhereIn;
+use haddowg\JsonApi\Resource\Link\DeclaredLink;
+use haddowg\JsonApi\Resource\Link\DeclaredLinkBuilder;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\DataFixtures\SeedManifest;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Track;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Query\FullTextSearch;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Serializer\TrackSerializer;
+use Symfony\Component\Clock\Clock;
 
 /**
  * The `tracks` resource type, mapped to its backing {@see Track} entity.
@@ -97,6 +101,40 @@ final class TrackResource extends AbstractResource
                 // the deliberate contrast with AlbumResource's lazy `tracks`.
                 ->withData(),
         ];
+    }
+
+    public function links(): array
+    {
+        return [self::previewLink()];
+    }
+
+    /**
+     * The `preview` link: a link object with a media type and two meta members, left
+     * out for a track with no duration. {@see TrackSerializer} renders the same
+     * declaration, because it serializes tracks in place of this resource.
+     */
+    public static function previewLink(): DeclaredLinkBuilder
+    {
+        return DeclaredLink::make('preview')
+            ->describedAs('A short audio preview of the track, valid until expiresAt.')
+            ->type('audio/mpeg')
+            ->example('https://cdn.example.com/previews/1.mp3')
+            ->meta(
+                Str::make('format')
+                    ->describedAs('Audio encoding of the preview.')
+                    ->example('mp3'),
+                DateTime::make('expiresAt')
+                    ->describedAs('When the preview URL stops working.')
+                    ->example('2026-01-01T12:00:00+00:00'),
+            )
+            ->hrefUsing(static fn(mixed $track): ?string => $track instanceof Track && $track->length_seconds > 0
+                ? 'https://cdn.example.com/previews/' . $track->id . '.mp3'
+                : null)
+            // The clock is Symfony's global one, so a test can pin it with a MockClock.
+            ->metaUsing(static fn(): array => [
+                'format' => 'mp3',
+                'expiresAt' => Clock::get()->now()->modify('+1 hour'),
+            ]);
     }
 
     /**

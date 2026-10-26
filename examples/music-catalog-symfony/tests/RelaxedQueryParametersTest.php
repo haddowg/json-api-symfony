@@ -31,6 +31,8 @@ use PHPUnit\Framework\Attributes\Test;
  */
 final class RelaxedQueryParametersTest extends JsonApiFunctionalTestCase
 {
+    use PinsTheClock;
+
     protected static function getKernelClass(): string
     {
         return RelaxedQueryParametersKernel::class;

@@ -8,6 +8,7 @@ use haddowg\JsonApi\OpenApi\Metadata\ActionMetadataInterface;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresAlwaysCounted;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationExamples;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationExtensions;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresResourceLinks;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresSingularName;
 use haddowg\JsonApi\OpenApi\Metadata\OperationExample;
 use haddowg\JsonApi\OpenApi\Metadata\OperationResponseInterface;
@@ -18,6 +19,7 @@ use haddowg\JsonApi\OpenApi\Metadata\TypeMetadataInterface;
 use haddowg\JsonApi\OpenApi\Schema;
 use haddowg\JsonApi\Resource\Field\FieldInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
+use haddowg\JsonApi\Resource\Link\DeclaredLink;
 use haddowg\JsonApi\Resource\Sort\SortInterface;
 
 /**
@@ -43,8 +45,11 @@ use haddowg\JsonApi\Resource\Sort\SortInterface;
  *
  * And core's opt-in {@see DeclaresAlwaysCounted}: whether the primary collection's
  * paginator counts on every request.
+ *
+ * And core's opt-in {@see DeclaresResourceLinks}: the resource's declared links, empty
+ * for a standalone type.
  */
-final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOperationExtensions, DeclaresSingularName, DeclaresOperationExamples, DeclaresAlwaysCounted
+final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOperationExtensions, DeclaresSingularName, DeclaresOperationExamples, DeclaresAlwaysCounted, DeclaresResourceLinks
 {
     /**
      * @param list<FieldInterface>            $fields
@@ -64,6 +69,7 @@ final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOper
      * @param ?string                         $singularName        the declared singular noun for generated prose (null = inflected by core)
      * @param array<string, OperationExample|false> $operationExamples the declared operation example overrides, keyed by core's operation name
      * @param bool                            $alwaysCounts        whether the resolved paginator counts on every request
+     * @param list<DeclaredLink>              $declaredLinks       the resource's built declared links, in declaration order
      */
     public function __construct(
         private string $type,
@@ -92,6 +98,7 @@ final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOper
         private ?string $singularName = null,
         private array $operationExamples = [],
         private bool $alwaysCounts = false,
+        private array $declaredLinks = [],
     ) {}
 
     public function type(): string
@@ -222,5 +229,10 @@ final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOper
     public function alwaysCounts(): bool
     {
         return $this->alwaysCounts;
+    }
+
+    public function declaredLinks(): array
+    {
+        return $this->declaredLinks;
     }
 }

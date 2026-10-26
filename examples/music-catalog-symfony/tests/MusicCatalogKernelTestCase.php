@@ -19,10 +19,13 @@ use haddowg\JsonApiBundle\Tests\Functional\JsonApiFunctionalTestCase;
  * every example suite boots against a fully populated database.
  *
  * The in-memory database lives and dies with the kernel's connection, so the
- * schema + seed are recreated per test.
+ * schema + seed are recreated per test. {@see PinsTheClock} freezes Symfony's clock
+ * first, so every render in a test reads the same time.
  */
 abstract class MusicCatalogKernelTestCase extends JsonApiFunctionalTestCase
 {
+    use PinsTheClock;
+
     protected static function getKernelClass(): string
     {
         return MusicCatalogKernel::class;
