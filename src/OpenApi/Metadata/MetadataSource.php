@@ -591,6 +591,8 @@ final class MetadataSource
             $action->server,
             $tags,
             $action->asLink,
+            $action->summary,
+            $action->description,
         );
     }
 

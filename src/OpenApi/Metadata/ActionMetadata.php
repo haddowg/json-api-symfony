@@ -105,12 +105,12 @@ final readonly class ActionMetadata implements DeclaresActionLink
 
     public function summary(): ?string
     {
-        return null;
+        return $this->descriptor->summary;
     }
 
     public function description(): ?string
     {
-        return null;
+        return $this->descriptor->description;
     }
 
     /**

@@ -106,6 +106,8 @@ final readonly class AsJsonApiAction
      * @param ActionResponse|list<ActionResponse>|null $responds the action's success response set (single or list); omitted = a `200` resource document of the mount type
      * @param list<string>                       $tags     the OpenAPI tag names this action is grouped under (empty = inherit the mount type's resource tags)
      * @param bool                               $asLink   expose the action as a security-aware `links` member on the mount type's resources (resource scope only)
+     * @param ?string                            $summary  the OpenAPI operation summary, a short line; omitted from the document when null
+     * @param ?string                            $description the OpenAPI operation description; omitted from the document when null
      */
     public function __construct(
         public string $type,
@@ -120,6 +122,8 @@ final readonly class AsJsonApiAction
         public ?string $name = null,
         public array $tags = [],
         public bool $asLink = false,
+        public ?string $summary = null,
+        public ?string $description = null,
     ) {
         $responds = $responds === null ? [] : (\is_array($responds) ? \array_values($responds) : [$responds]);
         if ($responds !== []) {

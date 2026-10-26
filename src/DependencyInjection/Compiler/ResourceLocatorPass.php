@@ -394,7 +394,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
         }
 
         $handlerReferences = [];
-        /** @var array<string, array{type: string, path: string, methods: list<string>, scope: string, input: string, inputType: string, outputType: string, responds: list<array{kind: string, type?: string, jobType?: string}>, security: ?string, handlerServiceId: string, server: string, tags: string, asLink: bool}> $actionDescriptors */
+        /** @var array<string, array{type: string, path: string, methods: list<string>, scope: string, input: string, inputType: string, outputType: string, responds: list<array{kind: string, type?: string, jobType?: string}>, security: ?string, handlerServiceId: string, server: string, tags: string, asLink: bool, summary: ?string, description: ?string}> $actionDescriptors */
         $actionDescriptors = [];
         /** @var array<string, list<array{uriType: string, type: string, path: string, methods: list<string>, scope: string, name: string}>> $routeDescriptorsByServer */
         $routeDescriptorsByServer = [];
@@ -498,6 +498,8 @@ final class ResourceLocatorPass implements CompilerPassInterface
                 );
 
                 $name = \is_string($tag['name'] ?? null) && $tag['name'] !== '' ? $tag['name'] : null;
+                $summary = \is_string($tag['summary'] ?? null) && $tag['summary'] !== '' ? $tag['summary'] : null;
+                $description = \is_string($tag['description'] ?? null) && $tag['description'] !== '' ? $tag['description'] : null;
 
                 // The action's OpenAPI tag refs (design §4.7): explicit refs on the
                 // action, else inherit the tags of the mount type's resource on each
@@ -551,6 +553,8 @@ final class ResourceLocatorPass implements CompilerPassInterface
                         // Whether the action is exposed as a `links` member on the mount
                         // type's resources (resource scope only; guarded above).
                         'asLink' => $asLink,
+                        'summary' => $summary,
+                        'description' => $description,
                     ];
 
                     $routeDescriptorsByServer[$server][] = [

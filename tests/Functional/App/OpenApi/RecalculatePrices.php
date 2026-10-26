@@ -26,6 +26,8 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiAction;
     responds: [new NoContent()],
     security: 'true',
     tags: ['Catalog'],
+    summary: 'Recalculate every product price',
+    description: 'Reprices the whole catalogue from the current cost and margin rules.',
 )]
 final class RecalculatePrices implements ActionHandlerInterface
 {
