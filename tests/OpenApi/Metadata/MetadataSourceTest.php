@@ -9,6 +9,7 @@ use haddowg\JsonApi\OpenApi\Metadata\ActionScope;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresExampleGeneration;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationExamples;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationExtensions;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresResourceLinks;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresSingularName;
 use haddowg\JsonApi\OpenApi\Metadata\OperationExample;
 use haddowg\JsonApi\OpenApi\Metadata\OperationResponseInterface;
@@ -190,6 +191,8 @@ final class MetadataSourceTest extends TestCase
         self::assertSame([], $snippets->fields());
         self::assertSame([], $snippets->operations());
         self::assertNull($snippets->pageSchema());
+        self::assertInstanceOf(DeclaresResourceLinks::class, $snippets);
+        self::assertSame([], $snippets->declaredLinks());
         // The default humanized tag still applies to a standalone type.
         self::assertSame(['Snippets'], $snippets->tags());
     }

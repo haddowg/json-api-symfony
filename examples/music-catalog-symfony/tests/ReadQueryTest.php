@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Tests;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\DataFixtures\SeedManifest;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
+use Symfony\Component\Clock\Test\ClockSensitiveTrait;
 
 /**
  * The read-query acceptance suite (backs `data-layer.md` / `doctrine.md`):
@@ -23,6 +24,8 @@ use PHPUnit\Framework\Attributes\Test;
 #[Group('spec:fetching')]
 final class ReadQueryTest extends MusicCatalogKernelTestCase
 {
+    use ClockSensitiveTrait;
+
     // --- filtering -----------------------------------------------------------
 
     #[Test]
@@ -340,14 +343,24 @@ final class ReadQueryTest extends MusicCatalogKernelTestCase
         // attribute, the computed `displayTitle`, the per-member meta, both
         // relationships' linkage and links). A leaked or extra member — a hidden
         // column surfacing, a stray relationship — would fail this, far stronger than
-        // spot-checking one attribute.
+        // spot-checking one attribute. The clock is pinned because the declared
+        // `preview` link's meta carries an expiry an hour from now.
+        self::mockTime(new \DateTimeImmutable('2026-01-01T11:00:00+00:00'));
+
         $this->browser()
             ->get('/tracks/1')
             ->assertFetchedOneExact([
                 'type' => 'tracks',
                 'id' => '1',
                 'meta' => ['served_by' => 'music-catalog'],
-                'links' => ['self' => ['href' => 'https://music.example/tracks/1', 'describedby' => '/docs.json#/paths/~1tracks~1%7Bid%7D/get']],
+                'links' => [
+                    'preview' => [
+                        'href' => 'https://cdn.example.com/previews/1.mp3',
+                        'type' => 'audio/mpeg',
+                        'meta' => ['format' => 'mp3', 'expiresAt' => '2026-01-01T12:00:00+00:00'],
+                    ],
+                    'self' => ['href' => 'https://music.example/tracks/1', 'describedby' => '/docs.json#/paths/~1tracks~1%7Bid%7D/get'],
+                ],
                 'attributes' => [
                     'title' => 'Airbag',
                     'trackNumber' => 1,

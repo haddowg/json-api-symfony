@@ -9,6 +9,7 @@ use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Schema\Link\ResourceLinks;
 use haddowg\JsonApi\Serializer\IncludeControlsInterface;
+use haddowg\JsonApi\Serializer\RendersDeclaredLinksInterface;
 use haddowg\JsonApi\Serializer\SerializerInterface;
 
 /**
@@ -39,7 +40,7 @@ use haddowg\JsonApi\Serializer\SerializerInterface;
  * what the response pivot schema's `required` promises. The map itself keeps write-only
  * values, because the validator reads them when it merges a partial pivot update.
  */
-final class PivotMetaSerializer implements SerializerInterface, IncludeControlsInterface
+final class PivotMetaSerializer implements SerializerInterface, IncludeControlsInterface, RendersDeclaredLinksInterface
 {
     /**
      * @param SerializerInterface                  $inner    the related type's real serializer
@@ -99,6 +100,13 @@ final class PivotMetaSerializer implements SerializerInterface, IncludeControlsI
     public function getLinks(mixed $object, JsonApiRequestInterface $request): ?ResourceLinks
     {
         return $this->inner->getLinks($object, $request);
+    }
+
+    public function renderDeclaredLinks(mixed $object, JsonApiRequestInterface $request): array
+    {
+        return $this->inner instanceof RendersDeclaredLinksInterface
+            ? $this->inner->renderDeclaredLinks($object, $request)
+            : [];
     }
 
     public function getAttributes(mixed $object, JsonApiRequestInterface $request): array

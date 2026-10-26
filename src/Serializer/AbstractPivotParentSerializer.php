@@ -13,6 +13,7 @@ use haddowg\JsonApi\Serializer\DeclaresEagerLoadsInterface;
 use haddowg\JsonApi\Serializer\DeclaresFieldNamesInterface;
 use haddowg\JsonApi\Serializer\DeclaresRelationsInterface;
 use haddowg\JsonApi\Serializer\IncludeControlsInterface;
+use haddowg\JsonApi\Serializer\RendersDeclaredLinksInterface;
 use haddowg\JsonApi\Serializer\SelfLinkAwareInterface;
 use haddowg\JsonApi\Serializer\SerializerInterface;
 
@@ -27,8 +28,8 @@ use haddowg\JsonApi\Serializer\SerializerInterface;
  * Crucially it **transparently forwards every optional serializer-render interface**
  * the inner serializer (an {@see \haddowg\JsonApi\Resource\AbstractResource})
  * implements — counting ({@see CountableControlsInterface}/
- * {@see CountableSelfInterface}), strict-fieldset/eager/relation declarations and the
- * self-link toggle — by implementing each and `instanceof`-delegating. A decorator
+ * {@see CountableSelfInterface}), strict-fieldset/eager/relation declarations, the
+ * self-link toggle and declared links — by implementing each and `instanceof`-delegating. A decorator
  * that dropped one of these would silently break the corresponding feature on the
  * decorated render (e.g. core's count gate reads {@see CountableControlsInterface}
  * off the *primary* serializer, so a non-forwarding decorator turns a valid
@@ -44,7 +45,8 @@ abstract class AbstractPivotParentSerializer implements
     DeclaresFieldNamesInterface,
     DeclaresEagerLoadsInterface,
     DeclaresRelationsInterface,
-    SelfLinkAwareInterface
+    SelfLinkAwareInterface,
+    RendersDeclaredLinksInterface
 {
     use RebindsPivotLinkage;
 
@@ -75,6 +77,13 @@ abstract class AbstractPivotParentSerializer implements
     public function getLinks(mixed $object, JsonApiRequestInterface $request): ?ResourceLinks
     {
         return $this->inner()->getLinks($object, $request);
+    }
+
+    public function renderDeclaredLinks(mixed $object, JsonApiRequestInterface $request): array
+    {
+        $inner = $this->inner();
+
+        return $inner instanceof RendersDeclaredLinksInterface ? $inner->renderDeclaredLinks($object, $request) : [];
     }
 
     public function getAttributes(mixed $object, JsonApiRequestInterface $request): array

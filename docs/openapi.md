@@ -250,6 +250,17 @@ The generated document describes these links: each `<Type>ResourceLinks`,
 component lists the members that context renders, with an example carrying the same
 `describedby`, and an `asLink` action is listed by its name.
 
+A resource's [declared links](resources.md#declared-links) are named, optional properties
+of its `<Type>ResourceLinks`. A bare link takes the open `LinkObject` schema; a link
+object gets its own schema with `href`, each static member as a `const`, and a `meta`
+object built from the declared members the way attributes are. The operation examples
+carry each link, built from its `example()` and its meta members' examples, and a missing
+one is reported like a missing attribute example, as `links.<name>` or
+`links.<name>.meta.<member>`. A document whose types declare a link is stamped contract
+14 in `info.x-generator`; one without stays on the baseline. Core's
+[OpenAPI page](https://github.com/haddowg/json-api/blob/main/docs/openapi.md#links-and-describedby)
+shows the full schema.
+
 The warmer writes a small map of each document's operations beside it, which is all a
 request reads to resolve a `describedby`. Without a warmed map (in development, say) the
 first request builds the document once and writes the map.

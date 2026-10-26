@@ -361,6 +361,7 @@ final class MetadataSource
             // hook, then the #[AsJsonApiResource(singular:)] attribute.
             singularName: $this->nonBlank($resource?->getSingularName()) ?? $this->descriptions?->singularFor($type, $serverName),
             operationExamples: $this->descriptions?->operationExamplesFor($type, $serverName) ?? [],
+            declaredLinks: $resource?->allLinks() ?? [],
         );
     }
 

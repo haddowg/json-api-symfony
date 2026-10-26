@@ -10,12 +10,16 @@ use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\DateTime;
 use haddowg\JsonApi\Resource\Field\Integer;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\Link\DeclaredLink;
+use haddowg\JsonApi\Resource\ProvidesOutputTimezoneInterface;
 use haddowg\JsonApi\Resource\RendersRelationsTrait;
 use haddowg\JsonApi\Resource\SerializerResolverAwareInterface;
 use haddowg\JsonApi\Resource\SerializerResolverInterface;
 use haddowg\JsonApi\Schema\Link\ResourceLinks;
 use haddowg\JsonApi\Serializer\AbstractSerializer;
+use haddowg\JsonApi\Serializer\RendersDeclaredLinksInterface;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Track;
+use haddowg\JsonApiBundle\Examples\MusicCatalog\Resource\TrackResource;
 
 /**
  * A hand-written read serializer for the `tracks` type — the serializer-override
@@ -33,12 +37,19 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Track;
  * after construction, letting {@see RendersRelationsTrait} render the `album` and
  * `playlists` relationships through the same relation declarations the resource
  * uses.
+ *
+ * It renders the resource's declared `preview` link too, through
+ * {@see RendersDeclaredLinksInterface}. A serializer that replaces a resource renders
+ * only what it implements, so without this the link the OpenAPI document describes
+ * would never reach the wire.
  */
-final class TrackSerializer extends AbstractSerializer implements SerializerResolverAwareInterface
+final class TrackSerializer extends AbstractSerializer implements SerializerResolverAwareInterface, RendersDeclaredLinksInterface
 {
     use RendersRelationsTrait;
 
     private ?SerializerResolverInterface $serializerResolver = null;
+
+    private ?DeclaredLink $previewLink = null;
 
     public function __construct(private readonly string $catalogTag) {}
 
@@ -78,6 +89,18 @@ final class TrackSerializer extends AbstractSerializer implements SerializerReso
     public function getLinks(mixed $object, JsonApiRequestInterface $request): ?ResourceLinks
     {
         return null;
+    }
+
+    public function renderDeclaredLinks(mixed $object, JsonApiRequestInterface $request): array
+    {
+        $this->previewLink ??= TrackResource::previewLink()->build();
+        $outputTimezone = $this->serializerResolver instanceof ProvidesOutputTimezoneInterface
+            ? $this->serializerResolver->outputTimezone()
+            : null;
+
+        $preview = $this->previewLink->resolve($object, $request, $outputTimezone);
+
+        return $preview !== null ? ['preview' => $preview] : [];
     }
 
     public function getAttributes(mixed $object, JsonApiRequestInterface $request): array

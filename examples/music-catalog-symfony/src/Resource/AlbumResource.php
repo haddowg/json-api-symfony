@@ -22,6 +22,7 @@ use haddowg\JsonApi\Resource\Filter\Range;
 use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Filter\WhereHas;
 use haddowg\JsonApi\Resource\Filter\WhereThrough;
+use haddowg\JsonApi\Resource\Link\DeclaredLink;
 use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApi\Resource\Sort\SortDirective;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
@@ -232,6 +233,22 @@ final class AlbumResource extends AbstractResource
     {
         return [
             new SortDirective(SortByField::make('releasedAt'), descending: true),
+        ];
+    }
+
+    /**
+     * A bare declared link: no meta and no static members, so it renders as a plain
+     * URL string and the OpenAPI document lists it on `AlbumsResourceLinks`.
+     */
+    public function links(): array
+    {
+        return [
+            DeclaredLink::make('store')
+                ->describedAs('The album\'s page in the store.')
+                ->example('https://store.example.com/albums/1')
+                ->hrefUsing(static fn(mixed $album): ?string => $album instanceof Album
+                    ? 'https://store.example.com/albums/' . $album->id
+                    : null),
         ];
     }
 
