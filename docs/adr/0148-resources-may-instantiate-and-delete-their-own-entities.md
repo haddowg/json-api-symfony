@@ -1,0 +1,3 @@
+# Resources may instantiate and delete their own entities
+
+The Doctrine persister builds entities without their constructor (ADR 0029) and is final, so running a constructor or soft-deleting one type meant writing a whole persister that delegated every other method. A resource can now implement `InstantiatesEntityInterface` or `DeletesEntityInterface`, and the handler calls it in place of the persister's `instantiate()` or `delete()`. We put the hooks on the resource, beside the lifecycle hooks, rather than in a Doctrine-only extension point or a delegating persister base class, because the resource already has the type's dependencies injected and the hooks then work over any data layer.

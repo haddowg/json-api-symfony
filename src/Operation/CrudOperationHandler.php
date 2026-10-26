@@ -95,6 +95,9 @@ use haddowg\JsonApiBundle\Event\BeforeRelationshipCommitEvent;
 use haddowg\JsonApiBundle\Event\BeforeRelationshipMutateEvent;
 use haddowg\JsonApiBundle\Event\BeforeSaveEvent;
 use haddowg\JsonApiBundle\Event\BeforeUpdateEvent;
+use haddowg\JsonApiBundle\Hook\DeletesEntityInterface;
+use haddowg\JsonApiBundle\Hook\HookContext;
+use haddowg\JsonApiBundle\Hook\InstantiatesEntityInterface;
 use haddowg\JsonApiBundle\Serializer\PivotLinkageParentSerializer;
 use haddowg\JsonApiBundle\Serializer\PivotMetaSerializer;
 use haddowg\JsonApiBundle\Serializer\PivotParentSerializer;
@@ -1986,7 +1989,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // never has a scalar id assigned to an association property (ADR 0018).
         $relationships = $this->extractRelationships($server, $type, $body, creating: true);
 
-        $entity = $persister->instantiate($type);
+        $entity = $this->instantiate($server, $persister, $type, $request);
 
         // Apply the embedded associations BEFORE core hydrates, so a flattened `on()`
         // attribute (which hydrates AFTER relationships and reads its owner off the
@@ -2412,6 +2415,24 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
     }
 
     /**
+     * The new model a create hydrates: built by the type's resource, or its standalone
+     * hydrator, when it implements {@see InstantiatesEntityInterface}, otherwise by the
+     * persister (bundle ADR 0148).
+     */
+    private function instantiate(Server $server, DataPersisterInterface $persister, string $type, JsonApiRequestInterface $request): object
+    {
+        $resource = $this->types->resourceFor($server, $type);
+        $instantiates = $resource instanceof InstantiatesEntityInterface ? $resource : null;
+        if ($instantiates === null && $resource === null && $server->hasHydratorFor($type)) {
+            $hydrator = $server->hydratorFor($type);
+            $instantiates = $hydrator instanceof InstantiatesEntityInterface ? $hydrator : null;
+        }
+
+        return $instantiates?->instantiate(new HookContext($request, $this->serverName($request), $type))
+            ?? $persister->instantiate($type);
+    }
+
+    /**
      * Whether `$relation` declares a `fillUsing()` hook, which then owns how the
      * relationship is written.
      */
@@ -2529,7 +2550,12 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // delete guard's natural seam, e.g. a 409 when the resource is referenced).
         $this->dispatch(new BeforeDeleteEvent($type, $request, $entity, $this->serverName($request)));
 
-        $this->persisters->forType($type)->delete($type, $entity);
+        $deletes = $this->types->resourceFor($this->server($operation->context()), $type);
+        if ($deletes instanceof DeletesEntityInterface) {
+            $deletes->delete($entity, new HookContext($request, $this->serverName($request), $type));
+        } else {
+            $this->persisters->forType($type)->delete($type, $entity);
+        }
 
         $response = NoContentResponse::create();
 
