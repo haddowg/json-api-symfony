@@ -41,6 +41,15 @@ final class OperationExamplesInMemoryTestKernel extends OperationExamplesDoctrin
             ->factory([self::class, 'provider'])
             ->args(['scraps'])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+
+        $services->set(InMemoryTallyResource::class);
+        $services->set(InMemoryJottingResource::class);
+        foreach (['tallies', 'jottings'] as $type) {
+            $services->set('test.' . $type . '_provider', InMemoryDataProvider::class)
+                ->factory([self::class, 'provider'])
+                ->args([$type])
+                ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+        }
     }
 
     public static function provider(string $type): InMemoryDataProvider

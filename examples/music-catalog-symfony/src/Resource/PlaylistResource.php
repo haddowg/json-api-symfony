@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Resource;
 
-use haddowg\JsonApi\OpenApi\Metadata\OperationExample;
 use haddowg\JsonApi\Pagination\PagePaginator;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Constraint\Comparison;
@@ -99,15 +98,6 @@ use haddowg\JsonApiBundle\Hook\ResourceLifecycleHooksTrait;
     securityUpdate: "is_granted('EDIT', object)",
     securityDelete: "is_granted('ROLE_ADMIN')",
     tags: ['Library'],
-    // `owner` links to `users`, which the default server does not register, so the
-    // projector has no users id to build its linkage from there. Spell it out.
-    operationExamples: [
-        'fetchRelationship.owner' => new OperationExample(responses: [200 => ['data' => ['type' => 'users', 'id' => '1']]]),
-        'updateRelationship.owner' => new OperationExample(
-            request: ['data' => ['type' => 'users', 'id' => '1']],
-            responses: [200 => ['data' => ['type' => 'users', 'id' => '1']]],
-        ),
-    ],
 )]
 final class PlaylistResource extends AbstractResource implements ResourceLifecycleHooksInterface
 {
@@ -150,9 +140,14 @@ final class PlaylistResource extends AbstractResource implements ResourceLifecyc
             // admin-only, OVERRIDING the (ungated) parent, while `publicOwner` below — the
             // curated public view of the same User — stays open. A relation thus authorizes
             // independently of the resource it hangs off. See `docs/authorization.md`.
+            //
+            // `users` is not registered on the default server either, so the OpenAPI
+            // examples there have no users id to build its linkage from. `exampleId()`
+            // names one.
             BelongsTo::make('owner', 'users')
                 ->security(read: "is_granted('ROLE_ADMIN')")
-                ->withoutRelatedEndpoint(),
+                ->withoutRelatedEndpoint()
+                ->exampleId('1'),
             // The **one-entity-two-types** witness: a SECOND relation reading the SAME
             // `owner` ManyToOne column (`storedAs('owner')`) but declaring its target as
             // the curated `public-profiles` type ({@see PublicProfileResource}, the same

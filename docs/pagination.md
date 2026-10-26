@@ -452,6 +452,11 @@ against a resource that is **not** `countable()` is rejected with a `400`
 `PagePaginator::make()->withCount()` from `pagination()` — then every paged request
 counts, no profile or param needed.
 
+The generated OpenAPI examples follow the same rule. A collection whose paginator was
+built with `withCount()` shows its total and `last` link with no `withCount` parameter,
+whether the paginator comes from the relation, the resource or the server default. A
+menu counts when its default strategy does.
+
 ## See also
 
 - Core [pagination](https://github.com/haddowg/json-api/blob/main/docs/pagination.md)

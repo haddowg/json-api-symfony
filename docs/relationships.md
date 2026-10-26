@@ -958,6 +958,20 @@ register is therefore a configuration error, and `cache:warmup` fails the build 
 A type reached only as linkage never needs registering. It is exposing the endpoint that
 makes the claim.
 
+The OpenAPI examples build linkage from the related type's `Id` example, which an
+unregistered type can't give. Declare the id on the relation with `exampleId()`, as the
+example's `playlists.owner` does:
+
+```php
+BelongsTo::make('owner', 'users')
+    ->withoutRelatedEndpoint()
+    ->exampleId('1'),
+```
+
+Without it, a read shows that relation's links and no `data`, a write leaves it out, and
+the relationship endpoints get no example. The related type's own example still wins
+wherever the server registers it.
+
 ## Controlling what can be included
 
 `?include` is a compound-document amplifier — a deeply nested path or a

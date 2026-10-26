@@ -414,6 +414,13 @@ Nothing is invented: an operation that needs a value with no declared example ge
 example, and `json-api:openapi:export` names the type and field it was missing. Declare
 an `Id` example too, since every resource object and linkage needs one.
 
+Linkage to a type the server doesn't register has no `Id` example to borrow, so give the
+relation an `exampleId()` (see [relationships](relationships.md#the-related-endpoints-target-must-be-registered-on-the-server)).
+A collection whose paginator counts on every request, one built with `withCount()`, shows
+`meta.total`, `meta.page.total` and the `last` link as it is served. The bundle reads that
+from the same paginator the endpoint uses: the relation's own, then the related
+resource's `pagination()`, then the server default. A cursor page never counts.
+
 `operationExamples` on `#[AsJsonApiResource]` (or `#[AsJsonApiSerializer]`) replaces or
 switches off an operation's example. Keys are core's operation names: `fetchCollection`,
 `fetchOne`, `create`, `update`, `delete`, and for a relation `fetchRelated.<relation>`,
@@ -427,7 +434,7 @@ use haddowg\JsonApi\OpenApi\Metadata\OperationExample;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 
 #[AsJsonApiResource(operationExamples: [
-    'fetchRelationship.owner' => new OperationExample(responses: [200 => ['data' => ['type' => 'users', 'id' => '1']]]),
+    'fetchOne' => new OperationExample(responses: [200 => ['data' => ['type' => 'playlists', 'id' => '1', 'attributes' => ['title' => 'Road trip']]]]),
     'update' => false,
 ])]
 final class PlaylistResource extends AbstractResource { /* … */ }
