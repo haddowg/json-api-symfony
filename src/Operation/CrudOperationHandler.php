@@ -34,6 +34,7 @@ use haddowg\JsonApi\Pagination\PageInterface;
 use haddowg\JsonApi\Pagination\PaginatorInterface;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Request\RelatedQuery;
+use haddowg\JsonApi\Resource\Field\AbstractFieldValue;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
@@ -1428,7 +1429,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         UpdateRelationshipOperation|AddToRelationshipOperation|RemoveFromRelationshipOperation $operation,
         JsonApiRequestInterface $body,
         Mode $mode,
-    ): IdentifierResponse|ErrorResponse {
+    ): IdentifierResponse|AcceptedResponse|ErrorResponse {
         $server = $this->server($operation->context());
         $target = $operation->target();
         $type = $target->type;
@@ -1496,18 +1497,27 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // as changed too, so a caller can't hand it to someone the gate would refuse them
         // as (bundle ADR 0136). A refusal rolls the change back.
         $parent = $this->withinWrite($persister, function () use ($persister, $type, $parent, $relation, $scopedLinkage, $mode, $request): object {
-            $parent = $persister->mutateRelationship($type, $parent, $relation, $scopedLinkage, $mode);
+            // A relation that declares fillUsing() owns how it is written: run it, then
+            // save the parent, rather than having the persister write its column.
+            if (!$this->fillsThroughHook($relation)) {
+                $parent = $persister->mutateRelationship($type, $parent, $relation, $scopedLinkage, $mode);
+            } else {
+                $parent = $this->fillRelationship($relation, $parent, $scopedLinkage, $mode, endpoint: true);
+            }
             $this->dispatch(new BeforeRelationshipCommitEvent($type, $request, $parent, $relation, $scopedLinkage, $mode, $this->serverName($request)));
 
-            return $parent;
+            return $this->fillsThroughHook($relation) ? $persister->update($type, $parent) : $parent;
         });
+        if ($parent instanceof AcceptedForProcessing) {
+            return $this->accepted($parent, $server);
+        }
         // The write may have changed whether a related row is readable.
         $this->relationshipLinkage?->forgetReadDecisions();
 
         // Render the linkage `GET` on the relationship endpoint serves (unpaginated), not
         // the model's members, which still include the ones the scope hides.
         $this->relationshipLinkage?->set(null);
-        $members = $this->linkageGuard?->scopedMembers($parent, $relation, $request);
+        $members = $this->linkageGuard?->scopedMembers($server, $parent, $relation, $request);
         $this->relationshipLinkage?->setIncluded(match (true) {
             $members !== null => new WindowedRelationshipLinkage([\spl_object_id($parent) => [$relationshipName => new RelationshipLinkage($members)]]),
             !$relation->isToMany() || \count($relation->relatedTypes()) > 1 => $this->includeBatcher?->scopeRelationship($server, $type, $parent, $relation, $request),
@@ -1983,7 +1993,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // parent) sees a related model associated in the SAME request body (ADR 0085).
         // Relationships are still stripped from the hydrate body, so core's
         // hydrateRelationships() stays a no-op (no scalar-id assignment, ADR 0018).
-        $this->applyRelationships($server, $persister, $type, $entity, $relationships, $body, $request, creating: true);
+        $entity = $this->applyRelationships($server, $persister, $type, $entity, $relationships, $body, $request, creating: true);
 
         // As on update: an `on()` attribute writes onto the target its relation's related
         // endpoint serves, so scope the hops below the relations this body set (ADR 0126).
@@ -2109,7 +2119,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // Everything from here to the save runs in one write, so a refusal or a failure
         // after the body's relationships are applied leaves nothing behind.
         $entity = $this->withinWrite($persister, function () use ($server, $persister, $type, $entity, $relationships, $body, $request, $original): object {
-            $this->applyRelationships($server, $persister, $type, $entity, $relationships, $body, $request, creating: false);
+            $entity = $this->applyRelationships($server, $persister, $type, $entity, $relationships, $body, $request, creating: false);
 
             // An `on()` attribute writes onto the target its relation's related endpoint
             // serves: scope the hops this body did not just set (bundle ADR 0125).
@@ -2339,6 +2349,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * is nothing to replace), and gating it would make a `cannotReplace` relation
      * impossible to ever set, since such a relation also has no relationship endpoint.
      *
+     * A relation that declares `fillUsing()` is written by its hook rather than the
+     * persister, exactly as core's own whole-resource hydration would, after the same
+     * gates and scoped linkage resolution (bundle ADR 0147).
+     *
      * @param list<array{relation: RelationInterface, linkage: ToOneRelationship|ToManyRelationship}> $relationships
      */
     private function applyRelationships(
@@ -2350,7 +2364,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         JsonApiRequestInterface $body,
         JsonApiRequestInterface $request,
         bool $creating,
-    ): void {
+    ): object {
         foreach ($relationships as $relationship) {
             if ($creating === false) {
                 $this->guardMutability(
@@ -2378,6 +2392,12 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 ?? $relationship['linkage'];
             $this->guardMovedMembers($persister, $type, $request, $entity, $relationship['relation'], $linkage, Mode::Replace);
 
+            if ($this->fillsThroughHook($relationship['relation'])) {
+                $entity = $this->fillRelationship($relationship['relation'], $entity, $linkage, Mode::Replace, endpoint: false);
+
+                continue;
+            }
+
             $persister->mutateRelationship(
                 $type,
                 $entity,
@@ -2387,6 +2407,40 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 flush: false,
             );
         }
+
+        return $entity;
+    }
+
+    /**
+     * Whether `$relation` declares a `fillUsing()` hook, which then owns how the
+     * relationship is written.
+     */
+    private function fillsThroughHook(RelationInterface $relation): bool
+    {
+        if (!$relation instanceof AbstractFieldValue) {
+            return false;
+        }
+
+        static $state = null;
+        $state ??= new \ReflectionProperty(AbstractFieldValue::class, 'state');
+        $fieldState = $state->getValue($relation);
+
+        return \is_object($fieldState) && \property_exists($fieldState, 'fillUsing') && $fieldState->fillUsing !== null;
+    }
+
+    /**
+     * Writes `$linkage` through the relation's `fillUsing()` hook, the way core hydrates
+     * it: a whole-resource write passes the linkage as core's own hydration does, and a
+     * relationship endpoint passes a to-many's mode as core's `applyToMany()` does. The
+     * hook may return a replacement model.
+     */
+    private function fillRelationship(RelationInterface $relation, object $entity, ToOneRelationship|ToManyRelationship $linkage, Mode $mode, bool $endpoint): object
+    {
+        $filled = $endpoint && $linkage instanceof ToManyRelationship
+            ? $relation->applyToMany($entity, $linkage, $mode)
+            : $relation->hydrateRelationship($entity, $linkage);
+
+        return \is_object($filled) ? $filled : $entity;
     }
 
     /**
