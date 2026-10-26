@@ -221,6 +221,14 @@ interface (or a bare serializer/hydrator pair with no resource) is untouched.
 > Both are exercised end to end by
 > [`LifecycleHooksTest`](../examples/music-catalog-symfony/tests/LifecycleHooksTest.php).
 
+### Building and deleting the model
+
+Two more resource interfaces replace a persister step for one type rather than
+wrapping it. `InstantiatesEntityInterface::instantiate()` builds the model a create
+hydrates, and `DeletesEntityInterface::delete()` deletes in place of the persister.
+See [Constructor-less instantiation](doctrine.md#constructor-less-instantiation) and
+[Deleting without the persister](doctrine.md#deleting-without-the-persister).
+
 ## Hooks vs. the other seams
 
 | Seam | Reach | Use it for |

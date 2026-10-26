@@ -480,8 +480,53 @@ they also don't. (Note that the `Album` constructor above initialises
 uninitialised. The persister re-initialises an uninitialised to-many collection
 property to an empty `ArrayCollection` before applying embedded relationships, so a
 whole-resource create that sets a to-many does not hit an "accessed before
-initialization" `\Error`.) An app that needs the constructor to run overrides
-`instantiate()` via a custom persister.
+initialization" `\Error`.)
+
+To run the constructor, or build the entity through a factory, implement
+`InstantiatesEntityInterface` on the resource. Its `instantiate()` builds the model
+every create of the type hydrates, an Atomic Operations `add` included, and the
+persister's own `instantiate()` is skipped:
+
+```php
+use haddowg\JsonApiBundle\Hook\HookContext;
+use haddowg\JsonApiBundle\Hook\InstantiatesEntityInterface;
+
+final class AdvertiserResource extends AbstractResource implements InstantiatesEntityInterface
+{
+    public function instantiate(HookContext $context): object
+    {
+        return new Advertiser(); // the constructor sets up its collections
+    }
+}
+```
+
+A type with no resource implements it on its standalone hydrator instead.
+
+### Deleting without the persister
+
+A type that deletes differently, such as a soft delete through a domain service,
+implements `DeletesEntityInterface` on its resource. The handler then calls its
+`delete()` in place of the persister's, after the before-delete gates and before the
+after-delete hooks. Every other write still goes through the Doctrine persister, so
+there is no persister to write or decorate. The hook commits its own change:
+
+```php
+use haddowg\JsonApiBundle\Hook\DeletesEntityInterface;
+use haddowg\JsonApiBundle\Hook\HookContext;
+
+final class AdvertiserResource extends AbstractResource implements DeletesEntityInterface
+{
+    public function __construct(private readonly AdvertiserManager $advertisers) {}
+
+    public function delete(object $entity, HookContext $context): void
+    {
+        $this->advertisers->archive($entity); // sets the flag and flushes
+    }
+}
+```
+
+A soft-deleted row is still found by the provider unless a
+[query extension](custom-data-providers.md#doctrineextensioninterface--scoping-the-doctrine-queries) hides it.
 
 ## Filter translation to DQL
 
