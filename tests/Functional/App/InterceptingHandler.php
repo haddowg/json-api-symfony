@@ -14,6 +14,7 @@ use haddowg\JsonApi\Response\ErrorResponse;
 use haddowg\JsonApi\Response\IdentifierResponse;
 use haddowg\JsonApi\Response\MetaResponse;
 use haddowg\JsonApi\Response\NoContentResponse;
+use haddowg\JsonApi\Response\RawResponse;
 use haddowg\JsonApi\Response\RelatedResponse;
 use haddowg\JsonApi\Response\SeeOtherResponse;
 use haddowg\JsonApiBundle\Operation\CrudOperationHandler;
@@ -46,7 +47,7 @@ final class InterceptingHandler implements OperationHandlerInterface
         private readonly OperationHandlerInterface $inner,
     ) {}
 
-    public function handle(JsonApiOperationInterface $operation): DataResponse|MetaResponse|RelatedResponse|IdentifierResponse|NoContentResponse|AtomicResultsResponse|AcceptedResponse|SeeOtherResponse|ErrorResponse
+    public function handle(JsonApiOperationInterface $operation): DataResponse|MetaResponse|RelatedResponse|IdentifierResponse|NoContentResponse|AtomicResultsResponse|AcceptedResponse|SeeOtherResponse|ErrorResponse|RawResponse
     {
         $response = $this->inner->handle($operation);
 

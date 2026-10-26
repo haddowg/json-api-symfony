@@ -214,8 +214,7 @@ wire. With such an id:
   a query projected and one decoded from the wire all key the same row.
 
 A `uuid` id needs no encoder: `Id::make()->uuid()` is enough, and the wire id is the
-canonical UUID string. Rendering the entity's own `Uuid` as that string is core's job,
-and needs a core release that renders a `Stringable` id as its string. An encoder still
+canonical UUID string. An encoder still
 works: when its `decode()` returns the 16-byte form, the `uuid` type accepts that too.
 
 ## Eager-loading includes (no N+1)
