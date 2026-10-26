@@ -952,6 +952,9 @@ final class JsonApiBundle extends AbstractBundle
                     // `links` member on the mount type's resources (resource scope
                     // only; the attribute constructor rejects a collection scope).
                     'asLink' => $attribute->asLink ? true : null,
+                    // The OpenAPI operation summary and description, carried only when set.
+                    'summary' => $attribute->summary,
+                    'description' => $attribute->description,
                 ], static fn(mixed $value): bool => $value !== null));
             },
         );

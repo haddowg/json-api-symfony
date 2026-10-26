@@ -110,6 +110,11 @@ final class OpenApiServingTest extends JsonApiFunctionalTestCase
 
         // The action returns 204 (responds: [new NoContent()]), so the document advertises a 204
         // response and NOT a 200 document body (§4.5).
+        // The declared summary and description project onto the operation.
+        $actionOperation = $this->nested($paths, '/products/-actions/recalculate-prices', 'post');
+        self::assertSame('Recalculate every product price', $actionOperation['summary'] ?? null);
+        self::assertSame('Reprices the whole catalogue from the current cost and margin rules.', $actionOperation['description'] ?? null);
+
         $actionResponses = $this->nested($paths, '/products/-actions/recalculate-prices', 'post', 'responses');
         self::assertArrayHasKey('204', $actionResponses);
         self::assertArrayNotHasKey('200', $actionResponses);

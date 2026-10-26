@@ -286,6 +286,20 @@ declare a `new NoContent()`, and one narrowed to exactly `MetaResponse` must dec
 `new MetaResult()` — otherwise the container fails to compile with an explanatory
 error. A handler that keeps the interface's union return type opts out of the guard.
 
+An action can also describe its operation. `summary` and `description` on the
+attribute become the operation's `summary` and `description`; left out, neither key is
+written:
+
+```php
+#[AsJsonApiAction(
+    type: 'products',
+    path: 'recalculate-prices',
+    scope: ActionScope::Collection,
+    summary: 'Recalculate every product price',
+    description: 'Reprices the whole catalogue from the current cost and margin rules.',
+)]
+```
+
 ### The `ActionContext`
 
 The handler is handed an `ActionContext` so it never has to thread the server. It

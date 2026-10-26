@@ -37,6 +37,8 @@ use Psr\Container\ContainerInterface;
  *     server: string,
  *     tags?: string,
  *     asLink?: bool,
+ *     summary?: ?string,
+ *     description?: ?string,
  * }
  */
 final class ActionRegistry
@@ -109,6 +111,8 @@ final class ActionRegistry
             $descriptor['server'],
             $this->splitTags($descriptor['tags'] ?? ''),
             $descriptor['asLink'] ?? false,
+            $descriptor['summary'] ?? null,
+            $descriptor['description'] ?? null,
         );
     }
 
