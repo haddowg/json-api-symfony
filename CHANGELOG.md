@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.0](https://github.com/haddowg/json-api-symfony/compare/v1.13.0...v1.14.0) (2026-10-26)
+
+
+### Features
+
+* let examples show always-counted pages and declared linkage ids ([#235](https://github.com/haddowg/json-api-symfony/issues/235)) ([78b49b8](https://github.com/haddowg/json-api-symfony/commit/78b49b88f331432f5058138bf0c3120d556d4781))
+
 ## [1.13.0](https://github.com/haddowg/json-api-symfony/compare/v1.12.0...v1.13.0) (2026-10-26)
 
 
