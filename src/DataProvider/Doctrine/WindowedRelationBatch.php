@@ -104,6 +104,7 @@ final class WindowedRelationBatch
         private readonly DoctrineSortHandler $sortHandler,
         private readonly KeysetResolver $keysetResolver,
         private readonly CursorTokenMinter $minter,
+        private readonly DoctrineIdentifiers $ids,
     ) {}
 
     /**
@@ -158,7 +159,7 @@ final class WindowedRelationBatch
         // parent-scope predicate, plus the shared CriteriaApplier driving the #1 DQL
         // filter executor. Apply ONLY the filters (a sort-stripped criteria), so the
         // inner query carries no ORDER BY to strip.
-        $builder = $this->innerQuery($shape, $relatedClass, $parentIds, $sortDirectives, $criteria);
+        $builder = $this->innerQuery($shape, $relatedClass, $parentMetadata, $parentIds, $sortDirectives, $criteria);
         $query = $builder->getQuery();
         $innerSql = $query->getSQL();
         \assert(\is_string($innerSql));
@@ -206,7 +207,7 @@ final class WindowedRelationBatch
             ? $this->loadRelatedById($relatedClass, $relatedMetadata, $rows)
             : [];
 
-        return $this->partition($rows, $parentType, $window, $countable, $shape->isJoinTable(), $relatedById);
+        return $this->partition($rows, $parentType, $parentMetadata, $window, $countable, $shape->isJoinTable(), $relatedById, $relatedMetadata);
     }
 
     /**
@@ -265,7 +266,7 @@ final class WindowedRelationBatch
         $shape = $this->resolveShape($parentMetadata, $relatedMetadata, $relation, $parentClass);
         $parentIds = $this->parentStorageIds($parents, $parentMetadata);
 
-        $builder = $this->innerQuery($shape, $relatedClass, $parentIds, $directives, $criteria);
+        $builder = $this->innerQuery($shape, $relatedClass, $parentMetadata, $parentIds, $directives, $criteria);
         $query = $builder->getQuery();
         $innerSql = $query->getSQL();
         \assert(\is_string($innerSql));
@@ -301,7 +302,7 @@ final class WindowedRelationBatch
             ? $this->loadRelatedById($relatedClass, $relatedMetadata, $rows)
             : [];
 
-        return $this->partitionCursor($rows, $parentType, $window, $shape->isJoinTable(), $relatedById, $relatedMetadata, $columns);
+        return $this->partitionCursor($rows, $parentType, $parentMetadata, $window, $shape->isJoinTable(), $relatedById, $relatedMetadata, $columns);
     }
 
     /**
@@ -365,6 +366,7 @@ final class WindowedRelationBatch
      * minting (bundle ADR 0118, core ADR 0123).
      *
      * @param list<array<int|string, mixed>> $rows
+     * @param ClassMetadata<object>          $parentMetadata
      * @param array<string, object>          $relatedById     the join-table shape's id-loaded related entities (empty for inverse-FK)
      * @param ClassMetadata<object>          $relatedMetadata
      * @param list<KeysetColumn>             $columns
@@ -372,6 +374,7 @@ final class WindowedRelationBatch
     private function partitionCursor(
         array $rows,
         string $parentType,
+        ClassMetadata $parentMetadata,
         CursorWindow $window,
         bool $joinTable,
         array $relatedById,
@@ -388,18 +391,17 @@ final class WindowedRelationBatch
             // The inverse-FK shape carries the hydrated entity at index 0; the join-table shape
             // carries the related id scalar, re-associated to the id-loaded entity.
             if ($joinTable) {
-                $relatedId = $row[BatchScope::RELATED_DISCRIMINATOR_ALIAS] ?? null;
-                $related = \is_scalar($relatedId) ? ($relatedById[(string) $relatedId] ?? null) : null;
+                $relatedKey = $this->ids->key($relatedMetadata, $row[BatchScope::RELATED_DISCRIMINATOR_ALIAS] ?? null);
+                $related = $relatedKey !== null ? ($relatedById[$relatedKey] ?? null) : null;
             } else {
                 $related = $row[0] ?? null;
             }
-            $storageKey = $row[BatchScope::PARENT_DISCRIMINATOR_ALIAS] ?? null;
+            $wireId = $this->wireId($row[BatchScope::PARENT_DISCRIMINATOR_ALIAS] ?? null, $parentType, $parentMetadata);
             $rn = $row['rn'] ?? null;
-            if (!\is_object($related) || !\is_scalar($storageKey) || !\is_numeric($rn)) {
+            if (!\is_object($related) || $wireId === null || !\is_numeric($rn)) {
                 continue;
             }
 
-            $wireId = $this->wireId($storageKey, $parentType);
             $partitionByRn[$wireId][(int) $rn] = $related;
         }
 
@@ -479,13 +481,15 @@ final class WindowedRelationBatch
      * scalars. Either way the shared {@see CriteriaApplier} pushes the criteria FILTERS
      * down on the related alias through the #1 DQL filter executor (sort stripped).
      *
-     * @param class-string        $relatedClass
-     * @param list<string>        $parentIds
-     * @param list<SortDirective> $sortDirectives
+     * @param class-string          $relatedClass
+     * @param ClassMetadata<object> $parentMetadata
+     * @param list<mixed>           $parentIds
+     * @param list<SortDirective>   $sortDirectives
      */
     private function innerQuery(
         WindowShape $shape,
         string $relatedClass,
+        ClassMetadata $parentMetadata,
         array $parentIds,
         array $sortDirectives,
         CollectionCriteria $criteria,
@@ -498,8 +502,8 @@ final class WindowedRelationBatch
                 ->getRepository($relatedClass)
                 ->createQueryBuilder('related')
                 ->addSelect(\sprintf('IDENTITY(related.%s) AS %s', $owningField, BatchScope::PARENT_DISCRIMINATOR_ALIAS))
-                ->andWhere(\sprintf('IDENTITY(related.%s) IN (:jsonapi_parent_ids)', $owningField))
-                ->setParameter('jsonapi_parent_ids', $parentIds, ArrayParameterType::STRING);
+                ->andWhere(\sprintf('IDENTITY(related.%s) IN (:jsonapi_parent_ids)', $owningField));
+            $this->ids->bindList($builder, 'jsonapi_parent_ids', $parentMetadata, $parentIds);
 
             return $this->applier->apply($this->filtersOnly($criteria), $builder, $this->filterHandler, $this->sortHandler, 'related');
         }
@@ -515,8 +519,8 @@ final class WindowedRelationBatch
             ->addSelect(\sprintf('related.%s AS %s', $relatedIdField, BatchScope::RELATED_DISCRIMINATOR_ALIAS))
             ->from($parentClass, 'parent')
             ->innerJoin(\sprintf('parent.%s', $property), 'related')
-            ->where('parent.' . $parentIdField . ' IN (:jsonapi_parent_ids)')
-            ->setParameter('jsonapi_parent_ids', $parentIds, ArrayParameterType::STRING);
+            ->where('parent.' . $parentIdField . ' IN (:jsonapi_parent_ids)');
+        $this->ids->bindList($builder, 'jsonapi_parent_ids', $parentMetadata, $parentIds);
 
         // The pair shape selects scalars, so the outer window cannot ORDER BY a related
         // column it never projected — project each sort field as a scalar the orderBy
@@ -760,9 +764,9 @@ final class WindowedRelationBatch
 
         $ids = [];
         foreach ($rows as $row) {
-            $relatedId = $row[BatchScope::RELATED_DISCRIMINATOR_ALIAS] ?? null;
-            if (\is_scalar($relatedId)) {
-                $ids[(string) $relatedId] = $relatedId;
+            $key = $this->ids->key($relatedMetadata, $row[BatchScope::RELATED_DISCRIMINATOR_ALIAS] ?? null);
+            if ($key !== null) {
+                $ids[$key] = $key;
             }
         }
 
@@ -770,10 +774,10 @@ final class WindowedRelationBatch
             return [];
         }
 
-        $loaded = $this->entityManager->getRepository($relatedClass)
+        $builder = $this->entityManager->getRepository($relatedClass)
             ->createQueryBuilder('related')
-            ->where(\sprintf('related.%s IN (:ids)', $idField))
-            ->setParameter('ids', \array_values($ids))
+            ->where(\sprintf('related.%s IN (:ids)', $idField));
+        $loaded = $this->ids->bindList($builder, 'ids', $relatedMetadata, $ids)
             ->getQuery()
             ->getResult();
         \assert(\is_array($loaded));
@@ -783,9 +787,9 @@ final class WindowedRelationBatch
             if (!\is_object($entity)) {
                 continue;
             }
-            $key = $relatedMetadata->getIdentifierValues($entity)[$idField] ?? null;
-            if (\is_scalar($key)) {
-                $byId[(string) $key] = $entity;
+            $key = $this->ids->key($relatedMetadata, $relatedMetadata->getIdentifierValues($entity)[$idField] ?? null);
+            if ($key !== null) {
+                $byId[$key] = $entity;
             }
         }
 
@@ -800,15 +804,19 @@ final class WindowedRelationBatch
      * `hasMore` from the surplus probe row (non-countable).
      *
      * @param list<array<int|string, mixed>> $rows
-     * @param array<string, object>          $relatedById the join-table shape's id-loaded related entities (empty for inverse-FK)
+     * @param ClassMetadata<object>          $parentMetadata
+     * @param array<string, object>          $relatedById     the join-table shape's id-loaded related entities (empty for inverse-FK)
+     * @param ClassMetadata<object>          $relatedMetadata
      */
     private function partition(
         array $rows,
         string $parentType,
+        ClassMetadata $parentMetadata,
         \haddowg\JsonApi\Pagination\OffsetWindow $window,
         bool $countable,
         bool $joinTable,
         array $relatedById,
+        ClassMetadata $relatedMetadata,
     ): RelatedBatch {
         // Collect each partition as `(rn => entity)` so the items are re-ordered by the
         // ROW_NUMBER even though the OUTER derived-table SELECT carries no ORDER BY (its
@@ -823,18 +831,17 @@ final class WindowedRelationBatch
             // The inverse-FK shape carries the hydrated entity at index 0; the join-table
             // shape carries the related id scalar, re-associated to the id-loaded entity.
             if ($joinTable) {
-                $relatedId = $row[BatchScope::RELATED_DISCRIMINATOR_ALIAS] ?? null;
-                $related = \is_scalar($relatedId) ? ($relatedById[(string) $relatedId] ?? null) : null;
+                $relatedKey = $this->ids->key($relatedMetadata, $row[BatchScope::RELATED_DISCRIMINATOR_ALIAS] ?? null);
+                $related = $relatedKey !== null ? ($relatedById[$relatedKey] ?? null) : null;
             } else {
                 $related = $row[0] ?? null;
             }
-            $storageKey = $row[BatchScope::PARENT_DISCRIMINATOR_ALIAS] ?? null;
+            $wireId = $this->wireId($row[BatchScope::PARENT_DISCRIMINATOR_ALIAS] ?? null, $parentType, $parentMetadata);
             $rn = $row['rn'] ?? null;
-            if (!\is_object($related) || !\is_scalar($storageKey) || !\is_numeric($rn)) {
+            if (!\is_object($related) || $wireId === null || !\is_numeric($rn)) {
                 continue;
             }
 
-            $wireId = $this->wireId($storageKey, $parentType);
             $partitionByRn[$wireId][(int) $rn] = $related;
 
             if ($countable) {
@@ -964,41 +971,30 @@ final class WindowedRelationBatch
     }
 
     /**
-     * The parent storage ids (the `:jsonapi_parent_ids` IN-list), stringified so the array
-     * parameter binds uniformly across id types (an int PK binds the same as a string).
+     * The parent ids (the `:jsonapi_parent_ids` IN-list), bound through the id's Doctrine
+     * type by {@see DoctrineIdentifiers::bindList()}.
      *
      * @param list<object>          $parents
      * @param ClassMetadata<object> $parentMetadata
      *
-     * @return list<string>
+     * @return list<mixed>
      */
     private function parentStorageIds(array $parents, ClassMetadata $parentMetadata): array
     {
-        $field = $parentMetadata->getSingleIdentifierFieldName();
-
-        $ids = [];
-        foreach ($parents as $parent) {
-            $key = $parentMetadata->getIdentifierValues($parent)[$field] ?? null;
-            if (\is_scalar($key)) {
-                $ids[] = (string) $key;
-            }
-        }
-
-        return $ids;
+        return \array_map(fn(object $parent): mixed => $this->ids->valueOf($parentMetadata, $parent), $parents);
     }
 
     /**
-     * The parent's wire id for a native row's `jsonapi_parent_id` storage-key scalar —
-     * encoded through the parent type's id encoder exactly as
+     * The parent's wire id for a native row's `jsonapi_parent_id` value, encoded through
+     * the parent type's id encoder exactly as
      * {@see DoctrineDataProvider::partitionByParent()} keys the DQL batch, so the two
-     * batch shapes key on identical wire ids. An unencoded type stringifies the storage
-     * key, the common case.
+     * batch shapes key on identical wire ids.
+     *
+     * @param ClassMetadata<object> $parentMetadata
      */
-    private function wireId(int|string|float|bool $storageKey, string $parentType): string
+    private function wireId(mixed $storageKey, string $parentType, ClassMetadata $parentMetadata): ?string
     {
-        $encoder = $this->idEncoders->encoderFor($parentType);
-
-        return $encoder !== null ? $encoder->encode($storageKey) : (string) $storageKey;
+        return $this->ids->wireId($parentMetadata, $storageKey, $this->idEncoders->encoderFor($parentType));
     }
 
     /**
