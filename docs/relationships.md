@@ -1189,7 +1189,7 @@ public function fields(): array
         // write). Each hop is a declared to-one relation, validated at boot.
         Str::make('authorCountry')->storedAs('name')->on('author.country'),
         // A computed, read-only attribute (read-only on create AND update): the closure
-        // owns the output, no serialize cast.
+        // supplies the value, which still gets the field's cast.
         Str::make('display')->computedUsing(
             static fn(mixed $model, JsonApiRequestInterface $request, string $name): string
                 => 'Book: ' . $model->title,

@@ -25,7 +25,7 @@ use haddowg\JsonApi\Resource\Field\Str;
  *    (stored as the country's `name`): read flattens `author.country.name` walking two
  *    to-one hops, any intermediate null short-circuits to null;
  *  - `display` — COMPUTED (`computedUsing()`): read-only on create AND update, the
- *    value derived by the closure (no serializeValue() cast);
+ *    value derived by the closure, then cast like any `Str`;
  *  - `editorName` — FLATTENED from the VISIBLE to-one `editor` relation (`on('editor')`),
  *    the same-body write witness;
  *  - `author` / `country` — HIDDEN to-one relations, so they never render as a
@@ -56,7 +56,7 @@ abstract class BaseFlattenBookResource extends AbstractResource
             // each book's author (the shared prefix with `authorName`), then each
             // author's country — O(depth), never per-row.
             Str::make('authorCountry')->storedAs('name')->on('author.country'),
-            // Computed: read-only, the value owned by the closure (no cast). Sending
+            // Computed: read-only, the closure's value cast as a Str. Sending
             // it on a write is silently ignored (read-only on create AND update).
             Str::make('display')->computedUsing(
                 static function (mixed $model, JsonApiRequestInterface $request, string $name): string {
