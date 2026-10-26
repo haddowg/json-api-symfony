@@ -70,6 +70,7 @@ final class CustomActionTest extends MusicCatalogKernelTestCase
         $response = $this->handleRaw(
             '/albums/2/-actions/artwork',
             'COVER-ART-BINARY',
+            'image/png',
             extraServer: ['HTTP_AUTHORIZATION' => 'Bearer admin'],
         );
 
@@ -99,12 +100,27 @@ final class CustomActionTest extends MusicCatalogKernelTestCase
     }
 
     #[Test]
+    public function theArtworkUploadAcceptsAFormAndRefusesOtherTypes(): void
+    {
+        $form = $this->handleRaw(
+            '/albums/2/-actions/artwork',
+            "--b\r\nContent-Disposition: form-data; name=\"artwork\"; filename=\"cover.png\"\r\nContent-Type: image/png\r\n\r\nFORM-ART\r\n--b--\r\n",
+            'multipart/form-data; boundary=b',
+            extraServer: ['HTTP_AUTHORIZATION' => 'Bearer admin'],
+        );
+        self::assertSame(204, $form->getStatusCode(), (string) $form->getContent());
+
+        $blob = $this->handleRaw('/albums/2/-actions/artwork', 'X', 'application/octet-stream', extraServer: ['HTTP_AUTHORIZATION' => 'Bearer admin']);
+        self::assertSame(415, $blob->getStatusCode());
+    }
+
+    #[Test]
     public function anActionPathDoesNotShadowANormalFetch(): void
     {
         // Route ordering: the resource-scope action path (4 segments) and a normal
         // /albums/{id} fetch (2 segments) both resolve correctly side by side — the
         // -actions segment is never captured as an {id} or a {relationship}.
-        $artwork = $this->handleRaw('/albums/2/-actions/artwork', 'X', extraServer: ['HTTP_AUTHORIZATION' => 'Bearer admin']);
+        $artwork = $this->handleRaw('/albums/2/-actions/artwork', 'X', 'image/png', extraServer: ['HTTP_AUTHORIZATION' => 'Bearer admin']);
         self::assertSame(204, $artwork->getStatusCode(), (string) $artwork->getContent());
 
         // The collection-scope action (3 segments) likewise coexists with the resource
