@@ -7,7 +7,6 @@ namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Tests;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\DataFixtures\SeedManifest;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
-use Symfony\Component\Clock\Test\ClockSensitiveTrait;
 
 /**
  * The read-query acceptance suite (backs `data-layer.md` / `doctrine.md`):
@@ -24,8 +23,6 @@ use Symfony\Component\Clock\Test\ClockSensitiveTrait;
 #[Group('spec:fetching')]
 final class ReadQueryTest extends MusicCatalogKernelTestCase
 {
-    use ClockSensitiveTrait;
-
     // --- filtering -----------------------------------------------------------
 
     #[Test]
@@ -343,10 +340,8 @@ final class ReadQueryTest extends MusicCatalogKernelTestCase
         // attribute, the computed `displayTitle`, the per-member meta, both
         // relationships' linkage and links). A leaked or extra member — a hidden
         // column surfacing, a stray relationship — would fail this, far stronger than
-        // spot-checking one attribute. The clock is pinned because the declared
-        // `preview` link's meta carries an expiry an hour from now.
-        self::mockTime(new \DateTimeImmutable('2026-01-01T11:00:00+00:00'));
-
+        // spot-checking one attribute. The base case pins the clock, so the
+        // declared `preview` link's expiry is fixed.
         $this->browser()
             ->get('/tracks/1')
             ->assertFetchedOneExact([

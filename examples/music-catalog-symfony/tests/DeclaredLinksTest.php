@@ -12,7 +12,6 @@ use haddowg\JsonApiBundle\Testing\SchemaConformanceTrait;
 use haddowg\JsonApiBundle\Testing\SchemaDocumentKind;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
-use Symfony\Component\Clock\Test\ClockSensitiveTrait;
 
 /**
  * The declared links (core ADR 0178): `albums` declares a bare `store` link, and
@@ -24,7 +23,6 @@ use Symfony\Component\Clock\Test\ClockSensitiveTrait;
 #[Group('spec:document-links')]
 final class DeclaredLinksTest extends MusicCatalogKernelTestCase
 {
-    use ClockSensitiveTrait;
     use SchemaConformanceTrait;
 
     private const array PREVIEW_1 = [
@@ -32,12 +30,6 @@ final class DeclaredLinksTest extends MusicCatalogKernelTestCase
         'type' => 'audio/mpeg',
         'meta' => ['format' => 'mp3', 'expiresAt' => '2026-01-01T12:00:00+00:00'],
     ];
-
-    protected function setUp(): void
-    {
-        parent::setUp();
-        self::mockTime(new \DateTimeImmutable('2026-01-01T11:00:00+00:00'));
-    }
 
     #[Test]
     public function aBareLinkRendersAsAStringOnFetchOne(): void
