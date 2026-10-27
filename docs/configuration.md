@@ -58,6 +58,7 @@ witness).
 | `doctrine.window_functions` | bool | `true` | Use SQL window functions (`ROW_NUMBER`/`COUNT OVER`) for the bounded windowed-include batch. Requires MySQL ≥ 8, MariaDB ≥ 10.2, SQLite ≥ 3.25, or any PostgreSQL. On an older engine the default `true` throws a `500` at the first windowed include — set `false` for the per-parent bounded fallback. |
 | `atomic_operations.enabled` | bool | `false` | Emit the [Atomic Operations](atomic-operations.md) endpoint (`POST {path}`) per server. |
 | `atomic_operations.path` | scalar | `/operations` | The path the Atomic Operations endpoint is served at. Must not equal a resource's collection path (the loader fails fast if it does). |
+| `atomic_operations.scopes` | list | `null` | The [OAuth scopes](scopes.md) the Atomic Operations endpoint itself needs on every server, replacing the scope resolver's answer. `[]` needs none. Each operation in a batch is still checked against its own scopes. |
 | `schema_validation` | bool | `false` | Registers the optional opis structural linter. Enabling it without `opis/json-schema` **fails the build**. |
 | `defaults.cache_headers` | map | `{}` | Fleet-wide default HTTP cache directives for `GET` reads. A resource's own `cacheHeaders` overrides these. |
 | `defaults.deprecation` / `sunset` / `sunset_link` | scalar | `null` | Fleet-wide default deprecation/sunset headers. A resource's own `deprecation`/`sunset` overrides these. |

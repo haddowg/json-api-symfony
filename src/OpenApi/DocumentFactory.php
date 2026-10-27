@@ -89,7 +89,8 @@ final class DocumentFactory
     /**
      * The decorated document for `$serverName` with the operation examples the projector
      * could not build, one {@see \haddowg\JsonApi\OpenApi\MissingExample} per missing
-     * declared value (core ADR 0176). The export command prints them.
+     * declared value (core ADR 0176), and the scope diagnostics (core ADR 0182). The
+     * export command prints them.
      *
      * @throws \LogicException when an unknown server name is requested
      */
@@ -98,7 +99,12 @@ final class DocumentFactory
         $serverName ??= ServerProvider::DEFAULT_SERVER;
         $projection = $this->projector->projectWithDiagnostics($this->metadata->forServer($serverName));
 
-        return new Projection($this->decorate($projection->document, $serverName), $projection->missingExamples);
+        return new Projection(
+            $this->decorate($projection->document, $serverName),
+            $projection->missingExamples,
+            $projection->undeclaredScopes,
+            $projection->scopeScheme,
+        );
     }
 
     /**

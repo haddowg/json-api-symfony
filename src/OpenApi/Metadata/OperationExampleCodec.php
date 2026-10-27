@@ -19,17 +19,6 @@ use haddowg\JsonApiBundle\Operation\Operation;
  */
 final class OperationExampleCodec
 {
-    /** The core operation name for each bundle {@see Operation} case. */
-    private const CRUD = [
-        'fetchCollection' => Operation::FetchCollection,
-        'fetchOne' => Operation::FetchOne,
-        'create' => Operation::Create,
-        'update' => Operation::Update,
-        'delete' => Operation::Delete,
-    ];
-
-    private const RELATION_PREFIXES = ['fetchRelated', 'fetchRelationship', 'updateRelationship', 'addRelationship', 'removeRelationship'];
-
     /**
      * Checks an `operationExamples` map: each key a core operation name the type can
      * expose, each value an {@see OperationExample}, `false` or `null`, each document
@@ -45,23 +34,7 @@ final class OperationExampleCodec
     {
         foreach ($examples as $key => $example) {
             $key = (string) $key;
-            $operation = self::CRUD[$key] ?? null;
-            if ($operation === null && !self::isRelationKey($key)) {
-                throw new \LogicException(\sprintf(
-                    '%s operationExamples has an unknown operation key "%s"; use one of %s, or %s followed by a dot and the relation name.',
-                    $attribute,
-                    $key,
-                    \implode(', ', \array_keys(self::CRUD)),
-                    \implode(', ', self::RELATION_PREFIXES),
-                ));
-            }
-            if ($operation !== null && !\in_array($operation, $exposed, true)) {
-                throw new \LogicException(\sprintf(
-                    '%s operationExamples["%s"] targets an operation this type does not expose; add it to the type\'s operations or drop the entry.',
-                    $attribute,
-                    $key,
-                ));
-            }
+            OperationKeys::assertExposed($attribute, 'operationExamples', $key, $exposed);
             if ($example !== null && $example !== false && !$example instanceof OperationExample) {
                 throw new \LogicException(\sprintf(
                     '%s operationExamples["%s"] must be an %s, false or null, got %s.',
@@ -183,14 +156,5 @@ final class OperationExampleCodec
         } catch (\JsonException $e) {
             throw new \LogicException(\sprintf('%s declares an operation example that is not JSON-encodable: %s', $attribute, $e->getMessage()), 0, $e);
         }
-    }
-
-    private static function isRelationKey(string $key): bool
-    {
-        $dot = \strpos($key, '.');
-
-        return $dot !== false
-            && $dot < \strlen($key) - 1
-            && \in_array(\substr($key, 0, $dot), self::RELATION_PREFIXES, true);
     }
 }

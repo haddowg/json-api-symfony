@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\OpenApi\Metadata;
 
 use haddowg\JsonApi\OpenApi\Metadata\AtomicOperationsMetadataInterface;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresAtomicScopes;
 use haddowg\JsonApi\OpenApi\SecurityRequirement;
 
 /**
@@ -25,7 +26,7 @@ use haddowg\JsonApi\OpenApi\SecurityRequirement;
  * document-level default (`ServerMetadata::defaultSecurity()`); that is the same
  * default-security modelling the rest of the document uses (design §4.6/D8).
  */
-final readonly class AtomicOperationsMetadata implements AtomicOperationsMetadataInterface
+final readonly class AtomicOperationsMetadata implements DeclaresAtomicScopes
 {
     /**
      * The default OpenAPI tag the atomic operation is grouped under.
@@ -34,12 +35,19 @@ final readonly class AtomicOperationsMetadata implements AtomicOperationsMetadat
 
     /**
      * @param list<SecurityRequirement> $security the OR-ed security alternatives for the atomic operation; empty inherits the document-level default
+     * @param list<string>|null         $scopes   the OAuth scopes the endpoint itself needs (`json_api.atomic_operations.scopes`); null asks the scope resolver
      */
     public function __construct(
         private string $path,
         private string $tag = self::DEFAULT_TAG,
         private array $security = [],
+        private ?array $scopes = null,
     ) {}
+
+    public function scopes(): ?array
+    {
+        return $this->scopes;
+    }
 
     public function path(): string
     {

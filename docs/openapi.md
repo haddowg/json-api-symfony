@@ -377,7 +377,7 @@ namespace.
 # The OpenAPI document (JSON to stdout, or a file; YAML needs symfony/yaml):
 php bin/console json-api:openapi:export
 php bin/console json-api:openapi:export --server=admin --format=yaml --output=openapi.yaml
-php bin/console json-api:openapi:export --strict > openapi.json   # fail on a missing example
+php bin/console json-api:openapi:export --strict > openapi.json   # fail on a missing example or undeclared scope
 
 # Standalone per-type JSON Schema 2020-12 documents:
 php bin/console json-api:json-schema:export --type=articles            # one type → stdout
@@ -393,6 +393,10 @@ build as a warning on stderr, one line per missing value, so the document on std
 valid to pipe. `--strict` turns any of them into a non-zero exit and writes no document,
 which suits a CI step that guards the examples. The served document and the cache warmer
 never report them.
+
+It also warns about each [OAuth scope](scopes.md#the-openapi-document) an operation needs
+that neither your scope catalogue nor the scope scheme's flows describe, and fails on them
+under `--strict`. A scope scheme that isn't `oauth2` is a warning only.
 
 ## Customisation
 
@@ -696,6 +700,9 @@ Every scheme type the OpenAPI 3.1 spec defines is supported — `http`/`bearer`,
 or an `openIdConnect` with no URL) is dropped rather than emitting an invalid document, and
 a `default_requirement` naming a scheme that did not resolve is dropped with it (the
 document never carries a dangling security reference).
+
+`scope_scheme` (default `oauth2`) names the scheme each operation's [OAuth
+scopes](scopes.md) are listed under. It is only read once some operation needs a scope.
 
 ```php
 #[AsJsonApiResource(securityRead: 'is_granted("ROLE_USER")')]

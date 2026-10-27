@@ -54,6 +54,9 @@ json_api:
     atomic_operations:
         enabled: true
         path: /operations
+        # The OAuth scope the endpoint itself needs. Each operation in a batch is also
+        # checked against its own scopes before anything is written.
+        scopes: [batch]
 
     # OpenAPI 3.1 generation (G1–G6). The document is projected from the live
     # registry and served at /docs.json (+ /admin/docs.json for the named server),
@@ -75,10 +78,22 @@ json_api:
         # (config/packages/security.yaml). Operations carrying a `security*`
         # expression — PlaylistResource's update/delete, the ReissueAlbum action —
         # get the default requirement, so the docs show them as authenticated.
+        #
+        # The `oauth2` scheme is where the operations' OAuth scopes are listed
+        # (`scope_scheme`). Its flow declares no scopes itself: the app's
+        # ScopeCatalogInterface service (src/Security/CatalogScopeCatalog.php) fills
+        # them in, and src/Security/CatalogScopes.php says which operation needs which.
         security:
             schemes:
                 bearer: { type: bearer, bearerFormat: JWT, description: 'A Bearer access token (the user identifier in this example).' }
+                oauth2:
+                    type: oauth2
+                    description: 'An OAuth 2.0 access token. Its scopes gate the catalogue and library writes.'
+                    flows:
+                        clientCredentials:
+                            tokenUrl: 'https://music.example/oauth/token'
             default_requirement: [bearer]
+            scope_scheme: oauth2
         # Top-level tag DEFINITIONS (authoritative): descriptions + emit order for the
         # tags the resources/actions reference. `Catalog` groups albums + the album
         # actions; `Library` groups playlists. A resource that references a tag not

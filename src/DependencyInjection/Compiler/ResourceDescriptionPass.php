@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\DependencyInjection\Compiler;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\OpenApi\Metadata\OperationExampleCodec;
+use haddowg\JsonApiBundle\OpenApi\Metadata\OperationScopeOverrides;
 use haddowg\JsonApiBundle\OpenApi\Metadata\ResourceDescriptionRegistry;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
@@ -35,7 +36,8 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
  *
  * The operation example overrides (core ADR 0176) ride as one JSON `operation_examples`
  * tag attribute, from a resource or a standalone serializer, into the registry's
- * `$examples` argument.
+ * `$examples` argument. The OAuth scope overrides (core ADR 0181) ride the same way as
+ * `operation_scopes`, under each server's `scopes`.
  */
 final class ResourceDescriptionPass implements CompilerPassInterface
 {
@@ -45,7 +47,7 @@ final class ResourceDescriptionPass implements CompilerPassInterface
             return;
         }
 
-        /** @var array<string, array{descriptions: array<string, array{description?: string, operations?: array<string, string>, singular?: string}>, extensions: array<string, array{type: array<string, mixed>, operations: array<string, array<string, mixed>>}>, examples: array<string, array<string, array{request: mixed, responses: array<int|string, mixed>}|false>>}> $byServer */
+        /** @var array<string, array{descriptions: array<string, array{description?: string, operations?: array<string, string>, singular?: string}>, extensions: array<string, array{type: array<string, mixed>, operations: array<string, array<string, mixed>>}>, examples: array<string, array<string, array{request: mixed, responses: array<int|string, mixed>}|false>>, scopes: array<string, array<string, list<string>>>}> $byServer */
         $byServer = [];
 
         foreach ($container->findTaggedServiceIds(JsonApiBundle::RESOURCE_TAG) as $id => $tags) {
@@ -82,10 +84,11 @@ final class ResourceDescriptionPass implements CompilerPassInterface
 
             $declared = $this->extensionsFromTags($tags);
             $examples = OperationExampleCodec::decodeMap($this->scalarFromTags($tags, 'operation_examples'));
+            $scopes = OperationScopeOverrides::decodeMap($this->scalarFromTags($tags, 'operation_scopes'));
 
             // Each class is recorded only under its own servers (bundle ADR 0144).
             foreach ($this->serversFromTags($tags) as $server) {
-                $byServer[$server] ??= ['descriptions' => [], 'extensions' => [], 'examples' => []];
+                $byServer[$server] ??= ['descriptions' => [], 'extensions' => [], 'examples' => [], 'scopes' => []];
                 if ($set !== []) {
                     $byServer[$server]['descriptions'][$type] = $set;
                 }
@@ -95,6 +98,9 @@ final class ResourceDescriptionPass implements CompilerPassInterface
                 if ($examples !== []) {
                     $byServer[$server]['examples'][$type] = $examples;
                 }
+                if ($scopes !== []) {
+                    $byServer[$server]['scopes'][$type] = $scopes;
+                }
             }
         }
 
@@ -102,29 +108,34 @@ final class ResourceDescriptionPass implements CompilerPassInterface
             $type = $this->scalarFromTags($tags, 'type');
             $declared = $this->extensionsFromTags($tags);
             $examples = OperationExampleCodec::decodeMap($this->scalarFromTags($tags, 'operation_examples'));
-            if ($type === null || ($declared === null && $examples === [])) {
+            $scopes = OperationScopeOverrides::decodeMap($this->scalarFromTags($tags, 'operation_scopes'));
+            if ($type === null || ($declared === null && $examples === [] && $scopes === [])) {
                 continue;
             }
 
             foreach ($this->serversFromTags($tags) as $server) {
-                $byServer[$server] ??= ['descriptions' => [], 'extensions' => [], 'examples' => []];
+                $byServer[$server] ??= ['descriptions' => [], 'extensions' => [], 'examples' => [], 'scopes' => []];
                 if ($declared !== null) {
                     $byServer[$server]['extensions'][$type] ??= $declared;
                 }
                 if ($examples !== []) {
                     $byServer[$server]['examples'][$type] ??= $examples;
                 }
+                if ($scopes !== []) {
+                    $byServer[$server]['scopes'][$type] ??= $scopes;
+                }
             }
         }
 
-        $default = $byServer[ServerProvider::DEFAULT_SERVER] ?? ['descriptions' => [], 'extensions' => [], 'examples' => []];
+        $default = $byServer[ServerProvider::DEFAULT_SERVER] ?? ['descriptions' => [], 'extensions' => [], 'examples' => [], 'scopes' => []];
         unset($byServer[ServerProvider::DEFAULT_SERVER]);
 
         $container->getDefinition(ResourceDescriptionRegistry::class)
             ->setArgument('$descriptions', $default['descriptions'])
             ->setArgument('$extensions', $default['extensions'])
             ->setArgument('$servers', $byServer)
-            ->setArgument('$examples', $default['examples']);
+            ->setArgument('$examples', $default['examples'])
+            ->setArgument('$scopes', $default['scopes']);
     }
 
     /**

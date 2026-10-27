@@ -97,10 +97,11 @@ final class SecurityEnforcementKernel extends Kernel
             'resource' => ResourceExpressionGadgetResource::class,
             'relation' => RelationExpressionGadgetResource::class,
             'documented' => DocumentedGadgetResource::class,
+            'catalog' => CatalogGadgetResource::class,
             default => PlainGadgetResource::class,
         });
 
-        if (static::$variant === 'action') {
+        if (static::$variant === 'action' || static::$variant === 'catalog') {
             $services->set(InspectGadget::class);
         }
 

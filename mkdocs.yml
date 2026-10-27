@@ -89,6 +89,7 @@ nav:
       - validation.md
       - security.md
       - authorization.md
+      - scopes.md
       - lifecycle.md
       - lifecycle-hooks.md
       - async.md

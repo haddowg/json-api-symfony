@@ -166,6 +166,12 @@ extension was never applied).
     failure cannot undo an earlier durable one. Back a batch's types with one transactional
     persister when you need strict cross-store atomicity.
 
+!!! note "OAuth scopes are checked before anything is written"
+    With [scope enforcement](scopes.md#atomic-operations) on, the endpoint's own scopes are
+    checked first, then every operation in the batch against the request's grant, before
+    the transaction opens. One operation the token can't perform refuses the whole batch
+    with a `403` pointing at it.
+
 ## Lifecycle hooks under a batch
 
 The per-operation [lifecycle hooks](lifecycle-hooks.md) still fire, with one

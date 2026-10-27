@@ -11,6 +11,8 @@ use haddowg\JsonApi\Atomic\AtomicResult;
 use haddowg\JsonApi\Atomic\LocalIdRegistry;
 use haddowg\JsonApi\Atomic\OperationDescriptor;
 use haddowg\JsonApi\Atomic\Ref;
+use haddowg\JsonApi\OpenApi\Metadata\OperationKey;
+use haddowg\JsonApi\OpenApi\Metadata\OperationType;
 use haddowg\JsonApi\Operation\AddToRelationshipOperation;
 use haddowg\JsonApi\Operation\CreateResourceOperation;
 use haddowg\JsonApi\Operation\DeleteResourceOperation;
@@ -25,6 +27,7 @@ use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\AbstractRelationValue;
 use haddowg\JsonApi\Response\DataResponse;
 use haddowg\JsonApi\Response\NoContentResponse;
+use haddowg\JsonApi\Scope\ScopeEnforcer;
 use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataPersister\TransactionalDataPersisterInterface;
@@ -131,6 +134,10 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
         private readonly ?RouteDescriptorRegistry $routeDescriptors = null,
     ) {
         $this->logger = $logger ?? new NullLogger();
+
+        // Scope pre-flight: every operation is checked against the batch request's grant
+        // before begin() opens anything, so a refused batch writes nothing (core ADR 0181).
+        ScopeEnforcer::forServer($this->server)?->enforceBatch($this->request, $this->batchOperations());
 
         // Pre-flight: resolve every participating type's persister up front and refuse
         // the batch if ANY is not transactional — before begin() opens anything.
@@ -352,15 +359,31 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
             return;
         }
 
-        $operation = match (true) {
-            $target->hasRelationship() => Operation::Update,
-            $opCode === AtomicOperationCode::Add => Operation::Create,
-            $opCode === AtomicOperationCode::Update => Operation::Update,
-            default => Operation::Delete,
-        };
+        // A relationship operation updates its parent.
+        $crud = OperationKey::forAtomicOperation($opCode, $target->relationship)->kind->operationType() ?? OperationType::Update;
+        $operation = Operation::from($crud->value);
 
         if (!\in_array($operation->value, $this->descriptor($target->type)['operations'] ?? [], true)) {
             throw new AtomicOperationNotExposed($target->type, $operation);
+        }
+    }
+
+    /**
+     * Each batch entry's index, the type it writes and the operation it performs, read
+     * from its `ref`, `href` or resource object before any local id is resolved.
+     *
+     * @return \Generator<int, array{string, OperationKey}>
+     */
+    private function batchOperations(): \Generator
+    {
+        foreach ($this->descriptors as $descriptor) {
+            $target = match (true) {
+                $descriptor->ref !== null => $this->targetFromRef($descriptor->ref),
+                $descriptor->href !== null => $this->targetFromHref($descriptor->href),
+                default => new Target($this->createTypeFromData($descriptor->data)),
+            };
+
+            yield $descriptor->index => [$target->type, OperationKey::forAtomicOperation($descriptor->opCode, $target->relationship)];
         }
     }
 

@@ -32,6 +32,7 @@ use haddowg\JsonApiBundle\DependencyInjection\InstalledVersionsCheck;
 use haddowg\JsonApiBundle\EventListener\ConfiguredExceptionMapper;
 use haddowg\JsonApiBundle\EventListener\ExceptionMapperInterface;
 use haddowg\JsonApiBundle\OpenApi\Metadata\OperationExampleCodec;
+use haddowg\JsonApiBundle\OpenApi\Metadata\OperationScopeOverrides;
 use haddowg\JsonApiBundle\Operation\CrudOperationHandler;
 use haddowg\JsonApiBundle\Operation\Operation;
 use haddowg\JsonApiBundle\Serializer\Doctrine\DoctrineRelationshipLoadState;
@@ -374,6 +375,14 @@ final class JsonApiBundle extends AbstractBundle
                             ->info('The path the per-server Atomic Operations endpoint is served at (POST). Default /operations.')
                             ->defaultValue('/operations')
                         ->end()
+                        ->variableNode('scopes')
+                            ->info('The OAuth scopes the Atomic Operations endpoint itself needs, on every server, overriding the scope resolver. Each operation in a batch is still checked against its own scopes. [] needs none; null (the default) asks the resolver.')
+                            ->defaultNull()
+                            ->validate()
+                                ->ifTrue(static fn(mixed $value): bool => $value !== null && (!\is_array($value) || !\array_is_list($value) || \array_filter($value, static fn(mixed $scope): bool => !\is_string($scope) || $scope === '') !== []))
+                                ->thenInvalid('json_api.atomic_operations.scopes must be a list of scopes or null, got %s.')
+                            ->end()
+                        ->end()
                     ->end()
                 ->end()
                 ->arrayNode('profiles')
@@ -560,6 +569,11 @@ final class JsonApiBundle extends AbstractBundle
                                 ->end()
                             ->end()
                         ->end()
+                        ->scalarNode('scope_scheme')
+                            ->info('The security scheme, among schemes, that operation OAuth scopes are listed under. It should be an oauth2 scheme, whose flows then list the scope catalogue. Only read when some operation needs a scope. Default oauth2.')
+                            ->defaultValue('oauth2')
+                            ->cannotBeEmpty()
+                        ->end()
                         ->arrayNode('default_requirement')
                             ->info('The scheme name(s) required by a secured operation by default. Each entry: a bare scheme name (no scopes), or {name, scopes:[...]}.')
                             ->beforeNormalization()
@@ -658,6 +672,10 @@ final class JsonApiBundle extends AbstractBundle
         // reads these to emit one POST {path} route per server when enabled.
         $builder->setParameter('haddowg_json_api.atomic_operations.enabled', $atomicEnabled);
         $builder->setParameter('haddowg_json_api.atomic_operations.path', $atomicPath);
+        // The Atomic Operations endpoint's own scope override, and the security scheme
+        // operation scopes are listed under in the OpenAPI document (core ADRs 0181, 0182).
+        $builder->setParameter('haddowg_json_api.atomic_operations.scopes', $this->atomicScopesConfig($config));
+        $builder->setParameter('haddowg_json_api.openapi.scope_scheme', $this->scopeSchemeConfig($config));
         // The exception-class => HTTP-status map (bundle ADR 0073) the config-driven
         // ConfiguredExceptionMapper reads to map a thrown app/third-party exception
         // to a JSON:API error. Default empty (no config mappings).
@@ -695,9 +713,14 @@ final class JsonApiBundle extends AbstractBundle
         // class-strings and serializer/hydrator maps are filled by the pass.
         $this->registerServers($container, $servers, $maxPerPage, $maxIncludeDepth, $strictQueryParameters, $profiles);
 
-        // Whether each server's OpenAPI document carries generated operation examples.
+        // Whether each server's OpenAPI document carries generated operation examples, and
+        // the OAuth scopes each operation needs (core ADR 0182).
         $builder->getDefinition(\haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource::class)
-            ->setArgument('$exampleGeneration', \array_map(static fn(array $settings): bool => $settings['openapi_examples'], $servers));
+            ->setArgument('$exampleGeneration', \array_map(static fn(array $settings): bool => $settings['openapi_examples'], $servers))
+            ->setArgument('$scopeTables', new \Symfony\Component\DependencyInjection\Reference(\haddowg\JsonApiBundle\Scope\ScopeTableProvider::class))
+            ->setArgument('$scopeScheme', '%haddowg_json_api.openapi.scope_scheme%')
+            ->setArgument('$scopeCatalog', new \Symfony\Component\DependencyInjection\Reference(\haddowg\JsonApi\Scope\ScopeCatalogInterface::class, \Symfony\Component\DependencyInjection\ContainerInterface::NULL_ON_INVALID_REFERENCE))
+            ->setArgument('$atomicScopes', '%haddowg_json_api.atomic_operations.scopes%');
 
         // The optional opis structural linter: registered (so the RequestListener
         // picks it up) only when explicitly enabled. opis/json-schema is a
@@ -766,6 +789,37 @@ final class JsonApiBundle extends AbstractBundle
                 '$rows' => service(\haddowg\JsonApiBundle\Security\ReadableRows::class),
             ]);
 
+        // The operation catalogue (core ADR 0183): every operation a server exposes with
+        // the security rule and scopes guarding it, read from the declarations above.
+        // The scope checker compares with the same matcher enforcement uses.
+        $services->set(\haddowg\JsonApiBundle\Catalog\OperationSecuritySource::class)
+            ->args([
+                '$actions' => service(\haddowg\JsonApiBundle\Action\ActionRegistry::class),
+                '$security' => service(\haddowg\JsonApiBundle\Security\ResourceSecurityRegistry::class),
+            ]);
+        $services->alias(\haddowg\JsonApi\Catalog\OperationSecuritySourceInterface::class, \haddowg\JsonApiBundle\Catalog\OperationSecuritySource::class);
+        // Public, since an app reaches for them outside the request lifecycle.
+        $services->set(\haddowg\JsonApi\Catalog\OperationCatalog::class)
+            ->public()
+            ->factory([\haddowg\JsonApiBundle\Catalog\CatalogFactory::class, 'catalog'])
+            ->args([
+                service(\haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource::class),
+                service(\haddowg\JsonApi\Catalog\OperationSecuritySourceInterface::class),
+            ]);
+        $services->set(\haddowg\JsonApi\Scope\ScopeChecker::class)
+            ->public()
+            ->factory([\haddowg\JsonApiBundle\Catalog\CatalogFactory::class, 'checker'])
+            ->args([service(\haddowg\JsonApi\Scope\ScopeMatcherInterface::class)->nullOnInvalid()]);
+        if (\class_exists(\Symfony\Component\ExpressionLanguage\ExpressionLanguage::class)
+            && \interface_exists(\Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface::class)) {
+            $services->set(\haddowg\JsonApiBundle\Catalog\ExpressionSecurityEvaluator::class)
+                ->args([
+                    '$authorizationChecker' => service('security.authorization_checker')->nullOnInvalid(),
+                    '$tokenStorage' => service('security.token_storage')->nullOnInvalid(),
+                ]);
+            $services->alias(\haddowg\JsonApi\Catalog\SecurityEvaluatorInterface::class, \haddowg\JsonApiBundle\Catalog\ExpressionSecurityEvaluator::class)->public();
+        }
+
         // Decides whether a related row may be shown through another type, by the
         // related type's own read expression (bundle ADR 0140).
         $services->set(\haddowg\JsonApiBundle\Security\ReadableRows::class)
@@ -813,6 +867,13 @@ final class JsonApiBundle extends AbstractBundle
 
         $builder->registerForAutoconfiguration(DoctrineSortArmInterface::class)
             ->addTag(self::DOCTRINE_SORT_ARM_TAG);
+
+        // The app's OAuth scope services are found by the core interface each implements
+        // (ScopeServicesPass), so an app writes the class and nothing else.
+        foreach (\haddowg\JsonApiBundle\DependencyInjection\Compiler\ScopeServicesPass::INTERFACES as $interface => $suffix) {
+            $builder->registerForAutoconfiguration($interface)
+                ->addTag(\haddowg\JsonApiBundle\DependencyInjection\Compiler\ScopeServicesPass::TAG_PREFIX . $suffix);
+        }
 
         // Any app service implementing the exception-mapper seam is auto-tagged, so
         // it is consulted by the ExceptionListener (before the config map) for a
@@ -899,6 +960,8 @@ final class JsonApiBundle extends AbstractBundle
                     // The OpenAPI operation example overrides (core ADR 0176), JSON-encoded
                     // because a nested map and core's OperationExample are not dumpable.
                     'operation_examples' => OperationExampleCodec::encodeMap('AsJsonApiResource', $attribute->operationExamples),
+                    // The OAuth scope overrides (core ADR 0181), JSON-encoded like the examples.
+                    'operation_scopes' => OperationScopeOverrides::encodeMap($attribute->operationScopes),
                     // The per-operation OpenAPI response declarations (typed response
                     // objects): the five create/update/delete/fetchOne/fetchCollection
                     // sets JSON-encoded into a single scalar tag attribute the
@@ -928,6 +991,7 @@ final class JsonApiBundle extends AbstractBundle
                     // Vendor extensions (bundle ADR 0127), read by the ResourceDescriptionPass.
                     'openapi_extensions' => self::extensionsTag($attribute->extensions, $attribute->operationExtensions),
                     'operation_examples' => OperationExampleCodec::encodeMap('AsJsonApiSerializer', $attribute->operationExamples),
+                    'operation_scopes' => OperationScopeOverrides::encodeMap($attribute->operationScopes),
                 ], static fn(mixed $value): bool => $value !== null));
             },
         );
@@ -1000,6 +1064,8 @@ final class JsonApiBundle extends AbstractBundle
                     'idempotent' => $attribute->idempotent,
                     // The action's own OpenAPI vendor extensions, JSON-encoded.
                     'extensions' => $attribute->extensions !== [] ? \json_encode($attribute->extensions, \JSON_THROW_ON_ERROR) : null,
+                    // The OAuth scope override, JSON-encoded; absent asks the scope resolver.
+                    'scopes' => OperationScopeOverrides::encodeList($attribute->scopes),
                 ], static fn(mixed $value): bool => $value !== null));
             },
         );
@@ -1051,6 +1117,7 @@ final class JsonApiBundle extends AbstractBundle
         $container->addCompilerPass(new ResponseHeadersPass());
         $container->addCompilerPass(new ResourceDescriptionPass());
         $container->addCompilerPass(new ErrorCatalogPass());
+        $container->addCompilerPass(new \haddowg\JsonApiBundle\DependencyInjection\Compiler\ScopeServicesPass());
     }
 
     /**
@@ -1425,10 +1492,29 @@ final class JsonApiBundle extends AbstractBundle
                     // Asked before a relationship's data renders and before a flattened
                     // write lands on a related row (bundle ADR 0139).
                     '$relationAuthorizer' => service(\haddowg\JsonApiBundle\Security\RelationAuthorizer::class),
+                    // OAuth scope enforcement (core ADR 0181), on only when the app
+                    // registers a GrantedScopesProviderInterface service.
+                    '$grantedScopes' => service(\haddowg\JsonApi\Scope\GrantedScopesProviderInterface::class)->nullOnInvalid(),
+                    '$scopeTables' => service(\haddowg\JsonApiBundle\Scope\ScopeTableProvider::class),
+                    '$scopeMatcher' => service(\haddowg\JsonApi\Scope\ScopeMatcherInterface::class)->nullOnInvalid(),
+                    '$logger' => service('logger')->nullOnInvalid(),
                 ]);
 
             $factoryRefs[$name] = service($id);
         }
+
+        // Each server's OAuth scope table (core ADR 0181): written by the warmer, which
+        // is not optional so a scope declaration that cannot be resolved fails the build.
+        $services->set(\haddowg\JsonApiBundle\Scope\ScopeTableProvider::class)
+            ->args([
+                '$metadata' => service_closure(\haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource::class),
+                '$serverNames' => \array_keys($servers),
+                '$resolver' => service(\haddowg\JsonApi\Scope\OperationScopeResolverInterface::class)->nullOnInvalid(),
+                '$cacheDir' => '%kernel.cache_dir%',
+            ]);
+        $services->set(\haddowg\JsonApiBundle\Scope\ScopeTableWarmer::class)
+            ->args(['$tables' => service(\haddowg\JsonApiBundle\Scope\ScopeTableProvider::class)])
+            ->tag('kernel.cache_warmer', ['priority' => 20]);
 
         $services->set(ServerProvider::class)
             ->args([
@@ -1880,6 +1966,31 @@ final class JsonApiBundle extends AbstractBundle
         }
 
         return $resolved;
+    }
+
+    /**
+     * @param array<string, mixed> $config
+     *
+     * @return list<string>|null
+     */
+    private function atomicScopesConfig(array $config): ?array
+    {
+        $atomic = \is_array($config['atomic_operations'] ?? null) ? $config['atomic_operations'] : [];
+        $scopes = $atomic['scopes'] ?? null;
+
+        return \is_array($scopes) ? \array_values(\array_filter($scopes, \is_string(...))) : null;
+    }
+
+    /**
+     * @param array<string, mixed> $config
+     */
+    private function scopeSchemeConfig(array $config): string
+    {
+        $openapi = \is_array($config['openapi'] ?? null) ? $config['openapi'] : [];
+        $security = \is_array($openapi['security'] ?? null) ? $openapi['security'] : [];
+        $scheme = $security['scope_scheme'] ?? null;
+
+        return \is_string($scheme) && $scheme !== '' ? $scheme : 'oauth2';
     }
 
     /**
