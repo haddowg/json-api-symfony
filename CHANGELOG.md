@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.1](https://github.com/haddowg/json-api-symfony/compare/v1.19.0...v1.19.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* render a 405 on a JSON:API path as a JSON:API error ([#253](https://github.com/haddowg/json-api-symfony/issues/253)) ([a14b771](https://github.com/haddowg/json-api-symfony/commit/a14b771c733a4588dcaceb3705448eb4a4f74d52))
+
 ## [1.19.0](https://github.com/haddowg/json-api-symfony/compare/v1.18.1...v1.19.0) (2026-10-27)
 
 
