@@ -582,3 +582,11 @@ The documentation-only `true` and `false` values are never evaluated, so they bu
 project into the [OpenAPI document](openapi.md) without any of these packages. Use
 `true` when your own firewall or `access_control` secures an operation, and `false` to
 document it as public.
+
+## OAuth scopes
+
+Security expressions decide what a user may do. When callers arrive with OAuth access
+tokens, the token can be narrower than its user, and [scope enforcement](scopes.md)
+refuses an operation the token wasn't granted before these expressions run. The
+[operation catalogue](scopes.md#listing-what-a-caller-can-do) reads the same expressions
+to tell a client which operations a user can call.

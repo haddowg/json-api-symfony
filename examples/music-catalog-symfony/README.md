@@ -155,6 +155,19 @@ the abort happens before any write / an unsecured type is ungated — every requ
 authenticated with `actingAs($user)` over a Bearer token. See
 [`docs/authorization.md`](../../docs/authorization.md) for the full surface.
 
+## OAuth scopes
+
+A token can carry OAuth scopes after a `#`: `Bearer admin#catalog:write`. Album writes
+need `catalog:write` and playlist writes `library:write`, decided by
+`src/Security/CatalogScopes.php`. A playlist delete adds `library:admin` through
+`operationScopes` on `PlaylistResource`, the artwork upload adds `catalog:media` through
+`scopes` on its action, and an Atomic Operations batch needs `batch` from
+`json_api.atomic_operations.scopes`. `src/Security/TokenScopes.php` reads the grant, and
+a token with no `#` is unscoped, so it is never checked for scopes.
+`src/Security/CatalogScopeCatalog.php` describes every scope for the `oauth2` scheme in
+the OpenAPI document. `tests/ScopesTest.php` covers the refusals and the document. See
+[`docs/scopes.md`](../../docs/scopes.md).
+
 ## Self links by convention
 
 The JSON:API spec **recommends** (SHOULD) two `self` links, and the bundle emits
