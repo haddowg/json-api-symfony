@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.17.1](https://github.com/haddowg/json-api-symfony/compare/v1.17.0...v1.17.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* treat a single-type morph relation as polymorphic at runtime ([#243](https://github.com/haddowg/json-api-symfony/issues/243)) ([aad9303](https://github.com/haddowg/json-api-symfony/commit/aad93034378eb1f1b0795b4ed217d2e1ba7b765e))
+
 ## [1.17.0](https://github.com/haddowg/json-api-symfony/compare/v1.16.0...v1.17.0) (2026-10-27)
 
 
