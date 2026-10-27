@@ -185,11 +185,6 @@ final readonly class ActionContext
     }
 
     /**
-     * A `303 See Other` {@see SeeOtherResponse} redirecting the client to `$location` —
-     * the completion half of the async lifecycle: a job-status action returns this,
-     * once the queued work is done, pointing at the produced resource.
-     */
-    /**
      * A raw (non-JSON:API) body, sent as it is: a string, a stream resource or a PSR-7
      * stream. The media type defaults to the one the request negotiated, and must be
      * one of the action's declared raw results.
@@ -202,8 +197,15 @@ final readonly class ActionContext
         return new RawResponse($body, $mediaType ?? $this->responseMediaType() ?? 'application/octet-stream', $status, $headers);
     }
 
-    public function seeOther(string $location): SeeOtherResponse
+    /**
+     * A `303 See Other` {@see SeeOtherResponse} pointing the client at `$location`, such
+     * as a finished job's result. From an action that declares `SeeOther` with a media
+     * type it is the URL the action hands out, such as a short-lived download link, and
+     * a request preferring JSON:API gets it as a `200` location document instead.
+     * `$expiresAt` is when that URL stops working.
+     */
+    public function seeOther(string $location, ?\DateTimeInterface $expiresAt = null): SeeOtherResponse
     {
-        return SeeOtherResponse::to($location);
+        return SeeOtherResponse::to($location, $expiresAt);
     }
 }

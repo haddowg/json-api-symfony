@@ -40,7 +40,7 @@ final readonly class ActionDescriptor
 {
     /**
      * @param list<string>                                              $methods  the author-declared HTTP method allow-list
-     * @param list<array{kind: string, type?: string, jobType?: string, raw?: array<string, mixed>}> $responds the declared success-response set (OpenAPI projection)
+     * @param list<array{kind: string, type?: string, jobType?: string, raw?: array<string, mixed>, description?: string, mediaType?: string}> $responds the declared success-response set (OpenAPI projection)
      * @param list<string>                                              $tags     the OpenAPI tag refs this action is grouped under (resolved: explicit, else the mount type's resource tags, else empty)
      * @param bool                                                      $asLink   expose the action as a security-aware `links` member on the mount type's resources (resource scope only)
      * @param ?string                                                   $summary  the OpenAPI operation summary, a short line; omitted from the document when null

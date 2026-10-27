@@ -1694,7 +1694,7 @@ final class JsonApiBundle extends AbstractBundle
 
     /**
      * Encodes an action's `responds` set to the JSON scalar the ACTION_TAG carries (a
-     * list of `{kind, type?, jobType?}`) so it survives the compiled container; `null`
+     * list of `{kind, type?, jobType?, raw?, description?, mediaType?}`) so it survives the compiled container; `null`
      * when the action declared none (the {@see \haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceLocatorPass}
      * then defaults it to a `200` resource document of the mount type).
      */
@@ -1711,7 +1711,10 @@ final class JsonApiBundle extends AbstractBundle
                 $response instanceof Accepted => ['kind' => 'accepted', 'jobType' => $response->jobType()],
                 $response instanceof MetaResult => ['kind' => 'meta'],
                 $response instanceof NoContent => ['kind' => 'nocontent'],
-                $response instanceof SeeOther => ['kind' => 'seeother'],
+                $response instanceof SeeOther => \array_filter(
+                    ['kind' => 'seeother', 'description' => $response->description, 'mediaType' => $response->mediaType],
+                    static fn(?string $value): bool => $value !== null,
+                ),
                 $response instanceof \haddowg\JsonApi\OpenApi\Metadata\RawResult => ['kind' => 'raw', 'raw' => \haddowg\JsonApiBundle\Action\RawResults::toArray($response)],
                 default => throw new \LogicException(\sprintf(
                     'Unsupported action response %s on action "%s"; declare responds with ActionResource / MetaResult / NoContent / Accepted / SeeOther / RawResult.',

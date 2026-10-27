@@ -164,8 +164,8 @@ final class DeclaredLinksTest extends MusicCatalogKernelTestCase
     public function theDocumentIsStampedWithTheDeclaredLinksContract(): void
     {
         // The album actions' declared safety raises the declared-links tier of 14 to 15,
-        // and the scoped writes raise it to 16.
-        self::assertSame(16, $this->nested($this->openApi(), 'info', 'x-generator')['contract'] ?? null);
+        // the scoped writes raise it to 16, and the download action's location document to 17.
+        self::assertSame(17, $this->nested($this->openApi(), 'info', 'x-generator')['contract'] ?? null);
     }
 
     #[Test]

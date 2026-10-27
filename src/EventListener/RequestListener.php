@@ -8,6 +8,7 @@ use haddowg\JsonApi\Atomic\AtomicExtension;
 use haddowg\JsonApi\Atomic\AtomicOperationsParser;
 use haddowg\JsonApi\Negotiation\AcceptNegotiator;
 use haddowg\JsonApi\Negotiation\RequestValidator;
+use haddowg\JsonApi\OpenApi\Metadata\ActionResource;
 use haddowg\JsonApi\Operation\AtomicOperationsOperation;
 use haddowg\JsonApi\Operation\CustomActionOperation;
 use haddowg\JsonApi\Operation\OperationContext;
@@ -24,7 +25,7 @@ use haddowg\JsonApiBundle\Action\ActionDescriptor;
 use haddowg\JsonApiBundle\Action\ActionInput;
 use haddowg\JsonApiBundle\Action\ActionRegistry;
 use haddowg\JsonApiBundle\Action\ActionScope;
-use haddowg\JsonApiBundle\Action\RawResults;
+use haddowg\JsonApiBundle\OpenApi\Metadata\ActionMetadata;
 use haddowg\JsonApiBundle\Operation\TargetResolver;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Server\ServerProvider;
@@ -269,12 +270,13 @@ final class RequestListener
         $scope = $this->actionScope($request);
         $descriptor = $this->actionDescriptor($request, $target->type, $scope, $actionName);
 
+        $responds = $descriptor !== null ? (new ActionMetadata($descriptor))->responds() : [new ActionResource($target->type)];
+
         // The response media type comes first: an Accept that picks a raw result names no
         // JSON:API type, so the JSON:API Accept rules then run as if it had asked for one.
-        $responseMediaType = AcceptNegotiator::negotiate(
-            $jsonApiRequest->getHeaderLine('accept'),
-            RawResults::mediaTypes($descriptor->responds ?? [['kind' => 'resource']]),
-        );
+        // An action answering with a URL gets null for an Accept it can only answer with
+        // its 303, such as a browser's navigation, and is negotiated the same way.
+        $responseMediaType = AcceptNegotiator::negotiateAction($jsonApiRequest->getHeaderLine('accept'), $responds);
         $negotiated = $responseMediaType === self::JSON_API_MEDIA_TYPE
             ? $jsonApiRequest
             : $jsonApiRequest->withHeader('accept', self::JSON_API_MEDIA_TYPE);
@@ -307,6 +309,7 @@ final class RequestListener
             $actionName,
             $jsonApiRequest->getMethod(),
             $body,
+            $responds,
         );
     }
 

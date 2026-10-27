@@ -76,32 +76,9 @@ final class RawResults
     }
 
     /**
-     * The media types an action can answer in, in the order core negotiates them:
-     * JSON:API when it declares any JSON:API response, then each raw result's type.
-     *
-     * @param list<array{kind: string, type?: string, jobType?: string, raw?: array<string, mixed>}> $responds
-     *
-     * @return list<string>
-     */
-    public static function mediaTypes(array $responds): array
-    {
-        $jsonApi = [];
-        $raw = [];
-        foreach ($responds as $entry) {
-            if ($entry['kind'] === 'raw' && isset($entry['raw'])) {
-                $raw[self::fromArray($entry['raw'])->essence()] = true;
-            } else {
-                $jsonApi = ['application/vnd.api+json'];
-            }
-        }
-
-        return [...$jsonApi, ...\array_keys($raw)];
-    }
-
-    /**
      * Whether the action declares any raw result.
      *
-     * @param list<array{kind: string, type?: string, jobType?: string, raw?: array<string, mixed>}> $responds
+     * @param list<array{kind: string, type?: string, jobType?: string, raw?: array<string, mixed>, description?: string, mediaType?: string}> $responds
      */
     public static function any(array $responds): bool
     {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
 use haddowg\JsonApiBundle\OpenApi\DocumentFactory;
+use haddowg\JsonApiBundle\Tests\Functional\App\Action\DownloadWidget;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Response;
@@ -506,8 +507,9 @@ abstract class CustomActionConformanceTestCase extends JsonApiFunctionalTestCase
         self::assertIsArray($publish);
         self::assertArrayNotHasKey('x-safety', $publish);
 
+        // Safety is tier 15; the download action's location document raises it to 17.
         $contract = self::at($document, 'info', 'x-generator', 'contract');
-        self::assertSame(15, $contract);
+        self::assertSame(17, $contract);
     }
 
     #[Test]
@@ -547,6 +549,102 @@ abstract class CustomActionConformanceTestCase extends JsonApiFunctionalTestCase
         }
 
         self::assertSame(405, $this->action('/actionWidgets/1/-actions/label', 'PATCH')->getStatusCode());
+    }
+
+    #[Test]
+    #[Group('spec:content-negotiation')]
+    public function aJsonApiRequestGetsTheLocationDocument(): void
+    {
+        $response = $this->download('application/vnd.api+json');
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertStringStartsWith('application/vnd.api+json', (string) $response->headers->get('Content-Type'));
+        self::assertFalse($response->headers->has('Location'));
+        self::assertSame([
+            'self' => ['href' => 'https://example.test/actionWidgets/1/-actions/download'],
+            'location' => [
+                'href' => 'https://storage.example.com/widgets/First%20widget.csv?signature=test',
+                'type' => 'text/csv',
+                'meta' => ['expiresAt' => DownloadWidget::EXPIRES_AT],
+            ],
+        ], $this->decode($response)['links'] ?? null);
+        self::assertSame(['expiresAt' => DownloadWidget::EXPIRES_AT], $this->decode($response)['meta'] ?? null);
+        self::assertNoStoreVaryingOnAccept($response);
+    }
+
+    #[Test]
+    #[Group('spec:content-negotiation')]
+    public function anyOtherRequestIsRedirectedToTheUrl(): void
+    {
+        $browser = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8';
+        foreach ([$browser, '*/*', 'text/csv', '', 'text/html, application/vnd.api+json;q=0.5'] as $accept) {
+            $response = $this->download($accept);
+
+            self::assertSame(303, $response->getStatusCode(), $accept . ': ' . $response->getContent());
+            self::assertSame('https://storage.example.com/widgets/First%20widget.csv?signature=test', $response->headers->get('Location'), $accept);
+            self::assertSame('', (string) $response->getContent(), $accept);
+            self::assertNoStoreVaryingOnAccept($response);
+        }
+    }
+
+    #[Test]
+    #[Group('spec:content-negotiation')]
+    public function aDownloadErrorIsStillAJsonApiDocument(): void
+    {
+        $response = $this->action('/actionWidgets/999/-actions/download', 'GET', null, ['HTTP_ACCEPT' => 'text/html']);
+
+        self::assertSame(404, $response->getStatusCode());
+        self::assertStringStartsWith('application/vnd.api+json', (string) $response->headers->get('Content-Type'));
+    }
+
+    #[Test]
+    #[Group('spec:content-negotiation')]
+    public function aBareSeeOtherActionIsUnchanged(): void
+    {
+        $response = $this->action('/actionWidgets/-actions/elsewhere', 'GET');
+
+        self::assertSame(303, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame('https://example.com/widgets', $response->headers->get('Location'));
+        self::assertStringNotContainsString('no-store', (string) $response->headers->get('Cache-Control'));
+
+        // Nothing it declares is acceptable, and it never answers with a URL document.
+        self::assertSame(406, $this->action('/actionWidgets/-actions/elsewhere', 'GET', null, ['HTTP_ACCEPT' => 'text/html'])->getStatusCode());
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    public function aDownloadActionProjectsBothResponses(): void
+    {
+        $document = $this->document();
+        $responses = self::at($document, 'paths', '/actionWidgets/{id}/-actions/download', 'get', 'responses');
+        self::assertIsArray($responses);
+
+        self::assertSame('A short-lived link to the widget sheet.', self::at($responses, '200', 'description'));
+        self::assertSame('A short-lived link to the widget sheet.', self::at($responses, '303', 'description'));
+        self::assertSame([
+            ['$ref' => '#/components/schemas/LocationDocument'],
+        ], \array_slice((array) self::at($responses, '200', 'content', 'application/vnd.api+json', 'schema', 'allOf'), 0, 1));
+        self::assertSame('uri-reference', self::at($responses, '303', 'headers', 'Location', 'schema', 'format'));
+        self::assertNotNull(self::at($responses, '200', 'headers', 'Cache-Control'));
+        self::assertNotNull(self::at($document, 'components', 'schemas', 'LocationLink'));
+        self::assertSame(17, self::at($document, 'info', 'x-generator', 'contract'));
+
+        // A bare SeeOther projects the plain 303 only.
+        $bare = self::at($document, 'paths', '/actionWidgets/-actions/elsewhere', 'get', 'responses');
+        self::assertIsArray($bare);
+        self::assertArrayNotHasKey('200', $bare);
+        self::assertArrayHasKey('303', $bare);
+    }
+
+    private static function assertNoStoreVaryingOnAccept(Response $response): void
+    {
+        self::assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
+        self::assertStringContainsString('Accept', (string) $response->headers->get('Vary'));
+    }
+
+    private function download(string $accept): Response
+    {
+        return $this->action('/actionWidgets/1/-actions/download', 'GET', null, ['HTTP_ACCEPT' => $accept]);
     }
 
     /**

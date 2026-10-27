@@ -123,7 +123,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
         $standaloneSerializersByServer = [];
         /** @var array<string, array<string, string>> $standaloneHydratorsByServer */
         $standaloneHydratorsByServer = [];
-        /** @var array<string, array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string, raw?: array<string, mixed>}>>}>> $descriptorsByServer */
+        /** @var array<string, array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string, raw?: array<string, mixed>, description?: string, mediaType?: string}>>}>> $descriptorsByServer */
         $descriptorsByServer = [];
 
         // Standalone relations providers, keyed by server and type: the registry
@@ -391,7 +391,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
      * them `null`.
      *
      * @param list<string>                                                                                                                             $declaredServers
-     * @param array<string, array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string, raw?: array<string, mixed>}>>}>> $descriptorsByServer the resource/standalone descriptors per server, read for each mount type's uriType and tags
+     * @param array<string, array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string, raw?: array<string, mixed>, description?: string, mediaType?: string}>>}>> $descriptorsByServer the resource/standalone descriptors per server, read for each mount type's uriType and tags
      */
     private function collectActions(ContainerBuilder $container, array $declaredServers, array $descriptorsByServer): void
     {
@@ -400,7 +400,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
         }
 
         $handlerReferences = [];
-        /** @var array<string, array{type: string, path: string, methods: list<string>, scope: string, input: string, inputType: string, outputType: string, responds: list<array{kind: string, type?: string, jobType?: string, raw?: array<string, mixed>}>, security: ?string, handlerServiceId: string, server: string, tags: string, asLink: bool, summary: ?string, description: ?string, accepts: list<array{mediaType: string, input: string, schema: array<string, mixed>|string|null, binary: bool}>, example: array{request: mixed, responses: array<int|string, mixed>}|false|null, readOnly: ?bool, destructive: ?bool, idempotent: ?bool, extensions: array<string, mixed>}> $actionDescriptors */
+        /** @var array<string, array{type: string, path: string, methods: list<string>, scope: string, input: string, inputType: string, outputType: string, responds: list<array{kind: string, type?: string, jobType?: string, raw?: array<string, mixed>, description?: string, mediaType?: string}>, security: ?string, handlerServiceId: string, server: string, tags: string, asLink: bool, summary: ?string, description: ?string, accepts: list<array{mediaType: string, input: string, schema: array<string, mixed>|string|null, binary: bool}>, example: array{request: mixed, responses: array<int|string, mixed>}|false|null, readOnly: ?bool, destructive: ?bool, idempotent: ?bool, extensions: array<string, mixed>}> $actionDescriptors */
         $actionDescriptors = [];
         // The handler class behind each descriptor key, so a declaration error can name it.
         /** @var array<string, string> $actionClasses */
@@ -730,7 +730,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
      * constrained here (the `responds` set then governs the projection alone).
      *
      * @param class-string                                              $class
-     * @param list<array{kind: string, type?: string, jobType?: string, raw?: array<string, mixed>}> $responds
+     * @param list<array{kind: string, type?: string, jobType?: string, raw?: array<string, mixed>, description?: string, mediaType?: string}> $responds
      */
     private function guardActionHandlerOutput(string $class, string $id, string $path, array $responds): void
     {
@@ -1053,7 +1053,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
      *
      * @param array<array<string, mixed>> $tags
      *
-     * @return array<string, list<array{status: int, jobType?: string, raw?: array<string, mixed>}>>
+     * @return array<string, list<array{status: int, jobType?: string, raw?: array<string, mixed>, description?: string, mediaType?: string}>>
      */
     private function responsesFromTags(array $tags): array
     {
@@ -1071,7 +1071,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
      * malformed entry defensively (the attribute already validated the real declaration
      * via {@see \haddowg\JsonApi\OpenApi\Metadata\OperationResponses::validate()}).
      *
-     * @return array<string, list<array{status: int, jobType?: string, raw?: array<string, mixed>}>>
+     * @return array<string, list<array{status: int, jobType?: string, raw?: array<string, mixed>, description?: string, mediaType?: string}>>
      */
     private function parseResponses(mixed $responses): array
     {
@@ -1176,7 +1176,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
      * `{kind, type?, jobType?}`), dropping any malformed entry defensively (the attribute
      * already validated the real declaration via {@see \haddowg\JsonApi\OpenApi\Metadata\ActionResponses::validate()}).
      *
-     * @return list<array{kind: string, type?: string, jobType?: string, raw?: array<string, mixed>}>
+     * @return list<array{kind: string, type?: string, jobType?: string, raw?: array<string, mixed>, description?: string, mediaType?: string}>
      */
     private function parseActionResponds(mixed $responds): array
     {
@@ -1206,6 +1206,11 @@ final class ResourceLocatorPass implements CompilerPassInterface
                 /** @var array<string, mixed> $raw */
                 $raw = $entry['raw'];
                 $parsed['raw'] = $raw;
+            }
+            foreach (['description', 'mediaType'] as $key) {
+                if (isset($entry[$key]) && \is_string($entry[$key])) {
+                    $parsed[$key] = $entry[$key];
+                }
             }
             $out[] = $parsed;
         }
@@ -1248,7 +1253,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
      * Compile-time guard: a type cannot expose a write operation (`Create` /
      * `Update`) without a hydrator to populate the entity.
      *
-     * @param array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string, raw?: array<string, mixed>}>>}> $descriptors
+     * @param array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string, raw?: array<string, mixed>, description?: string, mediaType?: string}>>}> $descriptors
      */
     private function validateWriteCapability(array $descriptors): void
     {
