@@ -138,8 +138,8 @@ A **pivot** (`belongsToMany`) to-many relationship endpoint is queryable too: it
 the linkage, scopes the related + pivot vocabulary, and still renders each member's
 `meta.pivot` (the [`PivotTest`](../examples/music-catalog-symfony/tests/PivotTest.php)
 witnesses `GET /playlists/{id}/relationships/orderedTracks?sort=position&filter[position]=…&page[size]=…`).
-A **polymorphic** (`MorphToMany`) to-many relationship endpoint, whose members span
-types, cannot window mixed linkage — querying it is unsupported, so a `?filter`/`?sort`/
+A **polymorphic** (`MorphToMany`) to-many relationship endpoint, over one type or
+several, cannot window mixed linkage — querying it is unsupported, so a `?filter`/`?sort`/
 `?page` there is a clean `400` (its OpenAPI operation advertises no query parameters),
 while a bare `GET …/relationships/{morphMany}` still renders the whole mixed linkage.
 
@@ -273,8 +273,8 @@ track at two positions) counts **once**, matching the related-collection endpoin
 (which dedupes to one row per member) and the rendered linkage. The `?withCount`
 relationship-object total and the endpoint pagination total therefore report the same
 number for the same relation/parent. A polymorphic `MorphToMany` is counted by the
-in-memory provider (the mixed member set) but is unsupported by the Doctrine
-reference provider (its members span entity classes) — supply a custom
+in-memory provider (the mixed member set) but, over several types, is unsupported by
+the Doctrine reference provider (its members span entity classes) — supply a custom
 `DataProvider` if you need it on Doctrine.
 
 ### Relation-scoped filters and sorts
@@ -1129,6 +1129,18 @@ own the rendering
 the bundle wires the data path and splits responsibility between the two
 providers.
 
+A `MorphTo` or `MorphToMany` is polymorphic however many types it lists.
+`MorphTo::make('writer', ['authors'])` is not a `BelongsTo`. Its endpoints take
+none of `authors`' filters, and `relatedQuery[writer]` is refused. A single-type
+`MorphToMany` likewise takes none of its type's filters or sorts, and its
+relationship endpoint takes no `page`. Each is a `400`, exactly as for a relation
+over several types. The OpenAPI document projects it as a one-member union and
+advertises the same parameters, so adding a second type later changes neither the
+document's shapes nor what a request may send. The members still load as one query
+while there is one type, so the Doctrine provider serves a single-type `MorphToMany`
+without a custom provider
+([ADR 0156](adr/0156-a-morph-relation-is-polymorphic-at-runtime-whatever-its-type-count.md)).
+
 ### Polymorphic to-one (`MorphTo`)
 
 [`FavoriteResource`](../examples/music-catalog-symfony/src/Resource/FavoriteResource.php)
@@ -1161,7 +1173,7 @@ mixed collection. The provider responsibilities differ by storage:
 - **The in-memory provider supports it**: it reads the mixed collection off the
   parent and slices with `page`. A polymorphic to-many carries no shared
   filter/sort vocabulary, so `filter`/`sort` are a `400` while `page` windows.
-- **The Doctrine provider throws** "unsupported" for a polymorphic to-many —
+- **The Doctrine provider throws** "unsupported" for a to-many over several types —
   members span entity classes, so no single scoped query can fetch them. You
   supply a custom provider (→ [custom-data-providers.md](custom-data-providers.md)).
 
