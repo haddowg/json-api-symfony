@@ -9,6 +9,8 @@ use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\BelongsTo;
 use haddowg\JsonApi\Resource\Field\HasMany;
 use haddowg\JsonApi\Resource\Field\Id;
+use haddowg\JsonApi\Resource\Field\MorphTo;
+use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApiBundle\OpenApi\Metadata\IncludePathResolver;
 use haddowg\JsonApiBundle\Server\RelationsRegistry;
@@ -79,6 +81,39 @@ final class IncludePathResolverTest extends TestCase
         // one `.friends`; with the cycle guard the same type is not re-descended, so
         // the path set is exactly {friends}.
         self::assertSame(['friends'], $paths);
+    }
+
+    #[Test]
+    public function aSingleTypeMorphRelationIsNotDescended(): void
+    {
+        // `subject` and `followers` are morphs over `people` alone, and `author` is a
+        // BelongsTo to the same type. Only `author` is walked into, so adding a second
+        // type to a morph later leaves the documented paths as they are.
+        $story = new IncStory();
+        [$resolver, $server] = $this->resolver(3, $story, new IncPerson(), new IncCompany());
+
+        self::assertEqualsCanonicalizing(
+            ['author', 'author.company', 'subject', 'followers'],
+            $resolver->pathsFor($server, 'stories'),
+        );
+    }
+
+    #[Test]
+    public function aSingleTypeMorphRelatedEndpointAdvertisesNoIncludePaths(): void
+    {
+        $story = new IncStory();
+        [$resolver, $server] = $this->resolver(3, $story, new IncPerson(), new IncCompany());
+
+        $author = $story->relationNamed('author');
+        $subject = $story->relationNamed('subject');
+        $followers = $story->relationNamed('followers');
+        self::assertNotNull($author);
+        self::assertNotNull($subject);
+        self::assertNotNull($followers);
+
+        self::assertSame(['company'], $resolver->relatedPathsFor($server, $author));
+        self::assertSame([], $resolver->relatedPathsFor($server, $subject));
+        self::assertSame([], $resolver->relatedPathsFor($server, $followers));
     }
 
     /**
@@ -169,6 +204,21 @@ final class IncPerson extends AbstractResource
             BelongsTo::make('company', 'companies'),
             // Not includable: never advertised, never descended.
             BelongsTo::make('manager', 'people')->cannotBeIncluded(),
+        ];
+    }
+}
+
+final class IncStory extends AbstractResource
+{
+    public static string $type = 'stories';
+
+    public function fields(): array
+    {
+        return [
+            Id::make(),
+            BelongsTo::make('author', 'people'),
+            MorphTo::make('subject', ['people']),
+            MorphToMany::make('followers', ['people']),
         ];
     }
 }

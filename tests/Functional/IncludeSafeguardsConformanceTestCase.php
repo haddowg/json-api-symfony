@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use haddowg\JsonApiBundle\OpenApi\DocumentFactory;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Response;
@@ -182,6 +183,87 @@ abstract class IncludeSafeguardsConformanceTestCase extends JsonApiFunctionalTes
         $response = $this->handle('/roots/r1?include=node.tag');
 
         $this->assertError($response, 400, 'INCLUSION_NOT_ALLOWED');
+    }
+
+    // --- A polymorphic relation over one type ------------------------------------
+
+    #[Test]
+    #[Group('spec:fetching-includes')]
+    public function aSingleTypeMorphToTakesNestedIncludesAtRuntime(): void
+    {
+        // t1's `anyNode` is n1, whose `next` is n2.
+        foreach (['/tags/t1?include=anyNode.next', '/tags/t1/anyNode?include=next'] as $path) {
+            $included = [];
+            $members = $this->fetchDocument($path)['included'] ?? null;
+            self::assertIsArray($members, $path);
+            foreach ($members as $member) {
+                $type = $this->at($member, 'type');
+                $id = $this->at($member, 'id');
+                self::assertIsString($type, $path);
+                self::assertIsString($id, $path);
+                $included[] = $type . ':' . $id;
+            }
+            self::assertContains('nodes:n2', $included, $path);
+        }
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    public function theDocumentListsNoIncludePathThroughASingleTypeMorphTo(): void
+    {
+        $factory = static::getContainer()->get(DocumentFactory::class);
+        self::assertInstanceOf(DocumentFactory::class, $factory);
+        $document = $factory->forServer()->toArray();
+
+        $paths = $this->includeEnum($document, '/tags/{id}');
+        self::assertContains('anyNode', $paths);
+        self::assertContains('node.next', $paths);
+        self::assertSame([], \array_values(\array_filter($paths, static fn(string $path): bool => \str_starts_with($path, 'anyNode.'))));
+
+        self::assertContains('next', $this->includeEnum($document, '/tags/{id}/node'));
+        self::assertSame([], $this->includeEnum($document, '/tags/{id}/anyNode'));
+    }
+
+    /**
+     * The `include` enum on `$path`'s GET operation, empty when it has no `include`
+     * parameter.
+     *
+     * @param array<array-key, mixed> $document
+     *
+     * @return list<string>
+     */
+    private function includeEnum(array $document, string $path): array
+    {
+        self::assertIsArray($this->at($document, 'paths', $path, 'get'), $path);
+        $parameters = $this->at($document, 'paths', $path, 'get', 'parameters') ?? [];
+        self::assertIsArray($parameters, $path);
+
+        foreach ($parameters as $parameter) {
+            if ($this->at($parameter, 'name') !== 'include') {
+                continue;
+            }
+            $enum = $this->at($parameter, 'schema', 'items', 'enum');
+            self::assertIsArray($enum, $path);
+
+            return \array_values(\array_filter($enum, \is_string(...)));
+        }
+
+        return [];
+    }
+
+    /**
+     * The value at `$keys` inside a decoded document, `null` when any level is missing.
+     */
+    private function at(mixed $node, string|int ...$keys): mixed
+    {
+        foreach ($keys as $key) {
+            if (!\is_array($node)) {
+                return null;
+            }
+            $node = $node[$key] ?? null;
+        }
+
+        return $node;
     }
 
     /**
