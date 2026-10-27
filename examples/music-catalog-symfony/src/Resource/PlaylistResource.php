@@ -98,6 +98,9 @@ use haddowg\JsonApiBundle\Hook\ResourceLifecycleHooksTrait;
     securityUpdate: "is_granted('EDIT', object)",
     securityDelete: "is_granted('ROLE_ADMIN')",
     tags: ['Library'],
+    // Deleting a playlist needs an admin scope on top of the write scope the app's
+    // resolver gives every playlist write.
+    operationScopes: ['delete' => ['library:write', 'library:admin']],
 )]
 final class PlaylistResource extends AbstractResource implements ResourceLifecycleHooksInterface
 {

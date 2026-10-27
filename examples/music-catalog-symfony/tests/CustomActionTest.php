@@ -195,7 +195,8 @@ final class CustomActionTest extends MusicCatalogKernelTestCase
             self::assertIsArray(self::at($document, 'paths', $path, 'post'), $path);
             self::assertNull(self::at($document, 'paths', $path, 'post', 'x-safety'), $path);
         }
-        self::assertSame(15, self::at($document, 'info', 'x-generator', 'contract'));
+        // The safety tier is 15; the scoped writes raise the document to 16.
+        self::assertSame(16, self::at($document, 'info', 'x-generator', 'contract'));
     }
 
     private static function at(mixed $value, string ...$keys): mixed

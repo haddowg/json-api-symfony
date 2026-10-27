@@ -26,7 +26,17 @@ use Psr\Http\Message\UploadedFileInterface;
  * a `204`, not a `200` albums body). Sending the same file
  * again changes nothing more, so the action declares itself idempotent.
  */
-#[AsJsonApiAction(type: 'albums', path: 'artwork', input: ActionInput::Raw, responds: [new NoContent()], accepts: ['multipart/form-data', 'image/*'], idempotent: true)]
+#[AsJsonApiAction(
+    type: 'albums',
+    path: 'artwork',
+    input: ActionInput::Raw,
+    responds: [new NoContent()],
+    accepts: ['multipart/form-data', 'image/*'],
+    idempotent: true,
+    // Its own scopes, replacing the resolver's: a token that may change albums also needs
+    // catalog:media to upload artwork.
+    scopes: ['catalog:write', 'catalog:media'],
+)]
 final class UploadAlbumArtwork implements ActionHandlerInterface
 {
     public function __construct(private readonly DataPersisterRegistry $persisters) {}

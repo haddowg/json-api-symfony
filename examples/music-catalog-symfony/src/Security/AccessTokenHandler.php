@@ -16,12 +16,15 @@ use Symfony\Component\Security\Http\Authenticator\Passport\Badge\UserBadge;
  * A real application would map an *opaque* token to a user (a lookup against a token
  * store, or a signed/JWT claim) here, rather than treating the token as the
  * identifier. This is the only place that mapping lives.
+ *
+ * A token may carry OAuth scopes after a `#` (see {@see TokenScopes}); the user is the
+ * part before it.
  */
 final class AccessTokenHandler implements AccessTokenHandlerInterface
 {
     public function getUserBadgeFrom(#[\SensitiveParameter] string $accessToken): UserBadge
     {
         // The token is the user identifier; the configured user provider loads it.
-        return new UserBadge($accessToken);
+        return new UserBadge(\explode('#', $accessToken, 2)[0]);
     }
 }
