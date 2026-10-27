@@ -174,7 +174,8 @@ list reaches on that path, and when one of them is a JSON:API route it renders c
 
 The response carries the same `Allow` header the router computed. Like a firewall
 error, it is answered before content negotiation, so it is a JSON:API document whatever
-the `Accept` header asks for, and on the atomic endpoint it declares the atomic `ext`. A
+the `Accept` header asks for. On the atomic endpoint it declares the atomic `ext` when the
+request named it on `Content-Type` or `Accept`, and is plain JSON:API otherwise. A
 path whose routes are none of them JSON:API endpoints, such as a controller of your own
 under the same prefix, keeps Symfony's own `405`. The OpenAPI document catalogues
 `METHOD_NOT_ALLOWED` but lists no `405` response on any operation, since an operation is

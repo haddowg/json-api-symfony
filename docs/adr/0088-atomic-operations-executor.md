@@ -51,6 +51,10 @@ still rolls back at that index. The route carries no `_jsonapi_type` — the bat
 primary resource — so the listener branches on a dedicated `_jsonapi_atomic` marker and
 negotiates the atomic `ext` on both `Content-Type` (415) and `Accept` (406).
 
+*Superseded by [ADR 0161](0161-an-atomic-endpoint-error-declares-the-ext-only-when-the-request-named-it.md):
+an error now declares the ext only when the request named it. The paragraph below records the
+original rule.*
+
 **Every error document for an atomic-route request advertises the atomic `ext`**, not only the
 in-loop rolled-back one. The `AtomicLoop` sets the ext on its own rolled-back error, but a
 failure raised *before* the loop — the empty-batch `400`, a parse error, the pre-flight `403`/
