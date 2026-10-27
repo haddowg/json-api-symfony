@@ -85,7 +85,7 @@ use Symfony\Component\Routing\RouterInterface;
  * each allowed method reaches on that path; when one of them is a JSON:API route, the
  * `405` renders as core's {@see MethodNotAllowed} under that route's server, with its
  * `Allow` header, and on the atomic path with the atomic `ext`. A path none of whose
- * routes is a JSON:API endpoint keeps Symfony's own handling (bundle ADR 0157).
+ * routes is a JSON:API endpoint keeps Symfony's own handling (bundle ADR 0160).
  */
 final class ExceptionListener
 {

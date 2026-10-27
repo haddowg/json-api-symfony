@@ -408,7 +408,7 @@ return static function (ContainerConfigurator $container): void {
             // unauthenticated / 403 when authenticated-but-denied (bundle ADR 0043).
             '$tokenStorage' => \Symfony\Component\DependencyInjection\Loader\Configurator\service('security.token_storage')->nullOnInvalid(),
             '$trustResolver' => \Symfony\Component\DependencyInjection\Loader\Configurator\service('security.authentication.trust_resolver')->nullOnInvalid(),
-            // Tells a 405 on a JSON:API path from one elsewhere (bundle ADR 0157).
+            // Tells a 405 on a JSON:API path from one elsewhere (bundle ADR 0160).
             '$router' => \Symfony\Component\DependencyInjection\Loader\Configurator\service('router')->nullOnInvalid(),
         ])
         ->tag('kernel.event_listener', ['event' => 'kernel.exception', 'method' => 'onKernelException', 'priority' => 128]);

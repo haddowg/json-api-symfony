@@ -115,7 +115,7 @@ final readonly class ServerMetadata implements ContributesErrorCodes, DeclaresLi
 
     /**
      * The exception listener renders a method the path does not accept as a JSON:API
-     * `405` on every server's paths (bundle ADR 0157).
+     * `405` on every server's paths (bundle ADR 0160).
      */
     public function rendersMethodNotAllowed(): bool
     {
