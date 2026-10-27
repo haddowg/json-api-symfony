@@ -125,7 +125,7 @@ Content-Type: application/vnd.api+json
 ```
 
 The exception listener renders it like any core error, header included, and on the atomic
-route the response still advertises the atomic extension.
+route the response declares the atomic extension when the request named it.
 
 ## Atomic Operations
 

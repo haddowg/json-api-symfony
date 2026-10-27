@@ -146,9 +146,15 @@ The whole batch runs inside one transaction opened on every participating
 authorization or mutability `403`, a missing target `404`, a `lid` error `400` — rolls
 back the entire batch and returns a single error document. Each error's `source.pointer`
 is prefixed with the failing operation's index, e.g.
-`/atomic:operations/1/data/attributes/title`. Every error document on the atomic
-endpoint advertises the extension (except the `415`/`406` negotiation failures, where the
-extension was never applied).
+`/atomic:operations/1/data/attributes/title`.
+
+An error from the atomic endpoint declares the extension on its `Content-Type` only when
+the request named it, in the `Content-Type` `ext` or in the `ext` of any `Accept` range.
+The listener reads the headers itself, because some errors come before negotiation runs,
+such as a `405` for `GET /operations` or a firewall `401`. A request that never named the
+extension gets a plain `application/vnd.api+json` error. A `415` or `406` never declares
+it, because negotiation failed. A rolled-back batch always declares it, since a batch only
+runs once both headers have named it.
 
 !!! warning "Atomicity needs a transactional persister"
     Every type a batch touches must be backed by a persister that implements

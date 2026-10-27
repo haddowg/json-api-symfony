@@ -109,6 +109,35 @@ abstract class MethodNotAllowedConformanceTestCase extends JsonApiFunctionalTest
     }
 
     #[Test]
+    #[Group('spec:atomic')]
+    public function aMethodTheAtomicEndpointDoesNotAcceptDeclaresTheExtensionNamedOnAnyHeader(): void
+    {
+        $atomic = 'application/vnd.api+json; ext="' . AtomicExtension::URI . '"';
+
+        $inAcceptList = $this->handle('/api/v5/operations', 'GET', extraServer: [
+            'HTTP_ACCEPT' => 'text/html, ' . $atomic,
+        ]);
+        self::assertSame(405, $inAcceptList->getStatusCode(), (string) $inAcceptList->getContent());
+        self::assertSame($atomic, $inAcceptList->headers->get('Content-Type'));
+
+        $inContentType = $this->handle('/api/v5/operations', 'GET', extraServer: ['CONTENT_TYPE' => $atomic]);
+        self::assertSame(405, $inContentType->getStatusCode(), (string) $inContentType->getContent());
+        self::assertSame($atomic, $inContentType->headers->get('Content-Type'));
+    }
+
+    #[Test]
+    #[Group('spec:atomic')]
+    public function aMethodTheAtomicEndpointDoesNotAcceptIsAPlainErrorWhenTheRequestDidNotNameTheExtension(): void
+    {
+        $response = $this->handle('/api/v5/operations', 'GET');
+
+        self::assertSame(405, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame('POST', $response->headers->get('Allow'));
+        self::assertSame('application/vnd.api+json', $response->headers->get('Content-Type'));
+        self::assertSame('METHOD_NOT_ALLOWED', $this->firstError($response)['code'] ?? null);
+    }
+
+    #[Test]
     public function aPlainRouteUnderTheSamePrefixKeepsSymfonysOwn405(): void
     {
         $response = $this->handle('/api/v5/status', 'POST');

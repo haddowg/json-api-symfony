@@ -11,6 +11,8 @@ use haddowg\JsonApi\Exception\JsonApiExceptionInterface;
 use haddowg\JsonApi\Exception\MediaTypeUnacceptable;
 use haddowg\JsonApi\Exception\MediaTypeUnsupported;
 use haddowg\JsonApi\Exception\MethodNotAllowed;
+use haddowg\JsonApi\Request\JsonApiRequest;
+use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Response\ErrorResponse;
 use haddowg\JsonApi\Schema\Error\Error;
 use haddowg\JsonApi\Schema\Error\InternalServerError;
@@ -68,23 +70,19 @@ use Symfony\Component\Routing\RouterInterface;
  * `ErrorHandlerMiddleware` produce a byte-identical generic-500 error object.
  *
  * **Atomic Operations.** On the Atomic Operations route (the one carrying the
- * {@see JsonApiRouteLoader::ATOMIC_ATTRIBUTE} marker) every error document this
- * listener produces advertises the atomic extension on its `Content-Type` `ext`
- * media-type parameter — the empty-batch `400`, a parse error, the pre-flight
- * `403`/`404` — so a failure raised BEFORE the loop runs declares the extension
- * just as the rolled-back in-loop error already does (the
- * {@see \haddowg\JsonApi\Atomic\AtomicLoop} sets it via
- * {@see \haddowg\JsonApi\Response\AbstractResponse::withExtensions()}). The sole
- * exception is the content-negotiation failures: a `415`
- * ({@see MediaTypeUnsupported}) or `406` ({@see MediaTypeUnacceptable}) means the
- * atomic extension was NOT successfully negotiated, so its error document correctly
- * omits the `ext` parameter.
+ * {@see JsonApiRouteLoader::ATOMIC_ATTRIBUTE} marker) an error document declares the
+ * atomic extension on its `Content-Type` `ext` parameter only when the request named
+ * it, on the `Content-Type` `ext` or on any `Accept` range's `ext`. The headers are
+ * read directly, since the error may come before negotiation ran: a `405`, a firewall
+ * `401`/`403`. A request that never named the extension gets a plain JSON:API error. A
+ * `415` ({@see MediaTypeUnsupported}) or `406` ({@see MediaTypeUnacceptable}) never
+ * declares it, since negotiation failed (bundle ADR 0161).
  *
  * **A method the path does not accept.** The router throws a `405` before any route
  * matches, so the request carries no marker. The listener asks the router which route
  * each allowed method reaches on that path; when one of them is a JSON:API route, the
  * `405` renders as core's {@see MethodNotAllowed} under that route's server, with its
- * `Allow` header, and on the atomic path with the atomic `ext`. A path none of whose
+ * `Allow` header, and on the atomic path under the rule above. A path none of whose
  * routes is a JSON:API endpoint keeps Symfony's own handling (bundle ADR 0160).
  */
 final class ExceptionListener
@@ -152,15 +150,10 @@ final class ExceptionListener
 
         $errorResponse = $this->toErrorResponse($throwable);
 
-        // On the Atomic Operations route, an error document is produced under the
-        // (successfully negotiated) atomic extension, so it must declare the ext on
-        // its Content-Type — EXCEPT the content-negotiation failures (415/406), where
-        // the extension was NOT negotiated and the error correctly omits it. The
-        // in-loop rolled-back error already carries the ext (the AtomicLoop sets it);
-        // this covers every pre-loop error (empty batch, parse, pre-flight 403/404).
         if ($request->attributes->get(JsonApiRouteLoader::ATOMIC_ATTRIBUTE) === true
             && !$throwable instanceof MediaTypeUnsupported
             && !$throwable instanceof MediaTypeUnacceptable
+            && self::namesAtomicExtension($psrRequest)
         ) {
             $errorResponse = $errorResponse->withExtensions([AtomicExtension::URI]);
         }
@@ -168,6 +161,18 @@ final class ExceptionListener
         $psrResponse = $errorResponse->toPsrResponse($server, $psrRequest);
 
         $event->setResponse($this->httpFoundationFactory->createResponse($psrResponse));
+    }
+
+    /**
+     * Whether the request named the atomic extension on its `Content-Type` or `Accept`
+     * `ext` parameter, read straight off the headers as negotiation may not have run.
+     */
+    private static function namesAtomicExtension(ServerRequestInterface $request): bool
+    {
+        $request = $request instanceof JsonApiRequestInterface ? $request : new JsonApiRequest($request);
+
+        return \in_array(AtomicExtension::URI, $request->getAppliedExtensions(), true)
+            || \in_array(AtomicExtension::URI, $request->getRequestedExtensions(), true);
     }
 
     /**

@@ -25,6 +25,8 @@ use Symfony\Component\HttpKernel\HttpKernelInterface;
  */
 abstract class AtomicOperationsConformanceTestCase extends JsonApiFunctionalTestCase
 {
+    protected const string ATOMIC_MEDIA_TYPE = 'application/vnd.api+json; ext="https://jsonapi.org/ext/atomic"';
+
     #[Test]
     #[Group('spec:atomic')]
     public function aBatchCreatesAResourceAndALaterOperationReferencesItByLid(): void
@@ -531,17 +533,13 @@ abstract class AtomicOperationsConformanceTestCase extends JsonApiFunctionalTest
     {
         // A pre-flight refusal (an unknown target type → 404) is raised BEFORE the loop,
         // so it renders through the ExceptionListener rather than the AtomicLoop. It must
-        // still advertise the atomic ext — the extension WAS successfully negotiated, so
-        // the error document is produced under it (Slice D fix).
+        // still advertise the atomic ext, as the request named it on both headers.
         $response = $this->atomic([
             ['op' => 'add', 'data' => ['type' => 'nonexistent', 'attributes' => ['name' => 'Nobody']]],
         ]);
 
         self::assertSame(404, $response->getStatusCode(), (string) $response->getContent());
-        self::assertStringContainsString(
-            'ext="https://jsonapi.org/ext/atomic"',
-            (string) $response->headers->get('Content-Type'),
-        );
+        self::assertSame(self::ATOMIC_MEDIA_TYPE, $response->headers->get('Content-Type'));
     }
 
     #[Test]
@@ -550,14 +548,62 @@ abstract class AtomicOperationsConformanceTestCase extends JsonApiFunctionalTest
     {
         // An empty batch is a parse-time 400 raised BEFORE the loop (the parser rejects
         // an empty `atomic:operations`), rendered through the ExceptionListener. The
-        // extension was negotiated, so the error advertises the atomic ext (Slice D fix).
+        // request named the extension, so the error advertises it.
         $response = $this->atomic([]);
 
         self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
-        self::assertStringContainsString(
-            'ext="https://jsonapi.org/ext/atomic"',
-            (string) $response->headers->get('Content-Type'),
-        );
+        self::assertSame(self::ATOMIC_MEDIA_TYPE, $response->headers->get('Content-Type'));
+    }
+
+    #[Test]
+    #[Group('spec:atomic')]
+    public function anErrorInsideTheBatchDeclaresTheAtomicExt(): void
+    {
+        $response = $this->atomic([
+            [
+                'op' => 'update',
+                'ref' => ['type' => 'articles', 'id' => '404'],
+                'data' => ['type' => 'articles', 'id' => '404', 'attributes' => ['title' => 'No such article']],
+            ],
+        ]);
+
+        self::assertSame(404, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(self::ATOMIC_MEDIA_TYPE, $response->headers->get('Content-Type'));
+    }
+
+    #[Test]
+    #[Group('spec:atomic')]
+    public function aValidationErrorDeclaresTheAtomicExtOnlyWhenTheRequestNamedIt(): void
+    {
+        $operations = [[
+            'op' => 'update',
+            'ref' => ['type' => 'articles', 'id' => '1'],
+            'data' => ['type' => 'articles', 'id' => '1', 'attributes' => ['title' => 'Bad param']],
+        ]];
+
+        $named = $this->atomic($operations, query: 'bogus=1');
+        self::assertSame(400, $named->getStatusCode(), (string) $named->getContent());
+        self::assertSame(self::ATOMIC_MEDIA_TYPE, $named->headers->get('Content-Type'));
+
+        // Without the ext the same request fails negotiation before its query is checked.
+        $unnamed = $this->atomic($operations, contentType: 'application/vnd.api+json', accept: 'application/vnd.api+json', query: 'bogus=1');
+        self::assertSame(415, $unnamed->getStatusCode(), (string) $unnamed->getContent());
+        self::assertSame('application/vnd.api+json', $unnamed->headers->get('Content-Type'));
+    }
+
+    #[Test]
+    #[Group('spec:atomic')]
+    public function aNegotiationFailureNeverDeclaresTheAtomicExtEvenWhenTheOtherHeaderNamedIt(): void
+    {
+        $operations = [['op' => 'add', 'data' => ['type' => 'authors', 'attributes' => ['name' => 'Nope']]]];
+
+        $unsupported = $this->atomic($operations, contentType: 'application/vnd.api+json');
+        self::assertSame(415, $unsupported->getStatusCode(), (string) $unsupported->getContent());
+        self::assertSame('application/vnd.api+json', $unsupported->headers->get('Content-Type'));
+
+        $unacceptable = $this->atomic($operations, accept: 'application/vnd.api+json');
+        self::assertSame(406, $unacceptable->getStatusCode(), (string) $unacceptable->getContent());
+        self::assertSame('application/vnd.api+json', $unacceptable->headers->get('Content-Type'));
     }
 
     #[Test]
