@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.20.0](https://github.com/haddowg/json-api-symfony/compare/v1.19.1...v1.20.0) (2026-10-27)
+
+
+### Features
+
+* add a --compact option to the export commands ([#255](https://github.com/haddowg/json-api-symfony/issues/255)) ([c201675](https://github.com/haddowg/json-api-symfony/commit/c20167567aff0fba64e82a6ea133da2e8fbbd9ff))
+
 ## [1.19.1](https://github.com/haddowg/json-api-symfony/compare/v1.19.0...v1.19.1) (2026-10-27)
 
 
