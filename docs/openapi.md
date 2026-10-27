@@ -248,7 +248,9 @@ point somewhere else.
 The generated document describes these links: each `<Type>ResourceLinks`,
 `<Type>DocumentLinks`, `<Type>CollectionLinks` and `<Type><Rel>RelationshipLinks`
 component lists the members that context renders, with an example carrying the same
-`describedby`, and an `asLink` action is listed by its name.
+`describedby`, and an `asLink` action is listed by its name. So is an action the resource
+links with an [`ActionLink`](actions.md#showing-an-action-link-only-in-some-states),
+described by its `describedAs()` when it sets one.
 
 A resource's [declared links](resources.md#declared-links) are named, optional properties
 of its `<Type>ResourceLinks`. A bare link takes the open `LinkObject` schema; a link

@@ -9,6 +9,8 @@ use haddowg\JsonApi\OpenApi\RelatedTypeNotRegistered;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApiBundle\Action\ActionRegistry;
+use haddowg\JsonApiBundle\Action\ActionScope;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
 use haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource;
@@ -62,6 +64,13 @@ use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
  *    cannot read, so the pass hands over what the app lacks to evaluate an expression
  *    and this check fails on any relation declaring one (bundle ADR 0130). The
  *    documentation-only `true`/`false` need nothing.
+ *  - **A resource's action links must name an action it has.** An
+ *    {@see \haddowg\JsonApi\Resource\Link\ActionLink} in `links()` links a
+ *    resource-scope custom action of the type. A server without that action leaves the
+ *    link out, but a path no server serving the type has would never render, so it fails
+ *    here, naming the resource class (bundle ADR 0159). Building the links also surfaces
+ *    core's own declaration errors: two action links for one path, or a declared link
+ *    named like an action link.
  *
  * Gating is on the per-type operation allow-list, so an embedded-only standalone
  * serializer (no operations) and a relationship-only target (served through its
@@ -82,6 +91,7 @@ final class ServableResourceWarmer implements CacheWarmerInterface
         private readonly MetadataSource $metadata,
         private readonly array $serverNames,
         private readonly array $unenforceableSecurity = [],
+        private readonly ?ActionRegistry $actions = null,
     ) {}
 
     /**
@@ -116,6 +126,7 @@ final class ServableResourceWarmer implements CacheWarmerInterface
                 $this->guardExactlyOneId($serverName, $type);
                 $this->guardPolymorphicDiscrimination($serverName, $type);
                 $this->guardRelationSecurity($serverName, $type);
+                $this->guardActionLinks($serverName, $type);
             }
 
             $this->guardRelatedEndpointTargets($serverName);
@@ -180,6 +191,42 @@ final class ServableResourceWarmer implements CacheWarmerInterface
                 . 'Add Id::make() to its fields().',
                 $type,
                 \count($idFields),
+            ));
+        }
+    }
+
+    /**
+     * Builds the resource's links, so a duplicate or clashing declaration fails here, and
+     * checks each declared action link names a resource-scope action of `$type` on some
+     * server that serves the type. A server without the action leaves the link out, so
+     * only a path no server has fails.
+     */
+    private function guardActionLinks(string $serverName, string $type): void
+    {
+        $server = $this->servers->get($serverName);
+        if (!$server->hasResourceFor($type)) {
+            return;
+        }
+
+        $resource = $server->resourceFor($type);
+        $resource->allLinks();
+        foreach ($resource->allActionLinks() as $link) {
+            foreach ($this->serverNames as $candidate) {
+                if (isset($this->descriptors->forServer($candidate)[$type])
+                    && $this->actions?->descriptorFor($candidate, $type, ActionScope::Resource, $link->path) !== null) {
+                    continue 2;
+                }
+            }
+
+            throw new \LogicException(\sprintf(
+                'The JSON:API resource %s declares an action link for "%s", but no server serving type "%s" has a '
+                . 'resource-scope action with that path. Declare #[AsJsonApiAction(type: \'%s\', path: \'%s\')], '
+                . 'or remove the action link.',
+                $resource::class,
+                $link->path,
+                $type,
+                $type,
+                $link->path,
             ));
         }
     }

@@ -407,12 +407,14 @@ final class ResourceLocatorPass implements CompilerPassInterface
         $actionClasses = [];
         /** @var array<string, list<array{uriType: string, type: string, path: string, methods: list<string>, scope: string, name: string}>> $routeDescriptorsByServer */
         $routeDescriptorsByServer = [];
-        // The asLink action link descriptors the ActionLinkContributor renders, keyed by
-        // server then by mount type: each is the link key (the action path) and the
+        // The resource-scope actions the ActionLinkContributor may render as links, keyed
+        // by server then by mount type: each is the link key (the action path), the
         // action's optional security expression (so the link renders only when the
-        // requester may invoke the action).
-        /** @var array<string, array<string, list<array{path: string, security: ?string, methods: list<string>}>>> $linksByServerType */
-        $linksByServerType = [];
+        // requester may invoke the action) and whether it declared asLink. A resource can
+        // also link an action through a declared ActionLink, which only the live
+        // resource knows, so every resource-scope action is recorded.
+        /** @var array<string, array<string, list<array{path: string, security: ?string, methods: list<string>, asLink: bool}>>> $actionsByServerType */
+        $actionsByServerType = [];
 
         foreach ($container->findTaggedServiceIds(JsonApiBundle::ACTION_TAG) as $id => $tags) {
             $definition = $container->findDefinition($id);
@@ -586,17 +588,18 @@ final class ResourceLocatorPass implements CompilerPassInterface
                         'name' => $name ?? '',
                     ];
 
-                    // An asLink action contributes a security-aware link on every
-                    // rendered resource of its mount type: record the link key (the
-                    // action path, which is also the URL's last segment) and the
-                    // security expression.
-                    if ($asLink) {
-                        $linksByServerType[$server][$type][] = [
+                    // A resource-scope action may contribute a security-aware link on
+                    // every rendered resource of its mount type, through asLink or a
+                    // declared ActionLink: record the link key (the action path, which
+                    // is also the URL's last segment) and the security expression.
+                    if ($scope === ActionScope::Resource) {
+                        $actionsByServerType[$server][$type][] = [
                             'path' => $path,
                             'security' => $security,
                             // The first method names the operation the link's
                             // describedby points at, as the OpenAPI projection does.
                             'methods' => $methods,
+                            'asLink' => $asLink,
                         ];
                     }
                 }
@@ -615,12 +618,12 @@ final class ResourceLocatorPass implements CompilerPassInterface
                 ->setArgument('$actionRouteDescriptorsByServer', $routeDescriptorsByServer);
         }
 
-        // Hand the asLink link descriptors to the ActionLinkContributor (bundle ADR
-        // 0091) so it can render each action's URL as a `links` member on its mount
-        // type's resources. A no-op when no asLink action is declared (the default map).
+        // Hand the resource-scope actions to the ActionLinkContributor (bundle ADRs 0091
+        // and 0159) so it can render each linked action's URL as a `links` member on its
+        // mount type's resources. A no-op when no resource-scope action is declared.
         if ($container->hasDefinition(ActionLinkContributor::class)) {
             $container->getDefinition(ActionLinkContributor::class)
-                ->setArgument('$linksByServerType', $linksByServerType);
+                ->setArgument('$actionsByServerType', $actionsByServerType);
         }
     }
 

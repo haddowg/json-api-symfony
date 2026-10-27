@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Tests;
 
+use Doctrine\ORM\EntityManagerInterface;
+use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Album;
+use haddowg\JsonApiBundle\Examples\MusicCatalog\Model\AlbumStatus;
 use haddowg\JsonApiBundle\OpenApi\DocumentFactory;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
@@ -221,6 +224,56 @@ final class CustomActionTest extends MusicCatalogKernelTestCase
         self::assertIsString($href);
         // On the configured base_uri, like the album's own self link.
         self::assertSame('https://music.example/albums/1/-actions/download', $href);
+    }
+
+    #[Test]
+    public function anAlbumLinksToItsDownloadOnlyWhileReleased(): void
+    {
+        $entityManager = static::getContainer()->get('doctrine.orm.entity_manager');
+        self::assertInstanceOf(EntityManagerInterface::class, $entityManager);
+        $album = $entityManager->find(Album::class, 1);
+        self::assertInstanceOf(Album::class, $album);
+        $album->status = AlbumStatus::Withdrawn->value;
+        $entityManager->flush();
+        $entityManager->clear();
+
+        $withdrawn = $this->dataOf($this->action('/albums/1', 'GET'))['links'] ?? null;
+        self::assertIsArray($withdrawn);
+        self::assertArrayNotHasKey('download', $withdrawn);
+        self::assertArrayHasKey('self', $withdrawn);
+    }
+
+    #[Test]
+    public function theAdminServerHasNoDownloadActionSoItsAlbumsCarryNoDownloadLink(): void
+    {
+        // The album resource declares the link on every server, but only the default server
+        // exposes the action, so the admin server leaves the link out of the resource and
+        // its document.
+        $links = $this->dataOf($this->action('/admin/albums/1', 'GET'))['links'] ?? null;
+        self::assertIsArray($links);
+        self::assertArrayNotHasKey('download', $links);
+        self::assertArrayHasKey('store', $links);
+
+        $factory = static::getContainer()->get(DocumentFactory::class);
+        self::assertInstanceOf(DocumentFactory::class, $factory);
+        $document = $factory->forServer('admin')->toArray();
+        $properties = self::at($document, 'components', 'schemas', 'AlbumsResourceLinks', 'properties');
+        self::assertIsArray($properties);
+        self::assertArrayNotHasKey('download', $properties);
+        self::assertNull(self::at($document, 'paths', '/albums/{id}/-actions/download'));
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    public function theDownloadLinkCarriesItsDeclaredDescription(): void
+    {
+        $factory = static::getContainer()->get(DocumentFactory::class);
+        self::assertInstanceOf(DocumentFactory::class, $factory);
+        $document = $factory->forServer()->toArray();
+
+        $description = self::at($document, 'components', 'schemas', 'AlbumsResourceLinks', 'properties', 'download', 'description');
+        self::assertIsString($description);
+        self::assertStringStartsWith('A short-lived link to the album as CSV, present while the album is released.', $description);
     }
 
     #[Test]
