@@ -143,7 +143,7 @@ final class ScopedLinkageGuard
     public function scopedMembers(Server $server, object $parent, RelationInterface $relation, JsonApiRequestInterface $request): ?array
     {
         $relatedType = $relation->relatedTypes()[0] ?? null;
-        if ($relatedType === null || !$relation->isToMany() || \count($relation->relatedTypes()) !== 1 || !$this->router->isScoped($relation)) {
+        if ($relatedType === null || !$relation->isToMany() || !Polymorphism::isMonomorphic($relation) || !$this->router->isScoped($relation)) {
             return null;
         }
 

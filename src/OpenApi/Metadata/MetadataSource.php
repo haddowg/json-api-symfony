@@ -19,6 +19,7 @@ use haddowg\JsonApi\Scope\ScopeTable;
 use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\Action\ActionDescriptor;
 use haddowg\JsonApiBundle\Action\ActionRegistry;
+use haddowg\JsonApiBundle\DataProvider\Polymorphism;
 use haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory;
 use haddowg\JsonApiBundle\OpenApi\DocumentUrlProvider;
 use haddowg\JsonApiBundle\Operation\Operation;
@@ -451,7 +452,7 @@ final class MetadataSource
         $paginator = null;
         if ($relation->isToMany()) {
             $relatedTypes = $relation->relatedTypes();
-            $relatedResource = \count($relatedTypes) === 1 ? $this->types->resourceFor($server, $relatedTypes[0]) : null;
+            $relatedResource = Polymorphism::isMonomorphic($relation) ? $this->types->resourceFor($server, $relatedTypes[0]) : null;
             $paginator = RelationCriteriaFactory::resolvePaginator($relation, $relatedResource, $serverDefault);
         }
 

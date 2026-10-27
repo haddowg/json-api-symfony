@@ -71,6 +71,7 @@ use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 use haddowg\JsonApiBundle\DataProvider\PivotAwareProviderInterface;
+use haddowg\JsonApiBundle\DataProvider\Polymorphism;
 use haddowg\JsonApiBundle\DataProvider\RelatedIncludeBatcher;
 use haddowg\JsonApiBundle\DataProvider\RelatedReadRouter;
 use haddowg\JsonApiBundle\DataProvider\RelationCountBatcher;
@@ -693,12 +694,12 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $this->gateRelatedCollection($relation);
         $this->assertInMemoryRelatedObjects($type, [$parent], $this->jsonApiRequest($operation->context()), $server, [$relation]);
 
-        // A polymorphic relation (MorphTo / MorphToMany) declares several related
-        // types, so there is no single related type to resolve a serializer or a
-        // shared filter/sort vocabulary from up front: the serializer is resolved
-        // per related object below.
+        // A polymorphic relation (MorphTo / MorphToMany, even over one type) has no
+        // single related type to resolve a serializer or a shared filter/sort
+        // vocabulary from up front: the serializer is resolved per related object
+        // below.
         $relatedTypes = $relation->relatedTypes();
-        $polymorphic = \count($relatedTypes) > 1;
+        $polymorphic = Polymorphism::of($relation);
         $relatedType = $relatedTypes[0] ?? $type;
 
         $request = $this->jsonApiRequest($operation->context());
@@ -844,9 +845,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
             $result = match (true) {
                 $this->readRouter?->readsComputed($relation) === true => $this->readRouter->fetchComputed($server, $parent, $relation, $criteria, $request),
-                // A polymorphic to-many reaching a scoped type serves its members narrowed
-                // per member type (bundle ADR 0125).
-                $polymorphic && $this->readRouter?->isScoped($relation) === true => $this->readRouter->fetchPolymorphic($server, $parent, $relation, $criteria, $request),
+                // A to-many over several types reaching a scoped type serves its members
+                // narrowed per member type (bundle ADR 0125).
+                \count($relatedTypes) > 1 && $this->readRouter?->isScoped($relation) === true => $this->readRouter->fetchPolymorphic($server, $parent, $relation, $criteria, $request),
                 default => $relatedProvider->fetchRelatedCollection($relatedType, $parent, $relation, $criteria, $request),
             };
 
@@ -1121,7 +1122,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // A to-one and a polymorphic relationship render off the parent: apply the related
         // type's scope first, exactly as an include does (bundle ADR 0125). A monomorphic
         // to-many is fetched through its provider below.
-        if (!$relation->isToMany() || \count($relation->relatedTypes()) > 1) {
+        if (!$relation->isToMany() || Polymorphism::of($relation)) {
             $this->relationshipLinkage?->setIncluded(
                 $this->includeBatcher?->scopeRelationship($server, $type, $parent, $relation, $this->jsonApiRequest($operation->context())),
             );
@@ -1133,7 +1134,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // serializer reads linkage off it — so core emits null linkage (bundle ADR 0068).
         // A GET read, so nothing flushes. Monomorphic only (a polymorphic to-one carries
         // no shared filter vocabulary).
-        if (!$relation->isToMany() && \count($relation->relatedTypes()) === 1) {
+        if (!$relation->isToMany() && Polymorphism::isMonomorphic($relation)) {
             $request = $this->jsonApiRequest($operation->context());
             $filter = $this->toOneRequestedFilter($operation->queryParameters(), $relation, $request);
             if ($filter !== []) {
@@ -1160,7 +1161,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                     }
                 }
             }
-        } elseif (!$relation->isToMany() && \count($relation->relatedTypes()) > 1) {
+        } elseif (!$relation->isToMany() && Polymorphism::of($relation)) {
             // A polymorphic to-one (MorphTo) carries no shared filter vocabulary, so ANY
             // requested filter key is unrecognised — the same `400` the polymorphic
             // to-many surfaces. Gated on the merged requested filter being present (not on
@@ -1251,7 +1252,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // reject it with the related endpoint's same `400` (the projector advertises no
         // query parameters for a polymorphic relationship endpoint, bundle ADR 0096); with
         // none requested it renders the whole association below.
-        if ($relation->isToMany() && \count($relation->relatedTypes()) > 1) {
+        if ($relation->isToMany() && Polymorphism::of($relation)) {
             $queryParameters = $operation->queryParameters();
             if ($queryParameters->filter !== []) {
                 throw new \haddowg\JsonApi\Exception\FilterParamUnrecognized(\array_key_first($queryParameters->filter));
@@ -1272,7 +1273,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // its pagination OUT-OF-BAND through the relationship-linkage/pagination seams —
         // NOT a destructive write onto the parent property (which would corrupt a sibling
         // relation sharing the backing column, bundle ADR 0086).
-        if ($relation->isToMany() && \count($relation->relatedTypes()) === 1 && $relatedProvider !== null) {
+        if ($relation->isToMany() && Polymorphism::isMonomorphic($relation) && $relatedProvider !== null) {
             $request = $this->jsonApiRequest($operation->context());
             $relatedResource = $this->types->resourceFor($server, $relatedType);
             $paginator = $this->relationCriteria->paginatorFor($relation, $relatedResource, $server);
@@ -1525,7 +1526,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $members = $this->linkageGuard?->scopedMembers($server, $parent, $relation, $request);
         $this->relationshipLinkage?->setIncluded(match (true) {
             $members !== null => new WindowedRelationshipLinkage([\spl_object_id($parent) => [$relationshipName => new RelationshipLinkage($members)]]),
-            !$relation->isToMany() || \count($relation->relatedTypes()) > 1 => $this->includeBatcher?->scopeRelationship($server, $type, $parent, $relation, $request),
+            !$relation->isToMany() || Polymorphism::of($relation) => $this->includeBatcher?->scopeRelationship($server, $type, $parent, $relation, $request),
             default => null,
         });
 
