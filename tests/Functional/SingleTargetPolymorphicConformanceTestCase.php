@@ -112,7 +112,7 @@ abstract class SingleTargetPolymorphicConformanceTestCase extends JsonApiFunctio
         self::assertInstanceOf(DocumentFactory::class, $factory);
         $document = $factory->forServer()->toArray();
 
-        self::assertSame(16, $this->at($document, 'info', 'x-generator', 'contract'));
+        self::assertSame(18, $this->at($document, 'info', 'x-generator', 'contract'));
 
         self::assertSame(
             ['anyOf' => [['anyOf' => [['$ref' => '#/components/schemas/AuthorsResourceIdentifier']]], ['type' => 'null']]],

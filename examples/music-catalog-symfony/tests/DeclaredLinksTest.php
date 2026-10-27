@@ -118,12 +118,17 @@ final class DeclaredLinksTest extends MusicCatalogKernelTestCase
     {
         $schemas = $this->nested($this->openApi(), 'components', 'schemas');
 
-        $store = $this->nested($schemas, 'AlbumsResourceLinks', 'properties', 'store');
-        self::assertSame([['$ref' => '#/components/schemas/LinkObject']], $store['allOf'] ?? null);
-        self::assertSame('The album\'s page in the store.', $store['description'] ?? null);
-        self::assertSame('https://store.example.com/albums/1', $store['example'] ?? null);
+        foreach (['AlbumsResourceLinks', 'TracksResourceLinks'] as $name) {
+            self::assertSame(['$ref' => '#/components/schemas/ResourceLinks'], $this->nested($schemas, $name, 'allOf', '0'), $name);
+        }
 
-        $preview = $this->nested($schemas, 'TracksResourceLinks', 'properties', 'preview');
+        // The link schema carries no example; the operation examples show the URL.
+        $store = $this->nested($schemas, 'AlbumsResourceLinks', 'allOf', '1', 'properties', 'store');
+        self::assertSame('#/components/schemas/LinkObject', $store['$ref'] ?? null);
+        self::assertSame('The album\'s page in the store.', $store['description'] ?? null);
+        self::assertArrayNotHasKey('example', $store);
+
+        $preview = $this->nested($schemas, 'TracksResourceLinks', 'allOf', '1', 'properties', 'preview');
         self::assertSame('A short audio preview of the track, valid until expiresAt.', $preview['description'] ?? null);
         self::assertSame(['href', 'type', 'meta'], $preview['required'] ?? null);
         self::assertSame('audio/mpeg', $this->nested($preview, 'properties', 'type')['const'] ?? null);
@@ -136,7 +141,7 @@ final class DeclaredLinksTest extends MusicCatalogKernelTestCase
         self::assertSame('When the preview URL stops working.', $expiresAt['description'] ?? null);
 
         // Neither link is required: a null href leaves it out.
-        $required = $this->nested($schemas, 'TracksResourceLinks')['required'] ?? [];
+        $required = $this->nested($schemas, 'TracksResourceLinks', 'allOf', '1')['required'] ?? [];
         self::assertIsArray($required);
         self::assertNotContains('preview', $required);
     }
@@ -163,9 +168,8 @@ final class DeclaredLinksTest extends MusicCatalogKernelTestCase
     #[Group('spec:openapi')]
     public function theDocumentIsStampedWithTheDeclaredLinksContract(): void
     {
-        // The album actions' declared safety raises the declared-links tier of 14 to 15,
-        // the scoped writes raise it to 16, and the download action's location document to 17.
-        self::assertSame(17, $this->nested($this->openApi(), 'info', 'x-generator')['contract'] ?? null);
+        // The declared-links tier is 14, but the shared links components raised the baseline to 18.
+        self::assertSame(18, $this->nested($this->openApi(), 'info', 'x-generator')['contract'] ?? null);
     }
 
     #[Test]

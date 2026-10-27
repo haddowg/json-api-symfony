@@ -414,8 +414,9 @@ and the action's value wins on a shared name. The names follow the same rules as
 type's: a full `x-` name, outside the reserved `x-oai-` and `x-oas-` prefixes, or the
 build fails. A declared `x-safety` wins over an extension of that name.
 
-A document that uses any of these, a multi-method action, declared safety or an action's
-own extensions, is stamped generator contract 15 in `info.x-generator`.
+Generator contract 15 introduced these: multi-method actions, declared safety and an
+action's own extensions. Contract 18 then raised the baseline past it, so every document is
+stamped 18 in `info.x-generator`, whether it uses them or not.
 
 ### Raw responses (CSV, PDF, plain JSON)
 
@@ -527,7 +528,8 @@ response, and `$context->seeOther($url, $expiresAt)` is the same response.
 The media type is the opt-in. A bare `new SeeOther()`, or one with only a description,
 stays the plain `303` it always was. The OpenAPI document shows both responses. The
 `200` references the shared `LocationDocument` component, and the `303` documents
-`Location`. A document whose actions declare such a `SeeOther` carries contract 17.
+`Location`. Contract 17 introduced this response. Every document now carries contract 18,
+the baseline since the links components were shared.
 Core's [location responses](https://github.com/haddowg/json-api/blob/main/docs/responses.md#location-responses)
 describe the rendering in full.
 

@@ -107,13 +107,19 @@ abstract class ActionLinksConformanceTestCase extends JsonApiFunctionalTestCase
     {
         $response = $this->handle('/api/docs.json');
         self::assertSame(200, $response->getStatusCode());
-        $properties = self::at($this->decode($response), 'components', 'schemas', 'ArticlesResourceLinks', 'properties');
+        $schemas = self::at($this->decode($response), 'components', 'schemas');
+        self::assertSame(['$ref' => '#/components/schemas/ResourceLinks'], self::at($schemas, 'ArticlesResourceLinks', 'allOf', 0));
+        self::assertIsArray(self::at($schemas, 'ResourceLinks', 'properties', 'self'));
+        $properties = self::at($schemas, 'ArticlesResourceLinks', 'allOf', 1, 'properties');
         self::assertIsArray($properties);
 
-        self::assertSame(['self', 'review', 'feature', 'archive'], \array_keys($properties));
-        self::assertStringStartsWith('Present while the article is a guide. ', self::string(self::at($properties, 'review', 'description')));
-        self::assertStringStartsWith('The `feature` action on this resource. ', self::string(self::at($properties, 'feature', 'description')));
-        self::assertStringStartsWith('Present while the article is news. ', self::string(self::at($properties, 'archive', 'description')));
+        self::assertSame(['review', 'feature', 'archive'], \array_keys($properties));
+        foreach ($properties as $name => $link) {
+            self::assertSame('#/components/schemas/RenderedLink', self::at($link, '$ref'), $name);
+        }
+        self::assertSame('Present while the article is a guide.', self::string(self::at($properties, 'review', 'description')));
+        self::assertSame('The `feature` action on this resource.', self::string(self::at($properties, 'feature', 'description')));
+        self::assertSame('Present while the article is news.', self::string(self::at($properties, 'archive', 'description')));
     }
 
     #[Test]

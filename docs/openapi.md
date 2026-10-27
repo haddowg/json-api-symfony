@@ -245,21 +245,26 @@ A `describedby` set on the response with `withDescribedby()`, or one inside its
 `withLinks()`, replaces the per-operation one, so set it only when a response should
 point somewhere else.
 
-The generated document describes these links: each `<Type>ResourceLinks`,
-`<Type>DocumentLinks`, `<Type>CollectionLinks` and `<Type><Rel>RelationshipLinks`
-component lists the members that context renders, with an example carrying the same
-`describedby`, and an `asLink` action is listed by its name. So is an action the resource
-links with an [`ActionLink`](actions.md#showing-an-action-link-only-in-some-states),
-described by its `describedAs()` when it sets one.
+The generated document describes these links with one shared component per context,
+`ResourceLinks`, `DocumentLinks`, `CollectionLinks`, `RelationshipLinks`,
+`RelationshipDocumentLinks` and `RelatedDocumentLinks`, each listing the members that
+context can render. The link schemas carry no examples. The
+[operation examples](#operation-examples) show each response whole, so that's
+where a type's own link URLs and their `describedby` appear.
+
+A type whose resources carry named links gets its own `<Type>ResourceLinks`, an `allOf` of
+`ResourceLinks` and an object with one property per named link. An `asLink` action is
+listed there by its name. So is an action the resource links with an
+[`ActionLink`](actions.md#showing-an-action-link-only-in-some-states), described by its
+`describedAs()` when it sets one.
 
 A resource's [declared links](resources.md#declared-links) are named, optional properties
-of its `<Type>ResourceLinks`. A bare link takes the open `LinkObject` schema; a link
+of that second `allOf` entry. A bare link takes the open `LinkObject` schema; a link
 object gets its own schema with `href`, each static member as a `const`, and a `meta`
 object built from the declared members the way attributes are. The operation examples
 carry each link, built from its `example()` and its meta members' examples, and a missing
 one is reported like a missing attribute example, as `links.<name>` or
-`links.<name>.meta.<member>`. A document whose types declare a link is stamped contract
-14 in `info.x-generator`; one without stays on the baseline. Core's
+`links.<name>.meta.<member>`. Core's
 [OpenAPI page](https://github.com/haddowg/json-api/blob/main/docs/openapi.md#links-and-describedby)
 shows the full schema.
 

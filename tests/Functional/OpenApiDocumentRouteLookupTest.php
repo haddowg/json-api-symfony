@@ -59,11 +59,11 @@ final class OpenApiDocumentRouteLookupTest extends \Symfony\Bundle\FrameworkBund
         $public = $this->document($kernel, '/public-items/1');
         self::assertSame('/api/docs.json#/paths/~1public-items~1%7Bid%7D/get', $this->at($public, 'links', 'self', 'describedby'));
 
-        // The served document's examples point at the same route.
+        // The served document's link example points at the same route.
         $spec = $this->document($kernel, '/api/v5/docs.json');
         self::assertSame(
             '/api/v5/docs.json' . self::ADMIN_POINTER,
-            $this->at($spec, 'components', 'schemas', 'AdminItemsResourceLinks', 'properties', 'self', 'example', 'describedby'),
+            $this->at($spec, 'components', 'schemas', 'LinkObject', 'example', 'describedby'),
         );
 
         $kernel->shutdown();
