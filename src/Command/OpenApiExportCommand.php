@@ -24,6 +24,9 @@ use Symfony\Component\Yaml\Yaml;
  * `--format=yaml` requires `symfony/yaml` (a suggested dependency); without it the
  * command fails with a clear message rather than emitting broken output.
  *
+ * `--compact` writes the JSON on one line, with the same encoding as the pretty default.
+ * YAML has no compact form, so `--compact` with `--format=yaml` is rejected.
+ *
  * Each operation example the projector could not build (core ADR 0176) is printed as a
  * warning on stderr, so stdout stays a clean document. An output with no separate stderr
  * gets them only when the document goes to a file. `--strict` turns any of them into a
@@ -46,6 +49,7 @@ final class OpenApiExportCommand extends Command
             ->addOption('server', null, InputOption::VALUE_REQUIRED, 'The JSON:API server name to export.', ServerProvider::DEFAULT_SERVER)
             ->addOption('format', null, InputOption::VALUE_REQUIRED, 'Output format: json or yaml.', 'json')
             ->addOption('output', 'o', InputOption::VALUE_REQUIRED, 'Write to this file instead of stdout.')
+            ->addOption('compact', null, InputOption::VALUE_NONE, 'Write the JSON on one line instead of pretty-printing it (JSON only).')
             ->addOption('strict', null, InputOption::VALUE_NONE, 'Fail, writing no document, when any operation is missing its generated example or needs a scope the document does not declare.');
     }
 
@@ -67,6 +71,13 @@ final class OpenApiExportCommand extends Command
         }
 
         $isYaml = $format === 'yaml' || $format === 'yml';
+        $compact = $input->getOption('compact') === true;
+        if ($isYaml && $compact) {
+            $io->error('The --compact option only applies to JSON output; drop it or export with --format=json.');
+
+            return Command::INVALID;
+        }
+
         if ($isYaml && !\class_exists(Yaml::class)) {
             $io->error('YAML export requires symfony/yaml; install it (composer require symfony/yaml) or export JSON.');
 
@@ -124,7 +135,7 @@ final class OpenApiExportCommand extends Command
 
         $rendered = $isYaml
             ? Yaml::dump($document->toArray(), 16, 2, Yaml::DUMP_OBJECT_AS_MAP)
-            : $document->toJsonString(true) . "\n";
+            : $document->toJsonString(!$compact) . "\n";
 
         if ($outputFile === null) {
             // Write straight to the output stream (no SymfonyStyle decoration) so a
