@@ -10,6 +10,7 @@ use haddowg\JsonApi\Exception\AuthenticationRequired;
 use haddowg\JsonApi\Exception\JsonApiExceptionInterface;
 use haddowg\JsonApi\Exception\MediaTypeUnacceptable;
 use haddowg\JsonApi\Exception\MediaTypeUnsupported;
+use haddowg\JsonApi\Exception\MethodNotAllowed;
 use haddowg\JsonApi\Response\ErrorResponse;
 use haddowg\JsonApi\Schema\Error\Error;
 use haddowg\JsonApi\Schema\Error\InternalServerError;
@@ -20,8 +21,14 @@ use Psr\Http\Message\ServerRequestInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Bridge\PsrHttpMessage\Factory\HttpFoundationFactory;
 use Symfony\Bridge\PsrHttpMessage\Factory\PsrHttpFactory;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\ExceptionEvent;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
+use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
+use Symfony\Component\Routing\Exception\ExceptionInterface as RoutingException;
+use Symfony\Component\Routing\Exception\MethodNotAllowedException;
+use Symfony\Component\Routing\Matcher\RequestMatcherInterface;
+use Symfony\Component\Routing\RouterInterface;
 
 /**
  * The route-scoped `kernel.exception` listener: it owns every error on JSON:API
@@ -72,6 +79,13 @@ use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
  * ({@see MediaTypeUnsupported}) or `406` ({@see MediaTypeUnacceptable}) means the
  * atomic extension was NOT successfully negotiated, so its error document correctly
  * omits the `ext` parameter.
+ *
+ * **A method the path does not accept.** The router throws a `405` before any route
+ * matches, so the request carries no marker. The listener asks the router which route
+ * each allowed method reaches on that path; when one of them is a JSON:API route, the
+ * `405` renders as core's {@see MethodNotAllowed} under that route's server, with its
+ * `Allow` header, and on the atomic path with the atomic `ext`. A path none of whose
+ * routes is a JSON:API endpoint keeps Symfony's own handling (bundle ADR 0160).
  */
 final class ExceptionListener
 {
@@ -107,17 +121,27 @@ final class ExceptionListener
         // authenticate) and 403 for an authenticated-but-denied one.
         private readonly ?\Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInterface $tokenStorage = null,
         private readonly ?\Symfony\Component\Security\Core\Authentication\AuthenticationTrustResolverInterface $trustResolver = null,
+        // Re-matches the path of a request the router refused with a 405, to tell
+        // whether the path belongs to a JSON:API server.
+        private readonly ?RouterInterface $router = null,
     ) {}
 
     public function onKernelException(ExceptionEvent $event): void
     {
         $request = $event->getRequest();
+        $throwable = $event->getThrowable();
 
         if (!JsonApiRoute::matches($request)) {
-            return;
-        }
+            $routed = $this->jsonApiRouteForUnroutedMethod($request, $throwable);
+            if ($routed === null) {
+                return;
+            }
 
-        $throwable = $event->getThrowable();
+            // Render against a copy carrying the JSON:API route's defaults, so the server
+            // and its mount resolve as they would for a matched request.
+            $throwable = new MethodNotAllowed($request->getMethod(), $this->allowedMethods($throwable), $throwable);
+            $request = $routed;
+        }
 
         $server = $this->servers->forRequest($request);
 
@@ -144,6 +168,67 @@ final class ExceptionListener
         $psrResponse = $errorResponse->toPsrResponse($server, $psrRequest);
 
         $event->setResponse($this->httpFoundationFactory->createResponse($psrResponse));
+    }
+
+    /**
+     * When the router refused the request's method, a copy of the request carrying the
+     * defaults of the JSON:API route one of the allowed methods reaches on the same path,
+     * or `null` when none of them is a JSON:API route.
+     */
+    private function jsonApiRouteForUnroutedMethod(Request $request, \Throwable $throwable): ?Request
+    {
+        if ($this->router === null || !$throwable instanceof MethodNotAllowedHttpException) {
+            return null;
+        }
+
+        $context = $this->router->getContext();
+        $method = $context->getMethod();
+
+        try {
+            foreach ($this->allowedMethods($throwable) as $allowed) {
+                // Newer matchers read the method off the request they are given, older
+                // ones off the shared context, so both carry the allowed method.
+                $probe = $request->duplicate();
+                $probe->setMethod($allowed);
+                $context->setMethod($allowed);
+
+                try {
+                    $defaults = $this->router instanceof RequestMatcherInterface
+                        ? $this->router->matchRequest($probe)
+                        : $this->router->match($probe->getPathInfo());
+                } catch (RoutingException) {
+                    continue;
+                }
+
+                if (($defaults[JsonApiRoute::MARKER] ?? null) === true) {
+                    return $request->duplicate(attributes: [...$request->attributes->all(), ...$defaults]);
+                }
+            }
+        } finally {
+            $context->setMethod($method);
+        }
+
+        return null;
+    }
+
+    /**
+     * The methods the router said the path accepts.
+     *
+     * @return list<string>
+     */
+    private function allowedMethods(\Throwable $throwable): array
+    {
+        $previous = $throwable->getPrevious();
+        if ($previous instanceof MethodNotAllowedException) {
+            return \array_values($previous->getAllowedMethods());
+        }
+
+        $allow = $throwable instanceof HttpExceptionInterface ? ($throwable->getHeaders()['Allow'] ?? '') : '';
+        if (!\is_string($allow) || \trim($allow) === '') {
+            return [];
+        }
+
+        return \array_values(\array_filter(\array_map(\trim(...), \explode(',', $allow)), static fn(string $method): bool => $method !== ''));
     }
 
     private function toErrorResponse(\Throwable $throwable): ErrorResponse
