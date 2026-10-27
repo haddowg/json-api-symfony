@@ -46,7 +46,7 @@ final class OpenApiExportCommand extends Command
             ->addOption('server', null, InputOption::VALUE_REQUIRED, 'The JSON:API server name to export.', ServerProvider::DEFAULT_SERVER)
             ->addOption('format', null, InputOption::VALUE_REQUIRED, 'Output format: json or yaml.', 'json')
             ->addOption('output', 'o', InputOption::VALUE_REQUIRED, 'Write to this file instead of stdout.')
-            ->addOption('strict', null, InputOption::VALUE_NONE, 'Fail, writing no document, when any operation is missing its generated example.');
+            ->addOption('strict', null, InputOption::VALUE_NONE, 'Fail, writing no document, when any operation is missing its generated example or needs a scope the document does not declare.');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -97,8 +97,27 @@ final class OpenApiExportCommand extends Command
             $warnings->listing(\array_map(static fn(\Stringable $miss): string => (string) $miss, $missing));
         }
 
+        $undeclared = $projection->undeclaredScopes;
+        if ($undeclared !== [] && $warnings !== null) {
+            $warnings->warning(\sprintf(
+                '%d scope(s) are required but declared by neither the scope catalogue nor the scope scheme\'s flows:',
+                \count($undeclared),
+            ));
+            $warnings->listing(\array_map(static fn(\Stringable $scope): string => (string) $scope, $undeclared));
+        }
+
+        if ($projection->scopeScheme !== null) {
+            $warnings?->warning((string) $projection->scopeScheme);
+        }
+
         if ($missing !== [] && $strict) {
             $io->getErrorStyle()->error('Wrote no document: --strict fails on a missing example. Declare the examples listed above, or switch the operation\'s example off.');
+
+            return Command::FAILURE;
+        }
+
+        if ($undeclared !== [] && $strict) {
+            $io->getErrorStyle()->error('Wrote no document: --strict fails on an undeclared scope. Describe each scope listed above in your ScopeCatalogInterface service or the scope scheme\'s flows.');
 
             return Command::FAILURE;
         }

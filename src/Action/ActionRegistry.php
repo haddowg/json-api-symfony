@@ -45,6 +45,7 @@ use Psr\Container\ContainerInterface;
  *     destructive?: ?bool,
  *     idempotent?: ?bool,
  *     extensions?: array<string, mixed>,
+ *     scopes?: list<string>|null,
  * }
  */
 final class ActionRegistry
@@ -127,6 +128,7 @@ final class ActionRegistry
             $descriptor['destructive'] ?? null,
             $descriptor['idempotent'] ?? null,
             $descriptor['extensions'] ?? [],
+            $descriptor['scopes'] ?? null,
         );
     }
 

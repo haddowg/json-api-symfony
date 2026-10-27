@@ -14,12 +14,15 @@ use haddowg\JsonApi\Pagination\CursorPaginator;
 use haddowg\JsonApi\Pagination\PaginatorInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Scope\ScopeCatalogInterface;
+use haddowg\JsonApi\Scope\ScopeTable;
 use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\Action\ActionDescriptor;
 use haddowg\JsonApiBundle\Action\ActionRegistry;
 use haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory;
 use haddowg\JsonApiBundle\OpenApi\DocumentUrlProvider;
 use haddowg\JsonApiBundle\Operation\Operation;
+use haddowg\JsonApiBundle\Scope\ScopeTableProvider;
 use haddowg\JsonApiBundle\Security\ResourceSecurity;
 use haddowg\JsonApiBundle\Security\ResourceSecurityRegistry;
 use haddowg\JsonApiBundle\Server\IdEncoderResolver;
@@ -70,6 +73,8 @@ final class MetadataSource
      * @param string                               $atomicPath     the path the per-server atomic endpoint is served at (`json_api.atomic_operations.path`, default `/operations`)
      * @param list<ErrorCatalogSourceInterface>    $errorSources   the application's described-error sources, filled by the {@see \haddowg\JsonApiBundle\DependencyInjection\Compiler\ErrorCatalogPass}; every declared server contributes the same set, since an exception class is not server-scoped
      * @param array<string, bool>                  $exampleGeneration whether each server's document carries generated operation examples, keyed by server name; a server left out gets them
+     * @param string                               $scopeScheme    the security scheme operation scopes are listed under (`json_api.openapi.security.scope_scheme`)
+     * @param list<string>|null                    $atomicScopes   the Atomic Operations endpoint's own scopes (`json_api.atomic_operations.scopes`); null asks the resolver
      */
     public function __construct(
         private readonly ServerProvider $servers,
@@ -88,6 +93,10 @@ final class MetadataSource
         private readonly ?MountServers $mountServers = null,
         private readonly ?DocumentUrlProvider $documentUrls = null,
         private readonly array $exampleGeneration = [],
+        private readonly ?ScopeTableProvider $scopeTables = null,
+        private readonly string $scopeScheme = 'oauth2',
+        private readonly ?ScopeCatalogInterface $scopeCatalog = null,
+        private readonly ?array $atomicScopes = null,
     ) {}
 
     /**
@@ -122,6 +131,9 @@ final class MetadataSource
             documentUrl: $this->documentUrls?->forServer($serverName),
             rejectsReadOnlyAttributes: $server->rejectsReadOnlyAttributes(),
             generatesExamples: $this->exampleGeneration[$serverName] ?? true,
+            scopeTable: $this->scopeTables !== null ? fn(): ScopeTable => $this->scopeTables->forServer($serverName) : null,
+            scopeScheme: $this->scopeScheme,
+            scopeCatalog: $this->scopeCatalog?->all() ?? [],
         );
     }
 
@@ -200,7 +212,26 @@ final class MetadataSource
             documentUrl: $this->documentUrls?->forServer(ServerProvider::DEFAULT_SERVER),
             rejectsReadOnlyAttributes: $defaultServer->rejectsReadOnlyAttributes(),
             generatesExamples: $this->exampleGeneration[ServerProvider::DEFAULT_SERVER] ?? true,
+            scopeTable: $this->scopeTables !== null ? fn(): ScopeTable => $this->combinedScopeTable() : null,
+            scopeScheme: $this->scopeScheme,
+            scopeCatalog: $this->scopeCatalog?->all() ?? [],
         );
+    }
+
+    /**
+     * Every server's scope table in one: the types do not collide in combined mode, and
+     * the one atomic endpoint the document lists is the default server's.
+     */
+    private function combinedScopeTable(): ScopeTable
+    {
+        \assert($this->scopeTables !== null);
+
+        $types = [];
+        foreach ($this->serverNames() as $serverName) {
+            $types += $this->scopeTables->forServer($serverName)->types;
+        }
+
+        return new ScopeTable($types, $this->scopeTables->forServer(ServerProvider::DEFAULT_SERVER)->atomic);
     }
 
     /**
@@ -240,7 +271,7 @@ final class MetadataSource
             return null;
         }
 
-        return new AtomicOperationsMetadata($this->atomicPath);
+        return new AtomicOperationsMetadata($this->atomicPath, scopes: $this->atomicScopes);
     }
 
     /**
@@ -362,6 +393,8 @@ final class MetadataSource
             singularName: $this->nonBlank($resource?->getSingularName()) ?? $this->descriptions?->singularFor($type, $serverName),
             operationExamples: $this->descriptions?->operationExamplesFor($type, $serverName) ?? [],
             declaredLinks: $resource?->allLinks() ?? [],
+            operationScopes: $this->descriptions?->operationScopesFor($type, $serverName) ?? [],
+            resourceClass: $resource !== null ? $resource::class : ($server->hasSerializerFor($type) ? $server->serializerFor($type)::class : null),
         );
     }
 
@@ -621,6 +654,7 @@ final class MetadataSource
             $action->destructive,
             $action->idempotent,
             $action->extensions,
+            $action->scopes,
         );
     }
 

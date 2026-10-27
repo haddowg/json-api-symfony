@@ -37,9 +37,12 @@ use haddowg\JsonApiBundle\Server\ServerProvider;
  * type's operations. Core has no resource method hook for extensions, so the
  * attribute is their only declaration site.
  *
- * Last, it carries the declared operation example overrides
+ * It carries the declared operation example overrides
  * (`#[AsJsonApiResource(operationExamples: …)]`, core ADR 0176), held as scalars and
  * rebuilt into core's {@see OperationExample} on read.
+ *
+ * Last, it carries the declared OAuth scope overrides
+ * (`#[AsJsonApiResource(operationScopes: …)]`, core ADR 0181).
  */
 final class ResourceDescriptionRegistry
 {
@@ -58,6 +61,9 @@ final class ResourceDescriptionRegistry
     /** @var array<string, array<string, array<string, array{request: mixed, responses: array<int|string, mixed>}|false>>> */
     private array $examplesByType = [];
 
+    /** @var array<string, array<string, array<string, list<string>>>> */
+    private array $scopesByType = [];
+
     /**
      * @param array<string, array{description?: string|null, operations?: array<string, string>, singular?: string|null}> $descriptions the default server's
      * @param array<string, array{type?: array<string, mixed>, operations?: array<string, array<string, mixed>>}>       $extensions   the default server's
@@ -65,19 +71,26 @@ final class ResourceDescriptionRegistry
      *     descriptions?: array<string, array{description?: string|null, operations?: array<string, string>, singular?: string|null}>,
      *     extensions?: array<string, array{type?: array<string, mixed>, operations?: array<string, array<string, mixed>>}>,
      *     examples?: array<string, array<string, array{request: mixed, responses: array<int|string, mixed>}|false>>,
+     *     scopes?: array<string, array<string, list<string>>>,
      * }> $servers every other server's, keyed by server name
      * @param array<string, array<string, array{request: mixed, responses: array<int|string, mixed>}|false>> $examples the default server's operation example overrides, by type then operation name
+     * @param array<string, array<string, list<string>>> $scopes the default server's OAuth scope overrides, by type then operation name
      */
-    public function __construct(array $descriptions = [], array $extensions = [], array $servers = [], array $examples = [])
+    public function __construct(array $descriptions = [], array $extensions = [], array $servers = [], array $examples = [], array $scopes = [])
     {
         $default = $servers[ServerProvider::DEFAULT_SERVER] ?? [];
         $servers[ServerProvider::DEFAULT_SERVER] = [
             'descriptions' => ($default['descriptions'] ?? []) + $descriptions,
             'extensions' => ($default['extensions'] ?? []) + $extensions,
             'examples' => ($default['examples'] ?? []) + $examples,
+            'scopes' => ($default['scopes'] ?? []) + $scopes,
         ];
 
         foreach ($servers as $server => $declared) {
+            foreach ($declared['scopes'] ?? [] as $type => $set) {
+                $this->scopesByType[$server][$type] = $set;
+            }
+
             foreach ($declared['examples'] ?? [] as $type => $set) {
                 $this->examplesByType[$server][$type] = $set;
             }
@@ -173,5 +186,16 @@ final class ResourceDescriptionRegistry
     public function operationExamplesFor(string $type, string $server = ServerProvider::DEFAULT_SERVER): array
     {
         return \array_map(OperationExampleCodec::toExample(...), $this->examplesByType[$server][$type] ?? []);
+    }
+
+    /**
+     * The OAuth scope overrides declared for `$type` on `$server`, keyed by core's
+     * operation name; empty when none.
+     *
+     * @return array<string, list<string>>
+     */
+    public function operationScopesFor(string $type, string $server = ServerProvider::DEFAULT_SERVER): array
+    {
+        return $this->scopesByType[$server][$type] ?? [];
     }
 }

@@ -13,16 +13,23 @@ use haddowg\JsonApi\Schema\Error\ErrorMessageResolverInterface;
 use haddowg\JsonApi\Schema\Profile\CountableProfile;
 use haddowg\JsonApi\Schema\Profile\ProfileInterface;
 use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
+use haddowg\JsonApi\Scope\ExactScopeMatcher;
+use haddowg\JsonApi\Scope\GrantedScopesProviderInterface;
+use haddowg\JsonApi\Scope\ScopeEnforcer;
+use haddowg\JsonApi\Scope\ScopeMatcherInterface;
 use haddowg\JsonApi\Serializer\RelationshipLoadStateInterface;
 use haddowg\JsonApi\Serializer\ResourceLinkContributorInterface;
 use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\Event\ServingEvent;
+use haddowg\JsonApiBundle\Scope\ScopeTableProvider;
 use haddowg\JsonApiBundle\Security\RelationAuthorizer;
 use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipCount;
 use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipLinkage;
 use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipPagination;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
@@ -145,6 +152,12 @@ final class ServerFactory
         // 0139). Bound to this server in create(); null asks nothing.
         private readonly ?RelationAuthorizer $relationAuthorizer = null,
         private readonly bool $rejectReadOnlyAttributes = false,
+        // OAuth scope enforcement (core ADR 0181): on only when the app supplies the
+        // scopes a request grants.
+        private readonly ?GrantedScopesProviderInterface $grantedScopes = null,
+        private readonly ?ScopeTableProvider $scopeTables = null,
+        private readonly ?ScopeMatcherInterface $scopeMatcher = null,
+        private readonly ?LoggerInterface $logger = null,
     ) {}
 
     /**
@@ -226,6 +239,7 @@ final class ServerFactory
             // declarations; read lazily, since the server it resolves through is the
             // one being built here.
             ->withRelationAuthorizer($this->relationAuthorizer?->forServer(fn(): ?Server => $this->server, $this->serverName))
+            ->withScopeEnforcement($this->scopeEnforcer())
             ->withContainer($this->resources);
 
         // Register the JSON:API profiles this server recognizes, data-driven from
@@ -282,6 +296,26 @@ final class ServerFactory
         }
 
         return $this->server = $server->withHandler($this->handler);
+    }
+
+    /**
+     * The scope enforcer for this server, or `null` when the app grants no scopes. Its
+     * table is the one the warmer cached, else built on first use from this server's
+     * metadata, which is read only then since it is built from the server.
+     */
+    private function scopeEnforcer(): ?ScopeEnforcer
+    {
+        if ($this->grantedScopes === null || $this->scopeTables === null) {
+            return null;
+        }
+
+        return new ScopeEnforcer(
+            $this->grantedScopes,
+            $this->scopeTables->builder($this->serverName),
+            $this->scopeTables->cachedTable($this->serverName),
+            $this->scopeMatcher ?? new ExactScopeMatcher(),
+            $this->logger ?? new NullLogger(),
+        );
     }
 
     /**

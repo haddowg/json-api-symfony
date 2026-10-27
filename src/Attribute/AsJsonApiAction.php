@@ -11,6 +11,7 @@ use haddowg\JsonApi\OpenApi\Metadata\OperationExample;
 use haddowg\JsonApiBundle\Action\AcceptedMediaTypes;
 use haddowg\JsonApiBundle\Action\ActionInput;
 use haddowg\JsonApiBundle\Action\ActionScope;
+use haddowg\JsonApiBundle\OpenApi\Metadata\OperationScopeOverrides;
 
 /**
  * Registers the annotated {@see \haddowg\JsonApiBundle\Action\ActionHandlerInterface}
@@ -139,6 +140,7 @@ final readonly class AsJsonApiAction
      * @param ?bool                              $destructive whether the action may delete or irreversibly change data; null leaves it undeclared
      * @param ?bool                              $idempotent  whether calling the action again with the same input has no further effect; null leaves it undeclared
      * @param array<string, mixed>               $extensions  OpenAPI vendor extensions (`x-…` keys) for the action's own operation
+     * @param list<string>|null                  $scopes      the OAuth scopes every method of the action needs, overriding the app's scope resolver; `[]` needs none, null asks the resolver
      */
     public function __construct(
         public string $type,
@@ -161,8 +163,12 @@ final readonly class AsJsonApiAction
         public ?bool $destructive = null,
         public ?bool $idempotent = null,
         public array $extensions = [],
+        public ?array $scopes = null,
     ) {
         VendorExtensions::assertValid('AsJsonApiAction', $extensions, [], []);
+        if ($scopes !== null) {
+            OperationScopeOverrides::assertList(\sprintf('AsJsonApiAction "%s" scopes', $path), $scopes);
+        }
 
         $this->accepts = AcceptedMediaTypes::normalise($accepts, $input, $path);
 

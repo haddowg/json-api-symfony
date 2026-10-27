@@ -111,7 +111,7 @@ return static function (ContainerConfigurator $container): void {
     // layered by the MetadataSource beneath each resource's
     // getDescription()/describeOperation() method hooks.
     $services->set(\haddowg\JsonApiBundle\OpenApi\Metadata\ResourceDescriptionRegistry::class)
-        ->args(['$descriptions' => [], '$extensions' => [], '$servers' => [], '$examples' => []]);
+        ->args(['$descriptions' => [], '$extensions' => [], '$servers' => [], '$examples' => [], '$scopes' => []]);
 
     // The bundle implementation of core's OpenAPI metadata contract: it builds a
     // ServerMetadataInterface (+ its TypeMetadataInterface family) per server from

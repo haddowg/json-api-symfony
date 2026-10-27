@@ -128,4 +128,21 @@ final class AsJsonApiActionTest extends TestCase
 
         new AsJsonApiAction(type: 'widgets', path: 'purge', extensions: ['workflows' => []]);
     }
+
+    #[Test]
+    public function scopesDefaultToAskingTheResolver(): void
+    {
+        self::assertNull((new AsJsonApiAction(type: 'albums', path: 'reissue'))->scopes);
+        self::assertSame([], (new AsJsonApiAction(type: 'albums', path: 'reissue', scopes: []))->scopes);
+    }
+
+    #[Test]
+    public function scopesMustBeStrings(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('AsJsonApiAction "reissue" scopes must list scopes as non-empty strings, got int.');
+
+        // @phpstan-ignore argument.type
+        new AsJsonApiAction(type: 'albums', path: 'reissue', scopes: [1]);
+    }
 }

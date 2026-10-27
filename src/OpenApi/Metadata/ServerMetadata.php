@@ -12,6 +12,7 @@ use haddowg\JsonApi\OpenApi\Metadata\AtomicOperationsMetadataInterface;
 use haddowg\JsonApi\OpenApi\Metadata\ContributesErrorCodes;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresExampleGeneration;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresLinkObjects;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationScopeTable;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresReadOnlyAttributeRejection;
 use haddowg\JsonApi\OpenApi\Metadata\ServerMetadataInterface;
 use haddowg\JsonApi\OpenApi\Metadata\TypeMetadataInterface;
@@ -19,6 +20,7 @@ use haddowg\JsonApi\OpenApi\SecurityRequirement;
 use haddowg\JsonApi\OpenApi\SecurityScheme;
 use haddowg\JsonApi\OpenApi\Server;
 use haddowg\JsonApi\OpenApi\Tag;
+use haddowg\JsonApi\Scope\ScopeTable;
 
 /**
  * One server's worth of OpenAPI metadata, assembled by the {@see MetadataSource}
@@ -42,8 +44,12 @@ use haddowg\JsonApi\OpenApi\Tag;
  * And core's {@see DeclaresExampleGeneration}, carrying the server's
  * `openapi_examples` setting (`json_api.openapi.examples` unless a named server sets
  * its own).
+ *
+ * And core's {@see DeclaresOperationScopeTable}, handing the projection the same scope
+ * table enforcement checks, read from the {@see \haddowg\JsonApiBundle\Scope\ScopeTableProvider}
+ * only when the projection asks for it.
  */
-final readonly class ServerMetadata implements ContributesErrorCodes, DeclaresLinkObjects, DeclaresReadOnlyAttributeRejection, DeclaresExampleGeneration
+final readonly class ServerMetadata implements ContributesErrorCodes, DeclaresLinkObjects, DeclaresReadOnlyAttributeRejection, DeclaresExampleGeneration, DeclaresOperationScopeTable
 {
     /**
      * @param list<Server>                      $servers
@@ -53,6 +59,8 @@ final readonly class ServerMetadata implements ContributesErrorCodes, DeclaresLi
      * @param list<TypeMetadataInterface>       $types
      * @param list<string>                      $profiles
      * @param list<ErrorCatalogSourceInterface> $errorSources
+     * @param (\Closure(): ScopeTable)|null      $scopeTable   reads the server's scope table when the projection asks for it; null uses no scopes
+     * @param array<string, string>             $scopeCatalog every scope the app defines, with its description
      */
     public function __construct(
         private string $title,
@@ -74,7 +82,25 @@ final readonly class ServerMetadata implements ContributesErrorCodes, DeclaresLi
         private ?string $documentUrl = null,
         private bool $rejectsReadOnlyAttributes = false,
         private bool $generatesExamples = true,
+        private ?\Closure $scopeTable = null,
+        private string $scopeScheme = 'oauth2',
+        private array $scopeCatalog = [],
     ) {}
+
+    public function scopeTable(): ScopeTable
+    {
+        return $this->scopeTable !== null ? ($this->scopeTable)() : new ScopeTable();
+    }
+
+    public function scopeScheme(): string
+    {
+        return $this->scopeScheme;
+    }
+
+    public function scopeCatalog(): array
+    {
+        return $this->scopeCatalog;
+    }
 
     public function generatesExamples(): bool
     {

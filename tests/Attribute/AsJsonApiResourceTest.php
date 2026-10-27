@@ -200,4 +200,48 @@ final class AsJsonApiResourceTest extends TestCase
 
         new AsJsonApiResource(operationExamples: [Operation::Create->name => false]);
     }
+
+    #[Test]
+    public function operationScopesAreKeyedLikeOperationExamples(): void
+    {
+        $attribute = new AsJsonApiResource(operationScopes: ['delete' => ['articles:admin'], 'fetchRelated.author' => []]);
+
+        self::assertSame(['delete' => ['articles:admin'], 'fetchRelated.author' => []], $attribute->operationScopes);
+    }
+
+    #[Test]
+    public function aReadScopeMayBeDeclaredForATypeThatDoesNotExposeTheRead(): void
+    {
+        $attribute = new AsJsonApiResource(operations: [Operation::Create], operationScopes: ['fetchOne' => ['articles:read'], 'fetchCollection' => ['articles:read']]);
+
+        self::assertSame(['articles:read'], $attribute->operationScopes['fetchOne'] ?? null);
+    }
+
+    #[Test]
+    public function aWriteScopeForAnOperationTheTypeDoesNotExposeIsRejected(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('operationScopes["update"] targets an operation this type does not expose');
+
+        new AsJsonApiResource(readOnly: true, operationScopes: ['update' => ['articles:write']]);
+    }
+
+    #[Test]
+    public function anOperationScopeKeyThatIsNotAnOperationNameIsRejected(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('AsJsonApiResource operationScopes has an unknown operation key "Delete"');
+
+        new AsJsonApiResource(operationScopes: ['Delete' => ['articles:admin']]);
+    }
+
+    #[Test]
+    public function operationScopesMustBeAListOfStrings(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('AsJsonApiResource operationScopes["delete"] must be a list of scopes, got string.');
+
+        // @phpstan-ignore argument.type
+        new AsJsonApiResource(operationScopes: ['delete' => 'articles:admin']);
+    }
 }

@@ -48,6 +48,7 @@ final readonly class ActionDescriptor
      * @param list<array{mediaType: string, input: string, schema: array<string, mixed>|string|null, binary: bool}> $accepts the accepted request media types (see {@see AcceptedMediaTypes}); empty keeps the input mode's default
      * @param array{request: mixed, responses: array<int|string, mixed>}|false|null $example the OpenAPI example override (null keeps the generated example)
      * @param array<string, mixed>                                      $extensions the action's own OpenAPI vendor extensions
+     * @param list<string>|null                                         $scopes   the OAuth scopes the action needs, overriding the scope resolver; null asks it
      */
     public function __construct(
         public string $type,
@@ -71,5 +72,6 @@ final readonly class ActionDescriptor
         public ?bool $destructive = null,
         public ?bool $idempotent = null,
         public array $extensions = [],
+        public ?array $scopes = null,
     ) {}
 }

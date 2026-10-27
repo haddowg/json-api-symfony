@@ -15,6 +15,7 @@ use haddowg\JsonApi\OpenApi\Metadata\DeclaresActionExample;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresActionExtensions;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresActionLink;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresActionSafety;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresActionScopes;
 use haddowg\JsonApi\OpenApi\Metadata\MetaResult;
 use haddowg\JsonApi\OpenApi\Metadata\NoContent;
 use haddowg\JsonApi\OpenApi\Metadata\OperationExample;
@@ -40,7 +41,7 @@ use haddowg\JsonApiBundle\Action\RawResults;
  * projector switches on to advertise a `200` resource document, a `200` meta document,
  * a `204`, a `202` async accept, or a `303` redirect (core ADR 0127).
  */
-final readonly class ActionMetadata implements DeclaresActionLink, DeclaresAcceptedBodies, DeclaresActionExample, DeclaresActionSafety, DeclaresActionExtensions
+final readonly class ActionMetadata implements DeclaresActionLink, DeclaresAcceptedBodies, DeclaresActionExample, DeclaresActionSafety, DeclaresActionExtensions, DeclaresActionScopes
 {
     public function __construct(private ActionDescriptor $descriptor) {}
 
@@ -160,5 +161,10 @@ final readonly class ActionMetadata implements DeclaresActionLink, DeclaresAccep
     public function extensions(): array
     {
         return $this->descriptor->extensions;
+    }
+
+    public function scopes(): ?array
+    {
+        return $this->descriptor->scopes;
     }
 }

@@ -14,6 +14,7 @@ use haddowg\JsonApi\OpenApi\Metadata\OperationResponses;
 use haddowg\JsonApi\OpenApi\Metadata\OperationType;
 use haddowg\JsonApi\OpenApi\Metadata\UpdateResponse;
 use haddowg\JsonApiBundle\OpenApi\Metadata\OperationExampleCodec;
+use haddowg\JsonApiBundle\OpenApi\Metadata\OperationScopeOverrides;
 use haddowg\JsonApiBundle\Operation\Operation;
 
 /**
@@ -127,6 +128,13 @@ use haddowg\JsonApiBundle\Operation\Operation;
  * the type does not expose, is a constructor `\LogicException`; core fails the
  * projection for a relation the type does not have.
  *
+ * `operationScopes` names the OAuth scopes an operation needs, overriding the app's
+ * scope resolver for it (core ADR 0181). It is keyed like `operationExamples`, and `[]`
+ * declares that the operation needs none. `fetchOne` and `fetchCollection` may be named
+ * even when the type does not expose them, since an `?include` reaching the type is
+ * checked against them. Any other key the type does not expose is a constructor
+ * `\LogicException`.
+ *
  * `security` (and the per-operation overrides) declare **declarative authorization**
  * for the type (bundle ADR 0043). Each accepts an **expression**, a **bool**, or null:
  *  - a Symfony Security
@@ -209,6 +217,7 @@ final readonly class AsJsonApiResource
      * @param FetchCollectionResponse|list<FetchCollectionResponse>|null           $fetchCollection the declared success responses for `GET /{type}` (null = the default `200`)
      * @param string|null                                                          $singular       the noun the generated OpenAPI prose uses for one resource, as words without an article (null = inflected from the type name)
      * @param array<string, OperationExample|false|null>                           $operationExamples per-operation OpenAPI example overrides, keyed by core's operation name (`create`, `fetchRelated.<relation>`, ...); `false` or `null` emits none
+     * @param array<string, list<string>>                                          $operationScopes   per-operation OAuth scope overrides, keyed like `operationExamples`; `[]` needs none
      */
     public function __construct(
         public ?string $type = null,
@@ -240,6 +249,7 @@ final readonly class AsJsonApiResource
         FetchCollectionResponse|array|null $fetchCollection = null,
         public ?string $singular = null,
         public array $operationExamples = [],
+        public array $operationScopes = [],
     ) {
         if ($singular !== null && \trim($singular) === '') {
             throw new \LogicException(
@@ -277,6 +287,7 @@ final readonly class AsJsonApiResource
 
         VendorExtensions::assertValid('AsJsonApiResource', $extensions, $operationExtensions, $exposed);
         OperationExampleCodec::assertValid('AsJsonApiResource', $operationExamples, $exposed);
+        OperationScopeOverrides::assertValid('AsJsonApiResource', $operationScopes, $exposed);
 
         $this->create = self::normalizeResponses($create, OperationType::Create, $allowed);
         $this->update = self::normalizeResponses($update, OperationType::Update, $allowed);
