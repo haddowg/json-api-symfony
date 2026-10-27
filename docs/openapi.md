@@ -380,11 +380,19 @@ namespace.
 php bin/console json-api:openapi:export
 php bin/console json-api:openapi:export --server=admin --format=yaml --output=openapi.yaml
 php bin/console json-api:openapi:export --strict > openapi.json   # fail on a missing example or undeclared scope
+php bin/console json-api:openapi:export --compact --output=openapi.min.json   # one line, no indentation
 
 # Standalone per-type JSON Schema 2020-12 documents:
 php bin/console json-api:json-schema:export --type=articles            # one type → stdout
 php bin/console json-api:json-schema:export --output=build/schemas/    # every type → directory
+php bin/console json-api:json-schema:export --output=build/schemas/ --compact
 ```
+
+Both commands pretty-print JSON by default. `--compact` writes each document on a single
+line with the same encoding otherwise: slashes and unicode stay unescaped, empty objects
+stay `{}`, and the trailing newline is there exactly when the pretty form has one. It works
+with stdout and `--output`. YAML has no compact form, so the OpenAPI export rejects
+`--compact` with `--format=yaml` and exits with status 2.
 
 The standalone JSON Schemas are projected by the **same** core projector the OpenAPI
 document uses, so a standalone `<type>.json` and the in-document `<Type>Resource`

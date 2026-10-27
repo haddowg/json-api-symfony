@@ -23,6 +23,8 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  * type to `--output=DIR` (one `<type>.json` per type). The schema is the **same**
  * core {@see \haddowg\JsonApi\OpenApi\SchemaProjector} projection the OpenAPI document
  * uses, so the standalone artifact and the in-document component agree.
+ *
+ * `--compact` writes each document on one line, with the same encoding as the pretty default.
  */
 #[AsCommand(
     name: 'json-api:json-schema:export',
@@ -40,7 +42,8 @@ final class JsonSchemaExportCommand extends Command
         $this
             ->addOption('server', null, InputOption::VALUE_REQUIRED, 'The JSON:API server name to export.', ServerProvider::DEFAULT_SERVER)
             ->addOption('type', null, InputOption::VALUE_REQUIRED, 'Export only this JSON:API type (default: every type).')
-            ->addOption('output', 'o', InputOption::VALUE_REQUIRED, 'Write to this file (single type) or directory (all types) instead of stdout.');
+            ->addOption('output', 'o', InputOption::VALUE_REQUIRED, 'Write to this file (single type) or directory (all types) instead of stdout.')
+            ->addOption('compact', null, InputOption::VALUE_NONE, 'Write the JSON on one line instead of pretty-printing it.');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -53,11 +56,12 @@ final class JsonSchemaExportCommand extends Command
         $type = \is_string($type) ? $type : null;
         $outputPath = $input->getOption('output');
         $outputPath = \is_string($outputPath) ? $outputPath : null;
+        $compact = $input->getOption('compact') === true;
 
         try {
             return $type !== null
-                ? $this->exportOne($io, $output, $server, $type, $outputPath)
-                : $this->exportAll($io, $output, $server, $outputPath);
+                ? $this->exportOne($io, $output, $server, $type, $outputPath, $compact)
+                : $this->exportAll($io, $output, $server, $outputPath, $compact);
         } catch (\Throwable $e) {
             $io->error(\sprintf('Could not export JSON Schema for server "%s": %s', $server, $e->getMessage()));
 
@@ -65,9 +69,9 @@ final class JsonSchemaExportCommand extends Command
         }
     }
 
-    private function exportOne(SymfonyStyle $io, OutputInterface $output, string $server, string $type, ?string $outputPath): int
+    private function exportOne(SymfonyStyle $io, OutputInterface $output, string $server, string $type, ?string $outputPath, bool $compact): int
     {
-        $json = $this->encode($this->schemas->forType($type, $server));
+        $json = $this->encode($this->schemas->forType($type, $server), $compact);
 
         if ($outputPath === null) {
             $output->write($json . "\n");
@@ -86,14 +90,14 @@ final class JsonSchemaExportCommand extends Command
         return Command::SUCCESS;
     }
 
-    private function exportAll(SymfonyStyle $io, OutputInterface $output, string $server, ?string $outputPath): int
+    private function exportAll(SymfonyStyle $io, OutputInterface $output, string $server, ?string $outputPath, bool $compact): int
     {
         $documents = $this->schemas->forServer($server);
 
         if ($outputPath === null) {
             // No directory: emit a single JSON object keyed by type so stdout stays
             // one well-formed document.
-            $output->write($this->encode((object) $documents) . "\n");
+            $output->write($this->encode((object) $documents, $compact) . "\n");
 
             return Command::SUCCESS;
         }
@@ -108,7 +112,7 @@ final class JsonSchemaExportCommand extends Command
             // Reuse the artifact store's path-segment sanitiser so a type carrying a
             // separator (or any non-`[A-Za-z0-9._-]`) can't escape the output directory.
             $file = \rtrim($outputPath, '/') . '/' . ArtifactStore::sanitizeSegment((string) $type) . '.json';
-            if (\file_put_contents($file, $this->encode($document)) === false) {
+            if (\file_put_contents($file, $this->encode($document, $compact)) === false) {
                 $io->error(\sprintf('Could not write to "%s".', $file));
 
                 return Command::FAILURE;
@@ -120,8 +124,10 @@ final class JsonSchemaExportCommand extends Command
         return Command::SUCCESS;
     }
 
-    private function encode(\stdClass $document): string
+    private function encode(\stdClass $document, bool $compact): string
     {
-        return (string) \json_encode($document, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE | \JSON_PRETTY_PRINT);
+        $flags = \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE;
+
+        return (string) \json_encode($document, $compact ? $flags : $flags | \JSON_PRETTY_PRINT);
     }
 }
