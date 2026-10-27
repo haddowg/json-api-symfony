@@ -1,5 +1,7 @@
 # Expose a custom action as a security-aware resource link (`asLink`)
 
+> Update: the link's URL is no longer generated through the router. [ADR 0158](0158-action-links-share-the-servers-link-base.md) builds it on the server's link base.
+
 A custom `#[AsJsonApiAction]` can set `asLink: true` to be published as a `links` member
 (keyed by the action's `path`) on every rendered resource of its mount type, so a client
 discovers the action straight from the resource it acts on. We render it through core's

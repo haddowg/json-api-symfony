@@ -187,6 +187,41 @@ abstract class DescribedLinksConformanceTestCase extends JsonApiFunctionalTestCa
     }
 
     #[Test]
+    #[Group('spec:actions')]
+    public function anActionLinkUsesTheConfiguredBaseUriLikeTheSelfLink(): void
+    {
+        $this->bootEnvironment('configured');
+
+        $links = $this->dataOf($this->fetch('https://tenant.example/api/articles/1'))['links'] ?? null;
+
+        $base = DescribedLinksInMemoryTestKernel::CONFIGURED_BASE_URI;
+        self::assertSame($base . '/articles/1', self::at($links, 'self', 'href'));
+        self::assertSame($base . '/articles/1/-actions/publish', self::at($links, 'publish', 'href'));
+    }
+
+    #[Test]
+    #[Group('spec:actions')]
+    public function anActionLinkUsesTheRequestHostAndMountWhenTheBaseUriIsEmpty(): void
+    {
+        $links = $this->dataOf($this->fetch('https://tenant.example/api/articles/1'))['links'] ?? null;
+
+        self::assertSame('https://tenant.example/api/articles/1', self::at($links, 'self', 'href'));
+        self::assertSame('https://tenant.example/api/articles/1/-actions/publish', self::at($links, 'publish', 'href'));
+    }
+
+    #[Test]
+    #[Group('spec:actions')]
+    public function anActionLinkUsesTheRequestHostAloneWhenUnmounted(): void
+    {
+        $this->bootEnvironment('unmounted');
+
+        $links = $this->dataOf($this->fetch('https://tenant.example/articles/1'))['links'] ?? null;
+
+        self::assertSame('https://tenant.example/articles/1', self::at($links, 'self', 'href'));
+        self::assertSame('https://tenant.example/articles/1/-actions/publish', self::at($links, 'publish', 'href'));
+    }
+
+    #[Test]
     #[Group('spec:document-links')]
     public function linksRenderAsStringsWhenLinkObjectsAreTurnedOff(): void
     {

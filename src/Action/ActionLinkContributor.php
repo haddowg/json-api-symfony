@@ -12,7 +12,6 @@ use haddowg\JsonApi\Serializer\ResourceLinkContributorInterface;
 use haddowg\JsonApi\Serializer\UriTypeAwareInterface;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use Symfony\Component\ExpressionLanguage\Expression;
-use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 
 /**
@@ -38,11 +37,11 @@ use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
  * document never advertises an action behind a gate it cannot evaluate. The build
  * fails in that case anyway (bundle ADR 0130), so this is a fallback.
  *
- * The URL is generated through the framework's {@see UrlGeneratorInterface} for the
- * action's route, with the rendered object's id (resolved through the same serializer
- * the render uses) as the `{id}` parameter, as an absolute URL — so it matches the
- * request-host-absolute convention the by-convention `self` link follows, and core's
- * base-prefixing leaves an already-absolute href untouched.
+ * The href is the action route's path relative to the server, `/{uriType}/{id}/-actions/{path}`,
+ * and core prefixes it with the same base as the resource's `self` link: the configured
+ * `base_uri`, or the request origin plus the recorded mount when that is empty (bundle
+ * ADR 0121). Generating it through the router instead would base it on the request
+ * host and ignore a configured `base_uri`.
  *
  * Each link names the action's operation (its path under the type's URI segment and its
  * first declared method), so where the server has a `describedby` resolver the link
@@ -55,11 +54,10 @@ use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 final readonly class ActionLinkContributor implements ResourceLinkContributorInterface
 {
     /**
-     * @param array<string, array<string, list<array{path: string, routeName: string, security: ?string, methods?: list<string>}>>> $linksByServerType the `asLink` action link descriptors, keyed by server name then by mount JSON:API type
+     * @param array<string, array<string, list<array{path: string, security: ?string, methods?: list<string>}>>> $linksByServerType the `asLink` action link descriptors, keyed by server name then by mount JSON:API type
      */
     public function __construct(
         private ServerProvider $servers,
-        private UrlGeneratorInterface $urlGenerator,
         private ?AuthorizationCheckerInterface $authorizationChecker = null,
         private array $linksByServerType = [],
     ) {}
@@ -91,14 +89,8 @@ final readonly class ActionLinkContributor implements ResourceLinkContributorInt
                 continue;
             }
 
-            $url = $this->urlGenerator->generate(
-                $descriptor['routeName'],
-                ['id' => $id],
-                UrlGeneratorInterface::ABSOLUTE_URL,
-            );
-
             $links[$descriptor['path']] = new OperationLink(
-                $url,
+                '/' . $uriType . '/' . $id . '/-actions/' . $descriptor['path'],
                 OperationReference::action($uriType, $descriptor['path'], ActionScope::Resource, $descriptor['methods'][0] ?? 'POST'),
             );
         }

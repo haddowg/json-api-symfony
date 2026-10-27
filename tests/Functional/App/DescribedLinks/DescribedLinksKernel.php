@@ -17,16 +17,20 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
  * - `strings`: `link_objects: false`;
  * - `published`: `document_url` names an absolute document elsewhere;
  * - `unserved`: the expose gate is closed (the kernels boot without debug), so no
- *   document route exists and no `document_url` is set.
+ *   document route exists and no `document_url` is set;
+ * - `configured`: a configured `base_uri` that carries the `/api` mount;
+ * - `unmounted`: an empty `base_uri` with both imports at the root, no prefix.
  */
 trait DescribedLinksKernel
 {
     public const string PUBLISHED_URL = 'https://docs.example.test/openapi/{server}.json';
 
+    public const string CONFIGURED_BASE_URI = 'https://api.example.test/api';
+
     private function configureJsonApi(ContainerConfigurator $container): void
     {
         $config = [
-            'base_uri' => '',
+            'base_uri' => $this->environment === 'configured' ? self::CONFIGURED_BASE_URI : '',
             'version' => '1.1',
             'openapi' => ['expose_in_prod' => $this->environment !== 'unserved'],
             'atomic_operations' => ['enabled' => true],
@@ -45,7 +49,9 @@ trait DescribedLinksKernel
 
     private function importRoutes(RoutingConfigurator $routes): void
     {
-        $routes->import('default', JsonApiRouteLoader::ROUTE_TYPE)->prefix('/api');
-        $routes->import('.', OpenApiRouteLoader::ROUTE_TYPE)->prefix('/api');
+        $prefix = $this->environment === 'unmounted' ? '' : '/api';
+
+        $routes->import('default', JsonApiRouteLoader::ROUTE_TYPE)->prefix($prefix);
+        $routes->import('.', OpenApiRouteLoader::ROUTE_TYPE)->prefix($prefix);
     }
 }
