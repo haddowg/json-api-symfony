@@ -868,6 +868,13 @@ final class JsonApiBundle extends AbstractBundle
         $builder->registerForAutoconfiguration(DoctrineSortArmInterface::class)
             ->addTag(self::DOCTRINE_SORT_ARM_TAG);
 
+        // The app's OAuth scope services are found by the core interface each implements
+        // (ScopeServicesPass), so an app writes the class and nothing else.
+        foreach (\haddowg\JsonApiBundle\DependencyInjection\Compiler\ScopeServicesPass::INTERFACES as $interface => $suffix) {
+            $builder->registerForAutoconfiguration($interface)
+                ->addTag(\haddowg\JsonApiBundle\DependencyInjection\Compiler\ScopeServicesPass::TAG_PREFIX . $suffix);
+        }
+
         // Any app service implementing the exception-mapper seam is auto-tagged, so
         // it is consulted by the ExceptionListener (before the config map) for a
         // throwable that is not a core JsonApiExceptionInterface (bundle ADR 0073).
@@ -1110,6 +1117,7 @@ final class JsonApiBundle extends AbstractBundle
         $container->addCompilerPass(new ResponseHeadersPass());
         $container->addCompilerPass(new ResourceDescriptionPass());
         $container->addCompilerPass(new ErrorCatalogPass());
+        $container->addCompilerPass(new \haddowg\JsonApiBundle\DependencyInjection\Compiler\ScopeServicesPass());
     }
 
     /**
