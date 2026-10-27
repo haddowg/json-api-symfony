@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.1](https://github.com/haddowg/json-api-symfony/compare/v1.18.0...v1.18.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* build action links on the server's link base ([#249](https://github.com/haddowg/json-api-symfony/issues/249)) ([844aa10](https://github.com/haddowg/json-api-symfony/commit/844aa109547a9855153684c94a493303c93351ab))
+
 ## [1.18.0](https://github.com/haddowg/json-api-symfony/compare/v1.17.2...v1.18.0) (2026-10-27)
 
 
