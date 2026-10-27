@@ -156,17 +156,18 @@ return static function (ContainerConfigurator $container): void {
         ->arg('$validator', \Symfony\Component\DependencyInjection\Loader\Configurator\service(ResourceValidator::class)->nullOnInvalid())
         ->arg('$dispatcher', \Symfony\Component\DependencyInjection\Loader\Configurator\service('event_dispatcher')->nullOnInvalid());
 
-    // Exposes an #[AsJsonApiAction(asLink: true)] action as a security-aware `links`
-    // member on its mount type's resources (bundle ADR 0091): a single shared
+    // Exposes an #[AsJsonApiAction(asLink: true)] action, or one a resource links through
+    // a declared ActionLink, as a security-aware `links` member on its mount type's
+    // resources (bundle ADRs 0091 and 0159): a single shared
     // ResourceLinkContributor threaded onto EVERY server's memoized Server (in
     // registerServers), resolving the server per request from `_jsonapi_server` so each
-    // server contributes only its own asLink actions. The link map (server → type →
-    // action link descriptors) is filled by the ResourceLocatorPass; the authorization
+    // server contributes only its own actions. The action map (server → type →
+    // resource-scope action descriptors) is filled by the ResourceLocatorPass; the authorization
     // checker is optional (no firewall → a `security`-gated action's link is suppressed;
     // the ResourceSecurityPass fails the build before that can happen).
     $services->set(\haddowg\JsonApiBundle\Action\ActionLinkContributor::class)
         ->arg('$authorizationChecker', \Symfony\Component\DependencyInjection\Loader\Configurator\service('security.authorization_checker')->nullOnInvalid())
-        ->arg('$linksByServerType', []);
+        ->arg('$actionsByServerType', []);
 
     // Resolves a type's id encoder + route {id} pattern from its resource's Id
     // field (ADR 0038). The Doctrine provider/persister decode wire ids through it

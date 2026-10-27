@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\Action;
 use haddowg\JsonApi\OpenApi\Metadata\ActionScope;
 use haddowg\JsonApi\OpenApi\OperationReference;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Resource\Link\ActionLink;
 use haddowg\JsonApi\Schema\Link\OperationLink;
 use haddowg\JsonApi\Serializer\ResourceLinkContributorInterface;
 use haddowg\JsonApi\Serializer\UriTypeAwareInterface;
@@ -18,14 +19,15 @@ use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
  * Contributes a custom action's URL as an out-of-band `links` member on every
  * rendered resource of its mount type — core's
  * {@see ResourceLinkContributorInterface} seam — when the action declared
- * `asLink: true` on its {@see \haddowg\JsonApiBundle\Attribute\AsJsonApiAction}.
+ * `asLink: true` on its {@see \haddowg\JsonApiBundle\Attribute\AsJsonApiAction}, or
+ * when the type's resource declares an {@see ActionLink} for the action's path in its
+ * `links()` (bundle ADR 0159).
  *
  * It is **per server**: each declared server's memoized
  * {@see \haddowg\JsonApi\Server\Server} is threaded its own contributor (via
  * {@see \haddowg\JsonApi\Server\Server::withResourceLinkContributor()}), holding only
- * that server's `asLink` actions — so an action exposed on server A never leaks a
- * link onto server B's resources, and the route name resolves to that server's
- * namespaced route.
+ * that server's resource-scope actions — so an action exposed on server A never leaks a
+ * link onto server B's resources.
  *
  * It is **security-aware**: when an action declared a `security` expression, the link
  * is rendered only when the requester would pass that gate, evaluated through the
@@ -36,6 +38,10 @@ use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
  * authorization checker a `security`-gated action's link is suppressed, so the
  * document never advertises an action behind a gate it cannot evaluate. The build
  * fails in that case anyway (bundle ADR 0130), so this is a fallback.
+ *
+ * When security passes, a declared {@see ActionLink}'s `when()` condition decides,
+ * with the rendered object and the request. A declared action link wins over
+ * `asLink`, so its condition applies even when the action also sets `asLink`.
  *
  * The href is the action route's path relative to the server, `/{uriType}/{id}/-actions/{path}`,
  * and core prefixes it with the same base as the resource's `self` link: the configured
@@ -54,24 +60,40 @@ use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 final readonly class ActionLinkContributor implements ResourceLinkContributorInterface
 {
     /**
-     * @param array<string, array<string, list<array{path: string, security: ?string, methods?: list<string>}>>> $linksByServerType the `asLink` action link descriptors, keyed by server name then by mount JSON:API type
+     * @param array<string, array<string, list<array{path: string, security: ?string, methods?: list<string>, asLink?: bool}>>> $actionsByServerType the resource-scope actions that may render as a link, keyed by server name then by mount JSON:API type, in registration order
      */
     public function __construct(
         private ServerProvider $servers,
         private ?AuthorizationCheckerInterface $authorizationChecker = null,
-        private array $linksByServerType = [],
+        private array $actionsByServerType = [],
     ) {}
 
     public function linksFor(mixed $object, string $type, JsonApiRequestInterface $request): array
     {
         $server = $this->serverName($request);
 
-        $descriptors = $this->linksByServerType[$server][$type] ?? [];
+        $descriptors = $this->actionsByServerType[$server][$type] ?? [];
         if ($descriptors === []) {
             return [];
         }
 
-        $serializer = $this->servers->get($server)->serializerFor($type);
+        $jsonApiServer = $this->servers->get($server);
+        $declared = [];
+        if ($jsonApiServer->hasResourceFor($type)) {
+            foreach ($jsonApiServer->resourceFor($type)->allActionLinks() as $actionLink) {
+                $declared[$actionLink->path] = $actionLink;
+            }
+        }
+
+        $descriptors = \array_filter(
+            $descriptors,
+            static fn(array $descriptor): bool => isset($declared[$descriptor['path']]) || ($descriptor['asLink'] ?? true),
+        );
+        if ($descriptors === []) {
+            return [];
+        }
+
+        $serializer = $jsonApiServer->serializerFor($type);
         $id = $serializer->getId($object);
         if ($id === '') {
             // A not-yet-persisted resource (e.g. rendered mid-create) has no id to
@@ -86,6 +108,9 @@ final readonly class ActionLinkContributor implements ResourceLinkContributorInt
         $links = [];
         foreach ($descriptors as $descriptor) {
             if (!$this->isVisible($descriptor['security'], $object)) {
+                continue;
+            }
+            if (isset($declared[$descriptor['path']]) && !$declared[$descriptor['path']]->appliesTo($object, $request)) {
                 continue;
             }
 

@@ -396,6 +396,7 @@ final class MetadataSource
             declaredLinks: $resource?->allLinks() ?? [],
             operationScopes: $this->descriptions?->operationScopesFor($type, $serverName) ?? [],
             resourceClass: $resource !== null ? $resource::class : ($server->hasSerializerFor($type) ? $server->serializerFor($type)::class : null),
+            actionLinks: $resource?->allActionLinks() ?? [],
         );
     }
 

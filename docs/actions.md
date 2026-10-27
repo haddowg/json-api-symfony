@@ -478,7 +478,6 @@ use Symfony\Component\Clock\Clock;
     path: 'download',
     methods: ['GET'],
     responds: [new SeeOther(description: 'A short-lived link to the album as CSV.', mediaType: 'text/csv')],
-    asLink: true,
     readOnly: true,
 )]
 final class DownloadAlbum implements ActionHandlerInterface
@@ -515,8 +514,9 @@ document with the URL as its `location` link:
 }
 ```
 
-Anything else gets the `303` to the URL. That covers a browser following the album's
-`download` link, `curl`, a missing `Accept` and `*/*`. The `303` is there for the
+The album resource links the action while the album is released, through an
+[action link](#showing-an-action-link-only-in-some-states). Anything else gets the `303`
+to the URL. That covers a browser following the album's `download` link, `curl`, a missing `Accept` and `*/*`. The `303` is there for the
 browser. The document is there for a script, because `fetch()` can't read a `303`'s
 `Location`. An `Accept` that lists none of the action's types is still a `303`, never a
 `406`. Both shapes send `Cache-Control: no-store` and `Vary: Accept` unless the handler
@@ -656,6 +656,50 @@ included `articles` member too.
 > as the `security` gate, so link visibility and invocation always agree. An action
 > with a `security` expression and no firewall [fails the
 > build](authorization.md#enabling-the-layer).
+
+### Showing an action link only in some states
+
+`asLink` renders the link whenever the action's security passes. A link that belongs
+only to some states, such as completing an upload only while the file is pending,
+shouldn't move that state into `security`. The invocation gate would then answer an
+out-of-state call with a plain `403` instead of the handler's own error. Declare the link
+on the resource instead, with core's `ActionLink`, next to its
+[declared links](resources.md#declared-links):
+
+```php
+use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Resource\Link\ActionLink;
+
+final class AlbumResource extends AbstractResource
+{
+    public function links(): array
+    {
+        return [
+            ActionLink::for('download')
+                ->when(static fn(Album $album, JsonApiRequestInterface $request): bool => $album->status === AlbumStatus::Released->value)
+                ->describedAs('A short-lived link to the album as CSV, present while the album is released.'),
+        ];
+    }
+}
+```
+
+`ActionLink::for()` names a resource-scope action of the resource's own type. The bundle
+still builds the href, the method and the `describedby` from the action, on the server's
+link base. It checks the action's `security` first, then calls `when()` with the rendered
+object and the request, and renders the link only when both pass. `when()` is optional.
+
+Declaring an `ActionLink` implies the link, so the action needs no `asLink: true`. When it
+has one anyway, the `ActionLink`'s condition and description apply. `describedAs()`
+replaces the generic description of the link in `<Type>ResourceLinks`; the rest of the
+schema is unchanged and the condition isn't described.
+
+A resource served on several servers links the action on each of them, so each server
+must expose the action. These fail the build at `cache:warmup`, naming the resource class:
+
+- an `ActionLink` for a path that has no resource-scope action on the type, on a server
+  the resource is served on;
+- a declared link named like an `ActionLink`'s path;
+- two `ActionLink`s for one path.
 
 ## Lifecycle events
 
