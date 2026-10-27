@@ -408,10 +408,10 @@ final class ResourceLocatorPass implements CompilerPassInterface
         /** @var array<string, list<array{uriType: string, type: string, path: string, methods: list<string>, scope: string, name: string}>> $routeDescriptorsByServer */
         $routeDescriptorsByServer = [];
         // The asLink action link descriptors the ActionLinkContributor renders, keyed by
-        // server then by mount type: each is the link key (the action path), the route
-        // name the URL generates from, and the action's optional security expression
-        // (so the link renders only when the requester may invoke the action).
-        /** @var array<string, array<string, list<array{path: string, routeName: string, security: ?string, methods: list<string>}>>> $linksByServerType */
+        // server then by mount type: each is the link key (the action path) and the
+        // action's optional security expression (so the link renders only when the
+        // requester may invoke the action).
+        /** @var array<string, array<string, list<array{path: string, security: ?string, methods: list<string>}>>> $linksByServerType */
         $linksByServerType = [];
 
         foreach ($container->findTaggedServiceIds(JsonApiBundle::ACTION_TAG) as $id => $tags) {
@@ -588,12 +588,11 @@ final class ResourceLocatorPass implements CompilerPassInterface
 
                     // An asLink action contributes a security-aware link on every
                     // rendered resource of its mount type: record the link key (the
-                    // action path), the route name the URL generates from (mirroring the
-                    // JsonApiRouteLoader's naming exactly), and the security expression.
+                    // action path, which is also the URL's last segment) and the
+                    // security expression.
                     if ($asLink) {
                         $linksByServerType[$server][$type][] = [
                             'path' => $path,
-                            'routeName' => $this->actionRouteName($server, $type, $scope, $path, $name),
                             'security' => $security,
                             // The first method names the operation the link's
                             // describedby points at, as the OpenAPI projection does.
@@ -654,26 +653,6 @@ final class ResourceLocatorPass implements CompilerPassInterface
                 ), 0, $e);
             }
         }
-    }
-
-    /**
-     * The route name the {@see JsonApiRouteLoader} emits for an action, replicated here
-     * so the {@see ActionLinkContributor} generates the action's URL from the exact same
-     * route: the default server keeps the unprefixed `jsonapi.` namespace, a named
-     * server uses `jsonapi.{server}.`; an explicit `name` override wins, else the name
-     * is `{prefix}{type}.action.{scope-lowercased}.{path}`.
-     */
-    private function actionRouteName(string $server, string $type, ActionScope $scope, string $path, ?string $name): string
-    {
-        $namePrefix = $server === ServerProvider::DEFAULT_SERVER
-            ? 'jsonapi.'
-            : \sprintf('jsonapi.%s.', $server);
-
-        if ($name !== null && $name !== '') {
-            return $namePrefix . $name;
-        }
-
-        return \sprintf('%s%s.action.%s.%s', $namePrefix, $type, \strtolower($scope->name), $path);
     }
 
     /**

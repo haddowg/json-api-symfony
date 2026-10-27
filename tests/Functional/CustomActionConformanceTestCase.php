@@ -268,6 +268,19 @@ abstract class CustomActionConformanceTestCase extends JsonApiFunctionalTestCase
 
     #[Test]
     #[Group('spec:actions')]
+    public function anAsLinkActionUsesTheConfiguredBaseUriRatherThanTheRequestHost(): void
+    {
+        // The kernel configures `https://example.test`; the request arrives on
+        // localhost. The action link shares the self link's base.
+        $links = $this->linksOf($this->action('/actionWidgets/1', 'GET', null, ['HTTP_AUTHORIZATION' => 'Bearer admin']));
+
+        self::assertSame('https://example.test/actionWidgets/1', $this->href($links['self']));
+        self::assertSame('https://example.test/actionWidgets/1/-actions/pin', $this->href($links['pin']));
+        self::assertSame('https://example.test/actionWidgets/1/-actions/archive', $this->href($links['archive']));
+    }
+
+    #[Test]
+    #[Group('spec:actions')]
     public function aSecurityGatedAsLinkActionRendersOnlyForAnAdmittedRequester(): void
     {
         // The `archive` action declares asLink: true AND security: ROLE_ADMIN. The link

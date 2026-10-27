@@ -642,6 +642,10 @@ The link's `describedby` names the action's operation in the served OpenAPI docu
 using its first declared method, and the document lists the action under its name in
 the type's resource links (see [links and `describedby`](openapi.md#links-and-describedby)).
 
+The link's href sits on the same base as the resource's `self` link. That's the
+server's `base_uri` when one is configured, or the request host plus the prefix the
+routes are imported under when it's empty (see [`base_uri`](configuration.md)).
+
 The contribution applies to **every** rendered resource of the type, primary or
 included — so `GET /comments/1?include=article` carries the `publish` link on the
 included `articles` member too.

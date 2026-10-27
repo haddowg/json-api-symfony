@@ -219,7 +219,8 @@ final class CustomActionTest extends MusicCatalogKernelTestCase
         $download = $links['download'] ?? null;
         $href = \is_array($download) ? ($download['href'] ?? null) : $download;
         self::assertIsString($href);
-        self::assertStringEndsWith('/albums/1/-actions/download', $href);
+        // On the configured base_uri, like the album's own self link.
+        self::assertSame('https://music.example/albums/1/-actions/download', $href);
     }
 
     #[Test]
