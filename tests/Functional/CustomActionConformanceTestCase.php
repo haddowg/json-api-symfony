@@ -520,9 +520,9 @@ abstract class CustomActionConformanceTestCase extends JsonApiFunctionalTestCase
         self::assertIsArray($publish);
         self::assertArrayNotHasKey('x-safety', $publish);
 
-        // Safety is tier 15; the download action's location document raises it to 17.
+        // Safety is tier 15, but the shared links components raised the baseline to 18.
         $contract = self::at($document, 'info', 'x-generator', 'contract');
-        self::assertSame(17, $contract);
+        self::assertSame(18, $contract);
     }
 
     #[Test]
@@ -640,7 +640,7 @@ abstract class CustomActionConformanceTestCase extends JsonApiFunctionalTestCase
         self::assertSame('uri-reference', self::at($responses, '303', 'headers', 'Location', 'schema', 'format'));
         self::assertNotNull(self::at($responses, '200', 'headers', 'Cache-Control'));
         self::assertNotNull(self::at($document, 'components', 'schemas', 'LocationLink'));
-        self::assertSame(17, self::at($document, 'info', 'x-generator', 'contract'));
+        self::assertSame(18, self::at($document, 'info', 'x-generator', 'contract'));
 
         // A bare SeeOther projects the plain 303 only.
         $bare = self::at($document, 'paths', '/actionWidgets/-actions/elsewhere', 'get', 'responses');

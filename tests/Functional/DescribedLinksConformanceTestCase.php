@@ -169,20 +169,27 @@ abstract class DescribedLinksConformanceTestCase extends JsonApiFunctionalTestCa
     #[Group('spec:openapi')]
     public function theServedDocumentDescribesTheLinksTheResponsesCarry(): void
     {
-        $links = self::at($this->servedDocument(), 'components', 'schemas', 'ArticlesResourceLinks');
+        $schemas = self::at($this->servedDocument(), 'components', 'schemas');
+        self::assertIsArray($schemas);
+        $links = self::at($schemas, 'ArticlesResourceLinks');
         self::assertIsArray($links);
+        self::assertSame(['$ref' => '#/components/schemas/ResourceLinks'], self::at($links, 'allOf', 0));
 
-        $self = self::at($links, 'properties', 'self');
+        // The shared self link carries no example, so the reference is written plainly.
+        $self = self::at($schemas, 'ResourceLinks', 'properties', 'self');
         self::assertIsArray($self);
-        // The link carries an example, so the reference is wrapped in a single-entry allOf.
-        self::assertArrayNotHasKey('$ref', $self);
-        self::assertSame('#/components/schemas/RenderedLink', self::at($self, 'allOf', 0, '$ref'));
-        self::assertSame($this->pointer('/articles/{id}'), self::at($self, 'example', 'describedby'));
+        self::assertSame('#/components/schemas/RenderedLink', self::at($self, '$ref'));
+        self::assertArrayNotHasKey('allOf', $self);
+        self::assertArrayNotHasKey('example', $self);
 
-        // The asLink action is listed by name, described by its first method.
+        // The asLink action is listed by name, beside the shared members.
+        self::assertSame('#/components/schemas/RenderedLink', self::at($links, 'allOf', 1, 'properties', 'publish', '$ref'));
+        self::assertNull(self::at($links, 'allOf', 1, 'properties', 'self'));
+
+        // The one link example left in the components points at the fetch operation.
         self::assertSame(
-            $this->pointer('/articles/{id}/-actions/publish', 'patch'),
-            self::at($links, 'properties', 'publish', 'example', 'describedby'),
+            ['href' => '/api/articles/1', 'describedby' => $this->pointer('/articles/{id}')],
+            self::at($schemas, 'LinkObject', 'example'),
         );
     }
 
@@ -239,9 +246,13 @@ abstract class DescribedLinksConformanceTestCase extends JsonApiFunctionalTestCa
         self::assertSame($this->pointer('/articles/{id}'), self::at($document, 'links', 'describedby'));
 
         // And the document describes strings, not link objects.
-        $self = self::at($this->servedDocument(), 'components', 'schemas', 'ArticlesResourceLinks', 'properties', 'self');
-        self::assertIsArray($self);
-        self::assertSame('#/components/schemas/LinkObject', self::at($self, 'allOf', 0, '$ref'));
+        $schemas = self::at($this->servedDocument(), 'components', 'schemas');
+        self::assertIsArray($schemas);
+        self::assertNull(self::at($schemas, 'RenderedLink'));
+        self::assertSame('#/components/schemas/LinkObject', self::at($schemas, 'ResourceLinks', 'properties', 'self', '$ref'));
+        self::assertSame('#/components/schemas/LinkObject', self::at($schemas, 'ArticlesResourceLinks', 'allOf', 1, 'properties', 'publish', '$ref'));
+        // Nor can the link example carry a describedby.
+        self::assertSame('/api/articles/1', self::at($schemas, 'LinkObject', 'example'));
     }
 
     #[Test]

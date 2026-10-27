@@ -257,10 +257,15 @@ final class CustomActionTest extends MusicCatalogKernelTestCase
         $factory = static::getContainer()->get(DocumentFactory::class);
         self::assertInstanceOf(DocumentFactory::class, $factory);
         $document = $factory->forServer('admin')->toArray();
-        $properties = self::at($document, 'components', 'schemas', 'AlbumsResourceLinks', 'properties');
+        $properties = self::at($document, 'components', 'schemas', 'AlbumsResourceLinks', 'allOf', '1', 'properties');
         self::assertIsArray($properties);
+        self::assertArrayHasKey('store', $properties);
         self::assertArrayNotHasKey('download', $properties);
         self::assertNull(self::at($document, 'paths', '/albums/{id}/-actions/download'));
+        $example = self::at($document, 'paths', '/albums/{id}', 'get', 'responses', '200', 'content', 'application/vnd.api+json', 'example', 'data', 'links');
+        self::assertIsArray($example);
+        self::assertArrayHasKey('store', $example);
+        self::assertArrayNotHasKey('download', $example);
     }
 
     #[Test]
@@ -271,9 +276,15 @@ final class CustomActionTest extends MusicCatalogKernelTestCase
         self::assertInstanceOf(DocumentFactory::class, $factory);
         $document = $factory->forServer()->toArray();
 
-        $description = self::at($document, 'components', 'schemas', 'AlbumsResourceLinks', 'properties', 'download', 'description');
-        self::assertIsString($description);
-        self::assertStringStartsWith('A short-lived link to the album as CSV, present while the album is released.', $description);
+        $download = self::at($document, 'components', 'schemas', 'AlbumsResourceLinks', 'allOf', '1', 'properties', 'download');
+        self::assertSame('#/components/schemas/RenderedLink', self::at($download, '$ref'));
+        self::assertSame('A short-lived link to the album as CSV, present while the album is released.', self::at($download, 'description'));
+
+        // The operation example shows the link the action builds.
+        self::assertSame(
+            ['href' => 'https://music.example/albums/1/-actions/download', 'describedby' => '/docs.json#/paths/~1albums~1%7Bid%7D~1-actions~1download/get'],
+            self::at($document, 'paths', '/albums/{id}', 'get', 'responses', '200', 'content', 'application/vnd.api+json', 'example', 'data', 'links', 'download'),
+        );
     }
 
     #[Test]
@@ -307,9 +318,8 @@ final class CustomActionTest extends MusicCatalogKernelTestCase
             self::assertIsArray(self::at($document, 'paths', $path, 'post'), $path);
             self::assertNull(self::at($document, 'paths', $path, 'post', 'x-safety'), $path);
         }
-        // The safety tier is 15, the scoped writes raise the document to 16, and the
-        // download action's location document to 17.
-        self::assertSame(17, self::at($document, 'info', 'x-generator', 'contract'));
+        // The safety tier is 15, but the shared links components raised the baseline to 18.
+        self::assertSame(18, self::at($document, 'info', 'x-generator', 'contract'));
     }
 
     private static function at(mixed $value, string ...$keys): mixed

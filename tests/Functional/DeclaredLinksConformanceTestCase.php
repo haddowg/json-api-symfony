@@ -91,14 +91,17 @@ abstract class DeclaredLinksConformanceTestCase extends JsonApiFunctionalTestCas
     public function theResourceLinksSchemaNamesEachDeclaredLink(): void
     {
         $document = $this->openApi();
-        $links = $this->nested($document, 'components', 'schemas', 'VenuesResourceLinks', 'properties');
+        $schema = $this->nested($document, 'components', 'schemas', 'VenuesResourceLinks');
+        self::assertSame(['$ref' => '#/components/schemas/ResourceLinks'], $this->nested($schema, 'allOf', '0'));
+        self::assertArrayHasKey('self', $this->nested($document, 'components', 'schemas', 'ResourceLinks', 'properties'));
+        $links = $this->nested($schema, 'allOf', '1', 'properties');
 
-        self::assertSame(['self', 'map', 'website', 'tickets'], \array_keys($links));
+        self::assertSame(['map', 'website', 'tickets'], \array_keys($links));
         $map = $this->nested($links, 'map');
         self::assertSame(['href', 'title', 'meta'], $map['required'] ?? null);
         self::assertSame('date-time', $this->nested($map, 'properties', 'meta', 'properties', 'openedAt')['format'] ?? null);
 
-        self::assertSame(14, $this->nested($document, 'info', 'x-generator')['contract'] ?? null);
+        self::assertSame(18, $this->nested($document, 'info', 'x-generator')['contract'] ?? null);
     }
 
     /**
