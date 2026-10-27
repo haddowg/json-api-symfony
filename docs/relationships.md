@@ -1141,6 +1141,12 @@ while there is one type, so the Doctrine provider serves a single-type `MorphToM
 without a custom provider
 ([ADR 0156](adr/0156-a-morph-relation-is-polymorphic-at-runtime-whatever-its-type-count.md)).
 
+The documented `include` enum follows the same rule. It lists `writer` but no path
+through it, so `writer.agency` is not in the parent's enum and `GET /{type}/{id}/writer`
+documents no `include` parameter, as for a relation over several types. A request may
+still send those includes. While there is one type the server knows the vocabulary, so
+`?include=writer.agency` and `GET /{type}/{id}/writer?include=agency` still work.
+
 ### Polymorphic to-one (`MorphTo`)
 
 [`FavoriteResource`](../examples/music-catalog-symfony/src/Resource/FavoriteResource.php)
