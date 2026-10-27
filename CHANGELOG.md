@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.20.1](https://github.com/haddowg/json-api-symfony/compare/v1.20.0...v1.20.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* declare the atomic ext on an error only when the request named it ([#258](https://github.com/haddowg/json-api-symfony/issues/258)) ([e3bd1b3](https://github.com/haddowg/json-api-symfony/commit/e3bd1b38e2fcac66aa375a4651292ae2bc989629))
+
 ## [1.20.0](https://github.com/haddowg/json-api-symfony/compare/v1.19.1...v1.20.0) (2026-10-27)
 
 
