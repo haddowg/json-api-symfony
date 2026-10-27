@@ -66,10 +66,11 @@ use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
  *    documentation-only `true`/`false` need nothing.
  *  - **A resource's action links must name an action it has.** An
  *    {@see \haddowg\JsonApi\Resource\Link\ActionLink} in `links()` links a
- *    resource-scope custom action of the type on this server; one naming a path no such
- *    action has would never render, so it fails here, naming the resource class
- *    (bundle ADR 0159). Building the links also surfaces core's own declaration errors:
- *    two action links for one path, or a declared link named like an action link.
+ *    resource-scope custom action of the type. A server without that action leaves the
+ *    link out, but a path no server serving the type has would never render, so it fails
+ *    here, naming the resource class (bundle ADR 0159). Building the links also surfaces
+ *    core's own declaration errors: two action links for one path, or a declared link
+ *    named like an action link.
  *
  * Gating is on the per-type operation allow-list, so an embedded-only standalone
  * serializer (no operations) and a relationship-only target (served through its
@@ -196,8 +197,9 @@ final class ServableResourceWarmer implements CacheWarmerInterface
 
     /**
      * Builds the resource's links, so a duplicate or clashing declaration fails here, and
-     * checks each declared action link names a resource-scope action of `$type` on
-     * `$serverName`.
+     * checks each declared action link names a resource-scope action of `$type` on some
+     * server that serves the type. A server without the action leaves the link out, so
+     * only a path no server has fails.
      */
     private function guardActionLinks(string $serverName, string $type): void
     {
@@ -209,18 +211,20 @@ final class ServableResourceWarmer implements CacheWarmerInterface
         $resource = $server->resourceFor($type);
         $resource->allLinks();
         foreach ($resource->allActionLinks() as $link) {
-            if ($this->actions?->descriptorFor($serverName, $type, ActionScope::Resource, $link->path) !== null) {
-                continue;
+            foreach ($this->serverNames as $candidate) {
+                if (isset($this->descriptors->forServer($candidate)[$type])
+                    && $this->actions?->descriptorFor($candidate, $type, ActionScope::Resource, $link->path) !== null) {
+                    continue 2;
+                }
             }
 
             throw new \LogicException(\sprintf(
-                'The JSON:API resource %s declares an action link for "%s", but type "%s" has no resource-scope '
-                . 'action with that path on server "%s". Declare #[AsJsonApiAction(type: \'%s\', path: \'%s\')] '
-                . 'on that server, or remove the action link.',
+                'The JSON:API resource %s declares an action link for "%s", but no server serving type "%s" has a '
+                . 'resource-scope action with that path. Declare #[AsJsonApiAction(type: \'%s\', path: \'%s\')], '
+                . 'or remove the action link.',
                 $resource::class,
                 $link->path,
                 $type,
-                $serverName,
                 $type,
                 $link->path,
             ));

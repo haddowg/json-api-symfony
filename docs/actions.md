@@ -693,11 +693,12 @@ has one anyway, the `ActionLink`'s condition and description apply. `describedAs
 replaces the generic description of the link in `<Type>ResourceLinks`; the rest of the
 schema is unchanged and the condition isn't described.
 
-A resource served on several servers links the action on each of them, so each server
-must expose the action. These fail the build at `cache:warmup`, naming the resource class:
+A resource served on several servers may name an action only some of them expose. A
+server without the action neither renders the link nor lists it in its document. These
+fail the build at `cache:warmup`, naming the resource class:
 
-- an `ActionLink` for a path that has no resource-scope action on the type, on a server
-  the resource is served on;
+- an `ActionLink` for a path that no server serving the type has a resource-scope action
+  for, which is usually a typo;
 - a declared link named like an `ActionLink`'s path;
 - two `ActionLink`s for one path.
 

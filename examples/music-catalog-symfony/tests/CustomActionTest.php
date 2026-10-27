@@ -229,11 +229,6 @@ final class CustomActionTest extends MusicCatalogKernelTestCase
     #[Test]
     public function anAlbumLinksToItsDownloadOnlyWhileReleased(): void
     {
-        // The admin server links the download too, while the album is released.
-        $released = $this->dataOf($this->action('/admin/albums/1', 'GET'))['links'] ?? null;
-        self::assertIsArray($released);
-        self::assertArrayHasKey('download', $released);
-
         $entityManager = static::getContainer()->get('doctrine.orm.entity_manager');
         self::assertInstanceOf(EntityManagerInterface::class, $entityManager);
         $album = $entityManager->find(Album::class, 1);
@@ -246,6 +241,26 @@ final class CustomActionTest extends MusicCatalogKernelTestCase
         self::assertIsArray($withdrawn);
         self::assertArrayNotHasKey('download', $withdrawn);
         self::assertArrayHasKey('self', $withdrawn);
+    }
+
+    #[Test]
+    public function theAdminServerHasNoDownloadActionSoItsAlbumsCarryNoDownloadLink(): void
+    {
+        // The album resource declares the link on every server, but only the default server
+        // exposes the action, so the admin server leaves the link out of the resource and
+        // its document.
+        $links = $this->dataOf($this->action('/admin/albums/1', 'GET'))['links'] ?? null;
+        self::assertIsArray($links);
+        self::assertArrayNotHasKey('download', $links);
+        self::assertArrayHasKey('store', $links);
+
+        $factory = static::getContainer()->get(DocumentFactory::class);
+        self::assertInstanceOf(DocumentFactory::class, $factory);
+        $document = $factory->forServer('admin')->toArray();
+        $properties = self::at($document, 'components', 'schemas', 'AlbumsResourceLinks', 'properties');
+        self::assertIsArray($properties);
+        self::assertArrayNotHasKey('download', $properties);
+        self::assertNull(self::at($document, 'paths', '/albums/{id}/-actions/download'));
     }
 
     #[Test]

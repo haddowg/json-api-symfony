@@ -120,7 +120,7 @@ abstract class ActionLinksConformanceTestCase extends JsonApiFunctionalTestCase
     public function anActionLinkNamingNoActionFailsTheBuild(): void
     {
         $this->expectException(\LogicException::class);
-        $this->expectExceptionMessageMatches('/resource .*ActionLinkArticleResource declares an action link for "retract", but type "articles" has no resource-scope action with that path on server "default"/');
+        $this->expectExceptionMessageMatches('/resource .*ActionLinkArticleResource declares an action link for "retract", but no server serving type "articles" has a resource-scope action with that path/');
 
         $this->bootEnvironment('missing', cold: true);
     }
