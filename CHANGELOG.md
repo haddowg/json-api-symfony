@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.17.2](https://github.com/haddowg/json-api-symfony/compare/v1.17.1...v1.17.2) (2026-10-27)
+
+
+### Bug Fixes
+
+* list no include paths through a single-type morph relation ([#245](https://github.com/haddowg/json-api-symfony/issues/245)) ([b50ee62](https://github.com/haddowg/json-api-symfony/commit/b50ee624ecba94855e861e7f06550c8b3816f7ef))
+
 ## [1.17.1](https://github.com/haddowg/json-api-symfony/compare/v1.17.0...v1.17.1) (2026-10-27)
 
 
