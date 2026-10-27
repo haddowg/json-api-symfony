@@ -789,6 +789,37 @@ final class JsonApiBundle extends AbstractBundle
                 '$rows' => service(\haddowg\JsonApiBundle\Security\ReadableRows::class),
             ]);
 
+        // The operation catalogue (core ADR 0183): every operation a server exposes with
+        // the security rule and scopes guarding it, read from the declarations above.
+        // The scope checker compares with the same matcher enforcement uses.
+        $services->set(\haddowg\JsonApiBundle\Catalog\OperationSecuritySource::class)
+            ->args([
+                '$actions' => service(\haddowg\JsonApiBundle\Action\ActionRegistry::class),
+                '$security' => service(\haddowg\JsonApiBundle\Security\ResourceSecurityRegistry::class),
+            ]);
+        $services->alias(\haddowg\JsonApi\Catalog\OperationSecuritySourceInterface::class, \haddowg\JsonApiBundle\Catalog\OperationSecuritySource::class);
+        // Public, since an app reaches for them outside the request lifecycle.
+        $services->set(\haddowg\JsonApi\Catalog\OperationCatalog::class)
+            ->public()
+            ->factory([\haddowg\JsonApiBundle\Catalog\CatalogFactory::class, 'catalog'])
+            ->args([
+                service(\haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource::class),
+                service(\haddowg\JsonApi\Catalog\OperationSecuritySourceInterface::class),
+            ]);
+        $services->set(\haddowg\JsonApi\Scope\ScopeChecker::class)
+            ->public()
+            ->factory([\haddowg\JsonApiBundle\Catalog\CatalogFactory::class, 'checker'])
+            ->args([service(\haddowg\JsonApi\Scope\ScopeMatcherInterface::class)->nullOnInvalid()]);
+        if (\class_exists(\Symfony\Component\ExpressionLanguage\ExpressionLanguage::class)
+            && \interface_exists(\Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface::class)) {
+            $services->set(\haddowg\JsonApiBundle\Catalog\ExpressionSecurityEvaluator::class)
+                ->args([
+                    '$authorizationChecker' => service('security.authorization_checker')->nullOnInvalid(),
+                    '$tokenStorage' => service('security.token_storage')->nullOnInvalid(),
+                ]);
+            $services->alias(\haddowg\JsonApi\Catalog\SecurityEvaluatorInterface::class, \haddowg\JsonApiBundle\Catalog\ExpressionSecurityEvaluator::class)->public();
+        }
+
         // Decides whether a related row may be shown through another type, by the
         // related type's own read expression (bundle ADR 0140).
         $services->set(\haddowg\JsonApiBundle\Security\ReadableRows::class)
