@@ -31,7 +31,7 @@ use Psr\Container\ContainerInterface;
  *     input: string,
  *     inputType: string,
  *     outputType: string,
- *     responds: list<array{kind: string, type?: string, jobType?: string, raw?: array<string, mixed>}>,
+ *     responds: list<array{kind: string, type?: string, jobType?: string, raw?: array<string, mixed>, description?: string, mediaType?: string}>,
  *     security: ?string,
  *     handlerServiceId: string,
  *     server: string,

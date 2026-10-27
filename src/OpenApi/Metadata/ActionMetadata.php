@@ -82,7 +82,7 @@ final readonly class ActionMetadata implements DeclaresActionLink, DeclaresAccep
                 'meta' => new MetaResult(),
                 'nocontent' => new NoContent(),
                 'accepted' => new Accepted($entry['jobType'] ?? ''),
-                'seeother' => new SeeOther(),
+                'seeother' => new SeeOther($entry['description'] ?? null, $entry['mediaType'] ?? null),
                 'raw' => RawResults::fromArray($entry['raw'] ?? []),
                 default => throw new \LogicException(\sprintf(
                     'Unknown action response kind "%s" for action "%s" on type "%s".',

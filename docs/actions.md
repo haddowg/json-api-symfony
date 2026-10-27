@@ -298,7 +298,7 @@ never a raw HTTP response. The choices:
 | `MetaResponse` | a top-level `meta`-only JSON:API document | `200` |
 | `NoContentResponse` | empty body | `204` |
 | `AcceptedResponse` | an async accept — a job document + `Content-Location` / `Retry-After` | `202` |
-| `SeeOtherResponse` | an async-completion redirect — a `Location` header, no body | `303` |
+| `SeeOtherResponse` | a redirect, such as an async completion, with a `Location` header and no body; or a [URL the action hands out](#actions-that-answer-with-a-url) | `303`, or `200` with a location document |
 | `ErrorResponse` | a JSON:API error document | the error's status |
 
 Because the response flows through the existing [`ViewListener`](lifecycle.md),
@@ -321,6 +321,7 @@ matches. `responds` takes one response object or a **list** of them, from
 | `responds: [new NoContent()]` | a `204 No Content` |
 | `responds: [new Accepted('jobs')]` | a `202 Accepted` — the `jobs` type's document + `Content-Location` + `Retry-After` (an async accept) |
 | `responds: [new SeeOther()]` | a `303 See Other` — a `Location` header, no body (an async-completion redirect) |
+| `responds: [new SeeOther('A link to the export.', 'text/csv')]` | a `200` location document and a `303`; see [actions that answer with a URL](#actions-that-answer-with-a-url) |
 
 An action that can answer more than one way lists them — a poll endpoint that returns
 `202` while the work runs and `303` once it is done declares
@@ -460,6 +461,76 @@ did not negotiate is a `500`, and an error is always a JSON:API document, whatev
 status, and a `DescribesRawBody` schema class becomes a component named by its short
 class name.
 
+### Actions that answer with a URL
+
+A download usually isn't served by the API itself. The action hands out a short-lived
+link, such as a presigned storage URL. Declare `SeeOther` with a description and the
+media type the URL serves, `application/octet-stream` when you don't know it, and
+return the URL with its expiry:
+
+```php
+use haddowg\JsonApi\OpenApi\Metadata\SeeOther;
+use haddowg\JsonApi\Response\SeeOtherResponse;
+use Symfony\Component\Clock\Clock;
+
+#[AsJsonApiAction(
+    type: 'albums',
+    path: 'download',
+    methods: ['GET'],
+    responds: [new SeeOther(description: 'A short-lived link to the album as CSV.', mediaType: 'text/csv')],
+    asLink: true,
+    readOnly: true,
+)]
+final class DownloadAlbum implements ActionHandlerInterface
+{
+    public function handle(ActionContext $context): SeeOtherResponse
+    {
+        $album = $context->entity();
+        \assert($album instanceof Album);
+
+        return SeeOtherResponse::to(
+            'https://storage.example.com/albums/' . $album->id . '.csv?signature=example',
+            expiresAt: Clock::get()->now()->modify('+5 minutes'),
+        );
+    }
+}
+```
+
+The request's `Accept` header picks the shape. A request naming
+`application/vnd.api+json`, with nothing else it lists weighing more, gets a `200`
+document with the URL as its `location` link:
+
+```json
+{
+  "links": {
+    "self": "https://music.example/albums/1/-actions/download",
+    "location": {
+      "href": "https://storage.example.com/albums/1.csv?signature=example",
+      "type": "text/csv",
+      "meta": { "expiresAt": "2026-01-01T11:05:00+00:00" }
+    }
+  },
+  "meta": { "expiresAt": "2026-01-01T11:05:00+00:00" },
+  "jsonapi": { "version": "1.1" }
+}
+```
+
+Anything else gets the `303` to the URL. That covers a browser following the album's
+`download` link, `curl`, a missing `Accept` and `*/*`. The `303` is there for the
+browser. The document is there for a script, because `fetch()` can't read a `303`'s
+`Location`. An `Accept` that lists none of the action's types is still a `303`, never a
+`406`. Both shapes send `Cache-Control: no-store` and `Vary: Accept` unless the handler
+sets its own with `withHeader()`. Symfony appends `private` to that `Cache-Control`.
+Errors stay JSON:API documents. `withType()` overrides the declared media type for one
+response, and `$context->seeOther($url, $expiresAt)` is the same response.
+
+The media type is the opt-in. A bare `new SeeOther()`, or one with only a description,
+stays the plain `303` it always was. The OpenAPI document shows both responses. The
+`200` references the shared `LocationDocument` component, and the `303` documents
+`Location`. A document whose actions declare such a `SeeOther` carries contract 17.
+Core's [location responses](https://github.com/haddowg/json-api/blob/main/docs/responses.md#location-responses)
+describe the rendering in full.
+
 ### The `ActionContext`
 
 The handler is handed an `ActionContext` so it never has to thread the server. It
@@ -477,7 +548,7 @@ exposes both the resolved request state and pre-wired response factories:
 | `meta($array)` | a `MetaResponse` |
 | `noContent()` | a `NoContentResponse` (`204`) |
 | `accepted($url)` | an `AcceptedResponse` (`202`) — an async accept pointing at the poll URL (chain `->withRetryAfter()`) |
-| `seeOther($url)` | a `SeeOtherResponse` (`303`) — an async-completion redirect to the produced resource |
+| `seeOther($url, $expiresAt)` | a `SeeOtherResponse` (`303`): an async-completion redirect, or the URL a download action hands out, with an optional expiry |
 
 The `data()` / `meta()` / `noContent()` factories are the ergonomic path; reach for
 the raw response value objects directly only when you need to set a status or

@@ -19,7 +19,7 @@ namespace haddowg\JsonApiBundle\Server;
  * on the route loader. Descriptors flow as scalars (strings, bools, string lists)
  * because the compiled container cannot dump value objects.
  *
- * @phpstan-type RouteDescriptor array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string, raw?: array<string, mixed>}>>}
+ * @phpstan-type RouteDescriptor array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string, raw?: array<string, mixed>, description?: string, mediaType?: string}>>}
  */
 final class RouteDescriptorRegistry
 {

@@ -181,6 +181,64 @@ final class CustomActionTest extends MusicCatalogKernelTestCase
     }
 
     #[Test]
+    public function theDownloadAnswersAJsonApiClientWithTheLink(): void
+    {
+        $response = $this->action('/albums/1/-actions/download', 'GET', user: 'ada@example.com');
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertFalse($response->headers->has('Location'));
+        self::assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
+        self::assertStringContainsString('Accept', (string) $response->headers->get('Vary'));
+
+        $document = $this->decode($response);
+        self::assertSame([
+            'href' => 'https://storage.example.com/albums/1.csv?signature=example',
+            'type' => 'text/csv',
+            'meta' => ['expiresAt' => '2026-01-01T11:05:00+00:00'],
+        ], self::at($document, 'links', 'location'));
+        self::assertSame(['expiresAt' => '2026-01-01T11:05:00+00:00'], $document['meta'] ?? null);
+    }
+
+    #[Test]
+    public function theDownloadRedirectsABrowserToTheFile(): void
+    {
+        $response = $this->action('/albums/1/-actions/download', 'GET', user: 'ada@example.com', accept: 'text/html,application/xhtml+xml,*/*;q=0.8');
+
+        self::assertSame(303, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame('https://storage.example.com/albums/1.csv?signature=example', $response->headers->get('Location'));
+        self::assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
+        self::assertStringContainsString('Accept', (string) $response->headers->get('Vary'));
+    }
+
+    #[Test]
+    public function anAlbumLinksToItsDownload(): void
+    {
+        $links = $this->dataOf($this->action('/albums/1', 'GET', user: 'ada@example.com'))['links'] ?? null;
+        self::assertIsArray($links);
+
+        $download = $links['download'] ?? null;
+        $href = \is_array($download) ? ($download['href'] ?? null) : $download;
+        self::assertIsString($href);
+        self::assertStringEndsWith('/albums/1/-actions/download', $href);
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    public function theDownloadDocumentsBothResponses(): void
+    {
+        $factory = static::getContainer()->get(DocumentFactory::class);
+        self::assertInstanceOf(DocumentFactory::class, $factory);
+        $document = $factory->forServer()->toArray();
+
+        $operation = self::at($document, 'paths', '/albums/{id}/-actions/download', 'get');
+        self::assertSame(['readOnly' => true], self::at($operation, 'x-safety'));
+        self::assertSame('A short-lived link to the album as CSV.', self::at($operation, 'responses', '200', 'description'));
+        self::assertSame('A short-lived link to the album as CSV.', self::at($operation, 'responses', '303', 'description'));
+        self::assertSame('uri-reference', self::at($operation, 'responses', '303', 'headers', 'Location', 'schema', 'format'));
+        self::assertNotNull(self::at($operation, 'responses', '200', 'content', 'application/vnd.api+json', 'schema'));
+    }
+
+    #[Test]
     #[Group('spec:openapi')]
     public function eachActionDocumentsTheSafetyItDeclares(): void
     {
@@ -195,8 +253,9 @@ final class CustomActionTest extends MusicCatalogKernelTestCase
             self::assertIsArray(self::at($document, 'paths', $path, 'post'), $path);
             self::assertNull(self::at($document, 'paths', $path, 'post', 'x-safety'), $path);
         }
-        // The safety tier is 15; the scoped writes raise the document to 16.
-        self::assertSame(16, self::at($document, 'info', 'x-generator', 'contract'));
+        // The safety tier is 15, the scoped writes raise the document to 16, and the
+        // download action's location document to 17.
+        self::assertSame(17, self::at($document, 'info', 'x-generator', 'contract'));
     }
 
     private static function at(mixed $value, string ...$keys): mixed
