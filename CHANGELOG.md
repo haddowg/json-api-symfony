@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.0](https://github.com/haddowg/json-api-symfony/compare/v1.17.2...v1.18.0) (2026-10-27)
+
+
+### Features
+
+* let a custom action answer with a URL ([#247](https://github.com/haddowg/json-api-symfony/issues/247)) ([af4cd4d](https://github.com/haddowg/json-api-symfony/commit/af4cd4d5b2929c5c074fa3ee8f9cf290cc8bd1ba))
+
 ## [1.17.2](https://github.com/haddowg/json-api-symfony/compare/v1.17.1...v1.17.2) (2026-10-27)
 
 
