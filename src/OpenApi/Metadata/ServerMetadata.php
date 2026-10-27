@@ -12,6 +12,7 @@ use haddowg\JsonApi\OpenApi\Metadata\AtomicOperationsMetadataInterface;
 use haddowg\JsonApi\OpenApi\Metadata\ContributesErrorCodes;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresExampleGeneration;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresLinkObjects;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresMethodNotAllowed;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationScopeTable;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresReadOnlyAttributeRejection;
 use haddowg\JsonApi\OpenApi\Metadata\ServerMetadataInterface;
@@ -49,7 +50,7 @@ use haddowg\JsonApi\Scope\ScopeTable;
  * table enforcement checks, read from the {@see \haddowg\JsonApiBundle\Scope\ScopeTableProvider}
  * only when the projection asks for it.
  */
-final readonly class ServerMetadata implements ContributesErrorCodes, DeclaresLinkObjects, DeclaresReadOnlyAttributeRejection, DeclaresExampleGeneration, DeclaresOperationScopeTable
+final readonly class ServerMetadata implements ContributesErrorCodes, DeclaresLinkObjects, DeclaresReadOnlyAttributeRejection, DeclaresExampleGeneration, DeclaresOperationScopeTable, DeclaresMethodNotAllowed
 {
     /**
      * @param list<Server>                      $servers
@@ -110,6 +111,15 @@ final readonly class ServerMetadata implements ContributesErrorCodes, DeclaresLi
     public function rejectsReadOnlyAttributes(): bool
     {
         return $this->rejectsReadOnlyAttributes;
+    }
+
+    /**
+     * The exception listener renders a method the path does not accept as a JSON:API
+     * `405` on every server's paths (bundle ADR 0157).
+     */
+    public function rendersMethodNotAllowed(): bool
+    {
+        return true;
     }
 
     public function rendersLinkObjects(): bool

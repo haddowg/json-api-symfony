@@ -32,11 +32,15 @@ public function onKernelException(ExceptionEvent $event): void
     $request = $event->getRequest();
 
     if (!JsonApiRoute::matches($request)) {
+        // … unless the router refused the method on a JSON:API path, see below
         return;
     }
     // … resolve the server, map the throwable, render the error document
 }
 ```
+
+The one failure that reaches it with no matched route is a `405` on a JSON:API path,
+covered in [a method the path does not accept](#a-method-the-path-does-not-accept).
 
 When the marker is present, the listener resolves the request's server
 (`_jsonapi_server`, defaulting to the implicit `default` — see
@@ -153,6 +157,28 @@ exception. The declarative [authorization](authorization.md) layer throws
 Because they carry a code, their title can be localized in the `jsonapi_errors`
 translation domain like any other error's (see
 [localizing and overriding error copy](#localizing-and-overriding-error-copy)).
+
+### A method the path does not accept
+
+A `PATCH` to a read-only type, or a `POST` to a relationship on one, has no route to
+match: the bundle emits only the routes a type allows, so the router finds the path and
+throws a `405` before any route is matched. The request carries no marker, but the
+listener still owns the error. It asks the router which route each method in the `Allow`
+list reaches on that path, and when one of them is a JSON:API route it renders core's
+`MethodNotAllowed` under that route's server:
+
+```json
+{"errors": [{"status": "405", "code": "METHOD_NOT_ALLOWED", "title": "Method Not Allowed",
+  "detail": "The method PATCH is not allowed on this path, which accepts GET."}]}
+```
+
+The response carries the same `Allow` header the router computed. Like a firewall
+error, it is answered before content negotiation, so it is a JSON:API document whatever
+the `Accept` header asks for, and on the atomic endpoint it declares the atomic `ext`. A
+path whose routes are none of them JSON:API endpoints, such as a controller of your own
+under the same prefix, keeps Symfony's own `405`. The OpenAPI document catalogues
+`METHOD_NOT_ALLOWED` but lists no `405` response on any operation, since an operation is
+one method on one path.
 
 > Between arm 1 and arm 2, the listener consults the application-extensible
 > exception mappers (below). Arm 1 always runs first: a core
