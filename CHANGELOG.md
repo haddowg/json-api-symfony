@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.17.0](https://github.com/haddowg/json-api-symfony/compare/v1.16.0...v1.17.0) (2026-10-27)
+
+
+### Features
+
+* enforce OAuth scopes per operation and add an operation catalogue ([#241](https://github.com/haddowg/json-api-symfony/issues/241)) ([f463ccf](https://github.com/haddowg/json-api-symfony/commit/f463ccf2fcbfda2305ff2decb9e1012b20bc09e1))
+
 ## [1.16.0](https://github.com/haddowg/json-api-symfony/compare/v1.15.0...v1.16.0) (2026-10-26)
 
 
