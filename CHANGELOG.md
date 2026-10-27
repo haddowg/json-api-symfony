@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.0](https://github.com/haddowg/json-api-symfony/compare/v1.18.1...v1.19.0) (2026-10-27)
+
+
+### Features
+
+* render a resource's conditional action links ([#251](https://github.com/haddowg/json-api-symfony/issues/251)) ([8d3b3aa](https://github.com/haddowg/json-api-symfony/commit/8d3b3aa1ac51c073400ecbe38ace76d55df677a9))
+
 ## [1.18.1](https://github.com/haddowg/json-api-symfony/compare/v1.18.0...v1.18.1) (2026-10-27)
 
 
