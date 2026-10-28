@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.21.0](https://github.com/haddowg/json-api-symfony/compare/v1.20.1...v1.21.0) (2026-10-28)
+
+
+### Features
+
+* run Doctrine extensions on the include hydration query ([#260](https://github.com/haddowg/json-api-symfony/issues/260)) ([51dc778](https://github.com/haddowg/json-api-symfony/commit/51dc778e047317eb26040f5fda24b4d9109359bc))
+
 ## [1.20.1](https://github.com/haddowg/json-api-symfony/compare/v1.20.0...v1.20.1) (2026-10-27)
 
 
