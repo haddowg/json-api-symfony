@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Serializer;
 
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Resource\Field\MorphTo;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\SerializerResolverInterface;
 use haddowg\JsonApi\Schema\Relationship\RelationshipLinkage;
@@ -42,7 +43,9 @@ use Symfony\Contracts\Service\ResetInterface;
  * A to-one target the caller may not read through its own type's read gate is supplied
  * as none ({@see ReadableRows}, bundle ADR 0140), so it is missing from `data` and from
  * `included`. To-many linkage is never filtered here: a list holds what its query
- * returned. When nothing is refused it answers as it would without the check.
+ * returned. When nothing is refused it answers as it would without the check. A
+ * `MorphTo` declared with `identifiedBy()` is checked only when its target was loaded,
+ * since its linkage renders from the stored pair.
  */
 final class RequestScopedRelationshipLinkage implements ToOneRelationshipLinkageInterface, ResetInterface
 {
@@ -157,6 +160,12 @@ final class RequestScopedRelationshipLinkage implements ToOneRelationshipLinkage
 
         if (!$this->rows->guardsRows($relation, $serverName)) {
             return $linkage;
+        }
+
+        // An identified MorphTo's pair renders without its target, which is gated only
+        // once a read loads it (bundle ADR 0163).
+        if ($linkage === null && $relation instanceof MorphTo && $relation->storesIdentifiers()) {
+            return null;
         }
 
         $target = $linkage !== null ? $linkage->target : $relation->readValue($model, $request);

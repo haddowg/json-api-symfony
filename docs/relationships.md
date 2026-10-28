@@ -817,7 +817,9 @@ stored as a type column and an id column:
 
 ```php
 MorphTo::make('target', ['advertisers', 'agencies'])
-    ->extractUsing(fn(File $file): ?object => $this->targets->find($file->targetType, $file->targetId))
+    ->identifiedBy(static fn(mixed $file): ?array => $file instanceof File && $file->targetId !== null
+        ? [$file->targetType, $file->targetId]
+        : null)
     ->fillUsing(static function (File $file, ToOneRelationship $linkage): File {
         $file->targetType = $linkage->resourceIdentifier?->type;
         $file->targetId = $linkage->resourceIdentifier?->id;
@@ -1169,6 +1171,53 @@ the EntityManager, so the member comes back managed). The
 [`PolymorphicTest`](../examples/music-catalog-symfony/tests/PolymorphicTest.php)
 witnesses `GET /favorites/1/favoritable` → a `tracks` member, `/favorites/2/…` →
 an `albums` member, `/favorites/3/…` → an `artists` member.
+
+### A `MorphTo` stored as a type and id pair
+
+When the parent stores its target as two plain columns, declare `identifiedBy()` and the
+linkage renders straight from the pair, without loading the target. The pair is
+`[$type, $id]`, with `$type` one of the declared types and `$id` the stored key, or
+`null` for an empty relation:
+
+```php
+#[ORM\Entity]
+class Campaign
+{
+    #[ORM\Column(nullable: true)]
+    public ?string $targetType = null;
+
+    #[ORM\Column(nullable: true)]
+    public ?int $targetId = null;
+}
+
+MorphTo::make('target', ['advertisers', 'agencies'])
+    ->identifiedBy(static fn(mixed $campaign): ?array => $campaign instanceof Campaign && $campaign->targetId !== null
+        ? [$campaign->targetType, $campaign->targetId]
+        : null),
+```
+
+A page of campaigns then renders every `target` linkage from the one campaign query.
+`?include=target` loads the targets with one query per type through that type's
+provider, so the Doctrine provider runs the type's extensions, and a row its scope hides
+renders as `data: null` and stays out of `included`. A loaded row also goes through its
+type's read gate (`securityRead`), and a relation's own `security(read:)` replaces that
+gate as for any relation. Includes beneath the target, such as `target.region`, follow
+the usual walk. `GET /campaigns/{id}/target` loads the one target the same way and
+renders `data: null` when it is hidden or missing. `GET /campaigns/{id}/relationships/target`
+renders the pair.
+
+A linkage that isn't included is the stored pair as it is: nothing is loaded, so neither
+the target type's scope nor its read gate is consulted, and a pair pointing at a hidden
+or deleted row still renders. Include the relation when the scope must decide. A stored
+type the relation doesn't declare throws a `\LogicException`, which renders as a `500`.
+
+The targets still render through the serializer whose `getType()` claims them, so each
+declared type's resource discriminates by class, as for any `MorphTo`. A provider that
+loads the targets for you implements `FetchesByIdsInterface`
+(see [custom providers → loading many rows by id](custom-data-providers.md#loading-many-rows-by-id)).
+Writes still go through `fillUsing()`, shown below in
+[relations written by `fillUsing()`](#relations-written-by-fillusing)
+([ADR 0163](adr/0163-an-identified-morph-to-loads-its-targets-by-id-through-each-types-provider.md)).
 
 ### Polymorphic to-many (`MorphToMany`)
 

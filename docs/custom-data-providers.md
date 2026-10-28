@@ -375,6 +375,27 @@ The answer governs writes too: linkage naming a scoped type is checked through y
 (see [relationships → written linkage is scoped too](relationships.md#written-linkage-is-scoped-too)).
 Make `fetchOne()` apply the same scope as your related reads.
 
+### Loading many rows by id
+
+A `MorphTo` declared with `identifiedBy()` stores its target as a type and id pair, so
+an include or its related endpoint loads the targets by id
+(see [relationships → a `MorphTo` stored as a type and id pair](relationships.md#a-morphto-stored-as-a-type-and-id-pair)).
+The bundle asks each target type's provider once, through
+[`FetchesByIdsInterface`](../src/DataProvider/FetchesByIdsInterface.php):
+
+```php
+public function fetchByIds(string $type, array $ids, JsonApiRequestInterface $request): array
+{
+    return $this->agencies->findVisibleByIds($ids); // one WHERE id IN (...)
+}
+```
+
+The ids are wire ids, as `fetchOne()` takes them. Return the rows your scope admits, in
+any order, and leave out the ids no row holds. A provider that doesn't implement it is
+asked through `fetchOne()`, one id at a time. The Doctrine and in-memory providers
+implement it; the Doctrine one runs one `WHERE id IN (...)` with the type's extensions
+under `QueryPurpose::FetchRelatedCollection`.
+
 ## The in-memory provider as a worked example
 
 [`InMemoryDataProvider`](../src/DataProvider/InMemoryDataProvider.php),
