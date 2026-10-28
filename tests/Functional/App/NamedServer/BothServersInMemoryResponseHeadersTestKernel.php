@@ -18,7 +18,7 @@ use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigura
  * `cachedWidgets` and `plainWidgets` on the default server, `taggedWidgets` served by a
  * different class on each server, and an untagged action on two of them.
  */
-final class BothServersInMemoryResponseHeadersTestKernel extends DefaultResponseHeadersTestKernel
+class BothServersInMemoryResponseHeadersTestKernel extends DefaultResponseHeadersTestKernel
 {
     use ServesOnBothServers {
         configureContainer as private configureBothServers;

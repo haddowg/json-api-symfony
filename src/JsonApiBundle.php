@@ -289,36 +289,7 @@ final class JsonApiBundle extends AbstractBundle
                         ->end()
                     ->end()
                 ->end()
-                ->arrayNode('defaults')
-                    ->info('Global default response headers applied to a resource that declares none (bundle ADR 0054). A resource-level cacheHeaders / deprecation overrides (and merges with) these.')
-                    ->addDefaultsIfNotSet()
-                    ->children()
-                        ->arrayNode('cache_headers')
-                            ->info('Default HTTP cache directives for safe (GET) successful reads: max_age/s_maxage/public/private/no_cache/must_revalidate/vary. Applied only when a resource declares no cacheHeaders of its own.')
-                            ->children()
-                                ->integerNode('max_age')->defaultNull()->end()
-                                ->integerNode('s_maxage')->defaultNull()->end()
-                                ->booleanNode('public')->defaultNull()->end()
-                                ->booleanNode('private')->defaultNull()->end()
-                                ->booleanNode('no_cache')->defaultNull()->end()
-                                ->booleanNode('must_revalidate')->defaultNull()->end()
-                                ->arrayNode('vary')->scalarPrototype()->end()->end()
-                            ->end()
-                        ->end()
-                        ->scalarNode('deprecation')
-                            ->info('Default Deprecation header (IETF Deprecation-header draft): a bool (true => bare header) or a date string. Applied when a resource declares no deprecation.')
-                            ->defaultNull()
-                        ->end()
-                        ->scalarNode('sunset')
-                            ->info('Default RFC 8594 Sunset HTTP-date. Applied when a resource declares no sunset.')
-                            ->defaultNull()
-                        ->end()
-                        ->scalarNode('sunset_link')
-                            ->info('Default URI for the companion Link: <uri>; rel="sunset" (emitted only when a sunset is set).')
-                            ->defaultNull()
-                        ->end()
-                    ->end()
-                ->end()
+                ->append($this->responseHeaderDefaultsNode('Global default response headers for every server (bundle ADR 0054). A server\'s own defaults block layers over these, and a resource\'s own cacheHeaders / deprecation / sunset / sunsetLink layer over both, field by field.'))
                 ->arrayNode('servers')
                     ->info('Additional named servers; the top-level base_uri/version define the implicit `default` server. Each named server inherits the top-level value when its own is omitted (ADR 0034).')
                     ->useAttributeAsKey('name')
@@ -352,6 +323,7 @@ final class JsonApiBundle extends AbstractBundle
                                     ->thenInvalid('A server\'s openapi_examples must be true, false or null, got %s.')
                                 ->end()
                             ->end()
+                            ->append($this->responseHeaderDefaultsNode('This server\'s default response headers (bundle ADR 0164), the same keys as json_api.defaults. Each value set here replaces the global one on this server only; a value left out inherits json_api.defaults, and a resource\'s own declaration still wins.'))
                             ->scalarNode('output_timezone')
                                 ->info('The timezone this server\'s DateTime attributes render in. Null (the default) inherits the top-level output_timezone; an empty string renders each value in the zone it carries.')
                                 ->defaultNull()
@@ -392,6 +364,62 @@ final class JsonApiBundle extends AbstractBundle
                 ->end()
                 ->append($this->openApiNode())
             ->end();
+    }
+
+    /**
+     * The `defaults` response-header block (bundle ADR 0054), shared by the global
+     * `json_api.defaults` and each `json_api.servers.<name>.defaults` (bundle ADR 0164)
+     * so both accept and reject the same values.
+     */
+    private function responseHeaderDefaultsNode(string $info): \Symfony\Component\Config\Definition\Builder\NodeDefinition
+    {
+        $treeBuilder = new \Symfony\Component\Config\Definition\Builder\TreeBuilder('defaults');
+        /** @var \Symfony\Component\Config\Definition\Builder\ArrayNodeDefinition $root */
+        $root = $treeBuilder->getRootNode();
+
+        $root
+            ->info($info)
+            ->addDefaultsIfNotSet()
+            ->children()
+                ->arrayNode('cache_headers')
+                    ->info('Default HTTP cache directives for safe (GET) successful reads: max_age/s_maxage/public/private/no_cache/must_revalidate/vary. A resource\'s own cacheHeaders merge over these directive by directive.')
+                    ->children()
+                        ->integerNode('max_age')->defaultNull()->end()
+                        ->integerNode('s_maxage')->defaultNull()->end()
+                        ->booleanNode('public')->defaultNull()->end()
+                        ->booleanNode('private')->defaultNull()->end()
+                        ->booleanNode('no_cache')->defaultNull()->end()
+                        ->booleanNode('must_revalidate')->defaultNull()->end()
+                        ->arrayNode('vary')->scalarPrototype()->end()->end()
+                    ->end()
+                ->end()
+                ->scalarNode('deprecation')
+                    ->info('Default Deprecation header (IETF Deprecation-header draft): a bool (true => bare header) or a date string. Applied when a resource declares no deprecation.')
+                    ->defaultNull()
+                    ->validate()
+                        ->ifTrue(static fn(mixed $value): bool => $value !== null && !\is_bool($value) && !\is_string($value))
+                        ->thenInvalid('A deprecation default must be true, false, a date string or null, got %s.')
+                    ->end()
+                ->end()
+                ->scalarNode('sunset')
+                    ->info('Default RFC 8594 Sunset HTTP-date. Applied when a resource declares no sunset.')
+                    ->defaultNull()
+                    ->validate()
+                        ->ifTrue(static fn(mixed $value): bool => $value !== null && !\is_string($value))
+                        ->thenInvalid('A sunset default must be an HTTP-date string or null, got %s.')
+                    ->end()
+                ->end()
+                ->scalarNode('sunset_link')
+                    ->info('Default URI for the companion Link: <uri>; rel="sunset" (emitted only when a sunset is set). Applied when a resource declares no sunsetLink.')
+                    ->defaultNull()
+                    ->validate()
+                        ->ifTrue(static fn(mixed $value): bool => $value !== null && !\is_string($value))
+                        ->thenInvalid('A sunset_link default must be a URI string or null, got %s.')
+                    ->end()
+                ->end()
+            ->end();
+
+        return $root;
     }
 
     /**
@@ -830,12 +858,12 @@ final class JsonApiBundle extends AbstractBundle
 
         // Declarative response headers (bundle ADR 0054): the server- and type-keyed
         // ResponseHeadersRegistry (bundle ADR 0144) seeded with the global `json_api.defaults`
-        // cache/deprecation defaults, plus the ResponseHeadersListener (wired in
+        // cache/deprecation defaults and each server's own (bundle ADR 0164), plus the ResponseHeadersListener (wired in
         // services.php) that emits them per request. The per-type map is filled by
         // the ResponseHeadersPass (added in build()) from each resource's
         // #[AsJsonApiResource(cacheHeaders/deprecation/sunset)]; the registry is
         // always present (no optional dependency — these are pure HTTP headers).
-        [$defaultCache, $defaultDeprecation] = $this->responseHeaderDefaults($config);
+        [$defaultCache, $defaultDeprecation] = $this->responseHeaderDefaults($config['defaults'] ?? null);
         $container->services()
             ->set(\haddowg\JsonApiBundle\Http\ResponseHeadersRegistry::class)
             ->args([
@@ -843,6 +871,7 @@ final class JsonApiBundle extends AbstractBundle
                 '$defaultCache' => $defaultCache,
                 '$defaultDeprecation' => $defaultDeprecation,
                 '$servers' => [],
+                '$serverDefaults' => $this->serverResponseHeaderDefaults($config),
             ]);
 
         // Any service extending AbstractResource is auto-tagged for registration;
@@ -2020,23 +2049,21 @@ final class JsonApiBundle extends AbstractBundle
     }
 
     /**
-     * The resolved global response-header defaults from `json_api.defaults` (bundle
-     * ADR 0054): a tuple of the scalar `cache_headers` map and the
-     * `deprecation`/`sunset`/`sunset_link` map, each in the shape the
-     * {@see \haddowg\JsonApiBundle\Http\CacheHeaders}/{@see \haddowg\JsonApiBundle\Http\DeprecationHeaders}
-     * `fromArray()` factories read. Absent keys yield empty maps (no global default).
-     *
-     * @param array<string, mixed> $config
+     * The resolved response-header defaults of one `defaults` block (bundle ADR 0054),
+     * the global `json_api.defaults` or a server's own: a tuple of the scalar
+     * `cache_headers` map and the `deprecation`/`sunset`/`sunset_link` map, each in the
+     * shape the {@see \haddowg\JsonApiBundle\Http\CacheHeaders}/{@see \haddowg\JsonApiBundle\Http\DeprecationHeaders}
+     * `fromArray()` factories read. Unset keys are left out, so a server's block
+     * replaces only the global values it sets.
      *
      * @return array{0: array<string, mixed>, 1: array<string, mixed>}
      */
-    private function responseHeaderDefaults(array $config): array
+    private function responseHeaderDefaults(mixed $defaults): array
     {
-        $defaults = $config['defaults'] ?? [];
         $defaults = \is_array($defaults) ? $defaults : [];
 
         $cache = $defaults['cache_headers'] ?? [];
-        $cache = \is_array($cache) ? \array_filter($cache, static fn(mixed $value): bool => $value !== null) : [];
+        $cache = \is_array($cache) ? \array_filter($cache, static fn(mixed $value): bool => $value !== null && $value !== []) : [];
 
         $deprecation = [];
         foreach (['deprecation', 'sunset', 'sunset_link'] as $key) {
@@ -2046,5 +2073,28 @@ final class JsonApiBundle extends AbstractBundle
         }
 
         return [$cache, $deprecation];
+    }
+
+    /**
+     * Each named server's own `json_api.servers.<name>.defaults` (bundle ADR 0164), keyed
+     * by server; a server that sets nothing is left out and reads the global defaults.
+     *
+     * @param array<string, mixed> $config
+     *
+     * @return array<string, array{cache: array<string, mixed>, deprecation: array<string, mixed>}>
+     */
+    private function serverResponseHeaderDefaults(array $config): array
+    {
+        $servers = $config['servers'] ?? [];
+        $byServer = [];
+
+        foreach (\is_array($servers) ? $servers : [] as $name => $settings) {
+            [$cache, $deprecation] = $this->responseHeaderDefaults(\is_array($settings) ? ($settings['defaults'] ?? null) : null);
+            if ($cache !== [] || $deprecation !== []) {
+                $byServer[(string) $name] = ['cache' => $cache, 'deprecation' => $deprecation];
+            }
+        }
+
+        return $byServer;
     }
 }

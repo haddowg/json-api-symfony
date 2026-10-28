@@ -1256,8 +1256,8 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *     doctrine?: array{ // Tuning for the reference Doctrine data provider.
  *         window_functions?: bool|Param, // Use SQL window functions (ROW_NUMBER/COUNT OVER) for the bounded windowed-include batch — ONE native query per relation fetches only ~limit rows per parent and the REAL per-parent total, instead of materialising every parent's whole related set. Default true. Requires MySQL>=8, MariaDB>=10.2, SQLite>=3.25, or any PostgreSQL. On an older engine this throws a 500 at the first windowed include — set false to use the per-parent bounded fallback instead (M bounded LIMIT queries per relation, no window functions). // Default: true
  *     },
- *     defaults?: array{ // Global default response headers applied to a resource that declares none (bundle ADR 0054). A resource-level cacheHeaders / deprecation overrides (and merges with) these.
- *         cache_headers?: array{ // Default HTTP cache directives for safe (GET) successful reads: max_age/s_maxage/public/private/no_cache/must_revalidate/vary. Applied only when a resource declares no cacheHeaders of its own.
+ *     defaults?: array{ // Global default response headers for every server (bundle ADR 0054). A server's own defaults block layers over these, and a resource's own cacheHeaders / deprecation / sunset / sunsetLink layer over both, field by field.
+ *         cache_headers?: array{ // Default HTTP cache directives for safe (GET) successful reads: max_age/s_maxage/public/private/no_cache/must_revalidate/vary. A resource's own cacheHeaders merge over these directive by directive.
  *             max_age?: int|Param, // Default: null
  *             s_maxage?: int|Param, // Default: null
  *             public?: bool|Param|null, // Default: null
@@ -1268,7 +1268,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         },
  *         deprecation?: scalar|Param|null, // Default Deprecation header (IETF Deprecation-header draft): a bool (true => bare header) or a date string. Applied when a resource declares no deprecation. // Default: null
  *         sunset?: scalar|Param|null, // Default RFC 8594 Sunset HTTP-date. Applied when a resource declares no sunset. // Default: null
- *         sunset_link?: scalar|Param|null, // Default URI for the companion Link: <uri>; rel="sunset" (emitted only when a sunset is set). // Default: null
+ *         sunset_link?: scalar|Param|null, // Default URI for the companion Link: <uri>; rel="sunset" (emitted only when a sunset is set). Applied when a resource declares no sunsetLink. // Default: null
  *     },
  *     servers?: array<string, array{ // Default: []
  *         base_uri?: scalar|Param|null, // Default: null
@@ -1276,6 +1276,20 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         link_objects?: scalar|Param|null, // Whether this server renders its built links as link objects. Null (the default) inherits the top-level link_objects. // Default: null
  *         reject_read_only_attributes?: scalar|Param|null, // Whether this server answers a write that sends an attribute the client cannot write with a 403. Null (the default) inherits the top-level reject_read_only_attributes. // Default: null
  *         openapi_examples?: scalar|Param|null, // Whether this server's OpenAPI document carries generated operation examples. Null (the default) inherits json_api.openapi.examples. // Default: null
+ *         defaults?: array{ // This server's default response headers (bundle ADR 0164), the same keys as json_api.defaults. Each value set here replaces the global one on this server only; a value left out inherits json_api.defaults, and a resource's own declaration still wins.
+ *             cache_headers?: array{ // Default HTTP cache directives for safe (GET) successful reads: max_age/s_maxage/public/private/no_cache/must_revalidate/vary. A resource's own cacheHeaders merge over these directive by directive.
+ *                 max_age?: int|Param, // Default: null
+ *                 s_maxage?: int|Param, // Default: null
+ *                 public?: bool|Param|null, // Default: null
+ *                 private?: bool|Param|null, // Default: null
+ *                 no_cache?: bool|Param|null, // Default: null
+ *                 must_revalidate?: bool|Param|null, // Default: null
+ *                 vary?: list<scalar|Param|null>,
+ *             },
+ *             deprecation?: scalar|Param|null, // Default Deprecation header (IETF Deprecation-header draft): a bool (true => bare header) or a date string. Applied when a resource declares no deprecation. // Default: null
+ *             sunset?: scalar|Param|null, // Default RFC 8594 Sunset HTTP-date. Applied when a resource declares no sunset. // Default: null
+ *             sunset_link?: scalar|Param|null, // Default URI for the companion Link: <uri>; rel="sunset" (emitted only when a sunset is set). Applied when a resource declares no sunsetLink. // Default: null
+ *         },
  *         output_timezone?: scalar|Param|null, // The timezone this server's DateTime attributes render in. Null (the default) inherits the top-level output_timezone; an empty string renders each value in the zone it carries. // Default: null
  *     }>,
  *     atomic_operations?: array{ // The JSON:API Atomic Operations extension (https://jsonapi.org/ext/atomic): a batch of write operations applied in order, all-or-nothing, within one request. Opt-in (default off): when enabled, each server gains a POST {path} endpoint that negotiates the atomic ext, parses atomic:operations, and runs them transactionally with local-id (lid) cross-references.
