@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.22.0](https://github.com/haddowg/json-api-symfony/compare/v1.21.0...v1.22.0) (2026-10-28)
+
+
+### Features
+
+* load identified MorphTo targets by id through each type's provider ([#262](https://github.com/haddowg/json-api-symfony/issues/262)) ([3c7f1ec](https://github.com/haddowg/json-api-symfony/commit/3c7f1eca24f67be7f7b282545830a9443b8c3fe9))
+
 ## [1.21.0](https://github.com/haddowg/json-api-symfony/compare/v1.20.1...v1.21.0) (2026-10-28)
 
 
