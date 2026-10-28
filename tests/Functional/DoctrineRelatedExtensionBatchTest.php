@@ -87,6 +87,37 @@ final class DoctrineRelatedExtensionBatchTest extends JsonApiFunctionalTestCase
     }
 
     #[Test]
+    #[Group('spec:fetching-includes')]
+    public function aFilteringExtensionAppliedAgainOnTheIncludeHydrationLeavesTheIncludedSetAlone(): void
+    {
+        // A plain include takes the pair shape: the pair query scopes the editors under
+        // FetchRelatedCollection, then the id load hydrates them under IncludeHydration.
+        // The extension ignores the purpose and applies on both, so the second pass
+        // narrows nothing the first had not.
+        $response = $this->handle(self::BASE_URI . '/articles?include=editors');
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $document = $this->decode($response);
+
+        $data = $document['data'] ?? null;
+        self::assertIsArray($data);
+
+        $expected = ['1' => ['2'], '2' => [], '3' => ['2'], '4' => [], '5' => []];
+        foreach ($data as $resource) {
+            self::assertIsArray($resource);
+            $id = $resource['id'] ?? null;
+            self::assertIsString($id);
+            if (!isset($expected[$id])) {
+                continue;
+            }
+            self::assertSame($expected[$id], $this->linkageIds($resource, 'editors'));
+        }
+
+        self::assertSame(['2'], $this->includedIds($document, 'authors'));
+        self::assertContains(QueryPurpose::IncludeHydration, $this->extension()->applied);
+        self::assertContains(QueryPurpose::FetchRelatedCollection, $this->extension()->applied);
+    }
+
+    #[Test]
     #[Group('spec:profiles')]
     #[Group('spec:fetching-relationships')]
     public function theUnbatchedSingleParentFetchScopesTheSameRelatedEntity(): void

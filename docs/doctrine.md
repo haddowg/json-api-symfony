@@ -258,6 +258,10 @@ final class AlbumResource extends AbstractResource
 The batch loads through the query extensions of the related type, so `included` and
 linkage hold exactly what the related endpoint returns (see
 [relationships → included data is scoped like the related endpoint](relationships.md#included-data-is-scoped-like-the-related-endpoint)).
+A many-to-many or owning-side to-many include loads its rows by id in a second query,
+which runs the extensions again as `QueryPurpose::IncludeHydration`, so an extension
+can fetch-join what the included rows render (see
+[shaping the include hydration query](custom-data-providers.md#shaping-the-include-hydration-query)).
 When no extension applies to the related type, batching is a pure optimization and a
 relation it cannot batch falls back to a lazy load: a polymorphic relation, a
 composite-key target. With an extension, a polymorphic to-many or a composite-key
