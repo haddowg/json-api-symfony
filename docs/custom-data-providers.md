@@ -259,7 +259,10 @@ tells you *why* the query is being built — `FetchCollection` (the primary
 `GET /{type}` collection), `FetchOne` (`GET /{type}/{id}`), or
 `FetchRelatedCollection` (any related/include/batch load of the type while serving
 another type's request, so a request-aware scope can tell a primary collection from a
-related load of the same type). It is **non-exhaustive by design**: the write phase
+related load of the same type), or `IncludeHydration` (the id load of a to-many include
+whose ids were already scoped, see
+[shaping the include hydration query](#shaping-the-include-hydration-query)). It is
+**non-exhaustive by design**: the write phase
 fetches an update's or delete's target through the same extension pipeline, so a
 scoping rule holds for writes without re-declaration — but that means new purposes can
 appear.
@@ -269,6 +272,38 @@ one you have a specific reason to treat differently. An exhaustive `match` over 
 purpose would silently stop applying your tenancy or soft-delete scope the moment a
 new purpose is added — scoping must fail **closed**. `PublishedAlbumsExtension`
 ignores the purpose entirely, which is the common case.
+
+### Shaping the include hydration query
+
+A to-many include whose rows can belong to more than one parent, such as a
+many-to-many or an owning-side to-many, loads in two queries. The first selects the
+(parent, related) id pairs and runs your extensions as `FetchRelatedCollection`, so
+your scope picks the ids. The second loads the related entities by those ids with
+`WHERE id IN (…)` and runs your extensions again as `IncludeHydration`.
+
+The ids reaching that second query are already scoped. A filtering extension can
+ignore the purpose and apply again, which changes nothing, or exempt
+`IncludeHydration` to save the duplicate predicate. A query-shaping extension can opt
+in to it: a fetch-join of an association the included rows render loads that
+association in the same query instead of one lazy load per distinct target.
+
+```php
+public function apply(QueryBuilder $builder, ExtensionContext $context): QueryBuilder
+{
+    if ($context->purpose !== QueryPurpose::IncludeHydration) {
+        return $builder;
+    }
+
+    $alias = $builder->getRootAliases()[0];
+
+    return $builder->leftJoin("{$alias}.genre", 'genre')->addSelect('genre');
+}
+```
+
+Opt in to `IncludeHydration` only for a join like this. The pair query's scope runs on
+a subquery that selects a single id column, so a fetch-join added under
+`FetchRelatedCollection` breaks it. A to-one include loads its targets in one id query
+that is also its scope, so it reports `FetchRelatedCollection`, not `IncludeHydration`.
 
 Two practical contracts when you write `apply()`:
 

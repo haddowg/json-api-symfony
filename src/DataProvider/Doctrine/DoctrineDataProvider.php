@@ -621,7 +621,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
         // Materialize the scoped rows once, then partition by parent — Approach B's
         // single round-trip.
-        $partitions = $this->partitionByParent($builder, $scope, $parentType);
+        $partitions = $this->partitionByParent($builder, $scope, $parentType, $relatedType, $request);
 
         // Window each parent's partition through the shared executor. The whole set is
         // already in PHP, so the closures slice/count the partition with no query —
@@ -972,13 +972,13 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
      *
      * @return array<string, list<object>> `parentWireId => related entities`, request order preserved per parent
      */
-    private function partitionByParent(QueryBuilder $builder, BatchScope $scope, string $parentType): array
+    private function partitionByParent(QueryBuilder $builder, BatchScope $scope, string $parentType, string $relatedType, ?JsonApiRequestInterface $request): array
     {
         $encoder = $this->idEncoders->encoderFor($parentType);
         $parentMetadata = $this->entityManager->getClassMetadata($this->entityClassFor($parentType));
 
         if ($scope->relatedClass !== null && $scope->relatedIdField !== null) {
-            return $this->partitionPairs($builder, $scope->relatedClass, $scope->relatedIdField, $parentMetadata, $encoder);
+            return $this->partitionPairs($builder, $scope->relatedClass, $scope->relatedIdField, $relatedType, $parentMetadata, $encoder, $request);
         }
 
         /** @var list<array<int|string, mixed>> $rows */
@@ -1006,14 +1006,26 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
      * its parent's partition in the query's order. Two scalar+load queries, still O(N)
      * per relation.
      *
+     * The id load runs the related type's extensions under
+     * {@see QueryPurpose::IncludeHydration}. The pair query already scoped the ids, so a
+     * filtering extension that applies again changes nothing, and a fetch-join extension
+     * can opt in to load what the included rows render in the same query.
+     *
      * @param class-string           $relatedClass
      * @param ClassMetadata<object>  $parentMetadata
      * @param ?IdEncoderInterface    $encoder the parent type's id encoder, or null
      *
      * @return array<string, list<object>> `parentWireId => related entities`, query order preserved per parent
      */
-    private function partitionPairs(QueryBuilder $builder, string $relatedClass, string $relatedIdField, ClassMetadata $parentMetadata, ?IdEncoderInterface $encoder): array
-    {
+    private function partitionPairs(
+        QueryBuilder $builder,
+        string $relatedClass,
+        string $relatedIdField,
+        string $relatedType,
+        ClassMetadata $parentMetadata,
+        ?IdEncoderInterface $encoder,
+        ?JsonApiRequestInterface $request,
+    ): array {
         /** @var list<array<string, mixed>> $pairs */
         $pairs = $builder->getQuery()->getResult();
         $relatedMetadata = $this->entityManager->getClassMetadata($relatedClass);
@@ -1030,11 +1042,16 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $entitiesById = [];
         if ($relatedIds !== []) {
             $loader = $this->entityManager->getRepository($relatedClass)
-                ->createQueryBuilder('related')
-                ->where(\sprintf('related.%s IN (:ids)', $relatedIdField));
-            $loaded = $this->ids->bindList($loader, 'ids', $relatedMetadata, $relatedIds)
-                ->getQuery()
-                ->getResult();
+                ->createQueryBuilder(self::ROOT_ALIAS)
+                ->where(\sprintf('%s.%s IN (:jsonapi_related_ids)', self::ROOT_ALIAS, $relatedIdField));
+            $this->ids->bindList($loader, 'jsonapi_related_ids', $relatedMetadata, $relatedIds);
+
+            $context = new ExtensionContext($relatedType, QueryPurpose::IncludeHydration, $request);
+            foreach ($this->extensionsFor($relatedType) as $extension) {
+                $loader = $extension->apply($loader, $context);
+            }
+
+            $loaded = $loader->getQuery()->getResult();
 
             \assert(\is_array($loaded));
             foreach ($loaded as $entity) {
