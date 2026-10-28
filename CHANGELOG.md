@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.23.0](https://github.com/haddowg/json-api-symfony/compare/v1.22.0...v1.23.0) (2026-10-28)
+
+
+### Features
+
+* let each server declare its own response-header defaults ([#264](https://github.com/haddowg/json-api-symfony/issues/264)) ([72d6f7a](https://github.com/haddowg/json-api-symfony/commit/72d6f7a04dd43b57c73033e4c52e135656722c39))
+
 ## [1.22.0](https://github.com/haddowg/json-api-symfony/compare/v1.21.0...v1.22.0) (2026-10-28)
 
 
