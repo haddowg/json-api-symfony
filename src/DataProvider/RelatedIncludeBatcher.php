@@ -52,8 +52,8 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
  * to-many, or a column the provider cannot batch) throws a `\LogicException` rather than
  * render the unscoped value. A `MorphTo` target is checked against the provider of the
  * type it renders as. A `MorphTo` declared with `identifiedBy()` renders its linkage
- * from the stored pair, and loads only when its targets render, by id through each
- * type's provider (bundle ADR 0163). {@see disable()} turns off only the optional
+ * from the stored pair. Its targets load by id through each type's provider when they
+ * render, and for linkage alone only the guarded types load (bundle ADR 0163). {@see disable()} turns off only the optional
  * batching of unscoped relations.
  *
  * Metadata is resolved on the request's own server, so a type registered only on a
@@ -103,6 +103,7 @@ final class RelatedIncludeBatcher
         private readonly TypeMetadataResolver $types,
         private readonly ServerProvider $servers,
         private readonly RelatedReadRouter $router,
+        private readonly IdentifiedTargetGuard $guard,
     ) {}
 
     /**
@@ -397,9 +398,19 @@ final class RelatedIncludeBatcher
         bool $descends,
         array &$linkages,
     ): array {
-        // Its linkage renders from the stored pair, so only a read of the targets loads.
+        // Its linkage renders from the stored pair. A read of the targets loads them all;
+        // otherwise only the guarded types load, so their pairs are checked.
         if ($relation instanceof MorphTo && $relation->storesIdentifiers()) {
-            return $included || $descends ? $this->loadIdentified($server, $entities, $relation, $request) : [];
+            if ($included || $descends) {
+                return $this->loadIdentified($server, $entities, $relation, $request);
+            }
+
+            $guarded = $this->guard->guardedTypes($relation, $this->serverName($request));
+            if ($guarded !== []) {
+                $this->loadIdentified($server, $entities, $relation, $request, $guarded);
+            }
+
+            return [];
         }
 
         // An extractUsing() relation's closure picks its candidates. Into a scoped type the
@@ -590,24 +601,28 @@ final class RelatedIncludeBatcher
     /**
      * Loads the targets of a `MorphTo` declared with `identifiedBy()` from the parents'
      * stored pairs, one query per type through that type's provider, and supplies each
-     * parent's target, or none when the provider's scope hides it (bundle ADR 0163). A
+     * parent's target, or none when the provider's scope hides it (bundle ADR 0163).
+     * With `$types`, only those types load and the rest keep their pairs. Otherwise a
      * type no provider serves is left to core, which reads the relation's usual value.
      *
-     * @param list<object> $entities
+     * @param list<object>      $entities
+     * @param list<string>|null $types
      *
      * @return list<object>
      */
-    private function loadIdentified(Server $server, array $entities, MorphTo $relation, JsonApiRequestInterface $request): array
+    private function loadIdentified(Server $server, array $entities, MorphTo $relation, JsonApiRequestInterface $request, ?array $types = null): array
     {
         $targets = [];
         $unloaded = [];
-        foreach ($this->router->identifiedTargets($server, $relation, $entities, $request) as $index => $identified) {
+        foreach ($this->router->identifiedTargets($server, $relation, $entities, $request, $types) as $index => $identified) {
             if ($identified === null) {
                 continue;
             }
 
             if (!$identified['loaded']) {
-                $unloaded[] = $entities[$index];
+                if ($types === null) {
+                    $unloaded[] = $entities[$index];
+                }
 
                 continue;
             }

@@ -238,6 +238,14 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         return \array_values($this->loadToOneTargets($entityClass, $metadata, $metadata->getSingleIdentifierFieldName(), $type, $keys, $request));
     }
 
+    /**
+     * A type is scoped when a query extension applies to it.
+     */
+    public function scopesFetchByIds(string $type): bool
+    {
+        return $this->extensionsFor($type) !== [];
+    }
+
     public function fetchCollection(string $type, CollectionCriteria $criteria): CollectionResult
     {
         $entityClass = $this->entityClassFor($type);

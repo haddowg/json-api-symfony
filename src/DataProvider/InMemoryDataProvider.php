@@ -142,6 +142,14 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
         return $rows;
     }
 
+    /**
+     * The store holds every row it serves, so nothing is hidden.
+     */
+    public function scopesFetchByIds(string $type): bool
+    {
+        return false;
+    }
+
     public function fetchCollection(string $type, CollectionCriteria $criteria): CollectionResult
     {
         // A cursor (keyset) window is its own execution: the keyset builds its OWN

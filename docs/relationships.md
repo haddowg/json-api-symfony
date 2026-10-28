@@ -1196,24 +1196,27 @@ MorphTo::make('target', ['advertisers', 'agencies'])
         : null),
 ```
 
-A page of campaigns then renders every `target` linkage from the one campaign query.
-`?include=target` loads the targets with one query per type through that type's
-provider, so the Doctrine provider runs the type's extensions, and a row its scope hides
-renders as `data: null` and stays out of `included`. A loaded row also goes through its
-type's read gate (`securityRead`), and a relation's own `security(read:)` replaces that
-gate as for any relation. Includes beneath the target, such as `target.region`, follow
-the usual walk. `GET /campaigns/{id}/target` loads the one target the same way and
-renders `data: null` when it is hidden or missing. `GET /campaigns/{id}/relationships/target`
-renders the pair.
+When nothing can hide a target, a page of campaigns renders every `target` linkage from
+the one campaign query. A target type is guarded on a server when its provider may hide
+a row, such as a Doctrine type with a query extension or a custom provider that scopes,
+when the type declares a read gate (`securityRead`, or `security`), or when the relation
+declares its own `security(read:)`. A pair naming a guarded type loads its target before
+the linkage renders: one query per guarded type for the whole page, through that type's
+provider. A target the scope hides, the read gate refuses or that no longer exists then
+renders as `data: null`, as for any guarded to-one. Pairs naming an unguarded type still
+render as stored, without a load, so a missing row of an unguarded type keeps its pair.
+`GET /campaigns/{id}/relationships/target` follows the same rule.
 
-A linkage that isn't included is the stored pair as it is: nothing is loaded, so neither
-the target type's scope nor its read gate is consulted, and a pair pointing at a hidden
-or deleted row still renders. Include the relation when the scope must decide. A stored
-type the relation doesn't declare throws a `\LogicException`, which renders as a `500`.
+`?include=target` loads every type's targets the same way, one query per type, and a row
+that doesn't come back renders as `data: null` and stays out of `included`. Includes
+beneath the target, such as `target.region`, follow the usual walk.
+`GET /campaigns/{id}/target` loads the one target and renders `data: null` when it is
+hidden or missing. A stored type the relation doesn't declare throws a `\LogicException`,
+which renders as a `500`.
 
-The targets still render through the serializer whose `getType()` claims them, so each
-declared type's resource discriminates by class, as for any `MorphTo`. A provider that
-loads the targets for you implements `FetchesByIdsInterface`
+A loaded target renders under the pair's type. Each declared type's resource still
+discriminates by class in `getType()`, as the build check requires for any `MorphTo`. A
+provider that loads the targets for you implements `FetchesByIdsInterface`
 (see [custom providers → loading many rows by id](custom-data-providers.md#loading-many-rows-by-id)).
 Writes still go through `fillUsing()`, shown below in
 [relations written by `fillUsing()`](#relations-written-by-fillusing)

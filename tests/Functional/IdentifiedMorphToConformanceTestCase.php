@@ -15,8 +15,10 @@ use Symfony\Component\HttpFoundation\Response;
  * {@see App\IdentifiedMorph\IdentifiedMorphFixtures}.
  *
  * A campaign's `target` is declared with `identifiedBy()` and stores its type and id as
- * two plain columns. Its linkage renders from the pair. An include or the related
- * endpoint loads the target through its type's provider, whose scope hides agency 2.
+ * two plain columns. Agencies are scoped, so agency 2 is hidden, and advertisers are
+ * not. The linkage of an advertiser renders from the pair, while an agency's target is
+ * loaded and checked first. An include or the related endpoint loads every target
+ * through its type's provider.
  */
 abstract class IdentifiedMorphToConformanceTestCase extends JsonApiFunctionalTestCase
 {
@@ -27,14 +29,16 @@ abstract class IdentifiedMorphToConformanceTestCase extends JsonApiFunctionalTes
 
     #[Test]
     #[Group('spec:resource-linkage')]
-    public function theLinkageRendersEachStoredPair(): void
+    public function theLinkageRendersEachPairAndHidesTheGuardedTypesHiddenTarget(): void
     {
         $document = $this->document('/campaigns');
 
+        // Agencies are scoped, so agency 2 is checked and hidden. Advertisers aren't, so
+        // the pair naming the missing advertiser 99 renders as stored.
         self::assertSame([
             '1' => ['type' => 'advertisers', 'id' => '1'],
             '2' => ['type' => 'agencies', 'id' => '1'],
-            '3' => ['type' => 'agencies', 'id' => '2'],
+            '3' => null,
             '4' => null,
             '5' => ['type' => 'advertisers', 'id' => '2'],
             '6' => ['type' => 'agencies', 'id' => '3'],
@@ -107,9 +111,14 @@ abstract class IdentifiedMorphToConformanceTestCase extends JsonApiFunctionalTes
 
     #[Test]
     #[Group('spec:fetching-relationships')]
-    public function theRelationshipEndpointRendersTheStoredPair(): void
+    public function theRelationshipEndpointFollowsTheSameRule(): void
     {
         self::assertSame(['type' => 'agencies', 'id' => '1'], $this->document('/campaigns/2/relationships/target')['data'] ?? null);
+        self::assertSame(['type' => 'advertisers', 'id' => '99'], $this->document('/campaigns/9/relationships/target')['data'] ?? null);
+
+        $hidden = $this->document('/campaigns/3/relationships/target');
+        self::assertArrayHasKey('data', $hidden);
+        self::assertNull($hidden['data']);
     }
 
     #[Test]

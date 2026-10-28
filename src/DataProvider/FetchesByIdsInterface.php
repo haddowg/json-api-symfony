@@ -11,7 +11,8 @@ use haddowg\JsonApi\Request\JsonApiRequestInterface;
  * its related reads apply. The bundle loads the targets of a `MorphTo` declared with
  * `identifiedBy()` through it, one call per target type (bundle ADR 0163). A provider
  * that doesn't implement it is asked through {@see DataProviderInterface::fetchOne()},
- * one id at a time.
+ * one id at a time, and is taken to scope every type it serves unless it says
+ * otherwise through {@see ScopesRelatedReadsInterface}.
  */
 interface FetchesByIdsInterface
 {
@@ -25,4 +26,11 @@ interface FetchesByIdsInterface
      * @return list<object>
      */
     public function fetchByIds(string $type, array $ids, JsonApiRequestInterface $request): array;
+
+    /**
+     * Whether {@see fetchByIds()} can leave out a row of `$type` that exists, because a
+     * scope hides it. When it can't, a stored pair naming the type renders without a
+     * load. The answer is cached per type, so it must not depend on the request.
+     */
+    public function scopesFetchByIds(string $type): bool;
 }

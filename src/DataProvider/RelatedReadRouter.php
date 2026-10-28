@@ -146,21 +146,22 @@ final class RelatedReadRouter
     /**
      * Each parent's target for a `MorphTo` declared with `identifiedBy()`, loaded from
      * the stored pairs with one {@see FetchesByIdsInterface::fetchByIds()} per type
-     * (bundle ADR 0163). An entry is `null` for an empty pair. `target` is `null` when
-     * the type's provider doesn't return the row. `loaded` is `false` for a type no
-     * provider serves, which this can't load.
+     * (bundle ADR 0163), limited to `$types` when given. An entry is `null` for an empty
+     * pair. `target` is `null` when the type's provider doesn't return the row.
+     * `loaded` is `false` for a type left out of `$types` or that no provider serves.
      *
-     * @param list<object> $parents
+     * @param list<object>      $parents
+     * @param list<string>|null $types
      *
      * @return list<array{type: string, target: ?object, loaded: bool}|null>
      *
      * @throws \LogicException when a parent stores a type the relation doesn't declare
      */
-    public function identifiedTargets(Server $server, MorphTo $relation, array $parents, JsonApiRequestInterface $request): array
+    public function identifiedTargets(Server $server, MorphTo $relation, array $parents, JsonApiRequestInterface $request, ?array $types = null): array
     {
         $rows = [];
         foreach ($relation->storedIdentifiers($parents, $request) as $type => $ids) {
-            if (!$server->hasSerializerFor($type) || !$this->providers->supportsType($type)) {
+            if (($types !== null && !\in_array($type, $types, true)) || !$server->hasSerializerFor($type) || !$this->providers->supportsType($type)) {
                 continue;
             }
 

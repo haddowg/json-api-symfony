@@ -44,8 +44,8 @@ use Symfony\Contracts\Service\ResetInterface;
  * as none ({@see ReadableRows}, bundle ADR 0140), so it is missing from `data` and from
  * `included`. To-many linkage is never filtered here: a list holds what its query
  * returned. When nothing is refused it answers as it would without the check. A
- * `MorphTo` declared with `identifiedBy()` is checked only when its target was loaded,
- * since its linkage renders from the stored pair.
+ * `MorphTo` declared with `identifiedBy()` is checked only when its target was loaded:
+ * the batcher loads every guarded type's targets, and the rest render their pairs.
  */
 final class RequestScopedRelationshipLinkage implements ToOneRelationshipLinkageInterface, ResetInterface
 {
@@ -162,8 +162,8 @@ final class RequestScopedRelationshipLinkage implements ToOneRelationshipLinkage
             return $linkage;
         }
 
-        // An identified MorphTo's pair renders without its target, which is gated only
-        // once a read loads it (bundle ADR 0163).
+        // An identified MorphTo's pair renders without its target. The batcher loads the
+        // targets of every guarded type, so one it didn't load needs no check (bundle ADR 0163).
         if ($linkage === null && $relation instanceof MorphTo && $relation->storesIdentifiers()) {
             return null;
         }

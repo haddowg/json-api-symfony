@@ -388,13 +388,23 @@ public function fetchByIds(string $type, array $ids, JsonApiRequestInterface $re
 {
     return $this->agencies->findVisibleByIds($ids); // one WHERE id IN (...)
 }
+
+public function scopesFetchByIds(string $type): bool
+{
+    return true; // findVisibleByIds() hides archived agencies
+}
 ```
 
 The ids are wire ids, as `fetchOne()` takes them. Return the rows your scope admits, in
-any order, and leave out the ids no row holds. A provider that doesn't implement it is
-asked through `fetchOne()`, one id at a time. The Doctrine and in-memory providers
-implement it; the Doctrine one runs one `WHERE id IN (...)` with the type's extensions
-under `QueryPurpose::FetchRelatedCollection`.
+any order, and leave out the ids no row holds. The interface also has
+`scopesFetchByIds(string $type)`: return `true` when your scope can hide a row of the
+type. A pair naming such a type loads its target even when the relation is only linked,
+so the scope decides, while a pair naming a type you never hide renders without a load.
+The answer is cached per server and type. A provider that doesn't implement the
+interface is asked through `fetchOne()`, one id at a time, and counts as scoping unless
+its `scopesRelatedReads()` says otherwise. The Doctrine and in-memory providers implement
+it; the Doctrine one runs one `WHERE id IN (...)` with the type's extensions under
+`QueryPurpose::FetchRelatedCollection`, and scopes a type when an extension supports it.
 
 ## The in-memory provider as a worked example
 

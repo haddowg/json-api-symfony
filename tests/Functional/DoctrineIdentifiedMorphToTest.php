@@ -15,8 +15,8 @@ use PHPUnit\Framework\Attributes\Test;
 
 /**
  * {@see IdentifiedMorphToConformanceTestCase} against the Doctrine provider, with the
- * query budget the pair buys: linkage loads no target, and an include loads each
- * target type in one query.
+ * query budget the pair buys: linkage loads only the scoped agencies, in one query,
+ * and an include loads each target type in one query.
  */
 final class DoctrineIdentifiedMorphToTest extends IdentifiedMorphToConformanceTestCase
 {
@@ -48,16 +48,42 @@ final class DoctrineIdentifiedMorphToTest extends IdentifiedMorphToConformanceTe
 
     #[Test]
     #[Group('spec:resource-linkage')]
-    public function theLinkageOfAPageLoadsNoTarget(): void
+    public function theLinkageOfAPageLoadsOnlyTheGuardedTypeInOneQuery(): void
     {
         $logger = $this->logger();
         $logger->reset();
 
         $this->document('/campaigns');
 
-        self::assertSame([], $this->selectsFrom($logger, 'identified_advertiser'));
-        self::assertSame([], $this->selectsFrom($logger, 'identified_agency'));
-        self::assertSame(1, $logger->queryCount(), \implode("\n", $logger->statements()));
+        self::assertSame([], $this->selectsFrom($logger, 'identified_advertiser'), \implode("\n", $logger->statements()));
+        self::assertCount(1, $this->selectsFrom($logger, 'identified_agency'), \implode("\n", $logger->statements()));
+        self::assertSame(2, $logger->queryCount(), \implode("\n", $logger->statements()));
+    }
+
+    #[Test]
+    #[Group('spec:resource-linkage')]
+    public function anUnguardedTypesLinkageLoadsNoTarget(): void
+    {
+        $logger = $this->logger();
+        $logger->reset();
+
+        $this->document('/campaigns/1');
+        $this->document('/campaigns/9/relationships/target');
+
+        self::assertSame([], $this->selectsFrom($logger, 'identified_advertiser'), \implode("\n", $logger->statements()));
+        self::assertSame(2, $logger->queryCount(), \implode("\n", $logger->statements()));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    public function theRelationshipEndpointLoadsAGuardedTypesTargetInOneQuery(): void
+    {
+        $logger = $this->logger();
+        $logger->reset();
+
+        $this->document('/campaigns/3/relationships/target');
+
+        self::assertCount(1, $this->selectsFrom($logger, 'identified_agency'), \implode("\n", $logger->statements()));
     }
 
     #[Test]
