@@ -28,6 +28,7 @@ use haddowg\JsonApiBundle\DataProvider\AdmitsRowsInterface;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\CriteriaApplier;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
+use haddowg\JsonApiBundle\DataProvider\FetchesByIdsInterface;
 use haddowg\JsonApiBundle\DataProvider\PivotAwareProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\PivotCollectionResult;
 use haddowg\JsonApiBundle\DataProvider\PivotCursorCollectionResult;
@@ -83,7 +84,7 @@ use haddowg\JsonApiBundle\Server\IdEncoderResolver;
  * @implements DataProviderInterface<object>
  * @implements PivotAwareProviderInterface<object>
  */
-final class DoctrineDataProvider implements DataProviderInterface, PivotAwareProviderInterface, ScopesRelatedReadsInterface, AdmitsRowsInterface
+final class DoctrineDataProvider implements DataProviderInterface, PivotAwareProviderInterface, ScopesRelatedReadsInterface, AdmitsRowsInterface, FetchesByIdsInterface
 {
     /**
      * The root alias every generated QueryBuilder uses; handlers re-read it
@@ -209,6 +210,40 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $result = $builder->getQuery()->getOneOrNullResult();
 
         return \is_object($result) ? $result : null;
+    }
+
+    /**
+     * One `WHERE id IN (...)` load with the type's extensions applied under
+     * {@see QueryPurpose::FetchRelatedCollection}. The ids come off the parents
+     * unscoped, so this load is the scope, as the to-one include's id load is.
+     */
+    public function fetchByIds(string $type, array $ids, JsonApiRequestInterface $request): array
+    {
+        $entityClass = $this->entityClassFor($type);
+        $metadata = $this->entityManager->getClassMetadata($entityClass);
+        if ($metadata->isIdentifierComposite) {
+            return [];
+        }
+
+        $encoder = $this->idEncoders->encoderFor($type);
+        $keys = [];
+        foreach ($ids as $id) {
+            $storageKey = $encoder !== null ? $encoder->decode($id) : $id;
+            $key = $storageKey !== null ? $this->ids->toPhp($metadata, $storageKey) : null;
+            if ($key !== null) {
+                $keys[] = $key;
+            }
+        }
+
+        return \array_values($this->loadToOneTargets($entityClass, $metadata, $metadata->getSingleIdentifierFieldName(), $type, $keys, $request));
+    }
+
+    /**
+     * A type is scoped when a query extension applies to it.
+     */
+    public function scopesFetchByIds(string $type): bool
+    {
+        return $this->extensionsFor($type) !== [];
     }
 
     public function fetchCollection(string $type, CollectionCriteria $criteria): CollectionResult

@@ -6,8 +6,12 @@ namespace haddowg\JsonApiBundle\DataProvider;
 
 use haddowg\JsonApi\Collection\CollectionResult;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\AbstractFieldValue;
+use haddowg\JsonApi\Resource\Field\Id;
+use haddowg\JsonApi\Resource\Field\MorphTo;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Serializer\SerializerInterface;
 use haddowg\JsonApi\Server\Server;
 
 /**
@@ -137,6 +141,103 @@ final class RelatedReadRouter
         }
 
         return new RelatedBatch($results);
+    }
+
+    /**
+     * Each parent's target for a `MorphTo` declared with `identifiedBy()`, loaded from
+     * the stored pairs with one {@see FetchesByIdsInterface::fetchByIds()} per type
+     * (bundle ADR 0163), limited to `$types` when given. An entry is `null` for an empty
+     * pair. `target` is `null` when the type's provider doesn't return the row.
+     * `loaded` is `false` for a type left out of `$types` or that no provider serves.
+     *
+     * @param list<object>      $parents
+     * @param list<string>|null $types
+     *
+     * @return list<array{type: string, target: ?object, loaded: bool}|null>
+     *
+     * @throws \LogicException when a parent stores a type the relation doesn't declare
+     */
+    public function identifiedTargets(Server $server, MorphTo $relation, array $parents, JsonApiRequestInterface $request, ?array $types = null): array
+    {
+        $rows = [];
+        foreach ($relation->storedIdentifiers($parents, $request) as $type => $ids) {
+            if (($types !== null && !\in_array($type, $types, true)) || !$server->hasSerializerFor($type) || !$this->providers->supportsType($type)) {
+                continue;
+            }
+
+            $serializer = $server->serializerFor($type);
+            $rows[$type] = $this->fetchByIds(
+                $type,
+                $serializer,
+                \array_values(\array_unique(\array_map(static fn(string|int $id): string => self::wireId($serializer, $id), $ids))),
+                $request,
+            );
+        }
+
+        $targets = [];
+        foreach ($parents as $parent) {
+            $pair = $relation->storedIdentifier($parent, $request);
+            if ($pair === null) {
+                $targets[] = null;
+
+                continue;
+            }
+
+            [$type, $id] = $pair;
+            $targets[] = isset($rows[$type])
+                ? ['type' => $type, 'target' => $rows[$type][self::wireId($server->serializerFor($type), $id)] ?? null, 'loaded' => true]
+                : ['type' => $type, 'target' => null, 'loaded' => false];
+        }
+
+        return $targets;
+    }
+
+    /**
+     * The rows of `$type` with the wire ids `$ids` that its provider admits, keyed by
+     * wire id.
+     *
+     * @param list<string> $ids
+     *
+     * @return array<string, object>
+     */
+    private function fetchByIds(string $type, SerializerInterface $serializer, array $ids, JsonApiRequestInterface $request): array
+    {
+        $provider = $this->providers->forType($type);
+        if ($provider instanceof FetchesByIdsInterface) {
+            $rows = $provider->fetchByIds($type, $ids, $request);
+        } else {
+            $rows = [];
+            foreach ($ids as $id) {
+                $row = $provider->fetchOne($type, $id);
+                if ($row !== null) {
+                    $rows[] = $row;
+                }
+            }
+        }
+
+        $byId = [];
+        foreach ($rows as $row) {
+            $byId[$serializer->getId($row)] = $row;
+        }
+
+        return $byId;
+    }
+
+    /**
+     * A stored key as `$serializer` renders it: through its id field's encoder when it
+     * declares one, as core renders the pair's linkage.
+     */
+    private static function wireId(SerializerInterface $serializer, string|int $id): string
+    {
+        if ($serializer instanceof AbstractResource) {
+            foreach ($serializer->allFields() as $field) {
+                if ($field instanceof Id) {
+                    return $field->encoder()?->encode($id) ?? (string) $id;
+                }
+            }
+        }
+
+        return (string) $id;
     }
 
     /**

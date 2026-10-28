@@ -8,6 +8,7 @@ use haddowg\JsonApi\Collection\CollectionResult;
 use haddowg\JsonApi\Operation\QueryParameters;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\Accessor;
+use haddowg\JsonApi\Resource\Field\MorphTo;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Schema\Relationship\RelationshipLinkage;
 use haddowg\JsonApi\Schema\Relationship\ToOneRelationshipLinkage;
@@ -50,8 +51,10 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
  * Otherwise a relation that cannot be loaded through the provider (a polymorphic
  * to-many, or a column the provider cannot batch) throws a `\LogicException` rather than
  * render the unscoped value. A `MorphTo` target is checked against the provider of the
- * type it renders as. {@see disable()} turns off only the optional batching of unscoped
- * relations.
+ * type it renders as. A `MorphTo` declared with `identifiedBy()` renders its linkage
+ * from the stored pair. Its targets load by id through each type's provider when they
+ * render, and for linkage alone only the guarded types load (bundle ADR 0163). {@see disable()} turns off only the optional
+ * batching of unscoped relations.
  *
  * Metadata is resolved on the request's own server, so a type registered only on a
  * named server is walked like any other.
@@ -100,6 +103,7 @@ final class RelatedIncludeBatcher
         private readonly TypeMetadataResolver $types,
         private readonly ServerProvider $servers,
         private readonly RelatedReadRouter $router,
+        private readonly IdentifiedTargetGuard $guard,
     ) {}
 
     /**
@@ -394,6 +398,21 @@ final class RelatedIncludeBatcher
         bool $descends,
         array &$linkages,
     ): array {
+        // Its linkage renders from the stored pair. A read of the targets loads them all;
+        // otherwise only the guarded types load, so their pairs are checked.
+        if ($relation instanceof MorphTo && $relation->storesIdentifiers()) {
+            if ($included || $descends) {
+                return $this->loadIdentified($server, $entities, $relation, $request);
+            }
+
+            $guarded = $this->guard->guardedTypes($relation, $this->serverName($request));
+            if ($guarded !== []) {
+                $this->loadIdentified($server, $entities, $relation, $request, $guarded);
+            }
+
+            return [];
+        }
+
         // An extractUsing() relation's closure picks its candidates. Into a scoped type the
         // scope still decides which of them exist, so they are narrowed through the router
         // (bundle ADR 0125); otherwise they render as the closure returns them. A pivot
@@ -577,6 +596,50 @@ final class RelatedIncludeBatcher
         $this->remember($targets);
 
         return $descends ? $targets : [];
+    }
+
+    /**
+     * Loads the targets of a `MorphTo` declared with `identifiedBy()` from the parents'
+     * stored pairs, one query per type through that type's provider, and supplies each
+     * parent's target, or none when the provider's scope hides it (bundle ADR 0163).
+     * With `$types`, only those types load and the rest keep their pairs. Otherwise a
+     * type no provider serves is left to core, which reads the relation's usual value.
+     *
+     * @param list<object>      $entities
+     * @param list<string>|null $types
+     *
+     * @return list<object>
+     */
+    private function loadIdentified(Server $server, array $entities, MorphTo $relation, JsonApiRequestInterface $request, ?array $types = null): array
+    {
+        $targets = [];
+        $unloaded = [];
+        foreach ($this->router->identifiedTargets($server, $relation, $entities, $request, $types) as $index => $identified) {
+            if ($identified === null) {
+                continue;
+            }
+
+            if (!$identified['loaded']) {
+                if ($types === null) {
+                    $unloaded[] = $entities[$index];
+                }
+
+                continue;
+            }
+
+            $target = $identified['target'];
+            $this->toOne[\spl_object_id($entities[$index])][$relation->name()] = $target !== null
+                ? ToOneRelationshipLinkage::to($target)
+                : ToOneRelationshipLinkage::none();
+            if ($target !== null) {
+                $targets[] = $target;
+            }
+        }
+
+        $targets = $this->unique([...$targets, ...($unloaded !== [] ? $this->readTargets($unloaded, $relation, $request) : [])]);
+        $this->remember($targets);
+
+        return $targets;
     }
 
     /**

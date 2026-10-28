@@ -17,6 +17,7 @@ use haddowg\JsonApi\Pagination\CursorWindow;
 use haddowg\JsonApi\Pagination\OffsetWindow;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\Accessor;
+use haddowg\JsonApi\Resource\Field\MorphTo;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\InMemory\ArrayFilterArmInterface;
 use haddowg\JsonApi\Resource\Filter\InMemory\ArrayFilterHandler;
@@ -46,7 +47,7 @@ use haddowg\JsonApi\Resource\Sort\SortDirective;
  *
  * @implements DataProviderInterface<object>
  */
-final class InMemoryDataProvider implements DataProviderInterface, ScopesRelatedReadsInterface
+final class InMemoryDataProvider implements DataProviderInterface, ScopesRelatedReadsInterface, FetchesByIdsInterface
 {
     private readonly InMemoryStore $store;
 
@@ -126,6 +127,27 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
     public function fetchOne(string $type, string $id): ?object
     {
         return $this->store->find($id);
+    }
+
+    public function fetchByIds(string $type, array $ids, JsonApiRequestInterface $request): array
+    {
+        $rows = [];
+        foreach ($ids as $id) {
+            $row = $this->store->find($id);
+            if ($row !== null) {
+                $rows[] = $row;
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * The store holds every row it serves, so nothing is hidden.
+     */
+    public function scopesFetchByIds(string $type): bool
+    {
+        return false;
     }
 
     public function fetchCollection(string $type, CollectionCriteria $criteria): CollectionResult
@@ -415,6 +437,11 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
     public function assertRelatedObjects(array $entities, iterable $relations, JsonApiRequestInterface $request): void
     {
         foreach ($relations as $relation) {
+            // Its target is identified by a stored pair, not held on the model.
+            if ($relation instanceof MorphTo && $relation->storesIdentifiers()) {
+                continue;
+            }
+
             foreach ($entities as $entity) {
                 if ($relation->isHiddenFor($request, $entity)) {
                     continue;
