@@ -14,7 +14,7 @@ use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigura
  * served by a different class on each server, over global defaults of a public 120s
  * cache and `Deprecation: true`, with an untagged action on two of them.
  */
-final class BothServersResponseHeadersTestKernel extends SecurityTestKernel
+class BothServersResponseHeadersTestKernel extends SecurityTestKernel
 {
     use ServesOnBothServers {
         configureContainer as private configureBothServers;

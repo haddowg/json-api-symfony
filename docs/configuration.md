@@ -60,10 +60,10 @@ witness).
 | `atomic_operations.path` | scalar | `/operations` | The path the Atomic Operations endpoint is served at. Must not equal a resource's collection path (the loader fails fast if it does). |
 | `atomic_operations.scopes` | list | `null` | The [OAuth scopes](scopes.md) the Atomic Operations endpoint itself needs on every server, replacing the scope resolver's answer. `[]` needs none. Each operation in a batch is still checked against its own scopes. |
 | `schema_validation` | bool | `false` | Registers the optional opis structural linter. Enabling it without `opis/json-schema` **fails the build**. |
-| `defaults.cache_headers` | map | `{}` | Fleet-wide default HTTP cache directives for `GET` reads. A resource's own `cacheHeaders` overrides these. |
-| `defaults.deprecation` / `sunset` / `sunset_link` | scalar | `null` | Fleet-wide default deprecation/sunset headers. A resource's own `deprecation`/`sunset` overrides these. |
+| `defaults.cache_headers` | map | `{}` | Fleet-wide default HTTP cache directives for `GET` reads. A server's own `defaults.cache_headers` and then a resource's own `cacheHeaders` merge over these. |
+| `defaults.deprecation` / `sunset` / `sunset_link` | scalar | `null` | Fleet-wide default deprecation/sunset headers. A server's own `defaults` and then a resource's own `deprecation`/`sunset`/`sunsetLink` override these, key by key. |
 | `reject_read_only_attributes` | bool | `false` | Answer a create or update that sends an attribute the client cannot write in that request, such as a `readOnly()` or computed one, with a `403 ATTRIBUTE_WRITE_PROHIBITED` pointing at each such attribute, instead of ignoring it. The check runs before validation, so it wins over a `422`. Named servers inherit it. |
-| `servers` | map | `[]` | Additional **named** servers, keyed by name. Each takes `base_uri`, `version`, `output_timezone`, `link_objects`, `reject_read_only_attributes` and `openapi_examples`. |
+| `servers` | map | `[]` | Additional **named** servers, keyed by name. Each takes `base_uri`, `version`, `output_timezone`, `link_objects`, `reject_read_only_attributes`, `openapi_examples` and a [`defaults`](#per-server-defaults) block of its own. |
 
 `base_uri` and `version` configure the implicit `default` server — link core
 [server.md](https://github.com/haddowg/json-api/blob/main/docs/server.md) for what
@@ -456,6 +456,45 @@ Unlike caching, deprecation/sunset ride **every** response for the type — read
 The same `json_api.defaults.deprecation` / `sunset` / `sunset_link` keys supply a
 fleet-wide default a resource overrides. An explicit `Deprecation`/`Sunset` header
 your app already set is never clobbered.
+
+### Per-server defaults
+
+A named server takes the same `defaults` block under `json_api.servers.<name>`. It
+applies only to that server's responses, which is how you deprecate a whole API
+version at once while its successor runs beside it:
+
+```yaml
+json_api:
+    defaults:
+        deprecation: true
+        cache_headers:
+            max_age: 60
+            public: true
+    servers:
+        v5:
+            defaults:
+                sunset: 'Sat, 01 May 2027 00:00:00 GMT'
+                sunset_link: 'https://music.example/migrating-to-v6'
+                cache_headers:
+                    max_age: 30
+        v6: ~
+```
+
+Each header value resolves in this order: the resource's own declaration, then its
+server's `defaults`, then the global `json_api.defaults`. The merge is key by key, so
+in the example every `v5` response carries the global `Deprecation: true` beside the
+server's `Sunset` and sunset `Link`, while `v6` gets only `Deprecation: true`. A
+resource on `v5` that declares its own `sunset` keeps it, and still inherits the
+server's `sunset_link` unless it sets `sunsetLink` too. Cache directives follow the
+same order with their usual merge: reads on `v5` cache for 30 seconds and stay `public`
+from the global block. `no_cache` and `must_revalidate` switch on at any layer and
+can't be switched off by a lower one, and `vary` lists add up across all three.
+
+The implicit `default` server has no block of its own: the top-level `defaults` is
+its block, and the fallback for every named server. A server block takes the same
+keys and fails the build on the same bad values as the global one, such as a
+non-integer `max_age` or a `sunset` that isn't a string. The OpenAPI document
+describes none of these headers on any server, so a server block doesn't change it.
 
 ## Named servers (`json_api.servers`)
 

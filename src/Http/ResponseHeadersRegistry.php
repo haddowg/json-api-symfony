@@ -22,10 +22,12 @@ use haddowg\JsonApiBundle\Server\ServerProvider;
  *
  * Each server holds only what its own resource class declared, so a type served by
  * different classes on two servers emits each class's headers on its own server, and a
- * server whose class declared nothing gets the global defaults.
+ * server whose class declared nothing gets the defaults.
  *
- * Resolution layers the resource-level value over the global default, then a
- * per-operation cache override over that — so a type tunes only what it declares.
+ * Resolution layers the resource-level value over the server's own
+ * `json_api.servers.<name>.defaults` (bundle ADR 0164) over the global default, field by
+ * field, then a per-operation cache override over that, so a type tunes only what it
+ * declares and a server replaces only the global values it sets.
  * The {@see \haddowg\JsonApiBundle\EventListener\ResponseHeadersListener} queries it
  * per request.
  */
@@ -44,6 +46,12 @@ final class ResponseHeadersRegistry
     /** @var array<string, array<string, DeprecationHeaders>> */
     private array $deprecationByType = [];
 
+    /** @var array<string, CacheHeaders> each server's defaults, already layered over the global ones */
+    private array $serverCache = [];
+
+    /** @var array<string, DeprecationHeaders> each server's defaults, already layered over the global ones */
+    private array $serverDeprecation = [];
+
     /**
      * @param array<string, array{
      *     cache?: array<string, mixed>,
@@ -57,13 +65,26 @@ final class ResponseHeadersRegistry
      *     cache_operations?: array<string, array<string, mixed>>,
      *     deprecation?: array<string, mixed>,
      * }>> $servers every other server's, keyed by server name then type
+     * @param array<string, array{
+     *     cache?: array<string, mixed>,
+     *     deprecation?: array<string, mixed>,
+     * }> $serverDefaults each server's own `defaults` block, keyed by server name
      */
-    public function __construct(array $byType = [], array $defaultCache = [], array $defaultDeprecation = [], array $servers = [])
+    public function __construct(array $byType = [], array $defaultCache = [], array $defaultDeprecation = [], array $servers = [], array $serverDefaults = [])
     {
         /** @var array{max_age?: int|null, s_maxage?: int|null, public?: bool|null, private?: bool|null, no_cache?: bool|null, must_revalidate?: bool|null, vary?: list<string>|null} $defaultCache */
         $this->defaultCache = CacheHeaders::fromArray($defaultCache);
         /** @var array{deprecation?: bool|string|null, sunset?: string|null, sunset_link?: string|null} $defaultDeprecation */
         $this->defaultDeprecation = DeprecationHeaders::fromArray($defaultDeprecation);
+
+        foreach ($serverDefaults as $server => $defaults) {
+            /** @var array{max_age?: int|null, s_maxage?: int|null, public?: bool|null, private?: bool|null, no_cache?: bool|null, must_revalidate?: bool|null, vary?: list<string>|null} $cache */
+            $cache = $defaults['cache'] ?? [];
+            $this->serverCache[$server] = CacheHeaders::fromArray($cache)->mergeOver($this->defaultCache);
+            /** @var array{deprecation?: bool|string|null, sunset?: string|null, sunset_link?: string|null} $deprecation */
+            $deprecation = $defaults['deprecation'] ?? [];
+            $this->serverDeprecation[$server] = DeprecationHeaders::fromArray($deprecation)->mergeOver($this->defaultDeprecation);
+        }
 
         $servers[ServerProvider::DEFAULT_SERVER] = ($servers[ServerProvider::DEFAULT_SERVER] ?? []) + $byType;
 
@@ -92,12 +113,12 @@ final class ResponseHeadersRegistry
     /**
      * The resolved {@see CacheHeaders} for `$type` on `$server` and the `$operation` read shape:
      * the per-operation override (when declared) layered over the resource-level
-     * value layered over the global default. Returns `null` only when the result is
+     * value layered over the server's defaults layered over the global default. Returns `null` only when the result is
      * empty (no caching anywhere) so the listener can skip the type entirely.
      */
     public function cacheFor(string $type, ResponseHeaderOperation $operation, string $server = ServerProvider::DEFAULT_SERVER): ?CacheHeaders
     {
-        $resolved = ($this->cacheByType[$server][$type] ?? new CacheHeaders())->mergeOver($this->defaultCache);
+        $resolved = ($this->cacheByType[$server][$type] ?? new CacheHeaders())->mergeOver($this->serverCache[$server] ?? $this->defaultCache);
 
         $override = $this->cacheByTypeOperation[$server][$type][$operation->value] ?? null;
         if ($override !== null) {
@@ -109,12 +130,12 @@ final class ResponseHeadersRegistry
 
     /**
      * The resolved {@see DeprecationHeaders} for `$type` on `$server`: the resource-level value
-     * layered over the global default. Returns `null` when the result is empty (no
+     * layered over the server's defaults layered over the global default, field by field. Returns `null` when the result is empty (no
      * deprecation/sunset anywhere).
      */
     public function deprecationFor(string $type, string $server = ServerProvider::DEFAULT_SERVER): ?DeprecationHeaders
     {
-        $resolved = ($this->deprecationByType[$server][$type] ?? new DeprecationHeaders())->mergeOver($this->defaultDeprecation);
+        $resolved = ($this->deprecationByType[$server][$type] ?? new DeprecationHeaders())->mergeOver($this->serverDeprecation[$server] ?? $this->defaultDeprecation);
 
         return $resolved->isEmpty() ? null : $resolved;
     }
