@@ -89,6 +89,22 @@ final class ScopedLinkageGuard
         }
 
         $hidden = [];
+        // An identified relation's current members are its stored pairs.
+        if (RelatedReadRouter::identifiesMembers($relation)) {
+            foreach ($relation->storedIdentifierList($parent, $request) as [$type, $key]) {
+                if (!$server->hasSerializerFor($type)) {
+                    continue;
+                }
+
+                $id = RelatedReadRouter::wireId($server->serializerFor($type), $key);
+                if (!isset($sent[$type . "\0" . $id]) && !$this->isVisible($type, $id, $relation)) {
+                    $hidden[] = new ResourceIdentifier($type, $id);
+                }
+            }
+
+            return $hidden === [] ? $linkage : new ToManyRelationship([...$linkage->resourceIdentifiers, ...$hidden]);
+        }
+
         foreach ($this->members($relation->readValue($parent, $request)) as $member) {
             $serializer = $relation->resolveSerializer($member, $server);
             if ($serializer === null) {

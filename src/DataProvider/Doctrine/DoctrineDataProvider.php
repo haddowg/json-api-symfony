@@ -24,6 +24,7 @@ use haddowg\JsonApi\Resource\Filter\FilterDefaults;
 use haddowg\JsonApi\Resource\Filter\WhereDoesntHave;
 use haddowg\JsonApi\Resource\Filter\WhereHas;
 use haddowg\JsonApi\Resource\Sort\SortByField;
+use haddowg\JsonApiBundle\DataProvider\AdmitsIdsInterface;
 use haddowg\JsonApiBundle\DataProvider\AdmitsRowsInterface;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\CriteriaApplier;
@@ -84,7 +85,7 @@ use haddowg\JsonApiBundle\Server\IdEncoderResolver;
  * @implements DataProviderInterface<object>
  * @implements PivotAwareProviderInterface<object>
  */
-final class DoctrineDataProvider implements DataProviderInterface, PivotAwareProviderInterface, ScopesRelatedReadsInterface, AdmitsRowsInterface, FetchesByIdsInterface
+final class DoctrineDataProvider implements DataProviderInterface, PivotAwareProviderInterface, ScopesRelatedReadsInterface, AdmitsRowsInterface, FetchesByIdsInterface, AdmitsIdsInterface
 {
     /**
      * The root alias every generated QueryBuilder uses; handlers re-read it
@@ -244,6 +245,44 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
     public function scopesFetchByIds(string $type): bool
     {
         return $this->extensionsFor($type) !== [];
+    }
+
+    /**
+     * One id-only query under the type's extensions, reported as FetchRelatedCollection
+     * like {@see fetchByIds()}.
+     */
+    public function admitIds(string $type, array $ids, JsonApiRequestInterface $request): array
+    {
+        $entityClass = $this->entityClassFor($type);
+        $metadata = $this->entityManager->getClassMetadata($entityClass);
+        if ($metadata->isIdentifierComposite || $ids === []) {
+            return [];
+        }
+
+        $encoder = $this->idEncoders->encoderFor($type);
+        $keys = [];
+        $wireIdsByKey = [];
+        foreach ($ids as $id) {
+            $storageKey = $encoder !== null ? $encoder->decode($id) : $id;
+            $value = $storageKey !== null ? $this->ids->toPhp($metadata, $storageKey) : null;
+            $key = $value !== null ? $this->ids->key($metadata, $value) : null;
+            if ($key !== null) {
+                $keys[$key] = $value;
+                $wireIdsByKey[$key][] = $id;
+            }
+        }
+
+        $criteria = new CollectionCriteria(new QueryParameters(fields: [], includes: [], sort: [], filter: [], pagination: []));
+        $admitted = $this->matchingToOneTargetIds($entityClass, $type, $metadata->getSingleIdentifierFieldName(), $criteria, \array_values($keys), $request);
+
+        $wireIds = [];
+        foreach ($wireIdsByKey as $key => $forKey) {
+            if (isset($admitted[$key])) {
+                \array_push($wireIds, ...$forKey);
+            }
+        }
+
+        return $wireIds;
     }
 
     public function fetchCollection(string $type, CollectionCriteria $criteria): CollectionResult
@@ -442,11 +481,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         JsonApiRequestInterface $request,
     ): CollectionResult {
         if (\count($relation->relatedTypes()) > 1) {
-            throw new \LogicException(\sprintf(
-                'The %s does not support a polymorphic (morph-to-many) related collection for relationship "%s": its members span entity classes and cannot be one scoped query. Supply a custom DataProvider that resolves the related members across types.',
-                self::class,
-                $relation->name(),
-            ));
+            throw $this->polymorphicToManyRefused($relation, 'a related collection', 'one scoped query');
         }
 
         $relatedClass = $this->entityClassFor($relatedType);
@@ -533,11 +568,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         JsonApiRequestInterface $request,
     ): RelatedBatch {
         if (\count($relation->relatedTypes()) > 1) {
-            throw new \LogicException(\sprintf(
-                'The %s does not support a polymorphic (morph-to-many) related collection for relationship "%s": its members span entity classes and cannot be one scoped query. Supply a custom DataProvider that resolves the related members across types.',
-                self::class,
-                $relation->name(),
-            ));
+            throw $this->polymorphicToManyRefused($relation, 'a related collection', 'one scoped query');
         }
 
         if ($parents === []) {
@@ -1170,11 +1201,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         JsonApiRequestInterface $request,
     ): array {
         if (\count($relation->relatedTypes()) > 1) {
-            throw new \LogicException(\sprintf(
-                'The %s does not support counting a polymorphic (morph-to-many) relationship "%s": its members span entity classes and cannot be one grouped COUNT. Supply a custom DataProvider that counts the related members across types.',
-                self::class,
-                $relation->name(),
-            ));
+            throw $this->polymorphicToManyRefused($relation, 'a count', 'one grouped COUNT');
         }
 
         if ($parents === []) {
@@ -2269,6 +2296,21 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         return \array_values(\array_filter(
             $this->extensions,
             static fn(DoctrineExtensionInterface $extension): bool => $extension->supports($type),
+        ));
+    }
+
+    /**
+     * The refusal of a polymorphic to-many, whose members span entity classes, so no
+     * single query reads them.
+     */
+    private function polymorphicToManyRefused(RelationInterface $relation, string $read, string $query): \LogicException
+    {
+        return new \LogicException(\sprintf(
+            'The %s does not support %s for the polymorphic (morph-to-many) relationship "%s": its members span entity classes and cannot be %s. Declare the relation with identifiedBy() so each type\'s members load by id, compute it with extractUsing(), or supply a custom DataProvider that resolves the members across types.',
+            self::class,
+            $read,
+            $relation->name(),
+            $query,
         ));
     }
 }

@@ -17,8 +17,8 @@ use haddowg\JsonApi\Pagination\CursorWindow;
 use haddowg\JsonApi\Pagination\OffsetWindow;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\Accessor;
-use haddowg\JsonApi\Resource\Field\MorphTo;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\Field\StoresIdentifiersInterface;
 use haddowg\JsonApi\Resource\Filter\InMemory\ArrayFilterArmInterface;
 use haddowg\JsonApi\Resource\Filter\InMemory\ArrayFilterHandler;
 use haddowg\JsonApi\Resource\Sort\InMemory\ArraySortArmInterface;
@@ -47,7 +47,7 @@ use haddowg\JsonApi\Resource\Sort\SortDirective;
  *
  * @implements DataProviderInterface<object>
  */
-final class InMemoryDataProvider implements DataProviderInterface, ScopesRelatedReadsInterface, FetchesByIdsInterface
+final class InMemoryDataProvider implements DataProviderInterface, ScopesRelatedReadsInterface, FetchesByIdsInterface, AdmitsIdsInterface
 {
     private readonly InMemoryStore $store;
 
@@ -140,6 +140,11 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
         }
 
         return $rows;
+    }
+
+    public function admitIds(string $type, array $ids, JsonApiRequestInterface $request): array
+    {
+        return \array_values(\array_filter($ids, fn(string $id): bool => $this->store->find($id) !== null));
     }
 
     /**
@@ -437,7 +442,7 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
     {
         foreach ($relations as $relation) {
             // Its target is identified by a stored pair, not held on the model.
-            if ($relation instanceof MorphTo && $relation->storesIdentifiers()) {
+            if ($relation instanceof StoresIdentifiersInterface && $relation->storesIdentifiers()) {
                 continue;
             }
 

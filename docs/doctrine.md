@@ -907,7 +907,13 @@ A **polymorphic to-many** (`MorphToMany`, whose `relatedTypes()` spans more than
 one type) is a deliberate hard boundary: the Doctrine provider executes one scoped
 query against a single related entity class, and a polymorphic collection's members
 span entity classes, so there is no single query to run. `fetchRelatedCollection`
-throws a `\LogicException` for it.
+throws a `\LogicException` for it, and its message points at the two ways past it below.
+
+A `MorphToMany` declared with `identifiedBy()` doesn't reach that boundary either. It
+reads its members' type and id pairs off the parent and loads each type's rows by id
+through that type's provider, so the related endpoint, `?withCount` and `?include` all
+work on Doctrine; see
+[relationships → a `MorphToMany` stored as type and id rows](relationships.md#a-morphtomany-stored-as-type-and-id-rows).
 
 A `MorphToMany` with `extractUsing()` doesn't reach that boundary. Its related
 endpoint and `?withCount` page and count the closure's value in memory, whether or not
