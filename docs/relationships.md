@@ -1301,9 +1301,15 @@ and a total is exact:
 - `?withCount=companies` on a user or a collection counts the admitted pairs.
 - `?include=companies` loads every member's row, one query per type, and leaves a row
   that doesn't come back out of both the linkage and `included`.
-- `GET /users/{id}/relationships/companies` renders the admitted pairs, and like any
-  polymorphic to-many relationship endpoint refuses `filter`, `sort` and `page` with a
-  `400`.
+- `GET /users/{id}/relationships/companies` pages the admitted pairs exactly as the
+  related endpoint does, with the same paginator, `page` parameters and
+  `?withCount=_self_`, but loads no rows. `filter` and `sort` are a `400`. Other
+  polymorphic to-many relationship endpoints still refuse `page` too.
+
+The pairs must point at rows that exist. A guarded type checks every pair, so a pair
+whose row is gone drops out and pages and totals stay exact. An unguarded type costs no
+query, so a dangling pair of one still shows in the linkage, and a related page that
+reaches it comes back one member short.
 
 Each member renders under its pair's type, so one entity class can back several of the
 types without overriding `getType()`. A stored type the relation doesn't declare throws a

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
 use haddowg\JsonApi\Schema\Profile\CountableProfile;
+use haddowg\JsonApiBundle\OpenApi\DocumentFactory;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
@@ -34,6 +35,8 @@ abstract class IdentifiedMorphToManyConformanceTestCase extends JsonApiFunctiona
         'related-page' => ['/users/1/companies?page[number]=2&page[size]=2&withCount=_self_', self::COUNTS_ACCEPT, 200],
         'related-sparse' => ['/users/1/companies?fields[advertisers]=code', null, 200],
         'relationship' => ['/users/1/relationships/companies', null, 200],
+        'relationship-page' => ['/users/1/relationships/companies?page[number]=2&page[size]=2&withCount=_self_', self::COUNTS_ACCEPT, 200],
+        'relationship-sort' => ['/users/1/relationships/companies?sort=name', null, 400],
         'related-sort' => ['/users/1/companies?sort=name', null, 400],
         'related-filter' => ['/users/1/companies?filter[name]=Agency', null, 400],
     ];
@@ -114,9 +117,49 @@ abstract class IdentifiedMorphToManyConformanceTestCase extends JsonApiFunctiona
     }
 
     #[Test]
-    public function theRelationshipEndpointRefusesAPage(): void
+    public function theRelationshipEndpointPagesInPairOrderWithExactTotals(): void
     {
-        $response = $this->handle('/users/1/relationships/companies?page[size]=2');
+        $visible = $this->visible(self::USER_ONE);
+
+        foreach ([1, 2, 3] as $number) {
+            $document = $this->get('/users/1/relationships/companies?withCount=_self_&page[size]=2&page[number]=' . $number, self::COUNTS_ACCEPT);
+            self::assertSame(\array_slice($visible, ($number - 1) * 2, 2), $this->keys($this->at($document, 'data')), 'page ' . $number);
+            self::assertSame($number < 3, $this->at($document, 'links', 'next') !== null, 'page ' . $number);
+        }
+    }
+
+    #[Test]
+    public function aCountFreeRelationshipPageKnowsWhetherMoreFollow(): void
+    {
+        $last = $this->get('/users/1/relationships/companies?page[size]=2&page[number]=3');
+        self::assertNull($this->at($last, 'links', 'next'));
+
+        $first = $this->get('/users/1/relationships/companies?page[size]=2&page[number]=1');
+        self::assertNotNull($this->at($first, 'links', 'next'));
+    }
+
+    #[Test]
+    public function theProjectedRelationshipEndpointTakesTheRelatedEndpointsPageParameters(): void
+    {
+        $factory = static::getContainer()->get(DocumentFactory::class);
+        self::assertInstanceOf(DocumentFactory::class, $factory);
+        $paths = $this->at(\json_decode((string) \json_encode($factory->forServer()->toArray()), true), 'paths');
+
+        $names = static fn(mixed $operation): array => \array_map(
+            static fn(mixed $parameter): mixed => \is_array($parameter) ? $parameter['name'] ?? null : null,
+            \is_array($operation) && \is_array($operation['parameters'] ?? null) ? $operation['parameters'] : [],
+        );
+
+        $relationship = $names($this->at($paths, '/users/{id}/relationships/companies', 'get'));
+        $related = $names($this->at($paths, '/users/{id}/companies', 'get'));
+        self::assertSame(['page', 'withCount'], $relationship);
+        self::assertSame(\array_values(\array_intersect($related, ['page', 'withCount'])), $relationship);
+    }
+
+    #[Test]
+    public function theRelationshipEndpointRefusesAFilter(): void
+    {
+        $response = $this->handle('/users/1/relationships/companies?filter[name]=Agency');
 
         self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
     }

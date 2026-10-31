@@ -6,3 +6,7 @@ A `MorphToMany` declared with `identifiedBy()` checks each guarded type once, wi
 
 - Loading every member's row to narrow them: correct, but a parent with thousands of members loads them all to show one page.
 - Narrowing the loaded page only: pages come out short and totals count rows the caller can't see.
+
+## Amendment: the relationship endpoint pages the pairs
+
+The relationship endpoint of an identified `MorphToMany` pages its admitted pairs the way the related endpoint does, with the same paginator, totals and `page` parameters, and renders them without loading a row. The pairs give it a stable order and an exact total that other polymorphic to-many relations lack, so those keep refusing `page`.

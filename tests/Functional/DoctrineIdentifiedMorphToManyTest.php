@@ -92,6 +92,20 @@ class DoctrineIdentifiedMorphToManyTest extends IdentifiedMorphToManyConformance
     }
 
     #[Test]
+    public function theRelationshipPageLoadsNoMemberRows(): void
+    {
+        $logger = $this->logger();
+        $logger->reset();
+
+        $this->get('/users/1/relationships/companies?page[number]=2&page[size]=2');
+
+        self::assertSame([], $this->selectsFrom($logger, 'mtm_advertiser'), \implode("\n", $logger->statements()));
+        self::assertSame([], $this->selectsFrom($logger, 'mtm_publisher'), \implode("\n", $logger->statements()));
+        // Only the id-only admit probe, once agencies are guarded.
+        self::assertCount($this->hides() ? 1 : 0, $this->selectsFrom($logger, 'mtm_agency'), \implode("\n", $logger->statements()));
+    }
+
+    #[Test]
     public function aPlainPolymorphicToManyIsRefusedPointingAtIdentifiedBy(): void
     {
         $provider = static::getContainer()->get(DoctrineDataProvider::class);

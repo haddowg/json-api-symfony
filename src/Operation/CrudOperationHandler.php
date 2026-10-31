@@ -1163,7 +1163,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // A to-one and a polymorphic relationship render off the parent: apply the related
         // type's scope first, exactly as an include does. A monomorphic
         // to-many is fetched through its provider below.
-        if (!$relation->isToMany() || Polymorphism::of($relation)) {
+        // An identified MorphToMany is paged below instead.
+        if ((!$relation->isToMany() || Polymorphism::of($relation)) && !RelatedReadRouter::identifiesMembers($relation)) {
             $this->relationshipLinkage?->setIncluded(
                 $this->includeBatcher?->scopeRelationship($server, $type, $parent, $relation, $this->jsonApiRequest($operation->context())),
             );
@@ -1282,6 +1283,42 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // Attach the page that windowed the linkage so a page profile (the
             // cursor-pagination profile) is advertised on the response; the body
             // stays links-only (core docs/responses.md).
+            return $page !== null ? $response->withPage($page) : $response;
+        }
+
+        // A MorphToMany declared with identifiedBy() pages its admitted pairs in pair order,
+        // exactly as its related endpoint does, and renders them without loading a row.
+        // Its members share no filter or sort vocabulary, so those stay a 400.
+        if ($this->readRouter !== null && RelatedReadRouter::identifiesMembers($relation)) {
+            $this->refusePolymorphicQuery($operation->queryParameters());
+
+            $request = $this->jsonApiRequest($operation->context());
+            $paginator = $this->relationCriteria->paginatorFor($relation, null, $server)?->resolve($request);
+
+            if ($request->countsRelationship('_self_') && !$relation->isCountable()) {
+                return ErrorResponse::fromException(
+                    new \haddowg\JsonApi\Exception\RelationshipCountNotAllowed(['_self_']),
+                );
+            }
+
+            $relWantsCount = $paginator !== null
+                && !($paginator instanceof CursorPaginator)
+                && ($paginator->wantsCount() || $request->countsRelationship('_self_'));
+            $criteria = $this->relationCriteria->criteriaFor(
+                $operation->queryParameters(),
+                null,
+                $relation,
+                $paginator?->window($request),
+                includePivotFields: false,
+                wantsCount: $relWantsCount,
+            );
+
+            $result = $this->readRouter->pageIdentified($server, $parent, $relation, $criteria, $request);
+            $items = \is_array($result->items) ? \array_values($result->items) : \iterator_to_array($result->items, false);
+            $page = $this->supplyWindowedRelationship($parent, $relationshipName, $items, $paginator, $result, $relWantsCount, $request, $operation->queryParameters());
+
+            $response = IdentifierResponse::forRelationship($parent, $server->serializerFor($type), $relationshipName);
+
             return $page !== null ? $response->withPage($page) : $response;
         }
 
