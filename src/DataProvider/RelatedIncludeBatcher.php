@@ -9,6 +9,7 @@ use haddowg\JsonApi\Operation\QueryParameters;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\Accessor;
 use haddowg\JsonApi\Resource\Field\MorphTo;
+use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Schema\Relationship\RelationshipLinkage;
 use haddowg\JsonApi\Schema\Relationship\ToOneRelationshipLinkage;
@@ -53,7 +54,10 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
  * render the unscoped value. A `MorphTo` target is checked against the provider of the
  * type it renders as. A `MorphTo` declared with `identifiedBy()` renders its linkage
  * from the stored pair. Its targets load by id through each type's provider when they
- * render, and for linkage alone only the guarded types load. {@see disable()} turns off only
+ * render, and for linkage alone only the guarded types load. A `MorphToMany` declared
+ * with `identifiedBy()` renders its linkage from the stored pairs the same way: its
+ * members load by id when they render, and for linkage alone each guarded type is
+ * narrowed to the ids its provider admits. {@see disable()} turns off only
  * the optional batching of unscoped relations.
  *
  * Metadata is resolved on the request's own server, so a type registered only on a
@@ -92,6 +96,14 @@ final class RelatedIncludeBatcher
      * @var array<int, array<string, ToOneRelationshipLinkage>>
      */
     private array $toOne = [];
+
+    /**
+     * The type each member an identified `MorphToMany` loaded renders as, keyed by object
+     * id, since one class may serve several of its types.
+     *
+     * @var array<int, string>
+     */
+    private array $typeOf = [];
 
     /**
      * The Relationship Queries window pages already installed for the primary level.
@@ -163,6 +175,7 @@ final class RelatedIncludeBatcher
         $this->windowed = $windowed;
         $this->known = [];
         $this->toOne = [];
+        $this->typeOf = [];
         foreach ($entitiesByType as $entities) {
             $this->remember($entities);
         }
@@ -252,6 +265,7 @@ final class RelatedIncludeBatcher
     {
         $this->known = [];
         $this->toOne = [];
+        $this->typeOf = [];
         $this->windowed = null;
     }
 
@@ -411,6 +425,12 @@ final class RelatedIncludeBatcher
             }
 
             return [];
+        }
+
+        // Its linkage renders from the stored pairs. A read of the members loads them all;
+        // otherwise each guarded type is narrowed to the ids its provider admits.
+        if (RelatedReadRouter::identifiesMembers($relation)) {
+            return $this->loadIdentifiedMembers($server, $entities, $relation, $request, $included || $descends, $linkages);
         }
 
         // An extractUsing() relation's closure picks its candidates. Into a scoped type the
@@ -643,6 +663,40 @@ final class RelatedIncludeBatcher
     }
 
     /**
+     * Supplies each parent's members of a `MorphToMany` declared with `identifiedBy()`:
+     * with `$load` every member's row, loaded one query per type, and otherwise the
+     * pairs of each guarded type its provider admits. With no guarded type and nothing
+     * to load, core renders the pairs as stored.
+     *
+     * @param list<object>                                   $entities
+     * @param array<int, array<string, RelationshipLinkage>> $linkages
+     *
+     * @return list<object>
+     */
+    private function loadIdentifiedMembers(Server $server, array $entities, MorphToMany $relation, JsonApiRequestInterface $request, bool $load, array &$linkages): array
+    {
+        if (!$load && $this->guard->guardedMemberTypes($relation) === []) {
+            return [];
+        }
+
+        $targets = [];
+        foreach ($this->router->identifiedMembers($server, $relation, $entities, $request, $load) as $index => $members) {
+            $linkages[\spl_object_id($entities[$index])][$relation->name()] = new RelationshipLinkage($members);
+            foreach ($members as $member) {
+                if ($member->target !== null) {
+                    $targets[] = $member->target;
+                    $this->typeOf[\spl_object_id($member->target)] = $member->type;
+                }
+            }
+        }
+
+        $targets = $this->unique($targets);
+        $this->remember($targets);
+
+        return $targets;
+    }
+
+    /**
      * Continues the walk into an included relation's targets, grouped by their type (a
      * polymorphic relation's targets span several).
      *
@@ -846,6 +900,13 @@ final class RelatedIncludeBatcher
 
         $groups = [];
         foreach ($targets as $target) {
+            $type = $this->typeOf[\spl_object_id($target)] ?? null;
+            if ($type !== null) {
+                $groups[$type][] = $target;
+
+                continue;
+            }
+
             $serializer = $relation->resolveSerializer($target, $server);
             if ($serializer !== null) {
                 $groups[$serializer->getType($target)][] = $target;

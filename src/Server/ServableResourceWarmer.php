@@ -288,6 +288,11 @@ final class ServableResourceWarmer implements CacheWarmerInterface
                 continue; // a monomorphic relation never compares getType()
             }
 
+            // An identified MorphToMany renders each member as its stored pair's type.
+            if (\haddowg\JsonApiBundle\DataProvider\RelatedReadRouter::identifiesMembers($relation)) {
+                continue;
+            }
+
             foreach ($relatedTypes as $candidateType) {
                 if (!$server->hasSerializerFor($candidateType)) {
                     continue;
