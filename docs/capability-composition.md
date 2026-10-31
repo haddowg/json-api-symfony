@@ -38,7 +38,7 @@ extra wiring:
 
 | Attribute | Goes on | Tag | Constant |
 | --- | --- | --- | --- |
-| `#[AsJsonApiSerializer(type, operations, server, tags, extensions, operationExtensions)]` | a core `SerializerInterface` | `haddowg.json_api.serializer` | `JsonApiBundle::SERIALIZER_TAG` |
+| `#[AsJsonApiSerializer(type, operations, server, tags, extensions, operationExtensions, operationExamples, operationScopes)]` | a core `SerializerInterface` | `haddowg.json_api.serializer` | `JsonApiBundle::SERIALIZER_TAG` |
 | `#[AsJsonApiHydrator(type, server)]` | a core `HydratorInterface` | `haddowg.json_api.hydrator` | `JsonApiBundle::HYDRATOR_TAG` |
 | `#[AsJsonApiRelations(type, server)]` | a bundle `RelationsProviderInterface` | `haddowg.json_api.relations` | `JsonApiBundle::RELATIONS_TAG` |
 

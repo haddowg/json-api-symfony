@@ -63,10 +63,16 @@ use haddowg\JsonApi\Response\NoContentResponse;
     security: "is_granted('PUBLISH', subject)",   // optional authz expression (see Authorization)
     name: null,                     // optional route-name override
     asLink: false,                  // expose as a security-aware `links` member (resource scope only)
+    tags: [],                       // OpenAPI tags; empty inherits the mount type's resource tags
+    summary: null,                  // OpenAPI operation summary / description
+    description: null,
+    accepts: [],                    // request media types the action takes; empty = its input mode's default
+    example: null,                  // OperationExample override for the generated example; false emits none
     readOnly: null,                 // declared safety, stamped as OpenAPI x-safety; null leaves a flag out
     destructive: null,
     idempotent: null,
     extensions: [],                 // OpenAPI x- extensions for this action's operation only
+    scopes: null,                   // OAuth scopes this action needs; null asks the scope resolver (see Scopes)
 )]
 final class PublishArticle implements ActionHandlerInterface
 {
@@ -543,13 +549,16 @@ exposes both the resolved request state and pre-wired response factories:
 | `entity()` | the resolved entity (resource scope) or `null` (collection scope) |
 | `input()` | the hydrated input (`Document` mode) or `null` |
 | `request()` | the JSON:API request — always; the raw body + uploaded files for `Raw` mode |
+| `requestMediaType()` | the request body's media type as matched against `accepts`, without parameters, or `null` with no body |
+| `responseMediaType()` | the media type the `Accept` header picked from `responds`: `application/vnd.api+json` or a raw result's type |
 | `queryParameters()` | the parsed, strict-validated query parameters |
 | `serializer()` | the `outputType` serializer |
 | `server()` | the resolving server |
 | `data($data)` | a `DataResponse` pre-wired to the response serializer |
 | `meta($array)` | a `MetaResponse` |
 | `noContent()` | a `NoContentResponse` (`204`) |
-| `accepted($url)` | an `AcceptedResponse` (`202`) — an async accept pointing at the poll URL (chain `->withRetryAfter()`) |
+| `raw($body, $mediaType, $status, $headers)` | a `RawResponse`: a string, stream resource or PSR-7 stream sent as it is, in the negotiated raw type by default |
+| `accepted($url, $job)` | an `AcceptedResponse` (`202`) — an async accept pointing at the poll URL, with the job as `data` when given (chain `->withRetryAfter()`) |
 | `seeOther($url, $expiresAt)` | a `SeeOtherResponse` (`303`): an async-completion redirect, or the URL a download action hands out, with an optional expiry |
 
 The `data()` / `meta()` / `noContent()` factories are the ergonomic path; reach for

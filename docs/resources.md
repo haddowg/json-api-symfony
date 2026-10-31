@@ -124,8 +124,12 @@ final readonly class AsJsonApiResource
 > `sunsetLink`) documented in [configuration](configuration.md#response-headers-caching-and-deprecation),
 > and the per-operation **response-declaration** arguments (`create`, `update`,
 > `delete`, `fetchOne`, `fetchCollection`) documented in
-> [Per-operation response declarations](#per-operation-response-declarations) below —
-> all omitted from the snippet above for brevity.
+> [Per-operation response declarations](#per-operation-response-declarations) below,
+> the OpenAPI description arguments (`tags`, `description`, `operationDescriptions`,
+> `singular`, `extensions`, `operationExtensions`, `operationExamples`) documented in
+> [OpenAPI customisation](openapi.md#customisation), and the per-operation OAuth
+> `operationScopes` documented in [scopes](scopes.md#overriding-one-operation) — all
+> omitted from the snippet above for brevity.
 
 A second job: the attribute **also tags a class that is *not* an `AbstractResource`
 subclass** as a resource. So if you build a type from capabilities rather than the

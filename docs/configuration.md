@@ -63,6 +63,10 @@ witness).
 | `defaults.cache_headers` | map | `{}` | Fleet-wide default HTTP cache directives for `GET` reads. A server's own `defaults.cache_headers` and then a resource's own `cacheHeaders` merge over these. |
 | `defaults.deprecation` / `sunset` / `sunset_link` | scalar | `null` | Fleet-wide default deprecation/sunset headers. A server's own `defaults` and then a resource's own `deprecation`/`sunset`/`sunsetLink` override these, key by key. |
 | `reject_read_only_attributes` | bool | `false` | Answer a create or update that sends an attribute the client cannot write in that request, such as a `readOnly()` or computed one, with a `403 ATTRIBUTE_WRITE_PROHIBITED` pointing at each such attribute, instead of ignoring it. The check runs before validation, so it wins over a `422`. Named servers inherit it. |
+| `exceptions` | map | `{}` | Map an exception class to an HTTP status, so a thrown instance renders as a JSON:API error with that status. See [errors](errors.md#facet-1--the-json_apiexceptions-config-map). |
+| `error_codes.paths` | list | `[]` | Directories scanned at build time for your `DescribedErrorInterface` exceptions, which the OpenAPI error catalogue then documents beside core's. See [errors](errors.md#documenting-your-own-error-codes). |
+| `profiles` | list | the three built-ins | The `ProfileInterface` classes every server recognizes: `CursorPaginationProfile`, `CountableProfile` and `RelationshipQueriesProfile` by default. Drop one to stop recognizing and advertising it (its query parameters leave the OpenAPI document too), or add your own class. |
+| `openapi` | map | see [OpenAPI](openapi.md) | Document generation, serving, the viewer, `describedby` links, examples and security schemes. Every key is covered on the [OpenAPI](openapi.md) page. |
 | `servers` | map | `[]` | Additional **named** servers, keyed by name. Each takes `base_uri`, `version`, `output_timezone`, `link_objects`, `reject_read_only_attributes`, `openapi_examples` and a [`defaults`](#per-server-defaults) block of its own. |
 
 `base_uri` and `version` configure the implicit `default` server — link core
@@ -129,7 +133,7 @@ request origin alone.
 
 ### Container parameters
 
-Two of the keys surface as container parameters you can read elsewhere:
+Several of the keys surface as container parameters you can read elsewhere:
 
 | Parameter | Source | Value |
 | --- | --- | --- |
