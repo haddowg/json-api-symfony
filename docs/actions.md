@@ -509,7 +509,7 @@ document with the URL as its `location` link:
 ```json
 {
   "links": {
-    "self": "https://music.example/albums/1/-actions/download",
+    "self": { "href": "https://music.example/albums/1/-actions/download" },
     "location": {
       "href": "https://storage.example.com/albums/1.csv?signature=example",
       "type": "text/csv",
