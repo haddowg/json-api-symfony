@@ -398,7 +398,7 @@ by one route-scoped `kernel.response` listener that reads
 the resource attribute (falling back to the global `json_api.defaults`) — you never
 mutate the response in an after-hook for these.
 
-### Cache headers (G7)
+### Cache headers
 
 Declare cache directives on `#[AsJsonApiResource(cacheHeaders: …)]`. The map keys
 are `max_age`, `s_maxage` (the shared/CDN lifetime), `public`/`private`,
@@ -443,7 +443,7 @@ json_api:
             vary: ['Accept']
 ```
 
-### Deprecation + Sunset (G16)
+### Deprecation + Sunset
 
 Declare a deprecation on `#[AsJsonApiResource(deprecation: …, sunset: …,
 sunsetLink: …)]`. `deprecation` is `true` (emit a bare `Deprecation: true`) or a

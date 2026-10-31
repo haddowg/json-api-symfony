@@ -174,7 +174,7 @@ final class DoctrineReadQueryBudgetTest extends JsonApiFunctionalTestCase
         $logger = $this->logger();
         $logger->reset();
 
-        // The G21 default flip: a bare `?page[size]=2` (no `?withCount`) now windows
+        // The count-free default: a bare `?page[size]=2` (no `?withCount`) now windows
         // count-free — ZERO COUNT queries, one primary SELECT (the windowed page over
         // the limit+1 probe).
         $response = $this->handle(self::BASE_URI . '/articles?page[size]=2');
@@ -238,7 +238,7 @@ final class DoctrineReadQueryBudgetTest extends JsonApiFunctionalTestCase
 
         // A resource that disables pagination (pagination() returns null) is fetched
         // whole, so its size is free — `meta.total` is rendered unconditionally with
-        // NO COUNT query (the size comes from the materialised set, G21 §5). The
+        // NO COUNT query (the size comes from the materialised set). The
         // `unpaginatedArticles` resource serves the same article rows with no paginator.
         $response = $this->handle(self::BASE_URI . '/unpaginatedArticles');
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());

@@ -9,7 +9,7 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 
 /**
- * A request-wide serving-gate witness for the custom-action suite (design §6): it subscribes to
+ * A request-wide serving-gate witness for the custom-action suite: it subscribes to
  * the {@see ServingEvent} core fires once per dispatch
  * inside `Server::dispatch()` — which a {@see \haddowg\JsonApi\Operation\CustomActionOperation}
  * routes through unchanged, so the gate covers actions for free — and **denies** the

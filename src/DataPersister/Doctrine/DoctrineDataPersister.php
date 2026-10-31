@@ -114,7 +114,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
      * long-running worker reuses the manager on its next message; closing it would
      * strand both (and forces a fragile reopen that breaks under older Doctrine ORM).
      *
-     * GUARDED (Slice C carry-forward): a no-op when the manager is already closed or
+     * GUARDED: a no-op when the manager is already closed or
      * has no active transaction. The atomic executor's commit-failure path rolls back
      * AFTER a failed commit (whose flush exception itself rolls back and closes the
      * manager), so an unconditional `rollback()` here would throw a secondary

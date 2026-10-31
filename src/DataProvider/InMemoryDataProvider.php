@@ -162,7 +162,7 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
             return $this->runCursor($criteria, $this->store->all());
         }
 
-        // Count-free by default (G21): count the pre-window total only when the
+        // Count-free by default: count the pre-window total only when the
         // handler resolved a COUNT for this fetch (the paginator's withCount() author
         // opt-in, or ?withCount=_self_ under a countable() resource); otherwise the
         // executor fetches count-free via the window+1 probe and reports `hasMore`.
@@ -179,7 +179,7 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
         // Read the related objects off the parent via the relation's public
         // accessor (honours storedAs/extractUsing; the default accessor returns
         // the stored related collection), then run the same criteria pipeline as
-        // a primary collection fetch. Count-free by default (G21): the related
+        // a primary collection fetch. Count-free by default: the related
         // endpoint counts only when the handler resolved a COUNT for this fetch
         // (`$criteria->wantsCount` — the relation paginator's withCount() author
         // opt-in, or ?withCount=_self_ under a countable() relation); otherwise it
@@ -306,8 +306,8 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
             window: $criteria->window,
             defaultSort: $defaultSort,
             aliasOf: $criteria->aliasOf,
-            // Preserve the count decision through the tiebreak rebuild (G21): a
-            // windowed include of a countable relation counts (§6d), so the rebuilt
+            // Preserve the count decision through the tiebreak rebuild: a
+            // windowed include of a countable relation counts, so the rebuilt
             // criteria must carry the same wantsCount the batcher resolved.
             wantsCount: $criteria->wantsCount,
         );

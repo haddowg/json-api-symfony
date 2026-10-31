@@ -78,8 +78,8 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
         // and the deduped rendered linkage — one consistent `total` semantic.
         $document = $this->countsFetchDocument('/playlists/3?withCount=tracks');
 
-        // The inline `?withCount=tracks` relationship-object count (the §6c path,
-        // unchanged by G21) reports the DISTINCT far-member count (2), agreeing with the
+        // The inline `?withCount=tracks` relationship-object count (the inline
+        // count path) reports the DISTINCT far-member count (2), agreeing with the
         // deduped rendered linkage — one consistent `total` semantic.
         self::assertSame(2, $this->relationshipTotal($document, 'tracks'));
     }
@@ -302,7 +302,7 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
         // filter[title] (the related `tracks` vocabulary, contains "o" → Intro,
         // Outro, NOT Bridge) composes with the pivot sort in ONE query; a page of
         // size 2 holds both, so the page is full (no short page). Count-free by
-        // default (G21): the page carries no total, and with both matches on page 1
+        // default: the page carries no total, and with both matches on page 1
         // there is no further page (no `next`).
         $document = $this->fetchDocument('/playlists/1/tracks?filter[title]=o&sort=position&page[size]=2&page[number]=1');
 
@@ -382,7 +382,7 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
         self::assertSame(['1', '2'], [...$firstIds, ...$secondIds]);
 
         // Page 1 of two distinct members signals a further page via `next` (count-free
-        // by default, G21); the dedup holds without a total being needed.
+        // by default); the dedup holds without a total being needed.
         $links = $first['links'] ?? null;
         self::assertIsArray($links);
         self::assertNotNull($links['next'] ?? null, 'a second distinct member follows on page 2');

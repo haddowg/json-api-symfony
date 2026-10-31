@@ -77,7 +77,7 @@ class Album
     #[ORM\Column(type: 'json', nullable: true)]
     public ?array $releaseInfo = null;
 
-    // Cover artwork, attached by the Raw-input `artwork` upload action (G13). It is
+    // Cover artwork, attached by the Raw-input `artwork` upload action. It is
     // never set through the CRUD write path — only the custom upload action fills
     // it — so it stays null until uploaded.
     #[ORM\Column(type: 'text', nullable: true)]

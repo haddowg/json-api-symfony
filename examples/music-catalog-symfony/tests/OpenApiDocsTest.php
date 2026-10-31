@@ -18,7 +18,7 @@ use PHPUnit\Framework\Attributes\Test;
  * configured surface — the info block, the `Catalog`/`Library` tags, the `bearer`
  * security scheme, and the reusable, *described* `AlbumStatus` enum component — and,
  * via {@see SchemaConformanceTrait}, that the generated schemas actually **describe the
- * real catalogue responses** (the round-trip guarantee, design §8/G6).
+ * real catalogue responses** (the round-trip guarantee).
  *
  * `expose_in_prod: true` in the example config registers the docs routes even though
  * the kernel boots `debug=false`, so `GET /docs.json` resolves here.
@@ -183,7 +183,7 @@ final class OpenApiDocsTest extends MusicCatalogKernelTestCase
     {
         // `playlists.owner` targets the `users` type, which is admin-only
         // (`server: 'admin'`). On the default server `users` is unserializable, so
-        // `?include=owner` could hydrate nothing — the projection prunes it (D45),
+        // `?include=owner` could hydrate nothing — the projection prunes it,
         // while include paths to default-serializable types remain.
         $document = $this->decode($this->handle('/docs.json'));
         $include = $this->parameterNamed($this->nested($document, 'paths', '/playlists', 'get', 'parameters'), 'include');

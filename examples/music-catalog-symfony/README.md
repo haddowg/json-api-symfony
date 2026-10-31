@@ -429,7 +429,7 @@ GET /albums/1?include=tracks&rQ[tracks][sort]=-duration
   **unknown** key is the same `400` as the endpoint, with the **plain-form** key in
   `source.parameter` (`filter[nope]`, not the `relatedQuery[…]` form).
 - A rendered to-many under the profile carries its pagination links — `first`/`prev`/
-  `next` (+`last` **only when the relation is `countable()`**, preserving the Slice 1
+  `next` (+`last` **only when the relation is `countable()`**, preserving the
   count-free vs countable distinction) — in its relationship object's `links`, in the
   spec's **plain form** against the relationship-linkage endpoint
   (`/albums/1/relationships/tracks?sort=-duration&page[number]=2`), **never** the

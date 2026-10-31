@@ -232,7 +232,7 @@ Counting is exposed two ways, both on the `total` meta key:
   (`source.parameter: withCount`).
 
 - **The related-collection endpoint** (`GET /{type}/{id}/{rel}`) is **count-free by
-  default** (since G21), exactly like a primary collection: it windows without a
+  default**, exactly like a primary collection: it windows without a
   `COUNT` — no `total`, no `last`, a further page signalled by `next`. A client opts
   into the total with `?withCount=_self_` on a `countable()` relation under the
   Countable profile (the `_self_` token meaning "this related collection"); an author

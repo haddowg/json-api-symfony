@@ -11,7 +11,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * The Slice-2 acceptance suite for the Relationship Queries profile, run identically against
+ * The acceptance suite for the Relationship Queries profile, run identically against
  * the in-memory provider
  * ({@see InMemoryRelationshipQueriesTest}) and the Doctrine provider
  * ({@see DoctrineRelationshipQueriesTest}).
@@ -332,7 +332,7 @@ abstract class RelationshipQueriesConformanceTestCase extends JsonApiFunctionalT
     #[Group('spec:fetching-pagination')]
     public function aCountableRelationshipObjectEmitsPlainFormPaginationLinksWithLast(): void
     {
-        // editors is countable(); with `?withCount=editors` opting into the count (G21: a
+        // editors is countable(); with `?withCount=editors` opting into the count (a
         // windowed include is count-free until asked) its relationship object carries
         // first + last pagination links, in the PLAIN form against the relationship-linkage
         // endpoint, mirroring the relatedQuery sort — never the relatedQuery[…] form.
@@ -362,7 +362,7 @@ abstract class RelationshipQueriesConformanceTestCase extends JsonApiFunctionalT
     {
         // lazyComments is a distinct non-countable to-many: under the profile its
         // relationship object paginates count-free — a first link but no last (the
-        // slice-1 count-free vs countable distinction, preserved).
+        // count-free vs countable distinction, preserved).
         $document = $this->profileDocument('/articles/1?include=lazyComments');
 
         $links = $this->relationshipLinks($document['data'] ?? null, 'lazyComments');

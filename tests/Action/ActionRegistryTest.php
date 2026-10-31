@@ -13,8 +13,8 @@ use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 
 /**
- * Characterizes the {@see ActionRegistry} enumeration seam added for OpenAPI Slice 4
- * (the OpenAPI metadata work): {@see ActionRegistry::forServerType()}
+ * Characterizes the {@see ActionRegistry} enumeration seam added for the OpenAPI
+ * metadata: {@see ActionRegistry::forServerType()}
  * lists every action declared for a `(server, type)` (the composite-key lookup
  * cannot), and rehydrates each scalar descriptor — including the comma-joined `tags`
  * split back into a list.

@@ -7,7 +7,7 @@ namespace haddowg\JsonApiBundle\OpenApi;
 use haddowg\JsonApi\OpenApi\OpenApi;
 
 /**
- * The wholesale-customisation decorator seam (design §5, D7) — the app's last word over
+ * The wholesale-customisation decorator seam — the app's last word over
  * the generated OpenAPI document.
  *
  * Inline authoring (`->description()`/`->example()` on the core builders) and config

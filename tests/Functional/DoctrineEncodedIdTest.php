@@ -73,8 +73,8 @@ final class DoctrineEncodedIdTest extends JsonApiFunctionalTestCase
         self::assertNotNull($show);
         // The author's declared id pattern (`cog-[0-9a-f]+`) is preserved, composed
         // behind a negative lookahead that excludes the reserved `-actions` segment so
-        // a collection-scope custom action is never shadowed by an {id} route (design
-        // §7). The lookahead is anchored to the segment boundary (`/` or end of path),
+        // a collection-scope custom action is never shadowed by an {id} route.
+        // The lookahead is anchored to the segment boundary (`/` or end of path),
         // not the whole string.
         self::assertSame('(?!\-actions(?:/|$))(?:cog-[0-9a-f]+)', $show->getRequirement('id'));
 

@@ -14,7 +14,7 @@ use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use Psr\Http\Message\UploadedFileInterface;
 
 /**
- * `POST /actionWidgets/{id}/-actions/artwork` — the **Raw-input** witness (design §3/§10): a
+ * `POST /actionWidgets/{id}/-actions/artwork` — the **Raw-input** witness: a
  * `multipart/form-data` (or raw blob) upload, NOT
  * `application/vnd.api+json`, so the request content-type negotiation is relaxed and
  * no JSON:API body parsing runs. The handler reads the raw body / uploaded files off

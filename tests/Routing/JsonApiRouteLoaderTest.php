@@ -12,7 +12,7 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Characterizes the {@see JsonApiRouteLoader}'s Atomic Operations route emission —
- * specifically the fail-fast configuration guard (Slice D polish): an atomic path
+ * specifically the fail-fast configuration guard: an atomic path
  * that equals a resource's collection path (`/{uriType}`) on the same server would
  * silently shadow that type's `POST` Create (both are `POST {path}`, and the atomic
  * route is emitted first), so the loader refuses it at route-loading time with a

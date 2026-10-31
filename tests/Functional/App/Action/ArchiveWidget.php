@@ -11,8 +11,8 @@ use haddowg\JsonApiBundle\Action\ActionHandlerInterface;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiAction;
 
 /**
- * `POST /actionWidgets/{id}/-actions/archive` — the per-action **`security`** witness
- * (design §6/§10): the action carries
+ * `POST /actionWidgets/{id}/-actions/archive` — the per-action **`security`** witness:
+ * the action carries
  * `security: "is_granted('ROLE_ADMIN')"`, evaluated at the `BeforeActionEvent` gate
  * against the resolved entity *after* it is fetched and *before* the handler runs.
  * A `ROLE_USER` request is denied with a `403`; a `ROLE_ADMIN` request reaches the

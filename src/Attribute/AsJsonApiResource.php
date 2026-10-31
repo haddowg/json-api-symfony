@@ -59,7 +59,7 @@ use haddowg\JsonApiBundle\Operation\Operation;
  * so an ambiguous declaration never compiles.
  *
  * `cacheHeaders` declares **declarative HTTP cache headers** for the type's safe
- * (`GET`) reads (API-Platform gap G7): a map of `max_age`,
+ * (`GET`) reads: a map of `max_age`,
  * `s_maxage` (shared/CDN), `public`/`private`, `no_cache`, `must_revalidate` and
  * `vary` (a list of response header names → `Vary`). The
  * {@see \haddowg\JsonApiBundle\EventListener\ResponseHeadersListener} maps them
@@ -70,7 +70,7 @@ use haddowg\JsonApiBundle\Operation\Operation;
  * (and has no `json_api.defaults.cache_headers`) gets no `Cache-Control` (unchanged).
  *
  * `tags` declares the **OpenAPI tag names** every operation of this type is grouped
- * under in the generated OpenAPI document (design §4.7, D15). Tags carry **no
+ * under in the generated OpenAPI document. Tags carry **no
  * JSON:API meaning** — they only drive how Swagger UI / ReDoc group operations. An
  * empty array means the default: a single tag named the humanized, title-cased,
  * pluralized form of the type (e.g. `blog-post` -> `'Blog Posts'`). Tag *definitions*
@@ -109,7 +109,7 @@ use haddowg\JsonApiBundle\Operation\Operation;
  *
  * `deprecation` and `sunset` declare **deprecation signalling** — the IETF
  * Deprecation header field (`draft-ietf-httpapi-deprecation-header`) plus the
- * RFC 8594 `Sunset` header (API-Platform gap G16), emitted on
+ * RFC 8594 `Sunset` header, emitted on
  * **every** response for the type (reads and writes alike). `deprecation: true`
  * emits a bare `Deprecation: true`;
  * `deprecation: '<date>'` emits `Deprecation: <date>` (the author formats the date

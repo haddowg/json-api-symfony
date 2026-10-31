@@ -115,7 +115,7 @@ final class InMemoryDataProviderTest extends TestCase
     #[Test]
     public function itWindowsTheCollectionAndReportsThePreWindowTotalWhenCountWanted(): void
     {
-        // `wantsCount: true` is the handler's COUNT opt-in (G21): the provider counts
+        // `wantsCount: true` is the handler's COUNT opt-in: the provider counts
         // the pre-window total and reports it.
         $result = $this->articles()->fetchCollection('articles', new CollectionCriteria(
             $this->query(),
@@ -130,7 +130,7 @@ final class InMemoryDataProviderTest extends TestCase
     #[Test]
     public function itWindowsCountFreeByDefaultReportingHasMoreNotATotal(): void
     {
-        // The G21 default: no `wantsCount`, so the provider fetches count-free — a
+        // The default: no `wantsCount`, so the provider fetches count-free — a
         // null total, `windowed` true, and `hasMore` from the window+1 probe.
         $result = $this->articles()->fetchCollection('articles', new CollectionCriteria(
             $this->query(),

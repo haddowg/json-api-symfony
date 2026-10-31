@@ -11,7 +11,7 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Contracts\Service\ResetInterface;
 
 /**
- * The cross-store snapshot coordinator. Slice D closes the
+ * The cross-store snapshot coordinator. It closes the
  * asymmetry with the {@see \haddowg\JsonApiBundle\DataPersister\WriteTransactionContext}:
  * the coordinator implements {@see ResetInterface} (auto-tagged `kernel.reset` when
  * registered as a service), so a batch that left a session open undrained — an

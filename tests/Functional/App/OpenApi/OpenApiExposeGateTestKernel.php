@@ -19,7 +19,7 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 /**
- * The expose-gate witness (design D9): identical to {@see OpenApiTestKernel} but
+ * The expose-gate witness: identical to {@see OpenApiTestKernel} but
  * **without** `expose_in_prod`. Booted `debug=false` (as the functional suite does),
  * neither gate passes, so the docs route loader emits **no** document route — proving
  * the document is unreachable over HTTP outside debug unless opted in.

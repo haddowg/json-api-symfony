@@ -10,7 +10,7 @@ use PHPUnit\Framework\Attributes\Test;
 
 /**
  * {@see CustomActionConformanceTestCase} against the in-memory provider/persister:
- * the witness for the Doctrine action path, running the same §10 action matrix over
+ * the witness for the Doctrine action path, running the same action matrix over
  * the shared {@see \haddowg\JsonApiBundle\DataProvider\InMemoryStore} with no database.
  */
 final class InMemoryCustomActionTest extends CustomActionConformanceTestCase

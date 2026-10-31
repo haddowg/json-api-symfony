@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The Tier-0 acceptance suite for strict query-parameter validation (docs/configuration.md),
+ * The acceptance suite for strict query-parameter validation (docs/configuration.md),
  * run identically against the in-memory provider
  * ({@see InMemoryStrictQueryParametersTest}) and the Doctrine provider
  * ({@see DoctrineStrictQueryParametersTest}).

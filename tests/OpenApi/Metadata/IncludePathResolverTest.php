@@ -24,7 +24,7 @@ use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 
 /**
- * Characterizes the {@see IncludePathResolver} (design §4.4): it walks the relation
+ * Characterizes the {@see IncludePathResolver}: it walks the relation
  * graph to derive a type's includable `?include` paths, honouring per-relation
  * includability, the max-include-depth cap, the root allow-list, and terminating on
  * cycles.
@@ -60,7 +60,7 @@ final class IncludePathResolverTest extends TestCase
     {
         // Same graph, but the `comments` type is NOT registered on this server — so an
         // `?include=comments` could hydrate nothing. The path is pruned even though the
-        // relation is includable (D45); `author`/`author.company` (registered) remain.
+        // relation is includable; `author`/`author.company` (registered) remain.
         [$resolver, $server] = $this->resolver(3, new IncArticle(), new IncPerson(), new IncCompany());
 
         self::assertEqualsCanonicalizing(

@@ -103,7 +103,7 @@ final class RelationCountTest extends MusicCatalogKernelTestCase
     #[Test]
     public function aCountableRelatedEndpointPaginatesCountFreeByDefault(): void
     {
-        // Since G21 the related-collection endpoint is count-free BY DEFAULT even for a
+        // The related-collection endpoint is count-free BY DEFAULT even for a
         // COUNTABLE relation: a bare fetch windows without a COUNT, so there is no
         // meta.page.total. (perPage is 2, album 1 has two non-explicit visible tracks,
         // so it is one full page with no further page — hence no `next`/`last`.) The
@@ -126,7 +126,7 @@ final class RelationCountTest extends MusicCatalogKernelTestCase
         // `artists.albums` is NOT countable(), so its related endpoint paginates
         // COUNT-FREE: no COUNT query runs, so there is no meta.page.total and no
         // `last` link — only self/first (a `next` would signal a further page). This
-        // is the gap-G21 partial-pagination mechanism for relationships.
+        // is the partial-pagination mechanism for relationships.
         $document = $this->fetch('/artists/1/albums');
 
         $page = $this->pageMeta($document);

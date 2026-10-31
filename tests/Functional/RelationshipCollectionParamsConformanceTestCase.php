@@ -61,7 +61,7 @@ abstract class RelationshipCollectionParamsConformanceTestCase extends JsonApiFu
     public function aRelationshipEndpointRendersLinkageOnlyAndNeverACompoundIncluded(): void
     {
         // A relationship endpoint returns linkage only — never a compound `included`
-        // document (core D16). `?include` is not part of its contract:
+        // document. `?include` is not part of its contract:
         // it is tolerated (not a 400) but inert, and no `included` member is emitted.
         // This locks the linkage-only contract on BOTH providers.
         $response = $this->handle('/articles/1/relationships/comments?include=author');
@@ -212,7 +212,7 @@ abstract class RelationshipCollectionParamsConformanceTestCase extends JsonApiFu
     #[Group('spec:fetching-pagination')]
     public function aCountableRelationshipLinkagePaginatesCountFreeWithoutWithCount(): void
     {
-        // The G21 default: even a countable() relation paginates count-FREE until the
+        // The default: even a countable() relation paginates count-FREE until the
         // client asks — a bare windowed `pagedComments` linkage carries `next` (the
         // over-fetch probe) but no `last`.
         $document = $this->fetchDocument('/articles/1/relationships/pagedComments?page[size]=1&page[number]=1');
@@ -233,7 +233,7 @@ abstract class RelationshipCollectionParamsConformanceTestCase extends JsonApiFu
     {
         // `comments` is NOT countable(), so `?withCount=_self_` on its relationship
         // endpoint is rejected by the handler's gate — the to-many twin of the related
-        // endpoint's gate (G21 §6b row 4).
+        // endpoint's gate.
         $response = $this->handle(self::BASE_URI . '/articles/1/relationships/comments?withCount=_self_', extraServer: [
             'HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . CountableProfile::URI . '"',
         ]);

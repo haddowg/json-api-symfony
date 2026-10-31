@@ -10,7 +10,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The Slice-1 acceptance suite for countable relations + `?withCount`, run identically against
+ * The acceptance suite for countable relations + `?withCount`, run identically against
  * the in-memory provider
  * ({@see InMemoryRelationCountTest}) and the Doctrine provider
  * ({@see DoctrineRelationCountTest}).
@@ -47,7 +47,7 @@ abstract class RelationCountConformanceTestCase extends JsonApiFunctionalTestCas
     // fetch negotiates it.
     private const string COUNTS_ACCEPT = 'application/vnd.api+json;profile="' . CountableProfile::URI . '"';
 
-    // The D5 filtered-count tests carry BOTH `?withCount` and a `relatedQuery[<rel>]`
+    // The filtered-count tests carry BOTH `?withCount` and a `relatedQuery[<rel>]`
     // filter, so they negotiate the Relationship Counts and Relationship Queries
     // profiles together (a space-separated list in the one `profile` parameter).
     private const string PROFILE_ACCEPT = 'application/vnd.api+json;profile="' . CountableProfile::URI . ' ' . RelationshipQueriesProfile::URI . '"';
@@ -157,7 +157,7 @@ abstract class RelationCountConformanceTestCase extends JsonApiFunctionalTestCas
         self::assertSame(['parameter' => 'withCount'], $this->firstError($this->decode($response))['source'] ?? null);
     }
 
-    // --- D5: ?withCount honours the relation's active filters --
+    // --- ?withCount honours the relation's active filters --
 
     #[Test]
     #[Group('spec:fetching-relationships')]
@@ -220,7 +220,7 @@ abstract class RelationCountConformanceTestCase extends JsonApiFunctionalTestCas
     public function withCountIsRawMembershipWhenTheRelationHasNoRelatedQueryFilter(): void
     {
         // The common case: no relatedQuery filter, so the count is unchanged raw
-        // membership — article 1 has two editors, exactly as before D5. This pins the
+        // membership — article 1 has two editors, exactly as without a filter. This pins the
         // "no-filter case unchanged" half of the behaviour.
         //
         // `editors` -> `authors`, and the authors resource declares a defaultSort() on
@@ -277,7 +277,7 @@ abstract class RelationCountConformanceTestCase extends JsonApiFunctionalTestCas
     /**
      * The related-collection endpoint's pagination `meta.page.total` for the given
      * path — the filtered total a `?withCount` count must agree with. The endpoint is
-     * count-free by default (G21), so the total is opted into with `?withCount=_self_`
+     * count-free by default, so the total is opted into with `?withCount=_self_`
      * (the `editors` relation is countable()).
      */
     protected function endpointTotal(string $path): int
@@ -310,7 +310,7 @@ abstract class RelationCountConformanceTestCase extends JsonApiFunctionalTestCas
     /**
      * A profile-negotiated fetch: the `Accept` carries the Relationship Queries profile
      * URI so the `relatedQuery`/`rQ` family parses (without it strict query-parameter
-     * validation rejects the family with a 400). Used by the D5 filtered-count tests,
+     * validation rejects the family with a 400). Used by the filtered-count tests,
      * which address a relation's filter through `relatedQuery[<rel>][filter]`.
      *
      * @return array<string, mixed>

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Functional\App\Action;
 
 /**
- * A bespoke **command** input DTO for the custom-`inputType` action (design §3): a request
+ * A bespoke **command** input DTO for the custom-`inputType` action: a request
  * document of type `renameCommands` is validated +
  * hydrated into one of these, which the action then applies onto the mount entity.
  *

@@ -32,7 +32,7 @@ use haddowg\JsonApiBundle\OpenApi\Metadata\OperationScopeOverrides;
  * `methods` is the author-declared HTTP method allow-list (default `['POST']`; any
  * of GET/POST/PATCH/PUT/DELETE).
  *
- * `input` chooses the request-body contract (design §3): {@see ActionInput::None}
+ * `input` chooses the request-body contract: {@see ActionInput::None}
  * (default) reads no body; {@see ActionInput::Document} parses + validates +
  * hydrates a JSON:API document into an `inputType` instance; {@see ActionInput::Raw}
  * relaxes request content-type negotiation for a non-JSON:API upload.
@@ -72,12 +72,12 @@ use haddowg\JsonApiBundle\OpenApi\Metadata\OperationScopeOverrides;
  * {@see https://symfony.com/doc/current/security/expressions.html ExpressionLanguage}
  * string, evaluated against the resolved entity (resource scope) / `null`
  * (collection scope) at the per-action `BeforeActionEvent` gate, denying with a
- * `403` on a false result (design §6). It rides on the action, not the type.
+ * `403` on a false result. It rides on the action, not the type.
  *
  * `name` is an optional route-name override.
  *
  * `tags` declares the **OpenAPI tag names** this action's operation is grouped under
- * in the generated OpenAPI document (design §4.7, D15). An empty array means the
+ * in the generated OpenAPI document. An empty array means the
  * default: inherit the resource tag(s) of the action's mount `type`, so actions
  * group with their resource. Tags carry no JSON:API meaning.
  *

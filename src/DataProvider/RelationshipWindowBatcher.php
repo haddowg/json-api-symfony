@@ -259,7 +259,7 @@ final class RelationshipWindowBatcher
         // relation's paginator opted in (`withCount()`) or the client named the relation
         // in `?withCount` (`countable()` is the upstream gate for that). A count-free
         // paginator default emits `first`/`prev`/`next` with no total/`last`, exactly
-        // like the primary and related-collection endpoints (G21; supersedes the
+        // like the primary and related-collection endpoints (superseding the
         // earlier "countable() always counts on include"). The
         // `?withCount` flag rides the ORIGINAL request, not the synthetic page request.
         $wantsCount = ($paginator?->wantsCount() ?? false) || $request->countsRelationship($relation->name());

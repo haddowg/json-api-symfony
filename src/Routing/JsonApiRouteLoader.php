@@ -115,14 +115,14 @@ final class JsonApiRouteLoader extends Loader
     public const string MOUNT_ATTRIBUTE = '_jsonapi_mount';
 
     /**
-     * The reserved path segment custom actions hang off (design §1/§7). It is a
+     * The reserved path segment custom actions hang off. It is a
      * **literal** in every action path and must never be captured as a resource
      * `{id}`: a collection-scope action `/{uriType}/-actions/{name}` is three
      * segments — structurally identical to the generic related route
      * `GET /{uriType}/{id}/{relationship}` — so the action route (declared methods
      * only) shields just its own verbs, and any other method would otherwise fall
      * through to the related route with `{id}` = the literal `-actions`. Excluding
-     * it from every `{id}` requirement (see {@see idRequirement()}) makes §7's
+     * it from every `{id}` requirement (see {@see idRequirement()}) makes the
      * "the literal `-actions` is never captured as an `{id}`" guarantee hold for
      * *all* methods, not only the ordering between same-method routes.
      */
@@ -386,7 +386,7 @@ final class JsonApiRouteLoader extends Loader
     }
 
     /**
-     * Emits the custom-action routes for `$server` (design §7),
+     * Emits the custom-action routes for `$server`,
      * each under the reserved `-actions` segment with the action's author-declared
      * HTTP methods. The single `{action}` segment is emitted as a **literal** (the
      * action's own name), not a parametric `{action}`, so two actions of the same
@@ -454,7 +454,7 @@ final class JsonApiRouteLoader extends Loader
      *
      * It always excludes the reserved {@see RESERVED_ACTIONS_SEGMENT} via a leading
      * negative lookahead, so the literal `-actions` can never be captured as a
-     * resource id (design §7) — closing the collection-scope action shadow where a
+     * resource id — closing the collection-scope action shadow where a
      * non-action method (e.g. `GET /{uriType}/-actions/{name}`) would otherwise fall
      * through to the generic related route `GET /{uriType}/{id}/{relationship}` with
      * `{id}` = `-actions`, bypassing the action's authz/dispatch entirely.

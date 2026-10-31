@@ -22,7 +22,7 @@ use Symfony\Contracts\Service\ResetInterface;
  * pagination links — the profile-not-negotiated default), and clears its backing on
  * {@see RequestScopedRelationshipPagination::reset()} so a profile read's windowed
  * pages never leak into a later render in a long-lived container. Mirrors the
- * slice-1 count holder.
+ * batched count holder.
  */
 final class RequestScopedRelationshipPaginationTest extends TestCase
 {

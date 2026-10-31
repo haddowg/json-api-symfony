@@ -30,7 +30,7 @@ abstract class BaseCommentResource extends AbstractResource
     }
 
     /**
-     * The related-collection vocabulary (Phase 4 P7): this is what scopes
+     * The related-collection vocabulary: this is what scopes
      * `GET /articles/{id}/comments?filter[body]=…&sort=…` — the comment filters
      * and sorts the related to-many endpoint resolves against, not the article's.
      */

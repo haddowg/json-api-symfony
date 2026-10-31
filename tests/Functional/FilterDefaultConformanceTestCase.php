@@ -51,7 +51,7 @@ abstract class FilterDefaultConformanceTestCase extends JsonApiFunctionalTestCas
     {
         // The default narrows before the pre-window COUNT, so the total
         // describes the defaulted (guide-only) collection, not all five rows.
-        // The `articles` paginator is count-free by default (G21), so the count
+        // The `articles` paginator is count-free by default, so the count
         // is opted into with `?withCount=_self_` under the Countable profile.
         $response = $this->handle('/articles?sort=title&page[number]=1&page[size]=2&withCount=_self_', extraServer: [
             'HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . CountableProfile::URI . '"',

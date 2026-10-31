@@ -8,7 +8,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The Phase-3 foundation acceptance suite: a resource's declared relationships
+ * The relationship-read acceptance suite: a resource's declared relationships
  * render as JSON:API linkage on reads. `GET /articles/{id}` and a collection
  * item from `GET /articles` must each carry a `relationships` member whose
  * to-one `author` is a single resource identifier and whose to-many `comments`

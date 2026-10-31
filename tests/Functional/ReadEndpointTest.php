@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The Phase-0 acceptance test: it boots {@see JsonApiTestKernel} and issues
+ * The baseline acceptance test: it boots {@see JsonApiTestKernel} and issues
  * `GET /articles/1`, `GET /articles`, and `GET /articles/999` through the kernel,
  * asserting each response is a spec-compliant JSON:API document. This is the
  * end-to-end witness that the listeners, the Server factory, `Server::dispatch()`,

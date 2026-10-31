@@ -94,7 +94,7 @@ return static function (ContainerConfigurator $container): void {
     $services->set(\haddowg\JsonApiBundle\Server\RouteDescriptorRegistry::class)
         ->args(['$descriptorsByServer' => []]);
 
-    // --- OpenAPI metadata source (Slice 4 stage A) ----------------------------
+    // --- OpenAPI metadata source ----------------------------
 
     // The pure helpers the MetadataSource composes: the humanized-type tag-name
     // default and the include-path graph walk (autowired from the
@@ -118,7 +118,7 @@ return static function (ContainerConfigurator $container): void {
     // the live registry. The ResourceSecurityRegistry is optional (present only
     // when symfony/security-core is installed), so it is injected ->nullOnInvalid();
     // the per-server document config (info / servers / tags / security schemes) is
-    // empty here and wired from json_api.openapi.* config in Slice 4 stage B.
+    // empty here and wired from json_api.openapi.* config by the extension.
     $services->set(\haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource::class)
         ->arg('$security', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Security\ResourceSecurityRegistry::class)->nullOnInvalid())
         ->arg('$descriptions', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\OpenApi\Metadata\ResourceDescriptionRegistry::class))
@@ -375,7 +375,7 @@ return static function (ContainerConfigurator $container): void {
         ->tag('kernel.event_listener', ['event' => 'kernel.view', 'method' => 'onKernelView']);
 
     // The route-scoped kernel.response listener that emits the declarative cache
-    // (gap G7) + deprecation/sunset (gap G16, RFC 8594) headers a resource declares
+    // + deprecation/sunset (RFC 8594) headers a resource declares
     // via #[AsJsonApiResource(cacheHeaders/deprecation/sunset)] or the global
     // json_api.defaults. It runs on kernel.response so the final
     // Response (data or error) is in hand and its status distinguishes a successful

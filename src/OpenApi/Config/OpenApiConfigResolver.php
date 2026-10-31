@@ -20,7 +20,7 @@ use haddowg\JsonApiBundle\OpenApi\Metadata\ServerDocumentConfig;
 /**
  * Resolves the `json_api.openapi.*` configuration array (already normalised by the
  * config tree) into a typed {@see OpenApiConfig} — the compile-time translation of
- * config into the OAS value-object model (design §6, §4.6/§4.7).
+ * config into the OAS value-object model.
  *
  * The info / advertised-servers / security-scheme / tag-definition / external-docs
  * data is document-wide (config carries no per-server openapi override), so the same
@@ -268,7 +268,7 @@ final class OpenApiConfigResolver
     }
 
     /**
-     * Builds an `oauth2` scheme from its `flows` graph (§4.6, D8). A scheme with no usable
+     * Builds an `oauth2` scheme from its `flows` graph. A scheme with no usable
      * flow is dropped (returns null) rather than emitting an `oauth2` scheme with an empty
      * `flows` object, which would fail OAS 3.1 meta-validation.
      *

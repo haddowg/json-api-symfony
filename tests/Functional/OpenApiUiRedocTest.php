@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The renderer-switch + CDN-override + custom-path witness (design D6/§11): the viewer
+ * The renderer-switch + CDN-override + custom-path witness: the viewer
  * configured `renderer: redoc`, a custom `cdn`, and a non-default `path` renders a ReDoc
  * page (not Swagger) from the custom asset origin at the custom path.
  */

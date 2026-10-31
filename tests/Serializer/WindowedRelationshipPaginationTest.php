@@ -15,7 +15,7 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * The per-page windowed-pagination backing: a render-time lookup
- * keyed by the parent's object identity then relation name, exactly as the slice-1
+ * keyed by the parent's object identity then relation name, exactly as the
  * {@see \haddowg\JsonApiBundle\Serializer\BatchedRelationshipCount} is. A parent or
  * relation absent from the pre-computed map returns `null` (no pagination links), and
  * a non-object model returns `null`.

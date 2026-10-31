@@ -44,7 +44,7 @@ abstract class WindowedIncludeBatchConformanceTestCase extends JsonApiFunctional
     public function aWindowedInverseFkIncludeIsBoundedAndCarriesTheRealTotal(): void
     {
         // GET /articles including pinnedComments (a countable inverse-FK to-many) windowed
-        // by -body, with `?withCount=pinnedComments` opting into the total (G21: a windowed
+        // by -body, with `?withCount=pinnedComments` opting into the total (a windowed
         // include is count-free until asked). Article 1 has 50 comments
         // comment-00..comment-49, so the page-1 window is the 15 NEWEST
         // (comment-49..comment-35) — bounded, and the relationship total is the REAL 50,
@@ -70,10 +70,10 @@ abstract class WindowedIncludeBatchConformanceTestCase extends JsonApiFunctional
     #[Group('spec:fetching-pagination')]
     public function aCountableWindowedIncludeIsCountFreeWithoutWithCount(): void
     {
-        // G21: a windowed include counts ONLY when the pagination counts. A bare
+        // A windowed include counts ONLY when the pagination counts. A bare
         // `?include=pinnedComments` (countable, but no `?withCount`, no `withCount()`
         // paginator) is therefore count-free — bounded to page 1, a `next` driven by the
-        // over-fetch probe (50 > 15), but NO `last` and no total. (Pre-G21 it counted just
+        // over-fetch probe (50 > 15), but NO `last` and no total. (It once counted just
         // because the relation is countable; that "always counts on include" is gone.)
         $document = $this->profileDocument('/articles?include=pinnedComments&relatedQuery[pinnedComments][sort]=-body');
 

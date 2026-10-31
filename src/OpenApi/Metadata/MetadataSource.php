@@ -32,8 +32,8 @@ use haddowg\JsonApiBundle\Server\ServerProvider;
 use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
 
 /**
- * The bundle's implementation of core's OpenAPI metadata contract (design §3, §4.6,
- * §4.7, D8/D15) — it builds, for one server, the {@see ServerMetadataInterface}
+ * The bundle's implementation of core's OpenAPI metadata contract
+ * — it builds, for one server, the {@see ServerMetadataInterface}
  * (with its {@see TypeMetadataInterface} family) the core
  * {@see \haddowg\JsonApi\OpenApi\OpenApiProjector} projects into an OpenAPI document.
  *
@@ -45,13 +45,13 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
  * {@see ActionRegistry} (custom actions), and the optional
  * {@see ResourceSecurityRegistry} (per-operation security intent) — and folds in the
  * config-shaped {@see ServerDocumentConfig} (info / advertised servers / tag
- * definitions / security schemes, wired from `json_api.openapi.*` in stage B).
+ * definitions / security schemes, wired from `json_api.openapi.*`).
  *
  * **Operation enum mapping**: the bundle's {@see Operation} (route allow-list) and
  * core's {@see OperationType} share the same five case names AND backing values, so a
  * value maps directly via {@see OperationType::tryFrom()}.
  *
- * **Security** (design §4.6/D8): `securedOperations()` reports only *which*
+ * **Security**: `securedOperations()` reports only *which*
  * operations carry a security expression (never the expression). The mapping follows
  * the runtime enforcement exactly (the {@see \haddowg\JsonApiBundle\Security\ResourceSecuritySubscriber}):
  * `forCreate`/`forUpdate`/`forDelete` gate Create/Update/Delete, `forRead` gates
@@ -61,7 +61,7 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
  * *default requirement* are config — carried on the source's config and surfaced on
  * the {@see ServerMetadata}.
  *
- * **Tags** (design §4.7/D15): a type's tag refs are the explicit descriptor `tags`,
+ * **Tags**: a type's tag refs are the explicit descriptor `tags`,
  * else the humanized-type default; the document's tag definitions are the config
  * definitions, unioned with name-only synthesized {@see Tag}s for any
  * referenced-but-undefined tag (config order first, then discovery order).
@@ -140,7 +140,7 @@ final class MetadataSource
 
     /**
      * The **combined** OpenAPI metadata spanning every declared server in one document
-     * (design D5, §10) — the source for `multi_server: combined`. It unions every
+     * — the source for `multi_server: combined`. It unions every
      * server's types (asserting non-colliding JSON:API types across servers, since one
      * document cannot carry two components for the same type), concatenates the
      * advertised base URIs, and dedupes the tag definitions and security schemes.
@@ -534,7 +534,7 @@ final class MetadataSource
     }
 
     /**
-     * The subset of `$operations` carrying a security expression (design §4.6/D8),
+     * The subset of `$operations` carrying a security expression,
      * resolved from the {@see ResourceSecurityRegistry} on `$serverName` exactly as the subscriber
      * enforces it: create/update/delete gate their like-named operation; read gates
      * FetchOne; and list (`securityList`) gates FetchCollection (the all-or-nothing
@@ -606,7 +606,7 @@ final class MetadataSource
 
     /**
      * The OpenAPI tag refs for a type: the explicit descriptor refs, else the
-     * humanized-type default (design §4.7).
+     * humanized-type default.
      *
      * @param list<string> $explicit
      *
@@ -618,7 +618,7 @@ final class MetadataSource
     }
 
     /**
-     * Re-resolves an action's tag refs against the contract default (design §4.7):
+     * Re-resolves an action's tag refs against the contract default:
      * the descriptor already inherited the mount type's *explicit* resource tags at
      * compile time, but a resource that declared none left the action's tags empty —
      * so an action with empty tags inherits the same humanized-type default the
@@ -661,7 +661,7 @@ final class MetadataSource
     }
 
     /**
-     * The document-root tag definitions (design §4.7/D15): the config definitions
+     * The document-root tag definitions: the config definitions
      * (authoritative, in config order) unioned with a name-only synthesized
      * {@see Tag} for every tag a type/action references but config did not define, in
      * discovery order.

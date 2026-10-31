@@ -49,7 +49,7 @@ use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 
 /**
- * Characterizes the {@see MetadataSource} (design §3, §4.6, §4.7, D8/D15): it
+ * Characterizes the {@see MetadataSource}: it
  * assembles a server's worth of OpenAPI metadata from the live registry — types,
  * operations (bundle->core enum mapping), relations, paginator kind, client-id
  * policy, tags (explicit + humanized default + definition synthesis), custom actions
@@ -99,7 +99,7 @@ final class MetadataSourceTest extends TestCase
     {
         // With a single declared server, the combined document spans that server's
         // types (the degenerate single-server case) — proving combined() unions the
-        // descriptor servers and carries the info block (D5).
+        // descriptor servers and carries the info block.
         $combined = $this->source()->combined();
 
         $names = \array_map(static fn($type): string => $type->type(), $combined->types());
@@ -272,7 +272,7 @@ final class MetadataSourceTest extends TestCase
         // `author` -> people (registered, no includable relations of its own). The
         // `comments` relation is includable but its `comments` type has no serializer on
         // this server (it renders links-only), so `?include=comments` could hydrate
-        // nothing and the path is pruned from the advertised set (D45).
+        // nothing and the path is pruned from the advertised set.
         self::assertEqualsCanonicalizing(['author'], $articles->includablePaths());
     }
 

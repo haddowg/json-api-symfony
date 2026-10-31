@@ -17,18 +17,18 @@ use haddowg\JsonApi\OpenApi\Tag;
  * {@see MetadataSource} cannot derive from the live JSON:API registry because it has
  * **no JSON:API semantics**: the `info` block, the advertised servers, the tag
  * *definitions*, the security schemes + document-level default, and the external
- * docs (design §4.6/§4.7, D8/D15).
+ * docs.
  *
- * It is a plain immutable carrier injected into the {@see MetadataSource} so Slice-4
- * stage B can build it from `json_api.openapi.*` config (and the per-server base URI)
- * without coupling stage A to the config tree. A `null`/empty member means the
+ * It is a plain immutable carrier injected into the {@see MetadataSource} so the
+ * bundle can build it from `json_api.openapi.*` config (and the per-server base URI)
+ * without coupling the metadata source to the config tree. A `null`/empty member means the
  * document omits it; defaults (a fallback title/version, the per-server base URI as
  * the single advertised server) are the metadata source's job, applied when this
  * carrier supplies none.
  *
  * Tag definitions are config-**authoritative** but not exhaustive: the metadata
  * source unions them with name-only synthesized tags for any tag a type/action
- * *references* but config did not *define* (design §4.7) — so this carries only the
+ * *references* but config did not *define* — so this carries only the
  * config-declared definitions, in config order.
  */
 final readonly class ServerDocumentConfig

@@ -47,7 +47,7 @@ use Symfony\Component\Routing\RouterInterface;
 /**
  * The bundle's Atomic Operations executor — the storage- and Symfony-specific
  * {@see AtomicLoopBackendInterface} the framework-agnostic {@see \haddowg\JsonApi\Atomic\AtomicLoop}
- * drives once per `POST /operations` batch (Slice C).
+ * drives once per `POST /operations` batch.
  *
  * It turns each parsed {@see OperationDescriptor} into the matching core CRUD
  * operation VO and dispatches it through the bundle's own
@@ -291,7 +291,7 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
         // Guarded: roll back only the transactions begin() actually opened (a pre-begin
         // executeOne failure, or a never-opened batch, leaves nothing to undo), and each
         // persister's own rollback() is itself a safe no-op when already closed / inactive
-        // (the Slice B carry-forward), so a commit-failure rollback never throws a secondary
+        //, so a commit-failure rollback never throws a secondary
         // error that masks the original.
         if ($this->opened) {
             foreach ($this->transactional as $persister) {

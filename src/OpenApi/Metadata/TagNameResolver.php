@@ -10,7 +10,7 @@ use function Symfony\Component\String\u;
 
 /**
  * Resolves the **default** OpenAPI tag name for a JSON:API type when none is
- * declared (design §4.7, D15): a humanized, title-cased, pluralized form of the
+ * declared: a humanized, title-cased, pluralized form of the
  * type — `blog-post` → `'Blog Posts'`, `genre` → `'Genres'`.
  *
  * It is a heuristic, always overridable by an explicit `tags` ref on the resource /

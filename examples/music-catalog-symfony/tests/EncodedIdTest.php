@@ -77,7 +77,7 @@ final class EncodedIdTest extends MusicCatalogKernelTestCase
         self::assertNotNull($show);
         // The author's declared id pattern (`prod-[0-9a-f]+`) is preserved, composed
         // behind a negative lookahead that excludes the reserved `-actions` segment so a
-        // collection-scope custom action is never shadowed by an {id} route (design §7).
+        // collection-scope custom action is never shadowed by an {id} route.
         self::assertSame('(?!\-actions(?:/|$))(?:prod-[0-9a-f]+)', $show->getRequirement('id'));
 
         // The ROUTER itself rejects a malformed id (a bare integer): matching the path

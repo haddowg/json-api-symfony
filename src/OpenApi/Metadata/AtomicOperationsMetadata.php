@@ -24,7 +24,7 @@ use haddowg\JsonApi\OpenApi\SecurityRequirement;
  * is subject to the document-level default security like any other write. So
  * {@see security()} returns an empty list and core's projector falls back to the
  * document-level default (`ServerMetadata::defaultSecurity()`); that is the same
- * default-security modelling the rest of the document uses (design §4.6/D8).
+ * default-security modelling the rest of the document uses.
  */
 final readonly class AtomicOperationsMetadata implements DeclaresAtomicScopes
 {

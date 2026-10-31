@@ -20,7 +20,7 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 /**
- * A prefixed-mount witness for the documentation viewer (design D6): identical to
+ * A prefixed-mount witness for the documentation viewer: identical to
  * {@see OpenApiTestKernel} but it imports the OpenAPI routes under a `->prefix('/api')`
  * routing prefix, so the served document lives at `/api/docs.json` and the viewer page
  * must point at that prefixed URL (generated from the document route, not joined from the

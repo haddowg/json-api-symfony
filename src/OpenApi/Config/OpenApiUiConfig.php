@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\OpenApi\Config;
 
 /**
- * The resolved `json_api.openapi.ui.*` configuration (design §6, D6) — the
+ * The resolved `json_api.openapi.ui.*` configuration — the
  * single config-driven documentation-viewer route's settings.
  *
  * A pure-scalar immutable carrier (so it threads straight through to the controller and

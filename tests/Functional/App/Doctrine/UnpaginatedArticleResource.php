@@ -13,7 +13,7 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 /**
  * A second JSON:API type (`unpaginatedArticles`) mapped to the SAME
  * {@see ArticleEntity} as `articles`, but with pagination **disabled**:
- * {@see pagination()} returns `null`, so the collection is fetched whole (G21 §5).
+ * {@see pagination()} returns `null`, so the collection is fetched whole.
  *
  * It is the fetch-all witness for the query-budget suite: a whole-collection fetch
  * has its size in hand for free, so the handler renders `meta.total` unconditionally
@@ -35,7 +35,7 @@ final class UnpaginatedArticleResource extends AbstractResource
     }
 
     /**
-     * Pagination is disabled (G21): the `null` return is the single source of truth,
+     * Pagination is disabled: the `null` return is the single source of truth,
      * so the collection is fetched whole and renders `meta.total` for free.
      */
     public function pagination(?PaginatorInterface $serverDefault): ?PaginatorInterface

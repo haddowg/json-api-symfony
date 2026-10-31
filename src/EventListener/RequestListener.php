@@ -242,7 +242,7 @@ final class RequestListener
     }
 
     /**
-     * Builds the {@see CustomActionOperation} for a custom-action route (design §3/§5/§8). It
+     * Builds the {@see CustomActionOperation} for a custom-action route. It
      * resolves the action's input mode from the
      * {@see ActionRegistry} descriptor (keyed by the route's server, the target type,
      * the route's scope and the action name) and handles the request body per mode:

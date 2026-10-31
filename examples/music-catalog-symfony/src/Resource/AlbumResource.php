@@ -62,7 +62,7 @@ final class AlbumResource extends AbstractResource
             Str::make('title')->example('Abbey Road')->required()->maxLength(200)->sortable(),
             Decimal::make('averageRating')->example(4.5)->readOnly()->nullable(),
             // Cover artwork — read-only on the CRUD path; only the Raw-input `artwork`
-            // upload action (G13) ever fills it. Surfaced here so the upload's
+            // upload action ever fills it. Surfaced here so the upload's
             // side-effect is observable through a normal fetch.
             Str::make('artwork')->example('/uploads/artwork/1.png')->readOnly()->nullable(),
             // Closure bound: no future release dates, resolved at validation time so
@@ -72,7 +72,7 @@ final class AlbumResource extends AbstractResource
                 ->useTimezone('UTC')
                 ->sortable(),
             Boolean::make('explicit')->example(false)->guaranteed(),
-            // Backed-enum attribute (design §4.8/D16): `->enum(AlbumStatus::class)`
+            // Backed-enum attribute: `->enum(AlbumStatus::class)`
             // constrains `status` to the enum's backing values and keeps the enum
             // class-string, so the OpenAPI projection emits a reusable, *described*
             // `#/components/schemas/AlbumStatus` component the docs viewer renders.
@@ -190,7 +190,7 @@ final class AlbumResource extends AbstractResource
             // something narrower than "a string", which an artist name is not, and an
             // invented `pattern` would reject real names to buy a type nobody wanted.
             WhereThrough::make('artist.name'),
-            // --- The convenience filter library (G8b; docs/doctrine.md). Each is an intent-named strategy that bakes in its operator, value
+            // --- The convenience filter library (docs/doctrine.md). Each is an intent-named strategy that bakes in its operator, value
             // coercion, the matching value constraint, and the OpenAPI value schema +
             // description from one declaration — no hand-wired Where operator.
             //

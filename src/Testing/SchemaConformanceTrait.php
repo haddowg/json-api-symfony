@@ -14,7 +14,7 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * The round-trip conformance guarantee (design §8, D11/G6 — docs/openapi.md): assert a
+ * The round-trip conformance guarantee (docs/openapi.md): assert a
  * **real** API response validates against the **generated** OpenAPI component schema for
  * its type — proving the document the bundle produces actually describes the responses
  * the bundle serves.

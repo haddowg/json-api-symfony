@@ -95,7 +95,7 @@ class ConstrainedFilterArticleResource extends BaseArticleResource
             // A non-numeric constraint: the value must be one of the known categories.
             Where::make('byCategory', 'category')->pattern('^(?:guide|news|opinion)$'),
 
-            // --- WhereThrough traversal filters (G8) ---
+            // --- WhereThrough traversal filters ---
             // A correlated EXISTS-ANY semi-join over a dotted relationship path,
             // executed identically on both providers (in-memory walk via Accessor /
             // Doctrine EXISTS subquery). The same declaration drives the dual-provider

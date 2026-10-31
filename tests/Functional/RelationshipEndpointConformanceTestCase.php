@@ -8,7 +8,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The Phase-3 S2 acceptance suite: the read related and relationship endpoints,
+ * The acceptance suite: the read related and relationship endpoints,
  * plus the compound (`?include`) document, on both providers.
  *
  *  - `GET /{type}/{id}/{relationship}` — the *related* resource(s): a single full

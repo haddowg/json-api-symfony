@@ -57,7 +57,7 @@ use function Symfony\Component\DependencyInjection\Loader\Configurator\tagged_it
  *
  * The configuration tree is intentionally minimal: the single-API common case
  * needs no `servers` block (everything lands on an implicit `default` server).
- * See CLAUDE.md and the bundle-plan memory for the full design.
+ * See CLAUDE.md for the full design.
  */
 final class JsonApiBundle extends AbstractBundle
 {
@@ -182,7 +182,7 @@ final class JsonApiBundle extends AbstractBundle
 
     /**
      * Tag applied to an {@see \haddowg\JsonApiBundle\OpenApi\OpenApiFactoryInterface}
-     * decorator (design §5, D7). The
+     * decorator. The
      * {@see \haddowg\JsonApiBundle\OpenApi\DocumentFactory} consumes the tagged services
      * as a priority-ordered iterator and applies them after the core projection, so an
      * app can mutate the built document (servers/security/tags/examples/anything) before
@@ -423,10 +423,10 @@ final class JsonApiBundle extends AbstractBundle
     }
 
     /**
-     * The `json_api.openapi.*` configuration subtree (design §6, D8/D13/D15/D16): the
+     * The `json_api.openapi.*` configuration subtree: the
      * OpenAPI document generation, serving + exposure, info / servers / security /
      * tags metadata, and the cache-warmer's optional static-file output. The UI
-     * subtree is declared here (forward-compatibly) but only consumed in Slice 5.
+     * subtree is declared here alongside the rest.
      */
     private function openApiNode(): \Symfony\Component\Config\Definition\Builder\NodeDefinition
     {
@@ -435,7 +435,7 @@ final class JsonApiBundle extends AbstractBundle
         $root = $treeBuilder->getRootNode();
 
         $root
-            ->info('OpenAPI 3.1 document generation, serving and export (G1–G6).')
+            ->info('OpenAPI 3.1 document generation, serving and export.')
             ->addDefaultsIfNotSet()
             ->children()
                 ->booleanNode('enabled')
@@ -443,7 +443,7 @@ final class JsonApiBundle extends AbstractBundle
                     ->defaultTrue()
                 ->end()
                 ->booleanNode('expose_in_prod')
-                    ->info('Expose the document HTTP routes outside kernel.debug (D9). Routes are auto-exposed in debug; set true to also serve them in prod. Default false.')
+                    ->info('Expose the document HTTP routes outside kernel.debug. Routes are auto-exposed in debug; set true to also serve them in prod. Default false.')
                     ->defaultFalse()
                 ->end()
                 ->booleanNode('describedby')
@@ -459,7 +459,7 @@ final class JsonApiBundle extends AbstractBundle
                     ->end()
                 ->end()
                 ->enumNode('multi_server')
-                    ->info('per_server (default): one document per server, served at /{server}/docs.json. combined: a single document spanning every server at the json path only (D5).')
+                    ->info('per_server (default): one document per server, served at /{server}/docs.json. combined: a single document spanning every server at the json path only.')
                     ->values(['per_server', 'combined'])
                     ->defaultValue('per_server')
                 ->end()
@@ -468,7 +468,7 @@ final class JsonApiBundle extends AbstractBundle
                     ->defaultTrue()
                 ->end()
                 ->enumNode('enum_value_descriptions')
-                    ->info('How a backed enum\'s per-value descriptions are surfaced (D16): both (markdown table + x-enum-* extensions), extensions (only the extensions), or description (only the markdown table). Default both.')
+                    ->info('How a backed enum\'s per-value descriptions are surfaced: both (markdown table + x-enum-* extensions), extensions (only the extensions), or description (only the markdown table). Default both.')
                     ->values(['both', 'extensions', 'description'])
                     ->defaultValue('both')
                 ->end()
@@ -487,7 +487,7 @@ final class JsonApiBundle extends AbstractBundle
                     ->defaultValue([])
                 ->end()
                 ->scalarNode('public_path')
-                    ->info('Also emit a fully static <server>.json (+ .yaml when symfony/yaml is installed) into this directory at cache:warmup (D17), so a web server/CDN can serve the document with zero PHP. Null = controller-only (served from the cache dir).')
+                    ->info('Also emit a fully static <server>.json (+ .yaml when symfony/yaml is installed) into this directory at cache:warmup, so a web server/CDN can serve the document with zero PHP. Null = controller-only (served from the cache dir).')
                     ->defaultNull()
                 ->end()
                 ->arrayNode('json')
@@ -514,7 +514,7 @@ final class JsonApiBundle extends AbstractBundle
                     ->end()
                 ->end()
                 ->arrayNode('ui')
-                    ->info('The Swagger UI / ReDoc documentation viewer (design D6, docs/openapi.md): a single config-driven route rendering plain CDN-linked HTML, behind the same expose gate as the document plus `ui.enabled`.')
+                    ->info('The Swagger UI / ReDoc documentation viewer (docs/openapi.md): a single config-driven route rendering plain CDN-linked HTML, behind the same expose gate as the document plus `ui.enabled`.')
                     ->addDefaultsIfNotSet()
                     ->children()
                         ->booleanNode('enabled')->info('Serve the viewer route. Default true (still subject to the expose gate).')->defaultTrue()->end()
@@ -536,7 +536,7 @@ final class JsonApiBundle extends AbstractBundle
                     ->end()
                 ->end()
                 ->arrayNode('info')
-                    ->info('The OpenAPI info block (G4/G5). Title/version default to JSON:API / 1.0.0 per server when omitted.')
+                    ->info('The OpenAPI info block. Title/version default to JSON:API / 1.0.0 per server when omitted.')
                     ->addDefaultsIfNotSet()
                     ->children()
                         ->scalarNode('title')->defaultNull()->end()
@@ -561,7 +561,7 @@ final class JsonApiBundle extends AbstractBundle
                     ->end()
                 ->end()
                 ->arrayNode('servers')
-                    ->info('Override the advertised OAS servers list. Null/empty = derive one server from each JSON:API server\'s base URI (D2), or from the prefixes its routes are imported under when the base URI is empty. A non-empty list replaces that derivation document-wide.')
+                    ->info('Override the advertised OAS servers list. Null/empty = derive one server from each JSON:API server\'s base URI, or from the prefixes its routes are imported under when the base URI is empty. A non-empty list replaces that derivation document-wide.')
                     ->arrayPrototype()
                         ->children()
                             ->scalarNode('url')->isRequired()->cannotBeEmpty()->end()
@@ -570,7 +570,7 @@ final class JsonApiBundle extends AbstractBundle
                     ->end()
                 ->end()
                 ->arrayNode('security')
-                    ->info('Named security schemes + the document-level default requirement applied to operations carrying a security expression (D8). The authz expression itself is never parsed for scheme semantics.')
+                    ->info('Named security schemes + the document-level default requirement applied to operations carrying a security expression. The authz expression itself is never parsed for scheme semantics.')
                     ->addDefaultsIfNotSet()
                     ->children()
                         ->arrayNode('schemes')
@@ -627,7 +627,7 @@ final class JsonApiBundle extends AbstractBundle
                     ->end()
                 ->end()
                 ->arrayNode('tags')
-                    ->info('Top-level tag DEFINITIONS (authoritative; D15). Any tag referenced by a resource/action but undefined here is auto-synthesized (name only). Config order is the emit order.')
+                    ->info('Top-level tag DEFINITIONS (authoritative). Any tag referenced by a resource/action but undefined here is auto-synthesized (name only). Config order is the emit order.')
                     ->arrayPrototype()
                         ->children()
                             ->scalarNode('name')->isRequired()->cannotBeEmpty()->end()
@@ -648,7 +648,7 @@ final class JsonApiBundle extends AbstractBundle
 
     /**
      * One OAuth2 flow node (implicit/password/clientCredentials/authorizationCode) under
-     * a scheme's `flows` graph (§4.6, D8). The member URLs a flow needs depend on its
+     * a scheme's `flows` graph. The member URLs a flow needs depend on its
      * grant (authorizationUrl for implicit/authorizationCode, tokenUrl for the token
      * grants); the resolver maps whatever is present, and a flow node only contributes a
      * flow when at least one member is set.
@@ -969,7 +969,7 @@ final class JsonApiBundle extends AbstractBundle
                     // structure (the per-operation cache overrides) does not survive
                     // as a flat tag attribute, so it is carried as one JSON string.
                     'response_headers' => self::responseHeadersTag($attribute),
-                    // The OpenAPI tag refs (design §4.7, D15), comma-joined to survive
+                    // The OpenAPI tag refs, comma-joined to survive
                     // the container as a plain scalar (mirroring `operations`); the
                     // ResourceLocatorPass parses them back for the OpenAPI MetadataSource.
                     'tags' => self::tagsTag($attribute->tags),
@@ -1015,7 +1015,7 @@ final class JsonApiBundle extends AbstractBundle
                     'operations' => $attribute->operations !== []
                         ? \implode(',', \array_map(static fn(Operation $op): string => $op->value, $attribute->operations))
                         : null,
-                    // Standalone-type OpenAPI tag refs (design §4.7); empty = the
+                    // Standalone-type OpenAPI tag refs; empty = the
                     // humanized-type default resolved by the MetadataSource.
                     'tags' => self::tagsTag($attribute->tags),
                     // Vendor extensions (docs/openapi.md), read by the ResourceDescriptionPass.
@@ -1072,7 +1072,7 @@ final class JsonApiBundle extends AbstractBundle
                     'security' => $attribute->security,
                     'methods' => $attribute->methods !== [] ? \implode(',', $attribute->methods) : null,
                     'name' => $attribute->name,
-                    // The OpenAPI tag refs (design §4.7); empty = inherit the mount
+                    // The OpenAPI tag refs; empty = inherit the mount
                     // type's resource tags, resolved by the MetadataSource.
                     'tags' => self::tagsTag($attribute->tags),
                     // Only carried when set: expose the action as a security-aware
@@ -1100,7 +1100,7 @@ final class JsonApiBundle extends AbstractBundle
             },
         );
 
-        // OpenAPI document generation, serving, warming + export (Slice 4 stage B): resolve
+        // OpenAPI document generation, serving, warming + export: resolve
         // json_api.openapi.* into the typed config, set
         // its parameters, and register the document/JSON-schema factories, the cache
         // warmer, the serving controller, the docs route loader and the two export
@@ -1151,8 +1151,7 @@ final class JsonApiBundle extends AbstractBundle
     }
 
     /**
-     * Wires the OpenAPI subsystem from `json_api.openapi.*` (design §3, §6,
-     * D9/D13/D17):
+     * Wires the OpenAPI subsystem from `json_api.openapi.*`:
      *  - resolves the config into a typed {@see \haddowg\JsonApiBundle\OpenApi\Config\OpenApiConfig};
      *  - feeds the per-server document config (info / servers / security / tags) into
      *    the already-registered {@see \haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource};
@@ -1165,7 +1164,7 @@ final class JsonApiBundle extends AbstractBundle
      *
      * The route loader applies the expose gate (`kernel.debug || expose_in_prod`), so
      * no document route exists when generation is disabled or exposure is not allowed
-     * — while the CLI export and the warmer stay available regardless (D9).
+     * — while the CLI export and the warmer stay available regardless.
      *
      * @param array<string, mixed> $config
      * @param list<string>         $serverNames
@@ -1214,7 +1213,7 @@ final class JsonApiBundle extends AbstractBundle
             ->args([
                 '$metadata' => service(\haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource::class),
                 '$enumDescriptionMode' => $enumMode,
-                // The wholesale-customisation decorators (design §5), composed
+                // The wholesale-customisation decorators, composed
                 // priority-ordered (lower first); applied after projection on every build
                 // path — warmer, controller lazy-build, CLI export.
                 '$decorators' => tagged_iterator(self::OPENAPI_FACTORY_TAG),
@@ -1236,7 +1235,7 @@ final class JsonApiBundle extends AbstractBundle
                 '$allowedClasses' => $openApiConfig->serveAllowedClasses,
             ]);
 
-        // The optional cache warmer (D17): pre-builds each server's document + JSON
+        // The optional cache warmer: pre-builds each server's document + JSON
         // Schemas at cache:warmup, and (when public_path is set) a static .json/.yaml.
         // isOptional() === true, so a docs failure never breaks a deploy.
         $services->set(\haddowg\JsonApiBundle\OpenApi\DocumentWarmer::class)
@@ -1266,7 +1265,7 @@ final class JsonApiBundle extends AbstractBundle
             ->public()
             ->tag('controller.service_arguments');
 
-        // The documentation viewer controller (design D6): renders Swagger UI or ReDoc
+        // The documentation viewer controller: renders Swagger UI or ReDoc
         // (one, per config) pointed at the configured json path; CDN-linked, overridable.
         $services->set(\haddowg\JsonApiBundle\Controller\OpenApiUiController::class)
             ->args([
@@ -1365,7 +1364,7 @@ final class JsonApiBundle extends AbstractBundle
         $builder->getDefinition(\haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource::class)
             ->setArgument('$documentUrls', new \Symfony\Component\DependencyInjection\Reference(\haddowg\JsonApiBundle\OpenApi\DocumentUrlProvider::class));
 
-        // The two export commands (D13) — always available (independent of exposure).
+        // The two export commands — always available (independent of exposure).
         $services->set(\haddowg\JsonApiBundle\Command\OpenApiExportCommand::class)
             ->args(['$documents' => service(\haddowg\JsonApiBundle\OpenApi\DocumentFactory::class)])
             ->tag('console.command');

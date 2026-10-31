@@ -12,7 +12,7 @@ use Symfony\Component\Routing\Exception\RouteNotFoundException;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 
 /**
- * Serves the documentation viewer page (design §6, D6) — a single config-driven route
+ * Serves the documentation viewer page — a single config-driven route
  * at `json_api.openapi.ui.path` (default `/docs`) that renders **Swagger UI _or_ ReDoc**
  * (per `json_api.openapi.ui.renderer`, one not both) pointed at the OpenAPI document the
  * {@see OpenApiController} serves.
@@ -21,7 +21,7 @@ use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
  * dependency-light and every other controller returns a raw {@see Response}), so the
  * viewer adds zero dependencies. It is **CDN-linked**: it loads the renderer's assets
  * from a pinned public CDN by default, and `json_api.openapi.ui.cdn` swaps that origin
- * for a self-hosted/air-gapped mirror (design §11, the CSP recipe). The spec URL it
+ * for a self-hosted/air-gapped mirror (the CSP recipe). The spec URL it
  * targets is resolved from the configured json path against the request's base URL, so
  * the page works behind a routing prefix or sub-path mount.
  *
@@ -33,7 +33,7 @@ use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
  * the same mount. The configured json path is kept only as a last-resort fallback for the
  * (unexpected) case where the document route is absent.
  *
- * **App-overridability** (design D6): an app that needs a bespoke page registers its own
+ * **App-overridability**: an app that needs a bespoke page registers its own
  * controller on the configured `ui.path` (it imports the docs route loader, so it can
  * instead define its own `GET {ui.path}` route that wins by registration order), or
  * sets `ui.cdn` to retarget the asset origin. The route is registered only when

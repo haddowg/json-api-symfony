@@ -15,7 +15,7 @@ use Doctrine\ORM\Mapping as ORM;
  * assigns on insert, the realistic common pattern; the JSON:API id is that int
  * rendered as a string. Not `final` so Doctrine may proxy it.
  *
- * Relationships (Phase 3 foundation): a to-one `author`
+ * Relationships: a to-one `author`
  * ({@see ORM\ManyToOne} to {@see AuthorEntity}) and a to-many `comments`
  * ({@see ORM\OneToMany} mapped by {@see CommentEntity}'s owning side). Core's
  * accessor reads the public `$author` / `$comments` members directly, so the

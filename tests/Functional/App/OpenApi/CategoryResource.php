@@ -13,7 +13,7 @@ use haddowg\JsonApi\Resource\Field\Str;
  * The OpenAPI witness's second resource: a `categories` resource carrying **no**
  * explicit OpenAPI tags, so its operations group under the humanized-type **default**
  * tag (`Categories`) the {@see \haddowg\JsonApiBundle\OpenApi\Metadata\TagNameResolver}
- * derives — the witness for the default-tag path (design §4.7).
+ * derives — the witness for the default-tag path.
  *
  * It also exercises the **method-hook** description-override surface (docs/openapi.md):
  * `getDescription()` overrides the resource-object schema description and

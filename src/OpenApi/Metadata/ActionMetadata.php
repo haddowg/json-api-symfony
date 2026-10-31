@@ -35,7 +35,7 @@ use haddowg\JsonApiBundle\Action\RawResults;
  * they are mapped **by case name**.
  *
  * `isSecured()` reads the descriptor's resolved `security` expression presence (the
- * expression itself is never surfaced — design §4.6/D8). `responds()` rehydrates the
+ * expression itself is never surfaced). `responds()` rehydrates the
  * descriptor's scalar success-response set (a `kind` discriminator + optional
  * `type`/`jobType`) into core's atomic {@see ActionResponse} objects — the values the
  * projector switches on to advertise a `200` resource document, a `200` meta document,

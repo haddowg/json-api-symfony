@@ -10,7 +10,7 @@ use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 /**
  * Builds the in-memory `gizmos` provider for the endpoint-exposure witness, seeded
  * with one gizmo carrying an {@see Author} and two {@see Comment}s. A persister is
- * wired so the full-CRUD resource is servable; every P4 endpoint-exposure assertion
+ * wired so the full-CRUD resource is servable; every endpoint-exposure assertion
  * still fires before any write reaches it.
  */
 final class GizmoFactory

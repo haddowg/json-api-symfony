@@ -13,7 +13,7 @@ use haddowg\JsonApi\Response\RawResponse;
 use haddowg\JsonApi\Response\SeeOtherResponse;
 
 /**
- * A custom, non-CRUD action (design §2). An author implements
+ * A custom, non-CRUD action. An author implements
  * this on a standalone handler class declared with
  * {@see \haddowg\JsonApiBundle\Attribute\AsJsonApiAction} — no `AbstractResource`
  * sugar — and is discovered by autoconfiguration exactly like a standalone

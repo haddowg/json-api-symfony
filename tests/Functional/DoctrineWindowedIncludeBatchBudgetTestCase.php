@@ -30,7 +30,7 @@ abstract class DoctrineWindowedIncludeBatchBudgetTestCase extends JsonApiFunctio
 
     /**
      * Negotiates BOTH the Relationship-Queries (windowing) and Countable (`?withCount`)
-     * profiles — the count rides the bounded scan only when the count is opted into (G21).
+     * profiles — the count rides the bounded scan only when the count is opted into.
      */
     protected const string COUNTING_ACCEPT = 'application/vnd.api+json;profile="' . RelationshipQueriesProfile::URI . ' ' . CountableProfile::URI . '"';
 

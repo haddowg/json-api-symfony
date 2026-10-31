@@ -9,7 +9,7 @@ use Symfony\Component\HttpFoundation\Response;
 /**
  * The declarative deprecation signal a JSON:API type declares via
  * `#[AsJsonApiResource(deprecation: …, sunset: …)]` or the global
- * `json_api.defaults.deprecation`/`sunset` config keys (API-Platform gap G16). A pure,
+ * `json_api.defaults.deprecation`/`sunset` config keys. A pure,
  * immutable value object of scalars so it survives the
  * container as a compiled argument.
  *

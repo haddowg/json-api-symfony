@@ -272,7 +272,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
         $builder = $this->applier->apply($criteria, $builder, $this->filterHandler, $this->sortHandler);
 
-        // Count-free by default (G21): the executor counts the pre-window total and
+        // Count-free by default: the executor counts the pre-window total and
         // fetches the windowed page only when the handler resolved a COUNT for this
         // fetch (the paginator's withCount() author opt-in, or ?withCount=_self_ under
         // a countable() resource); otherwise it fetches count-free via the window+1
@@ -476,7 +476,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $builder = $this->applier->apply($criteria, $builder, $this->filterHandler, $this->sortHandler);
 
         // The window/count/count-free tail runs through the shared executor. Count-free by
-        // default (G21): the related endpoint counts only
+        // default: the related endpoint counts only
         // when the handler resolved a COUNT for this fetch (`$criteria->wantsCount` —
         // the relation paginator's withCount() author opt-in, or ?withCount=_self_
         // under a countable() relation; the handler 400s an un-countable `_self_`
@@ -1655,7 +1655,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         // countable count), keeping it behaviour-identical until the pivot row shape is
         // reconciled with the executor's entity contract.
         //
-        // Count-free by default (G21): the pivot endpoint counts only when the handler
+        // Count-free by default: the pivot endpoint counts only when the handler
         // resolved a COUNT for this fetch (`$criteria->wantsCount` — the relation
         // paginator's withCount() author opt-in, or ?withCount=_self_ under a
         // countable() relation; the handler 400s an un-countable `_self_` first).

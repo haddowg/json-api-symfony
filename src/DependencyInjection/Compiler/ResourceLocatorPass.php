@@ -236,7 +236,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
                 'hasHydrator' => true,
                 'hasRelations' => true,
                 'operations' => $this->operationsFromTags($tags) ?? self::allOperations(),
-                // The OpenAPI tag refs (design §4.7); empty = the humanized-type
+                // The OpenAPI tag refs; empty = the humanized-type
                 // default the MetadataSource resolves. Read across all tags so the
                 // empty autoconfig tag does not erase the attribute's value.
                 'tags' => $this->tagsFromTags($tags),
@@ -294,7 +294,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
                     'hasHydrator' => isset($standaloneHydratorsByServer[$server][$type]),
                     'hasRelations' => isset($standaloneRelationsByServer[$server][$type]),
                     'operations' => $standalone['operations'],
-                    // The standalone-type OpenAPI tag refs (design §4.7); empty = the
+                    // The standalone-type OpenAPI tag refs; empty = the
                     // humanized-type default the MetadataSource resolves.
                     'tags' => $standalone['tags'],
                     // A standalone serializer carries no response overrides — its
@@ -515,7 +515,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
                 $example = OperationExampleCodec::decodeOne($tag['example'] ?? null);
                 $extensions = $this->parseActionExtensions($tag['extensions'] ?? null);
 
-                // The action's OpenAPI tag refs (design §4.7): explicit refs on the
+                // The action's OpenAPI tag refs: explicit refs on the
                 // action, else inherit the tags of the mount type's resource on each
                 // server so the action groups with its resource there.
                 // Empty when that resource declared none — the MetadataSource then
@@ -560,7 +560,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
                         'security' => $security,
                         'handlerServiceId' => $id,
                         'server' => $server,
-                        // The OpenAPI tag refs (design §4.7), comma-joined so the map
+                        // The OpenAPI tag refs, comma-joined so the map
                         // value stays a flat scalar shape; the ActionRegistry splits
                         // it back into a list on rehydration.
                         'tags' => \implode(',', $actionTags),
@@ -983,7 +983,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
     }
 
     /**
-     * The OpenAPI tag refs declared across a resource's tags (design §4.7), resolved
+     * The OpenAPI tag refs declared across a resource's tags, resolved
      * like {@see operationsFromTags}: the first tag carrying a `tags` string wins (so
      * the empty autoconfig tag does not erase the attribute's value), parsed via
      * {@see parseTags}; empty when none declared (the MetadataSource then applies the

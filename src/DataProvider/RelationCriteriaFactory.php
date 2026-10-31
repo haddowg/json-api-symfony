@@ -55,7 +55,7 @@ final class RelationCriteriaFactory
      * related-resource paginator); the chain then collapses to
      * `relation -> server default`.
      *
-     * Since G21 each level's `pagination()` is the single source of truth and
+     * Each level's `pagination()` is the single source of truth and
      * receives the already-resolved fallback (the level below it), so a `null`
      * return now means *no pagination* rather than "inherit the default". The
      * fallback is composed bottom-up: the related resource resolves against the
@@ -114,7 +114,7 @@ final class RelationCriteriaFactory
      * page-1 query parameters + page-1 window + `includePivotFields: false`
      * (includes never pivot).
      *
-     * `$wantsCount` rides onto the criteria (G21): only the related endpoint passes
+     * `$wantsCount` rides onto the criteria: only the related endpoint passes
      * `true` (the relation's paginator opted in via `withCount()`, or the client
      * asked `?withCount=_self_` under a countable() relation); the include/linkage/
      * count batchers leave the default `false`, so those paths stay count-free (their
@@ -148,13 +148,13 @@ final class RelationCriteriaFactory
             // Empty off the pivot path, so the alias-aware applier is inert there and
             // for the in-memory provider.
             $includePivotFields ? $this->pivotAliases($relation) : [],
-            // Whether the provider should run the COUNT for this related fetch (G21):
+            // Whether the provider should run the COUNT for this related fetch:
             // the related endpoint passes `true` only when the relation's own paginator
             // opted in via withCount() OR the client asked `?withCount=_self_` under a
             // countable() relation (the handler 400s an un-countable `_self_` first).
             // The include/linkage/count batchers leave it `false` — those paths stay
             // count-free (their relationship-object totals ride the separate
-            // RelationCountInterface seam, §6c/§6d).
+            // RelationCountInterface seam).
             wantsCount: $wantsCount,
         );
     }

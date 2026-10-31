@@ -6,7 +6,7 @@ namespace haddowg\JsonApiBundle\Event;
 
 /**
  * Dispatched by the {@see \haddowg\JsonApiBundle\Action\ActionInvoker} *after* the
- * action handler has run (design §6), for symmetry with the CRUD
+ * action handler has run, for symmetry with the CRUD
  * after-hooks. It carries the action's {@see $type} and {@see $action} name and the
  * {@see $subject} — the resolved entity for a resource-scope action, `null` for a
  * collection-scope action. A public lifecycle event a

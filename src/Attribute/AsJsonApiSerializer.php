@@ -31,7 +31,7 @@ use haddowg\JsonApiBundle\OpenApi\Metadata\OperationScopeOverrides;
  * the implicit `default` server.
  *
  * `tags` declares the **OpenAPI tag names** every operation of this standalone type
- * is grouped under in the generated OpenAPI document (design §4.7, D15). An empty
+ * is grouped under in the generated OpenAPI document. An empty
  * array means the default: a single tag named the humanized-type form. Tags carry
  * no JSON:API meaning.
  *

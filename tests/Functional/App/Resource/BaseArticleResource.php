@@ -41,7 +41,7 @@ use Symfony\Component\Clock\Clock;
  * `title` and `category` are sortable (`category` carries ties, so multi-field
  * sort composition is observable); `body` deliberately is not, so sorting on a
  * declared-but-unsortable field is testable. The filters cover the exact /
- * contains / id-set shapes of the Phase-1 vocabulary.
+ * contains / id-set shapes of the read-query vocabulary.
  *
  * `title` and `category` also carry validation constraints (required + length,
  * and an enum) that are inert on reads but exercised by the write/validation
@@ -61,7 +61,7 @@ abstract class BaseArticleResource extends AbstractResource
 
     public function __construct()
     {
-        // The primary collection is client-countable (G21 §6a): `?withCount=_self_`
+        // The primary collection is client-countable: `?withCount=_self_`
         // under the Countable profile renders the total; the paginator stays
         // count-free by default, so an unrequested page never counts.
         $this->countable();
@@ -95,7 +95,7 @@ abstract class BaseArticleResource extends AbstractResource
             // Cross-field rule: expiresAt must be after publishedAt — exercises the
             // document-level CompareField execution path.
             DateTime::make('expiresAt')->nullable()->compareWith('publishedAt', Comparison::GreaterThan),
-            // Structured attribute (Phase 3 S6): a nested `address` object whose two
+            // Structured attribute: a nested `address` object whose two
             // children carry their own constraints. The bridge validates them by
             // recursion (the implicit Valid-cascade), so a too-short `street` or a
             // pattern-violating `postcode` surfaces a 422 at
@@ -134,7 +134,7 @@ abstract class BaseArticleResource extends AbstractResource
 
                 return $model;
             }),
-            // Relationships (Phase 3 foundation): a to-one `author` and a
+            // Relationships: a to-one `author` and a
             // to-many `comments`. Core reads the related objects off the model
             // (`$model->author` / `$model->comments`) and emits resource-identifier
             // linkage via the serializer registered for each related type.
@@ -155,7 +155,7 @@ abstract class BaseArticleResource extends AbstractResource
                 ->withData()
                 ->withFilters(Where::make('commentBody', 'body', 'like'))
                 ->withSorts(SortByField::make('recent', 'id')),
-            // Per-relation default paginator (Phase 4 P7): reuses the `comments`
+            // Per-relation default paginator: reuses the `comments`
             // property but carries its own PagePaginator, so
             // `GET /articles/1/pagedComments` paginates by `page[number]`/`page[size]`
             // while plain `comments` stays unpaginated. The same related collection,
@@ -196,7 +196,7 @@ abstract class BaseArticleResource extends AbstractResource
             // predicate, so it always emits.
             BelongsTo::make('lazyAuthor', 'authors')->storedAs('author'),
             HasMany::make('lazyComments', 'comments')->storedAs('featuredComments'),
-            // Mutability variants (Phase 3 S3): relationship-endpoint mutation
+            // Mutability variants: relationship-endpoint mutation
             // guards. `lockedAuthor` reuses the `author` property but forbids
             // replacement (a PATCH to its endpoint is FullReplacementProhibited);
             // `lockedComments` reuses the `comments` property but forbids removal
@@ -234,7 +234,7 @@ abstract class BaseArticleResource extends AbstractResource
             // null), so the same `/articles` endpoint serves a to-one shape.
             Where::make('exactTitle', 'title')->singular(),
             WhereIdIn::make(),
-            // Relationship-existence filters (Phase 3 S5). The request value is
+            // Relationship-existence filters. The request value is
             // ignored — presence on the named association decides the match. The
             // to-many `comments` and the to-one `author` both exercise the
             // EXISTS/NOT EXISTS translation on Doctrine and core's non-empty /
@@ -244,7 +244,7 @@ abstract class BaseArticleResource extends AbstractResource
             WhereHas::make('hasAuthor', 'author'),
             WhereDoesntHave::make('lacksAuthor', 'author'),
 
-            // Convenience filter library (G8b, docs/doctrine.md) —
+            // Convenience filter library (docs/doctrine.md) —
             // shared across the article kernels so the dual-provider
             // ConvenienceFilterConformanceTestCase and the DoctrineReadQueryBudgetTest
             // both see them. The intent-named string strategies on `title` and the
@@ -271,7 +271,7 @@ abstract class BaseArticleResource extends AbstractResource
 
     /**
      * The `articles` collection paginates with the default page strategy and is
-     * **count-free by default** (G21): a bare `?page[size]=…` windows without a
+     * **count-free by default**: a bare `?page[size]=…` windows without a
      * `COUNT`. The resource is {@see countable()} (in the constructor), so a client
      * may opt into the total per request with `?withCount=_self_` under the
      * negotiated Countable profile — the matrix witness for the primary-collection

@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The extensible exception → JSON:API-error mapping seam (gap G15).
+ * The extensible exception → JSON:API-error mapping seam.
  * The {@see ExceptionMappingTestKernel} serves a `throwingWidgets` type
  * whose read hook throws a chosen test exception on a JSON:API route
  * (`GET /throwingWidgets?throwSignal=<signal>`); these tests drive each signal and assert

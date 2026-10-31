@@ -12,9 +12,9 @@ use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 
 /**
  * `POST /actionWidgets/{id}/-actions/publish` — the resource-scope, input-`None`
- * witness (design §10): the `{id}` is resolved to the mount entity
+ * witness: the `{id}` is resolved to the mount entity
  * before the handler runs, the handler flips `published`, **persists** the change
- * (the handler owns its side-effects — design §3/§4, "apply the action in the
+ * (the handler owns its side-effects — "apply the action in the
  * handler"), and returns the **mount resource** through the default (`outputType` =
  * mount type) serializer so the response is the published widget document.
  *

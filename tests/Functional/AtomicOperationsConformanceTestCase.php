@@ -11,7 +11,7 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 
 /**
- * The Slice-C acceptance suite for the JSON:API Atomic Operations extension: a real
+ * The acceptance suite for the JSON:API Atomic Operations extension: a real
  * `POST /operations` batch runs end-to-end on BOTH providers (the in-memory witness
  * and the Doctrine-sqlite kernel), all-or-nothing, with local-id (`lid`)
  * cross-references — each subclass differing only in the kernel it names.
@@ -390,7 +390,7 @@ abstract class AtomicOperationsConformanceTestCase extends JsonApiFunctionalTest
     #[Group('spec:atomic')]
     public function aRelationshipRollbackRestoresAssociationAndRelatedObjectIdentity(): void
     {
-        // The cross-store identity case (Slice C carry-forward): a relationship mutation
+        // The cross-store identity case: a relationship mutation
         // inside a batch, then a FORCED rollback (the next op fails), then assert the
         // association AND the related-object graph are restored to the pre-batch state.
         //

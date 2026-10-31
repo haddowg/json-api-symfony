@@ -136,7 +136,7 @@ final class WindowedRelationBatch
         $parentClass = $parentMetadata->getName();
 
         // The include path's count opt-in rides the criteria (the RelationshipWindowBatcher
-        // sets `wantsCount: $relation->isCountable()` — §6d), so the
+        // sets `wantsCount: $relation->isCountable()`), so the
         // native batch reads it uniformly with the per-parent tail.
         $countable = $criteria->wantsCount;
         // A non-countable relation is count-free: bound rn <= limit+1 and read the

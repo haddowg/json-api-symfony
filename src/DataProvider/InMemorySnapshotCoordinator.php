@@ -8,8 +8,7 @@ use Symfony\Contracts\Service\ResetInterface;
 
 /**
  * Coordinates a snapshot/restore across **every** registered {@see InMemoryStore} as
- * ONE serialize pass, so cross-store object identity survives a rollback (the Slice C
- * in-memory carry-forward).
+ * ONE serialize pass, so cross-store object identity survives a rollback.
  *
  * The problem it solves: a parent object held in store A can reference a related
  * object held in store B (an {@see \haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister::mutateRelationship()}

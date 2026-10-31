@@ -20,7 +20,7 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 /**
- * The single-server OpenAPI document witness kernel (Slice 4 stage B): two resources
+ * The single-server OpenAPI document witness kernel: two resources
  * (`products` — explicitly `Catalog`-tagged, enum attribute, filters/sorts, a to-one
  * + to-many relation, a security expression on read/create; `categories` — untagged,
  * humanized-default tag), a collection-scope custom action, a standalone-serializer

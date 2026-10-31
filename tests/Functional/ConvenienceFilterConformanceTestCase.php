@@ -8,7 +8,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The convenience filter library acceptance suite (G8b,
+ * The convenience filter library acceptance suite (see
  * docs/doctrine.md): the intent-named string strategies
  * ({@see \haddowg\JsonApi\Resource\Filter\Contains} / `StartsWith` / `EndsWith`)
  * and the structured numeric {@see \haddowg\JsonApi\Resource\Filter\Range},

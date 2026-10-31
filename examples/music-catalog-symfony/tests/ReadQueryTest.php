@@ -73,7 +73,7 @@ final class ReadQueryTest extends MusicCatalogKernelTestCase
         self::assertSame([], $this->albumIds($this->fetch('/albums?filter[artist.name]=Nobody')));
     }
 
-    // --- convenience filter library (G8b) ------------------------------------
+    // --- convenience filter library ------------------------------------
 
     #[Test]
     #[Group('spec:fetching-filtering')]

@@ -16,7 +16,7 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
 
 /**
  * Builds the **standalone per-type JSON Schema 2020-12** documents for a server
- * (design §3, D11) — the `json-api:json-schema:export` command's source.
+ * — the `json-api:json-schema:export` command's source.
  *
  * Distinct from the {@see DocumentFactory}: that builds the whole OpenAPI document
  * (paths + envelopes + the component set, where a type's schema is `$ref`-able). This

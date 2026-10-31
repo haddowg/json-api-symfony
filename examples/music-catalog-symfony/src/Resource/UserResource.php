@@ -69,7 +69,7 @@ final class UserResource extends AbstractResource
             // serialization for a stable wire shape.
             ArrayHash::make('preferences')->example(['theme' => 'dark'])->minProperties(0)->maxProperties(20)->sortKeys()->guaranteed(),
             Ip::make('lastSeenIp')->example('203.0.113.7')->nullable(),
-            // A genuine write-only credential (Tier-0 G18, core docs/fields.md): accepted on
+            // A genuine write-only credential (core docs/fields.md): accepted on
             // BOTH create and update and still validated (required on create, min 8) —
             // but skipped in the attribute render, so it appears on NO read (single,
             // collection, included, related) and a `fields[users]=password` cannot

@@ -420,7 +420,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // never an array, and never paginated (core docs/filters.md).
         $singular = $this->appliesSingularFilter($filters, $operation->queryParameters());
 
-        // The resource's pagination() return is the single source of truth (G21):
+        // The resource's pagination() return is the single source of truth:
         // used verbatim, with `null` meaning *no pagination* (fetch-all). The base
         // impl returns the resolved server default, so a non-overriding resource still
         // inherits it; a bare serializer/hydrator pair (no resource) has no override
@@ -435,7 +435,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         }
         $window = $paginator !== null && $request !== null ? $paginator->window($request) : null;
 
-        // The single COUNT decision (G21): a count-based paginator counts when its
+        // The single COUNT decision: a count-based paginator counts when its
         // own withCount() author opt-in flipped it, OR the client asked
         // `?withCount=_self_` (already 400-ed by core's document gate if the resource
         // is not countable(), so an accepted `_self_` here implies countable). The
@@ -532,11 +532,11 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return $this->afterFetchCollection($response, $type, $request, $items, $activatedProfiles);
         }
 
-        // Fan the single resolved total to BOTH meta slots from one count, per the
-        // G21 §6a matrix (never recount):
+        // Fan the single resolved total to BOTH meta slots from one count, per this
+        // matrix (never recount):
         //
         // - FETCH-ALL (no paginator): the whole collection is materialized, so its
-        //   size is free — render `meta.total` UNCONDITIONALLY, no `meta.page` (§5).
+        //   size is free — render `meta.total` UNCONDITIONALLY, no `meta.page`.
         // - PAGINATED + counted (`$result->total !== null`): the count-based page
         //   carries `meta.page.total`/`links.last`; the SAME int is echoed at
         //   top-level `meta.total` — never a second count.
@@ -719,14 +719,14 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // The related endpoint renders via CollectionDocument, which does NOT run
             // core's primary-collection `_self_` document gate — so the handler enforces
             // the relation's countable() here: `?withCount=_self_` on a non-countable
-            // relation is a 400 (G21 §6b row 4), mirroring the document gate's reject.
+            // relation is a 400, mirroring the document gate's reject.
             if ($request->countsRelationship('_self_') && !$relation->isCountable()) {
                 return ErrorResponse::fromException(
                     new \haddowg\JsonApi\Exception\RelationshipCountNotAllowed(['_self_']),
                 );
             }
 
-            // The single COUNT decision for the related collection (G21): the relation's
+            // The single COUNT decision for the related collection: the relation's
             // paginator counts when its own withCount() author opt-in flipped it, OR the
             // client asked `?withCount=_self_` (gated above on the relation's countable()).
             // The cursor strategy is inherently count-free and resolves total-null on its
@@ -816,7 +816,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
                 // Counted page: the single total fans to BOTH meta.page.total (inside
                 // the count-based page) AND the universal top-level meta.total — one
-                // count, two slots (G21 §6b).
+                // count, two slots.
                 if ($paginator !== null && $pivotResult->total !== null) {
                     return RelatedResponse::fromPage(
                         $paginator->paginate($request, $items, $pivotResult->total),
@@ -838,7 +838,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 }
 
                 // Fetch-all (no paginator): the whole related set is materialized, so
-                // its size is free — render meta.total UNCONDITIONALLY (G21 §5).
+                // its size is free — render meta.total UNCONDITIONALLY.
                 return RelatedResponse::fromCollection($items, $serializer, $relation->isCountable())
                     ->withMeta(['total' => \count($items)]);
             }
@@ -899,7 +899,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
             // Counted page: the single total fans to BOTH meta.page.total (inside the
             // count-based page) AND the universal top-level meta.total — one count, two
-            // slots (G21 §6b).
+            // slots.
             if ($paginator !== null && $result->total !== null) {
                 return RelatedResponse::fromPage(
                     $paginator->paginate($request, $items, $result->total),
@@ -920,7 +920,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             }
 
             // Fetch-all (no paginator): the whole related set is materialized, so its
-            // size is free — render meta.total UNCONDITIONALLY (G21 §5).
+            // size is free — render meta.total UNCONDITIONALLY.
             return RelatedResponse::fromCollection($items, $serializer, $relation->isCountable())
                 ->withMeta(['total' => \count($items)]);
         }
@@ -1220,7 +1220,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $items = \is_array($pivotResult->items) ? \array_values($pivotResult->items) : \iterator_to_array($pivotResult->items, false);
 
             // Linkage-only response (IdentifierResponse) — a relationship endpoint carries no
-            // compound `included` (core D16); the pivot meta rides the windowed
+            // compound `included`; the pivot meta rides the windowed
             // map below, so there is nothing to preload here.
             $page = $this->supplyWindowedRelationship($parent, $relationshipName, $items, $paginator, $pivotResult, $relWantsCount, $request, $operation->queryParameters());
 
@@ -1288,7 +1288,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 );
             }
 
-            // The single COUNT decision (G21), mirroring fetchRelated: the paginator
+            // The single COUNT decision, mirroring fetchRelated: the paginator
             // counts when its own withCount() opt-in flipped it OR the client asked
             // `?withCount=_self_` (gated above); the cursor strategy is count-free.
             $relWantsCount = $paginator !== null
@@ -1314,7 +1314,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $items = \is_array($result->items) ? \array_values($result->items) : \iterator_to_array($result->items, false);
 
             // A relationship endpoint renders linkage only — an IdentifierResponse never
-            // carries a compound `included` (core D16), so `?include` here is
+            // carries a compound `included`, so `?include` here is
             // inert and there is nothing to preload (the old preload was mis-rooted and
             // rendered nothing — a wasted fetch).
             $page = $this->supplyWindowedRelationship($parent, $relationshipName, $items, $paginator, $result, $relWantsCount, $request, $operation->queryParameters());
@@ -1427,7 +1427,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      *
      * The validation lives here (not in the persister) so core owns the request-shape
      * rules and the persister owns only the storage-correct apply — the composition
-     * the Phase-3 S3 plan settled on.
+     * this split settles on.
      */
     private function mutateRelationship(
         UpdateRelationshipOperation|AddToRelationshipOperation|RemoveFromRelationshipOperation $operation,
@@ -2704,7 +2704,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
     /**
      * Fires an After* lifecycle dispatch either inline (the single-op path) or
      * deferred to post-commit (an active Atomic Operations batch) — the ONLY
-     * behavioural edit Slice B makes to the write arms.
+     * behavioural difference the batch makes to the write arms.
      *
      * On the single-op path the {@see WriteTransactionContext} is inactive (or
      * absent), so this runs `$fire` immediately and honours its response

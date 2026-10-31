@@ -21,15 +21,15 @@ use haddowg\JsonApiBundle\Operation\Operation;
  *  - a **constrained id** (`matchAs('[0-9]+')`) so the `{id}` path parameter advertises
  *    the anchored `^(?:[0-9]+)$` pattern — the idPattern-derivation witness;
  *  - **explicit OpenAPI tags** (`Catalog`) so its operations group under a config-
- *    defined tag (design §4.7);
+ *    defined tag;
  *  - a **backed-enum** attribute (`status`) so the document emits the reusable named
- *    `CatalogStatus` component (§4.8);
+ *    `CatalogStatus` component;
  *  - **filters** + **sorts** so the collection operation enumerates `filter[…]` and
- *    `sort` parameters (§4.4);
+ *    `sort` parameters;
  *  - a to-one `category` and a to-many `tags` **relation** so the relationship /
  *    related endpoints appear; and
  *  - a `securityRead` + `securityCreate` **expression** so `FetchOne` and `Create`
- *    are reported as secured operations (§4.6/D8) — the expression is `true` so it is
+ *    are reported as secured operations — the expression is `true` so it is
  *    inert at runtime but present for the metadata projection.
  */
 #[AsJsonApiResource(

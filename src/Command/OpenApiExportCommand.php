@@ -16,8 +16,8 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 use Symfony\Component\Yaml\Yaml;
 
 /**
- * Exports a server's OpenAPI 3.1 document to JSON or YAML — to a file, or to stdout
- * (design §7, D6/D13). The CLI export is **always available** (independent of the
+ * Exports a server's OpenAPI 3.1 document to JSON or YAML — to a file, or to stdout.
+ * The CLI export is **always available** (independent of the
  * HTTP expose gate), so a CI pipeline can spec-diff or publish the document with no
  * web exposure.
  *

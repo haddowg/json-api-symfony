@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The viewer gating witness (design D6): `ui.enabled: false` suppresses the UI route
+ * The viewer gating witness: `ui.enabled: false` suppresses the UI route
  * while exposure stays on, so the document is still served but the viewer is not — the
  * viewer is independently switchable from the document. (The shared expose gate
  * suppressing *both* routes is covered by {@see OpenApiExposeAndMultiServerTest}.)
