@@ -387,6 +387,42 @@ assertion vocabulary — `assertFetchedManyExact`, `assertIncludedExactly`,
 `assertExactMeta`, `assertNoData`/`assertNoLink`, `assertErrorsExact`, … — is
 available beyond the browser-level shorthands.
 
+#### Browser method reference
+
+Every public method of `JsonApiBrowser`. The request methods and most assertions return
+the browser, so they chain; `assertFetchedOne()` and `assertFetchedMany()` return core's
+`JsonApiDocument` instead, to carry on with body assertions.
+
+| Method | Does |
+| --- | --- |
+| `get($uri, $server = [])` | a `GET` with `Accept: application/vnd.api+json` |
+| `post($uri, $document = null, $server = [])` | a `POST`, JSON-encoding `$document` with the JSON:API `Content-Type` |
+| `patch($uri, $document = null, $server = [])` | a `PATCH`, encoded the same way |
+| `delete($uri, $document = null, $server = [])` | a `DELETE`, with an optional body such as relationship-remove linkage |
+| `actingAs($user)` | authenticates every later request as a `UserInterface` or identifier, as a Bearer token |
+| `assertStatus($status)` | the HTTP status |
+| `assertContentType($expected = 'application/vnd.api+json')` | the `Content-Type` |
+| `assertHeader($name, $expected = null)` | the header is present, and equals `$expected` when given |
+| `assertCreated()` | `201`, the JSON:API content type and a `Location` header |
+| `assertNoContent()` | `204` and an empty body |
+| `assertFetchedOne()` | `200` and the JSON:API content type; returns the `JsonApiDocument` |
+| `assertFetchedMany()` | `200`, the content type and a collection as `data`; returns the `JsonApiDocument` |
+| `assertFetchedManyInOrder($ids, $type = null)` | the collection holds exactly these ids, in this order |
+| `assertFetchedOneExact($expected)` | the primary resource object equals `$expected` member for member |
+| `assertFetchedManyExact($expected)` | the collection's members equal `$expected`, in order |
+| `assertHasError($status = null, $pointer = null, $code = null)` | some error object matches the given status, `source.pointer` and code |
+| `assertHasExactError($error)` | some error object equals `$error` exactly |
+| `assertErrorsExact($errors)` | the error list equals `$errors` exactly, in order |
+| `assertNoData()` | the document has no `data` member |
+| `assertNoMeta()` | the document has no top-level `meta` |
+| `assertNoLink($rel = null)` | the document has no top-level `links`, or none named `$rel` |
+| `getDocument()` | the last response as core's `JsonApiDocument`, status and headers included |
+| `getErrors()` | the last response as core's `JsonApiErrors` |
+| `expectResource($entity, $serverName = null, $type = null)` | the resource object `$entity` should render as, through its own serializer |
+
+Everything else is Symfony's `KernelBrowser`, such as `request()`, `getResponse()` and
+`getContainer()`.
+
 #### Extending the browser
 
 The class is **non-`final`** and exposes its behaviour as protected, overridable
