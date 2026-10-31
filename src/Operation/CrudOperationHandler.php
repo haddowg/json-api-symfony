@@ -232,8 +232,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // Each server's per-type operation allow-list, re-checked on writes that reach
         // the handler without a route the loader gated.
         private readonly ?RouteDescriptorRegistry $descriptors = null,
-        // Reads a computed relation into a scoped type as the closure's value narrowed to
-        // that scope.
+        // Reads a computed relation as the closure's value, narrowed to any scope.
         private readonly ?RelatedReadRouter $readRouter = null,
         // Resolves a type's id encoder from the class the operation's server serves it
         // with; bound per operation.
@@ -844,7 +843,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             }
 
             $result = match (true) {
-                $this->readRouter?->readsComputed($relation) === true => $this->readRouter->fetchComputed($server, $parent, $relation, $criteria, $request),
+                $this->readRouter?->isComputed($relation) === true => $this->readRouter->fetchComputed($server, $parent, $relation, $criteria, $request),
                 // A to-many over several types reaching a scoped type serves its members
                 // narrowed per member type.
                 \count($relatedTypes) > 1 && $this->readRouter?->isScoped($relation) === true => $this->readRouter->fetchPolymorphic($server, $parent, $relation, $criteria, $request),
@@ -1308,7 +1307,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             );
             $this->validateFilterValues($operation->queryParameters()->filter, $criteria->filters);
 
-            $result = $this->readRouter?->readsComputed($relation) === true
+            $result = $this->readRouter?->isComputed($relation) === true
                 ? $this->readRouter->fetchComputed($server, $parent, $relation, $criteria, $request)
                 : $relatedProvider->fetchRelatedCollection($relatedType, $parent, $relation, $criteria, $request);
             $items = \is_array($result->items) ? \array_values($result->items) : \iterator_to_array($result->items, false);

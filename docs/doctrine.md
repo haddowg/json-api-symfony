@@ -909,6 +909,10 @@ query against a single related entity class, and a polymorphic collection's memb
 span entity classes, so there is no single query to run. `fetchRelatedCollection`
 throws a `\LogicException` for it.
 
+A `MorphToMany` with `extractUsing()` doesn't reach that boundary. Its related
+endpoint and `?withCount` page and count the closure's value in memory, whether or not
+any of its types has an extension, so it needs no custom provider.
+
 A host that needs a polymorphic to-many supplies a **custom provider** that resolves
 the members across types. The example app does exactly this:
 [`LibraryItemsProvider`](../examples/music-catalog-symfony/src/Provider/LibraryItemsProvider.php)

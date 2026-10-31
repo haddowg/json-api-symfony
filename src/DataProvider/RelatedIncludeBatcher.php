@@ -418,7 +418,7 @@ final class RelatedIncludeBatcher
         // otherwise they render as the closure returns them. A pivot
         // belongsToMany is not computed: the provider's pivot query is what it serves.
         if ($this->router->isComputed($relation)) {
-            if (!$this->router->readsComputed($relation)) {
+            if (!$this->isScoped($relation)) {
                 return $descends ? $this->readTargets($entities, $relation, $request) : [];
             }
 

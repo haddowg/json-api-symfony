@@ -1061,8 +1061,11 @@ linkage, `included`, both endpoints, `?withCount`, the Relationship Queries wind
 Doctrine provider admits rows with one `WHERE id IN (…)` query per relation per level,
 with its extensions applied; a custom provider can do the same by implementing
 `AdmitsRowsInterface`, and is otherwise asked through `fetchOne()` one row at a time.
-When the related type isn't scoped the closure's value renders as it is, at no extra
-cost. A pivot `belongsToMany` always loads through the provider's pivot query.
+When the related type isn't scoped, linkage and `included` render the closure's value
+as it is, at no extra cost, and both endpoints and `?withCount` page and count that
+value in memory. The provider is never asked to query the relation, so a computed
+polymorphic to-many works on the Doctrine provider without a custom one. A pivot
+`belongsToMany` always loads through the provider's pivot query.
 
 A relation stored on a getter or property that is not a Doctrine association renders
 what the model returns; your code owns its scoping.

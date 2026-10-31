@@ -149,7 +149,7 @@ final class ScopedLinkageGuard
 
         $criteria = new CollectionCriteria(new QueryParameters(fields: [], includes: [], sort: [], filter: [], pagination: []));
         // A computed relation's members are its closure's value, narrowed as GET narrows them.
-        if ($this->router->readsComputed($relation)) {
+        if ($this->router->isComputed($relation)) {
             return $this->members($this->router->fetchComputed($server, $parent, $relation, $criteria, $request)->items);
         }
 

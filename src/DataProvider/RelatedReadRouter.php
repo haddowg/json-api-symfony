@@ -102,7 +102,7 @@ final class RelatedReadRouter
      */
     public function batch(Server $server, string $type, array $parents, RelationInterface $relation, CollectionCriteria $criteria, JsonApiRequestInterface $request): RelatedBatch
     {
-        if ($this->readsComputed($relation)) {
+        if ($this->isComputed($relation)) {
             $serializer = $server->serializerFor($type);
             $results = [];
             foreach ($this->admitComputed($server, $parents, $relation, $request) as $index => $members) {
@@ -250,7 +250,7 @@ final class RelatedReadRouter
      */
     public function counts(Server $server, string $type, array $parents, RelationInterface $relation, CollectionCriteria $criteria, JsonApiRequestInterface $request): array
     {
-        if ($this->readsComputed($relation)) {
+        if ($this->isComputed($relation)) {
             $serializer = $server->serializerFor($type);
             $counts = [];
             foreach ($this->admitComputed($server, $parents, $relation, $request) as $index => $members) {
@@ -330,6 +330,10 @@ final class RelatedReadRouter
      * closure on the field's protected state, so this reads it by reflection. A pivot
      * `belongsToMany` is not counted: its closure only feeds core's model read, and the
      * provider's pivot query is what its related endpoint serves.
+     *
+     * A computed relation's endpoints, counts and windows always read the closure's
+     * value, narrowed to the rows any scoped type admits, since its storage need not be
+     * anything a provider can query.
      */
     public function isComputed(RelationInterface $relation): bool
     {
@@ -342,26 +346,6 @@ final class RelatedReadRouter
         $fieldState = $state->getValue($relation);
 
         return \is_object($fieldState) && \property_exists($fieldState, 'extractUsing') && $fieldState->extractUsing !== null;
-    }
-
-    /**
-     * Whether `$relation` is computed and any type it relates to is scoped, so its
-     * members are the closure's value narrowed to the rows that type's provider admits. An
-     * unscoped computed relation renders the closure's value as is.
-     */
-    public function readsComputed(RelationInterface $relation): bool
-    {
-        if (!$this->isComputed($relation)) {
-            return false;
-        }
-
-        foreach ($relation->relatedTypes() as $type) {
-            if ($this->isScopedType($type, $relation)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     /**
@@ -425,7 +409,7 @@ final class RelatedReadRouter
      */
     public function fetchPolymorphic(Server $server, object $parent, RelationInterface $relation, CollectionCriteria $criteria, JsonApiRequestInterface $request): CollectionResult
     {
-        if ($this->readsComputed($relation)) {
+        if ($this->isComputed($relation)) {
             return $this->fetchComputed($server, $parent, $relation, $criteria, $request);
         }
 
