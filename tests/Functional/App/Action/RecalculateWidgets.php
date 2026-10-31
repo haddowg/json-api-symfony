@@ -19,7 +19,7 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiAction;
  * the author-declared method allow-list is enforced at routing, before any handler.
  *
  * The handler returns a meta-only document, so it declares `responds: [new MetaResult()]` — the
- * generated document advertises a `200` meta document (core ADR 0102).
+ * generated document advertises a `200` meta document (core ADR 0126).
  */
 #[AsJsonApiAction(type: 'actionWidgets', path: 'recalculate', methods: ['PATCH'], scope: ActionScope::Collection, responds: [new MetaResult()])]
 final class RecalculateWidgets implements ActionHandlerInterface

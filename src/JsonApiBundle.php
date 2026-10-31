@@ -109,7 +109,7 @@ final class JsonApiBundle extends AbstractBundle
      * The Doctrine filter handler consults each registered arm (first
      * {@see \haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineFilterArmInterface::supports()}
      * match wins) to push a custom `FilterInterface` down to DQL before raising
-     * `UnsupportedFilter` — the extensible-handler seam (core ADR 0078).
+     * `UnsupportedFilter` — the extensible-handler seam (core docs/adapters.md).
      */
     public const string DOCTRINE_FILTER_ARM_TAG = 'haddowg.json_api.doctrine_filter_arm';
 
@@ -701,7 +701,7 @@ final class JsonApiBundle extends AbstractBundle
         $builder->setParameter('haddowg_json_api.atomic_operations.enabled', $atomicEnabled);
         $builder->setParameter('haddowg_json_api.atomic_operations.path', $atomicPath);
         // The Atomic Operations endpoint's own scope override, and the security scheme
-        // operation scopes are listed under in the OpenAPI document (core ADRs 0181, 0182).
+        // operation scopes are listed under in the OpenAPI document (core ADR 0181).
         $builder->setParameter('haddowg_json_api.atomic_operations.scopes', $this->atomicScopesConfig($config));
         $builder->setParameter('haddowg_json_api.openapi.scope_scheme', $this->scopeSchemeConfig($config));
         // The exception-class => HTTP-status map (bundle ADR 0003) the config-driven
@@ -742,7 +742,7 @@ final class JsonApiBundle extends AbstractBundle
         $this->registerServers($container, $servers, $maxPerPage, $maxIncludeDepth, $strictQueryParameters, $profiles);
 
         // Whether each server's OpenAPI document carries generated operation examples, and
-        // the OAuth scopes each operation needs (core ADR 0182).
+        // the OAuth scopes each operation needs (core ADR 0181).
         $builder->getDefinition(\haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource::class)
             ->setArgument('$exampleGeneration', \array_map(static fn(array $settings): bool => $settings['openapi_examples'], $servers))
             ->setArgument('$scopeTables', new \Symfony\Component\DependencyInjection\Reference(\haddowg\JsonApiBundle\Scope\ScopeTableProvider::class))
@@ -817,7 +817,7 @@ final class JsonApiBundle extends AbstractBundle
                 '$rows' => service(\haddowg\JsonApiBundle\Security\ReadableRows::class),
             ]);
 
-        // The operation catalogue (core ADR 0183): every operation a server exposes with
+        // The operation catalogue (core ADR 0180): every operation a server exposes with
         // the security rule and scopes guarding it, read from the declarations above.
         // The scope checker compares with the same matcher enforcement uses.
         $services->set(\haddowg\JsonApiBundle\Catalog\OperationSecuritySource::class)
@@ -1064,7 +1064,7 @@ final class JsonApiBundle extends AbstractBundle
                     'scope' => $attribute->scope->name,
                     'input' => $attribute->input->name,
                     'inputType' => $attribute->inputType,
-                    // The declared success-response set (core ADR 0127), JSON-encoded as a
+                    // The declared success-response set (core ADR 0126), JSON-encoded as a
                     // list of {kind, type?, jobType?}; absent = the ResourceLocatorPass
                     // defaults it to a 200 resource document of the mount type.
                     'responds' => self::actionRespondsTag($attribute),

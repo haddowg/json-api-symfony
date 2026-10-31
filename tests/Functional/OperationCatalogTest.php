@@ -18,7 +18,7 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Security\Core\User\InMemoryUser;
 
 /**
- * The operation catalogue (core ADR 0183): the scopes each operation lists, the security
+ * The operation catalogue (core ADR 0180): the scopes each operation lists, the security
  * rule and level the bundle reads for it, and the verdicts Symfony Security gives.
  */
 #[Group('scopes')]

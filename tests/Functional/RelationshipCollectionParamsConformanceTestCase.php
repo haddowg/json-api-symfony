@@ -193,7 +193,7 @@ abstract class RelationshipCollectionParamsConformanceTestCase extends JsonApiFu
         // `pagedComments` is countable(), so `?withCount=_self_` (under the Countable
         // profile) counts the linkage collection — emitting a `last` link the count-free
         // default omits. `_self_` is relation-aware on a relationship render (core ADR
-        // 0068 / bundle ADR 0052).
+        // 0057 / bundle ADR 0052).
         $response = $this->handle(self::BASE_URI . '/articles/1/relationships/pagedComments?withCount=_self_&page[size]=1&page[number]=1', extraServer: [
             'HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . CountableProfile::URI . '"',
         ]);
@@ -255,7 +255,7 @@ abstract class RelationshipCollectionParamsConformanceTestCase extends JsonApiFu
         self::assertSame(['1', '2'], $this->ids($document));
     }
 
-    // --- relation-scoped filters and sorts (core ADR 0051) -------------------
+    // --- relation-scoped filters and sorts (core docs/relations.md) -------------------
 
     #[Test]
     #[Group('spec:fetching-relationships')]

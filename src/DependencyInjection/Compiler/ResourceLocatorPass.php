@@ -457,7 +457,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
                 $methods = $this->actionMethods($tag);
                 $inputType = \is_string($tag['inputType'] ?? null) && $tag['inputType'] !== '' ? $tag['inputType'] : $type;
 
-                // The declared success-response set (core ADR 0127), decoded from the
+                // The declared success-response set (core ADR 0126), decoded from the
                 // action's `responds` JSON scalar; empty = the action defaults to a `200`
                 // resource document of its mount type. Each entry is a kind discriminator
                 // (+ the type an ActionResource names / the jobType an Accepted names). The

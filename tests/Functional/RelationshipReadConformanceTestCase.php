@@ -129,7 +129,7 @@ abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTest
     public function aRelationshipWithoutTheLoadStatePolicyAlwaysEmitsData(): void
     {
         // Regression: the `comments` to-many opts into eager linkage with
-        // `withData()` (a to-many is lazy by default since core ADR 0067), so its
+        // `withData()` (a to-many is lazy by default since core ADR 0025), so its
         // `data` member is always present on both providers regardless of any
         // injected load-state predicate — `withData()` overrides the lazy default.
         $relationships = $this->relationshipsOf($this->fetchResource('/articles/1'));
@@ -150,7 +150,7 @@ abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTest
     #[Group('spec:fetching-relationships')]
     public function aToOneRelationshipUnderTheLoadStatePolicyStillEmitsData(): void
     {
-        // `lazyAuthor` is a `BelongsTo` to-one, EAGER by default (core ADR 0067:
+        // `lazyAuthor` is a `BelongsTo` to-one, EAGER by default (core ADR 0025:
         // its id is on the owner). Its `data` is always present — mirroring the
         // Doctrine predicate's "a to-one is always loaded" verdict (a lazy ManyToOne
         // proxy carries its identifier, so emitting it needs no DB load); the
@@ -200,7 +200,7 @@ abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTest
         );
     }
 
-    // --- convention self links (core ADR 0054) ---------------------------------
+    // --- convention self links (core docs/links-and-meta.md) ---------------------------------
 
     #[Test]
     #[Group('spec:document-resource-objects')]

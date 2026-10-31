@@ -190,7 +190,7 @@ final class AlbumResource extends AbstractResource
             // something narrower than "a string", which an artist name is not, and an
             // invented `pattern` would reject real names to buy a type nobody wanted.
             WhereThrough::make('artist.name'),
-            // --- The convenience filter library (G8b, core ADR 0075-0077; docs/doctrine.md). Each is an intent-named strategy that bakes in its operator, value
+            // --- The convenience filter library (G8b, core ADRs 0075-0076; docs/doctrine.md). Each is an intent-named strategy that bakes in its operator, value
             // coercion, the matching value constraint, and the OpenAPI value schema +
             // description from one declaration — no hand-wired Where operator.
             //
@@ -226,7 +226,7 @@ final class AlbumResource extends AbstractResource
      * `releasedAt` descending through the Doctrine sort handler (so OK Computer
      * (1997) precedes Dummy (1994)), keeping the unsorted collection — and its
      * pagination — deterministic. An explicit `?sort=…` overrides this entirely
-     * (core ADR 0044).
+     * (core docs/sorts.md).
      *
      * @return list<SortDirective>
      */

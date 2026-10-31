@@ -16,7 +16,7 @@ use haddowg\JsonApiBundle\Security\ResourceSecurityRegistry;
 
 /**
  * The security rule guarding each operation in the catalogue, read from the same
- * declarations the bundle enforces (core ADR 0183):
+ * declarations the bundle enforces (core ADR 0180):
  *
  * - a CRUD operation: the type's `security*` declaration for it;
  * - a related or relationship read: the relation's read security, else the type's

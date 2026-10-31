@@ -45,7 +45,7 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
  *  - applies the relatedQuery sort/filter — over the SAME merged vocabulary the
  *    endpoint uses (the related resource's filters/sorts merged with the relation's
  *    own scoped {@see RelationInterface::filters()}/{@see RelationInterface::sorts()},
- *    core ADR 0051) — through the provider's batched
+ *    core docs/relations.md) — through the provider's batched
  *    {@see DataProviderInterface::fetchRelatedCollectionBatch()} seam (so an unknown
  *    sort/filter key is the endpoint's same `400`, and the scoping/count-free vs
  *    countable distinction is reused verbatim) for the WHOLE page in one round-trip;

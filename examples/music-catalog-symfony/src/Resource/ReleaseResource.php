@@ -20,7 +20,7 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Release;
 
 /**
  * The `releases` resource type — the composite-attribute showcase (core ADRs
- * 0118–0121), exercising all three composite kinds on one resource:
+ * 0114–0121), exercising all three composite kinds on one resource:
  *
  * - `format` is a discriminated {@see OneOf}: its `medium` key selects the
  *   vinyl / cd / digital variant, each variant's children validating (and

@@ -417,7 +417,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         // A singular filter the client applied collapses the collection to a
         // zero-to-one response — a single resource (the first match) or null,
-        // never an array, and never paginated (core ADR 0039).
+        // never an array, and never paginated (core docs/filters.md).
         $singular = $this->appliesSingularFilter($filters, $operation->queryParameters());
 
         // The resource's pagination() return is the single source of truth (G21):
@@ -450,7 +450,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $filters,
             $resource?->allSorts() ?? [],
             $window,
-            // Applied only when the request carries no `sort` (core ADR 0044); a
+            // Applied only when the request carries no `sort` (core docs/sorts.md); a
             // bare serializer/hydrator pair has no resource and so no default.
             $resource?->defaultSort() ?? [],
             wantsCount: $wantsCount,
@@ -614,7 +614,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      *    merged with the relation's own scoped {@see RelationInterface::filters()}/
      *    {@see RelationInterface::sorts()} (extra filters/sorts available ONLY on this
      *    related endpoint, never the primary collection; the relation wins a key
-     *    clash, core ADR 0051) — into a {@see CollectionCriteria}, asks the related
+     *    clash, core docs/relations.md) — into a {@see CollectionCriteria}, asks the related
      *    provider's
      *    {@see \haddowg\JsonApiBundle\DataProvider\DataProviderInterface::fetchRelatedCollection()}
      *    to execute it (scoped to the parent), and renders a paginated
@@ -751,7 +751,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // The related-collection endpoint resolves `?filter`/`?sort` against the
             // related resource's vocabulary *merged* with the relation's own scoped
             // filters()/sorts() — extra filters/sorts a relation declares for this ONE
-            // relationship endpoint (core ADR 0051), never reachable on the primary
+            // relationship endpoint (core docs/relations.md), never reachable on the primary
             // /{relatedType} collection — plus, for a pivot relation, the pivot field
             // keys. The merge + criteria assembly + the 3-tier paginator chain are
             // owned by the RelationCriteriaFactory, shared verbatim with the
@@ -1241,7 +1241,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
             // Attach the page that windowed the linkage so a page profile (the
             // cursor-pagination profile) is advertised on the response; the body
-            // stays links-only (core ADR 0124).
+            // stays links-only (core docs/responses.md).
             return $page !== null ? $response->withPage($page) : $response;
         }
 
@@ -1325,7 +1325,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
             // Attach the page that windowed the linkage so a page profile (the
             // cursor-pagination profile) is advertised on the response; the body
-            // stays links-only (core ADR 0124).
+            // stays links-only (core docs/responses.md).
             return $page !== null ? $response->withPage($page) : $response;
         }
 
@@ -1358,7 +1358,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * caller can attach it to the {@see IdentifierResponse} via `withPage()` —
      * advertising a page profile (e.g. cursor pagination) on the linkage response
      * exactly as the related endpoint does, while the body stays links-only (core
-     * ADR 0124).
+     * docs/responses.md).
      *
      * @param list<object>             $items  the page-1 linkage members
      * @param CollectionResult<object> $result the provider's windowed fetch result
@@ -2058,7 +2058,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // The Location prefix is resolved from the request the SAME way the body's
         // links are (an empty base_uri yields the request-host-absolute origin, a
         // configured base is used verbatim), so the Location and the created
-        // resource's own `links.self` stay equal under either base (core ADR 0054).
+        // resource's own `links.self` stay equal under either base (core docs/links-and-meta.md).
         $baseUri = \haddowg\JsonApi\Server\RequestBaseUri::resolve($server->baseUri(), $request->getUri());
 
         $response = DataResponse::fromResource($entity, $serializer)

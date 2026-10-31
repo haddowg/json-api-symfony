@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * The request-aware-predicates acceptance suite (core ADRs 0079/0080, bundle ADR
+ * The request-aware-predicates acceptance suite (core ADR 0079, bundle ADR
  * 0084): every field-visibility / writability / relationship-authz predicate and
  * the widened validation `when()`, each declared on the `badges` fixture as a
  * closure keyed off the inbound `X-Role` header, executed end-to-end over HTTP. The

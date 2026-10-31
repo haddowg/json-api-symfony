@@ -225,7 +225,7 @@ final class WindowedRelationBatch
      *
      * Per parent the boundary rows mint a forward cursor through the SAME
      * {@see CursorTokenMinter} + row-value reader the per-parent path ({@see DoctrineDataProvider::runCursor()})
-     * uses, so the single window is byte-identical to the per-parent minting (core ADR 0123).
+     * uses, so the single window is byte-identical to the per-parent minting (core ADR 0061).
      *
      * @param list<object> $parents      the page of parents (non-empty)
      * @param class-string $relatedClass
@@ -363,7 +363,7 @@ final class WindowedRelationBatch
      * the forward cursor is minted from the boundary rows via the SAME {@see CursorTokenMinter}
      * + row-value reader the per-parent path uses (read each keyset column off the hydrated
      * entity through the ORM accessor), so the single window is byte-identical to the per-parent
-     * minting (bundle ADR 0065, core ADR 0123).
+     * minting (bundle ADR 0065, core ADR 0061).
      *
      * @param list<array<int|string, mixed>> $rows
      * @param ClassMetadata<object>          $parentMetadata

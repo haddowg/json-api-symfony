@@ -25,7 +25,7 @@ final class DoctrineVaultResource extends AbstractResource
     {
         return [
             // Store-provided id: the {@see VaultEntity} keys on a database
-            // auto-increment the persister reads back after flush (core ADR 0048).
+            // auto-increment the persister reads back after flush (core docs/ids.md).
             Id::make(),
             Str::make('secret'),
         ];

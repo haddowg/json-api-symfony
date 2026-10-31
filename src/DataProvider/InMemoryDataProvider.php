@@ -536,7 +536,7 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
         \assert($window instanceof CursorWindow);
 
         // Resolve the keyset columns (the active sort + the PK) through the core
-        // resolver, feeding it the criteria's sort inputs (core ADR 0123) so
+        // resolver, feeding it the criteria's sort inputs (core ADR 0061) so
         // `?sort` validates against the vocabulary exactly as the plain path does.
         // The PK direction for a PK-only keyset follows the resource
         // default-sort-on-PK; with none it is ascending (the resolver's default).

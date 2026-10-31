@@ -306,7 +306,7 @@ final class OpenApiDocsTest extends MusicCatalogKernelTestCase
     {
         // `UserResource::pagination()` pins a CursorPaginator — the catalogue's sole
         // cursor (keyset) witness — so the `users` primary collection's single `page`
-        // deepObject parameter (ADR 0130) carries the keyset object schema: the opaque
+        // deepObject parameter (core ADR 0130) carries the keyset object schema: the opaque
         // `page[after]`/`page[before]` cursor tokens plus `page[size]`, and NOT the
         // `number` of the page-based default. `users` is admin-only, so this rides the
         // `admin` server's document; the path keys are unprefixed (the `/admin` mount

@@ -105,7 +105,7 @@ abstract class ReadQueryConformanceTestCase extends JsonApiFunctionalTestCase
     {
         // `exactTitle` is declared singular(): applying it renders the matched
         // resource as the document's primary `data` *object*, not a one-element
-        // array — the JSON:API zero-to-one shape (core ADR 0039).
+        // array — the JSON:API zero-to-one shape (core docs/filters.md).
         $document = $this->fetchDocument('/articles?filter[exactTitle]=Zebra%20patterns');
 
         $data = $document['data'] ?? null;

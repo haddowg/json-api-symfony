@@ -22,7 +22,7 @@ namespace haddowg\JsonApiBundle\Action;
  * `responds` set's `ActionResource` entry when present, else the mount `type`.
  *
  * `responds` is the declared success-response set the OpenAPI projection advertises
- * (core ADR 0127): each entry a `kind` discriminator (`resource`/`meta`/`nocontent`/
+ * (core ADR 0126): each entry a `kind` discriminator (`resource`/`meta`/`nocontent`/
  * `accepted`/`seeother`) plus the `type` an `ActionResource` names or the `jobType` an
  * `Accepted` names. The {@see \haddowg\JsonApiBundle\OpenApi\Metadata\ActionMetadata}
  * rehydrates each into a core response object. It stays a plain scalar list so the

@@ -26,7 +26,7 @@ use haddowg\JsonApi\Resource\Sort\SortInterface;
  *   the declared {@see $sorts} (validated by the applier exactly as a requested
  *   sort is), so a default flows through the provider's sort handler on the same
  *   path. A default order keeps an otherwise unsorted collection — and its
- *   pagination window — deterministic (core ADR 0044);
+ *   pagination window — deterministic (core docs/sorts.md);
  * - {@see $window} — the pagination fetch window to push down to the store, or
  *   `null` for an unpaginated fetch. Carried as the polymorphic
  *   {@see WindowInterface}; a provider narrows to the concrete window types it

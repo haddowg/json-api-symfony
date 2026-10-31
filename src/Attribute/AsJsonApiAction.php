@@ -44,7 +44,7 @@ use haddowg\JsonApiBundle\OpenApi\Metadata\OperationScopeOverrides;
  * `inputType` resolves to `type`.
  *
  * `responds` declares the action's success response set for the generated OpenAPI
- * document (core's per-operation response declarations, ADR 0127) — the same atomic
+ * document (core's per-operation response declarations, ADR 0126) — the same atomic
  * response objects a resource declares, restricted to those valid on an action:
  *  - `new ActionResource('type')` → `200` with that type's document schema (a resource
  *    body; the handler returns a {@see \haddowg\JsonApi\Response\DataResponse} through

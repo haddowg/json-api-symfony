@@ -19,7 +19,7 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Device;
  * client id of the wrong shape is a `422` — but the common path is the store/app
  * minting it, never a client.
  *
- * It is also the **self-link opt-out** witness (core ADR 0054, docs/resources.md):
+ * It is also the **self-link opt-out** witness (core docs/links-and-meta.md, docs/resources.md):
  * core emits a convention `data.links.self` (`{baseUri}/{uriType}/{id}`) on every
  * resource object by default; overriding {@see emitsSelfLink()} to return `false`
  * suppresses it for THIS type only. A `GET /devices/{id}` therefore carries no

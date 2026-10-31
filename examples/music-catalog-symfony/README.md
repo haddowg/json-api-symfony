@@ -171,7 +171,7 @@ the OpenAPI document. `tests/ScopesTest.php` covers the refusals and the documen
 ## Self links by convention
 
 The JSON:API spec **recommends** (SHOULD) two `self` links, and the bundle emits
-both **by convention** — no hand-written `getLinks()` needed (core ADR 0054, bundle
+both **by convention** — no hand-written `getLinks()` needed (core [links and meta](https://github.com/haddowg/json-api/blob/main/docs/links-and-meta.md), bundle
 docs/resources.md). Both derive from ingredients the integration already has — the resource's
 `baseUri`/`uriType`/`id` and the request URI — so they are **provider-agnostic**: the
 Doctrine-backed `albums`/`tracks` and the in-memory `charts` render identical self
@@ -655,7 +655,7 @@ stored (the test asserts it against the persisted `User` entity, not just the
 response). `passwordConfirm` is `computed()` **and** `writeOnly()` — validated against
 `password` but never persisted and never echoed. Declaring a field both `writeOnly()`
 and `readOnly()` is a `\LogicException` at declaration (it could be neither read nor
-written). Core ADR 0060.
+written). See core's [fields](https://github.com/haddowg/json-api/blob/main/docs/fields.md).
 
 ## Pivot data on an association entity
 

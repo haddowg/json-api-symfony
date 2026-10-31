@@ -96,7 +96,7 @@ final class TrackResource extends AbstractResource
                 // Countable (bundle ADR 0052) so the server-default-fallback related
                 // endpoint still emits a total — the existing example asserts one.
                 ->countable()
-                // A to-many is lazy by default (core ADR 0067); `withData()` opts this
+                // A to-many is lazy by default (core ADR 0025); `withData()` opts this
                 // one back to EAGER so its linkage identifiers render on a track read —
                 // the deliberate contrast with AlbumResource's lazy `tracks`.
                 ->withData(),

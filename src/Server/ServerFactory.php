@@ -280,7 +280,7 @@ final class ServerFactory
 
         // The serving bridge (bundle ADR 0042): one core `serving` handler that
         // turns core's server-level seam (fired once per request inside
-        // `Server::dispatch()`, core ADR 0050) into a bundle `ServingEvent`. A
+        // `Server::dispatch()`, core docs/server.md) into a bundle `ServingEvent`. A
         // ServingEvent subscriber that throws a JsonApiException aborts — the throw
         // propagates out of the closure → out of `dispatch()` → the route-scoped
         // ExceptionListener. Registered only when a dispatcher is wired (the events

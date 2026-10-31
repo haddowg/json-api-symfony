@@ -369,7 +369,7 @@ skipped on every request that does not ask for it. It stays a fully declared mem
 field — naming it is *not* rejected. This is the opt-in inverse of the usual sparse
 fieldset (present unless excluded), and is orthogonal to `hidden()` / `writeOnly()`
 (never rendered even when named). Applies to relations too. Witnessed over HTTP in
-`tests/Functional/SparseByDefaultFieldTest.php` (core ADR 0117).
+`tests/Functional/SparseByDefaultFieldTest.php` (see core's [fields](https://github.com/haddowg/json-api/blob/main/docs/fields.md)).
 
 ### Choosing a relationship's target type
 

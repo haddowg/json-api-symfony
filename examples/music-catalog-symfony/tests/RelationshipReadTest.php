@@ -71,7 +71,7 @@ final class RelationshipReadTest extends MusicCatalogKernelTestCase
     public function aLoadStateOptInToManyEmitsLinksWithoutForcingAFetch(): void
     {
         // AlbumResource's `tracks` to-many is lazy by default (a to-many's per-type
-        // default since core ADR 0067): on a lazy Doctrine collection it emits the
+        // default since core ADR 0025): on a lazy Doctrine collection it emits the
         // convention links but NO `data` member — the load-state seam reports the
         // uninitialised collection as "not loaded", so the identifiers are not
         // materialised.

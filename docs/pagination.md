@@ -227,7 +227,7 @@ ADR 0063). The linkage `data` is the keyset page of resource **identifiers**, an
 the boundary-cursor links ride the document's `links` at the relationship URL —
 `first`, `prev` (`page[before]=…`) and `next` (`page[after]=…`), never `last`
 (count-free by design). The body stays **links-only**: a linkage document carries
-no `meta.page` (core ADR 0124); the windowing page is attached to the response
+no `meta.page` (see core's [responses](https://github.com/haddowg/json-api/blob/main/docs/responses.md)); the windowing page is attached to the response
 only so the cursor-pagination **profile is advertised** (`jsonapi.profile` + the
 `Content-Type` `profile` parameter), byte-identical to the related endpoint's
 advertisement. A pivot relation's linkage page additionally carries each

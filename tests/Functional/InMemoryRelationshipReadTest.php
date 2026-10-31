@@ -50,7 +50,7 @@ final class InMemoryRelationshipReadTest extends RelationshipReadConformanceTest
     #[Group('spec:fetching-relationships')]
     public function aToManyRelationshipUnderTheLoadStatePolicyStillEmitsDataInMemory(): void
     {
-        // `lazyComments` is a lazy-by-default to-many (core ADR 0067), but the
+        // `lazyComments` is a lazy-by-default to-many (core ADR 0025), but the
         // in-memory kernel wires no load-state predicate (no doctrine/orm), so core
         // treats every relation as loaded: the in-memory `comments` are materialised
         // objects, so the `data` member is present exactly as for the eager

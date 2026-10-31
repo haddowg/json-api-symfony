@@ -26,7 +26,7 @@ use haddowg\JsonApi\Resource\Field\Str;
  * It also opts out of the convention resource `self` link
  * ({@see emitsSelfLink()}) — the witness that a resource can suppress its own
  * `data.links.self` while the top-level document `self` is unaffected (core
- * ADR 0054).
+ * docs/links-and-meta.md).
  *
  * Storage-orthogonal (every assertion fires before any write), so witnessed on the
  * in-memory kernel only.

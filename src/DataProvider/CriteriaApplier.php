@@ -152,7 +152,7 @@ final class CriteriaApplier
 
         // No `?sort`: fall back to the resource's default order (if any). An
         // explicit `?sort=` overrides the default entirely — the default is never
-        // appended to a requested sort (core ADR 0044). The defaults are still
+        // appended to a requested sort (core docs/sorts.md). The defaults are still
         // matched against the declared sort vocabulary (same as a requested sort),
         // so a default naming an undeclared sort is a server-config error rather
         // than a silently dropped directive. A default never names a pivot field

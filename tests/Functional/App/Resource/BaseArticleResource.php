@@ -73,7 +73,7 @@ abstract class BaseArticleResource extends AbstractResource
             // Store-provided id: the `articles` entity keys on a database
             // auto-increment, so a create omits `data.id` and the store assigns the
             // next sequential int (rendered as a string on the wire) — the realistic,
-            // common pattern. `Id::make()` sets nothing on create (core ADR 0048).
+            // common pattern. `Id::make()` sets nothing on create (core docs/ids.md).
             Id::make(),
             Str::make('title')->sortable()->required()->minLength(3)->maxLength(50),
             Str::make('body'),
@@ -140,7 +140,7 @@ abstract class BaseArticleResource extends AbstractResource
             // linkage via the serializer registered for each related type.
             BelongsTo::make('author', 'authors'),
             // The to-many `comments` relation also declares its OWN scoped filter
-            // and sort (core ADR 0051), available ONLY on
+            // and sort (core docs/relations.md), available ONLY on
             // `GET /articles/{id}/comments` — never the primary `/comments`
             // collection (which exposes just the comment resource's `filter[body]`).
             // `filter[commentBody]` is a contains-match on the comment body and
@@ -148,7 +148,7 @@ abstract class BaseArticleResource extends AbstractResource
             // contextual vocabulary the related type does not expose globally. The
             // host merges these with the comment resource's own vocabulary.
             // `withData()` keeps this to-many EAGER (a to-many is lazy by default since
-            // the flip to per-type defaults, core ADR 0067): it is the always-emitting
+            // the flip to per-type defaults, core ADR 0025): it is the always-emitting
             // regression baseline its data-presence assertions rely on, distinct from
             // the lazy `lazyComments`/`pinnedComments` witnesses below.
             HasMany::make('comments', 'comments')
@@ -179,7 +179,7 @@ abstract class BaseArticleResource extends AbstractResource
             // relations carry.
             HasMany::make('pinnedComments', 'comments')->storedAs('pinnedComments')->paginate(PagePaginator::make())->countable()
                 ->withFilters(Where::make('bodyContains', 'body', 'like')),
-            // Load-aware relationships under the lazy default (core ADR 0067) so the
+            // Load-aware relationships under the lazy default (core ADR 0025) so the
             // storage-aware load-state predicate decides whether `data` is emitted.
             // They exercise the predicate on both providers, distinct from the
             // eager `withData()` `comments` baseline above.
@@ -229,7 +229,7 @@ abstract class BaseArticleResource extends AbstractResource
         return [
             Where::make('title'),
             Where::make('titleContains', 'title', 'like'),
-            // Singular filter (core ADR 0039): a zero-to-one filter on the unique
+            // Singular filter (core docs/filters.md): a zero-to-one filter on the unique
             // title. Applying it collapses the collection to a single resource (or
             // null), so the same `/articles` endpoint serves a to-one shape.
             Where::make('exactTitle', 'title')->singular(),
@@ -244,7 +244,7 @@ abstract class BaseArticleResource extends AbstractResource
             WhereHas::make('hasAuthor', 'author'),
             WhereDoesntHave::make('lacksAuthor', 'author'),
 
-            // Convenience filter library (G8b, core ADRs 0075-0077, docs/doctrine.md) —
+            // Convenience filter library (G8b, core ADRs 0075-0076, docs/doctrine.md) —
             // shared across the article kernels so the dual-provider
             // ConvenienceFilterConformanceTestCase and the DoctrineReadQueryBudgetTest
             // both see them. The intent-named string strategies on `title` and the

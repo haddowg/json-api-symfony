@@ -89,7 +89,7 @@ final class DocumentFactory
     /**
      * The decorated document for `$serverName` with the operation examples the projector
      * could not build, one {@see \haddowg\JsonApi\OpenApi\MissingExample} per missing
-     * declared value (core ADR 0176), and the scope diagnostics (core ADR 0182). The
+     * declared value (core ADR 0176), and the scope diagnostics (core ADR 0181). The
      * export command prints them.
      *
      * @throws \LogicException when an unknown server name is requested

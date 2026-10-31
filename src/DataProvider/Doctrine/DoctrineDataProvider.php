@@ -295,7 +295,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
     /**
      * The cursor (keyset) execution pushed down to DQL — the twin of the in-memory
      * witness ({@see \haddowg\JsonApi\Collection\Keyset\InMemoryKeyset}),
-     * which is the ground truth (bundle ADR 0063 / core ADR 0123). It resolves the keyset columns
+     * which is the ground truth (bundle ADR 0063 / core ADR 0061). It resolves the keyset columns
      * (the active sort + the appended/deduped PK; validates `?sort`), applies the
      * filters, checks the cursor against the resolved columns (a stale cursor →
      * 400), then via {@see DoctrineKeyset} builds the forced NULL=largest
@@ -378,7 +378,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
     /**
      * Resolves the keyset columns for `$criteria` through the core
-     * {@see KeysetResolver} (core ADR 0123), feeding it the criteria's sort
+     * {@see KeysetResolver} (core ADR 0061), feeding it the criteria's sort
      * inputs — the requested `?sort`, the declared vocabulary and the resource
      * default — so the cursor path's sort validation stays byte-identical to the
      * plain (offset) path's.

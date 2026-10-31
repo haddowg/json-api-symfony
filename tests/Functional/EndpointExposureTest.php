@@ -115,7 +115,7 @@ final class EndpointExposureTest extends JsonApiFunctionalTestCase
     #[Group('spec:document-resource-objects')]
     public function aResourceOptedOutOfTheSelfLinkOmitsItsResourceSelfButKeepsTheDocumentSelf(): void
     {
-        // GizmoResource::emitsSelfLink() returns false (core ADR 0054), so the
+        // GizmoResource::emitsSelfLink() returns false (core docs/links-and-meta.md), so the
         // resource object carries no convention `data.links.self`. The opt-out is
         // resource-scoped: the top-level document `self` (the request URI) is
         // unaffected and still present.

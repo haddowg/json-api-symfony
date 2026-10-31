@@ -449,7 +449,7 @@ return static function (ContainerConfigurator $container): void {
                 '$windowFunctions' => '%haddowg_json_api.doctrine.window_functions%',
                 // Author arms for custom FilterInterface / SortInterface types: each
                 // autoconfigured arm pushes one custom value object down to DQL before
-                // the handler raises UnsupportedFilter/UnsupportedSort (core ADR 0078).
+                // the handler raises UnsupportedFilter/UnsupportedSort (core docs/adapters.md).
                 '$filterArms' => \Symfony\Component\DependencyInjection\Loader\Configurator\tagged_iterator(JsonApiBundle::DOCTRINE_FILTER_ARM_TAG),
                 '$sortArms' => \Symfony\Component\DependencyInjection\Loader\Configurator\tagged_iterator(JsonApiBundle::DOCTRINE_SORT_ARM_TAG),
                 // The current server's output zone, so rendered pivot DateTime values

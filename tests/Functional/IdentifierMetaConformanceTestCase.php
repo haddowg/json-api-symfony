@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * The acceptance suite for the parent-aware identifier-meta hook (core ADR 0084),
+ * The acceptance suite for the parent-aware identifier-meta hook (core docs/relations.md),
  * run identically against the in-memory provider ({@see InMemoryIdentifierMetaTest})
  * and the Doctrine provider ({@see DoctrineIdentifierMetaTest}).
  *

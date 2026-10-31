@@ -13,7 +13,7 @@ use PHPUnit\Framework\Attributes\Test;
  * configured base, every link in the body is resolved from the request origin
  * (`<scheme>://<authority>`), and the `Location` header must follow the same
  * resolution so it stays equal to the created resource's `data.links.self`
- * (core ADR 0054). The dual-provider {@see WriteConformanceTestCase} kernels all
+ * (core docs/links-and-meta.md). The dual-provider {@see WriteConformanceTestCase} kernels all
  * pin a non-empty base, so they only exercise the configured-base path; this case
  * covers the request-origin path the empty base introduces.
  */

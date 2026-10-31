@@ -89,7 +89,7 @@ final class RelationCriteriaFactory
      * vocabulary *merged* with the relation's own scoped
      * {@see RelationInterface::filters()}/{@see RelationInterface::sorts()} — extra
      * filters/sorts a relation declares for this ONE relationship endpoint (core
-     * ADR 0051), never reachable on the primary `/{relatedType}` collection — plus
+     * docs/relations.md), never reachable on the primary `/{relatedType}` collection — plus
      * the auto-derived pivot SORT vocabulary ({@see PivotFields::sortsFor()}) when
      * `$includePivotFields`.
      *
@@ -311,7 +311,7 @@ final class RelationCriteriaFactory
     /**
      * Merges two filter vocabularies, keyed by {@see FilterInterface::key()} so a
      * clash resolves to the later list's declaration (the more specific scope wins,
-     * core ADR 0051). The order `[...$resourceFilters, ...$relationFilters]` is
+     * core docs/relations.md). The order `[...$resourceFilters, ...$relationFilters]` is
      * preserved before the dedup; returned as a list for the {@see CollectionCriteria}.
      *
      * @param list<FilterInterface> $resourceFilters
@@ -331,7 +331,7 @@ final class RelationCriteriaFactory
 
     /**
      * Merges two sort vocabularies, keyed by {@see SortInterface::key()} so a clash
-     * resolves to the later list's declaration (core ADR 0051). The order
+     * resolves to the later list's declaration (core docs/relations.md). The order
      * `[...$resourceSorts, ...$relationSorts]` is preserved before the dedup;
      * returned as a list for the {@see CollectionCriteria}.
      *
