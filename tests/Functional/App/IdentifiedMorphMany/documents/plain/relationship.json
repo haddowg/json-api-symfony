@@ -1,0 +1,1 @@
+{"data":[{"type":"agencies","id":"1"},{"type":"advertisers","id":"1"},{"type":"publishers","id":"1"},{"type":"agencies","id":"2"},{"type":"advertisers","id":"2"},{"type":"agencies","id":"3"}],"links":{"self":{"href":"https:\/\/example.test\/users\/1\/relationships\/companies"},"related":{"href":"https:\/\/example.test\/users\/1\/companies"}},"jsonapi":{"version":"1.1"}}
