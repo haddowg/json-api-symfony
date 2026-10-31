@@ -141,18 +141,14 @@ final class OpenApiAtomicServingTest extends \Symfony\Bundle\FrameworkBundle\Tes
     }
 
     /**
-     * The served atomic `data` schema must accept the **real** atomic-write wire — a
+     * The served atomic operation schema must accept the **real** atomic-write wire: a
      * no-id create (the only valid create body for a type with `allowsClientId=false`,
-     * such as the default server's `public-items`), a local-id (`lid`) create, and a
-     * single to-one relationship identifier referenced by `lid` — while still rejecting
-     * a body with no `type`. (Before the discrete `<Type>AtomicAdd` / `<Type>AtomicUpdate`
-     * shapes the served schema referenced the id-requiring read shape, so it advertised
-     * that every id-less create was invalid — the documented, asserted-passing example
-     * batch included.)
+     * such as the default server's `public-items`), a local-id (`lid`) create and an
+     * update, while still rejecting data with no `type`. Each operation matches exactly one of the operation kinds.
      */
     #[Test]
     #[Group('spec:openapi')]
-    public function theServedAtomicDataSchemaAcceptsTheRealWriteWire(): void
+    public function theServedAtomicOperationSchemaAcceptsTheRealWriteWire(): void
     {
         $kernel = new OpenApiMultiServerTestKernel('test', false, false, true);
         $kernel->boot();
@@ -168,23 +164,36 @@ final class OpenApiAtomicServingTest extends \Symfony\Bundle\FrameworkBundle\Tes
         $resolver = $validator->resolver();
         self::assertNotNull($resolver);
         $resolver->registerRaw($document, 'urn:atomic-conformance');
-        $dataRef = 'urn:atomic-conformance#/components/schemas/AtomicOperation/properties/data';
 
-        $isValid = static fn(mixed $instance): bool => $validator->validate(
+        $isValid = static fn(mixed $instance, string $component = 'AtomicOperation'): bool => $validator->validate(
             \json_decode((string) \json_encode($instance), false),
-            $dataRef,
+            'urn:atomic-conformance#/components/schemas/' . $component,
         )->isValid();
 
-        // The headline cases the read-shape schema wrongly rejected.
-        self::assertTrue($isValid(['type' => 'public-items', 'attributes' => ['name' => 'x']]), 'create (no id)');
-        self::assertTrue($isValid(['type' => 'public-items', 'lid' => 'p1', 'attributes' => ['name' => 'x']]), 'create (lid)');
-        self::assertTrue($isValid(['type' => 'public-items', 'lid' => 'p1']), 'to-one identifier (lid)');
-        // Already-accepted shapes still validate.
-        self::assertTrue($isValid(['type' => 'public-items', 'id' => '1', 'attributes' => ['name' => 'x']]), 'update (id)');
-        self::assertTrue($isValid([['type' => 'public-items', 'lid' => 'p1']]), 'to-many array');
-        self::assertTrue($isValid(null), 'to-one cleared (null)');
+        // The headline cases a read-shape schema would wrongly reject.
+        self::assertTrue($isValid(['op' => 'add', 'data' => ['type' => 'public-items', 'attributes' => ['name' => 'x']]]), 'create (no id)');
+        self::assertTrue($isValid(['op' => 'add', 'data' => ['type' => 'public-items', 'lid' => 'p1', 'attributes' => ['name' => 'x']]]), 'create (lid)');
+        self::assertTrue($isValid(['op' => 'update', 'data' => ['type' => 'public-items', 'id' => '1', 'attributes' => ['name' => 'x']]]), 'update (id)');
         // A body with no `type` is still rejected.
-        self::assertFalse($isValid(['attributes' => ['name' => 'x']]), 'a type-less operation data must be rejected');
+        self::assertFalse($isValid(['op' => 'add', 'data' => ['attributes' => ['name' => 'x']]]), 'a type-less operation data must be rejected');
+
+        // The server's types declare no relations, so it offers only the resource kinds.
+        $kinds = \array_values(\array_filter(
+            \array_keys(\get_object_vars($document->components->schemas)),
+            static fn(string $name): bool => \preg_match('/^Atomic\\w+Operation$/', $name) === 1,
+        ));
+        \sort($kinds);
+        self::assertSame(['AtomicAddOperation', 'AtomicRemoveOperation', 'AtomicUpdateOperation'], $kinds);
+
+        // Each matches exactly one kind.
+        foreach ([
+            ['op' => 'add', 'data' => ['type' => 'public-items']],
+            ['op' => 'update', 'data' => ['type' => 'public-items', 'id' => '1']],
+            ['op' => 'remove', 'ref' => ['type' => 'public-items', 'id' => '1']],
+        ] as $operation) {
+            $matches = \array_filter($kinds, static fn(string $kind): bool => $isValid($operation, $kind));
+            self::assertCount(1, $matches, (string) \json_encode($operation));
+        }
 
         $kernel->shutdown();
     }
