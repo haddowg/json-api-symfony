@@ -765,6 +765,11 @@ named relation, guards mutability, parses the linkage with core's body parser,
 then calls the persister's `DataPersister::mutateRelationship()` seam (the
 six-arg signature lives in [data-layer.md](data-layer.md)).
 
+The change is applied inside the persister's transaction. Before it commits, the
+changed parent runs through the resource's
+[entity-level constraints](validation.md#after-a-relationship-write) in the update
+context, and a violation is a `422` that rolls the change back.
+
 Before the persister runs, the linkage's resource **type** is checked against the
 relation's declared related type(s). A `{ "type": T, "id": X }` whose `T` is not an
 accepted inverse type — a `BelongsTo::make('author', 'authors')` sent a

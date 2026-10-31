@@ -13,7 +13,8 @@ use haddowg\JsonApi\Resource\Constraint\ConstraintInterface;
  *
  * The bridge skips these in the document-first {@see ResourceValidator::validate()}
  * pass and runs them in {@see ResourceValidator::validateEntity()}, which the
- * write handler calls once the hydrator has built the entity. A constraint
+ * write handler calls once the hydrator has built the entity, and again after a
+ * relationship endpoint applies its change. A constraint
  * implementing this interface translates (via the {@see ConstraintTranslator},
  * including any registered {@see ConstraintTranslatorInterface}) to a Symfony
  * **class** constraint validated against the entity object — so an application's
