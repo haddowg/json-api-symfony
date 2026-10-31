@@ -427,6 +427,35 @@ Each violation is a `422`. One without a property path points at `/data`, one wh
 path names a relationship at `/data/relationships/<name>`, and any other at
 `/data/attributes/<path>`.
 
+### After a relationship write
+
+The relationship endpoints run the entity-level pass too. A `PATCH`, `POST` or `DELETE`
+on `/{type}/{id}/relationships/{name}`, and an atomic `add`, `update` or `remove` whose
+`ref` names a relationship, applies the change inside the persister's transaction and
+then validates the changed entity, in the update context, before it commits. A violation
+is a `422` with the same pointer an update would give, and nothing is saved:
+
+```php
+// IntegrationUserResource::entityConstraints()
+NativeEntityConstraints::make(new Callback(static function (IntegrationUser $user, ExecutionContextInterface $context): void {
+    if ($user->companies->isEmpty()) {
+        $context->buildViolation('An integration user needs at least one company.')->atPath('companies')->addViolation();
+    }
+})),
+
+// DELETE /integration-users/1/relationships/companies removing the last company
+// → 422 at /data/relationships/companies, and the company stays
+```
+
+Inside an atomic batch the pointer gains the operation's prefix, such as
+`/atomic:operations/2/data/relationships/companies`, and the whole batch rolls back.
+
+Only the entity-level constraints run. The attribute constraints are not checked again,
+so a stored value that a newer attribute rule would refuse doesn't block a relationship
+write. A constraint limited to create with `onCreate()` doesn't run here. A resource
+whose stored data already breaks one of its entity-level constraints gets that `422` on
+every relationship write until the data is fixed.
+
 > **`UniqueEntity` requires `symfony/doctrine-bridge` at runtime** — that package
 > ships Symfony's `UniqueEntity` constraint and validator, which `ConstraintTranslator`
 > translates to. It is listed in the bundle's own `composer.json` `suggest`

@@ -988,7 +988,8 @@ final class ResourceValidator
      * The entity-level pass: validates the hydrated entity against the resource's
      * {@see EntityConstraintInterface} constraints (uniqueness and the like, which
      * need the persisted object, not the request document). The write handler calls
-     * this after hydration and before commit; it is a no-op for a resource that
+     * this after hydration, and after a relationship endpoint applies its change, in
+     * the update context and before commit; it is a no-op for a resource that
      * declares none.
      *
      * @throws ValidationFailed when the entity violates an entity-level constraint

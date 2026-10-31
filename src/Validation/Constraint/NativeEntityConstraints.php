@@ -14,8 +14,8 @@ use Symfony\Component\Validator\Constraint as SymfonyConstraint;
  * class constraint or `Callback`, so they run without a translator.
  *
  * Return it from {@see \haddowg\JsonApiBundle\Validation\DeclaresEntityConstraintsInterface::entityConstraints()}
- * on the resource. It runs with the other entity-level constraints after hydration,
- * and each violation is a `422`: at `/data` when it has no property path, at the
+ * on the resource. It runs with the other entity-level constraints after hydration
+ * and after a relationship endpoint changes the resource, and each violation is a `422`: at `/data` when it has no property path, at the
  * relationship when the path names one, and at the attribute otherwise.
  *
  * ```php

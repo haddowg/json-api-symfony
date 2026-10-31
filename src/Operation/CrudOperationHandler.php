@@ -1420,7 +1420,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      *  4. parse the linkage with core's relationship-endpoint body parser;
      *  5. apply the mutation through the persister's storage-owning relationship
      *     seam ({@see DataPersisterInterface::mutateRelationship()}), which resolves
-     *     the linkage ids to the related objects/references and commits;
+     *     the linkage ids to the related objects/references, then validate the
+     *     changed parent against its entity-level constraints before the commit;
      *  6. render the resulting linkage ({@see IdentifierResponse::forRelationship()},
      *     `200`).
      *
@@ -1496,10 +1497,11 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $persister = $this->persisters->forType($type);
         $this->guardMovedMembers($persister, $type, $request, $parent, $relation, $scopedLinkage, $mode);
 
-        // Applied and checked again before it commits: the update gate judges the parent
-        // as changed too, so a caller can't hand it to someone the gate would refuse them
-        // as. A refusal rolls the change back.
-        $parent = $this->withinWrite($persister, function () use ($persister, $type, $parent, $relation, $scopedLinkage, $mode, $request): object {
+        // Applied and checked again before it commits: the changed parent must still pass
+        // its entity-level constraints, and the update gate judges it too, so a caller
+        // can't hand it to someone the gate would refuse them as. A violation or a refusal
+        // rolls the change back.
+        $parent = $this->withinWrite($persister, function () use ($server, $persister, $type, $parent, $relation, $scopedLinkage, $mode, $request): object {
             // A relation that declares fillUsing() owns how it is written: run it, then
             // save the parent, rather than having the persister write its column.
             if (!$this->fillsThroughHook($relation)) {
@@ -1507,6 +1509,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             } else {
                 $parent = $this->fillRelationship($relation, $parent, $scopedLinkage, $mode, endpoint: true);
             }
+            $this->validateEntity($server, $type, $parent, creating: false);
             $this->dispatch(new BeforeRelationshipCommitEvent($type, $request, $parent, $relation, $scopedLinkage, $mode, $this->serverName($request)));
 
             return $this->fillsThroughHook($relation) ? $persister->update($type, $parent) : $parent;
