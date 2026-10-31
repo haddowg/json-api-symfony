@@ -165,8 +165,7 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
         // Count-free by default (G21): count the pre-window total only when the
         // handler resolved a COUNT for this fetch (the paginator's withCount() author
         // opt-in, or ?withCount=_self_ under a countable() resource); otherwise the
-        // executor fetches count-free via the window+1 probe and reports `hasMore`
-        // (bundle ADR 0052).
+        // executor fetches count-free via the window+1 probe and reports `hasMore`.
         return $this->applyAndWindow($criteria, $this->store->all(), countable: $criteria->wantsCount);
     }
 
@@ -191,8 +190,8 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
 
         // A cursor (keyset) window on the related endpoint runs the SAME keyset
         // execution as the primary collection — the parent scoping is already done
-        // (the items were read off the parent), so only the source array differs
-        // (bundle ADR 0063). A to-many's members are objects; the filter narrows
+        // (the items were read off the parent), so only the source array differs. A to-many's
+        // members are objects; the filter narrows
         // the accessor's mixed members to the keyset's list<object> contract. The
         // OffsetWindow / null-window tail stays byte-identical.
         if ($criteria->window instanceof CursorWindow) {
@@ -206,7 +205,7 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
     }
 
     /**
-     * The in-memory witness for the batched related fetch (bundle ADR 0035): for
+     * The in-memory witness for the batched related fetch: for
      * each parent it reads the related object(s) off the parent through the relation's
      * public accessor, applies `$criteria`'s filters/sorts via the shared
      * {@see CriteriaApplier}, and runs the same {@see \haddowg\JsonApi\Collection\WindowExecutor}
@@ -219,7 +218,7 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
      * other (the documented in-memory support, vs the Doctrine boundary).
      *
      * A **to-one** relation is the {@see \haddowg\JsonApiBundle\DataProvider\RelatedIncludeBatcher}
-     * include arm (bundle ADR 0035): each parent's {@see RelationInterface::readValue()}
+     * include arm: each parent's {@see RelationInterface::readValue()}
      * is the single related object (or `null`), wrapped as a 0-or-1
      * {@see CollectionResult} keyed by the parent's wire id — no window, no criteria
      * (a to-one include has neither). The orchestrator writes back `items[0] ?? null`
@@ -251,8 +250,8 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
 
             // A WINDOWED to-many include appends a deterministic PK tiebreak to the sort
             // so ties resolve by id (not PHP-usort insertion order) — the SAME tiebreak
-            // the Doctrine native ROW_NUMBER batch appends to its ORDER BY (bundle ADR
-            // 0065), so the two providers are provably identical on ties, not
+            // the Doctrine native ROW_NUMBER batch appends to its ORDER BY, so the two
+            // providers are provably identical on ties, not
             // coincidentally identical when insertion order happens to equal PK order.
             // A plain (un-windowed) include carries no tiebreak, so it stays byte-identical
             // to before.
@@ -274,7 +273,7 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
 
     /**
      * Returns `$criteria` with a final PK-tiebreak sort appended (the in-memory witness's
-     * half of the windowed-batch determinism fix, bundle ADR 0065): a synthetic `id` sort
+     * half of the windowed-batch determinism fix): a synthetic `id` sort
      * is added to the declared vocabulary AND to the resolved order (after the requested
      * sort, or after the resource default when none was requested), so the shared
      * {@see CriteriaApplier} cascades it as the least-significant key — the same final
@@ -319,8 +318,8 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
      * counts each parent's **filtered** related set: it reads the related objects off
      * every parent through the relation's public accessor, applies `$criteria`'s
      * filters via the shared {@see CriteriaApplier} (the same matching the related
-     * endpoint runs), and counts the survivors, keying by the parent's wire id (bundle
-     * ADR 0052). With an empty criteria (the common no-relatedQuery case) every
+     * endpoint runs), and counts the survivors, keying by the parent's wire id. With an empty
+     * criteria (the common no-relatedQuery case) every
      * member survives, so the count is raw membership unchanged; a parent whose
      * filtered set is empty reports `0`. A polymorphic to-many is supported here — the
      * mixed members are still a single iterable off the parent, so they count like any
@@ -360,7 +359,7 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
     }
 
     /**
-     * The in-memory witness for the single to-one match (bundle ADR 0053): wrap the one
+     * The in-memory witness for the single to-one match: wrap the one
      * related object in a 1-element list and run the same {@see CriteriaApplier} filter
      * pass {@see countRelated()} runs over a parent's related set (filter only — no
      * window/sort, which are irrelevant to a single member), returning whether the object
@@ -378,8 +377,8 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
     }
 
     /**
-     * The BATCHED in-memory witness for a to-one match over a page of parents (bundle ADR
-     * 0053): read each parent's single to-one target off the parent via the relation's
+     * The BATCHED in-memory witness for a to-one match over a page of parents: read each
+     * parent's single to-one target off the parent via the relation's
      * public accessor and run the same 1-element {@see CriteriaApplier} match per object,
      * keyed by the parent's wire id. A parent whose to-one is `null` is a no-match
      * (`false`); a parent the store cannot identify is skipped (it has no wire id to key
@@ -505,8 +504,7 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
      * entity the in-memory provider cannot model (the documented in-memory pivot
      * boundary, mirrored on the write side by {@see \haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister}).
      * So it returns no existing pivot meta: the validator then treats every incoming
-     * member as new (create context), exactly as before the pivot merge-before-validate
-     * (ADR 0049).
+     * member as new (create context), exactly as before the pivot merge-before-validate.
      *
      * @return array<string, array<string, mixed>>
      */
@@ -517,7 +515,7 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
 
     /**
      * The in-memory cursor (keyset) execution — the **ground truth** the Doctrine
-     * push-down matches byte-for-byte (bundle ADR 0063). It resolves the keyset
+     * push-down matches byte-for-byte. It resolves the keyset
      * columns (the active sort + the appended/deduped PK; validates `?sort`),
      * applies the filters, checks the cursor against the resolved columns (a stale
      * cursor → 400), then runs {@see InMemoryKeyset}: sort by the forced
@@ -536,7 +534,7 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
         \assert($window instanceof CursorWindow);
 
         // Resolve the keyset columns (the active sort + the PK) through the core
-        // resolver, feeding it the criteria's sort inputs (core ADR 0061) so
+        // resolver, feeding it the criteria's sort inputs so
         // `?sort` validates against the vocabulary exactly as the plain path does.
         // The PK direction for a PK-only keyset follows the resource
         // default-sort-on-PK; with none it is ascending (the resolver's default).
@@ -640,11 +638,11 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
     /**
      * Applies `$criteria` (filter + sort) to `$items` through core's reference
      * in-memory handlers, then delegates the window/count/count-free tail to the
-     * shared {@see WindowExecutor} (core ADR 0061) over `array_slice`/`count`
+     * shared {@see WindowExecutor} over `array_slice`/`count`
      * closures — the shared tail of {@see fetchCollection()} and
      * {@see fetchRelatedCollection()}.
      *
-     * When `$countable` is false (a non-countable related to-many, bundle ADR 0052)
+     * When `$countable` is false (a non-countable related to-many)
      * the executor builds the window **count-free**: the result carries no total,
      * only a `hasMore` flag derived from a limit+1 probe — so the handler renders a
      * count-free page (no `total`/`last`). A primary collection and a countable

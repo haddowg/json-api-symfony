@@ -12,7 +12,7 @@ use PHPUnit\Framework\Attributes\Test;
  * {@see OutputTimezoneConformanceTestCase} against the Doctrine provider, plus the
  * pivot meta the Doctrine provider alone renders. The provider casts each pivot
  * column while it reads the association rows, so the server zone has to reach it
- * separately from the resource attributes (bundle ADR 0045).
+ * separately from the resource attributes.
  */
 final class DoctrineOutputTimezoneTest extends OutputTimezoneConformanceTestCase
 {

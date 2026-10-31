@@ -131,11 +131,9 @@ direct consequence of 1.1 support being unimplemented
 ### JSON:API format maintenance & stability signal
 
 JSON:API is the *sole, purpose-built* output of these libraries — not a secondary
-format alongside a different-first design. Every conformance decision is recorded
-in a public ADR trail (131 decision records in core alone, plus the bundle's
-own), and the test suites (149 test classes in core, 184 in the bundle) group
-spec-requirement tests by spec section, so coverage is auditable
-section-by-section.
+format alongside a different-first design. The test suites (149 test classes in core,
+184 in the bundle) group spec-requirement tests by spec section, so coverage is
+auditable section-by-section.
 
 API Platform's JSON:API support is actively maintained — 19 JSON:API-touching
 PRs merged January–June 2026 — and it would be wrong to call it abandoned. But

@@ -32,7 +32,7 @@ use haddowg\JsonApiBundle\Server\ServerProvider;
  * lazy-build fallback). It is **pure** — no I/O — so it is cheap to call in a test
  * and safe to memoize.
  *
- * The wholesale-customisation decorator seam (design §5, D7 — bundle ADR 0077) is
+ * The wholesale-customisation decorator seam (design §5, D7) is
  * applied **here**, after the core projection: every registered
  * {@see OpenApiFactoryInterface} (priority-ordered, lower first) receives the built
  * {@see OpenApi} VO and returns a mutated one. Because every build path — the warmer,
@@ -89,7 +89,7 @@ final class DocumentFactory
     /**
      * The decorated document for `$serverName` with the operation examples the projector
      * could not build, one {@see \haddowg\JsonApi\OpenApi\MissingExample} per missing
-     * declared value (core ADR 0176), and the scope diagnostics (core ADR 0181). The
+     * declared value, and the scope diagnostics. The
      * export command prints them.
      *
      * @throws \LogicException when an unknown server name is requested

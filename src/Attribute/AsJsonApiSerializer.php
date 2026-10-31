@@ -11,7 +11,7 @@ use haddowg\JsonApiBundle\OpenApi\Metadata\OperationScopeOverrides;
 /**
  * Registers the annotated {@see \haddowg\JsonApi\Serializer\SerializerInterface}
  * as the serializer for a JSON:API `type`, **without** an
- * {@see \haddowg\JsonApi\Resource\AbstractResource} (bundle ADR 0024). A type
+ * {@see \haddowg\JsonApi\Resource\AbstractResource}. A type
  * registered this way is **serialize-only** by default: it renders as primary
  * data, linkage and `included`, but exposes no endpoints of its own — the classic
  * embedded / reference type that only ever appears inside another resource.
@@ -23,7 +23,7 @@ use haddowg\JsonApiBundle\OpenApi\Metadata\OperationScopeOverrides;
  * type writable / fetchable.
  *
  * `operations` is the exposed operation allow-list: the {@see \haddowg\JsonApiBundle\Operation\Operation}
- * cases this type serves, one route emitted per case (bundle ADR 0024). An empty
+ * cases this type serves, one route emitted per case. An empty
  * array means the default — for a standalone serializer, no endpoints (serialize-only).
  *
  * `server` names the server(s) this type is exposed on: a single server name, a

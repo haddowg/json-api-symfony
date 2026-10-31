@@ -23,8 +23,8 @@ use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 
 /**
- * The built-in subscriber that enforces declarative resource authorization (bundle
- * ADR 0043). For each gated operation it resolves the type's declared
+ * The built-in subscriber that enforces declarative resource authorization. For each gated
+ * operation it resolves the type's declared
  * {@see ResourceSecurity} expression and evaluates it through Symfony's
  * {@see AuthorizationCheckerInterface} with the operation's subject as `object` — so
  * Symfony's `ExpressionVoter` supplies `user`/`object`/`request`/`token`/`roles` and
@@ -66,20 +66,20 @@ use Symfony\Component\Security\Core\Exception\AccessDeniedException;
  * declaring nothing inherits the parent gate unchanged).
  *
  * Collection reads (`GET /{type}`) **are** gated here — all-or-nothing — by the
- * type's `securityList` declaration (bundle ADR 0043), evaluated at
+ * type's `securityList` declaration, evaluated at
  * {@see BeforeFetchCollectionEvent} **before** the query with a `null` `object` (a
  * collection has no single subject, so use a role/attribute check). Row-level read
  * authorization — hiding individual rows — belongs instead in a query-scope (a
  * Doctrine extension filtering the collection), not this single gate. A type that
  * declared no security is never gated (the subscriber is a no-op for it).
  *
- * Each gate reads the declarations of the server the event names (bundle ADR 0034), so
+ * Each gate reads the declarations of the server the event names, so
  * a type served by different resource classes on two servers is gated by each server's
  * own resource only.
  *
  * The authorization checker is injected optionally so an app that declares no
  * expression needs no firewall. The build already fails when an expression is declared
- * without one (bundle ADR 0043); if the subscriber still meets an expression it cannot
+ * without one; if the subscriber still meets an expression it cannot
  * evaluate, it throws rather than let the request through.
  */
 final class ResourceSecuritySubscriber implements EventSubscriberInterface
@@ -137,7 +137,7 @@ final class ResourceSecuritySubscriber implements EventSubscriberInterface
 
     /**
      * Enforces a custom action's per-action {@see BeforeActionEvent::$security}
-     * expression (bundle ADR 0076) — carried on the *event*, not the
+     * expression — carried on the *event*, not the
      * {@see ResourceSecurityRegistry} (it is per-action, not per-type) — evaluating
      * it against the action's subject: the resolved entity for a resource-scope
      * action, `null` for a collection-scope action. A `null` expression leaves the
@@ -187,7 +187,7 @@ final class ResourceSecuritySubscriber implements EventSubscriberInterface
      * Checks the same expression as {@see onBeforeRelationshipMutate()} against the parent
      * after the change is applied and before it commits, so a caller can't change a
      * resource into one the expression would refuse them, such as handing it to another
-     * user (bundle ADR 0136).
+     * user (ADR 0048).
      */
     public function onBeforeRelationshipCommit(BeforeRelationshipCommitEvent $event): void
     {

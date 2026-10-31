@@ -12,7 +12,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Resource\BaseCursorWidgetResource
  * {@see BaseCursorWidgetResource} mapped to its backing entity via
  * `#[AsJsonApiResource(entity: …)]`, so the type routes to the
  * {@see \haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineDataProvider} and
- * its keyset push-down runs as real DQL (bundle ADR 0063).
+ * its keyset push-down runs as real DQL.
  */
 #[AsJsonApiResource(entity: CursorWidgetEntity::class)]
 final class DoctrineCursorWidgetResource extends BaseCursorWidgetResource {}

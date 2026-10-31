@@ -9,8 +9,8 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The dual-provider contract for built links as link objects with a `describedby`
- * (bundle ADR 0105): identical assertions against the in-memory
+ * The dual-provider contract for built links as link objects with a `describedby`: identical
+ * assertions against the in-memory
  * ({@see InMemoryDescribedLinksTest}) and Doctrine ({@see DoctrineDescribedLinksTest})
  * kernels, which serve the articles surface and an `asLink` action under `/api`.
  *

@@ -26,7 +26,7 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Device;
  * `data.links.self`, while the top-level document `links.self` (the request URI) is
  * unaffected — the opt-out is resource-scoped.
  *
- * Finally it is the **RFC 8594 deprecation** witness (bundle ADR 0054, API-Platform
+ * Finally it is the **RFC 8594 deprecation** witness (API-Platform
  * gap G16): `devices` is a legacy endpoint slated for removal. `deprecation: true`
  * marks every response for the type with a bare `Deprecation: true`; `sunset` carries
  * the HTTP-date the endpoint stops responding; and `sunsetLink` adds a companion

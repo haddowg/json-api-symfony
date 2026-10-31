@@ -16,7 +16,7 @@ use haddowg\JsonApiBundle\Server\ServerProvider;
  * as scalars; the per-operation map is carried as one JSON string, like the response
  * headers, because a nested array is not a dumpable flat tag attribute).
  *
- * Descriptions are keyed by server and type (bundle ADR 0034): each server holds only
+ * Descriptions are keyed by server and type: each server holds only
  * what its own resource class or standalone serializer declared, a class on several
  * servers is held under each, and a server whose class declared nothing gets the
  * generated default rather than another server's values. The
@@ -37,11 +37,11 @@ use haddowg\JsonApiBundle\Server\ServerProvider;
  * attribute is their only declaration site.
  *
  * It carries the declared operation example overrides
- * (`#[AsJsonApiResource(operationExamples: …)]`, core ADR 0176), held as scalars and
+ * (`#[AsJsonApiResource(operationExamples: …)]`), held as scalars and
  * rebuilt into core's {@see OperationExample} on read.
  *
  * Last, it carries the declared OAuth scope overrides
- * (`#[AsJsonApiResource(operationScopes: …)]`, core ADR 0181).
+ * (`#[AsJsonApiResource(operationScopes: …)]`).
  */
 final class ResourceDescriptionRegistry
 {

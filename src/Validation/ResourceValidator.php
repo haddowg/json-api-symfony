@@ -88,7 +88,7 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
  * already flattens it. This is an *implicit* cascade: a structured attribute's
  * children validate consistently with top-level attributes, with no `Valid` marker.
  * Only one level deep (a Map's direct children); a child that is itself a Map, and
- * a list-of-objects, are out of scope here (see ADR 0020).
+ * a list-of-objects, are out of scope here (see ADR 0015).
  */
 final class ResourceValidator
 {
@@ -121,8 +121,8 @@ final class ResourceValidator
      * present-null that trips `NotNull`/the comparison), so it is dropped before
      * the merge — an incoming explicit `null` still overrides because the
      * incoming partial is merged last. On create there is no existing object and
-     * the incoming document is validated as today (merge-before-validate, ADR
-     * 0049 [HALF A]).
+     * the incoming document is validated as today (merge-before-validate,
+     * ADR 0028).
      *
      * For a `belongsToMany` pivot relation present in the write body, the existing
      * pivot rows (keyed by relation name, read by the handler through the
@@ -130,8 +130,7 @@ final class ResourceValidator
      * seam) are folded the same way **per member**: an incoming member already in the
      * relationship validates its MERGED pivot (stored row overlaid by the incoming
      * meta) in the update context, a genuinely-new member validates its incoming meta
-     * in the create (new-row) context — superseding the always-create-context band-aid
-     * (ADR 0049 [HALF B]).
+     * in the create (new-row) context — superseding the always-create-context band-aid.
      *
      * @param object|null                                        $existingObject the already-loaded domain object on an
      *                                                                           update (null on create), whose stored
@@ -179,7 +178,7 @@ final class ResourceValidator
             if ($field instanceof Id || $field instanceof RelationInterface) {
                 continue;
             }
-            // The read-only gate is request-aware (core ADR 0079): a field the author
+            // The read-only gate is request-aware: a field the author
             // marked `readOnly(fn)` is validated for a caller it is *writable* for and
             // skipped for one it is *read-only* for — so validation and hydration stay
             // consistent. Were this static, a conditionally-read-only field would be
@@ -191,7 +190,7 @@ final class ResourceValidator
 
             // The field's incoming (merged) value, or null when absent — used to
             // evaluate a request-aware `when()` condition during presence resolution
-            // (a conditionally-required field, ADR 0084).
+            // (a conditionally-required field).
             $value = $attributes[$field->name()] ?? null;
             $fields[$field->name()] = $this->fieldConstraint($field, $creating, request: $request, value: $value);
             foreach ($this->compareConstraints($field, $creating) as $compare) {
@@ -320,10 +319,10 @@ final class ResourceValidator
      * member whose related id is in `$existingPivot` is already in the relationship, so
      * its stored pivot row is merged under the incoming meta and validated in the
      * UPDATE context (a writable field absent from meta keeps its stored value — the
-     * persister reorders the row in place, ADR 0045), while a genuinely-new member
+     * persister reorders the row in place), while a genuinely-new member
      * validates the incoming meta in the CREATE (new-row) context — a required writable
      * pivot field absent on a new row is a `422` before persist (never the DB NOT-NULL
-     * `500`). This supersedes the always-create-context band-aid (ADR 0049).
+     * `500`). This supersedes the always-create-context band-aid.
      * {@see Mode::Remove} carries no pivot meta, so no pivot validation runs.
      *
      * @param array<string, array<string, mixed>> $existingPivot the relation's existing pivot rows, by related id
@@ -385,7 +384,7 @@ final class ResourceValidator
     /**
      * The writable pivot values from a linkage member's `meta`, read from the nested
      * `meta.pivot` (symmetric with how pivot renders on reads and how the OpenAPI
-     * request schema types it; bundle ADR 0045). A missing or non-array `pivot` yields
+     * request schema types it). A missing or non-array `pivot` yields
      * an empty map.
      *
      * @param array<array-key, mixed> $meta the linkage member's full meta
@@ -401,7 +400,7 @@ final class ResourceValidator
 
     /**
      * Validates ONE relationship-endpoint member's pivot meta in the per-member
-     * new/existing context (ADR 0049): a member whose related id is in `$existingPivot`
+     * new/existing context: a member whose related id is in `$existingPivot`
      * is an existing row, so its stored pivot row is merged under the incoming meta and
      * validated in the UPDATE context (a writable field absent from meta keeps its
      * stored value); a member whose id is absent is a new row, validated in the CREATE
@@ -804,7 +803,7 @@ final class ResourceValidator
      * association row, validated in the CREATE (new-row) context — a required writable
      * pivot field absent on it is a `422` (a new row would have no value for it), never
      * the DB NOT-NULL `500`. This supersedes the always-create-context band-aid the
-     * pivot-writes work introduced (ADR 0049).
+     * pivot-writes work introduced.
      *
      * @param array<mixed, mixed>|mixed                $member        the raw linkage member (`{type, id, meta?}`)
      * @param array<string, array<string, mixed>>      $existingPivot the relation's existing pivot rows, by related id
@@ -886,7 +885,7 @@ final class ResourceValidator
      * Validates the cross-field comparisons ({@see CompareField}) a relation's writable
      * pivot fields declare, over the **merged** pivot meta — the document-level analogue
      * of the attribute {@see compareError()} loop, scoped to pivot meta. Because the
-     * meta is already merged (stored row overlaid by incoming, ADR 0049), a comparison
+     * meta is already merged (stored row overlaid by incoming), a comparison
      * against a sibling pivot field the partial did not re-send evaluates against the
      * member's resulting pivot state, not the partial alone. The pointer is built by the
      * caller's `$pointer` closure so the same machinery serves the whole-resource linkage
@@ -1183,7 +1182,7 @@ final class ResourceValidator
     /**
      * @param bool $descend whether to descend into a {@see Map} child's own children;
      *                      true at the top level, false one level in so the cascade
-     *                      stops at a Map's direct children (ADR 0020)
+     *                      stops at a Map's direct children
      * @param ?JsonApiRequestInterface $request the inbound request threaded into a
      *                                           widened {@see \haddowg\JsonApi\Resource\Constraint\When}
      *                                           condition (null on the filter/pivot/id paths — the
@@ -1192,7 +1191,7 @@ final class ResourceValidator
      *                     evaluate a widened `when()` condition during presence
      *                     resolution so a *conditionally*-required field (a `Required`
      *                     wrapped in a `When` whose condition holds for the caller) is
-     *                     required for the matching caller (ADR 0084)
+     *                     required for the matching caller
      */
     private function fieldConstraint(FieldInterface $field, bool $creating, bool $descend = true, ?JsonApiRequestInterface $request = null, mixed $value = null): RequiredField|Optional
     {
@@ -1275,7 +1274,7 @@ final class ResourceValidator
         // by recursion: a nested Collection mirroring the top-level one carries the
         // per-child rules, so a child violation maps to /data/attributes/<field>/<child>.
         // One level only — a child that is itself structured is not descended into here
-        // ($descend is false one level in), which also bounds the recursion (ADR 0020).
+        // ($descend is false one level in), which also bounds the recursion.
         if ($descend && ($field instanceof Map || $field instanceof Obj)) {
             $constraints[] = $this->nestedCollection($field, $creating, $request);
         }
@@ -1313,7 +1312,7 @@ final class ResourceValidator
      * honours the create/update context exactly as a top-level field would), and
      * unknown keys are ignored (`allowExtraFields: true`). The recursion is one level
      * deep by design — a child that is itself a {@see Map}, or a list-of-objects, is
-     * out of scope here (ADR 0020), so a nested Map's *own* children are not
+     * out of scope here, so a nested Map's *own* children are not
      * descended into, which also guards against unbounded recursion.
      */
     private function nestedCollection(Map|Obj $structured, bool $creating, ?JsonApiRequestInterface $request = null): Collection
@@ -1321,7 +1320,7 @@ final class ResourceValidator
         $fields = [];
         foreach ($structured->children() as $child) {
             // A Map child's *visibility* (read-only / hidden) is an explicit non-goal
-            // of request-aware predicates (ADR 0020 / core ADR 0079), so this skip
+            // of request-aware predicates, so this skip
             // stays static; only the child's `when()` condition sees the request,
             // which is why the request still threads into fieldConstraint() below.
             if ($child->isReadOnly($creating)) {
@@ -1329,7 +1328,7 @@ final class ResourceValidator
             }
 
             // descend: false — one level only; a nested Map child's own children are
-            // not validated here (ADR 0020), which also bounds the recursion.
+            // not validated here, which also bounds the recursion.
             $fields[$child->name()] = $this->fieldConstraint($child, $creating, descend: false, request: $request);
         }
 
@@ -1496,7 +1495,7 @@ final class ResourceValidator
     /**
      * Whether the field is required in this context — resolving a {@see Required}
      * declared directly **or** wrapped in a {@see When} whose (widened) condition
-     * holds for this caller and value (ADR 0084). The latter is how a *conditionally*
+     * holds for this caller and value. The latter is how a *conditionally*
      * required field — `when(fn($v, $req) => …, fn($f) => $f->required())` — gates
      * presence on the request: an admin omitting it then 422s while another caller is
      * unaffected. The `When` condition receives the incoming value (null when absent)
@@ -1516,7 +1515,7 @@ final class ResourceValidator
      * Whether a presence rule of `$ruleClass` ({@see Required}/{@see Nullable}) applies
      * in this context, looking both at the field's own constraints and inside any
      * {@see When} whose condition holds for the caller/value — the seam that lets a
-     * `when()`-wrapped presence rule be request-aware (ADR 0084).
+     * `when()`-wrapped presence rule be request-aware.
      *
      * @param class-string<ConstraintInterface> $ruleClass
      */

@@ -8,7 +8,7 @@ use haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 
 /**
- * Builds the in-memory providers for the multi-server witness (ADR 0034),
+ * Builds the in-memory providers for the multi-server witness,
  * one per JSON:API type, each seeded with a single widget. The SPI resolves by type,
  * not by server — a type exposed on two servers reads from the one provider.
  */

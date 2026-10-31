@@ -9,7 +9,7 @@ use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 
 /**
  * Builds the writable in-memory `books` / `authors` / `publishers` graph for the
- * flattened-attribute (`on()`) conformance suite (bundle ADR 0035): three providers
+ * flattened-attribute (`on()`) conformance suite: three providers
  * over ONE seeded object graph, so a book holds the SAME author/publisher object
  * instances the authors/publishers stores hold — the reference-sharing the
  * write-existing witness relies on (a flattened `authorName` write mutates the

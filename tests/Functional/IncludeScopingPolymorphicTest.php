@@ -13,7 +13,7 @@ use PHPUnit\Framework\Attributes\Test;
 
 /**
  * A polymorphic to-many whose member types include a scoped type renders its members
- * narrowed per member type (bundle ADR 0035). `mixed-advertisers` 1's `contacts` holds
+ * narrowed per member type. `mixed-advertisers` 1's `contacts` holds
  * advertiser 2, of the unscoped advertisers type, and the hidden agency 2, of the
  * scoped agencies type; it is the second type that is scoped.
  */

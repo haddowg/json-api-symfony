@@ -14,7 +14,7 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Album;
 
 /**
  * `POST /albums/{id}/-actions/reissue` — a **resource-scope `Document`** custom action
- * (G13, bundle ADR 0076, design §2): a non-CRUD verb (re-releasing an album under a
+ * (G13, design §2): a non-CRUD verb (re-releasing an album under a
  * new date) hanging off the `albums` type under the reserved `-actions` segment.
  *
  * It is a `Document` action with the default `inputType` (the mount `albums` type), so

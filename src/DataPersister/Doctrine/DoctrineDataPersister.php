@@ -59,7 +59,7 @@ use haddowg\JsonApiBundle\Validation\RelationshipTypeUnacceptable;
  * ({@see \haddowg\JsonApi\Resource\Field\Id::encodeUsing()}) the linkage `id`s are
  * wire ids, so each is **decoded** to its storage key (via the injected
  * {@see IdEncoderResolver}, keyed by the related type) before `getReference` — the
- * wire-id SPI never changes, only this impl decodes (bundle ADR 0038). A related type
+ * wire-id SPI never changes, only this impl decodes. A related type
  * with no encoder decodes to itself, so the path is identical to today; a well-formed
  * but undecodable linkage id is a bad target — it raises {@see ResourceNotFound}
  * (`404`), rather than passing the raw wire string to `getReference` (which would
@@ -188,8 +188,8 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
 
         // A belongsToMany pivot relation is mutated as an association-entity DIFF, not
         // a plain collection write: the incoming linkage members carry pivot `meta`,
-        // and the join row holding it is the auto-detected association entity (bundle
-        // ADR 0045). Upsert each member's row (creating or reordering it in place from
+        // and the join row holding it is the auto-detected association entity. Upsert each
+        // member's row (creating or reordering it in place from
         // the writable pivot fields), and on Replace drop the rows no longer present.
         if ($linkage instanceof ToManyRelationship
             && $this->pivotAssociations !== null
@@ -328,7 +328,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
 
     /**
      * The association-entity DIFF — the reorder engine for a writable-pivot
-     * `belongsToMany`. Resolves the auto-detected association entity (bundle ADR 0045)
+     * `belongsToMany`. Resolves the auto-detected association entity
      * and, against the parent's existing join rows keyed by far member:
      *  - {@see Mode::Replace} — UPSERT every incoming member (update an existing row's
      *    writable pivot fields from `meta` IN PLACE — the reorder — or create a new
@@ -407,7 +407,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
      * (its scalar identifier), read off the parent's inverse `OneToMany` collection
      * when mapped, else queried from the association repository by the parent. Where
      * the same far member appears more than once (duplicate membership) the last row
-     * wins the key — pivot meta is a single per-member value set (ADR 0045).
+     * wins the key — pivot meta is a single per-member value set.
      *
      * @param class-string $relatedClass
      *
@@ -501,7 +501,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
             }
             // Writable pivot values are nested under the linkage member's `meta.pivot`
             // (symmetric with how pivot RENDERS on reads, and how the OpenAPI request
-            // schema types it) — not directly under `meta` (bundle ADR 0045).
+            // schema types it) — not directly under `meta`.
             $pivotMeta = $identifier->meta['pivot'] ?? [];
             $members[] = [$storageKey, $reference, \is_array($pivotMeta) ? $pivotMeta : []];
         }
@@ -546,7 +546,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
 
     /**
      * A new, unpopulated association-entity instance via Doctrine's constructor-less
-     * instantiation (ADR 0029), with its parent and far references set. The pivot
+     * instantiation, with its parent and far references set. The pivot
      * fields are written separately; readOnly fields take their server default (the
      * entity's own column default or a `PrePersist` callback).
      */
@@ -837,7 +837,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
      * typed property to an empty {@see ArrayCollection} first.
      *
      * On create the persister instantiates the entity without invoking its
-     * constructor (ADR 0029), so an association collection a constructor would have
+     * constructor (ADR 0018), so an association collection a constructor would have
      * initialised is left uninitialised — reading it directly would
      * {@see \Error} ("accessed before initialization"). Initialising it here
      * mirrors how Doctrine populates association collections on read-hydration, so
@@ -894,7 +894,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
      * `uuid` id becomes its Uuid object. A wire id that does not decode or convert has
      * no storage key, so no entity holds it: it is a bad linkage target and raises
      * {@see ResourceNotFound} (`404`), rather than reaching `getReference`, whose proxy
-     * would error on initialization and surface as a `500` (ADR 0038).
+     * would error on initialization and surface as a `500`.
      */
     private function decodeLinkageId(string $relatedType, string $id): mixed
     {

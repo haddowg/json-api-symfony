@@ -17,7 +17,7 @@ use Symfony\Component\HttpKernel\HttpKernelInterface;
 
 /**
  * Characterizes the route-scoping and the no-clobber guard of the
- * {@see ResponseHeadersListener} (bundle ADR 0054) directly — the parts the
+ * {@see ResponseHeadersListener} directly — the parts the
  * functional suite cannot reach: a non-JSON:API route is untouched, and an
  * explicit app-set `Cache-Control` is left alone.
  */

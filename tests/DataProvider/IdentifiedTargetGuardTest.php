@@ -14,8 +14,8 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Which types of an identified `MorphTo` must load before their pairs render (bundle
- * ADR 0035). The provider scopes are covered by the functional suites; these are the
+ * Which types of an identified `MorphTo` must load before their pairs render. The provider
+ * scopes are covered by the functional suites; these are the
  * security gates.
  */
 final class IdentifiedTargetGuardTest extends TestCase

@@ -24,7 +24,7 @@ use haddowg\JsonApi\Resource\Filter\DescribesQueryParameter;
  *  - {@see DescribedFilter} surfaces a meaningful description on the `filter[<key>]`
  *    parameter rather than the generic per-key default.
  *  - {@see DescribesQueryParameter} declares the value's envelope. The projector types
- *    an unconstrained filter's value from the single column it targets (core ADR 0138),
+ *    an unconstrained filter's value from the single column it targets,
  *    and this one targets several, so there is no column to read a type off and the
  *    value falls to the `string` every query parameter is on the wire. The fallback and
  *    this declaration agree here, which is the point of showing it: the seam is where a

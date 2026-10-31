@@ -1,5 +1,5 @@
-# The firewall behind the example's declarative-authorization witness (bundle
-# ADR 0043, docs/authorization.md). `PlaylistResource` declares
+# The firewall behind the example's declarative-authorization witness (docs/authorization.md).
+# `PlaylistResource` declares
 # `securityDelete: "is_granted('ROLE_ADMIN')"` and
 # `securityUpdate: "is_granted('EDIT', object)"`; the bundle's
 # `ResourceSecuritySubscriber` evaluates those expressions at the lifecycle hooks

@@ -21,7 +21,7 @@ use PHPUnit\Framework\Attributes\Test;
  * row and renders a {@see \haddowg\JsonApi\Pagination\CursorBasedPage} — the
  * relationship object emits `first`/`next` (the minted `page[after]`) and never
  * `prev`/`last`. Shelf 1 holds every widget, so under a PK-only keyset its first
- * page is widgets `1,2` and its `next` cursor continues to `3,4` (core ADR 0063).
+ * page is widgets `1,2` and its `next` cursor continues to `3,4`.
  * The Doctrine per-parent keyset push-down must match the in-memory witness.
  */
 abstract class CursorIncludeBatchConformanceTestCase extends JsonApiFunctionalTestCase

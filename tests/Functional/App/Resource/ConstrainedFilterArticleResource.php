@@ -59,8 +59,8 @@ class ConstrainedFilterArticleResource extends BaseArticleResource
             // Re-declare the `author` to-one with a relation-scoped, integer-constrained
             // `authorId` filter, so the to-one related/relationship endpoints AND the
             // include/linkage path have a constrained to-one filter to validate — the
-            // to-one twin of the `comments` constrained filter (bundle ADR 0053 follow-up
-            // #2). A mistyped value (via `?filter[authorId]`, `relatedQuery[author][filter]`,
+            // to-one twin of the `comments` constrained filter. A mistyped value (via
+            // `?filter[authorId]`, `relatedQuery[author][filter]`,
             // or the include path) is the endpoint's same 400.
             if ($field instanceof BelongsToBuilder && $field->name() === 'author') {
                 $field = BelongsTo::make('author', 'authors')
@@ -95,7 +95,7 @@ class ConstrainedFilterArticleResource extends BaseArticleResource
             // A non-numeric constraint: the value must be one of the known categories.
             Where::make('byCategory', 'category')->pattern('^(?:guide|news|opinion)$'),
 
-            // --- WhereThrough traversal filters (G8, core ADR 0063) ---
+            // --- WhereThrough traversal filters (G8) ---
             // A correlated EXISTS-ANY semi-join over a dotted relationship path,
             // executed identically on both providers (in-memory walk via Accessor /
             // Doctrine EXISTS subquery). The same declaration drives the dual-provider
@@ -136,7 +136,7 @@ class ConstrainedFilterArticleResource extends BaseArticleResource
             // validated); only a client-supplied empty value would be a 400.
             Where::make('anyTitle', 'title', 'like')->pattern('^.+$')->default(''),
 
-            // --- Server-composed filter groups + ->fixed() (#24b, core ADR 0129) ---
+            // --- Server-composed filter groups + ->fixed() (#24b) ---
             // The same declarations drive the dual-provider FilterGroupConformanceTestCase.
             //
             // WhereAny fan-out search: one value fanned across two columns —

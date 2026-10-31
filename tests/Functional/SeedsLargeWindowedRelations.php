@@ -13,7 +13,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\CommentEntity;
 /**
  * Seeds a graph with a LARGE windowed relation (article 1 with 50 comments) plus the
  * m2m `editors` and a tie scenario, for the bounded ROW_NUMBER windowed-include batch
- * conformance (bundle ADR 0065): the Doctrine schema is created in-memory and the same
+ * conformance: the Doctrine schema is created in-memory and the same
  * deterministic content is seeded that {@see WindowedIncludeBatchConformanceTestCase}'s
  * in-memory witness mirrors, so both providers assert identical documents.
  *

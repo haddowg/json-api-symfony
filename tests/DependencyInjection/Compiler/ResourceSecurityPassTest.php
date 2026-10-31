@@ -16,7 +16,7 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 
 /**
- * The build-time check of {@see ResourceSecurityPass} (bundle ADR 0043), with the
+ * The build-time check of {@see ResourceSecurityPass}, with the
  * package checks injected so a missing symfony/expression-language or
  * symfony/security-core can be simulated.
  */

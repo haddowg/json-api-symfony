@@ -71,7 +71,7 @@ final class WriteTest extends MusicCatalogKernelTestCase
     {
         // Per the spec, a write that returns the resource honours ?include: the
         // create/update arms render the same DataResponse as a fetch (and the
-        // Doctrine provider batch-preloads it, ADR 0035). PATCH track 1 — whose
+        // Doctrine provider batch-preloads it). PATCH track 1 — whose
         // to-one `album` is on the same server — asking for ?include=album.
         $this->browser()
             ->patch('/tracks/1?include=album', [

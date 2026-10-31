@@ -12,7 +12,7 @@ use Symfony\Component\Security\Core\Authorization\Voter\Voter;
 /**
  * The Voter backing the `is_granted('EDIT', object)` ownership gate on
  * {@see \haddowg\JsonApiBundle\Examples\MusicCatalog\Resource\PlaylistResource}
- * (bundle ADR 0043, docs/authorization.md). It grants `EDIT` on a {@see Playlist}
+ * (docs/authorization.md). It grants `EDIT` on a {@see Playlist}
  * when the authenticated user's identifier equals the playlist owner's email — so
  * `securityUpdate: "is_granted('EDIT', object)"` lets only a playlist's owner
  * update it, while everyone else gets a `403` (an unauthenticated client a `401`).

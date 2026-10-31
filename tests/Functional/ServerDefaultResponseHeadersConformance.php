@@ -10,7 +10,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\NamedServer\ServerHeaderDefaults;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * A named server's own `defaults` block (bundle ADR 0054) over global defaults of a public
+ * A named server's own `defaults` block over global defaults of a public
  * 120s cache and `Deprecation: true`. The named server sets a sunset and its link and a
  * 30s cache varying on Accept-Language. On the named server `plainWidgets` declares
  * nothing, `cachedWidgets` caches for 60s and `deprecatedWidgets` declares its own sunset.

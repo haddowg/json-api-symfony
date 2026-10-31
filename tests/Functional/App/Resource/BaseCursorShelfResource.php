@@ -18,7 +18,7 @@ use haddowg\JsonApi\Resource\Field\Integer;
  * relation declares its OWN {@see CursorPaginator} (default size 2) via
  * {@see HasMany::paginate()}, so `GET /cursorShelves/{id}/widgets` resolves a
  * keyset window and the providers run the same keyset execution as the primary
- * `/cursorWidgets` collection — scoped to the parent (bundle ADR 0063).
+ * `/cursorWidgets` collection — scoped to the parent.
  *
  * The related vocabulary (sortable `category`/`priority`/`releasedAt`/`id`)
  * comes from the related {@see BaseCursorWidgetResource}, so every keyset shape
@@ -27,7 +27,7 @@ use haddowg\JsonApi\Resource\Field\Integer;
  *
  * It also declares a `pivotWidgets` {@see BelongsToMany} carrying a `slot`
  * pivot field under the SAME cursor paginator — the pivot-related cursor
- * conformance surface (bundle ADR 0063). Over the Doctrine kernel the relation
+ * conformance surface. Over the Doctrine kernel the relation
  * pins its association entity (see the Doctrine subclass's
  * {@see pivotWidgets()} override), so the fetch runs the pivot keyset
  * push-down and each member renders `meta.pivot`; over the in-memory kernel the

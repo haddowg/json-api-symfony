@@ -9,8 +9,8 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The bounded-fetch proof under `json_api.doctrine.window_functions: true` (bundle ADR
- * 0065): the windowed include runs ONE native ROW_NUMBER statement, bounded to ~limit
+ * The bounded-fetch proof under `json_api.doctrine.window_functions: true`: the windowed
+ * include runs ONE native ROW_NUMBER statement, bounded to ~limit
  * rows per parent.
  */
 final class DoctrineWindowedIncludeBatchBudgetOnTest extends DoctrineWindowedIncludeBatchBudgetTestCase
@@ -44,7 +44,7 @@ final class DoctrineWindowedIncludeBatchBudgetOnTest extends DoctrineWindowedInc
         );
 
         // The pinnedComments window (scoped on its unique inverse FK in the inner DQL the
-        // native ROW_NUMBER wraps — bundle ADR 0065) is BOUNDED to rn <= :limit and carries
+        // native ROW_NUMBER wraps) is BOUNDED to rn <= :limit and carries
         // the real per-parent total on the same scan — the bound that kills the 6a whole-set
         // over-fetch. The inner DQL projects the FK as a generated scalar alias the outer
         // window partitions by (w.sclr_N), so the window is matched by its inner FK scope,
@@ -70,7 +70,7 @@ final class DoctrineWindowedIncludeBatchBudgetOnTest extends DoctrineWindowedInc
     public function theFilteredWindowedIncludeRunsOneBoundedNativeQuery(): void
     {
         // A FILTERED windowed include (filter[bodyContains]=comment-4 + sort + page) folds
-        // onto the SAME native ROW_NUMBER path as the unfiltered one (bundle ADR 0065): the
+        // onto the SAME native ROW_NUMBER path as the unfiltered one: the
         // inner scoped query carries the relatedQuery filter through the #1 DQL filter
         // executor (CriteriaApplier + DoctrineFilterHandler), then is wrapped for the
         // window — so it is ONE bounded native query, NOT M per-parent queries.
@@ -111,8 +111,8 @@ final class DoctrineWindowedIncludeBatchBudgetOnTest extends DoctrineWindowedInc
     /**
      * The first native ROW_NUMBER window whose WRAPPED inner DQL scopes by `$fkColumn`
      * (`<fkColumn> IN`), or null — the new DQL-wrap shape partitions by a generated scalar
-     * alias, so the pinned window is identified by its inner inverse-FK scope (bundle ADR
-     * 0065), not a physical partition column name.
+     * alias, so the pinned window is identified by its inner inverse-FK scope, not a physical
+     * partition column name.
      *
      * @param list<string> $statements
      */

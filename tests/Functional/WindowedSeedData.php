@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
 /**
- * The single source of the windowed-include-batch conformance seed (bundle ADR 0065):
+ * The single source of the windowed-include-batch conformance seed:
  * the Doctrine seeding trait ({@see SeedsLargeWindowedRelations}) and the in-memory
  * witness kernel seed from the SAME body lists, so both providers' documents are
  * asserted identical.

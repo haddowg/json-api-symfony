@@ -19,8 +19,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\DoctrineJsonApiTestKerne
  * NULL=largest ORDER BY + the IS-NULL-branched keyset WHERE composed with the
  * RelationScope IN-subquery parent predicate (the shelf's owning-side
  * ManyToMany) — over an in-memory SQLite database. A divergence from the
- * witness localizes to the Doctrine keyset push-down or its parent scoping
- * (bundle ADR 0063).
+ * witness localizes to the Doctrine keyset push-down or its parent scoping.
  */
 final class DoctrineRelatedCursorTest extends RelatedCursorConformanceTestCase
 {

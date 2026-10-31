@@ -614,8 +614,8 @@ abstract class AtomicOperationsConformanceTestCase extends JsonApiFunctionalTest
         // object is `{data, meta}` only (no compound document, no `included`). An
         // ?include/?fields param on /operations is a recognized JSON:API query-param
         // name, so it is NOT rejected (no spurious 400); it is simply not processed —
-        // the batch succeeds and the response carries no top-level `included` (bundle
-        // ADR 0087, the deliberate "not part of the atomic flow" choice).
+        // the batch succeeds and the response carries no top-level `included` (the deliberate
+        // "not part of the atomic flow" choice).
         $response = $this->atomic(
             [
                 [

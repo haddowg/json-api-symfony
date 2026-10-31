@@ -17,7 +17,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Article;
  * instead of committing it: {@see create()} / {@see update()} dispatch the work
  * (here, nothing — a real one would enqueue a Symfony Messenger message) and return
  * an {@see AcceptedForProcessing} pointing at a pollable {@see Job}. The witness for
- * the bundle's async-write seam (bundle ADR 0110): the handler renders these as a
+ * the bundle's async-write seam: the handler renders these as a
  * `202 Accepted` with `Content-Location` + `Retry-After` rather than a `201`/`200`.
  */
 final class AsyncArticlesPersister implements DataPersisterInterface

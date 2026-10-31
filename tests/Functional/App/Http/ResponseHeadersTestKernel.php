@@ -18,8 +18,8 @@ use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
 /**
- * The response-header witness kernel **without** global `json_api.defaults` (bundle
- * ADR 0054): a `cachedWidgets` resource declaring cacheHeaders, a
+ * The response-header witness kernel **without** global `json_api.defaults`: a `cachedWidgets`
+ * resource declaring cacheHeaders, a
  * `deprecatedWidgets` resource declaring deprecation/sunset, and a `plainWidgets`
  * control declaring nothing — so its reads get no headers (unchanged behaviour).
  * The companion {@see DefaultResponseHeadersTestKernel} adds the global defaults.

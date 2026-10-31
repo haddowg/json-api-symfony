@@ -21,8 +21,8 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Genre;
  * both pinning the route `{id}` and validating the wire id through the bundle's
  * Symfony Validator bridge (a malformed key 422s at `/data/id`).
  *
- * It is also the **declarative HTTP cache-header** witness (bundle ADR 0054,
- * API-Platform gap G7). A genre is reference/lookup data that changes rarely, so its
+ * It is also the **declarative HTTP cache-header** witness
+ * (API-Platform gap G7). A genre is reference/lookup data that changes rarely, so its
  * reads are long-cacheable: `cacheHeaders` declares a one-hour client lifetime
  * (`max_age`), a one-day CDN lifetime (`s_maxage`), `public`, and `Vary: Accept` so a
  * cache keys per negotiated media type. The collection lists genres, which churns a

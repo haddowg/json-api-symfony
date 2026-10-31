@@ -12,7 +12,7 @@ use Symfony\Component\HttpFoundation\Request;
 /**
  * Resolves a configured {@see Server} by its `_jsonapi_server` route-default name.
  *
- * Multi-server support is config-declared (bundle ADR 0034): top-level
+ * Multi-server support is config-declared: top-level
  * `base_uri`/`version` define the implicit `default` server, and an optional
  * `json_api.servers` map declares additional named servers. One {@see ServerFactory}
  * is built per declared server, each holding only that server's registered types;
@@ -59,7 +59,7 @@ final class ServerProvider
      * every link on the request origin alone, dropping the import prefix a server's
      * routes are mounted under; so when the route carries a mount (or the front
      * controller lives below the web root) the Server is given the effective base
-     * `origin + base path + mount` for this request instead (bundle ADR 0121).
+     * `origin + base path + mount` for this request instead.
      *
      * The `describedby` resolver is set here rather than on the memoized Server because
      * the default document URL is a path generated against this request's base path.

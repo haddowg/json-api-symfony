@@ -11,7 +11,7 @@ use haddowg\JsonApi\Resource\Field\Str;
 
 /**
  * The parent of the serialize-only witness: a normal `widgets` resource whose
- * `color` relation points at the resource-less `colors` type (ADR 0024). The
+ * `color` relation points at the resource-less `colors` type. The
  * relation renders linkage / `?include` through the standalone
  * {@see \haddowg\JsonApiBundle\Tests\Functional\App\ColorSerializer}.
  */

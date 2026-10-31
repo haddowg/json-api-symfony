@@ -6,7 +6,7 @@ namespace haddowg\JsonApiBundle\Security;
 
 /**
  * Thrown at container build or cache warm-up when a resource, relation or action
- * declares a security expression the application cannot evaluate (bundle ADR 0043).
+ * declares a security expression the application cannot evaluate.
  * A declared expression must either be enforced or stop the build; it never passes
  * silently.
  */

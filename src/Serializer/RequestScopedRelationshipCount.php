@@ -9,7 +9,7 @@ use haddowg\JsonApi\Serializer\RelationshipCountInterface;
 use Symfony\Contracts\Service\ResetInterface;
 
 /**
- * A stable, swappable holder for the per-request count seam (bundle ADR 0052).
+ * A stable, swappable holder for the per-request count seam.
  * Core's {@see RelationshipCountInterface} is injected into the immutable, memoized
  * {@see \haddowg\JsonApi\Server\Server} once (at factory time, mirroring the
  * Doctrine load-state predicate); but the actual counts are per request — they

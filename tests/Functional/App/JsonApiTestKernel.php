@@ -93,8 +93,7 @@ final class JsonApiTestKernel extends Kernel
         $services->set(CommentResource::class);
 
         // The cursor (keyset) conformance witness: a `cursorWidgets` type whose
-        // pagination() returns a CursorPaginator, served over the in-memory provider
-        // (bundle ADR 0063).
+        // pagination() returns a CursorPaginator, served over the in-memory provider.
         $services->set(CursorWidgetResource::class);
         $services->set('test.cursor_widgets_provider', InMemoryDataProvider::class)
             ->factory([CursorWidgetProviderFactory::class, 'create'])
@@ -107,8 +106,7 @@ final class JsonApiTestKernel extends Kernel
 
         // The RELATED-collection cursor (keyset) conformance witness: a
         // `cursorShelves` parent whose to-many `widgets` relation declares its own
-        // CursorPaginator, its members drawn live from the `cursorWidgets` store
-        // (bundle ADR 0063).
+        // CursorPaginator, its members drawn live from the `cursorWidgets` store.
         $services->set(CursorShelfResource::class);
         $services->set('test.cursor_shelves_provider', InMemoryDataProvider::class)
             ->factory([CursorShelfProviderFactory::class, 'create'])
@@ -124,7 +122,7 @@ final class JsonApiTestKernel extends Kernel
         // to-many `widgets` relation declares its own CursorPaginator, its members drawn live
         // from the `cursorWidgets` store — the complement of the owning-side ManyToMany
         // `cursorShelves`, so the batched include exercises the inverse-FK single-window shape
-        // on the Doctrine half and this witness refereeing it (bundle ADR 0065).
+        // on the Doctrine half and this witness refereeing it.
         $services->set(CursorGroupResource::class);
         $services->set('test.cursor_groups_provider', InMemoryDataProvider::class)
             ->factory([CursorGroupProviderFactory::class, 'create'])

@@ -15,7 +15,7 @@ use PHPUnit\Framework\Attributes\TestWith;
 /**
  * A pivot `belongsToMany` (through {@see \haddowg\JsonApiBundle\Tests\Functional\App\IncludeScoping\ScopingPlacement})
  * to a type a Doctrine query extension scopes renders only the scoped members, with
- * `meta.pivot` for those alone (bundle ADR 0035). Agency 2 is hidden; its placements
+ * `meta.pivot` for those alone. Agency 2 is hidden; its placements
  * carry the role "Secret Role".
  */
 final class IncludeScopingPivotTest extends JsonApiFunctionalTestCase

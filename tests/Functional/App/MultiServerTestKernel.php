@@ -22,7 +22,7 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 /**
- * The multi-server witness kernel (ADR 0034): a `default` server (top-level
+ * The multi-server witness kernel: a `default` server (top-level
  * base_uri) and a named `admin` server (its own base_uri). Three resources are
  * assigned via the attribute — `public-widgets` default-only, `admin-widgets`
  * admin-only, `shared-widgets` on both — and the route loader is imported once per

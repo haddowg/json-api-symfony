@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The handler-override witness (ADR 0021): an application overrides handling for a
+ * The handler-override witness: an application overrides handling for a
  * specific type/operation by **decorating** the single generic
  * {@see \haddowg\JsonApiBundle\Operation\CrudOperationHandler}. The `ServerFactory`
  * resolves the handler by service id, so the Symfony decoration is transparently

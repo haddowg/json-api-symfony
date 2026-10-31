@@ -6,7 +6,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App;
 
 /**
  * The in-memory `authors` model of the flattened-attribute (`on()`) conformance
- * fixture (bundle ADR 0035): a {@see FlattenBook}'s HIDDEN to-one `author`
+ * fixture: a {@see FlattenBook}'s HIDDEN to-one `author`
  * relation points at it, and the book's `authorName` attribute flattens this
  * model's `name`. A write of `authorName` mutates THIS object's `name` in place —
  * the in-memory store shares the reference, so a re-fetch of the author sees the

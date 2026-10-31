@@ -13,7 +13,7 @@ use PHPUnit\Framework\Attributes\Test;
  * in-memory ({@see InMemoryCursorTest}) and Doctrine-sqlite ({@see DoctrineCursorTest})
  * kernels over the shared `cursorWidgets` declaration + {@see \haddowg\JsonApiBundle\Tests\Functional\App\CursorWidgetFixtures}
  * seed. The in-memory witness is the ground truth; the Doctrine keyset push-down
- * must match it (bundle ADR 0063).
+ * must match it.
  *
  * The keyset columns walk a forced NULL=largest total order terminated by the PK
  * tiebreak: the cases cover forward/backward round-trips, mixed asc/desc, a
@@ -474,7 +474,7 @@ abstract class CursorConformanceTestCase extends JsonApiFunctionalTestCase
     /**
      * Fetches a page and returns `[ids, links]`. A cursor page advertises the
      * cursor-pagination profile on its Content-Type (the server registers that profile
-     * by default — docs/configuration.md, core ADR 0131); a count-based page selected from the
+     * by default — docs/configuration.md); a count-based page selected from the
      * same menu does not, so `$expectCursorProfile` is passed `false` for the page-strategy
      * cases. The profile parameter's exact serialization (quoting/spacing) is not pinned.
      *

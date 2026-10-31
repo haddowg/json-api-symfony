@@ -25,8 +25,7 @@ use Zenstruck\Foundry\ZenstruckFoundryBundle;
  * 1 and 2 (the shared, cross-parent membership), so the many-to-many `editors`
  * relation is the parent-rooted PAIR-shape batch — the path the related-type
  * extension must reach the RELATED entity on, not the parent root
- * ({@see \haddowg\JsonApiBundle\Tests\Functional\DoctrineRelatedExtensionBatchTest},
- * bundle ADR 0035).
+ * ({@see \haddowg\JsonApiBundle\Tests\Functional\DoctrineRelatedExtensionBatchTest}).
  */
 final class DoctrineRelatedExtensionTestKernel extends Kernel
 {

@@ -21,7 +21,7 @@ use Psr\Container\ContainerInterface;
  * span entity classes, so they cannot be one scoped query (the same boundary as
  * the many-to-many subquery scope). The provider throws "unsupported" before
  * touching the EntityManager — a host that needs it supplies a custom provider
- * that resolves the related members across types (ADR 0032).
+ * that resolves the related members across types.
  */
 final class DoctrinePolymorphicRelatedCollectionTest extends TestCase
 {
@@ -60,7 +60,7 @@ final class DoctrinePolymorphicRelatedCollectionTest extends TestCase
     #[Test]
     public function itThrowsForCountingAPolymorphicToManyRelationship(): void
     {
-        // The same boundary on the count seam (bundle ADR 0052): a polymorphic
+        // The same boundary on the count seam: a polymorphic
         // to-many's members span entity classes, so they cannot be one grouped
         // COUNT — the guard fires before any EntityManager use, so a host supplies a
         // custom provider to count across types.

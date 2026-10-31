@@ -113,8 +113,8 @@ final class MetadataSourceTest extends TestCase
     public function itAdvertisesTheDefaultRegisteredProfilesInCanonicalOrder(): void
     {
         // The bundle registers the three built-in profiles by default, in the canonical
-        // order the OpenAPI jsonapi.profile enum lists them (docs/configuration.md, core ADR
-        // 0131). profiles() reads the live registry the ServerFactory built, not a
+        // order the OpenAPI jsonapi.profile enum lists them (docs/configuration.md). profiles()
+        // reads the live registry the ServerFactory built, not a
         // hardcoded list.
         self::assertSame(
             [CursorPaginationProfile::URI, CountableProfile::URI, RelationshipQueriesProfile::URI],
@@ -125,7 +125,7 @@ final class MetadataSourceTest extends TestCase
     #[Test]
     public function theGeneratedDocumentAdvertisesTheRegisteredProfilesRelatedQueryAndWithCount(): void
     {
-        // Projected through the core registration-aware projector (core ADR 0131), the
+        // Projected through the core registration-aware projector, the
         // default registration pins the jsonapi.profile enum to the three URIs in order,
         // advertises the Relationship Queries `relatedQuery` parameter (articles declares
         // relations) as a $ref to the single shared component, and the Countable

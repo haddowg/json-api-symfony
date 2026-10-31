@@ -10,8 +10,8 @@ use haddowg\JsonApi\Resource\Field\IdEncoderInterface;
  * A small, dependency-free, reversible id codec demonstrating that the JSON:API
  * `id` a client sees can be the **wire** form of a distinct **storage** key — here
  * the auto-increment integer primary key of the {@see \haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Product Product}
- * entity is never exposed; clients see an opaque `prod-…` token instead (bundle
- * ADR 0038, à la Laravel JSON:API custom id encoding).
+ * entity is never exposed; clients see an opaque `prod-…` token instead (à la Laravel JSON:API
+ * custom id encoding).
  *
  * The transform XORs each byte of the decimal storage key with a fixed key stream
  * and hex-encodes the result behind a `prod-` prefix, so it is fully reversible

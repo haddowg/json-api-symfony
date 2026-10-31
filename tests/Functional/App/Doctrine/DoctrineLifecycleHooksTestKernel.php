@@ -18,7 +18,7 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 use Zenstruck\Foundry\ZenstruckFoundryBundle;
 
 /**
- * The Doctrine lifecycle-hooks witness kernel (bundle ADR 0042): the
+ * The Doctrine lifecycle-hooks witness kernel: the
  * resource-method hook mechanism over the **Doctrine** persist/flush path. It maps
  * a {@see DoctrineHookableWidgetResource} (which implements the hook interface) and
  * its related {@see DoctrineHookOwnerResource} to the `-128` fallback Doctrine

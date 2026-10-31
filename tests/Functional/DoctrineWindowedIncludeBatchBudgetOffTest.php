@@ -9,8 +9,8 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The bounded-fetch proof under `json_api.doctrine.window_functions: false` (bundle ADR
- * 0065): the per-parent bounded fallback runs real `LIMIT` push-downs and NO window
+ * The bounded-fetch proof under `json_api.doctrine.window_functions: false`: the per-parent
+ * bounded fallback runs real `LIMIT` push-downs and NO window
  * function — strictly better than 6a's whole-set materialise.
  */
 final class DoctrineWindowedIncludeBatchBudgetOffTest extends DoctrineWindowedIncludeBatchBudgetTestCase

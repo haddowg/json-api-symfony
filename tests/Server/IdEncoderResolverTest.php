@@ -16,7 +16,7 @@ use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 
 /**
- * Characterizes the {@see IdEncoderResolver} (bundle ADR 0038): it resolves a JSON:API
+ * Characterizes the {@see IdEncoderResolver}: it resolves a JSON:API
  * type to its resource through the global {@see ResourceLocator} (matching the static
  * `$type` without instantiating, then resolving the one instance) and reads that
  * resource's {@see Id} field encoder + route pattern — yielding `null` for a type with

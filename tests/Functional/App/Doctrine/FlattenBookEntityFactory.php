@@ -8,7 +8,7 @@ use Zenstruck\Foundry\Persistence\PersistentObjectFactory;
 
 /**
  * Foundry factory for {@see FlattenBookEntity}: seeds a `books` row of the
- * flattened-attribute (`on()`) Doctrine fixture (bundle ADR 0035). The `author` and
+ * flattened-attribute (`on()`) Doctrine fixture. The `author` and
  * `publisher` associations are passed by the seeding trait once the related rows
  * exist.
  *

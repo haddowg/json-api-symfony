@@ -10,7 +10,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 /**
  * The declarative response-header witness (backs the README caching/deprecation
- * section; bundle ADR 0054). Two example types opt into the bundle's route-scoped
+ * section). Two example types opt into the bundle's route-scoped
  * `ResponseHeadersListener` purely through `#[AsJsonApiResource(...)]` metadata — no
  * kernel wiring beyond the attribute:
  *

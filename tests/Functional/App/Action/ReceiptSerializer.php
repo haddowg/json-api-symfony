@@ -10,8 +10,8 @@ use haddowg\JsonApi\Serializer\SerializerInterface;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiSerializer;
 
 /**
- * A standalone serializer for the bespoke `receipts` response type (bundle ADR 0076,
- * design §4): registered with no resource and no endpoints. A custom action whose
+ * A standalone serializer for the bespoke `receipts` response type
+ * (design §4): registered with no resource and no endpoints. A custom action whose
  * `outputType` is `receipts` returns a {@see Receipt} that renders through this
  * serializer, proving the response document is decoupled from the mount type.
  */

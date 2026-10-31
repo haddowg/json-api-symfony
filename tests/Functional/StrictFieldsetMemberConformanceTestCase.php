@@ -11,7 +11,7 @@ use PHPUnit\Framework\Attributes\Test;
  * The dual-provider acceptance suite for strict `fields[type]` sparse-fieldset
  * **member** validation (Laravel-parity L#37; core
  * {@see \haddowg\JsonApi\Exception\FieldsetMemberUnrecognized} +
- * {@see \haddowg\JsonApi\Serializer\DeclaresFieldNamesInterface}, core ADR 0059),
+ * {@see \haddowg\JsonApi\Serializer\DeclaresFieldNamesInterface}),
  * run identically against the in-memory provider
  * ({@see InMemoryStrictFieldsetMemberTest}) and the Doctrine provider
  * ({@see DoctrineStrictFieldsetMemberTest}).

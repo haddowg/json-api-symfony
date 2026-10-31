@@ -44,11 +44,10 @@ use haddowg\JsonApiBundle\Operation\Operation;
  * and/or {@see \haddowg\JsonApi\Hydrator\HydratorInterface} (each a registered
  * service, so it may have constructor dependencies) when the field DSL cannot
  * express the wire shape. The generic CRUD engine then drives reads/writes for
- * the type through the override instead of the resource's field inventory
- * (bundle ADR 0024).
+ * the type through the override instead of the resource's field inventory.
  *
  * `operations` is the exposed operation allow-list: the {@see \haddowg\JsonApiBundle\Operation\Operation}
- * cases this type serves, one route emitted per case (bundle ADR 0024). An empty
+ * cases this type serves, one route emitted per case. An empty
  * array means the default — for a resource, all five operations.
  *
  * `readOnly` is an intent-named shorthand for the common "suppress every write"
@@ -60,7 +59,7 @@ use haddowg\JsonApiBundle\Operation\Operation;
  * so an ambiguous declaration never compiles.
  *
  * `cacheHeaders` declares **declarative HTTP cache headers** for the type's safe
- * (`GET`) reads (bundle ADR 0054, API-Platform gap G7): a map of `max_age`,
+ * (`GET`) reads (API-Platform gap G7): a map of `max_age`,
  * `s_maxage` (shared/CDN), `public`/`private`, `no_cache`, `must_revalidate` and
  * `vary` (a list of response header names → `Vary`). The
  * {@see \haddowg\JsonApiBundle\EventListener\ResponseHeadersListener} maps them
@@ -110,7 +109,7 @@ use haddowg\JsonApiBundle\Operation\Operation;
  *
  * `deprecation` and `sunset` declare **deprecation signalling** — the IETF
  * Deprecation header field (`draft-ietf-httpapi-deprecation-header`) plus the
- * RFC 8594 `Sunset` header (bundle ADR 0054, API-Platform gap G16), emitted on
+ * RFC 8594 `Sunset` header (API-Platform gap G16), emitted on
  * **every** response for the type (reads and writes alike). `deprecation: true`
  * emits a bare `Deprecation: true`;
  * `deprecation: '<date>'` emits `Deprecation: <date>` (the author formats the date
@@ -118,8 +117,8 @@ use haddowg\JsonApiBundle\Operation\Operation;
  * `sunsetLink` is set — a companion `Link: <uri>; rel="sunset"`.
  *
  * `operationExamples` replaces or switches off the worked examples the OpenAPI document
- * generates for the type's operations from its fields' declared examples (core ADR
- * 0176). It is keyed by core's operation name: `fetchCollection`, `fetchOne`, `create`,
+ * generates for the type's operations from its fields' declared examples. It is keyed by core's
+ * operation name: `fetchCollection`, `fetchOne`, `create`,
  * `update`, `delete`, or for a relation `fetchRelated.<relation>`,
  * `fetchRelationship.<relation>`, `updateRelationship.<relation>`,
  * `addRelationship.<relation>` and `removeRelationship.<relation>`. A `false` value
@@ -129,14 +128,14 @@ use haddowg\JsonApiBundle\Operation\Operation;
  * projection for a relation the type does not have.
  *
  * `operationScopes` names the OAuth scopes an operation needs, overriding the app's
- * scope resolver for it (core ADR 0181). It is keyed like `operationExamples`, and `[]`
+ * scope resolver for it. It is keyed like `operationExamples`, and `[]`
  * declares that the operation needs none. `fetchOne` and `fetchCollection` may be named
  * even when the type does not expose them, since an `?include` reaching the type is
  * checked against them. Any other key the type does not expose is a constructor
  * `\LogicException`.
  *
  * `security` (and the per-operation overrides) declare **declarative authorization**
- * for the type (bundle ADR 0043). Each accepts an **expression**, a **bool**, or null:
+ * for the type. Each accepts an **expression**, a **bool**, or null:
  *  - a Symfony Security
  *    {@see https://symfony.com/doc/current/security/expressions.html ExpressionLanguage}
  *    string is evaluated at the matching lifecycle hook against the subject entity (it
@@ -160,7 +159,7 @@ use haddowg\JsonApiBundle\Operation\Operation;
  * with no subject (a role/attribute check) — row-level read filtering still belongs in
  * the query scope. A bool is a **documentation-only** declaration; only an expression is
  * enforced at runtime, and declaring one without symfony/security-core,
- * symfony/expression-language and a firewall fails the build (bundle ADR 0043).
+ * symfony/expression-language and a firewall fails the build.
  */
 #[\Attribute(\Attribute::TARGET_CLASS)]
 final readonly class AsJsonApiResource

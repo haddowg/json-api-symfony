@@ -15,7 +15,7 @@ use haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource;
  * container.
  *
  * The same table feeds enforcement, the OpenAPI document and the operation catalogue, so
- * the three never disagree (core ADRs 0181 to 0183).
+ * the three never disagree.
  */
 final class ScopeTableProvider
 {

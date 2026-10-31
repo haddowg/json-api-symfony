@@ -15,7 +15,7 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Tester\CommandTester;
 
 /**
- * The generated OpenAPI operation examples (core ADR 0176) and how the bundle declares
+ * The generated OpenAPI operation examples and how the bundle declares
  * and reports them, against the in-memory ({@see InMemoryOperationExamplesTest}) and
  * Doctrine ({@see DoctrineOperationExamplesTest}) kernels. Note 1 is seeded. `notes`
  * declares an example on every field, overrides `fetchOne` and `create`, and switches

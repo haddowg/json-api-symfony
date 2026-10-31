@@ -24,7 +24,7 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 /**
- * The in-memory include-safeguards kernel (bundle ADR 0036). It leaves
+ * The in-memory include-safeguards kernel. It leaves
  * `json_api.max_include_depth` UNSET so the bundle's opinionated default of `3` is
  * in force, and registers the circular `nodes` chain plus the `tags`/`roots`/`caps`
  * witnesses so the {@see \haddowg\JsonApiBundle\Tests\Functional\IncludeSafeguardsConformanceTestCase}

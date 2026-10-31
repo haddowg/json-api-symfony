@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The `belongsToMany` pivot witness (bundle ADR 0045, backs `relationships.md`):
+ * The `belongsToMany` pivot witness (backs `relationships.md`):
  * `playlists.orderedTracks` is backed by the
  * {@see \haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\PlaylistEntry}
  * association entity, which carries the `position`/`addedAt` pivot columns a plain
@@ -37,7 +37,7 @@ use PHPUnit\Framework\Attributes\Test;
  * (`securityUpdate: is_granted('EDIT', object)`), so the writes authenticate as the
  * seeded owner.
  *
- * The merge-before-validate witnesses (bundle ADR 0049) then prove a partial pivot
+ * The merge-before-validate witnesses then prove a partial pivot
  * update of an EXISTING member validates the MERGED pivot row (stored values
  * overlaid by the incoming meta): an existing member re-asserted with no `position`
  * keeps its stored position and 200s (the required field need not be re-sent), the
@@ -177,8 +177,8 @@ final class PivotTest extends MusicCatalogKernelTestCase
     #[Group('spec:fetching-pagination')]
     public function aNonCountablePivotEndpointPaginatesCountFree(): void
     {
-        // `orderedTracks` is non-countable: a windowed page runs no COUNT (bundle ADR
-        // 0052). Morning Mix shows two members (Exit Music 3 @ 1, Airbag 1 @ 2; the
+        // `orderedTracks` is non-countable: a windowed page runs no COUNT. Morning Mix shows
+        // two members (Exit Music 3 @ 1, Airbag 1 @ 2; the
         // explicit Paranoid Android is hidden). page[size]=1 yields page one with a
         // `next` (a further page follows), NO meta.page.total and NO `last` — the gate
         // reaches the pivot path exactly as the plain path.
@@ -375,7 +375,7 @@ final class PivotTest extends MusicCatalogKernelTestCase
     #[Group('spec:updating-relationships')]
     public function anExistingMemberPivotUpdateOmittingTheRequiredPositionKeepsItAnd200s(): void
     {
-        // Merge-before-validate (bundle ADR 0049): `position` is REQUIRED-on-create,
+        // Merge-before-validate: `position` is REQUIRED-on-create,
         // but Airbag (track 1) is ALREADY a member at stored position 2. A
         // relationship POST (Mode::Add) re-asserting it with NO meta is a partial
         // pivot update of an EXISTING row — the required `position` is taken from the

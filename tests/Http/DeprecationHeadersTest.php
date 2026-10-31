@@ -10,7 +10,7 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Characterizes the {@see DeprecationHeaders} value object (bundle ADR 0054): the
+ * Characterizes the {@see DeprecationHeaders} value object: the
  * bool-vs-date `Deprecation` (the IETF Deprecation-header draft), the `Sunset` +
  * companion `Link` (RFC 8594), the `mergeOver()` fallback, and the
  * no-clobber-of-an-explicit-header behaviour.

@@ -15,8 +15,7 @@ use PHPUnit\Framework\Attributes\Test;
  * {@see \haddowg\JsonApi\Pagination\CursorPaginator}) and the
  * {@see \haddowg\JsonApiBundle\Tests\Functional\App\CursorShelfFixtures} seed.
  * The in-memory witness is the ground truth; the Doctrine keyset push-down —
- * running INSIDE the RelationScope parent scope — must match it (bundle ADR
- * 0063).
+ * running INSIDE the RelationScope parent scope — must match it.
  *
  * Shelf 1 holds every widget, so its related pages must equal the primary
  * `/cursorWidgets` keyset pages verbatim (the {@see CursorConformanceTestCase}

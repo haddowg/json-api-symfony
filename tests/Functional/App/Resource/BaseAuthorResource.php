@@ -29,7 +29,7 @@ use haddowg\JsonApi\Resource\Sort\SortDirective;
  * count needs no order and roots on the parent, so the related resource's default
  * order MUST be dropped from the count criteria — otherwise the grouped count
  * would emit `ORDER BY parent.name`, a related-entity column against the parent
- * root, which a SQL engine rejects (bundle ADR 0052). The default order still
+ * root, which a SQL engine rejects. The default order still
  * applies to the real `/authors` and `/articles/{id}/editors` fetches (every
  * order-asserting test there passes an explicit `?sort`, which overrides it).
  */

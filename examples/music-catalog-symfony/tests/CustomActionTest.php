@@ -13,7 +13,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * The custom / non-CRUD actions acceptance suite (G13, bundle ADR 0076): the example
+ * The custom / non-CRUD actions acceptance suite (G13): the example
  * app's three witness actions hanging off the `albums` type under the reserved
  * `-actions` segment, exercised end to end over the reference Doctrine data layer.
  *

@@ -250,8 +250,8 @@ operation lists the `415`.
 
 Every `POST` must send a `Content-Type`, even one with no body, and so must a `PATCH`,
 `PUT` or `DELETE` that has a body. For CRUD writes, Atomic Operations and `None` or
-`Document` actions it must be `application/vnd.api+json`; anything else is a `415`
-(core ADR 0172). A bodyless `POST` sent as `application/vnd.api+json` passes any action,
+`Document` actions it must be `application/vnd.api+json`; anything else is a `415`.
+A bodyless `POST` sent as `application/vnd.api+json` passes any action,
 whatever its `accepts`, and the handler sees no body: clients send that type on every
 `POST`, and it cannot be sent cross-origin without a preflight. A bodyless `PATCH`,
 `PUT` or `DELETE` needs no `Content-Type`.

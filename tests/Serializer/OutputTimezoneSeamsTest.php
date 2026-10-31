@@ -18,7 +18,7 @@ use Symfony\Contracts\Service\ResetInterface;
 
 /**
  * The bundle pieces that carry a server's output timezone outside a resource's own
- * attributes (bundle ADR 0045): the pivot-substituting resolver passes its inner
+ * attributes: the pivot-substituting resolver passes its inner
  * resolver's zone through, the pivot cast applies a zone the way core does for
  * attributes, and the per-operation holder clears between requests.
  */

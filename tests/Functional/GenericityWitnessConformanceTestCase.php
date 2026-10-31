@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * The capstone genericity proof (ADR 0021): the `tags` type is declared with
+ * The capstone genericity proof: the `tags` type is declared with
  * nothing but a resource class (+ a Doctrine entity / in-memory POJO). No per-type
  * handler, route, serializer or persister code exists for it, yet the full JSON:API
  * endpoint set works — CRUD plus the relationship-read endpoints — identically on

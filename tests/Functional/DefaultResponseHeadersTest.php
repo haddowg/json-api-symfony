@@ -10,7 +10,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The global-default response-header suite (bundle ADR 0054): under a kernel that
+ * The global-default response-header suite: under a kernel that
  * declares `json_api.defaults.cache_headers` + `deprecation`, a resource declaring
  * nothing inherits the defaults, and a resource declaring its own `cacheHeaders`
  * overrides the default cache while still inheriting the default deprecation —

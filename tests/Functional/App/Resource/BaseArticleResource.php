@@ -148,7 +148,7 @@ abstract class BaseArticleResource extends AbstractResource
             // contextual vocabulary the related type does not expose globally. The
             // host merges these with the comment resource's own vocabulary.
             // `withData()` keeps this to-many EAGER (a to-many is lazy by default since
-            // the flip to per-type defaults, core ADR 0025): it is the always-emitting
+            // the flip to per-type defaults): it is the always-emitting
             // regression baseline its data-presence assertions rely on, distinct from
             // the lazy `lazyComments`/`pinnedComments` witnesses below.
             HasMany::make('comments', 'comments')
@@ -160,7 +160,7 @@ abstract class BaseArticleResource extends AbstractResource
             // `GET /articles/1/pagedComments` paginates by `page[number]`/`page[size]`
             // while plain `comments` stays unpaginated. The same related collection,
             // two pagination policies — pinning that pagination is per-relation.
-            // Marked countable() (bundle ADR 0052) so its related-collection endpoint
+            // Marked countable() so its related-collection endpoint
             // computes the total and emits `meta.page.total` + a `last` link, and
             // `?withCount=pagedComments` activates the relationship-object `meta.total`.
             HasMany::make('pagedComments', 'comments')->storedAs('comments')->paginate(PagePaginator::make())->countable(),
@@ -170,16 +170,16 @@ abstract class BaseArticleResource extends AbstractResource
             // the related-collection fetch scopes membership via an IN subquery.
             // Paginated, so the endpoint witnesses page/filter/sort over the
             // subquery. Countable so its endpoint still emits a total over the
-            // subquery scope (bundle ADR 0052).
+            // subquery scope.
             HasMany::make('editors', 'authors')->storedAs('editors')->paginate(PagePaginator::make())->countable(),
             // A countable, paginated inverse-FK to-many over the UNIQUE `pinnedComments`
-            // column (no other relation shares it), so the windowed-include batch (bundle
-            // ADR 0065) asserts per-parent order + the REAL total on the inverse-FK shape
+            // column (no other relation shares it), so the windowed-include batch asserts
+            // per-parent order + the REAL total on the inverse-FK shape
             // without the shared-column last-writer-wins boundary the `comments`-backed
             // relations carry.
             HasMany::make('pinnedComments', 'comments')->storedAs('pinnedComments')->paginate(PagePaginator::make())->countable()
                 ->withFilters(Where::make('bodyContains', 'body', 'like')),
-            // Load-aware relationships under the lazy default (core ADR 0025) so the
+            // Load-aware relationships under the lazy default so the
             // storage-aware load-state predicate decides whether `data` is emitted.
             // They exercise the predicate on both providers, distinct from the
             // eager `withData()` `comments` baseline above.
@@ -208,7 +208,7 @@ abstract class BaseArticleResource extends AbstractResource
             // A SECOND `withData()` to-many over the SAME `comments` backing column as
             // the `comments` relation above — so the two are CO-WINDOWED on one column,
             // each addressed by its OWN relatedQuery filter and each rendering its own
-            // filtered page out-of-band (bundle ADR 0053). It carries a distinct scoped
+            // filtered page out-of-band. It carries a distinct scoped
             // filter key (`flaggedBody`, a contains-match on the comment body) so the
             // two co-windowed relations are filtered to DIFFERENT subsets of the shared
             // membership, witnessing no cross-contamination on either provider.
@@ -244,7 +244,7 @@ abstract class BaseArticleResource extends AbstractResource
             WhereHas::make('hasAuthor', 'author'),
             WhereDoesntHave::make('lacksAuthor', 'author'),
 
-            // Convenience filter library (G8b, core ADRs 0075-0076, docs/doctrine.md) —
+            // Convenience filter library (G8b, docs/doctrine.md) —
             // shared across the article kernels so the dual-provider
             // ConvenienceFilterConformanceTestCase and the DoctrineReadQueryBudgetTest
             // both see them. The intent-named string strategies on `title` and the

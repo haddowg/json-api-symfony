@@ -36,7 +36,7 @@ final class Article
      * @param list<Comment> $pinnedComments a third, independent comment list over a
      *                                       UNIQUE column backing the `pinnedComments`
      *                                       relation the windowed-include batch asserts
-     *                                       the inverse-FK shape on (bundle ADR 0065)
+     *                                       the inverse-FK shape on
      */
     public function __construct(
         public ?int $id = null,

@@ -109,13 +109,13 @@ final class RequestListener
 
         // A custom action route carries `_jsonapi_action`; it parses its body per the
         // action's declared input mode (None/Document/Raw) and builds a
-        // CustomActionOperation rather than the CRUD operation (bundle ADR 0076).
+        // CustomActionOperation rather than the CRUD operation.
         $actionName = $request->attributes->get(JsonApiRouteLoader::ACTION_ATTRIBUTE);
         if (\is_string($actionName) && $actionName !== '') {
             $operation = $this->actionOperation($request, $jsonApiRequest, $target, $server, $actionName);
         } else {
             $validator = new RequestValidator();
-            // A write must send the JSON:API Content-Type (core ADR 0172).
+            // A write must send the JSON:API Content-Type.
             $validator->negotiate($jsonApiRequest, strictContentType: self::carriesDocument($jsonApiRequest));
             $validator->validateQueryParams($jsonApiRequest);
 
@@ -161,7 +161,7 @@ final class RequestListener
     }
 
     /**
-     * Runs an Atomic Operations batch (`POST /operations`, bundle ADR 0087): it
+     * Runs an Atomic Operations batch (`POST /operations`): it
      *  1. picks the server by the route's `_jsonapi_server` default;
      *  2. converts the Symfony request to PSR-7 and wraps it in core's
      *     {@see JsonApiRequest};
@@ -242,8 +242,8 @@ final class RequestListener
     }
 
     /**
-     * Builds the {@see CustomActionOperation} for a custom-action route (bundle ADR
-     * 0076, design §3/§5/§8). It resolves the action's input mode from the
+     * Builds the {@see CustomActionOperation} for a custom-action route (design §3/§5/§8). It
+     * resolves the action's input mode from the
      * {@see ActionRegistry} descriptor (keyed by the route's server, the target type,
      * the route's scope and the action name) and handles the request body per mode:
      *  - {@see ActionInput::None}: negotiates response `Accept` only — no body is read
@@ -351,7 +351,7 @@ final class RequestListener
      * returning that mode and the media type the body matched (null when it has none).
      *
      * An action with neither `accepts` nor `Raw` input takes a JSON:API body, so a
-     * request that carries one must say so (core ADR 0172). Otherwise the body's
+     * request that carries one must say so. Otherwise the body's
      * `Content-Type` is matched against the accepted media types, `Raw` input with no
      * `accepts` taking any type but the three cross-origin form types, and the matched
      * entry's mode wins. A bodyless `POST` sent with the JSON:API `Content-Type` passes
@@ -399,7 +399,7 @@ final class RequestListener
     /**
      * Whether the request must carry a JSON:API `Content-Type` if it is a JSON:API
      * write: every `POST`, even a bodyless one, and any other unsafe method with a body.
-     * The same rule as core's `ContentNegotiationMiddleware` (core ADR 0172).
+     * The same rule as core's `ContentNegotiationMiddleware`.
      */
     private static function carriesDocument(JsonApiRequestInterface $request): bool
     {

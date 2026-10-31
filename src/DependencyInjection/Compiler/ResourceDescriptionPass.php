@@ -23,7 +23,7 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
  * into the {@see ResourceDescriptionRegistry} the
  * {@see \haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource} reads.
  *
- * Each class is recorded under each of its servers only (bundle ADR 0034): the default
+ * Each class is recorded under each of its servers only: the default
  * server's maps are the `$descriptions` and `$extensions` arguments and every other
  * server's go under `$servers`. The values flow as
  * plain scalars (the container cannot dump value objects); the per-operation map rides
@@ -34,9 +34,9 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
  * JSON `openapi_extensions` tag attribute, into the registry's `$extensions` argument.
  * A standalone serializer ({@see JsonApiBundle::SERIALIZER_TAG}) can declare them too.
  *
- * The operation example overrides (core ADR 0176) ride as one JSON `operation_examples`
+ * The operation example overrides ride as one JSON `operation_examples`
  * tag attribute, from a resource or a standalone serializer, into the registry's
- * `$examples` argument. The OAuth scope overrides (core ADR 0181) ride the same way as
+ * `$examples` argument. The OAuth scope overrides ride the same way as
  * `operation_scopes`, under each server's `scopes`.
  */
 final class ResourceDescriptionPass implements CompilerPassInterface
@@ -86,7 +86,7 @@ final class ResourceDescriptionPass implements CompilerPassInterface
             $examples = OperationExampleCodec::decodeMap($this->scalarFromTags($tags, 'operation_examples'));
             $scopes = OperationScopeOverrides::decodeMap($this->scalarFromTags($tags, 'operation_scopes'));
 
-            // Each class is recorded only under its own servers (bundle ADR 0034).
+            // Each class is recorded only under its own servers.
             foreach ($this->serversFromTags($tags) as $server) {
                 $byServer[$server] ??= ['descriptions' => [], 'extensions' => [], 'examples' => [], 'scopes' => []];
                 if ($set !== []) {

@@ -22,7 +22,7 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 /**
- * The in-memory custom-action conformance kernel (bundle ADR 0076): it mounts the
+ * The in-memory custom-action conformance kernel: it mounts the
  * `actionWidgets` type over a writable in-memory provider/persister, registers the
  * standalone serializer/hydrator pairs backing the bespoke `renameCommands` /
  * `receipts` decoupled documents, autoconfigures every `#[AsJsonApiAction]` handler

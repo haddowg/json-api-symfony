@@ -9,7 +9,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\WindowedIncludeWitnessKernel;
 /**
  * {@see WindowedIncludeBatchConformanceTestCase} against the in-memory provider — the
  * GROUND TRUTH the Doctrine native batch and the per-parent fallback are both checked
- * against (bundle ADR 0065).
+ * against.
  */
 final class InMemoryWindowedIncludeBatchTest extends WindowedIncludeBatchConformanceTestCase
 {

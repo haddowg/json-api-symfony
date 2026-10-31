@@ -32,7 +32,7 @@ final class DoctrineConstrainedFilterArticleResource extends ConstrainedFilterAr
         return [
             ...parent::filters(),
 
-            // --- WhereHasMatching (bundle ADR 0019, Doctrine-only) ---
+            // --- WhereHasMatching (Doctrine-only) ---
             // PRIMARY surface: a structured Criteria narrowing the related `editors`
             // root — keep an article one of whose editors is named "Ada Lovelace".
             WhereHasMatching::criteria(

@@ -138,7 +138,7 @@ final class OpenApiTestKernel extends Kernel
         $services->set(ShelfSerializer::class);
         $services->set(RestockShelves::class);
 
-        // The decorator seam witness (ADR 0077): autoconfigured onto the OpenAPI factory
+        // The decorator seam witness: autoconfigured onto the OpenAPI factory
         // tag, it stamps a tag onto every built document, so the serving + warmer tests
         // can prove the decorator runs on both build paths.
         $services->set(StampDecorator::class);

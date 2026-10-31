@@ -15,7 +15,7 @@ use Symfony\Component\Routing\Route;
 use Symfony\Component\Routing\RouteCollection;
 
 /**
- * Maps the mounts recorded on a server's routes to OpenAPI `servers` (bundle ADR 0121).
+ * Maps the mounts recorded on a server's routes to OpenAPI `servers`.
  */
 #[Group('spec:openapi')]
 final class MountServersTest extends TestCase

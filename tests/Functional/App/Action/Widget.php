@@ -6,7 +6,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\Action;
 
 /**
  * The plain mount-type model the custom-action conformance suite hangs its actions
- * off (bundle ADR 0076). A `widgets` resource serves it over the in-memory provider;
+ * off. A `widgets` resource serves it over the in-memory provider;
  * the Doctrine kernel maps the parallel
  * {@see \haddowg\JsonApiBundle\Tests\Functional\App\Action\Doctrine\WidgetEntity}.
  *
@@ -24,7 +24,7 @@ final class Widget implements MutableWidget
         // A self-referential to-one the in-memory WidgetResource exposes as a `related`
         // relation, so `?include=related` renders another widget as an INCLUDED member
         // — the witness that the asLink contributor runs for every rendered resource of
-        // the type, not only the primary one (bundle ADR 0076).
+        // the type, not only the primary one.
         public ?Widget $related = null,
     ) {}
 

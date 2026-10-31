@@ -14,7 +14,7 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
  * The `ownedWidgets` resource: an ownership expression `is_granted('EDIT', object)`
  * gates every per-object operation, resolved by the {@see OwnedWidgetVoter} against
  * the subject entity's `owner`. The keystone use case — per-object authorization
- * backed by a Voter (bundle ADR 0043). A self-referential `parent` relation gives the
+ * backed by a Voter. A self-referential `parent` relation gives the
  * resource a relationship-mutation endpoint (`…/relationships/parent`) whose write is
  * gated by the same ownership expression against the parent.
  *

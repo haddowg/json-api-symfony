@@ -12,7 +12,7 @@ use Symfony\Component\Security\Core\Authorization\Voter\Voter;
  * The Voter backing the `is_granted('EDIT', object)` ownership gate on
  * {@see OwnedWidgetResource}: it grants `EDIT` on an {@see OwnedWidgetEntity} when
  * the authenticated user's identifier equals the entity's `owner`. The keystone
- * per-object authorization the security expression delegates to (bundle ADR 0043).
+ * per-object authorization the security expression delegates to.
  *
  * It also grants `EDIT` on the owned folder and note fixtures by the same rule.
  *

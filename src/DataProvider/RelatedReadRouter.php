@@ -17,7 +17,7 @@ use haddowg\JsonApi\Server\Server;
 /**
  * Decides which provider loads a relation's members for a document (includes,
  * linkage, `?withCount`, the Relationship Queries window), so they are the members
- * the related endpoint serves (bundle ADR 0035).
+ * the related endpoint serves.
  *
  * The related endpoint reads through the provider of the relation's first related
  * type. A relation is **scoped** when that provider may return fewer members than the
@@ -145,8 +145,8 @@ final class RelatedReadRouter
 
     /**
      * Each parent's target for a `MorphTo` declared with `identifiedBy()`, loaded from
-     * the stored pairs with one {@see FetchesByIdsInterface::fetchByIds()} per type
-     * (bundle ADR 0035), limited to `$types` when given. An entry is `null` for an empty
+     * the stored pairs with one {@see FetchesByIdsInterface::fetchByIds()} per type, limited to
+     * `$types` when given. An entry is `null` for an empty
      * pair. `target` is `null` when the type's provider doesn't return the row.
      * `loaded` is `false` for a type left out of `$types` or that no provider serves.
      *
@@ -346,8 +346,8 @@ final class RelatedReadRouter
 
     /**
      * Whether `$relation` is computed and any type it relates to is scoped, so its
-     * members are the closure's value narrowed to the rows that type's provider admits
-     * (bundle ADR 0035). An unscoped computed relation renders the closure's value as is.
+     * members are the closure's value narrowed to the rows that type's provider admits. An
+     * unscoped computed relation renders the closure's value as is.
      */
     public function readsComputed(RelationInterface $relation): bool
     {

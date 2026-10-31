@@ -11,7 +11,8 @@ use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Strict query-parameter validation end to end over the example app (docs/configuration.md, core ADR 0059; backs the README "Strict query parameters" section and
+ * Strict query-parameter validation end to end over the example app (docs/configuration.md;
+ * backs the README "Strict query parameters" section and
  * `docs/configuration.md#strict_query_parameters`). With
  * `json_api.strict_query_parameters` on — its default, and the shipped example's
  * `config/packages/json_api.yaml` omits the key, so strict is on there already — an

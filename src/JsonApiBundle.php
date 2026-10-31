@@ -125,7 +125,7 @@ final class JsonApiBundle extends AbstractBundle
      * The {@see \haddowg\JsonApiBundle\EventListener\ExceptionListener} consults them
      * (descending tag `priority`, first non-null result wins) to map a throwable
      * that is NOT a core {@see \haddowg\JsonApi\Exception\JsonApiExceptionInterface}
-     * to a JSON:API error document (bundle ADR 0003). The bundle's config-driven
+     * to a JSON:API error document. The bundle's config-driven
      * {@see \haddowg\JsonApiBundle\EventListener\ConfiguredExceptionMapper} registers
      * at the low `-1000` fallback priority, so an application mapper (default `0`) is
      * always consulted before the `json_api.exceptions` config map.
@@ -146,7 +146,7 @@ final class JsonApiBundle extends AbstractBundle
     /**
      * Tag applied to a standalone {@see \haddowg\JsonApi\Serializer\SerializerInterface}
      * registered for a type via {@see AsJsonApiSerializer} — a serializer without an
-     * {@see AbstractResource} (bundle ADR 0024). The tag carries the `type` it
+     * {@see AbstractResource}. The tag carries the `type` it
      * serializes; {@see \haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceLocatorPass}
      * reads it to register the type's serializer with core.
      */
@@ -154,15 +154,15 @@ final class JsonApiBundle extends AbstractBundle
 
     /**
      * Tag applied to a standalone {@see \haddowg\JsonApi\Hydrator\HydratorInterface}
-     * registered for a type via {@see AsJsonApiHydrator} — the decoupled write half
-     * (bundle ADR 0024). The tag carries the `type` it hydrates.
+     * registered for a type via {@see AsJsonApiHydrator} — the decoupled write half. The tag
+     * carries the `type` it hydrates.
      */
     public const string HYDRATOR_TAG = 'haddowg.json_api.hydrator';
 
     /**
      * Tag applied to a standalone {@see \haddowg\JsonApiBundle\Server\RelationsProviderInterface}
      * registered for a type via {@see AsJsonApiRelations} — a type's relations
-     * declared with no {@see AbstractResource} (bundle ADR 0024). The tag carries the
+     * declared with no {@see AbstractResource}. The tag carries the
      * `type` it declares relations for; {@see \haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceLocatorPass}
      * reads it to wire the type-keyed {@see \haddowg\JsonApiBundle\Server\RelationsRegistry}.
      */
@@ -171,8 +171,8 @@ final class JsonApiBundle extends AbstractBundle
     /**
      * Tag applied to a custom, non-CRUD action handler — a
      * {@see \haddowg\JsonApiBundle\Action\ActionHandlerInterface} registered for a
-     * mount type via {@see \haddowg\JsonApiBundle\Attribute\AsJsonApiAction} (bundle
-     * ADR 0076). The tag carries the flattened attribute metadata (type/server/path/
+     * mount type via {@see \haddowg\JsonApiBundle\Attribute\AsJsonApiAction}. The tag carries
+     * the flattened attribute metadata (type/server/path/
      * scope/input/inputType/outputType/security/methods/name);
      * {@see \haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceLocatorPass}
      * reads it to wire the {@see \haddowg\JsonApiBundle\Action\ActionRegistry}'s
@@ -182,7 +182,7 @@ final class JsonApiBundle extends AbstractBundle
 
     /**
      * Tag applied to an {@see \haddowg\JsonApiBundle\OpenApi\OpenApiFactoryInterface}
-     * decorator (design §5, D7 — bundle ADR 0077). The
+     * decorator (design §5, D7). The
      * {@see \haddowg\JsonApiBundle\OpenApi\DocumentFactory} consumes the tagged services
      * as a priority-ordered iterator and applies them after the core projection, so an
      * app can mutate the built document (servers/security/tags/examples/anything) before
@@ -192,16 +192,16 @@ final class JsonApiBundle extends AbstractBundle
     public const string OPENAPI_FACTORY_TAG = 'haddowg.json_api.openapi_factory';
 
     /**
-     * Tag applied to an {@see \haddowg\JsonApiBundle\OpenApi\OpenApiServeDecoratorInterface}
-     * (bundle ADR 0077). The {@see \haddowg\JsonApiBundle\Controller\OpenApiController}
+     * Tag applied to an {@see \haddowg\JsonApiBundle\OpenApi\OpenApiServeDecoratorInterface}.
+     * The {@see \haddowg\JsonApiBundle\Controller\OpenApiController}
      * runs the tagged services on every served `docs.json`, with the request, in the same
      * priority order as {@see self::OPENAPI_FACTORY_TAG}. The CLI export never runs them.
      */
     public const string OPENAPI_SERVE_DECORATOR_TAG = 'haddowg.json_api.openapi_serve_decorator';
 
     /**
-     * Tag applied to a {@see \haddowg\JsonApiBundle\OpenApi\JsonSchemaServeDecoratorInterface}
-     * (bundle ADR 0077): the `schemas.json` counterpart of
+     * Tag applied to a {@see \haddowg\JsonApiBundle\OpenApi\JsonSchemaServeDecoratorInterface}:
+     * the `schemas.json` counterpart of
      * {@see self::OPENAPI_SERVE_DECORATOR_TAG}.
      */
     public const string JSON_SCHEMA_SERVE_DECORATOR_TAG = 'haddowg.json_api.json_schema_serve_decorator';
@@ -250,11 +250,11 @@ final class JsonApiBundle extends AbstractBundle
                     ->defaultFalse()
                 ->end()
                 ->booleanNode('strict_query_parameters')
-                    ->info('Reject an unrecognized top-level query-parameter family with a 400 (docs/configuration.md, core ADR 0059). A param is recognized when its base name is a reserved JSON:API family (include/fields/filter/sort/page), a key the primary resource declares, a negotiated profile keyword (relatedQuery/rQ for the Relationship Queries profile, withCount for the Countable profile), or an app-registered custom param. The default is true; set false to restore the old silent-ignore behaviour.')
+                    ->info('Reject an unrecognized top-level query-parameter family with a 400 (docs/configuration.md). A param is recognized when its base name is a reserved JSON:API family (include/fields/filter/sort/page), a key the primary resource declares, a negotiated profile keyword (relatedQuery/rQ for the Relationship Queries profile, withCount for the Countable profile), or an app-registered custom param. The default is true; set false to restore the old silent-ignore behaviour.')
                     ->defaultTrue()
                 ->end()
                 ->arrayNode('exceptions')
-                    ->info('Map an exception class (FQCN) to an HTTP status; a thrown instance renders as a JSON:API error with that status, reason-phrase title, and (in debug) its message as detail. A core JsonApiExceptionInterface always renders natively and is never overridden by this map. For richer errors (custom source/meta), implement ExceptionMapperInterface (bundle ADR 0003). Default empty.')
+                    ->info('Map an exception class (FQCN) to an HTTP status; a thrown instance renders as a JSON:API error with that status, reason-phrase title, and (in debug) its message as detail. A core JsonApiExceptionInterface always renders natively and is never overridden by this map. For richer errors (custom source/meta), implement ExceptionMapperInterface. Default empty.')
                     ->useAttributeAsKey('class')
                     ->integerPrototype()->end()
                 ->end()
@@ -289,9 +289,9 @@ final class JsonApiBundle extends AbstractBundle
                         ->end()
                     ->end()
                 ->end()
-                ->append($this->responseHeaderDefaultsNode('Global default response headers for every server (bundle ADR 0054). A server\'s own defaults block layers over these, and a resource\'s own cacheHeaders / deprecation / sunset / sunsetLink layer over both, field by field.'))
+                ->append($this->responseHeaderDefaultsNode('Global default response headers for every server. A server\'s own defaults block layers over these, and a resource\'s own cacheHeaders / deprecation / sunset / sunsetLink layer over both, field by field.'))
                 ->arrayNode('servers')
-                    ->info('Additional named servers; the top-level base_uri/version define the implicit `default` server. Each named server inherits the top-level value when its own is omitted (ADR 0034).')
+                    ->info('Additional named servers; the top-level base_uri/version define the implicit `default` server. Each named server inherits the top-level value when its own is omitted.')
                     ->useAttributeAsKey('name')
                     ->arrayPrototype()
                         ->children()
@@ -323,7 +323,7 @@ final class JsonApiBundle extends AbstractBundle
                                     ->thenInvalid('A server\'s openapi_examples must be true, false or null, got %s.')
                                 ->end()
                             ->end()
-                            ->append($this->responseHeaderDefaultsNode('This server\'s default response headers (bundle ADR 0054), the same keys as json_api.defaults. Each value set here replaces the global one on this server only; a value left out inherits json_api.defaults, and a resource\'s own declaration still wins.'))
+                            ->append($this->responseHeaderDefaultsNode('This server\'s default response headers, the same keys as json_api.defaults. Each value set here replaces the global one on this server only; a value left out inherits json_api.defaults, and a resource\'s own declaration still wins.'))
                             ->scalarNode('output_timezone')
                                 ->info('The timezone this server\'s DateTime attributes render in. Null (the default) inherits the top-level output_timezone; an empty string renders each value in the zone it carries.')
                                 ->defaultNull()
@@ -358,7 +358,7 @@ final class JsonApiBundle extends AbstractBundle
                     ->end()
                 ->end()
                 ->arrayNode('profiles')
-                    ->info('The JSON:API profiles every server recognizes: each profile\'s URI is advertised (Content-Type `profile` param + `jsonapi.profile`) when a client negotiates it, and the profile\'s opt-in query family is parsed only under that negotiation. Each entry is a ProfileInterface class-string. Default: the three built-ins — CursorPaginationProfile, CountableProfile, RelationshipQueriesProfile — in that order (the order the generated OpenAPI `jsonapi.profile` enum lists them, and the order that must match across framework adapters for byte-parity; core ADR 0131). Trim an entry to stop recognizing and advertising that profile — its OpenAPI parameters (`?withCount`, `relatedQuery`, the cursor page marker) disappear with it; add your own ProfileInterface class to recognize a custom profile.')
+                    ->info('The JSON:API profiles every server recognizes: each profile\'s URI is advertised (Content-Type `profile` param + `jsonapi.profile`) when a client negotiates it, and the profile\'s opt-in query family is parsed only under that negotiation. Each entry is a ProfileInterface class-string. Default: the three built-ins — CursorPaginationProfile, CountableProfile, RelationshipQueriesProfile — in that order (the order the generated OpenAPI `jsonapi.profile` enum lists them, and the order that must match across framework adapters for byte-parity). Trim an entry to stop recognizing and advertising that profile — its OpenAPI parameters (`?withCount`, `relatedQuery`, the cursor page marker) disappear with it; add your own ProfileInterface class to recognize a custom profile.')
                     ->scalarPrototype()->end()
                     ->defaultValue(ServerFactory::DEFAULT_PROFILES)
                 ->end()
@@ -367,8 +367,8 @@ final class JsonApiBundle extends AbstractBundle
     }
 
     /**
-     * The `defaults` response-header block (bundle ADR 0054), shared by the global
-     * `json_api.defaults` and each `json_api.servers.<name>.defaults` (bundle ADR 0054)
+     * The `defaults` response-header block, shared by the global
+     * `json_api.defaults` and each `json_api.servers.<name>.defaults`
      * so both accept and reject the same values.
      */
     private function responseHeaderDefaultsNode(string $info): \Symfony\Component\Config\Definition\Builder\NodeDefinition
@@ -561,7 +561,7 @@ final class JsonApiBundle extends AbstractBundle
                     ->end()
                 ->end()
                 ->arrayNode('servers')
-                    ->info('Override the advertised OAS servers list. Null/empty = derive one server from each JSON:API server\'s base URI (D2), or from the prefixes its routes are imported under when the base URI is empty (ADR 0121). A non-empty list replaces that derivation document-wide.')
+                    ->info('Override the advertised OAS servers list. Null/empty = derive one server from each JSON:API server\'s base URI (D2), or from the prefixes its routes are imported under when the base URI is empty. A non-empty list replaces that derivation document-wide.')
                     ->arrayPrototype()
                         ->children()
                             ->scalarNode('url')->isRequired()->cannotBeEmpty()->end()
@@ -701,10 +701,10 @@ final class JsonApiBundle extends AbstractBundle
         $builder->setParameter('haddowg_json_api.atomic_operations.enabled', $atomicEnabled);
         $builder->setParameter('haddowg_json_api.atomic_operations.path', $atomicPath);
         // The Atomic Operations endpoint's own scope override, and the security scheme
-        // operation scopes are listed under in the OpenAPI document (core ADR 0181).
+        // operation scopes are listed under in the OpenAPI document.
         $builder->setParameter('haddowg_json_api.atomic_operations.scopes', $this->atomicScopesConfig($config));
         $builder->setParameter('haddowg_json_api.openapi.scope_scheme', $this->scopeSchemeConfig($config));
-        // The exception-class => HTTP-status map (bundle ADR 0003) the config-driven
+        // The exception-class => HTTP-status map the config-driven
         // ConfiguredExceptionMapper reads to map a thrown app/third-party exception
         // to a JSON:API error. Default empty (no config mappings).
         $builder->setParameter('json_api.exceptions', $this->exceptionsConfig($config));
@@ -713,7 +713,7 @@ final class JsonApiBundle extends AbstractBundle
         // path is named, so no stray described error can reach a published document.
         $builder->setParameter(ErrorCatalogPass::PATHS_PARAMETER, $this->errorCodePathsConfig($config));
 
-        // The full server map (ADR 0034): the implicit `default` server carries the
+        // The full server map: the implicit `default` server carries the
         // top-level base_uri/version, and each named server from `json_api.servers`
         // inherits the top-level value when its own is omitted. The list of names is
         // a container parameter the ResourceLocatorPass reads to validate resource
@@ -723,7 +723,7 @@ final class JsonApiBundle extends AbstractBundle
 
         $container->import(\dirname(__DIR__) . '/config/services.php');
 
-        // The config-driven exception mapper (bundle ADR 0003): maps a thrown
+        // The config-driven exception mapper: maps a thrown
         // app/third-party exception named in `json_api.exceptions` to a status-keyed
         // JSON:API error. Tagged at the low `-1000` fallback priority so an
         // application's own ExceptionMapperInterface (default `0`) is consulted
@@ -742,7 +742,7 @@ final class JsonApiBundle extends AbstractBundle
         $this->registerServers($container, $servers, $maxPerPage, $maxIncludeDepth, $strictQueryParameters, $profiles);
 
         // Whether each server's OpenAPI document carries generated operation examples, and
-        // the OAuth scopes each operation needs (core ADR 0181).
+        // the OAuth scopes each operation needs.
         $builder->getDefinition(\haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource::class)
             ->setArgument('$exampleGeneration', \array_map(static fn(array $settings): bool => $settings['openapi_examples'], $servers))
             ->setArgument('$scopeTables', new \Symfony\Component\DependencyInjection\Reference(\haddowg\JsonApiBundle\Scope\ScopeTableProvider::class))
@@ -783,13 +783,13 @@ final class JsonApiBundle extends AbstractBundle
                 ->args(['$translator' => \Symfony\Component\DependencyInjection\Loader\Configurator\service('translator')]);
         }
 
-        // Declarative resource authorization (bundle ADR 0043): the server- and
-        // type-keyed ResourceSecurityRegistry (bundle ADR 0034) + the ResourceSecuritySubscriber that evaluates a
+        // Declarative resource authorization: the server- and
+        // type-keyed ResourceSecurityRegistry + the ResourceSecuritySubscriber that evaluates a
         // type's security expression at the lifecycle hooks. Always registered: the
         // registry also feeds the OpenAPI projection, where the documentation-only
         // `true`/`false` declarations need no optional package. The ResourceSecurityPass
         // fills the registry and fails the build when a declared expression can't be
-        // evaluated (bundle ADR 0043): symfony/security-core or
+        // evaluated: symfony/security-core or
         // symfony/expression-language missing, or no security.authorization_checker
         // (no SecurityBundle firewall). The checker stays optional so an app that
         // declares no expression needs none of them; the subscriber refuses the
@@ -807,7 +807,7 @@ final class JsonApiBundle extends AbstractBundle
             ->tag('kernel.event_subscriber');
 
         // The relation authorizer core asks before it renders a relationship's data or
-        // writes a flattened `on()` attribute onto a related row (bundle ADR 0100). It
+        // writes a flattened `on()` attribute onto a related row. It
         // evaluates the same expressions as the subscriber; each server factory binds
         // its own copy to its server.
         $services->set(\haddowg\JsonApiBundle\Security\RelationAuthorizer::class)
@@ -817,7 +817,7 @@ final class JsonApiBundle extends AbstractBundle
                 '$rows' => service(\haddowg\JsonApiBundle\Security\ReadableRows::class),
             ]);
 
-        // The operation catalogue (core ADR 0180): every operation a server exposes with
+        // The operation catalogue: every operation a server exposes with
         // the security rule and scopes guarding it, read from the declarations above.
         // The scope checker compares with the same matcher enforcement uses.
         $services->set(\haddowg\JsonApiBundle\Catalog\OperationSecuritySource::class)
@@ -849,16 +849,17 @@ final class JsonApiBundle extends AbstractBundle
         }
 
         // Decides whether a related row may be shown through another type, by the
-        // related type's own read expression (bundle ADR 0100).
+        // related type's own read expression.
         $services->set(\haddowg\JsonApiBundle\Security\ReadableRows::class)
             ->args([
                 '$authorizationChecker' => service('security.authorization_checker')->nullOnInvalid(),
                 '$registry' => service(\haddowg\JsonApiBundle\Security\ResourceSecurityRegistry::class),
             ]);
 
-        // Declarative response headers (bundle ADR 0054): the server- and type-keyed
-        // ResponseHeadersRegistry (bundle ADR 0034) seeded with the global `json_api.defaults`
-        // cache/deprecation defaults and each server's own (bundle ADR 0054), plus the ResponseHeadersListener (wired in
+        // Declarative response headers: the server- and type-keyed
+        // ResponseHeadersRegistry seeded with the global `json_api.defaults`
+        // cache/deprecation defaults and each server's own, plus the ResponseHeadersListener
+        // (wired in
         // services.php) that emits them per request. The per-type map is filled by
         // the ResponseHeadersPass (added in build()) from each resource's
         // #[AsJsonApiResource(cacheHeaders/deprecation/sunset)]; the registry is
@@ -906,7 +907,7 @@ final class JsonApiBundle extends AbstractBundle
 
         // Any app service implementing the exception-mapper seam is auto-tagged, so
         // it is consulted by the ExceptionListener (before the config map) for a
-        // throwable that is not a core JsonApiExceptionInterface (bundle ADR 0003).
+        // throwable that is not a core JsonApiExceptionInterface.
         $builder->registerForAutoconfiguration(ExceptionMapperInterface::class)
             ->addTag(self::EXCEPTION_MAPPER_TAG);
 
@@ -918,7 +919,7 @@ final class JsonApiBundle extends AbstractBundle
 
         // Any app service implementing the OpenAPI decorator seam is auto-tagged, so the
         // DocumentFactory applies it (priority-ordered) over the built document for every
-        // build path — warmer, controller lazy-build, and CLI export (bundle ADR 0077).
+        // build path — warmer, controller lazy-build, and CLI export.
         $builder->registerForAutoconfiguration(\haddowg\JsonApiBundle\OpenApi\OpenApiFactoryInterface::class)
             ->addTag(self::OPENAPI_FACTORY_TAG);
         $builder->registerForAutoconfiguration(\haddowg\JsonApiBundle\OpenApi\OpenApiServeDecoratorInterface::class)
@@ -952,7 +953,7 @@ final class JsonApiBundle extends AbstractBundle
                     // operations. The attribute constructor forbids declaring both, so
                     // at most one of these branches contributes a non-null value.
                     'operations' => self::operationsTag($attribute),
-                    // The declarative authorization expressions (bundle ADR 0043),
+                    // The declarative authorization expressions,
                     // recorded as scalar tag attributes the ResourceSecurityPass reads
                     // into the ResourceSecurityRegistry, under each of the resource's servers.
                     'security_default' => $attribute->security,
@@ -961,7 +962,7 @@ final class JsonApiBundle extends AbstractBundle
                     'security_delete' => $attribute->securityDelete,
                     'security_read' => $attribute->securityRead,
                     'security_list' => $attribute->securityList,
-                    // The declarative response-header config (bundle ADR 0054) —
+                    // The declarative response-header config —
                     // cache directives + deprecation/sunset headers — JSON-encoded
                     // into a single scalar tag attribute the ResponseHeadersPass
                     // decodes into the ResponseHeadersRegistry, under each of the resource's servers. A nested
@@ -986,10 +987,10 @@ final class JsonApiBundle extends AbstractBundle
                     // The OpenAPI vendor extensions (docs/openapi.md), type-wide and
                     // per-operation, JSON-encoded into one scalar for the same reason.
                     'openapi_extensions' => self::extensionsTag($attribute->extensions, $attribute->operationExtensions),
-                    // The OpenAPI operation example overrides (core ADR 0176), JSON-encoded
+                    // The OpenAPI operation example overrides, JSON-encoded
                     // because a nested map and core's OperationExample are not dumpable.
                     'operation_examples' => OperationExampleCodec::encodeMap('AsJsonApiResource', $attribute->operationExamples),
-                    // The OAuth scope overrides (core ADR 0181), JSON-encoded like the examples.
+                    // The OAuth scope overrides, JSON-encoded like the examples.
                     'operation_scopes' => OperationScopeOverrides::encodeMap($attribute->operationScopes),
                     // The per-operation OpenAPI response declarations (typed response
                     // objects): the five create/update/delete/fetchOne/fetchCollection
@@ -1004,7 +1005,7 @@ final class JsonApiBundle extends AbstractBundle
 
         // Standalone serializer/hydrator capabilities: a class implementing
         // SerializerInterface/HydratorInterface registers for a type with no
-        // AbstractResource (ADR 0024). A single class may carry both.
+        // AbstractResource. A single class may carry both.
         $builder->registerAttributeForAutoconfiguration(
             AsJsonApiSerializer::class,
             static function (Definition $definition, AsJsonApiSerializer $attribute): void {
@@ -1036,7 +1037,7 @@ final class JsonApiBundle extends AbstractBundle
         );
 
         // Standalone relations: a class implementing RelationsProviderInterface
-        // declares a type's relations with no AbstractResource (ADR 0024).
+        // declares a type's relations with no AbstractResource.
         $builder->registerAttributeForAutoconfiguration(
             AsJsonApiRelations::class,
             static function (Definition $definition, AsJsonApiRelations $attribute): void {
@@ -1049,7 +1050,7 @@ final class JsonApiBundle extends AbstractBundle
 
         // Custom, non-CRUD actions: a standalone ActionHandlerInterface class
         // declared with #[AsJsonApiAction] hangs off a mount type under the
-        // reserved `-actions` segment (bundle ADR 0076). The attribute's enums and
+        // reserved `-actions` segment. The attribute's enums and
         // method list are flattened to plain scalar tag attributes (enum case names,
         // a comma-joined method list — mirroring how `operations` is encoded) so the
         // ResourceLocatorPass can read them from the compiled container; the
@@ -1064,7 +1065,7 @@ final class JsonApiBundle extends AbstractBundle
                     'scope' => $attribute->scope->name,
                     'input' => $attribute->input->name,
                     'inputType' => $attribute->inputType,
-                    // The declared success-response set (core ADR 0126), JSON-encoded as a
+                    // The declared success-response set, JSON-encoded as a
                     // list of {kind, type?, jobType?}; absent = the ResourceLocatorPass
                     // defaults it to a 200 resource document of the mount type.
                     'responds' => self::actionRespondsTag($attribute),
@@ -1084,10 +1085,10 @@ final class JsonApiBundle extends AbstractBundle
                     // The accepted request media types, JSON-encoded; absent keeps the
                     // input mode's default negotiation.
                     'accepts' => $attribute->accepts !== [] ? \json_encode($attribute->accepts, \JSON_THROW_ON_ERROR) : null,
-                    // The OpenAPI example override (core ADR 0176), JSON-encoded; absent
+                    // The OpenAPI example override, JSON-encoded; absent
                     // keeps the generated example.
                     'example' => OperationExampleCodec::encodeOne('AsJsonApiAction', $attribute->example),
-                    // The declared safety flags (core ADR 0179), each carried only when set.
+                    // The declared safety flags, each carried only when set.
                     'readOnly' => $attribute->readOnly,
                     'destructive' => $attribute->destructive,
                     'idempotent' => $attribute->idempotent,
@@ -1099,8 +1100,8 @@ final class JsonApiBundle extends AbstractBundle
             },
         );
 
-        // OpenAPI document generation, serving, warming + export (Slice 4 stage B,
-        // bundle ADR 0077): resolve json_api.openapi.* into the typed config, set
+        // OpenAPI document generation, serving, warming + export (Slice 4 stage B): resolve
+        // json_api.openapi.* into the typed config, set
         // its parameters, and register the document/JSON-schema factories, the cache
         // warmer, the serving controller, the docs route loader and the two export
         // commands. The MetadataSource (registered in services.php) is given the
@@ -1110,7 +1111,7 @@ final class JsonApiBundle extends AbstractBundle
 
     /**
      * Refuses to run a cached container compiled against other versions of this bundle or
-     * of haddowg/json-api (bundle ADR 0143), which Symfony does not rebuild by itself
+     * of haddowg/json-api, which Symfony does not rebuild by itself
      * outside debug mode.
      */
     public function boot(): void
@@ -1151,7 +1152,7 @@ final class JsonApiBundle extends AbstractBundle
 
     /**
      * Wires the OpenAPI subsystem from `json_api.openapi.*` (design §3, §6,
-     * D9/D13/D17; bundle ADR 0077):
+     * D9/D13/D17):
      *  - resolves the config into a typed {@see \haddowg\JsonApiBundle\OpenApi\Config\OpenApiConfig};
      *  - feeds the per-server document config (info / servers / security / tags) into
      *    the already-registered {@see \haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource};
@@ -1213,7 +1214,7 @@ final class JsonApiBundle extends AbstractBundle
             ->args([
                 '$metadata' => service(\haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource::class),
                 '$enumDescriptionMode' => $enumMode,
-                // The wholesale-customisation decorators (design §5, ADR 0077), composed
+                // The wholesale-customisation decorators (design §5), composed
                 // priority-ordered (lower first); applied after projection on every build
                 // path — warmer, controller lazy-build, CLI export.
                 '$decorators' => tagged_iterator(self::OPENAPI_FACTORY_TAG),
@@ -1258,7 +1259,7 @@ final class JsonApiBundle extends AbstractBundle
                 '$store' => service(\haddowg\JsonApiBundle\OpenApi\ArtifactStore::class),
                 '$debug' => '%kernel.debug%',
                 '$combined' => $openApiConfig->combined,
-                // Per-request customisation (ADR 0077), never run by the CLI export.
+                // Per-request customisation, never run by the CLI export.
                 '$serveDecorators' => tagged_iterator(self::OPENAPI_SERVE_DECORATOR_TAG),
                 '$cacheControl' => $openApiConfig->cacheControl,
             ])
@@ -1459,7 +1460,8 @@ final class JsonApiBundle extends AbstractBundle
                     // A resource's own maxIncludeDepth() overrides it per type.
                     '$maxIncludeDepth' => $maxIncludeDepth,
                     // Reject an unrecognized top-level query-parameter family with a
-                    // 400 (json_api.strict_query_parameters, default true; docs/configuration.md, core ADR 0059). False restores the old silent-ignore.
+                    // 400 (json_api.strict_query_parameters, default true;
+                    // docs/configuration.md). False restores the old silent-ignore.
                     '$strictQueryParameters' => $strictQueryParameters,
                     // Optional custom server-default paginators (e.g. a CursorPaginator),
                     // resolved by-server-first then generic: an app may register a
@@ -1471,26 +1473,26 @@ final class JsonApiBundle extends AbstractBundle
                     // Doctrine application that maps an entity, else null (core then
                     // treats every relation as loaded).
                     '$relationshipLoadState' => service(DoctrineRelationshipLoadState::class)->nullOnInvalid(),
-                    // The per-request count seam holder (bundle ADR 0052): a stable
+                    // The per-request count seam holder: a stable
                     // service threaded into the memoized Server once, whose batched
                     // backing the handler swaps per read so the render emits
                     // meta.total for ?withCount-named countable relations. Always
                     // present (it is provider-agnostic — the batch fill is the
                     // provider's job), so no nullOnInvalid().
                     '$relationshipCount' => service(\haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipCount::class),
-                    // The per-request relationship-window seam holder (bundle ADR
-                    // 0053): the page-1 windowing twin of the count holder, threaded
+                    // The per-request relationship-window seam holder: the page-1 windowing
+                    // twin of the count holder, threaded
                     // into the memoized Server once so the handler can swap each
                     // profile read's windowed pages into the render. Always present
                     // (provider-agnostic — the batch fill is the provider's job).
                     '$relationshipPagination' => service(\haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipPagination::class),
-                    // The per-request relationship-LINKAGE seam holder (bundle ADR
-                    // 0053): threaded into the memoized Server once so the handler can
+                    // The per-request relationship-LINKAGE seam holder: threaded into the
+                    // memoized Server once so the handler can
                     // swap each profile read's windowed linkage into the render WITHOUT
                     // the batcher writing it onto the parent property. Always present
                     // (provider-agnostic — the batch fill is the provider's job).
                     '$relationshipLinkage' => service(\haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipLinkage::class),
-                    // The out-of-band resource-link contributor (bundle ADR 0076): a
+                    // The out-of-band resource-link contributor: a
                     // single shared service threaded onto every server's memoized Server,
                     // contributing a security-aware link for each #[AsJsonApiAction(asLink:
                     // true)] action of the type being rendered, scoped to the request's
@@ -1502,7 +1504,7 @@ final class JsonApiBundle extends AbstractBundle
                     // not registered), so core renders its inline English copy.
                     '$errorMessageResolver' => service(\haddowg\JsonApiBundle\Server\TranslatorErrorMessageResolver::class)->nullOnInvalid(),
                     // This server's name + the dispatcher the serving bridge fires
-                    // the bundle ServingEvent through (bundle ADR 0042); the
+                    // the bundle ServingEvent through; the
                     // dispatcher is optional (the lifecycle-hook seam is off when
                     // symfony/event-dispatcher is absent).
                     '$serverName' => $name,
@@ -1510,7 +1512,7 @@ final class JsonApiBundle extends AbstractBundle
                     // The JSON:API profiles this server recognizes (docs/configuration.md),
                     // data-driven from json_api.profiles (default: the three built-ins in
                     // canonical order). The same list feeds the OpenAPI jsonapi.profile
-                    // enum + the profile-gated parameters (core ADR 0131).
+                    // enum + the profile-gated parameters.
                     '$profiles' => $profiles,
                     // The zone DateTime attributes render in (json_api.output_timezone,
                     // or the named server's own); null leaves values in their own zone.
@@ -1518,9 +1520,9 @@ final class JsonApiBundle extends AbstractBundle
                     '$linkObjects' => $settings['link_objects'],
                     '$rejectReadOnlyAttributes' => $settings['reject_read_only_attributes'],
                     // Asked before a relationship's data renders and before a flattened
-                    // write lands on a related row (bundle ADR 0100).
+                    // write lands on a related row.
                     '$relationAuthorizer' => service(\haddowg\JsonApiBundle\Security\RelationAuthorizer::class),
-                    // OAuth scope enforcement (core ADR 0181), on only when the app
+                    // OAuth scope enforcement, on only when the app
                     // registers a GrantedScopesProviderInterface service.
                     '$grantedScopes' => service(\haddowg\JsonApi\Scope\GrantedScopesProviderInterface::class)->nullOnInvalid(),
                     '$scopeTables' => service(\haddowg\JsonApiBundle\Scope\ScopeTableProvider::class),
@@ -1531,7 +1533,7 @@ final class JsonApiBundle extends AbstractBundle
             $factoryRefs[$name] = service($id);
         }
 
-        // Each server's OAuth scope table (core ADR 0181): written by the warmer, which
+        // Each server's OAuth scope table: written by the warmer, which
         // is not optional so a scope declaration that cannot be resolved fails the build.
         $services->set(\haddowg\JsonApiBundle\Scope\ScopeTableProvider::class)
             ->args([
@@ -1552,7 +1554,7 @@ final class JsonApiBundle extends AbstractBundle
                 '$describedBy' => service(\haddowg\JsonApiBundle\OpenApi\DescribedByResolverProvider::class)->nullOnInvalid(),
             ]);
 
-        // The fail-loud eager-load warmer (bundle ADR 0035): at cache:warmup it walks every
+        // The fail-loud eager-load warmer: at cache:warmup it walks every
         // server's registered types and runs core's EagerLoadValidator over each, so a
         // malformed `on()` declaration (an unknown segment, or a to-many segment at any depth)
         // throws a developer-facing \LogicException at cache:clear / deploy rather than as a
@@ -1628,7 +1630,7 @@ final class JsonApiBundle extends AbstractBundle
 
     /**
      * The JSON-encoded response-header config for the `response_headers` tag
-     * attribute (bundle ADR 0054): the resource's `cacheHeaders` map plus its
+     * attribute: the resource's `cacheHeaders` map plus its
      * `deprecation`/`sunset`/`sunsetLink`, as a single scalar string the
      * {@see \haddowg\JsonApiBundle\DependencyInjection\Compiler\ResponseHeadersPass}
      * decodes. Returns `null` when the resource declares no response headers (so the
@@ -1880,8 +1882,8 @@ final class JsonApiBundle extends AbstractBundle
 
     /**
      * The resolved `json_api.strict_query_parameters` — whether an unrecognized
-     * top-level query-parameter family is rejected with a `400` (docs/configuration.md,
-     * core ADR 0059). Defaults to `true` (strict) when the key is absent; `false`
+     * top-level query-parameter family is rejected with a `400` (docs/configuration.md).
+     * Defaults to `true` (strict) when the key is absent; `false`
      * restores the old silent-ignore behaviour.
      *
      * @param array<string, mixed> $config
@@ -1945,7 +1947,7 @@ final class JsonApiBundle extends AbstractBundle
     }
 
     /**
-     * The resolved `json_api.exceptions` map (bundle ADR 0003): each exception
+     * The resolved `json_api.exceptions` map: each exception
      * class-string keyed to its HTTP status, read by the config-driven
      * {@see ConfiguredExceptionMapper}. Absent / malformed entries are filtered out,
      * so the parameter is always a clean `array<class-string, int>` (empty by
@@ -2048,7 +2050,7 @@ final class JsonApiBundle extends AbstractBundle
     }
 
     /**
-     * The resolved response-header defaults of one `defaults` block (bundle ADR 0054),
+     * The resolved response-header defaults of one `defaults` block,
      * the global `json_api.defaults` or a server's own: a tuple of the scalar
      * `cache_headers` map and the `deprecation`/`sunset`/`sunset_link` map, each in the
      * shape the {@see \haddowg\JsonApiBundle\Http\CacheHeaders}/{@see \haddowg\JsonApiBundle\Http\DeprecationHeaders}
@@ -2075,7 +2077,7 @@ final class JsonApiBundle extends AbstractBundle
     }
 
     /**
-     * Each named server's own `json_api.servers.<name>.defaults` (bundle ADR 0054), keyed
+     * Each named server's own `json_api.servers.<name>.defaults`, keyed
      * by server; a server that sets nothing is left out and reads the global defaults.
      *
      * @param array<string, mixed> $config

@@ -14,7 +14,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * The per-page windowed-pagination backing (bundle ADR 0053): a render-time lookup
+ * The per-page windowed-pagination backing: a render-time lookup
  * keyed by the parent's object identity then relation name, exactly as the slice-1
  * {@see \haddowg\JsonApiBundle\Serializer\BatchedRelationshipCount} is. A parent or
  * relation absent from the pre-computed map returns `null` (no pagination links), and

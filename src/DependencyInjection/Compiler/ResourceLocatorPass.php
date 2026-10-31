@@ -43,7 +43,7 @@ use Symfony\Component\DependencyInjection\Reference;
  * Resource's `static $type` without instantiating and then resolve the instance
  * (a real Symfony service, dependencies and all) lazily on first lookup.
  *
- * Multi-server (bundle ADR 0034): a resource — or a standalone serializer /
+ * Multi-server: a resource — or a standalone serializer /
  * hydrator — is assigned to one or more named servers via the tag's `server`
  * value (a comma-joined string the extension wrote from the attribute); absent
  * means the implicit `default`. The pass reads the declared server names from the
@@ -55,7 +55,7 @@ use Symfony\Component\DependencyInjection\Reference;
  * are scoped. A type assigned to N servers lands in all N buckets.
  *
  * A resource may also declare a custom serializer/hydrator via
- * `#[AsJsonApiResource(serializer: …, hydrator: …)]` (bundle ADR 0024). Those
+ * `#[AsJsonApiResource(serializer: …, hydrator: …)]`. Those
  * override classes must be registered services too, so each is added to the same
  * locator (keyed by its class-string) — core resolves them through the very same
  * resolver — and a per-server `resourceClass → override` map is handed to that
@@ -64,14 +64,14 @@ use Symfony\Component\DependencyInjection\Reference;
  * through the override.
  *
  * Standalone serializer/hydrator capabilities (`#[AsJsonApiSerializer]` /
- * `#[AsJsonApiHydrator]`, bundle ADR 0024) — a serializer/hydrator registered for
+ * `#[AsJsonApiHydrator]`) — a serializer/hydrator registered for
  * a type with **no** resource — flow the same way: each service joins the locator
  * (keyed by its class-string) and a per-server `type → class` map is handed to that
  * server's ServerFactory, which registers them with core's
  * {@see \haddowg\JsonApi\Server\Server::registerSerializerHydrator()}.
  *
  * Standalone relations (`#[AsJsonApiRelations]` on a
- * {@see RelationsProviderInterface} class, bundle ADR 0024) declare a type's
+ * {@see RelationsProviderInterface} class) declare a type's
  * relations with **no** resource: the pass collects them into a service locator keyed
  * by server and type and wires the {@see RelationsRegistry} from it (lazy, because
  * relations are runtime objects, not scalars). A resource-less type that declares
@@ -81,14 +81,14 @@ use Symfony\Component\DependencyInjection\Reference;
  * operation allow-list, the URI segment, whether the type is a full resource, has a
  * hydrator and has relations) and hands it to the {@see JsonApiRouteLoader}, which
  * emits — for the server a routing import names — exactly one route per declared
- * operation (bundle ADR 0024) plus the relationship routes for a type that has
+ * operation plus the relationship routes for a type that has
  * relations. Descriptors flow as plain scalar arrays — strings, bools and lists of
  * strings — because Symfony cannot dump arbitrary value objects as a compiled service
  * argument. A write operation (`Create`/`Update`) is compile-time-validated to have a
  * hydrator on each server that exposes it.
  *
  * Everything a resource class, standalone capability or action declares is recorded
- * under the servers that class is assigned to (bundle ADR 0034), so two
+ * under the servers that class is assigned to, so two
  * servers can serve one type name through different classes without either seeing the
  * other's declarations.
  *
@@ -110,7 +110,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
         $serializers = [];
         /** @var array<string, string> $hydrators */
         $hydrators = [];
-        // Per-server buckets (ADR 0034): a type/resource assigned to N servers lands
+        // Per-server buckets: a type/resource assigned to N servers lands
         // in all N. The ResourceLocator stays global (the union below); only the
         // per-server ServerFactory args and the route descriptors are scoped.
         /** @var array<string, list<class-string>> $resourceClassesByServer */
@@ -354,7 +354,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
             $factory->setArgument('$standaloneHydrators', $standaloneHydratorsByServer[$server] ?? []);
         }
 
-        // Custom actions (bundle ADR 0076): collect the ACTION_TAG handler services
+        // Custom actions: collect the ACTION_TAG handler services
         // + their flattened attribute metadata into the ActionRegistry's descriptor
         // map (keyed by the composite (server, type, scope, path)) and handler
         // locator, plus the per-server action route descriptors the loader emits. The
@@ -377,7 +377,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
 
     /**
      * Collects every {@see JsonApiBundle::ACTION_TAG} handler service and wires the
-     * custom-action seam (bundle ADR 0076): the {@see ActionRegistry}'s
+     * custom-action seam: the {@see ActionRegistry}'s
      * composite-keyed {@see ActionDescriptor} map + a handler service-locator (keyed
      * by service id, resolved lazily so a handler with real constructor dependencies
      * is built only when invoked), and the per-server **action route descriptors**
@@ -457,7 +457,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
                 $methods = $this->actionMethods($tag);
                 $inputType = \is_string($tag['inputType'] ?? null) && $tag['inputType'] !== '' ? $tag['inputType'] : $type;
 
-                // The declared success-response set (core ADR 0126), decoded from the
+                // The declared success-response set, decoded from the
                 // action's `responds` JSON scalar; empty = the action defaults to a `200`
                 // resource document of its mount type. Each entry is a kind discriminator
                 // (+ the type an ActionResource names / the jobType an Accepted names). The
@@ -517,7 +517,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
 
                 // The action's OpenAPI tag refs (design §4.7): explicit refs on the
                 // action, else inherit the tags of the mount type's resource on each
-                // server (bundle ADR 0034) so the action groups with its resource there.
+                // server so the action groups with its resource there.
                 // Empty when that resource declared none — the MetadataSource then
                 // resolves the humanized-type default. Carried through the descriptor as
                 // a comma-joined scalar (not a list) so it survives the compiled
@@ -618,8 +618,8 @@ final class ResourceLocatorPass implements CompilerPassInterface
                 ->setArgument('$actionRouteDescriptorsByServer', $routeDescriptorsByServer);
         }
 
-        // Hand the resource-scope actions to the ActionLinkContributor (bundle ADRs 0076
-        // and 0159) so it can render each linked action's URL as a `links` member on its
+        // Hand the resource-scope actions to the ActionLinkContributor so it can render each
+        // linked action's URL as a `links` member on its
         // mount type's resources. A no-op when no resource-scope action is declared.
         if ($container->hasDefinition(ActionLinkContributor::class)) {
             $container->getDefinition(ActionLinkContributor::class)

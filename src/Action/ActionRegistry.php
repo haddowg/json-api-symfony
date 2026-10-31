@@ -8,7 +8,7 @@ use Psr\Container\ContainerInterface;
 
 /**
  * Resolves an {@see ActionDescriptor} and its {@see ActionHandlerInterface} service
- * by the composite key `(server, type, scope, path)` (bundle ADR 0076).
+ * by the composite key `(server, type, scope, path)`.
  *
  * The descriptors arrive as an associative map keyed by that composite key (built by
  * the {@see \haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceLocatorPass}

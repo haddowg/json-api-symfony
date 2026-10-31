@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Action;
 
 /**
- * How a custom action's request body is handled (bundle ADR 0076, design §3).
+ * How a custom action's request body is handled (design §3).
  *
  * - {@see None} (default): no body is read; the request `Content-Type` is not
  *   required; {@see ActionContext::input()} is `null`.

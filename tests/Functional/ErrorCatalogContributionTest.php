@@ -13,7 +13,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The application-contributed error catalogue (core ADR 0136): an app's own described
+ * The application-contributed error catalogue: an app's own described
  * errors reach the projected document as named schema variants beside core's, and the
  * two ways in are the scan over `json_api.error_codes.paths` and the
  * {@see \haddowg\JsonApiBundle\JsonApiBundle::ERROR_SOURCE_TAG} service tag.

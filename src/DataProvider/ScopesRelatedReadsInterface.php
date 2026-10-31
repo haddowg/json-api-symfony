@@ -15,7 +15,7 @@ use haddowg\JsonApi\Resource\Field\RelationInterface;
  * When it answers `true`, an included relation and any linkage `data` that renders
  * for it are loaded through {@see DataProviderInterface::fetchRelatedCollectionBatch()},
  * never read off the parent model, and a relation that cannot be loaded that way is
- * refused with a `\LogicException` (bundle ADR 0035). When it answers `false`, reading
+ * refused with a `\LogicException`. When it answers `false`, reading
  * the relation off the parent returns what the related endpoint returns, so the
  * batcher may leave it lazy.
  *

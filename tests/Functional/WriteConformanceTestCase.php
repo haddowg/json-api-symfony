@@ -213,7 +213,7 @@ abstract class WriteConformanceTestCase extends JsonApiFunctionalTestCase
     public function creatingWithALocalIdOnThePrimaryResourceReturns400(): void
     {
         // `lid` is an Atomic Operations member; a standalone create carrying one is a
-        // 400 (not silently ignored), on both providers (core ADR 0086).
+        // 400 (not silently ignored), on both providers.
         $response = $this->handle('/articles', 'POST', [
             'data' => [
                 'type' => 'articles',

@@ -30,7 +30,7 @@ final class BoardResource extends AbstractResource
             Id::make(),
             Str::make('title'),
             MorphTo::make('pinned', ['notes', 'images'])->storedAs('pinned'),
-            // Countable (bundle ADR 0052): the in-memory provider counts the mixed
+            // Countable: the in-memory provider counts the mixed
             // member set, so ?withCount=items emits the relationship-object meta.total
             // even for a polymorphic to-many (the Doctrine provider throws for it).
             MorphToMany::make('items', ['notes', 'images'])->storedAs('items')->paginate(PagePaginator::make())->countable(),

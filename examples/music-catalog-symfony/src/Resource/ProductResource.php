@@ -12,8 +12,8 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Product;
 
 /**
- * The `products` resource type — the **encoded resource id** witness (bundle ADR
- * 0038). Its {@see Product} entity is keyed by a database-generated integer that
+ * The `products` resource type — the **encoded resource id** witness. Its {@see Product} entity
+ * is keyed by a database-generated integer that
  * never reaches the wire: {@see Id::encodeUsing()} attaches a
  * {@see ProductIdCodec} so the JSON:API `id` and the URL are an opaque `prod-…`
  * token, and {@see Id::matchAs()} constrains the route `{id}` to that token shape

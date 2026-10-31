@@ -11,7 +11,7 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 
 /**
- * The composite-attribute conformance witness (core ADR 0114), run against
+ * The composite-attribute conformance witness, run against
  * both providers: the validator bridge cascades an
  * {@see \haddowg\JsonApi\Resource\Field\Obj}'s children and a
  * {@see \haddowg\JsonApi\Resource\Field\OneOf}'s selected variant children,

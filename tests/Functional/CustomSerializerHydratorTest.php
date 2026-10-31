@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The custom serializer/hydrator witness (ADR 0024): the `gadget` type overrides
+ * The custom serializer/hydrator witness: the `gadget` type overrides
  * its serializer and hydrator via #[AsJsonApiResource(serializer:, hydrator:)], and
  * the generic CRUD engine drives reads through the override serializer (name
  * upper-cased + a meta marker) and writes through the override hydrator (name

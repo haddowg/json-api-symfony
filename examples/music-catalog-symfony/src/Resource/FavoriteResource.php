@@ -15,7 +15,7 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Favorite;
 /**
  * The `favorites` resource type, mapped to its backing {@see Favorite} entity.
  *
- * It is the **polymorphic to-one witness** (seam 3, ADR 0032): `favoritable`
+ * It is the **polymorphic to-one witness** (seam 3): `favoritable`
  * points at a track, album, or artist, and the member's serializer is resolved at
  * runtime from the related object's own type. The Doctrine provider resolves the
  * member from the entity's `targetType`/`targetId` pair onto the non-mapped
@@ -54,7 +54,7 @@ final class FavoriteResource extends AbstractResource
             // targetType/targetId pair). This is the one and only extractUsing in the
             // example — the natural place a polymorphic to-one needs a custom resolver.
             //
-            // Include safeguard A (bundle ADR 0036): `favoritable` is `cannotBeIncluded()`
+            // Include safeguard A: `favoritable` is `cannotBeIncluded()`
             // — a polymorphic to-one whose members span types with no shared include
             // vocabulary, so a client reaches it through the related/relationship
             // endpoints (`/favorites/{id}/favoritable`) rather than `?include`. Its

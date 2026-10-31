@@ -62,13 +62,13 @@ use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
  *    `security(read:, mutate:)` lives in its resource's `fields()`, which the
  *    {@see \haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceSecurityPass}
  *    cannot read, so the pass hands over what the app lacks to evaluate an expression
- *    and this check fails on any relation declaring one (bundle ADR 0043). The
+ *    and this check fails on any relation declaring one. The
  *    documentation-only `true`/`false` need nothing.
  *  - **A resource's action links must name an action it has.** An
  *    {@see \haddowg\JsonApi\Resource\Link\ActionLink} in `links()` links a
  *    resource-scope custom action of the type. A server without that action leaves the
  *    link out, but a path no server serving the type has would never render, so it fails
- *    here, naming the resource class (bundle ADR 0076). Building the links also surfaces
+ *    here, naming the resource class. Building the links also surfaces
  *    core's own declaration errors: two action links for one path, or a declared link
  *    named like an action link.
  *

@@ -13,7 +13,7 @@ use Symfony\Component\Routing\Exception\ResourceNotFoundException;
 use Symfony\Component\Routing\RouterInterface;
 
 /**
- * The custom resource-id encoding witness (bundle ADR 0038, backs `data-layer.md`):
+ * The custom resource-id encoding witness (backs `data-layer.md`):
  * the `products` type keys its entity by a database-generated integer that never
  * reaches the wire — the JSON:API `id` (and the URL) is an opaque `prod-…` token the
  * {@see ProductIdCodec} encodes/decodes. It proves the encode/decode round-trip on

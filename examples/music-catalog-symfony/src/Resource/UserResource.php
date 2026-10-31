@@ -26,7 +26,7 @@ use haddowg\JsonApiBundle\Validation\Constraint\UniqueEntity;
 /**
  * The `users` resource type, mapped to its backing {@see User} entity.
  *
- * It is the **admin-only multi-server witness** (ADR 0034): `server: 'admin'`
+ * It is the **admin-only multi-server witness**: `server: 'admin'`
  * exposes it on the named `admin` server alone (mounted under `/admin`), so
  * `/users` 404s on the default surface while `/admin/users` resolves.
  *
@@ -41,8 +41,8 @@ use haddowg\JsonApiBundle\Validation\Constraint\UniqueEntity;
  * seam that queries this repository through `symfony/doctrine-bridge` to reject a
  * duplicate before commit.
  *
- * It is finally the **cursor (keyset) pagination witness** (core ADR 0061, bundle
- * ADR 0063): {@see pagination()} pins a {@see CursorPaginator} for the primary
+ * It is finally the **cursor (keyset) pagination witness**: {@see pagination()} pins a {@see
+ * CursorPaginator} for the primary
  * `users` collection, so `GET /users` (admin server) pages by opaque
  * `page[after]`/`page[before]` cursor tokens rather than `page[number]`. It is the
  * catalogue's only cursor-only collection (`tracks` offers cursor as one choice in its
@@ -118,7 +118,7 @@ final class UserResource extends AbstractResource
     }
 
     /**
-     * Include safeguard C (bundle ADR 0036): the full dotted include paths a client
+     * Include safeguard C: the full dotted include paths a client
      * may request when `users` is the request's root. A user may compound their
      * playlists, each playlist's owner, and their library — but NOT a playlist's
      * tracks, even though `tracks` is freely includable when `playlists` is the

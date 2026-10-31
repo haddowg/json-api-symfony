@@ -23,12 +23,12 @@ use haddowg\JsonApi\Server\Server;
  * dance the generic CRUD engine would otherwise repeat at every
  * metadata-dependent call site into one resource-presence-aware lookup, so the
  * engine stays generic over both a full resource and a bare pair without per-type
- * branching — the capstone seam the bare-pair path (bundle ADR 0021) plugs into.
+ * branching — the capstone seam the bare-pair path plugs into.
  *
  * The {@see Server} is passed per call (it flows from the operation context, and
  * the architecture is multi-server-capable) rather than held; relations are sourced
  * resource-first then from that server's entries in the {@see RelationsRegistry}, so a
- * resource-less type that declared standalone relations (ADR 0024) resolves the same
+ * resource-less type that declared standalone relations resolves the same
  * way as a resource.
  */
 final class TypeMetadataResolver
@@ -78,7 +78,7 @@ final class TypeMetadataResolver
      * unless `withUriFieldName()` set another), resource-first then standalone. When no
      * relation is served under it, the segment is tried as a relation name, so a client
      * still calling a renamed relation's old name-keyed URL keeps working; the links and
-     * the OpenAPI document only name the URI field name (bundle ADR 0016).
+     * the OpenAPI document only name the URI field name.
      */
     public function relationAtUriSegment(Server $server, string $type, string $segment): ?RelationInterface
     {
@@ -158,7 +158,7 @@ final class TypeMetadataResolver
      * The relations of `$type` a read of this request renders: {@see relationsFor()}
      * without the ones write-only for `$request`. A write-only relation never renders
      * its linkage, so the read path must not window, count, batch or pivot-query it,
-     * and a `relatedQuery` path naming it is unknown (bundle ADR 0084). The write
+     * and a `relatedQuery` path naming it is unknown. The write
      * path keeps using {@see relationsFor()}.
      *
      * @return list<RelationInterface>

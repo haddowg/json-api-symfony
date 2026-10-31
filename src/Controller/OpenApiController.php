@@ -47,7 +47,7 @@ use Symfony\Component\HttpFoundation\Response;
  * as they are, tagged with the hash the warmer stored beside them, so a matching
  * `If-None-Match` costs one small read. With serve decorators it loads the warmed value
  * objects, runs the decorators with the request, prunes what they orphaned and serialises
- * the result (bundle ADR 0077).
+ * the result.
  */
 final class OpenApiController
 {

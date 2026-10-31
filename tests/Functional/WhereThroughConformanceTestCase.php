@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Test;
 
 /**
  * The dual-provider acceptance suite for the **`WhereThrough` traversal filter**
- * (G8, core ADR 0063): a correlated `EXISTS-ANY` semi-join over a dotted
+ * (G8): a correlated `EXISTS-ANY` semi-join over a dotted
  * relationship path — `filter[author.name]` keeps an article whose author's name
  * matches; `filter[comments.body]` keeps one with SOME matching comment;
  * `filter[commentArticleTitle]` (`comments.article.title`) chains the hops. The

@@ -7,8 +7,8 @@ namespace haddowg\JsonApiBundle\Security;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 
 /**
- * The registry of declarative {@see ResourceSecurity} expression sets (bundle ADR 0043),
- * keyed by server and type (bundle ADR 0034). Built from plain scalar
+ * The registry of declarative {@see ResourceSecurity} expression sets,
+ * keyed by server and type. Built from plain scalar
  * `type → {default, create, update, delete, read, list}` maps the
  * {@see \haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceSecurityPass}
  * assembles from each resource's `#[AsJsonApiResource(security: …)]` tag attributes

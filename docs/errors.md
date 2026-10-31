@@ -437,8 +437,7 @@ Two codes claiming the same `code` string is a container-build failure, not a
 last-one-wins merge: a `code` is what a client dispatches on, so publishing one
 class's status and title under another's would be a lie. The catalogue stays
 **open** either way — the `anyOf` leads with the generic `Error`, so an error
-carrying a code you never declared is still a valid error object
-([core ADR 0136](https://github.com/haddowg/json-api/blob/main/docs/adr/0136-the-projected-error-code-catalogue-is-open.md)).
+carrying a code you never declared is still a valid error object.
 
 Contributed codes are documented on every server this bundle declares. An exception
 class is not server-scoped the way a resource is, so there is no per-server
@@ -448,7 +447,8 @@ registration to get wrong.
 
 Every error's `title` and `detail` are message templates core resolves per stable
 error `code`
-([core ADR 0128](https://github.com/haddowg/json-api/blob/main/docs/errors-and-exceptions.md#localizing-and-overriding-error-copy)).
+(see [localizing and overriding error copy](https://github.com/haddowg/json-api/blob/main/docs/errors-and-exceptions.md#localizing-and-overriding-error-copy)
+in the core docs).
 The bundle binds that seam to the **Symfony translator** automatically: when
 `symfony/translation` is installed, any error's copy can be localized or rebranded
 through ordinary translation files in the `jsonapi_errors` domain, keyed by code:

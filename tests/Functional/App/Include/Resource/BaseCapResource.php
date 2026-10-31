@@ -16,7 +16,7 @@ use haddowg\JsonApi\Resource\Field\Str;
  * {@see \haddowg\JsonApiBundle\JsonApiBundle::DEFAULT_MAX_INCLUDE_DEPTH}), but this
  * resource's own override wins when `caps` is the primary/root type — so
  * `?include=node` (depth 1) succeeds while `?include=node.next` (depth 2) is a `400`,
- * proving the per-resource override beats the server default (bundle ADR 0036).
+ * proving the per-resource override beats the server default.
  */
 abstract class BaseCapResource extends AbstractResource
 {

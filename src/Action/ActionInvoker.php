@@ -28,7 +28,7 @@ use haddowg\JsonApiBundle\Validation\ResourceValidator;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
- * Invokes a custom, non-CRUD action (bundle ADR 0076, design §5). The single
+ * Invokes a custom, non-CRUD action (design §5). The single
  * bundle {@see \haddowg\JsonApiBundle\Operation\CrudOperationHandler} delegates its
  * {@see CustomActionOperation} arm here when this optional collaborator is wired
  * (`null` otherwise → the handler renders a `404`).

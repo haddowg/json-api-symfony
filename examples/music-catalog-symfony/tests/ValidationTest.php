@@ -158,7 +158,7 @@ final class ValidationTest extends MusicCatalogKernelTestCase
     #[Group('spec:updating-resources')]
     public function aPartialUpdateComparesAgainstAStoredSiblingNotInTheBody(): void
     {
-        // Merge-before-validate (bundle ADR 0049): album 1 is stored with
+        // Merge-before-validate: album 1 is stored with
         // `availableFrom` 1997-05-21. A partial PATCH that sends ONLY `availableUntil`
         // — and never re-sends the stored `availableFrom` — must still evaluate the
         // directional `availableUntil > availableFrom` rule against the MERGED

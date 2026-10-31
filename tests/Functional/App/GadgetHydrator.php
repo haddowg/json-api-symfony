@@ -9,7 +9,7 @@ use haddowg\JsonApi\Request\JsonApiRequestInterface;
 
 /**
  * A custom hydrator for the `gadget` type, proving the generic engine drives
- * writes through a registered override (ADR 0024). It prefixes the incoming
+ * writes through a registered override. It prefixes the incoming
  * `name` (a distinguishable transform) and assigns an id on create, and takes a
  * constructor dependency (the prefix), so the test passing proves it was
  * container-resolved with its dependency.

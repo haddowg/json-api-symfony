@@ -11,7 +11,7 @@ use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Str;
 
 /**
- * The endpoint-exposure witness resource (ADR 0016): one `gizmos` type whose
+ * The endpoint-exposure witness resource: one `gizmos` type whose
  * relations exercise the per-relation endpoint-exposure flags the handler
  * enforces. Each suppressed/locked variant reuses an underlying property
  * (`storedAs()`) so they read identically to the plain `author`/`comments`

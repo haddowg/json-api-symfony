@@ -55,7 +55,7 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
  * operations carry a security expression (never the expression). The mapping follows
  * the runtime enforcement exactly (the {@see \haddowg\JsonApiBundle\Security\ResourceSecuritySubscriber}):
  * `forCreate`/`forUpdate`/`forDelete` gate Create/Update/Delete, `forRead` gates
- * FetchOne (the single-read hook), and `forList` (`securityList`, bundle ADR 0043)
+ * FetchOne (the single-read hook), and `forList` (`securityList`)
  * gates FetchCollection — enforced all-or-nothing before the query at the
  * collection-read hook, so it too is projected here. The security *schemes* +
  * *default requirement* are config — carried on the source's config and surfaced on

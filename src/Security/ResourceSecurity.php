@@ -6,7 +6,7 @@ namespace haddowg\JsonApiBundle\Security;
 
 /**
  * The resolved authorization declarations for one JSON:API type via
- * `#[AsJsonApiResource(security: …)]` (bundle ADR 0043): the default plus the
+ * `#[AsJsonApiResource(security: …)]`: the default plus the
  * per-operation overrides. Each is a Symfony Security ExpressionLanguage **string**
  * (enforced + documented secured), the bool **`true`** (documented secured only — an
  * external firewall enforces it), the bool **`false`** (documented public), or `null`

@@ -12,8 +12,7 @@ use PHPUnit\Framework\Attributes\Test;
 /**
  * Two servers with an empty `base_uri`, mounted apart: `default` under `/api/v5`
  * and `admin` under `/admin`. Each route records its own server's mount, so a type
- * shared by both servers links to whichever mount the request came through (bundle
- * ADR 0121).
+ * shared by both servers links to whichever mount the request came through.
  */
 final class MountedMultiServerTest extends JsonApiFunctionalTestCase
 {

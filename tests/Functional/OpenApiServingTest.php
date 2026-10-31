@@ -120,8 +120,7 @@ final class OpenApiServingTest extends JsonApiFunctionalTestCase
         self::assertArrayNotHasKey('200', $actionResponses);
 
         // The meta-output action (responds: [new MetaResult()]) advertises a 200 referencing the
-        // shared MetaDocument component — not a products resource body and not a 204
-        // (core ADR 0126).
+        // shared MetaDocument component — not a products resource body and not a 204.
         self::assertArrayHasKey('/products/-actions/summarize', $paths);
         $summarizeResponses = $this->nested($paths, '/products/-actions/summarize', 'post', 'responses');
         self::assertArrayHasKey('200', $summarizeResponses);
@@ -153,7 +152,7 @@ final class OpenApiServingTest extends JsonApiFunctionalTestCase
         self::assertSame(['draft', 'published', 'archived'], $this->nested($schemas, 'CatalogStatus')['enum'] ?? null);
         // The meta-output action (SummarizeCatalog, responds: [new MetaResult()]) causes the shared
         // meta-document component to join the schema set: a meta-required object with no
-        // `data` (core ADR 0126).
+        // `data`.
         self::assertArrayHasKey('MetaDocument', $schemas);
         self::assertSame(['meta'], $this->nested($schemas, 'MetaDocument', 'required'));
         self::assertArrayNotHasKey('data', $this->nested($schemas, 'MetaDocument', 'properties'));
@@ -229,7 +228,7 @@ final class OpenApiServingTest extends JsonApiFunctionalTestCase
         // include + the sparse-fieldset param for the primary type.
         self::assertContains('include', $names);
         self::assertContains('fields[products]', $names);
-        // The page family projects as one `page` deepObject parameter (core ADR 0130),
+        // The page family projects as one `page` deepObject parameter,
         // whose object schema carries the page-based number/size keys.
         self::assertContains('page', $names);
         $pageIndex = (string) (int) \array_search('page', $names, true);

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Functional\App\Http;
 
 /**
- * A minimal POJO backing the response-header witnesses (bundle ADR 0054): one
+ * A minimal POJO backing the response-header witnesses: one
  * mutable `name` attribute so the cached/deprecated resources can be created, read
  * and written without any storage coupling.
  */

@@ -32,7 +32,7 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
  *
  * It declares a SECOND pivot relation `orderedTracks` over the SAME
  * {@see PlaylistTrackEntity}, left **non-countable**, as the count-free pivot-endpoint
- * witness (bundle ADR 0052): its related collection paginates with no `COUNT`, so the
+ * witness: its related collection paginates with no `COUNT`, so the
  * page carries no `meta.page.total` and no `last` link — the universal `countable()`
  * gate applies to the pivot path exactly as to the plain path. Because both relations
  * now reach the same far type through the same association entity, each pins it with
@@ -75,8 +75,8 @@ final class DoctrinePlaylistResource extends AbstractResource
                         static fn(mixed $track, JsonApiRequestInterface $request): bool => $track instanceof TrackEntity && $track->title === 'Outro',
                     )->build(),
                 )
-                // Pivot filters are AUTHOR-DECLARED via the `pivot.` column prefix
-                // (bundle ADR 0045): a filter whose column starts with `pivot.` targets
+                // Pivot filters are AUTHOR-DECLARED via the `pivot.` column prefix: a filter
+                // whose column starts with `pivot.` targets
                 // the association-entity join. The value cast auto-resolves from the
                 // pivot field backing the stripped column (so `addedAfter` coerces the
                 // wire value to a DateTime exactly as the field renders it). The filter
@@ -94,12 +94,12 @@ final class DoctrinePlaylistResource extends AbstractResource
                 )
                 ->extractUsing($this->extractTracks())
                 ->paginate(PagePaginator::make())
-                // Countable (bundle ADR 0052): the Doctrine provider counts the
+                // Countable: the Doctrine provider counts the
                 // ASSOCIATION-entity rows per parent, so ?withCount=tracks reflects
                 // duplicate membership (a track at two positions counts twice).
                 ->countable(),
 
-            // The count-free pivot witness (bundle ADR 0052): the SAME association
+            // The count-free pivot witness: the SAME association
             // entity, left NON-countable. Its related collection paginates with no
             // COUNT — no meta.page.total, no `last` — exactly as the plain non-countable
             // path does, proving the universal countable() gate reaches the pivot path.
@@ -113,7 +113,7 @@ final class DoctrinePlaylistResource extends AbstractResource
                 ->extractUsing($this->extractTracks())
                 ->paginate(PagePaginator::make()),
 
-            // The DEFAULT-RENDERED-LINKAGE pivot witness (bundle ADR 0045): the SAME
+            // The DEFAULT-RENDERED-LINKAGE pivot witness: the SAME
             // association entity, but `withData()` so its linkage data renders on a
             // PRIMARY document with NO `?include`. It proves a primary-resource document
             // carries each member's `meta.pivot` on the relationships block wherever the
@@ -130,7 +130,7 @@ final class DoctrinePlaylistResource extends AbstractResource
                 ->extractUsing($this->extractTracks())
                 ->withData(),
 
-            // The CONDITIONALLY-HIDDEN pivot witness (bundle ADR 0045): the SAME
+            // The CONDITIONALLY-HIDDEN pivot witness: the SAME
             // association entity, `withData()` so its linkage WOULD render, but
             // `hidden(fn …)` makes it hidden FOR THIS REQUEST. A per-request hidden
             // relation is not UNCONDITIONALLY hidden, so it still flows to the render

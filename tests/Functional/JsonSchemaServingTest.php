@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The JSON Schema serving witness (bundle ADR 0077): boots the {@see OpenApiTestKernel},
+ * The JSON Schema serving witness: boots the {@see OpenApiTestKernel},
  * hits `GET /schemas.json`, and asserts the served aggregate is the per-type standalone
  * JSON Schema 2020-12 documents — one object keyed by JSON:API type, each a valid,
  * self-contained schema (`$schema` dialect + addressable `$id` + the resource object) —

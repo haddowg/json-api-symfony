@@ -4,4 +4,4 @@ The handler dispatches fixed before and after events per operation (create, upda
 
 ## Consequences
 
-The hooks are inert without `symfony/event-dispatcher`. Inside an Atomic Operations batch, after events wait for the commit (ADR 0087).
+The hooks are inert without `symfony/event-dispatcher`. Inside an Atomic Operations batch, after events wait for the commit (ADR 0038).

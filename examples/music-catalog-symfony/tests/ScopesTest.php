@@ -13,7 +13,7 @@ use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * OAuth scopes on the catalogue's writes (core ADR 0181). A token carries its
+ * OAuth scopes on the catalogue's writes. A token carries its
  * scopes after a `#` (`Bearer admin#catalog:write`); a token without one is unscoped and
  * its requests are not checked for scopes, which is why the other suites are unaffected.
  *

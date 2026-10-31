@@ -136,7 +136,7 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
         $this->logger = $logger ?? new NullLogger();
 
         // Scope pre-flight: every operation is checked against the batch request's grant
-        // before begin() opens anything, so a refused batch writes nothing (core ADR 0181).
+        // before begin() opens anything, so a refused batch writes nothing.
         ScopeEnforcer::forServer($this->server)?->enforceBatch($this->request, $this->batchOperations());
 
         // Pre-flight: resolve every participating type's persister up front and refuse
@@ -589,8 +589,8 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
         $id = $match['id'] ?? null;
         $relationship = $match['relationship'] ?? null;
         $relationship = \is_string($relationship) && $relationship !== '' ? $relationship : null;
-        // The href names the relation by its URI segment; the Target carries its name
-        // (bundle ADR 0016). An unknown segment stays as it is and answers 404.
+        // The href names the relation by its URI segment; the Target carries its name. An
+        // unknown segment stays as it is and answers 404.
         if ($relationship !== null) {
             $relationship = $this->types->relationAtUriSegment($this->server, $type, $relationship)?->name() ?? $relationship;
         }

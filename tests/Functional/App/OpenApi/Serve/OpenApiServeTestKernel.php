@@ -25,7 +25,7 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 /**
- * The serve-time customisation witness kernel (bundle ADR 0077). The environment picks
+ * The serve-time customisation witness kernel. The environment picks
  * the serve decorators:
  *  - `plain`: none, so the raw artifact is served;
  *  - `keyed`: host servers + feature gate (OpenAPI) and the feature gate (schemas), every

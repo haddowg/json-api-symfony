@@ -11,7 +11,7 @@ use PHPUnit\Framework\Attributes\Test;
 
 /**
  * An empty `base_uri` on a server imported with no prefix: links stay based on the
- * request origin alone, as they were before mounts were recorded (bundle ADR 0121).
+ * request origin alone, as they were before mounts were recorded.
  */
 final class UnmountedEmptyBaseLinksTest extends JsonApiFunctionalTestCase
 {

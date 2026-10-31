@@ -10,7 +10,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\Routing\RouterInterface;
 
 /**
- * The serialize-only witness (ADR 0024): the `colors` type is registered with a
+ * The serialize-only witness: the `colors` type is registered with a
  * standalone `#[AsJsonApiSerializer]` and no {@see \haddowg\JsonApi\Resource\AbstractResource}.
  * It renders as linkage and as an `?include`d resource on a `widgets` resource, but
  * exposes no endpoints of its own — the case a resource cannot express, because a

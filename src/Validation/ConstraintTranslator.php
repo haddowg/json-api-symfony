@@ -245,8 +245,8 @@ final class ConstraintTranslator
 
         // Presence rules ({@see Required}/{@see Nullable}) carry no Symfony *value*
         // constraint — they are resolved by the {@see ResourceValidator} into the
-        // field's Required/Optional wrapper, request-aware even inside a `When`
-        // (ADR 0084). So a `when(…, fn($f) => $f->required())` is realised by
+        // field's Required/Optional wrapper, request-aware even inside a `When`. So a `when(…,
+        // fn($f) => $f->required())` is realised by
         // presence resolution, not here; the When-callback only validates the inner
         // *value* rules, skipping the presence markers (translating them would fail
         // loud — they have no value-constraint translation).

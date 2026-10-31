@@ -223,7 +223,7 @@ document-scoped. (A hand-written `getLinks()` self still wins over the conventio
 Two cross-cutting HTTP-response concerns are declared **purely as attribute
 metadata** — no `getLinks()`, no after-hook. The bundle's route-scoped
 `ResponseHeadersListener` reads the config off the matched type and writes the
-headers (bundle ADR 0054).
+headers.
 
 **Declarative HTTP cache headers (`genres`).** A genre is reference/lookup data that
 changes rarely, so its reads are long-cacheable. `GenreResource` declares
@@ -372,8 +372,8 @@ A countable relation surfaces a total two ways, both keyed `total`
 
 A cursor-paginated relation marked countable still honours the total where asked —
 the author opted into the cost by declaring `countable()`. See
-[`docs/relationships.md`](../../docs/relationships.md) (bundle ADR 0052, core ADR
-0057) for the full surface.
+[`docs/relationships.md`](../../docs/relationships.md) for the full
+surface.
 
 ## Filtering and sorting a relationship from the primary request
 
@@ -425,7 +425,7 @@ GET /albums/1?include=tracks&rQ[tracks][sort]=-duration
 
 - The vocabulary is exactly the related-collection **endpoint's**: the related
   `tracks` resource's own keys (`?...[sort]=title`, `?...[filter][explicit]=true`)
-  **merged** with the relation's scoped `duration`/`longerThan` (bundle ADR 0030). An
+  **merged** with the relation's scoped `duration`/`longerThan`. An
   **unknown** key is the same `400` as the endpoint, with the **plain-form** key in
   `source.parameter` (`filter[nope]`, not the `relatedQuery[…]` form).
 - A rendered to-many under the profile carries its pagination links — `first`/`prev`/
@@ -436,13 +436,13 @@ GET /albums/1?include=tracks&rQ[tracks][sort]=-duration
   `relatedQuery[…]` form. `albums.tracks` (countable) emits a `last`; `users.playlists`
   (non-countable) paginates count-free with no `last`.
 
-The bundle's `docs/relationships.md` (bundle ADR 0053, core ADR 0058) documents the
+The bundle's `docs/relationships.md` documents the
 full surface. On a **collection** include each parent's relationship is windowed to its
 own page 1 independently by a **portable per-parent query** on every provider — the
 Doctrine provider reuses its per-parent scoped (or many-to-many `IN`-subquery) query,
 the in-memory provider applies the criteria in PHP. A single windowed native batch
 (`ROW_NUMBER() OVER (PARTITION BY …)` where the platform supports window functions) is
-a **deferred optimization, not a correctness requirement** (bundle ADR 0053). A relation
+a **deferred optimization, not a correctness requirement**. A relation
 whose linkage is *derived* rather than a plain Doctrine association (the pivot
 `playlists.orderedTracks` here) is addressed at its own endpoint, not from a parent
 request.
@@ -494,8 +494,8 @@ their own `paginate()`, so they stay page-based.
 An **unrecognized** top-level query-parameter family is **rejected with a `400`**
 rather than silently dropped — so a client typo (`?pag[number]=2` for `page[number]`,
 a misspelled custom param) surfaces as an error instead of a wrong-but-`200` result.
-This is **on by default** (`json_api.strict_query_parameters`, docs/configuration.md, core
-ADR 0059); the shipped app's `config/packages/json_api.yaml` omits the key, so it is
+This is **on by default** (`json_api.strict_query_parameters`, docs/configuration.md);
+the shipped app's `config/packages/json_api.yaml` omits the key, so it is
 already strict here (`tests/StrictQueryParametersTest.php`):
 
 ```
@@ -585,7 +585,7 @@ So (`tests/FilterValueConstraintTest.php`):
 The validation reuses the [validator bridge](../../docs/validation.md)
 (`symfony/validator`), so a constrained filter with no validator installed is inert —
 the same optionality the attribute-constraint bridge has. No new config keys. See
-[`docs/data-layer.md`](../../docs/data-layer.md) (core ADR 0055).
+[`docs/data-layer.md`](../../docs/data-layer.md).
 
 ## Validating the merged resource on update
 
@@ -617,7 +617,7 @@ sibling is absent from the wire. A required attribute already valid in stored st
 likewise need not be re-sent: the merge folds the stored value in, so a partial
 `PATCH` that omits it stays a `200` rather than a false `422`. The same merge
 semantics apply **per relationship member** to pivot meta — see the next section. See
-[`docs/validation.md`](../../docs/validation.md) (bundle ADR 0049).
+[`docs/validation.md`](../../docs/validation.md).
 
 ## Write-only attributes (a credential a client sets but never reads back)
 
@@ -744,7 +744,7 @@ PATCH /playlists/{id}
   **`422`** pointed at `…/meta/pivot/position` (the relationship endpoint) or
   `/data/relationships/orderedTracks/data/{n}/meta/pivot/position` (a whole-resource
   write), with **no write** — the store is unchanged;
-- **merge-before-validate, per member** (bundle ADR 0049): an update validates each
+- **merge-before-validate, per member**: an update validates each
   member against its **merged** pivot row (the stored values overlaid by the incoming
   `meta`). So a *genuinely-new* member missing the required `position` is a `422`
   (the new-row context — never a DB NOT-NULL `500`), but re-asserting an *existing*
@@ -773,7 +773,7 @@ PATCH /playlists/{id}
   splits across pages, and the rendered values are a representative membership row.
 
 See [`docs/relationships.md`](../../docs/relationships.md) and
-[`docs/doctrine.md`](../../docs/doctrine.md) for the full surface (bundle ADR 0045).
+[`docs/doctrine.md`](../../docs/doctrine.md) for the full surface.
 
 ## What's here
 

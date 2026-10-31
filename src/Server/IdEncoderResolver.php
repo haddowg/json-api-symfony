@@ -14,7 +14,7 @@ use haddowg\JsonApi\Resource\Field\IdEncoderInterface;
  * {@see Id} field's {@see IdEncoderInterface} (storage-key ⇄ wire-id codec) and its
  * route `{id}` requirement ({@see Id::routePattern()}).
  *
- * The encode/decode boundary is split by where the id flows (bundle ADR 0038): core
+ * The encode/decode boundary is split by where the id flows: core
  * owns the entity's-own-id transform (encode on serialize, decode a client-generated
  * id on create), and the reference Doctrine layer owns the id-as-lookup-key
  * transforms the storage-agnostic {@see \haddowg\JsonApiBundle\DataProvider\DataProviderInterface}
@@ -27,8 +27,8 @@ use haddowg\JsonApi\Resource\Field\IdEncoderInterface;
  * through.
  *
  * Two servers may serve one type through different resource classes with different
- * {@see Id} fields, so a type resolves to the class its server serves it with (bundle
- * ADR 0034): the server a caller names, else the one the current operation
+ * {@see Id} fields, so a type resolves to the class its server serves it with: the server a
+ * caller names, else the one the current operation
  * {@see bind() bound}, else the default server. When that server does not serve the
  * type, the first class that declares it anywhere answers. The class is matched by
  * the {@see AbstractResource}'s static `$type` (read without instantiating, exactly

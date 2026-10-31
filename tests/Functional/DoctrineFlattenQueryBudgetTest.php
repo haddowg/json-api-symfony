@@ -11,8 +11,8 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The Doctrine query-budget PROOF for the flattened-attribute (`on()`) eager load
- * (bundle ADR 0035): a `/books` collection read flattening `authorName`/`editorName`
+ * The Doctrine query-budget PROOF for the flattened-attribute (`on()`) eager load: a `/books`
+ * collection read flattening `authorName`/`editorName`
  * over three books with DISTINCT lazy `author`/`editor` associations would, without
  * the eager batch, trigger one `SELECT … FROM flatten_author WHERE id = ?` PER book
  * PER backing relation (the per-row N+1 the flattened read introduces). The eager

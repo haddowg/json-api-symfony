@@ -39,7 +39,7 @@ use haddowg\JsonApiBundle\Action\RawResults;
  * descriptor's scalar success-response set (a `kind` discriminator + optional
  * `type`/`jobType`) into core's atomic {@see ActionResponse} objects — the values the
  * projector switches on to advertise a `200` resource document, a `200` meta document,
- * a `204`, a `202` async accept, or a `303` redirect (core ADR 0126).
+ * a `204`, a `202` async accept, or a `303` redirect.
  */
 final readonly class ActionMetadata implements DeclaresActionLink, DeclaresAcceptedBodies, DeclaresActionExample, DeclaresActionSafety, DeclaresActionExtensions, DeclaresActionScopes
 {

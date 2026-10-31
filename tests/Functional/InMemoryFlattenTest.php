@@ -8,7 +8,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\FlattenInMemoryTestKernel;
 use haddowg\JsonApiBundle\Tests\Functional\App\FlattenProviderFactory;
 
 /**
- * {@see FlattenConformanceTestCase} against the in-memory provider (bundle ADR 0035):
+ * {@see FlattenConformanceTestCase} against the in-memory provider:
  * the flattened single- and multi-hop `on()` read/write, the computed attribute, and
  * the eager loads run over the writable in-memory `books`/`authors`/`countries` graph.
  * `afterBoot()` resets the factory so each test boots a fresh, unmutated graph (a

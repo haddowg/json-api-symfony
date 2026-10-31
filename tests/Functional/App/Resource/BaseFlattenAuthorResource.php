@@ -11,7 +11,7 @@ use haddowg\JsonApi\Resource\Field\Str;
 
 /**
  * The shared `authors` declaration of the flattened-attribute (`on()`) conformance
- * fixture (bundle ADR 0035): the related type a {@see BaseFlattenBookResource}'s
+ * fixture: the related type a {@see BaseFlattenBookResource}'s
  * hidden `author` relation points at. Registering it makes the type known to the
  * serializer resolver and gives the book's eager loader a batching provider. The
  * `name` is the member a book's `authorName` flattens; re-fetching `/authors/{id}`

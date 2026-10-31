@@ -10,7 +10,7 @@ use PHPUnit\Framework\Attributes\Test;
 
 /**
  * The **Doctrine-only** acceptance suite for the {@see \haddowg\JsonApiBundle\DataProvider\Doctrine\Filter\WhereHasMatching}
- * escape hatch (bundle ADR 0019): a relationship-existence filter narrowed by an
+ * escape hatch: a relationship-existence filter narrowed by an
  * author-supplied inner predicate — a structured {@see \Doctrine\Common\Collections\Criteria}
  * (the primary surface, applied with `addCriteria` on the related root) or a raw
  * subquery closure parameterised by the request value (the deep hatch). Both feed

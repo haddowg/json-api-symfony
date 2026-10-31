@@ -9,7 +9,7 @@ use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 
 /**
  * Builds the writable in-memory `badges` / `medals` graph for the
- * request-aware-predicates conformance suite (bundle ADR 0084): two providers over
+ * request-aware-predicates conformance suite: two providers over
  * one seeded object graph (so a parent fetch returns the related objects), plus an
  * {@see InMemoryDataPersister} for `badges` whose related-object resolver looks a
  * medal id up in the medals store — so a relationship mutation can resolve a

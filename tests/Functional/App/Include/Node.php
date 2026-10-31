@@ -9,7 +9,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\Include;
  * wired into a circular `next` chain (n1 → n2 → n3 → n1) so that default-including
  * `next` would recurse forever without a depth cap — the mutual/self default-include
  * cycle the bundle's {@see \haddowg\JsonApiBundle\JsonApiBundle::DEFAULT_MAX_INCLUDE_DEPTH}
- * must terminate (bundle ADR 0036).
+ * must terminate.
  *
  * `prev` is the back-reference the {@see \haddowg\JsonApiBundle\Tests\Functional\App\Include\Resource\NodeResource}
  * marks `cannotBeIncluded()` (Capability A); `tag` is a to-one whose related

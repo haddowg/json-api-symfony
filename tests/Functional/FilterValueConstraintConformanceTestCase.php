@@ -185,7 +185,7 @@ abstract class FilterValueConstraintConformanceTestCase extends JsonApiFunctiona
         self::assertSame(['1'], $ids);
     }
 
-    // --- uniform relatedQuery filter-value validation (bundle ADR 0053 follow-up #2) ---
+    // --- uniform relatedQuery filter-value validation ---
 
     #[Test]
     #[Group('spec:fetching-relationships')]

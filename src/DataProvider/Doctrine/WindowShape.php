@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\DataProvider\Doctrine;
 
 /**
- * The inner-query shape descriptor {@see WindowedRelationBatch} resolves per relation
- * (bundle ADR 0065): which DQL the bounded ROW_NUMBER window wraps, mirroring
+ * The inner-query shape descriptor {@see WindowedRelationBatch} resolves per relation: which
+ * DQL the bounded ROW_NUMBER window wraps, mirroring
  * {@see RelationScope}'s two branches.
  *
  *  - **inverse-FK** ({@see inverseFk()}) — a single-valued inverse association (the

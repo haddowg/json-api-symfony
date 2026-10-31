@@ -20,7 +20,7 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 /**
- * The serialize-only witness kernel (ADR 0024): a `widgets` resource with a to-one
+ * The serialize-only witness kernel: a `widgets` resource with a to-one
  * `color` relation to the resource-less `colors` type, whose wire shape comes from a
  * standalone {@see ColorSerializer} registered via `#[AsJsonApiSerializer]` with no
  * {@see \haddowg\JsonApi\Resource\AbstractResource}. The widgets provider is a

@@ -306,7 +306,7 @@ final class OpenApiDocsTest extends MusicCatalogKernelTestCase
     {
         // `UserResource::pagination()` pins a CursorPaginator — the catalogue's sole
         // cursor (keyset) witness — so the `users` primary collection's single `page`
-        // deepObject parameter (core ADR 0130) carries the keyset object schema: the opaque
+        // deepObject parameter carries the keyset object schema: the opaque
         // `page[after]`/`page[before]` cursor tokens plus `page[size]`, and NOT the
         // `number` of the page-based default. `users` is admin-only, so this rides the
         // `admin` server's document; the path keys are unprefixed (the `/admin` mount
@@ -378,7 +378,7 @@ final class OpenApiDocsTest extends MusicCatalogKernelTestCase
 
         // The aggregate is the per-type standalone JSON Schema 2020-12 documents keyed by
         // JSON:API type — a single fetch the client codegen consumes for its validation
-        // seam (bundle ADR 0077). Each is self-contained: a `$id` and a `type` const.
+        // seam. Each is self-contained: a `$id` and a `type` const.
         $aggregate = $this->decode($response);
         foreach (['albums', 'tracks', 'playlists'] as $type) {
             $schema = $this->nested($aggregate, $type);

@@ -13,8 +13,8 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Hook\HookLog;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The lifecycle-hooks suite against the **Doctrine** persist/flush path (bundle
- * ADR 0042): the resource-method mechanism witness over real SQL. It mirrors the
+ * The lifecycle-hooks suite against the **Doctrine** persist/flush path: the resource-method
+ * mechanism witness over real SQL. It mirrors the
  * resource-method assertions of the in-memory {@see LifecycleHooksTest} — order,
  * before-mutation persisted, before-throw aborts with no commit, after-replace,
  * read hooks — so a hook regression localizes to a provider, not the seam.

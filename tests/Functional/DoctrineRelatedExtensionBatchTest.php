@@ -16,7 +16,7 @@ use PHPUnit\Framework\Attributes\Test;
  * is applied ON the related entity even on the parent-rooted PAIR-shape batched fetch
  * (the many-to-many `editors` relation), not on the parent query root — the
  * divergence the batched windowed-include path otherwise had from the related-rooted
- * unbatched fetch (bundle ADR 0035).
+ * unbatched fetch.
  *
  * The {@see PublishedAuthorsExtension} scopes every `authors` query to exclude `Ada
  * Lovelace` (author 1). Author 1 is an editor of articles 1 and 2 (the shared,
@@ -81,7 +81,7 @@ final class DoctrineRelatedExtensionBatchTest extends JsonApiFunctionalTestCase
 
         // The related-type extension actually ran on the windowed collection include,
         // and reports the related purpose (not the primary FetchCollection) — the
-        // distinction a request-aware scope branches on (bundle ADR 0008).
+        // distinction a request-aware scope branches on.
         self::assertContains(QueryPurpose::FetchRelatedCollection, $this->extension()->applied);
         self::assertNotContains(QueryPurpose::FetchCollection, $this->extension()->applied);
     }

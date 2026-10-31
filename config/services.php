@@ -70,19 +70,19 @@ return static function (ContainerConfigurator $container): void {
         ->args(['$services' => null, '$classes' => []]);
 
     // The per-server ServerFactory services and the ServerProvider are registered
-    // in JsonApiBundle::loadExtension() (one factory per declared server, ADR 0034),
+    // in JsonApiBundle::loadExtension() (one factory per declared server),
     // not here — the server map is only known once the extension config is read.
 
     // The type-keyed registry of standalone relations providers; the
     // ResourceLocatorPass fills its locator argument from the tagged providers
     // (mirroring the ResourceLocator's $services), so a resource-less type can
-    // still declare relations (ADR 0024).
+    // still declare relations.
     $services->set(RelationsRegistry::class)
         ->args(['$providers' => null]);
 
     // The resource-presence-aware metadata lookup the CRUD engine resolves a
     // type's resource/relations through, so a bare serializer/hydrator pair (no
-    // resource) is tolerated without per-type branching (ADR 0021). It sources
+    // resource) is tolerated without per-type branching. It sources
     // relations resource-first then from the RelationsRegistry (autowired).
     $services->set(TypeMetadataResolver::class);
 
@@ -106,7 +106,7 @@ return static function (ContainerConfigurator $container): void {
     // The type-keyed registry of declarative OpenAPI description overrides
     // (#[AsJsonApiResource(description:, operationDescriptions:)], docs/openapi.md)
     // and vendor extensions (extensions:, operationExtensions:, docs/openapi.md)
-    // and operation example overrides (operationExamples:, core ADR 0176);
+    // and operation example overrides (operationExamples:);
     // its arguments are filled by the ResourceDescriptionPass. Descriptions are
     // layered by the MetadataSource beneath each resource's
     // getDescription()/describeOperation() method hooks.
@@ -133,13 +133,13 @@ return static function (ContainerConfigurator $container): void {
         ->arg('$atomicEnabled', '%haddowg_json_api.atomic_operations.enabled%')
         ->arg('$atomicPath', '%haddowg_json_api.atomic_operations.path%')
         // An empty base_uri advertises the server's recorded route mounts as relative
-        // servers (bundle ADR 0121).
+        // servers.
         ->arg('$mountServers', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\OpenApi\Metadata\MountServers::class));
 
     $services->set(\haddowg\JsonApiBundle\OpenApi\Metadata\MountServers::class)
         ->arg('$router', \Symfony\Component\DependencyInjection\Loader\Configurator\service('router')->nullOnInvalid());
 
-    // Custom, non-CRUD actions (bundle ADR 0076). The ActionRegistry resolves an
+    // Custom, non-CRUD actions. The ActionRegistry resolves an
     // ActionDescriptor + its ActionHandlerInterface by the composite key
     // (server, type, scope, path); both its handler service-locator and its
     // descriptor map are filled by the ResourceLocatorPass from the ACTION_TAG
@@ -158,7 +158,7 @@ return static function (ContainerConfigurator $container): void {
 
     // Exposes an #[AsJsonApiAction(asLink: true)] action, or one a resource links through
     // a declared ActionLink, as a security-aware `links` member on its mount type's
-    // resources (bundle ADR 0076): a single shared
+    // resources: a single shared
     // ResourceLinkContributor threaded onto EVERY server's memoized Server (in
     // registerServers), resolving the server per request from `_jsonapi_server` so each
     // server contributes only its own actions. The action map (server → type →
@@ -170,7 +170,7 @@ return static function (ContainerConfigurator $container): void {
         ->arg('$actionsByServerType', []);
 
     // Resolves a type's id encoder + route {id} pattern from its resource's Id
-    // field (ADR 0038). The Doctrine provider/persister decode wire ids through it
+    // field. The Doctrine provider/persister decode wire ids through it
     // (the SPI stays wire-id; the in-memory provider has no encoder so wire ==
     // storage and is untouched); the route loader reads the route pattern. It
     // resolves through the global ResourceLocator (autowired).
@@ -184,13 +184,13 @@ return static function (ContainerConfigurator $container): void {
     // resource⊕relation⊕pivot filter/sort assembly), the 3-tier per-relation
     // paginator chain, and the CollectionCriteria assembly — shared by the
     // related-collection endpoint (the handler) and its include/linkage windowing
-    // twin (RelationshipWindowBatcher), so the logic lives once (bundle ADR 0030).
+    // twin (RelationshipWindowBatcher), so the logic lives once.
     // Autowired into both.
     $services->set(\haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory::class);
 
     // The validator argument is optional: it resolves to the ResourceValidator
     // only when the Symfony Validator bridge is wired (below), else null. The
-    // dispatcher fires the per-operation lifecycle events (bundle ADR 0042); it is
+    // dispatcher fires the per-operation lifecycle events; it is
     // optional too, so the handler is a no-op for hooks when symfony/event-dispatcher
     // is absent.
     $services->set(CrudOperationHandler::class)
@@ -200,28 +200,28 @@ return static function (ContainerConfigurator $container): void {
         // Validator bridge is wired (below), else null — a constrained filter is
         // then inert, matching how the resource validator degrades (docs/data-layer.md).
         ->arg('$filterValues', \Symfony\Component\DependencyInjection\Loader\Configurator\service(FilterValueValidator::class)->nullOnInvalid())
-        // The Relationship Queries profile window seam (bundle ADR 0053): the
+        // The Relationship Queries profile window seam: the
         // per-request pagination holder threaded into the memoized Server (in
         // loadExtension) and a batcher that windows each rendered to-many relation
         // to page 1 of its relatedQuery-ordered/filtered set. Both autowired and
         // always present (the profile parse is gated on negotiation per request).
         ->arg('$windowBatcher', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataProvider\RelationshipWindowBatcher::class))
         ->arg('$relationshipPagination', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipPagination::class))
-        // The per-request relationship-LINKAGE holder (bundle ADR 0053): the batcher
+        // The per-request relationship-LINKAGE holder: the batcher
         // supplies a windowed to-many's page-1 linkage out-of-band through this holder
         // instead of writing it onto the parent property, so a column-sharing bystander
         // relation renders its own membership.
         ->arg('$relationshipLinkage', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipLinkage::class))
-        // The provider-agnostic include batcher (bundle ADR 0035): batch eager-loads a
+        // The provider-agnostic include batcher: batch eager-loads a
         // read's effective ?include tree one query per level through the
         // fetchRelatedCollectionBatch SPI, for every batching provider (Doctrine AND
         // in-memory). Always wired; a relation/provider that cannot batch falls to lazy.
         ->arg('$includeBatcher', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataProvider\RelatedIncludeBatcher::class))
         ->arg('$readRouter', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataProvider\RelatedReadRouter::class))
         // Bound to each operation's server so storage decodes ids with the encoder of
-        // the class that server serves (bundle ADR 0034).
+        // the class that server serves.
         ->arg('$idEncoders', \Symfony\Component\DependencyInjection\Loader\Configurator\service(IdEncoderResolver::class))
-        // The custom-action invoker (bundle ADR 0076): the optional collaborator the
+        // The custom-action invoker: the optional collaborator the
         // CustomActionOperation arm delegates to. Always wired in the bundle (a null
         // would 404 every action); an app with no actions simply registers none.
         ->arg('$actions', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Action\ActionInvoker::class))
@@ -236,9 +236,9 @@ return static function (ContainerConfigurator $container): void {
         ->arg('$router', \Symfony\Component\DependencyInjection\Loader\Configurator\service('router')->nullOnInvalid())
         // Optional PSR logger, threaded into the per-batch AtomicLoopBackend: a
         // deferred After* hook that throws AFTER an atomic batch durably commits is
-        // logged (best-effort) instead of failing the committed batch (bundle ADR 0087).
+        // logged (best-effort) instead of failing the committed batch.
         ->arg('$logger', \Symfony\Component\DependencyInjection\Loader\Configurator\service('logger')->nullOnInvalid())
-        // The per-operation output timezone holder (bundle ADR 0045), set from the
+        // The per-operation output timezone holder, set from the
         // operation's Server so pivot meta renders in the server's zone.
         ->arg('$outputTimezone', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Serializer\RequestScopedOutputTimezone::class));
 
@@ -249,25 +249,25 @@ return static function (ContainerConfigurator $container): void {
     // (ResetInterface, auto-tagged kernel.reset). Shared (one instance per request).
     $services->set(\haddowg\JsonApiBundle\DataPersister\WriteTransactionContext::class);
 
-    // The ?withCount count seam (bundle ADR 0052): a stable per-request holder
+    // The ?withCount count seam: a stable per-request holder
     // threaded into the memoized Server (in loadExtension) and a batcher that fills
     // it. The batcher runs once over a read's fetched page and asks the provider for
     // ONE grouped count per ?withCount-named countable relation (no N+1); the holder
     // is the swappable indirection so the immutable Server can render this page's
     // counts. Both autowired.
     // Routes each relation's document reads (includes, linkage, counts, the window)
-    // to the provider whose reads match the related endpoint (bundle ADR 0035).
+    // to the provider whose reads match the related endpoint.
     $services->set(\haddowg\JsonApiBundle\DataProvider\RelatedReadRouter::class);
     $services->set(\haddowg\JsonApiBundle\DataProvider\ScopedLinkageGuard::class);
     $services->set(\haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipCount::class);
     $services->set(\haddowg\JsonApiBundle\DataProvider\RelationCountBatcher::class);
 
-    // The output timezone of the server handling the current operation (bundle ADR
-    // 0045): the handler sets it per operation so the Doctrine provider can render
+    // The output timezone of the server handling the current operation: the handler sets it per
+    // operation so the Doctrine provider can render
     // pivot DateTime values in the server's zone. Reset between requests (kernel.reset).
     $services->set(\haddowg\JsonApiBundle\Serializer\RequestScopedOutputTimezone::class);
 
-    // The Relationship Queries profile window seam (bundle ADR 0053): a stable
+    // The Relationship Queries profile window seam: a stable
     // per-request holder threaded into the memoized Server (in loadExtension) and a
     // batcher that fills it. The batcher windows each rendered to-many relation of a
     // read's fetched page to page 1 of its relatedQuery-ordered/filtered set (writing
@@ -275,13 +275,13 @@ return static function (ContainerConfigurator $container): void {
     // swappable indirection so the immutable Server can render this request's pages.
     // Both autowired.
     $services->set(\haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipPagination::class);
-    // The Relationship Queries profile LINKAGE seam (bundle ADR 0053): a stable
+    // The Relationship Queries profile LINKAGE seam: a stable
     // per-request holder threaded into the memoized Server (in loadExtension), through
     // which the batcher supplies a windowed to-many's page-1 linkage data WITHOUT
     // writing it onto the parent property — so a relation sharing the backing column
     // renders its own membership rather than the windowed sibling's filtered page.
     $services->set(\haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipLinkage::class)
-        // Supplies a to-one target the caller may not read as none (bundle ADR 0100).
+        // Supplies a to-one target the caller may not read as none.
         ->args([
             '$rows' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Security\ReadableRows::class)->nullOnInvalid(),
         ]);
@@ -290,22 +290,22 @@ return static function (ContainerConfigurator $container): void {
         // only when the Symfony Validator bridge is wired, else null — so a mistyped
         // relatedQuery filter value on the include/linkage path is the endpoint's same
         // 400, and a constrained filter is inert without the validator, exactly as the
-        // handler degrades (bundle ADR 0053 follow-up #2).
+        // handler degrades.
         ->arg('$filterValues', \Symfony\Component\DependencyInjection\Loader\Configurator\service(FilterValueValidator::class)->nullOnInvalid());
 
-    // The include batcher (bundle ADR 0035): a provider-agnostic orchestrator that
+    // The include batcher: a provider-agnostic orchestrator that
     // batch eager-loads a read's effective ?include tree one query per level through
     // the fetchRelatedCollectionBatch SPI (the successor to the Doctrine-only
     // IncludePreloader + shipmonk/doctrine-entity-preloader, now dissolved). Autowired
     // from the DataProviderRegistry, TypeMetadataResolver and ServerProvider; it carries
     // the disable() seam the conformance witness toggles to prove byte-identical output.
-    // Which identifiedBy() MorphTo types need their targets loaded before the pair renders (bundle ADR 0035).
+    // Which identifiedBy() MorphTo types need their targets loaded before the pair renders.
     $services->set(\haddowg\JsonApiBundle\DataProvider\IdentifiedTargetGuard::class);
     $services->set(\haddowg\JsonApiBundle\DataProvider\RelatedIncludeBatcher::class);
 
     // The built-in subscriber that routes each lifecycle event to the resource's
     // overridable hook method (ResourceLifecycleHooksInterface), making the
-    // per-type resource methods sugar over the events (bundle ADR 0042). It is an
+    // per-type resource methods sugar over the events. It is an
     // EventSubscriberInterface, so framework-bundle autoconfigures it as a
     // kernel.event_subscriber.
     $services->set(\haddowg\JsonApiBundle\EventListener\ResourceHookSubscriber::class);
@@ -338,7 +338,7 @@ return static function (ContainerConfigurator $container): void {
         ->tag('routing.loader');
 
     // Records each server's import prefix on its routes once the whole route
-    // collection is loaded (bundle ADR 0121). Dropped when FrameworkBundle's router
+    // collection is loaded. Dropped when FrameworkBundle's router
     // isn't installed.
     $services->set(MountRecordingLoader::class)
         ->decorate('routing.loader', invalidBehavior: ContainerInterface::IGNORE_ON_INVALID_REFERENCE)
@@ -356,7 +356,7 @@ return static function (ContainerConfigurator $container): void {
     // defaults (_jsonapi_type/_jsonapi_server) are populated first, AND after the
     // Security Firewall (priority 8) so an authenticated token is in the token
     // storage before the listener dispatches the operation — the declarative
-    // authorization layer (bundle ADR 0043) evaluates is_granted() at the lifecycle
+    // authorization layer evaluates is_granted() at the lifecycle
     // hooks the dispatch fires, so the firewall must have authenticated first.
     // Priority 4 keeps it after the firewall but well before the controller is
     // resolved. Its schema validator is null unless json_api.schema_validation
@@ -377,7 +377,7 @@ return static function (ContainerConfigurator $container): void {
     // The route-scoped kernel.response listener that emits the declarative cache
     // (gap G7) + deprecation/sunset (gap G16, RFC 8594) headers a resource declares
     // via #[AsJsonApiResource(cacheHeaders/deprecation/sunset)] or the global
-    // json_api.defaults (bundle ADR 0054). It runs on kernel.response so the final
+    // json_api.defaults. It runs on kernel.response so the final
     // Response (data or error) is in hand and its status distinguishes a successful
     // read (cacheable) from an error (never cached). The ResponseHeadersRegistry is
     // registered in loadExtension (seeded with the global defaults; its per-type map
@@ -398,8 +398,8 @@ return static function (ContainerConfigurator $container): void {
             '$httpFoundationFactory' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\Symfony\Bridge\PsrHttpMessage\Factory\HttpFoundationFactory::class),
             '$debug' => '%kernel.debug%',
             '$logger' => \Symfony\Component\DependencyInjection\Loader\Configurator\service('logger')->nullOnInvalid(),
-            // The application-extensible exception → JSON:API-error mappers (bundle
-            // ADR 0003), priority-ordered (mirrors how DOCTRINE_EXTENSION_TAG is
+            // The application-extensible exception → JSON:API-error mappers, priority-ordered
+            // (mirrors how DOCTRINE_EXTENSION_TAG is
             // injected). Consulted only for a throwable that is NOT a core
             // JsonApiExceptionInterface; the config-driven ConfiguredExceptionMapper
             // (registered in loadExtension) sits at the low -1000 fallback priority,
@@ -407,10 +407,10 @@ return static function (ContainerConfigurator $container): void {
             '$mappers' => \Symfony\Component\DependencyInjection\Loader\Configurator\tagged_iterator(JsonApiBundle::EXCEPTION_MAPPER_TAG),
             // Optional Symfony Security collaborators (present only with
             // symfony/security-core), so an AccessDeniedException maps to 401 when
-            // unauthenticated / 403 when authenticated-but-denied (bundle ADR 0043).
+            // unauthenticated / 403 when authenticated-but-denied.
             '$tokenStorage' => \Symfony\Component\DependencyInjection\Loader\Configurator\service('security.token_storage')->nullOnInvalid(),
             '$trustResolver' => \Symfony\Component\DependencyInjection\Loader\Configurator\service('security.authentication.trust_resolver')->nullOnInvalid(),
-            // Tells a 405 on a JSON:API path from one elsewhere (bundle ADR 0003).
+            // Tells a 405 on a JSON:API path from one elsewhere.
             '$router' => \Symfony\Component\DependencyInjection\Loader\Configurator\service('router')->nullOnInvalid(),
         ])
         ->tag('kernel.event_listener', ['event' => 'kernel.exception', 'method' => 'onKernelException', 'priority' => 128]);
@@ -443,8 +443,8 @@ return static function (ContainerConfigurator $container): void {
                 '$pivotAssociations' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataProvider\Doctrine\PivotAssociationResolver::class),
                 // Whether the windowed-include batch runs the bounded ROW_NUMBER/COUNT
                 // OVER native query (true, the default) or the per-parent bounded
-                // fallback (false) — json_api.doctrine.window_functions (bundle ADR
-                // 0065). Defaulted true so a provider wired outside the extension
+                // fallback (false) — json_api.doctrine.window_functions. Defaulted true so a
+                // provider wired outside the extension
                 // (a plain service test) keeps the native path.
                 '$windowFunctions' => '%haddowg_json_api.doctrine.window_functions%',
                 // Author arms for custom FilterInterface / SortInterface types: each
@@ -453,7 +453,7 @@ return static function (ContainerConfigurator $container): void {
                 '$filterArms' => \Symfony\Component\DependencyInjection\Loader\Configurator\tagged_iterator(JsonApiBundle::DOCTRINE_FILTER_ARM_TAG),
                 '$sortArms' => \Symfony\Component\DependencyInjection\Loader\Configurator\tagged_iterator(JsonApiBundle::DOCTRINE_SORT_ARM_TAG),
                 // The current server's output zone, so rendered pivot DateTime values
-                // follow it the way attributes do (bundle ADR 0045).
+                // follow it the way attributes do.
                 '$outputTimezone' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Serializer\RequestScopedOutputTimezone::class),
             ])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG, ['priority' => -128]);

@@ -8,7 +8,7 @@ use Doctrine\ORM\QueryBuilder;
 
 /**
  * The descriptor {@see RelationScope::scopeBatchToParents()} returns for a batched
- * related fetch (Approach B, bundle ADR 0035): the query scoped to a page of
+ * related fetch (Approach B): the query scoped to a page of
  * parents, plus the metadata the caller needs to turn its result into a per-parent
  * partition. Both shapes apply the shared criteria on {@see $relatedAlias}, but they
  * differ in how the materialized result carries the (parent, related) pairing —

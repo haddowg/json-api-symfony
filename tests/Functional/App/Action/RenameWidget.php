@@ -16,7 +16,7 @@ use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 
 /**
  * `POST /actionWidgets/{id}/-actions/rename` — the **decoupled document** witness
- * (bundle ADR 0076, design §3/§10): a `Document`-input action whose `inputType`
+ * (design §3/§10): a `Document`-input action whose `inputType`
  * (`renameCommands`) and response type (`receipts`) BOTH differ from the mount type.
  *
  * The bespoke `renameCommands` command rides in (validated + hydrated into a

@@ -2,7 +2,7 @@
 # there is no Configuration.php). The top-level base_uri/version define the
 # implicit `default` server, so a single-API app needs no `servers:` block.
 #
-# This example declares a second, named `admin` server (ADR 0034) — the minimal
+# This example declares a second, named `admin` server — the minimal
 # multi-server witness. It carries its own base_uri and inherits the top-level
 # version (omitted here). Types join a server via the resource attribute's
 # `server:` argument (AlbumResource on both; UserResource admin-only), and each
@@ -10,7 +10,7 @@
 json_api:
     base_uri: 'https://music.example'
     version: '1.1'
-    # Include safeguard B (bundle ADR 0036): cap the nesting depth of a `?include`
+    # Include safeguard B: cap the nesting depth of a `?include`
     # (relationship hops from the primary resource). The bundle default is 3; set
     # to 2 here so the cap is witnessable — `?include=tracks.album` (depth 2) is
     # allowed, but a depth-3 path is a 400. `0` would be unlimited. A resource's own

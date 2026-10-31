@@ -24,7 +24,7 @@ use haddowg\JsonApi\Server\Server;
  * and its include/linkage twin
  * ({@see RelationshipWindowBatcher}) had each duplicated: the per-relation
  * paginator chain and the resource⊕relation (⊕pivot) filter/sort vocabulary merge
- * that rides a {@see CollectionCriteria} (bundle ADR 0030).
+ * that rides a {@see CollectionCriteria}.
  *
  * A stateless collaborator — it holds no state and reads everything off its
  * arguments, so a single shared instance serves every relation of every request.
@@ -42,7 +42,7 @@ final class RelationCriteriaFactory
      * `pivot.position`) is routed to the `pivot` alias with the prefix stripped
      * ({@see \haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineFilterHandler}
      * strips the leading segment on that alias); any other column targets the root
-     * (the related entity). Bundle ADR 0045.
+     * (the related entity).
      */
     private const string PIVOT_PREFIX = 'pivot.';
 
@@ -93,7 +93,7 @@ final class RelationCriteriaFactory
      * the auto-derived pivot SORT vocabulary ({@see PivotFields::sortsFor()}) when
      * `$includePivotFields`.
      *
-     * Pivot FILTERS are author-declared (bundle ADR 0045): an app declares each pivot
+     * Pivot FILTERS are author-declared: an app declares each pivot
      * filter in {@see RelationInterface::filters()} as a normal core filter whose
      * `column` is `pivot.`-prefixed. Those filters merge on every path, so the boundary
      * is preserved by `$includePivotFields`: when false (the in-memory provider and the
@@ -107,7 +107,7 @@ final class RelationCriteriaFactory
      * order `[...resourceFilters, ...relationFilters]` then keyed by `->key()`.
      * `defaultSort` is the related resource's default order (empty for a polymorphic
      * to-many); the merged vocabulary rides the criteria so both providers' existing
-     * handlers apply it unchanged (ADR 0030).
+     * handlers apply it unchanged.
      *
      * The related endpoint passes the operation's query parameters + request window
      * + `includePivotFields: $pivot`; the windowing batcher passes its synthetic
@@ -146,7 +146,7 @@ final class RelationCriteriaFactory
             // ({@see \haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineDataProvider::pivotQuery()}
             // — the literal alias 'pivot'); every related key resolves to the root.
             // Empty off the pivot path, so the alias-aware applier is inert there and
-            // for the in-memory provider (bundle ADR 0045).
+            // for the in-memory provider.
             $includePivotFields ? $this->pivotAliases($relation) : [],
             // Whether the provider should run the COUNT for this related fetch (G21):
             // the related endpoint passes `true` only when the relation's own paginator
@@ -229,7 +229,7 @@ final class RelationCriteriaFactory
      * an empty `aliasOf`) never see a pivot-column filter: in-memory the requested
      * pivot key stays unrecognised (`400`), and the include/count paths never route a
      * `pivot.`-column to the root alias (a `root.pivot.position` path is not a valid
-     * Doctrine field path). Bundle ADR 0045.
+     * Doctrine field path).
      *
      * @param list<FilterInterface> $filters
      *
@@ -289,7 +289,7 @@ final class RelationCriteriaFactory
      * pivot alias (the key is independent of the column, so the routing keys on the
      * wire key while the column-strip + cast key on the column). Sort aliases still
      * derive from the auto-derived pivot sort vocabulary ({@see PivotFields::sortsFor()},
-     * keyed by the pivot field name): pivot sorts remain zero-config (bundle ADR 0045).
+     * keyed by the pivot field name): pivot sorts remain zero-config.
      *
      * @return array<string, string>
      */

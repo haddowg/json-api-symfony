@@ -14,7 +14,7 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 
 /**
- * Characterizes the {@see ResponseHeadersRegistry} resolution (bundle ADR 0054):
+ * Characterizes the {@see ResponseHeadersRegistry} resolution:
  * the per-type cache/deprecation layered over the global defaults, the
  * per-operation cache override, and the null result when nothing applies.
  */

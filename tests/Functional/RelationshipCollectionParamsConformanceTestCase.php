@@ -12,7 +12,7 @@ use PHPUnit\Framework\Attributes\Test;
  * The queryable to-many relationship (linkage) endpoint
  * `GET /{type}/{id}/relationships/{rel}` as a real filtered/sorted/paginated
  * collection on both providers — the linkage twin of
- * {@see RelatedCollectionParamsConformanceTestCase} (bundle ADR 0030).
+ * {@see RelatedCollectionParamsConformanceTestCase}.
  *
  *  - `?sort=…` / `?filter[…]` scope against the **related** type's vocabulary merged
  *    with the relation's own scoped filters/sorts (the `comments` vocabulary, not the
@@ -61,7 +61,7 @@ abstract class RelationshipCollectionParamsConformanceTestCase extends JsonApiFu
     public function aRelationshipEndpointRendersLinkageOnlyAndNeverACompoundIncluded(): void
     {
         // A relationship endpoint returns linkage only — never a compound `included`
-        // document (core D16 / core ADR 0107). `?include` is not part of its contract:
+        // document (core D16). `?include` is not part of its contract:
         // it is tolerated (not a 400) but inert, and no `included` member is emitted.
         // This locks the linkage-only contract on BOTH providers.
         $response = $this->handle('/articles/1/relationships/comments?include=author');
@@ -192,8 +192,7 @@ abstract class RelationshipCollectionParamsConformanceTestCase extends JsonApiFu
     {
         // `pagedComments` is countable(), so `?withCount=_self_` (under the Countable
         // profile) counts the linkage collection — emitting a `last` link the count-free
-        // default omits. `_self_` is relation-aware on a relationship render (core ADR
-        // 0057 / bundle ADR 0052).
+        // default omits. `_self_` is relation-aware on a relationship render.
         $response = $this->handle(self::BASE_URI . '/articles/1/relationships/pagedComments?withCount=_self_&page[size]=1&page[number]=1', extraServer: [
             'HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . CountableProfile::URI . '"',
         ]);

@@ -11,7 +11,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The query-budget witness for the batched windowed-include path (bundle ADR 0035):
+ * The query-budget witness for the batched windowed-include path:
  * under the Relationship Queries profile, a collection include that windows N
  * relations over M parents issues ONE
  * {@see \haddowg\JsonApiBundle\DataProvider\DataProviderInterface::fetchRelatedCollectionBatch()}
@@ -93,7 +93,7 @@ final class DoctrineWindowedIncludeBudgetTest extends JsonApiFunctionalTestCase
 
         // GET /articles (M = 5 parents) including the to-one `author`, with a relatedQuery
         // filter that excludes some authors (only Ada Lovelace's articles keep their
-        // author). The to-one nulling path (bundle ADR 0053) must match all parents'
+        // author). The to-one nulling path must match all parents'
         // author targets in ONE `relatedToOneMatchesBatch` — a single
         // `SELECT id … FROM author WHERE id IN (…) AND name = …` — NOT a per-parent probe
         // (~M queries). The query count is constant in M.
@@ -156,7 +156,7 @@ final class DoctrineWindowedIncludeBudgetTest extends JsonApiFunctionalTestCase
         // GET /articles?relatedQuery[lazyComments][filter][body]=First! under the profile,
         // WITHOUT including lazyComments. lazyComments is a lazy (links-only-by-default)
         // to-many backed by the `featured_article` association — it does not render data
-        // this request, so it must NOT be windowed (bundle ADR 0053): no
+        // this request, so it must NOT be windowed: no
         // fetchRelatedCollectionBatch, and so ZERO queries against the `featured_article`
         // column. Before the gate this filtered window ran ONE batch query per such
         // relation AND leaked the filtered page onto the lazy property.

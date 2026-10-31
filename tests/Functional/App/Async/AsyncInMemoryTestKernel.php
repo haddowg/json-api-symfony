@@ -26,7 +26,7 @@ use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 /**
  * A kernel whose `articles` writes are accepted asynchronously
  * ({@see AsyncArticlesPersister}) so `POST`/`PATCH` render a `202 Accepted` — the
- * async-write seam witness (bundle ADR 0110). The seeded {@see InMemoryDataProvider}
+ * async-write seam witness. The seeded {@see InMemoryDataProvider}
  * still serves reads (the async `PATCH` loads its target through it), a standalone
  * {@see JobSerializer} renders the `202` job body, and the collection-scope
  * {@see CompleteJobAction} drives the `303 See Other` completion leg.

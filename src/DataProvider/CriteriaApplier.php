@@ -42,14 +42,14 @@ use haddowg\JsonApiBundle\DataProvider\Doctrine\AliasAwareSortHandler;
  * pushes it down through the handler's bundle {@see AliasAwareFilterHandler}/{@see AliasAwareSortHandler}
  * capability on that alias; with an empty map and no `$defaultAlias` every directive
  * routes to the root exactly as before — so every non-pivot fetch path and the entire
- * in-memory provider are byte-identical (bundle ADR 0045). The `$defaultAlias` is the
+ * in-memory provider are byte-identical. The `$defaultAlias` is the
  * count seam: the Doctrine `?withCount` count roots on the parent and joins the
  * related entity as `related`, so it passes `related` as the default alias to apply
  * every related filter on the join — not the parent root — matching the in-memory
- * witness's per-parent filtered count (bundle ADR 0052). An explicit per-key
+ * witness's per-parent filtered count. An explicit per-key
  * `aliasOf` entry still wins over `$defaultAlias`. Sorts do not compose commutatively,
  * so an empty map with no `$defaultAlias` keeps the single composite handler call (the
- * in-memory stable multi-key sort + core ADR 0016) while a non-empty map or a
+ * in-memory stable multi-key sort) while a non-empty map or a
  * `$defaultAlias` applies the directives one at a time in request order across the
  * resolved aliases, reproducing the pivot path's cross-alias `ORDER BY` exactly.
  */
@@ -114,7 +114,7 @@ final class CriteriaApplier
             // (only the Doctrine pivot path does), else to the caller's
             // `$defaultAlias` when one is given (the Doctrine ?withCount count
             // applies every related filter on the `related` join alias, not the
-            // `parent` root, ADR 0052), else to the query root through the unchanged
+            // `parent` root), else to the query root through the unchanged
             // apply() — every non-pivot fetch path and the whole in-memory provider.
             $alias = $criteria->aliasOf[$key] ?? $defaultAlias;
             if ($alias === null) {
@@ -160,10 +160,10 @@ final class CriteriaApplier
         // a per-key `aliasOf` entry; but when the caller supplies a `$defaultAlias`
         // the default sort routes there too (the batched parent-rooted related fetch
         // roots on the PARENT and applies the related resource's default order on the
-        // `related` join alias — bundle ADR 0035), so the default order is not resolved
+        // `related` join alias), so the default order is not resolved
         // against the wrong root. With no `$defaultAlias` (every other path) the default
         // routes to the query root through the composite call exactly as before. A count
-        // carries no sort and no default order (sort is irrelevant to a count, ADR 0052),
+        // carries no sort and no default order (sort is irrelevant to a count),
         // so this returns the query untouched on that path.
         if ($requested === []) {
             $directives = $this->defaultDirectives($criteria);
@@ -207,7 +207,7 @@ final class CriteriaApplier
         // Empty aliasOf and no caller-supplied default alias — every non-pivot fetch
         // path and the whole in-memory provider: one composite call, most significant
         // directive first. Sorts do not compose commutatively, so the handler owns the
-        // combination (core ADR 0016); the in-memory handler does its one stable
+        // combination; the in-memory handler does its one stable
         // multi-key sort here.
         if ($criteria->aliasOf === [] && $defaultAlias === null) {
             return $handler->apply(\array_map(static fn(array $pair): SortDirective => $pair[1], $directives), $query);

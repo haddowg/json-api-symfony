@@ -5,4 +5,4 @@ A to-many's related endpoint and relationship endpoint are collections at parity
 ## Consequences
 
 - Doctrine scopes by the inverse foreign key when the related entity holds it, and by an `IN` subquery otherwise (owning side, many-to-many).
-- The relationship endpoint's page reaches core out of band (ADR 0053), never written onto the parent.
+- The relationship endpoint's page reaches core out of band (ADR 0030), never written onto the parent.

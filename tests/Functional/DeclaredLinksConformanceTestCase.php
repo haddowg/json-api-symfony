@@ -10,7 +10,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Declared resource links (core ADR 0178), run against the in-memory provider
+ * Declared resource links, run against the in-memory provider
  * ({@see InMemoryDeclaredLinksTest}) and the Doctrine provider
  * ({@see DoctrineDeclaredLinksTest}) on the output-timezone kernels.
  *

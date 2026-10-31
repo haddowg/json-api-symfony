@@ -129,7 +129,7 @@ abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTest
     public function aRelationshipWithoutTheLoadStatePolicyAlwaysEmitsData(): void
     {
         // Regression: the `comments` to-many opts into eager linkage with
-        // `withData()` (a to-many is lazy by default since core ADR 0025), so its
+        // `withData()` (a to-many is lazy by default), so its
         // `data` member is always present on both providers regardless of any
         // injected load-state predicate — `withData()` overrides the lazy default.
         $relationships = $this->relationshipsOf($this->fetchResource('/articles/1'));
@@ -150,8 +150,8 @@ abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTest
     #[Group('spec:fetching-relationships')]
     public function aToOneRelationshipUnderTheLoadStatePolicyStillEmitsData(): void
     {
-        // `lazyAuthor` is a `BelongsTo` to-one, EAGER by default (core ADR 0025:
-        // its id is on the owner). Its `data` is always present — mirroring the
+        // `lazyAuthor` is a `BelongsTo` to-one, EAGER by default
+        // (its id is on the owner). Its `data` is always present — mirroring the
         // Doctrine predicate's "a to-one is always loaded" verdict (a lazy ManyToOne
         // proxy carries its identifier, so emitting it needs no DB load); the
         // in-memory kernel injects no predicate at all. So on BOTH providers the

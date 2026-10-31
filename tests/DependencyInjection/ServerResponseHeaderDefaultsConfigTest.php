@@ -13,8 +13,8 @@ use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 
 /**
- * How `json_api.servers.<name>.defaults` reaches the {@see ResponseHeadersRegistry}
- * (bundle ADR 0054), and that it rejects what the global `json_api.defaults` rejects.
+ * How `json_api.servers.<name>.defaults` reaches the {@see ResponseHeadersRegistry}, and that
+ * it rejects what the global `json_api.defaults` rejects.
  */
 final class ServerResponseHeaderDefaultsConfigTest extends TestCase
 {

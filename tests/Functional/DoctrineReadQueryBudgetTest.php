@@ -44,8 +44,8 @@ final class DoctrineReadQueryBudgetTest extends JsonApiFunctionalTestCase
         // preloader batches the INCLUDED comments in ONE query across the page
         // (SELECT … FROM comment WHERE article_id IN (…)), so the include load is O(1)
         // in the parent count — a per-parent preloader regression would emit five
-        // `WHERE article_id = ?` loads instead. (Since the lazy-by-default flip, core
-        // ADR 0025, a non-included to-many renders links-only and forces no per-parent
+        // `WHERE article_id = ?` loads instead. (Since the lazy-by-default flip in
+        // core, a non-included to-many renders links-only and forces no per-parent
         // load at all — see the Finding-2 witness below — so this isolates the include
         // batch by its `IN (…)` fingerprint.)
         $response = $this->handle(self::BASE_URI . '/articles?include=comments');
@@ -140,7 +140,7 @@ final class DoctrineReadQueryBudgetTest extends JsonApiFunctionalTestCase
         $logger->reset();
 
         // GET /articles (5 parents) — a plain collection, no `?include`. The Finding-2
-        // fix (core ADR 0025): a to-many is lazy by default, so a non-included to-many
+        // fix: a to-many is lazy by default, so a non-included to-many
         // renders its links only and never initialises its collection just to serialize
         // identifiers. The `pinnedComments` relation is an inverse one-to-many keyed by
         // the UNIQUE `pinned_article_id` FK on the comment table, so a per-parent

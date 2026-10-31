@@ -10,7 +10,7 @@ use PHPUnit\Framework\Attributes\Test;
 /**
  * The `opaque-` types are served by a provider that neither declares its scope nor
  * batches, so the bundle treats them as scoped and loads their rows through it, per
- * parent and member type, rather than off the model (bundle ADR 0035).
+ * parent and member type, rather than off the model.
  */
 final class IncludeScopingOpaqueProviderTest extends JsonApiFunctionalTestCase
 {

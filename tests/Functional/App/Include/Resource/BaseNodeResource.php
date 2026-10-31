@@ -14,7 +14,7 @@ use haddowg\JsonApi\Resource\Field\Str;
  * and Doctrine-sqlite). A node is wired into a circular `next` chain
  * (n1 → n2 → n3 → n1), and `next` is **default-included**, so the default cascade
  * would recurse forever without the bundle's max-include-depth cap — the cycle the
- * cap must terminate (bundle ADR 0036).
+ * cap must terminate.
  *
  * `prev` is the back-reference marked `cannotBeIncluded()` (Capability A): a
  * `?include` naming it is a `400`, and the default cascade never auto-includes it.

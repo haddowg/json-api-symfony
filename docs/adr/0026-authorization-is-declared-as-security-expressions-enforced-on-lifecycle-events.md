@@ -6,4 +6,4 @@ A resource declares Symfony ExpressionLanguage strings (`security`, and per oper
 
 - `security` cascades to every operation including the collection read, which has no subject, so a per-object default needs an explicit `securityList`.
 - A declared expression nothing can evaluate (no `symfony/security-core`, `symfony/expression-language` or firewall) fails the build instead of running ungated.
-- Which rows a list holds is a query scope (ADR 0008), not a gate.
+- Which rows a list holds is a query scope (ADR 0007), not a gate.

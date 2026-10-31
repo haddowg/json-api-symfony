@@ -16,7 +16,7 @@ use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
  * aggregate schema document the {@see \haddowg\JsonApiBundle\Controller\JsonSchemaController}
  * serves) at `cache:warmup` — every prod deploy — into the cache dir, so the
  * controllers serve an `O(file read)` artifact and never build per request (design
- * D17, the bundle ADR 0077 warmer).
+ * D17).
  *
  * It is deliberately **optional** ({@see isOptional()} returns `true`): a docs build
  * failure (a misconfigured resource, an exotic paginator) must never break a deploy,
@@ -40,7 +40,7 @@ use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
  *
  * Beside each JSON artifact it writes the artifact's hash (the served ETag), the
  * document as serialized value objects, which a request with serve decorators loads
- * instead of rebuilding (bundle ADR 0077), and the operations the document carries,
+ * instead of rebuilding, and the operations the document carries,
  * which each link's `describedby` is checked against ({@see DescribedByResolverProvider}).
  * A document whose values hold an object outside `json_api.openapi.serve_allowed_classes`
  * gets no serialized copy and a logged warning.

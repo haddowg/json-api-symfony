@@ -90,7 +90,7 @@ abstract class AbstractDataProvider implements DataProviderInterface, ScopesRela
      * relation off the parent is what it would return. A provider whose related reads
      * filter anything (tenancy, soft-delete, visibility) MUST return `true` here, so the
      * {@see RelatedIncludeBatcher} loads included and linkage data through it rather than
-     * off the parent (bundle ADR 0035).
+     * off the parent.
      */
     public function scopesRelatedReads(RelationInterface $relation): bool
     {

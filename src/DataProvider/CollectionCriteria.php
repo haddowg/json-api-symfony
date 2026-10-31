@@ -41,7 +41,7 @@ use haddowg\JsonApi\Resource\Sort\SortInterface;
  *   Doctrine pivot related-collection path (the pivot keys → the `pivot` join
  *   alias, see {@see RelationCriteriaFactory}); it is empty on every other Doctrine
  *   path and on EVERY in-memory path, so the alias-aware branches are provably inert
- *   off the pivot path (bundle ADR 0045).
+ *   off the pivot path.
  * - {@see $wantsCount} — whether the handler resolved a `COUNT` for this windowed
  *   fetch: `true` when the paginator's `withCount()` author opt-in flipped it, or
  *   when `?withCount=_self_` was requested under a `countable()` resource/relation
@@ -49,7 +49,7 @@ use haddowg\JsonApi\Resource\Sort\SortInterface;
  *   `meta.page.total`/`links.last`) iff `true`, else fetches count-free (the
  *   window+1 probe → `hasMore`, no total). Defaulted `false` so every existing
  *   construction site stays count-free unless the handler explicitly asks for a
- *   count (bundle ADR 0052).
+ *   count.
  */
 final readonly class CollectionCriteria
 {

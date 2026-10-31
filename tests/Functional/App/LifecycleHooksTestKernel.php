@@ -22,7 +22,7 @@ use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
 /**
- * The lifecycle-hooks witness kernel (bundle ADR 0042): two equivalent widget
+ * The lifecycle-hooks witness kernel: two equivalent widget
  * types over the in-memory provider/persister — `hookWidgets` observed through the
  * cross-cutting {@see RecordingHookSubscriber} (the **event** mechanism) and
  * `hookableWidgets` whose resource implements

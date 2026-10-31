@@ -12,7 +12,7 @@ use PHPUnit\Framework\Attributes\Test;
 /**
  * A document whose values hold an object outside the serve artifact's allow-list: the
  * warmer logs a warning naming the class and the config key, writes no artifact, and
- * decorated requests build the document instead (bundle ADR 0077).
+ * decorated requests build the document instead.
  */
 final class OpenApiServeObjectValuesTest extends OpenApiServeTestCase
 {

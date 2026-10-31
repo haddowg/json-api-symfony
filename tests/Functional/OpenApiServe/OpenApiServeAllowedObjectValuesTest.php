@@ -10,7 +10,7 @@ use PHPUnit\Framework\Attributes\Test;
 
 /**
  * With the value's class in `json_api.openapi.serve_allowed_classes` the warmer caches the
- * document for serve decorators as usual (bundle ADR 0077).
+ * document for serve decorators as usual.
  */
 final class OpenApiServeAllowedObjectValuesTest extends OpenApiServeTestCase
 {

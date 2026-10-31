@@ -20,7 +20,7 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 /**
- * The in-memory half of the fail-loud eager-load validation pair (bundle ADR 0035):
+ * The in-memory half of the fail-loud eager-load validation pair:
  * registers ONE subject `products` resource (named via {@see $subjectResource}, set
  * before boot) plus the related `brands` / `regions` types, so the
  * {@see \haddowg\JsonApiBundle\Serializer\EagerLoadWarmer} can be invoked from the test

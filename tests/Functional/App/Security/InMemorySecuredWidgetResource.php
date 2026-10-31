@@ -16,7 +16,7 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
  * The in-memory `securedWidgets` resource: a `ROLE_USER` read default with a
  * `ROLE_ADMIN` create override, the in-memory twin of the Doctrine
  * {@see \haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\Security\SecuredWidgetResource}
- * — the witness that declarative authorization (bundle ADR 0043) is
+ * — the witness that declarative authorization is
  * provider-agnostic.
  *
  * A self-referential `partner` to-one relation gives the read-gated resource a related
@@ -24,8 +24,8 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
  * suite can prove the read gate covers those endpoints too (a read-gated resource is
  * not reachable via its relationship endpoints).
  *
- * Two further self-relations witness **per-relation security** (core ADR 0099 / bundle
- * ADR 0100) — a relation authorized independently of its parent. All three share the
+ * Two further self-relations witness **per-relation security** — a relation authorized
+ * independently of its parent. All three share the
  * `partner` backing (the linkage is identical); only the gate differs:
  *  - `publicPartner` declares `security(read: false)` — explicitly PUBLIC, so its read
  *    endpoints are reachable even unauthenticated, MORE permissive than the

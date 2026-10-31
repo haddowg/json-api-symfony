@@ -15,7 +15,7 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 
 /**
- * OAuth scope enforcement (core ADRs 0181 to 0183), run against the in-memory provider
+ * OAuth scope enforcement, run against the in-memory provider
  * ({@see InMemoryScopesTest}) and the Doctrine provider ({@see DoctrineScopesTest}).
  *
  * The grant comes from the `X-Granted-Scopes` header; a request without it is not

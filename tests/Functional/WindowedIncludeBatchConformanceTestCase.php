@@ -11,8 +11,8 @@ use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * The acceptance suite for the bounded ROW_NUMBER windowed-include batch (bundle ADR
- * 0065), run identically against the in-memory witness
+ * The acceptance suite for the bounded ROW_NUMBER windowed-include batch, run identically
+ * against the in-memory witness
  * ({@see InMemoryWindowedIncludeBatchTest}), the Doctrine native path with
  * `json_api.doctrine.window_functions: true` ({@see DoctrineWindowedIncludeBatchOnTest}),
  * and the Doctrine per-parent fallback with it `false`

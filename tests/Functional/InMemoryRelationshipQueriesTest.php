@@ -9,8 +9,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\JsonApiTestKernel;
 /**
  * {@see RelationshipQueriesConformanceTestCase} against the in-memory provider: a
  * relationship is windowed to page 1 of its relatedQuery-ordered/filtered set by
- * reading the related objects off the parent and applying the criteria in PHP
- * (bundle ADR 0053).
+ * reading the related objects off the parent and applying the criteria in PHP.
  */
 final class InMemoryRelationshipQueriesTest extends RelationshipQueriesConformanceTestCase
 {

@@ -10,7 +10,7 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\RouterInterface;
 
 /**
- * The multi-server witness (bundle ADR 0034) for the example app: the implicit
+ * The multi-server witness for the example app: the implicit
  * `default` server (top-level `base_uri`, `https://music.example`) plus a named
  * `admin` server (its own `base_uri`, `https://admin.music.example/admin`), declared in
  * `config/packages/json_api.yaml` and mounted by the two per-server imports in

@@ -16,7 +16,7 @@ use haddowg\JsonApi\Resource\Field\Str;
  * `?include=node.tag` are a `400` — even though `next` and `tag` are themselves
  * includable from `nodes`' own root. This is the headline a per-relation
  * `cannotBeIncluded()` (Capability A) cannot express: a path forbidden ONLY when
- * reached as a nested path from this parent (bundle ADR 0036).
+ * reached as a nested path from this parent.
  *
  * The whitelist is evaluated once against this primary/root resource and governs
  * the whole nested tree, so it does not need to enumerate `node.*` — listing only

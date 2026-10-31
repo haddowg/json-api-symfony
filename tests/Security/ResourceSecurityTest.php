@@ -11,7 +11,7 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Characterizes the per-operation fallback of a {@see ResourceSecurity} expression
- * set (bundle ADR 0043): each operation resolves to its override, else the default;
+ * set: each operation resolves to its override, else the default;
  * a fully-null set is empty, so the registry never gates such a type.
  */
 final class ResourceSecurityTest extends TestCase

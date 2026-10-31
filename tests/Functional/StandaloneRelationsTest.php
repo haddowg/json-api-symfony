@@ -10,7 +10,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\Routing\RouterInterface;
 
 /**
- * The standalone-relations witness (ADR 0024): the resource-less `posts` type
+ * The standalone-relations witness: the resource-less `posts` type
  * declares its relations via `#[AsJsonApiRelations]` on a
  * {@see \haddowg\JsonApiBundle\Server\RelationsProviderInterface} class, with no
  * {@see \haddowg\JsonApi\Resource\AbstractResource}. Its serializer renders those

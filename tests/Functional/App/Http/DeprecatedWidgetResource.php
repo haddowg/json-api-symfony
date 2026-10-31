@@ -10,7 +10,7 @@ use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 
 /**
- * The deprecation/sunset witness (bundle ADR 0054, gap G16): a bare
+ * The deprecation/sunset witness (gap G16): a bare
  * `Deprecation` header plus a `Sunset` HTTP-date and a companion sunset `Link` —
  * emitted on every response for the type (reads and writes), not just GETs.
  */

@@ -206,8 +206,8 @@ dual-provider
 [`RelatedCursorConformanceTestCase`](../tests/Functional/RelatedCursorConformanceTestCase.php)
 asserts this over the `cursorShelves` → `widgets` fixture.
 
-A **pivot-backed `belongsToMany`** related endpoint pages by cursor too (bundle
-ADR 0063). Over the Doctrine provider the keyset executes as the same single
+A **pivot-backed `belongsToMany`** related endpoint pages by cursor too.
+Over the Doctrine provider the keyset executes as the same single
 association-entity query that reads the pivot values, so each member still
 renders its `meta.pivot` and a **pivot field is a sortable keyset column** —
 `?sort=position` walks the pivot column with the far entity's primary key as the
@@ -222,8 +222,8 @@ asserts both halves over the `cursorShelves` → `pivotWidgets` fixture.
 ### On a relationship (linkage) endpoint
 
 The relationship endpoint (`GET /{type}/{id}/relationships/{rel}`) windows by
-cursor under the same relation-declared (or inherited) `CursorPaginator` (bundle
-ADR 0063). The linkage `data` is the keyset page of resource **identifiers**, and
+cursor under the same relation-declared (or inherited) `CursorPaginator`.
+The linkage `data` is the keyset page of resource **identifiers**, and
 the boundary-cursor links ride the document's `links` at the relationship URL —
 `first`, `prev` (`page[before]=…`) and `next` (`page[after]=…`), never `last`
 (count-free by design). The body stays **links-only**: a linkage document carries

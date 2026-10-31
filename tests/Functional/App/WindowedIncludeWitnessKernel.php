@@ -22,8 +22,8 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 /**
- * The in-memory GROUND-TRUTH kernel for the windowed-include-batch conformance (bundle
- * ADR 0065): the article graph served by {@see InMemoryDataProvider}s seeded with the
+ * The in-memory GROUND-TRUTH kernel for the windowed-include-batch conformance: the article
+ * graph served by {@see InMemoryDataProvider}s seeded with the
  * SAME large relation the Doctrine kernels seed
  * ({@see WindowedProviderFactory}). Every conformance assertion runs identically here and
  * against the Doctrine on/off kernels, so the native ROW_NUMBER batch and the per-parent

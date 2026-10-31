@@ -15,7 +15,7 @@ use haddowg\JsonApi\Collection\CollectionResult;
  * types.
  *
  * It **extends** the core {@see CollectionResult} (the moved window-result value
- * object, core ADR 0061), carrying every shape the plain result does — items,
+ * object), carrying every shape the plain result does — items,
  * total, windowed, hasMore — plus the per-member {@see $pivotMap}. The handler's
  * existing pagination/render path therefore reads it as a `CollectionResult`
  * unchanged; {@see collection()} is retained for callers that want the plain view
@@ -29,7 +29,7 @@ use haddowg\JsonApi\Collection\CollectionResult;
  * and windowed the collection.
  *
  * Like {@see CollectionResult}, a non-countable pivot relation paginates
- * **count-free** (bundle ADR 0052): the related-collection endpoint is gated by
+ * **count-free**: the related-collection endpoint is gated by
  * `countable()` alone, so a non-countable `belongsToMany` endpoint runs no `COUNT`,
  * leaves the total null, and signals a further page through `windowed` + `hasMore`
  * (the data layer over-fetches by one). The handler reads those to build a

@@ -75,7 +75,7 @@ final class PolymorphicBoardFactory
         $board2 = new Board('2', 'Image-pinned', $i1, []);
         // Board 3 pins nothing — the empty-polymorphic-to-one witness: a filter on it
         // still 400s (the unrecognised-key error is gated on the filter being present,
-        // not on a target existing — bundle ADR 0053 follow-up #1).
+        // not on a target existing).
         $board3 = new Board('3', 'Empty', null, []);
 
         /** @var array<string, Board> $boards */

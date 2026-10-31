@@ -16,7 +16,7 @@ use Psr\Container\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
- * Characterizes the multi-server {@see ServerProvider} (bundle ADR 0034): it
+ * Characterizes the multi-server {@see ServerProvider}: it
  * resolves a {@see Server} by name through a name → {@see ServerFactory} locator —
  * the implicit `default` and any declared named server — and treats an unknown
  * name as a wiring fault ({@see \LogicException}), not a runtime `404`.

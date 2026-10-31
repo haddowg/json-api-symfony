@@ -16,8 +16,8 @@ use PHPUnit\Framework\Attributes\Test;
  * has **required** constructor arguments, so `new VaultEntity()` would `TypeError`.
  * A create therefore only succeeds because the reference Doctrine persister builds
  * the instance via Doctrine's constructor-less instantiation
- * (`ClassMetadata::newInstance()`), the same mechanism the ORM uses on read
- * (ADR 0029). The schema is created in `afterBoot()`; no seeding is needed.
+ * (`ClassMetadata::newInstance()`), the same mechanism the ORM uses on read. The schema is
+ * created in `afterBoot()`; no seeding is needed.
  */
 final class DoctrineInstantiationTest extends JsonApiFunctionalTestCase
 {

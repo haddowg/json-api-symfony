@@ -13,7 +13,7 @@ use PHPUnit\Framework\Attributes\Test;
  * A configured `base_uri` that carries the server's mount (`/api/v5`) is used
  * verbatim: the recorded mount never adds to it, and the request host never
  * replaces it. Core counts the configured base's path as the mount, so document
- * links carry it once (bundle ADR 0121, core ADR 0087).
+ * links carry it once.
  */
 final class ConfiguredBaseUnderAPrefixTest extends JsonApiFunctionalTestCase
 {

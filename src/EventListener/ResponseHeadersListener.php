@@ -15,7 +15,7 @@ use Symfony\Component\HttpKernel\Event\ResponseEvent;
 
 /**
  * The route-scoped `kernel.response` listener that emits the declarative response
- * headers a JSON:API type declares (bundle ADR 0054):
+ * headers a JSON:API type declares:
  *
  *  - **HTTP cache headers (gap G7)** — the resolved {@see \haddowg\JsonApiBundle\Http\CacheHeaders}
  *    (resource-level + per-operation override, layered over the global
@@ -61,7 +61,7 @@ final class ResponseHeadersListener
             return;
         }
 
-        // Each server emits only what its own resource class declares (bundle ADR 0034).
+        // Each server emits only what its own resource class declares.
         $server = $request->attributes->get('_jsonapi_server');
         $server = \is_string($server) && $server !== '' ? $server : ServerProvider::DEFAULT_SERVER;
 

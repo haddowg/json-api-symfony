@@ -11,8 +11,8 @@ use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * The dual-provider conformance contract for custom / non-CRUD actions (G13, bundle
- * ADR 0076, design §10): identical assertions run against the in-memory kernel
+ * The dual-provider conformance contract for custom / non-CRUD actions (G13,
+ * design §10): identical assertions run against the in-memory kernel
  * ({@see InMemoryCustomActionTest}) and the Doctrine-sqlite kernel
  * ({@see DoctrineCustomActionTest}), so a failure on one provider but not the other
  * localizes to that data layer.
@@ -259,7 +259,7 @@ abstract class CustomActionConformanceTestCase extends JsonApiFunctionalTestCase
     {
         // The `pin` action declares asLink: true with NO security, so its `links.pin`
         // member renders on every rendered actionWidgets resource and resolves to the
-        // action's own route URL (bundle ADR 0076).
+        // action's own route URL.
         $links = $this->linksOf($this->action('/actionWidgets/1', 'GET'));
 
         self::assertArrayHasKey('pin', $links);
@@ -285,7 +285,7 @@ abstract class CustomActionConformanceTestCase extends JsonApiFunctionalTestCase
     {
         // The `archive` action declares asLink: true AND security: ROLE_ADMIN. The link
         // renders ONLY for a requester who would pass the same gate the BeforeActionEvent
-        // uses — present for `admin`, absent for `user` (bundle ADR 0076).
+        // uses — present for `admin`, absent for `user`.
         $adminLinks = $this->linksOf($this->action('/actionWidgets/1', 'GET', null, ['HTTP_AUTHORIZATION' => 'Bearer admin']));
         self::assertArrayHasKey('archive', $adminLinks);
         self::assertStringEndsWith('/actionWidgets/1/-actions/archive', $this->href($adminLinks['archive']));

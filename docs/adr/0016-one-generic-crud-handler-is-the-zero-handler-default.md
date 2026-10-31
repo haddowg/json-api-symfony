@@ -4,4 +4,4 @@ An application gets the whole endpoint set for a type by declaring only a resour
 
 ## Consequences
 
-A decorator sees an Atomic Operations batch as one operation, not each sub-operation (ADR 0087).
+A decorator sees an Atomic Operations batch as one operation, not each sub-operation (ADR 0038).

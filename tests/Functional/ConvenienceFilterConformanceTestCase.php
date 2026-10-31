@@ -8,7 +8,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The convenience filter library acceptance suite (G8b, core ADRs 0075-0076,
+ * The convenience filter library acceptance suite (G8b,
  * docs/doctrine.md): the intent-named string strategies
  * ({@see \haddowg\JsonApi\Resource\Filter\Contains} / `StartsWith` / `EndsWith`)
  * and the structured numeric {@see \haddowg\JsonApi\Resource\Filter\Range},
@@ -164,14 +164,14 @@ abstract class ConvenienceFilterConformanceTestCase extends JsonApiFunctionalTes
     #[Group('spec:fetching-filtering')]
     public function anOrderedRangeBoundNeverMatchesANullColumnOnEitherProvider(): void
     {
-        // Core ADR 0116: an ordered comparison — and a Range bound is a `>=`/`<=` pair —
+        // An ordered comparison — and a Range bound is a `>=`/`<=` pair —
         // against a column whose value is `null` never matches; the row is EXCLUDED,
         // mirroring SQL three-valued logic (a NULL column against a present bound is
         // UNKNOWN) rather than PHP's silent coercion of `null` toward `0`. The `articles`
         // fixtures leave `publishedAt` null on every row, so a present DateRange bound must
         // exclude them ALL — on the in-memory witness AND the Doctrine provider.
         //
-        // This is exactly the divergence the ADR closes: before the fix the in-memory
+        // This is exactly the divergence core closed: before the fix the in-memory
         // `range()` coerced `null <= max` to true and returned every row, diverging from
         // the Doctrine provider (whose SQL `publishedAt <= :max` excludes NULL). The fix
         // reads the raw column before the deserializer and drops a null, so both providers

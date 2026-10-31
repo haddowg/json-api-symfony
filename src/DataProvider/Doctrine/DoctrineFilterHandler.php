@@ -87,7 +87,7 @@ use haddowg\JsonApiBundle\DataProvider\Doctrine\Filter\WhereHasMatching;
  * {@see \haddowg\JsonApiBundle\DataProvider\CriteriaApplier} can push a declared
  * filter down onto a NON-root alias of the query (the pivot related-collection path
  * applies pivot keys on the joined `pivot` alias, related keys on the root, all on
- * the one builder — bundle ADR 0045). `apply()` is `applyOn()` on the query root, so
+ * the one builder). `apply()` is `applyOn()` on the query root, so
  * every non-pivot path stays byte-identical.
  *
  * A custom {@see FilterInterface} the built-ins do not recognise is delegated to a
@@ -751,7 +751,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
     /**
      * Strips a single leading `pivot.` from a declared column WHEN AND ONLY WHEN the
      * filter is applying on the `pivot` join alias — the author-declared pivot-filter
-     * convention (bundle ADR 0045): a filter whose column is `pivot.position` is routed
+     * convention: a filter whose column is `pivot.position` is routed
      * (by the {@see \haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory} aliasOf
      * map) to the `pivot` alias, where the real association-entity column is `position`.
      * Without this strip {@see path()} would build `pivot.pivot.position`. Only the

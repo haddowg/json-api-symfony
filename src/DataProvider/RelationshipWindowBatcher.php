@@ -29,9 +29,9 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
  * relation included at the primary level (default-includes honoured) or one that
  * renders data unconditionally (`withData()`) — of a fetched page of parents to
  * PAGE 1 of the set the Relationship Queries profile's per-relationship sort/filter
- * orders, under the negotiated profile (bundle ADR 0053). A lazy, links-only,
+ * orders, under the negotiated profile. A lazy, links-only,
  * not-included to-many is left untouched: windowing it would waste a fetch and leak
- * the filtered linkage the lazy default omits (bundle ADR 0053 — see
+ * the filtered linkage the lazy default omits (see
  * {@see windowableRelations()}). It is the include/linkage twin of the
  * related-collection ENDPOINT: where the endpoint reads the request's plain
  * `?sort`/`?filter`, this reads the `relatedQuery[<path>][sort|filter]` the profile
@@ -50,11 +50,11 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
  *    sort/filter key is the endpoint's same `400`, and the scoping/count-free vs
  *    countable distinction is reused verbatim) for the WHOLE page in one round-trip;
  *  - per parent, records the page-1 items as a {@see RelationshipLinkage} supplied to
- *    core OUT-OF-BAND (the relationship-linkage seam, core ADR 0083) — NOT written onto
+ *    core OUT-OF-BAND (the relationship-linkage seam) — NOT written onto
  *    the parent's relation property — so the linkage `data` IS page 1 of the
  *    profile-ordered set (the `sort` selects which members land on page 1 — page is out
  *    for includes) WHILE any relation sharing the backing column still renders its own
- *    membership (bundle ADR 0053 — a destructive property write would leak the filtered
+ *    membership (a destructive property write would leak the filtered
  *    page onto a column-sharing bystander, and on Doctrine flip its load-state);
  *  - per parent, builds a {@see RelationshipPagination} carrying the page + the
  *    plain-form (`sort=…&filter[…]=…`) query string, so core emits the relationship
@@ -66,7 +66,7 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
  * {@see DataProviderInterface::fetchRelatedCollectionBatch()} per windowed relation
  * scopes the whole page of parents, so a collection include of N relations over M
  * parents is O(N) provider round-trips, NOT O(M*N) — the per-parent fetch loop is
- * retired (bundle ADR 0035, replacing the per-parent path of bundle ADR 0053). A
+ * retired. A
  * to-one relation, a relation with neither a paginator nor any relatedQuery, and any
  * relation core does not render are left untouched (today's full-collection
  * behaviour).
@@ -90,7 +90,7 @@ final class RelationshipWindowBatcher
         // validates a relatedQuery filter VALUE against the per-relation merged
         // vocabulary at the two points criteria is assembled — to-one nulling and the
         // to-many window — so a mistyped relatedQuery value is the endpoint's same 400
-        // here too (bundle ADR 0053 follow-up #2). Null without the validator, exactly
+        // here too. Null without the validator, exactly
         // as the handler degrades; only RAW client input is validated (docs/data-layer.md).
         private readonly ?\haddowg\JsonApiBundle\Validation\FilterValueValidator $filterValues = null,
     ) {}
@@ -112,13 +112,13 @@ final class RelationshipWindowBatcher
 
         // The monomorphic to-one relations addressed by a filter-only relatedQuery: a
         // relation filter that excludes a to-one's single target nulls the linkage (and
-        // omits the include) — the to-one twin of the windowed to-many (bundle ADR 0053).
+        // omits the include) — the to-one twin of the windowed to-many.
         $toOneFiltered = $this->toOneFilteredRelations($allRelations, $request);
 
-        // Up-front path validation (core ADR 0058 delegates this to the host): every
+        // Up-front path validation (core delegates this to the host): every
         // relatedQuery/rQ path the client addressed MUST resolve to a windowable
         // (monomorphic to-many) relation of the primary type — or a monomorphic to-one
-        // addressed with `[filter]` ONLY (bundle ADR 0053; a `[sort]`/`[page]` on a
+        // addressed with `[filter]` ONLY (a `[sort]`/`[page]` on a
         // to-one stays a 400, a single member has nothing to order or page). An unknown
         // path (a typo, a relation of an included resource via an unhandled dotted path)
         // is the related-collection endpoint's same `400`, with `source.parameter` the
@@ -132,12 +132,12 @@ final class RelationshipWindowBatcher
 
         // Null each filter-excluded to-one's linkage across the page in ONE batched match
         // per relation (no N+1) — runs whether or not any to-many is windowed — supplied
-        // out of band as an empty to-one (bundle ADRs 0053, 0035). It produces no
+        // out of band as an empty to-one. It produces no
         // pagination entry (a to-one has none).
         $excluded = $this->nullExcludedToOnes($server, $type, $parents, $toOneFiltered, $request);
 
         // The to-many relations to window — restricted to those whose linkage DATA renders
-        // for THIS request (bundle ADR 0053): a relation that is included at the primary
+        // for THIS request: a relation that is included at the primary
         // level (honouring default-includes) or renders data unconditionally (`withData()`).
         // A lazy, links-only, not-included to-many is NOT windowed — windowing it would
         // both waste a fetch AND leak, because writing page 1 onto the parent property flips
@@ -148,7 +148,7 @@ final class RelationshipWindowBatcher
 
         // A to-many that is addressed by a relatedQuery sort/filter but NOT windowed (it
         // renders links-only this request) must STILL reject an unknown sort/filter KEY
-        // with the related-collection endpoint's same `400` (bundle ADR 0053): the path
+        // with the related-collection endpoint's same `400`: the path
         // resolves and the key vocabulary is the same whether or not the linkage renders,
         // so a typo'd key is a client error regardless. The window fetch normally surfaces
         // that `400` as a side effect — but a gated relation never fetches, so the keys are
@@ -169,11 +169,11 @@ final class RelationshipWindowBatcher
         }
 
         // ONE batch fetch per windowed relation over the WHOLE page, replacing the
-        // per-parent fetch loop (bundle ADR 0035): a collection include of N windowable
+        // per-parent fetch loop: a collection include of N windowable
         // relations over M parents is O(N) provider round-trips, not O(M*N). For each
         // relation, fetch the page-1 windowed batch once, then
         // record each parent's page-1 linkage + relationship-object pagination — WITHOUT
-        // writing the page onto the parent property (bundle ADR 0053): the page is supplied
+        // writing the page onto the parent property: the page is supplied
         // to core OUT-OF-BAND through the relationship-linkage seam, so a relation sharing
         // the column (a not-windowed lazy bystander, or another windowed relation) renders
         // its OWN membership rather than this relation's filtered page (which a destructive
@@ -189,7 +189,7 @@ final class RelationshipWindowBatcher
             }
         }
 
-        // Nothing writes a to-many column (bundle ADRs 0053, 0035), so the parents are
+        // Nothing writes a to-many column, so the parents are
         // pristine and any bystander renders its true membership; the windowed relations
         // read their pages from the linkage seam.
         return $pages === [] && $linkages === [] && $excluded === []
@@ -206,7 +206,7 @@ final class RelationshipWindowBatcher
      * parent records the page-1 linkage ({@see RelationshipLinkage}, supplied to core
      * out-of-band so the page is NOT written onto the parent property) and its
      * {@see RelationshipPagination} — the batched replacement for the retired
-     * per-parent windowing loop (bundle ADR 0035).
+     * per-parent windowing loop.
      *
      * Returns a `spl_object_id(parent) => ['page' => ?RelationshipPagination,
      * 'linkage' => RelationshipLinkage]` map of the parents whose relation was windowed;
@@ -260,7 +260,7 @@ final class RelationshipWindowBatcher
         // in `?withCount` (`countable()` is the upstream gate for that). A count-free
         // paginator default emits `first`/`prev`/`next` with no total/`last`, exactly
         // like the primary and related-collection endpoints (G21; supersedes the
-        // slice-1 "countable() always counts on include" of bundle ADR 0053). The
+        // earlier "countable() always counts on include"). The
         // `?withCount` flag rides the ORIGINAL request, not the synthetic page request.
         $wantsCount = ($paginator?->wantsCount() ?? false) || $request->countsRelationship($relation->name());
 
@@ -281,7 +281,7 @@ final class RelationshipWindowBatcher
 
         // Validate the relatedQuery filter VALUE against the per-relation merged
         // vocabulary before the batched window fetch, so a mistyped value on the
-        // include/linkage path is the endpoint's same 400 (bundle ADR 0053 follow-up #2).
+        // include/linkage path is the endpoint's same 400.
         // RAW client input only (RelatedQuery::filter); a no-op without the validator.
         $this->filterValues?->validate($relatedQuery->filter, $criteria->filters);
 
@@ -317,8 +317,8 @@ final class RelationshipWindowBatcher
     /**
      * Builds one parent's windowed page-1 result: the {@see RelationshipLinkage} core
      * renders out-of-band (so the page is NOT written onto the parent property, leaving
-     * any column-sharing sibling relation to render its own membership — bundle ADR
-     * 0053) paired with its {@see RelationshipPagination} — or a `null` page when the
+     * any column-sharing sibling relation to render its own membership) paired with its {@see
+     * RelationshipPagination} — or a `null` page when the
      * relation is not sliced (a relatedQuery present but no paginator), in which case the
      * linkage is re-ordered/filtered but carries no pagination links.
      *
@@ -366,8 +366,8 @@ final class RelationshipWindowBatcher
      * A to-many's data renders for this request when it is INCLUDED at the primary
      * level (`isIncludedRelationship('', name, defaults)` — honouring default-includes)
      * OR it renders data UNCONDITIONALLY (`emitsDataOnlyWhenLoaded() === false`, the
-     * `withData()` opt-out). A lazy, links-only, not-included to-many is excluded
-     * (bundle ADR 0053): windowing it would write page 1 onto the parent property,
+     * `withData()` opt-out). A lazy, links-only, not-included to-many is excluded: windowing it
+     * would write page 1 onto the parent property,
      * flipping the storage load-state predicate to "loaded" — so core's
      * {@see \haddowg\JsonApi\Resource\Field\AbstractRelationValue::shouldDeferLinkage()} stops
      * deferring and the relationship leaks the filtered linkage the lazy default omits,
@@ -422,8 +422,8 @@ final class RelationshipWindowBatcher
 
     /**
      * Validates the relatedQuery sort/filter KEYS of every monomorphic to-many that is
-     * addressed by a relatedQuery but is NOT being windowed this request (bundle ADR
-     * 0053): a links-only, not-included to-many that the rendered-data gate excluded
+     * addressed by a relatedQuery but is NOT being windowed this request: a links-only,
+     * not-included to-many that the rendered-data gate excluded
      * from {@see windowableRelations()}. The window fetch normally surfaces an unknown
      * key as the related-collection endpoint's `400` — but a gated relation never
      * fetches, so the keys are validated here directly against the SAME merged
@@ -488,8 +488,8 @@ final class RelationshipWindowBatcher
 
             $this->assertRelatedQueryKeysRecognised($relatedQuery, $criteria);
 
-            // The mistyped-VALUE check rides the same path as the windowed fetch (bundle
-            // ADR 0053 follow-up #2): a links-only relation validates its raw filter
+            // The mistyped-VALUE check rides the same path as the windowed fetch: a links-only
+            // relation validates its raw filter
             // values too, so a bad value is the endpoint's same `400` here as well.
             $this->filterValues?->validate($relatedQuery->filter, $criteria->filters);
         }
@@ -568,7 +568,7 @@ final class RelationshipWindowBatcher
 
     /**
      * The monomorphic TO-ONE relations among `$allRelations` addressed by a
-     * filter-only `relatedQuery`/`rQ` param (bundle ADR 0053): a to-one whose path
+     * filter-only `relatedQuery`/`rQ` param: a to-one whose path
      * carries a `[filter]` op (and whose raw family ops are filter-only — a `[sort]`/
      * `[page]` would have 400'd in {@see validatePaths()}). A polymorphic to-one carries
      * no shared filter vocabulary, so it is excluded.
@@ -595,7 +595,7 @@ final class RelationshipWindowBatcher
 
     /**
      * Nulls each filter-excluded to-one's linkage across the whole page in ONE batched
-     * match per relation (bundle ADR 0053): for each filtered to-one it resolves the
+     * match per relation: for each filtered to-one it resolves the
      * merged filter criteria (related resource ⊕ relation filters, the same vocabulary
      * the related endpoint uses), drives the provider's
      * {@see DataProviderInterface::relatedToOneMatchesBatch()} ONCE over the page (no
@@ -640,8 +640,8 @@ final class RelationshipWindowBatcher
 
             // Validate the relatedQuery filter VALUE against the per-relation merged
             // vocabulary before the batched match runs, so a mistyped value on the
-            // include/linkage path is the endpoint's same 400 (bundle ADR 0053 follow-up
-            // #2). RAW client input only (RelatedQuery::filter), so an author default is
+            // include/linkage path is the endpoint's same 400. RAW client input only
+            // (RelatedQuery::filter), so an author default is
             // never validated (docs/data-layer.md); a no-op without the validator.
             $this->filterValues?->validate($request->getRelatedQuery($relation->name())->filter, $criteria->filters);
 
@@ -665,13 +665,13 @@ final class RelationshipWindowBatcher
      * top-level relations) or a to-one path addressed with a `[sort]`/`[page]` op
      * (a single member has nothing to order or page) — with the related-collection
      * endpoint's same `400`. A monomorphic to-one addressed with `[filter]` ONLY is
-     * ALLOWED through (bundle ADR 0053): its single target is matched against the
+     * ALLOWED through: its single target is matched against the
      * filters and the linkage nulled when excluded.
      *
      * `source.parameter` names the parameter as the client wrote it — the family base
      * it used (`relatedQuery[<path>]` or `rQ[<path>]`), matching core's structural
      * errors rather than normalising to the canonical family. The unknown sort/filter
-     * KEY on a valid path is still validated downstream by the fetch (core ADR 0058
+     * KEY on a valid path is still validated downstream by the fetch (core
      * delegates path/cardinality validation to the host).
      *
      * Core's `parseRelatedQueries()` captures only `sort`+`filter` ops and silently
@@ -697,7 +697,7 @@ final class RelationshipWindowBatcher
         // Validate the union of the PARSED paths (sort/filter ops) and the RAW family
         // paths: core's parser drops a `[page]` op, so a page-only path is invisible to
         // getRelatedQueryPaths() — but a `[page]`-on-to-one must still 400, so the raw
-        // family is scanned too (bundle ADR 0053). A path's raw op set decides a to-one's
+        // family is scanned too. A path's raw op set decides a to-one's
         // fate: filter-only passes, any sort/page is rejected.
         $rawOps = $this->rawPathOps($request);
         $rawFamilies = $this->rawPathFamilies($request);
@@ -845,8 +845,8 @@ final class RelationshipWindowBatcher
         // per-parent boundary tokens (an include is always a FIRST cursor page — no
         // cursor token rides an include — so `hasPrevious` is false and `prev` is
         // omitted), so render through the paginator's cursor path carrying the minted
-        // `next` token + `hasMore`, mirroring the primary/related cursor render (core
-        // ADR 0063). `from`/`to` are the wire ids of the first/last rendered rows — the
+        // `next` token + `hasMore`, mirroring the primary/related cursor render. `from`/`to`
+        // are the wire ids of the first/last rendered rows — the
         // related serializer is resolved only here (a cursor-resolved relation's related
         // type is always servable), never eagerly for every windowed relation.
         if ($result instanceof CursorCollectionResult && $paginator instanceof CursorPaginator) {

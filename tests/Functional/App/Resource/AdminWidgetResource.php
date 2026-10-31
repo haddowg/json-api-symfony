@@ -11,7 +11,7 @@ use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 
 /**
- * The admin-only resource of the multi-server witness (ADR 0034): exposed on the
+ * The admin-only resource of the multi-server witness: exposed on the
  * named `admin` server alone (`server: 'admin'`), so its routes mount only under
  * the admin import's `/admin` prefix.
  */

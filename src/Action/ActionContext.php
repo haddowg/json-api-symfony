@@ -17,7 +17,7 @@ use haddowg\JsonApi\Server\ResolvingServerInterface;
 
 /**
  * The resolved context handed to an {@see ActionHandlerInterface::handle()}
- * (bundle ADR 0076, design §4). It carries everything the handler needs without
+ * (design §4). It carries everything the handler needs without
  * threading the server: the resolving {@see ResolvingServerInterface}, the
  * {@see ActionDescriptor}, the resolved {@see $entity} (resource scope; `null` for
  * collection scope), the hydrated {@see $input} (Document mode; `null` otherwise),

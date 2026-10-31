@@ -14,7 +14,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The declared links (core ADR 0178): `albums` declares a bare `store` link, and
+ * The declared links: `albums` declares a bare `store` link, and
  * `tracks` a `preview` link object with a media type and two meta members. Tracks are
  * serialized by {@see \haddowg\JsonApiBundle\Examples\MusicCatalog\Serializer\TrackSerializer},
  * which renders the same declaration, and the pivot related endpoint wraps that

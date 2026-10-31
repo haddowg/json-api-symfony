@@ -11,13 +11,12 @@ use haddowg\JsonApi\Schema\Relationship\RelationshipPagination;
 use haddowg\JsonApi\Serializer\RelationshipPaginationInterface;
 
 /**
- * The bundle's fill of core's {@see RelationshipPaginationInterface} seam (core
- * ADR 0058): a render-time lookup over a map the
+ * The bundle's fill of core's {@see RelationshipPaginationInterface} seam: a render-time lookup
+ * over a map the
  * {@see \haddowg\JsonApiBundle\DataProvider\RelationshipWindowBatcher} pre-computed
  * for the fetched page of parents under the Relationship Queries profile, so the
  * relationship-object pagination links core renders for a rendered to-many read a
- * pre-built page rather than triggering a per-object query at render time (bundle
- * ADR 0053).
+ * pre-built page rather than triggering a per-object query at render time.
  *
  * Keyed by the parent's object identity ({@see \spl_object_id()}) then by relation
  * name — exactly as {@see BatchedRelationshipCount} is — because the very object

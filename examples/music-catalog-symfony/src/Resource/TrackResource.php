@@ -34,7 +34,7 @@ use Symfony\Component\Clock\Clock;
 /**
  * The `tracks` resource type, mapped to its backing {@see Track} entity.
  *
- * It is the **serializer-override witness** (ADR 0024): `serializer:
+ * It is the **serializer-override witness**: `serializer:
  * TrackSerializer::class` delegates reads to a hand-written serializer (with a
  * bound constructor arg, proving DI resolution) while this resource still hydrates
  * writes — read and write capabilities resolved independently.
@@ -93,10 +93,10 @@ final class TrackResource extends AbstractResource
             BelongsTo::make('album', 'albums'),
             BelongsToMany::make('playlists', 'playlists')
                 ->cannotReplace()
-                // Countable (bundle ADR 0052) so the server-default-fallback related
+                // Countable so the server-default-fallback related
                 // endpoint still emits a total — the existing example asserts one.
                 ->countable()
-                // A to-many is lazy by default (core ADR 0025); `withData()` opts this
+                // A to-many is lazy by default; `withData()` opts this
                 // one back to EAGER so its linkage identifiers render on a track read —
                 // the deliberate contrast with AlbumResource's lazy `tracks`.
                 ->withData(),
@@ -162,8 +162,8 @@ final class TrackResource extends AbstractResource
         // third make() argument). `explicit` coerces to a real bool, defaulting to
         // false when absent. `genres` matches a membership set.
         //
-        // `explicit` also declares a `->boolean()` value constraint (core ADR 0055,
-        // docs/data-layer.md): a client-supplied `filter[explicit]` must be a boolean
+        // `explicit` also declares a `->boolean()` value constraint
+        // (docs/data-layer.md): a client-supplied `filter[explicit]` must be a boolean
         // wire form (`true`/`false`/`1`/`0`), so `filter[explicit]=banana` is a clean
         // `400` (`FILTER_VALUE_INVALID`, `source.parameter`) on the primary
         // collection rather than silently coercing to `false` and mis-matching. The

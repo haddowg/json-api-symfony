@@ -9,8 +9,8 @@ use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Str;
 
 /**
- * The leaf related `regions` of the fail-loud eager-load validation fixture (bundle
- * ADR 0035): the type a {@see EagerBrandResource}'s to-one `region` points at, so the
+ * The leaf related `regions` of the fail-loud eager-load validation fixture: the type a {@see
+ * EagerBrandResource}'s to-one `region` points at, so the
  * two-segment ancestor path `tags.region` resolves to a real second-level type.
  */
 final class EagerRegionResource extends AbstractResource

@@ -11,7 +11,7 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 use haddowg\JsonApiBundle\Operation\Operation;
 
 /**
- * The create-only witness for operation exposure (ADR 0024): a `signals` resource
+ * The create-only witness for operation exposure: a `signals` resource
  * that declares only {@see Operation::Create}, so the route loader emits exactly
  * `POST /signals` and nothing else — no read/update/delete routes. `name` is
  * required, so a valid POST body must carry it.

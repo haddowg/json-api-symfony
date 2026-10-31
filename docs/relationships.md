@@ -1117,9 +1117,7 @@ writing a flattened attribute through a hidden target is a `422`
 
 A relation whose types are unscoped keeps resolving ids straight through the persister,
 unchecked. A polymorphic relation checks each id against its own type's scope, so a hidden
-id is a `404` and a replace keeps the hidden current members attached, as above. The
-decision is recorded in
-[ADR 0126](adr/0126-written-linkage-resolves-through-the-related-endpoints-scope.md).
+id is a `404` and a replace keeps the hidden current members attached, as above.
 
 ## Polymorphic relationships
 
@@ -1140,8 +1138,7 @@ over several types. The OpenAPI document projects it as a one-member union and
 advertises the same parameters, so adding a second type later changes neither the
 document's shapes nor what a request may send. The members still load as one query
 while there is one type, so the Doctrine provider serves a single-type `MorphToMany`
-without a custom provider
-([ADR 0032](adr/0032-polymorphic-related-endpoints.md)).
+without a custom provider.
 
 The documented `include` enum follows the same rule. It lists `writer` but no path
 through it, so `writer.agency` is not in the parent's enum and `GET /{type}/{id}/writer`
@@ -1219,8 +1216,7 @@ discriminates by class in `getType()`, as the build check requires for any `Morp
 provider that loads the targets for you implements `FetchesByIdsInterface`
 (see [custom providers → loading many rows by id](custom-data-providers.md#loading-many-rows-by-id)).
 Writes still go through `fillUsing()`, shown below in
-[relations written by `fillUsing()`](#relations-written-by-fillusing)
-([ADR 0035](adr/0035-doctrine-include-batch-preloading.md)).
+[relations written by `fillUsing()`](#relations-written-by-fillusing).
 
 ### Polymorphic to-many (`MorphToMany`)
 
