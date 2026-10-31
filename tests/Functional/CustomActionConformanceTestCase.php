@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use haddowg\JsonApi\OpenApi\GeneratorContract;
 use haddowg\JsonApiBundle\OpenApi\DocumentFactory;
 use haddowg\JsonApiBundle\Tests\Functional\App\Action\DownloadWidget;
 use PHPUnit\Framework\Attributes\Group;
@@ -520,9 +521,9 @@ abstract class CustomActionConformanceTestCase extends JsonApiFunctionalTestCase
         self::assertIsArray($publish);
         self::assertArrayNotHasKey('x-safety', $publish);
 
-        // Safety is tier 15, but the shared links components raised the baseline to 18.
+        // The safety tier sits below the baseline, so the document carries the baseline.
         $contract = self::at($document, 'info', 'x-generator', 'contract');
-        self::assertSame(18, $contract);
+        self::assertSame(GeneratorContract::BASELINE, $contract);
     }
 
     #[Test]
@@ -640,7 +641,7 @@ abstract class CustomActionConformanceTestCase extends JsonApiFunctionalTestCase
         self::assertSame('uri-reference', self::at($responses, '303', 'headers', 'Location', 'schema', 'format'));
         self::assertNotNull(self::at($responses, '200', 'headers', 'Cache-Control'));
         self::assertNotNull(self::at($document, 'components', 'schemas', 'LocationLink'));
-        self::assertSame(18, self::at($document, 'info', 'x-generator', 'contract'));
+        self::assertSame(GeneratorContract::BASELINE, self::at($document, 'info', 'x-generator', 'contract'));
 
         // A bare SeeOther projects the plain 303 only.
         $bare = self::at($document, 'paths', '/actionWidgets/-actions/elsewhere', 'get', 'responses');

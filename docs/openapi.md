@@ -1009,8 +1009,11 @@ warmer / controller / CLI use, and validates over `opis/json-schema` — which i
 the 2020-12 dialect natively, so the helper is fully offline (no meta-schema to vendor).
 `assertBodyMatchesGeneratedComponent($body, '<Component>')` is the escape hatch for a
 component the four kinds don't name (a custom enum component, a per-relation collection).
-The trait also checks each `included` resource against its own type's `<Type>Resource`
-component, since the envelope's `included` schema only checks `type` and `id`.
+The envelope's `included` is a `oneOf` over the `<Type>Resource` of every type the
+document's `?include` paths reach, discriminated by `type`, so an included resource of any
+other type fails. The trait also checks each `included` resource against its own type's
+`<Type>Resource` component, and reports that failure, which names the resource's index,
+rather than the envelope's `oneOf`.
 
 ### Sparse fieldsets
 

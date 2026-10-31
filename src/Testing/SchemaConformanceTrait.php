@@ -114,9 +114,10 @@ trait SchemaConformanceTrait
     }
 
     /**
-     * Validates the body against `$component`, then each `included` resource against its
-     * own type's `<Base>Resource` component (the envelope's `included` schema only checks
-     * `type`/`id`). An included type the document has no component for is skipped.
+     * Validates the body against `$component` and each `included` resource against its
+     * own type's `<Base>Resource` component, reporting the included failures when there
+     * are any, since they name the resource. An included type the document has no
+     * component for is skipped.
      *
      * @param array<mixed>|null $fieldsets
      *
@@ -138,13 +139,11 @@ trait SchemaConformanceTrait
         $resolver->registerRaw($document, self::documentId());
 
         $result = $validator->validate($decoded, self::documentId() . ComponentNaming::schemaRef($component));
-        if (!$result->isValid()) {
-            return $this->describeErrors($result->error());
-        }
+        $envelopeFailure = $result->isValid() ? null : $this->describeErrors($result->error());
 
         $included = $decoded instanceof \stdClass ? ($decoded->included ?? null) : null;
         if (!\is_array($included)) {
-            return null;
+            return $envelopeFailure;
         }
 
         $schemas = $document->components->schemas ?? null;
@@ -165,7 +164,8 @@ trait SchemaConformanceTrait
             }
         }
 
-        return $failures === [] ? null : \implode("\n", $failures);
+        // A failure naming the included resource reads better than the envelope's `oneOf` one.
+        return $failures === [] ? $envelopeFailure : \implode("\n", $failures);
     }
 
     /**
