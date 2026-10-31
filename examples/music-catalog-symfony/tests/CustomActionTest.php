@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Tests;
 
 use Doctrine\ORM\EntityManagerInterface;
+use haddowg\JsonApi\OpenApi\GeneratorContract;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Album;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Model\AlbumStatus;
 use haddowg\JsonApiBundle\OpenApi\DocumentFactory;
@@ -318,8 +319,8 @@ final class CustomActionTest extends MusicCatalogKernelTestCase
             self::assertIsArray(self::at($document, 'paths', $path, 'post'), $path);
             self::assertNull(self::at($document, 'paths', $path, 'post', 'x-safety'), $path);
         }
-        // The safety tier is 15, but the shared links components raised the baseline to 18.
-        self::assertSame(18, self::at($document, 'info', 'x-generator', 'contract'));
+        // The safety tier sits below the baseline, so the document carries the baseline.
+        self::assertSame(GeneratorContract::BASELINE, self::at($document, 'info', 'x-generator', 'contract'));
     }
 
     private static function at(mixed $value, string ...$keys): mixed
