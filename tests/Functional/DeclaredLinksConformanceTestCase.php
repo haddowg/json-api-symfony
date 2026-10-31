@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use haddowg\JsonApi\OpenApi\GeneratorContract;
 use haddowg\JsonApiBundle\OpenApi\DocumentFactory;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
@@ -101,7 +102,7 @@ abstract class DeclaredLinksConformanceTestCase extends JsonApiFunctionalTestCas
         self::assertSame(['href', 'title', 'meta'], $map['required'] ?? null);
         self::assertSame('date-time', $this->nested($map, 'properties', 'meta', 'properties', 'openedAt')['format'] ?? null);
 
-        self::assertSame(18, $this->nested($document, 'info', 'x-generator')['contract'] ?? null);
+        self::assertSame(GeneratorContract::BASELINE, $this->nested($document, 'info', 'x-generator')['contract'] ?? null);
     }
 
     /**

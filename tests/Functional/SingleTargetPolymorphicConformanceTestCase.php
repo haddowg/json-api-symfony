@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use haddowg\JsonApi\OpenApi\GeneratorContract;
 use haddowg\JsonApi\Schema\Profile\CountableProfile;
 use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
 use haddowg\JsonApiBundle\OpenApi\DocumentFactory;
@@ -112,14 +113,14 @@ abstract class SingleTargetPolymorphicConformanceTestCase extends JsonApiFunctio
         self::assertInstanceOf(DocumentFactory::class, $factory);
         $document = $factory->forServer()->toArray();
 
-        self::assertSame(18, $this->at($document, 'info', 'x-generator', 'contract'));
+        self::assertSame(GeneratorContract::BASELINE, $this->at($document, 'info', 'x-generator', 'contract'));
 
         self::assertSame(
-            ['anyOf' => [['anyOf' => [['$ref' => '#/components/schemas/AuthorsResourceIdentifier']]], ['type' => 'null']]],
+            ['anyOf' => [['oneOf' => [['$ref' => '#/components/schemas/AuthorsResourceIdentifier']], 'discriminator' => ['propertyName' => 'type', 'mapping' => ['authors' => '#/components/schemas/AuthorsResourceIdentifier']]], ['type' => 'null']]],
             $this->at($document, 'components', 'schemas', 'ArticlesWriterRelationship', 'properties', 'data'),
         );
         self::assertSame(
-            ['type' => 'array', 'items' => ['anyOf' => [['$ref' => '#/components/schemas/CommentsResourceIdentifier']]]],
+            ['type' => 'array', 'items' => ['oneOf' => [['$ref' => '#/components/schemas/CommentsResourceIdentifier']], 'discriminator' => ['propertyName' => 'type', 'mapping' => ['comments' => '#/components/schemas/CommentsResourceIdentifier']]]],
             $this->at($document, 'components', 'schemas', 'ArticlesRemarksRelationship', 'properties', 'data'),
         );
 
