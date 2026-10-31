@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.24.0](https://github.com/haddowg/json-api-symfony/compare/v1.23.1...v1.24.0) (2026-10-31)
+
+
+### Features
+
+* run entity-level constraints after relationship writes ([#269](https://github.com/haddowg/json-api-symfony/issues/269)) ([ec748a6](https://github.com/haddowg/json-api-symfony/commit/ec748a66271db9031359900b5fd246987c161fd6))
+
 ## [1.23.1](https://github.com/haddowg/json-api-symfony/compare/v1.23.0...v1.23.1) (2026-10-31)
 
 
