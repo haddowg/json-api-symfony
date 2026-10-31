@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\OpenApi\Metadata;
 
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresAlwaysCounted;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresIdentifiedMembers;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresPolymorphicRelation;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresRelationExampleId;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresRelationUriFieldName;
@@ -16,6 +17,7 @@ use haddowg\JsonApi\Resource\Field\ExemplifiedRelationInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApiBundle\DataProvider\PivotFields;
 use haddowg\JsonApiBundle\DataProvider\Polymorphism;
+use haddowg\JsonApiBundle\DataProvider\RelatedReadRouter;
 
 /**
  * Adapts a core {@see RelationInterface} (a resource's relation field, or a
@@ -29,7 +31,7 @@ use haddowg\JsonApiBundle\DataProvider\Polymorphism;
  * the {@see \haddowg\JsonApi\Server\Server} fallback chain + the relation graph) and
  * passed in, as is whether that paginator counts on every request.
  */
-final readonly class RelationMetadata implements RelationMetadataInterface, DeclaresWriteOnlyRelation, DeclaresRelationUriFieldName, DeclaresAlwaysCounted, DeclaresRelationExampleId, DeclaresPolymorphicRelation
+final readonly class RelationMetadata implements RelationMetadataInterface, DeclaresWriteOnlyRelation, DeclaresRelationUriFieldName, DeclaresAlwaysCounted, DeclaresRelationExampleId, DeclaresPolymorphicRelation, DeclaresIdentifiedMembers
 {
     /**
      * @param list<string> $relatedIncludablePaths the related type's includable paths (resolved by the source)
@@ -63,6 +65,11 @@ final readonly class RelationMetadata implements RelationMetadataInterface, Decl
     public function isPolymorphic(): bool
     {
         return Polymorphism::of($this->relation);
+    }
+
+    public function storesIdentifiers(): bool
+    {
+        return RelatedReadRouter::identifiesMembers($this->relation);
     }
 
     public function isToMany(): bool

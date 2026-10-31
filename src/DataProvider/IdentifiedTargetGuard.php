@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\DataProvider;
 
 use haddowg\JsonApi\Resource\Field\MorphTo;
+use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApiBundle\Security\ResourceSecurityRegistry;
 
 /**
@@ -13,6 +14,9 @@ use haddowg\JsonApiBundle\Security\ResourceSecurityRegistry;
  * on a server when the relation declares its own read
  * permission, when the type declares a read gate there, or when its provider may hide
  * a row. The type-level answers are cached per server and type.
+ *
+ * A `MorphToMany` declared with `identifiedBy()` guards a type only when its provider may
+ * hide a row, since a to-many's rows are never gated one by one ({@see \haddowg\JsonApiBundle\Security\ReadableRows}).
  *
  * @internal
  */
@@ -27,6 +31,24 @@ final class IdentifiedTargetGuard
         private readonly DataProviderRegistry $providers,
         private readonly ?ResourceSecurityRegistry $security = null,
     ) {}
+
+    /**
+     * The types `$relation` declares whose pairs a scope may hide, so they are checked
+     * against their provider before the linkage renders, a page is cut or a count taken.
+     *
+     * @return list<string>
+     */
+    public function guardedMemberTypes(MorphToMany $relation): array
+    {
+        $guarded = [];
+        foreach ($relation->relatedTypes() as $type) {
+            if ($this->providers->supportsType($type) && $this->scopes($relation, $type)) {
+                $guarded[] = $type;
+            }
+        }
+
+        return $guarded;
+    }
 
     /**
      * The types `$relation` declares whose pairs need their target loaded before the
@@ -57,17 +79,21 @@ final class IdentifiedTargetGuard
             return true;
         }
 
+        return $this->scopes($relation, $type) || $this->readGated($type, $server);
+    }
+
+    /**
+     * Whether the provider of `$type` may leave out a row of it that exists.
+     */
+    private function scopes(MorphTo|MorphToMany $relation, string $type): bool
+    {
         $provider = $this->providers->forType($type);
         if (!$provider instanceof FetchesByIdsInterface) {
             // The answer may depend on the relation, so it isn't cached.
-            if (!$provider instanceof ScopesRelatedReadsInterface || $provider->scopesRelatedReads($relation)) {
-                return true;
-            }
-
-            return $this->readGated($type, $server);
+            return !$provider instanceof ScopesRelatedReadsInterface || $provider->scopesRelatedReads($relation);
         }
 
-        return $this->types[$server . "\0" . $type] ??= $provider->scopesFetchByIds($type) || $this->readGated($type, $server);
+        return $this->types[$type] ??= $provider->scopesFetchByIds($type);
     }
 
     private function readGated(string $type, string $server): bool

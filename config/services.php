@@ -299,7 +299,7 @@ return static function (ContainerConfigurator $container): void {
     // IncludePreloader + shipmonk/doctrine-entity-preloader, now dissolved). Autowired
     // from the DataProviderRegistry, TypeMetadataResolver and ServerProvider; it carries
     // the disable() seam the conformance witness toggles to prove byte-identical output.
-    // Which identifiedBy() MorphTo types need their targets loaded before the pair renders.
+    // Which types of an identifiedBy() MorphTo or MorphToMany need loading before their pairs render.
     $services->set(\haddowg\JsonApiBundle\DataProvider\IdentifiedTargetGuard::class);
     $services->set(\haddowg\JsonApiBundle\DataProvider\RelatedIncludeBatcher::class);
 

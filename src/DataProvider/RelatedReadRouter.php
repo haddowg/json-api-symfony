@@ -5,12 +5,16 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\DataProvider;
 
 use haddowg\JsonApi\Collection\CollectionResult;
+use haddowg\JsonApi\Collection\WindowExecutor;
+use haddowg\JsonApi\Pagination\OffsetWindow;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\AbstractFieldValue;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\MorphTo;
+use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Schema\Relationship\IdentifiedMember;
 use haddowg\JsonApi\Serializer\SerializerInterface;
 use haddowg\JsonApi\Server\Server;
 
@@ -30,7 +34,194 @@ use haddowg\JsonApi\Server\Server;
  */
 final class RelatedReadRouter
 {
-    public function __construct(private readonly DataProviderRegistry $providers) {}
+    private readonly IdentifiedTargetGuard $guard;
+
+    public function __construct(
+        private readonly DataProviderRegistry $providers,
+        ?IdentifiedTargetGuard $guard = null,
+    ) {
+        $this->guard = $guard ?? new IdentifiedTargetGuard($providers);
+    }
+
+    /**
+     * Whether `$relation` is a `MorphToMany` declared with `identifiedBy()`.
+     *
+     * @phpstan-assert-if-true MorphToMany $relation
+     */
+    public static function identifiesMembers(RelationInterface $relation): bool
+    {
+        return $relation instanceof MorphToMany && $relation->storesIdentifiers();
+    }
+
+    /**
+     * Each parent's members for a `MorphToMany` declared with `identifiedBy()`, in pair
+     * order. Without `$load`, each guarded type is narrowed to the ids its provider
+     * admits, one {@see AdmitsIdsInterface::admitIds()} per type across every parent,
+     * and the other types keep their pairs unloaded. With `$load`, every type's rows
+     * load, one {@see FetchesByIdsInterface::fetchByIds()} per type, and a pair whose row
+     * doesn't come back is dropped. A type no provider serves keeps its pairs unloaded.
+     *
+     * @param list<object> $parents
+     *
+     * @return list<list<IdentifiedMember>>
+     *
+     * @throws \LogicException when a parent stores a type the relation doesn't declare
+     */
+    public function identifiedMembers(Server $server, MorphToMany $relation, array $parents, JsonApiRequestInterface $request, bool $load = false): array
+    {
+        $grouped = $relation->storedIdentifiers($parents, $request);
+
+        $rows = [];
+        $admitted = [];
+        foreach ($grouped as $type => $keys) {
+            if (!$server->hasSerializerFor($type) || !$this->providers->supportsType($type)) {
+                continue;
+            }
+
+            $serializer = $server->serializerFor($type);
+            $ids = \array_values(\array_unique(\array_map(static fn(string|int $key): string => self::wireId($serializer, $key), $keys)));
+            if ($load) {
+                $rows[$type] = $this->fetchByIds($type, $serializer, $ids, $request);
+            } elseif (\in_array($type, $this->guard->guardedMemberTypes($relation), true)) {
+                $admitted[$type] = \array_flip($this->admitIds($type, $serializer, $ids, $request));
+            }
+        }
+
+        $members = [];
+        foreach ($parents as $parent) {
+            $kept = [];
+            foreach ($relation->storedIdentifierList($parent, $request) as $pair) {
+                [$type, $key] = $pair;
+                if (!isset($rows[$type]) && !isset($admitted[$type])) {
+                    $kept[] = IdentifiedMember::of($pair);
+
+                    continue;
+                }
+
+                $id = self::wireId($server->serializerFor($type), $key);
+                if (isset($rows[$type][$id])) {
+                    $kept[] = IdentifiedMember::of($pair, $rows[$type][$id]);
+                } elseif (isset($admitted[$type][$id])) {
+                    $kept[] = IdentifiedMember::of($pair);
+                }
+            }
+            $members[] = $kept;
+        }
+
+        return $members;
+    }
+
+    /**
+     * The page of a `MorphToMany` declared with `identifiedBy()`: the parent's pairs
+     * narrowed to the ids each guarded type's provider admits, windowed in pair order per
+     * `$criteria`, as {@see IdentifiedMember} values with no row loaded. The admitted
+     * pairs are the whole set, so the total is exact and a count-free page knows whether
+     * more follow without loading anything past it.
+     *
+     * @return CollectionResult<IdentifiedMember>
+     */
+    public function pageIdentified(Server $server, object $parent, MorphToMany $relation, CollectionCriteria $criteria, JsonApiRequestInterface $request): CollectionResult
+    {
+        $members = $this->identifiedMembers($server, $relation, [$parent], $request)[0];
+
+        $window = $criteria->window;
+        if ($window instanceof OffsetWindow) {
+            $page = \array_slice($members, $window->offset, $window->limit);
+
+            return $criteria->wantsCount
+                ? new CollectionResult($page, \count($members), windowed: true)
+                : new CollectionResult($page, null, windowed: true, hasMore: $window->offset + $window->limit < \count($members));
+        }
+
+        return (new WindowExecutor())->run(
+            $window,
+            countable: $criteria->wantsCount,
+            all: static fn(): array => $members,
+            count: static fn(): int => \count($members),
+            page: static fn(int $offset, int $limit): array => \array_slice($members, $offset, $limit),
+            probe: static fn(int $offset, int $limit): array => \array_slice($members, $offset, $limit),
+        );
+    }
+
+    /**
+     * The related page of a `MorphToMany` declared with `identifiedBy()`: the
+     * {@see pageIdentified()} page with only its rows loaded, one
+     * {@see FetchesByIdsInterface::fetchByIds()} per type. `$types` receives the type each
+     * returned row renders as, keyed by object id, since one class may serve several.
+     *
+     * @param array<int, string> $types
+     *
+     * @return CollectionResult<object>
+     */
+    public function fetchIdentified(Server $server, object $parent, MorphToMany $relation, CollectionCriteria $criteria, JsonApiRequestInterface $request, array &$types = []): CollectionResult
+    {
+        $page = $this->pageIdentified($server, $parent, $relation, $criteria, $request);
+        $members = [];
+        foreach ($page->items as $member) {
+            if ($member instanceof IdentifiedMember) {
+                $members[] = $member;
+            }
+        }
+
+        return new CollectionResult($this->loadMembers($server, $members, $request, $types), $page->total, $page->windowed, $page->hasMore);
+    }
+
+    /**
+     * The rows of `$members`, in their order, one {@see FetchesByIdsInterface::fetchByIds()}
+     * per type, leaving out a member whose row doesn't come back.
+     *
+     * @param list<IdentifiedMember> $members
+     * @param array<int, string>     $types   receives each row's type, keyed by object id
+     *
+     * @return list<object>
+     */
+    private function loadMembers(Server $server, array $members, JsonApiRequestInterface $request, array &$types): array
+    {
+        $ids = [];
+        foreach ($members as $member) {
+            if ($server->hasSerializerFor($member->type) && $this->providers->supportsType($member->type)) {
+                $ids[$member->type][self::wireId($server->serializerFor($member->type), $member->id)] = true;
+            }
+        }
+
+        $rows = [];
+        foreach ($ids as $type => $set) {
+            $rows[$type] = $this->fetchByIds($type, $server->serializerFor($type), \array_map('strval', \array_keys($set)), $request);
+        }
+
+        $loaded = [];
+        foreach ($members as $member) {
+            if (!isset($rows[$member->type])) {
+                continue;
+            }
+
+            $row = $rows[$member->type][self::wireId($server->serializerFor($member->type), $member->id)] ?? null;
+            if ($row !== null) {
+                $loaded[] = $row;
+                $types[\spl_object_id($row)] = $member->type;
+            }
+        }
+
+        return $loaded;
+    }
+
+    /**
+     * The ids among `$ids` whose rows the provider of `$type` admits: one id-only probe
+     * when it can, else one load by id, else one `fetchOne()` per id.
+     *
+     * @param list<string> $ids
+     *
+     * @return list<string>
+     */
+    private function admitIds(string $type, SerializerInterface $serializer, array $ids, JsonApiRequestInterface $request): array
+    {
+        $provider = $this->providers->forType($type);
+        if ($provider instanceof AdmitsIdsInterface) {
+            return $provider->admitIds($type, $ids, $request);
+        }
+
+        return \array_map('strval', \array_keys($this->fetchByIds($type, $serializer, $ids, $request)));
+    }
 
     /**
      * Whether the provider of any type `$relation` reaches scopes its reads, so a
@@ -227,7 +418,7 @@ final class RelatedReadRouter
      * A stored key as `$serializer` renders it: through its id field's encoder when it
      * declares one, as core renders the pair's linkage.
      */
-    private static function wireId(SerializerInterface $serializer, string|int $id): string
+    public static function wireId(SerializerInterface $serializer, string|int $id): string
     {
         if ($serializer instanceof AbstractResource) {
             foreach ($serializer->allFields() as $field) {
@@ -250,6 +441,17 @@ final class RelatedReadRouter
      */
     public function counts(Server $server, string $type, array $parents, RelationInterface $relation, CollectionCriteria $criteria, JsonApiRequestInterface $request): array
     {
+        // The pairs each guarded type's provider admits, before any page.
+        if (self::identifiesMembers($relation)) {
+            $serializer = $server->serializerFor($type);
+            $counts = [];
+            foreach ($this->identifiedMembers($server, $relation, $parents, $request) as $index => $members) {
+                $counts[$serializer->getId($parents[$index])] = \count($members);
+            }
+
+            return $counts;
+        }
+
         if ($this->isComputed($relation)) {
             $serializer = $server->serializerFor($type);
             $counts = [];

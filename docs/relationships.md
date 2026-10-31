@@ -1236,8 +1236,11 @@ mixed collection. The provider responsibilities differ by storage:
   parent and slices with `page`. A polymorphic to-many carries no shared
   filter/sort vocabulary, so `filter`/`sort` are a `400` while `page` windows.
 - **The Doctrine provider throws** "unsupported" for a to-many over several types —
-  members span entity classes, so no single scoped query can fetch them. You
-  supply a custom provider (→ [custom-data-providers.md](custom-data-providers.md)).
+  members span entity classes, so no single scoped query can fetch them. Declare it
+  with `identifiedBy()` when the parent stores type and id pairs (see
+  [below](#a-morphtomany-stored-as-type-and-id-rows)), compute it with
+  `extractUsing()`, or supply a custom provider
+  (→ [custom-data-providers.md](custom-data-providers.md)).
 
 The example app demonstrates the escape hatch with
 [`LibraryItemsProvider`](../examples/music-catalog-symfony/src/Provider/LibraryItemsProvider.php),
@@ -1252,6 +1255,68 @@ discriminates each by its own type. `PolymorphicTest` witnesses
 `GET /libraries/1/items` → `[tracks:1, albums:2, artists:1]`, the matching
 linkage endpoint, and `?include=items` yielding the three mixed `included`
 resources.
+
+### A `MorphToMany` stored as type and id rows
+
+When the members are join rows that each name a type and an id, declare
+`identifiedBy()` on the `MorphToMany` and return the parent's pairs in order:
+
+```php
+#[ORM\Entity]
+class UserCompany
+{
+    #[ORM\ManyToOne(inversedBy: 'userCompanies')]
+    public User $user;
+
+    #[ORM\Column]
+    public string $companyType;
+
+    #[ORM\Column]
+    public int $companyId;
+}
+
+MorphToMany::make('companies', ['agencies', 'advertisers', 'publishers'])
+    ->countable()
+    ->identifiedBy(static fn(mixed $user): array => $user instanceof User
+        ? array_map(static fn(UserCompany $row): array => [$row->companyType, $row->companyId], $user->userCompanies->toArray())
+        : [])
+    ->fillUsing($writeTheJoinRows),
+```
+
+The linkage renders from the pairs in their order. A member type is guarded when its
+provider may hide a row: a Doctrine type with a query extension, or a provider that
+scopes. Each guarded type is checked once for the whole page with an id-only query, and
+a hidden or missing member is left out of the linkage. Pairs naming an unguarded type
+render as stored, with no query. A per-row read gate doesn't guard a type here, since a
+to-many's rows are never gated one by one.
+
+Every read that counts or pages the members works from the pairs. It checks each guarded
+type once over all of the parent's pairs before anything else, so a page is never short
+and a total is exact:
+
+- `GET /users/{id}/companies` cuts the page from the admitted pairs, in pair order, and
+  loads only that page's rows, one `id IN (...)` per type. `filter` and `sort` are a
+  `400`, as for any polymorphic to-many, and `?withCount=_self_` counts the admitted
+  pairs.
+- `?withCount=companies` on a user or a collection counts the admitted pairs.
+- `?include=companies` loads every member's row, one query per type, and leaves a row
+  that doesn't come back out of both the linkage and `included`.
+- `GET /users/{id}/relationships/companies` pages the admitted pairs exactly as the
+  related endpoint does, with the same paginator, `page` parameters and
+  `?withCount=_self_`, but loads no rows. `filter` and `sort` are a `400`. Other
+  polymorphic to-many relationship endpoints still refuse `page` too.
+
+The pairs must point at rows that exist. A guarded type checks every pair, so a pair
+whose row is gone drops out and pages and totals stay exact. An unguarded type costs no
+query, so a dangling pair of one still shows in the linkage, and a related page that
+reaches it comes back one member short.
+
+Each member renders under its pair's type, so one entity class can back several of the
+types without overriding `getType()`. A stored type the relation doesn't declare throws a
+`\LogicException`, which renders as a `500`. Writes go through `fillUsing()`, and a
+replace keeps the members the scope hides, as for any scoped to-many. A provider that
+can answer the id-only check without loading rows implements `AdmitsIdsInterface`
+(see [custom providers → loading many rows by id](custom-data-providers.md#loading-many-rows-by-id)).
 
 ## Flattened (`on()`) attributes and eager loading
 

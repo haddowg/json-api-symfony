@@ -406,6 +406,23 @@ its `scopesRelatedReads()` says otherwise. The Doctrine and in-memory providers 
 it; the Doctrine one runs one `WHERE id IN (...)` with the type's extensions under
 `QueryPurpose::FetchRelatedCollection`, and scopes a type when an extension supports it.
 
+A `MorphToMany` declared with `identifiedBy()` also has to know which of a parent's
+stored ids a scope admits before it cuts a page or takes a count, without loading every
+row. A provider that can answer that from ids alone implements
+[`AdmitsIdsInterface`](../src/DataProvider/AdmitsIdsInterface.php):
+
+```php
+public function admitIds(string $type, array $ids, JsonApiRequestInterface $request): array
+{
+    return $this->agencies->visibleIdsAmong($ids); // SELECT id ... WHERE id IN (...)
+}
+```
+
+Return the wire ids your scope admits, in any order. Without it the bundle loads the
+rows through `fetchByIds()` and keeps their ids, or asks `fetchOne()` one id at a time.
+The Doctrine provider runs one id-only `WHERE id IN (...)` under the type's extensions,
+and the in-memory provider checks its store.
+
 ## The in-memory provider as a worked example
 
 [`InMemoryDataProvider`](../src/DataProvider/InMemoryDataProvider.php),

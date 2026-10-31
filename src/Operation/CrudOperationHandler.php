@@ -842,23 +842,35 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                     ->withMeta(['total' => \count($items)]);
             }
 
-            $result = match (true) {
-                $this->readRouter?->isComputed($relation) === true => $this->readRouter->fetchComputed($server, $parent, $relation, $criteria, $request),
-                // A to-many over several types reaching a scoped type serves its members
-                // narrowed per member type.
-                \count($relatedTypes) > 1 && $this->readRouter?->isScoped($relation) === true => $this->readRouter->fetchPolymorphic($server, $parent, $relation, $criteria, $request),
-                default => $relatedProvider->fetchRelatedCollection($relatedType, $parent, $relation, $criteria, $request),
-            };
+            // A MorphToMany declared with identifiedBy() pages its stored pairs, narrowed by
+            // each guarded type's provider, and loads only the page's rows. Each row renders
+            // as its pair's type, which a class serving several types can't report.
+            $identifiedTypes = null;
+            if ($this->readRouter !== null && RelatedReadRouter::identifiesMembers($relation)) {
+                $this->refusePolymorphicQuery($operation->queryParameters());
+                $identifiedTypes = [];
+                $result = $this->readRouter->fetchIdentified($server, $parent, $relation, $criteria, $request, $identifiedTypes);
+            } else {
+                $result = match (true) {
+                    $this->readRouter?->isComputed($relation) === true => $this->readRouter->fetchComputed($server, $parent, $relation, $criteria, $request),
+                    // A to-many over several types reaching a scoped type serves its members
+                    // narrowed per member type.
+                    \count($relatedTypes) > 1 && $this->readRouter?->isScoped($relation) === true => $this->readRouter->fetchPolymorphic($server, $parent, $relation, $criteria, $request),
+                    default => $relatedProvider->fetchRelatedCollection($relatedType, $parent, $relation, $criteria, $request),
+                };
+            }
 
-            $serializer = $polymorphic
-                ? $this->polymorphicSerializer($relation, $server)
-                : $server->serializerFor($relatedType);
+            $serializer = match (true) {
+                $identifiedTypes !== null => $this->identifiedSerializer($relation, $server, $identifiedTypes),
+                $polymorphic => $this->polymorphicSerializer($relation, $server),
+                default => $server->serializerFor($relatedType),
+            };
 
             // Materialize once so the related members can be both preloaded and
             // rendered. A polymorphic page is preloaded per member type.
             $items = \is_array($result->items) ? \array_values($result->items) : \iterator_to_array($result->items, false);
             if ($polymorphic) {
-                $this->preloadPolymorphic($relation, $items, $request, $server);
+                $this->preloadPolymorphic($relation, $items, $request, $server, $identifiedTypes ?? []);
             } else {
                 $this->windowRelatedItems($server, $relatedType, $items, $request);
                 $this->preloadIncludes($relatedProvider, $items, $relatedType, $request, $server);
@@ -1066,6 +1078,37 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
     }
 
     /**
+     * A {@see PolymorphicSerializer} for the related page of a `MorphToMany` declared
+     * with `identifiedBy()`: each row renders with the serializer of the type its pair
+     * named.
+     *
+     * @param array<int, string> $types each row's type, keyed by object id
+     */
+    private function identifiedSerializer(RelationInterface $relation, Server $server, array $types): PolymorphicSerializer
+    {
+        return new PolymorphicSerializer(
+            static fn(mixed $object): SerializerInterface => \is_object($object) && isset($types[\spl_object_id($object)])
+                ? $server->serializerFor($types[\spl_object_id($object)])
+                : throw new \LogicException(\sprintf('No stored pair of the "%s" relationship names a related object.', $relation->name())),
+        );
+    }
+
+    /**
+     * A polymorphic to-many's members share no filter or sort vocabulary, so a requested
+     * `filter` or `sort` is the same `400` its other reads answer with.
+     */
+    private function refusePolymorphicQuery(QueryParameters $queryParameters): void
+    {
+        if ($queryParameters->filter !== []) {
+            throw new \haddowg\JsonApi\Exception\FilterParamUnrecognized((string) \array_key_first($queryParameters->filter));
+        }
+
+        if ($queryParameters->sort !== []) {
+            throw new \haddowg\JsonApi\Exception\SortingUnsupported();
+        }
+    }
+
+    /**
      * `GET /{type}/{id}/relationships/{relationship}` — the relationship-linkage
      * document (resource identifiers only). Loads the parent, validates the
      * relationship exists, and routes the parent through the *parent* type's
@@ -1120,7 +1163,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // A to-one and a polymorphic relationship render off the parent: apply the related
         // type's scope first, exactly as an include does. A monomorphic
         // to-many is fetched through its provider below.
-        if (!$relation->isToMany() || Polymorphism::of($relation)) {
+        // An identified MorphToMany is paged below instead.
+        if ((!$relation->isToMany() || Polymorphism::of($relation)) && !RelatedReadRouter::identifiesMembers($relation)) {
             $this->relationshipLinkage?->setIncluded(
                 $this->includeBatcher?->scopeRelationship($server, $type, $parent, $relation, $this->jsonApiRequest($operation->context())),
             );
@@ -1239,6 +1283,42 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // Attach the page that windowed the linkage so a page profile (the
             // cursor-pagination profile) is advertised on the response; the body
             // stays links-only (core docs/responses.md).
+            return $page !== null ? $response->withPage($page) : $response;
+        }
+
+        // A MorphToMany declared with identifiedBy() pages its admitted pairs in pair order,
+        // exactly as its related endpoint does, and renders them without loading a row.
+        // Its members share no filter or sort vocabulary, so those stay a 400.
+        if ($this->readRouter !== null && RelatedReadRouter::identifiesMembers($relation)) {
+            $this->refusePolymorphicQuery($operation->queryParameters());
+
+            $request = $this->jsonApiRequest($operation->context());
+            $paginator = $this->relationCriteria->paginatorFor($relation, null, $server)?->resolve($request);
+
+            if ($request->countsRelationship('_self_') && !$relation->isCountable()) {
+                return ErrorResponse::fromException(
+                    new \haddowg\JsonApi\Exception\RelationshipCountNotAllowed(['_self_']),
+                );
+            }
+
+            $relWantsCount = $paginator !== null
+                && !($paginator instanceof CursorPaginator)
+                && ($paginator->wantsCount() || $request->countsRelationship('_self_'));
+            $criteria = $this->relationCriteria->criteriaFor(
+                $operation->queryParameters(),
+                null,
+                $relation,
+                $paginator?->window($request),
+                includePivotFields: false,
+                wantsCount: $relWantsCount,
+            );
+
+            $result = $this->readRouter->pageIdentified($server, $parent, $relation, $criteria, $request);
+            $items = \is_array($result->items) ? \array_values($result->items) : \iterator_to_array($result->items, false);
+            $page = $this->supplyWindowedRelationship($parent, $relationshipName, $items, $paginator, $result, $relWantsCount, $request, $operation->queryParameters());
+
+            $response = IdentifierResponse::forRelationship($parent, $server->serializerFor($type), $relationshipName);
+
             return $page !== null ? $response->withPage($page) : $response;
         }
 
@@ -1663,9 +1743,11 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * {@see preloadIncludes()} for a polymorphic page: the members are grouped by the
      * type they render as and each group's tree is loaded on `$server`.
      *
-     * @param list<object> $items
+     * @param list<object>       $items
+     * @param array<int, string> $types the type a member renders as, keyed by object id,
+     *                                  when its object can't say
      */
-    private function preloadPolymorphic(RelationInterface $relation, array $items, JsonApiRequestInterface $request, Server $server): void
+    private function preloadPolymorphic(RelationInterface $relation, array $items, JsonApiRequestInterface $request, Server $server, array $types = []): void
     {
         if ($items === [] || $this->includeBatcher === null) {
             return;
@@ -1673,6 +1755,12 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         $groups = [];
         foreach ($items as $item) {
+            if (isset($types[\spl_object_id($item)])) {
+                $groups[$types[\spl_object_id($item)]][] = $item;
+
+                continue;
+            }
+
             $serializer = $relation->resolveSerializer($item, $server);
             if ($serializer !== null) {
                 $groups[$serializer->getType($item)][] = $item;
