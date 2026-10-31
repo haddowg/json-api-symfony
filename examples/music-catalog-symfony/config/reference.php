@@ -1298,17 +1298,17 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         scopes?: mixed, // The OAuth scopes the Atomic Operations endpoint itself needs, on every server, overriding the scope resolver. Each operation in a batch is still checked against its own scopes. [] needs none; null (the default) asks the resolver. // Default: null
  *     },
  *     profiles?: list<scalar|Param|null>,
- *     openapi?: array{ // OpenAPI 3.1 document generation, serving and export (G1–G6).
+ *     openapi?: array{ // OpenAPI 3.1 document generation, serving and export.
  *         enabled?: bool|Param, // Whether OpenAPI generation is available at all. When false, no document routes are emitted and the cache warmer skips warming (the CLI export still works). Default true. // Default: true
- *         expose_in_prod?: bool|Param, // Expose the document HTTP routes outside kernel.debug (D9). Routes are auto-exposed in debug; set true to also serve them in prod. Default false. // Default: false
+ *         expose_in_prod?: bool|Param, // Expose the document HTTP routes outside kernel.debug. Routes are auto-exposed in debug; set true to also serve them in prod. Default false. // Default: false
  *         describedby?: bool|Param, // Give each built link object, and each document, a describedby pointing at the operation in the OpenAPI document that describes it, e.g. /docs.json#/paths/~1albums~1%7Bid%7D/get. The document is the one served for the request's server: by the bundle's document route, or by an app route to its OpenApiController when the bundle's isn't registered, so this only takes effect when a route serves the document, unless document_url names one. Default true. // Default: true
  *         document_url?: scalar|Param|null, // The URL describedby points into, used as given, for a document published somewhere other than the bundle's own route (a docs site, or a CDN serving the public_path files). {server} is replaced by the server name, or by "combined" in combined mode. Null (the default) uses the path of the route serving the document, host-relative and including any import prefix. // Default: null
- *         multi_server?: "per_server"|"combined"|Param, // per_server (default): one document per server, served at /{server}/docs.json. combined: a single document spanning every server at the json path only (D5). // Default: "per_server"
+ *         multi_server?: "per_server"|"combined"|Param, // per_server (default): one document per server, served at /{server}/docs.json. combined: a single document spanning every server at the json path only. // Default: "per_server"
  *         examples?: bool|Param, // Give every operation's request body and success responses, and each shared error response, a worked example built from the examples your fields and error codes declare. An operation missing one of those values gets no example, and json-api:openapi:export lists it. A named server can override it with its own openapi_examples. Default true. // Default: true
- *         enum_value_descriptions?: "both"|"extensions"|"description"|Param, // How a backed enum's per-value descriptions are surfaced (D16): both (markdown table + x-enum-* extensions), extensions (only the extensions), or description (only the markdown table). Default both. // Default: "both"
+ *         enum_value_descriptions?: "both"|"extensions"|"description"|Param, // How a backed enum's per-value descriptions are surfaced: both (markdown table + x-enum-* extensions), extensions (only the extensions), or description (only the markdown table). Default both. // Default: "both"
  *         cache_control?: scalar|Param|null, // The Cache-Control header for the served docs.json and schemas.json of every server, e.g. "public, max-age=60, s-maxage=300, stale-while-revalidate=86400". Both always carry an ETag and answer a matching If-None-Match with a 304. Null (the default) leaves Cache-Control to Symfony, which makes the response private. // Default: null
  *         serve_allowed_classes?: list<scalar|Param|null>,
- *         public_path?: scalar|Param|null, // Also emit a fully static <server>.json (+ .yaml when symfony/yaml is installed) into this directory at cache:warmup (D17), so a web server/CDN can serve the document with zero PHP. Null = controller-only (served from the cache dir). // Default: null
+ *         public_path?: scalar|Param|null, // Also emit a fully static <server>.json (+ .yaml when symfony/yaml is installed) into this directory at cache:warmup, so a web server/CDN can serve the document with zero PHP. Null = controller-only (served from the cache dir). // Default: null
  *         json?: array{
  *             path?: scalar|Param|null, // The path the default server's document is served at. Default /docs.json. // Default: "/docs.json"
  *         },
@@ -1316,7 +1316,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *             enabled?: bool|Param, // Register the JSON Schema HTTP routes. Default true (still subject to the expose gate). The route serves GET /schemas.json (+ /{server}/schemas.json per server). // Default: true
  *             path?: scalar|Param|null, // The path the default server's aggregate schema document is served at. Default /schemas.json. // Default: "/schemas.json"
  *         },
- *         ui?: array{ // The Swagger UI / ReDoc documentation viewer (design D6, docs/openapi.md): a single config-driven route rendering plain CDN-linked HTML, behind the same expose gate as the document plus `ui.enabled`.
+ *         ui?: array{ // The Swagger UI / ReDoc documentation viewer (docs/openapi.md): a single config-driven route rendering plain CDN-linked HTML, behind the same expose gate as the document plus `ui.enabled`.
  *             enabled?: bool|Param, // Serve the viewer route. Default true (still subject to the expose gate). // Default: true
  *             renderer?: "swagger"|"redoc"|Param, // swagger (default) or redoc — one, not both. // Default: "swagger"
  *             path?: scalar|Param|null, // The viewer route path. Default /docs. // Default: "/docs"
@@ -1324,7 +1324,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *             redoc_version?: scalar|Param|null, // The exact ReDoc version the redoc renderer loads. A 3.x version loads the ES module build, a 2.x version (e.g. 2.5.4) the classic global script. Default 3.0.1. // Default: "3.0.1"
  *             redoc_telemetry?: bool|Param, // Let ReDoc 3.x send its usage telemetry. Default false, which renders disable-telemetry="true" on the <redoc> tag. ReDoc 2.x sends none, so it ignores this. // Default: false
  *         },
- *         info?: array{ // The OpenAPI info block (G4/G5). Title/version default to JSON:API / 1.0.0 per server when omitted.
+ *         info?: array{ // The OpenAPI info block. Title/version default to JSON:API / 1.0.0 per server when omitted.
  *             title?: scalar|Param|null, // Default: null
  *             version?: scalar|Param|null, // Default: null
  *             description?: scalar|Param|null, // Default: null
@@ -1343,7 +1343,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *             url?: scalar|Param|null,
  *             description?: scalar|Param|null, // Default: null
  *         }>,
- *         security?: array{ // Named security schemes + the document-level default requirement applied to operations carrying a security expression (D8). The authz expression itself is never parsed for scheme semantics.
+ *         security?: array{ // Named security schemes + the document-level default requirement applied to operations carrying a security expression. The authz expression itself is never parsed for scheme semantics.
  *             schemes?: array<string, array{ // Default: []
  *                 type?: scalar|Param|null,
  *                 description?: scalar|Param|null, // Default: null

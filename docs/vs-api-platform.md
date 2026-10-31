@@ -96,7 +96,7 @@ most frameworks offer. But its coverage is of JSON:API **1.0**, incompletely:
 1.1-era mechanisms (`ext` extensions, the `profile` parameter, `lid`) are
 unimplemented and untracked — a
 ["JSON:API v1.1 support" request (#8022)](https://github.com/api-platform/core/issues/8022)
-has been open since 2021 — and even base-1.0 client-generated-ID support (§7.3)
+has been open since 2021 — and even base-1.0 support for client-generated IDs
 only landed in mid-2026
 ([PR #7930](https://github.com/api-platform/core/pull/7930), merged 2026-06-05).
 
