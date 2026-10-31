@@ -19,7 +19,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Resource\BaseCursorShelfResource;
  * The `pivotWidgets` relation pins its association entity
  * ({@see CursorShelfWidgetEntity}) so the cursor fetch runs the PIVOT keyset
  * push-down — the `slot` pivot column joins the sort vocabulary and each member
- * renders `meta.pivot` (bundle ADR 0114). `through()` is required here: the
+ * renders `meta.pivot` (bundle ADR 0063). `through()` is required here: the
  * shelf's plain `widgets` ManyToMany offers no association entity to
  * auto-detect.
  */

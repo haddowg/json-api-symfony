@@ -21,7 +21,7 @@ use Doctrine\ORM\Mapping as ORM;
  *
  * `position` is a **required-on-create** writable field and `weight` a second
  * writable field constrained `weight >= position` — together they back the
- * merge-before-validate witness (bundle ADR 0050): on an existing-member partial
+ * merge-before-validate witness (bundle ADR 0049): on an existing-member partial
  * pivot update the omitted `position` is preserved from the stored row (no false
  * `422`), and the cross-pivot `weight >= position` rule compares an incoming
  * `weight` against the MERGED (stored) `position`.

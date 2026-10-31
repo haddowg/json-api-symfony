@@ -155,7 +155,7 @@ abstract class RelatedCollectionParamsConformanceTestCase extends JsonApiFunctio
         // `?withCount=_self_` under the Countable profile, and the single total fans to
         // BOTH the top-level meta.total and meta.page.total, plus a `last` link. Core's
         // `_self_` gate is relation-aware on a related render (it keys on the *relation*,
-        // not the related-type resource — core ADR 0068 / bundle ADR 0075), so the
+        // not the related-type resource — core ADR 0068 / bundle ADR 0052), so the
         // countable relation's collection is counted even though the `comments` resource
         // is not itself countable().
         $response = $this->handle(self::BASE_URI . '/articles/1/pagedComments?withCount=_self_&page[size]=1&page[number]=1', extraServer: [

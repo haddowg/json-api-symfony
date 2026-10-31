@@ -18,7 +18,7 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiAction;
  * A `ROLE_USER` request is denied with a `403`; a `ROLE_ADMIN` request reaches the
  * handler (a `204`). The handler body never runs on a deny.
  *
- * It also declares `asLink: true` (bundle ADR 0091), so it is the **security-aware
+ * It also declares `asLink: true` (bundle ADR 0076), so it is the **security-aware
  * resource-link** witness: a `links.archive` member renders on `GET
  * /actionWidgets/{id}` only for a requester who would pass the same `ROLE_ADMIN`
  * gate — present for `admin`, absent for `user`.

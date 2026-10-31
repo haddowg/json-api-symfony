@@ -10,7 +10,7 @@ use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 
 /**
- * The generateUsing witness (bundle ADR 0039): a closure mints the storage key directly
+ * The generateUsing witness (docs/validation.md): a closure mints the storage key directly
  * when a create omits the id. The closure result is set on the id as-is — it is a
  * storage key, never decoded (only a client wire id decodes). Here it mints a `slug-…`
  * key so the witness can assert the closure ran.

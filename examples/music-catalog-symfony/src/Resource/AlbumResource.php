@@ -119,7 +119,7 @@ final class AlbumResource extends AbstractResource
             //
             // A relation-scoped `withFilters()` on the TO-ONE `artist` is the witness
             // for null-a-to-one-when-a-relation-filter-excludes-its-target (bundle ADR
-            // 0068): `filter[name]` (the related `artists.name` column) is reachable on
+            // 0053): `filter[name]` (the related `artists.name` column) is reachable on
             // the three to-one read surfaces — `GET /albums/{id}/artist?filter[name]=…`,
             // `…/relationships/artist?filter[name]=…`, and `relatedQuery[artist][filter]
             // [name]=…` on a primary request. When the filter EXCLUDES the album's
@@ -127,7 +127,7 @@ final class AlbumResource extends AbstractResource
             // `[sort]`/`[page]` on a to-one path stays a 400. Dual-provider.
             BelongsTo::make('artist', 'artists')
                 ->withFilters(Where::make('name', 'name')),
-            // Relation-scoped filters/sorts (bundle ADR 0044): `withFilters`/
+            // Relation-scoped filters/sorts (bundle ADR 0030): `withFilters`/
             // `withSorts` augment the related-collection endpoint
             // `GET /albums/{id}/tracks` ONLY — they are merged on top of the related
             // `tracks` resource's own vocabulary there, but are absent from the
@@ -138,7 +138,7 @@ final class AlbumResource extends AbstractResource
             //    `length_seconds` exceeds the value — a contextual filter that only
             //    makes sense when listing one album's tracks, so it lives on the
             //    relation, not the `tracks` type. Its `->integer()` value constraint
-            //    (core ADR 0055, bundle ADR 0048) is validated before the
+            //    (core ADR 0055, docs/data-layer.md) is validated before the
             //    related-collection fetch reaches the provider, so a mistyped
             //    `filter[longerThan]=banana` is a clean `400` (`FILTER_VALUE_INVALID`,
             //    `source.parameter`) instead of the provider's unhelpful default on
@@ -174,7 +174,7 @@ final class AlbumResource extends AbstractResource
             // reference renders this as an EXISTS subquery over the same relation.
             WhereHas::make('tracks'),
             // WhereThrough('artist.name'): the constrained-existence DOTTED-TRAVERSAL
-            // filter (core ADR 0063, bundle ADR 0069). `filter[artist.name]=Radiohead`
+            // filter (core ADR 0063, bundle ADR 0019). `filter[artist.name]=Radiohead`
             // keeps albums whose `artist` relation's `name` matches — a portable
             // EXISTS-ANY semi-join that works on BOTH providers (the in-memory provider
             // traverses the object graph; the Doctrine reference renders it as a
@@ -190,8 +190,7 @@ final class AlbumResource extends AbstractResource
             // something narrower than "a string", which an artist name is not, and an
             // invented `pattern` would reject real names to buy a type nobody wanted.
             WhereThrough::make('artist.name'),
-            // --- The convenience filter library (G8b, core ADR 0075-0077; bundle ADR
-            // 0082). Each is an intent-named strategy that bakes in its operator, value
+            // --- The convenience filter library (G8b, core ADR 0075-0077; docs/doctrine.md). Each is an intent-named strategy that bakes in its operator, value
             // coercion, the matching value constraint, and the OpenAPI value schema +
             // description from one declaration — no hand-wired Where operator.
             //

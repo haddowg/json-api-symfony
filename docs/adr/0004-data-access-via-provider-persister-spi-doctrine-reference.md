@@ -1,17 +1,8 @@
-# Data access goes through a Provider/Persister SPI, with Doctrine as the reference implementation
+# Data access goes through a provider/persister SPI, with Doctrine as the reference implementation
 
-Welding the generic CRUD capstone directly to Doctrine would be the smallest build
-but would exclude every other store and block testing without a database. Instead
-the generic handler is storage-agnostic over a bundle SPI — a `DataProvider` (fetch
-one / collection) and `DataPersister` (create / update / delete /
-relationship-mutate), resolved per resource type — with Doctrine as the reference
-implementation (building queries through core's `FilterHandlerInterface` /
-`SortHandlerInterface`) and an in-memory implementation as the test double and
-conformance witness, which keeps a finding attributable to either the core seam or
-the data mapping.
+The generic engine is storage-agnostic over a `DataProvider` (reads) and a `DataPersister` (writes, including relationship mutation), each resolved per type, with Doctrine as the reference implementation and an in-memory pair as the test double and conformance witness, so a finding is attributable either to the shared engine or to one store's execution. Welding the engine to Doctrine would have been smaller, but it would exclude every other store and block testing without a database.
 
-This mirrors core's own metadata-versus-execution split one layer up
-(`haddowg/json-api` ADR 0007). Other stores plug in by implementing the SPI, and the
-generic engine (a later phase) is built once over it as a refactor of the proven
-per-type handlers. The cost — more interfaces than direct Doctrine — is accepted as
-the price of a platform rather than a Doctrine-only tool.
+## Consequences
+
+- Resolution is the standard tagged-iterator contract: providers and persisters are consulted in descending tag priority and the first `supports()` wins. The Doctrine pair registers at `-128`, so an application's own provider shadows it for the types it supports with no configuration.
+- The persister is not templated over the entity type (entities flow as `object`), and it owns `instantiate()` because it owns the storage mapping.

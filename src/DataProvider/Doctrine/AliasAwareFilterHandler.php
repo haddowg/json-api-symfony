@@ -11,7 +11,7 @@ use haddowg\JsonApi\Resource\Filter\FilterInterface;
  * implementation may offer so the shared {@see \haddowg\JsonApiBundle\DataProvider\CriteriaApplier}
  * can push a declared filter down onto a NON-root alias of the query — the pivot
  * related-collection path applies the related vocabulary on the query root and the
- * pivot vocabulary on the joined `pivot` alias, all on the one builder (bundle ADR 0059).
+ * pivot vocabulary on the joined `pivot` alias, all on the one builder (bundle ADR 0045).
  *
  * It is NOT a core change: core's `FilterHandlerInterface` is untouched, and the
  * in-memory handler does not implement this — the applier only ever requests a

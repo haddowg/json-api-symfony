@@ -19,7 +19,7 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 /**
  * Builds one `guard-gadgets` type per {@see $variant}, with or without a firewall
  * ({@see $firewall}), so the suite can show which security declarations fail the
- * build when nothing can evaluate them (bundle ADR 0130).
+ * build when nothing can evaluate them (bundle ADR 0043).
  *
  * Variants: `resource` (an expression on the resource attribute), `relation` (an
  * expression on a relation), `action` (an expression on a custom action),

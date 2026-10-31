@@ -36,7 +36,7 @@ use haddowg\JsonApiBundle\Operation\Operation;
     tags: ['Catalog'],
     securityRead: 'true',
     securityCreate: 'true',
-    // OpenAPI description overrides via the attribute (bundle ADR 0092): the
+    // OpenAPI description overrides via the attribute (docs/openapi.md): the
     // resource-object schema description, and a per-operation override on the
     // collection read (keyed by the Operation case name). Operations without an
     // override (FetchOne/Create/Update/Delete) keep the generated default.
@@ -44,7 +44,7 @@ use haddowg\JsonApiBundle\Operation\Operation;
     operationDescriptions: [
         Operation::FetchCollection->name => 'Browse the product catalog.',
     ],
-    // Vendor extensions (bundle ADR 0127): x-feature on every products operation,
+    // Vendor extensions (docs/openapi.md): x-feature on every products operation,
     // overridden for Create and joined by x-rate-limit on Delete.
     extensions: ['x-feature' => 'catalog'],
     operationExtensions: [
@@ -69,7 +69,7 @@ final class ProductResource extends AbstractResource
             Str::make('name')->sortable()->required()->minLength(2)->maxLength(120),
             Str::make('status')->sortable()->enum(CatalogStatus::class),
             // A relation description (->describedAs()) flows onto the related +
-            // relationship operation descriptions for this relation (bundle ADR 0092).
+            // relationship operation descriptions for this relation (docs/openapi.md).
             BelongsTo::make('category', 'categories')->describedAs('The catalog category this product belongs to.'),
             HasMany::make('tags', 'categories')->storedAs('tagIds'),
         ];

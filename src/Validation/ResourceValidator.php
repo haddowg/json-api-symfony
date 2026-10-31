@@ -131,7 +131,7 @@ final class ResourceValidator
      * relationship validates its MERGED pivot (stored row overlaid by the incoming
      * meta) in the update context, a genuinely-new member validates its incoming meta
      * in the create (new-row) context — superseding the always-create-context band-aid
-     * (ADR 0050 [HALF B]).
+     * (ADR 0049 [HALF B]).
      *
      * @param object|null                                        $existingObject the already-loaded domain object on an
      *                                                                           update (null on create), whose stored
@@ -320,10 +320,10 @@ final class ResourceValidator
      * member whose related id is in `$existingPivot` is already in the relationship, so
      * its stored pivot row is merged under the incoming meta and validated in the
      * UPDATE context (a writable field absent from meta keeps its stored value — the
-     * persister reorders the row in place, ADR 0046), while a genuinely-new member
+     * persister reorders the row in place, ADR 0045), while a genuinely-new member
      * validates the incoming meta in the CREATE (new-row) context — a required writable
      * pivot field absent on a new row is a `422` before persist (never the DB NOT-NULL
-     * `500`). This supersedes the always-create-context band-aid (ADR 0050).
+     * `500`). This supersedes the always-create-context band-aid (ADR 0049).
      * {@see Mode::Remove} carries no pivot meta, so no pivot validation runs.
      *
      * @param array<string, array<string, mixed>> $existingPivot the relation's existing pivot rows, by related id
@@ -385,7 +385,7 @@ final class ResourceValidator
     /**
      * The writable pivot values from a linkage member's `meta`, read from the nested
      * `meta.pivot` (symmetric with how pivot renders on reads and how the OpenAPI
-     * request schema types it; bundle ADR 0103). A missing or non-array `pivot` yields
+     * request schema types it; bundle ADR 0045). A missing or non-array `pivot` yields
      * an empty map.
      *
      * @param array<array-key, mixed> $meta the linkage member's full meta
@@ -401,7 +401,7 @@ final class ResourceValidator
 
     /**
      * Validates ONE relationship-endpoint member's pivot meta in the per-member
-     * new/existing context (ADR 0050): a member whose related id is in `$existingPivot`
+     * new/existing context (ADR 0049): a member whose related id is in `$existingPivot`
      * is an existing row, so its stored pivot row is merged under the incoming meta and
      * validated in the UPDATE context (a writable field absent from meta keeps its
      * stored value); a member whose id is absent is a new row, validated in the CREATE
@@ -804,7 +804,7 @@ final class ResourceValidator
      * association row, validated in the CREATE (new-row) context — a required writable
      * pivot field absent on it is a `422` (a new row would have no value for it), never
      * the DB NOT-NULL `500`. This supersedes the always-create-context band-aid the
-     * pivot-writes work introduced (ADR 0050).
+     * pivot-writes work introduced (ADR 0049).
      *
      * @param array<mixed, mixed>|mixed                $member        the raw linkage member (`{type, id, meta?}`)
      * @param array<string, array<string, mixed>>      $existingPivot the relation's existing pivot rows, by related id
@@ -886,7 +886,7 @@ final class ResourceValidator
      * Validates the cross-field comparisons ({@see CompareField}) a relation's writable
      * pivot fields declare, over the **merged** pivot meta — the document-level analogue
      * of the attribute {@see compareError()} loop, scoped to pivot meta. Because the
-     * meta is already merged (stored row overlaid by incoming, ADR 0050), a comparison
+     * meta is already merged (stored row overlaid by incoming, ADR 0049), a comparison
      * against a sibling pivot field the partial did not re-send evaluates against the
      * member's resulting pivot state, not the partial alone. The pointer is built by the
      * caller's `$pointer` closure so the same machinery serves the whole-resource linkage

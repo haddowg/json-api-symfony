@@ -36,7 +36,7 @@ final class CogResource extends AbstractResource
             // key (no DB sequence), so a create must carry the encoded `cog-…` wire
             // id — `requireClientId()` mandates it (a create without one 403s), the
             // policy that supersedes the removed `acceptsClientGeneratedId()` (bundle
-            // ADR 0039). The encoder decodes the wire id to the integer storage key.
+            // docs/validation.md). The encoder decodes the wire id to the integer storage key.
             Id::make()
                 ->requireClientId()
                 ->encodeUsing(new HexIdEncoder())
@@ -48,7 +48,7 @@ final class CogResource extends AbstractResource
 
     /**
      * A `name` filter so the self-referential `parent` to-one is filter-excludable:
-     * the to-one nulling path (bundle ADR 0068) is then exercised on an ENCODED-ID
+     * the to-one nulling path (bundle ADR 0053) is then exercised on an ENCODED-ID
      * parent type — the parent's wire id is a `cog-…` token, so this proves the
      * batch's `parentWireId()` keys agree with the serializer's `getId()` (follow-up
      * #4). A non-matching `filter[name]` nulls the related cog `data: null`.

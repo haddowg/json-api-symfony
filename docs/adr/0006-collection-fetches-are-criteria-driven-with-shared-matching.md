@@ -1,21 +1,7 @@
 # Collection fetches are criteria-driven: the handler resolves, a shared applier matches, providers only execute
 
-Letting each `DataProvider` interpret the raw query parameters itself would
-duplicate the spec semantics — which `filter[…]`/`sort` keys are declared,
-unknown key → 400, `-` prefix → descending — per store, and divergence there is
-exactly what the in-memory conformance witness (ADR 0004) exists to catch. The
-read handler instead resolves everything declaration-shaped up front
-(`filters()`, `allSorts()`, `pagination()` from the resource) into a
-`CollectionCriteria`; the shared `CriteriaApplier` does the matching and raises
-the spec errors once for all providers; a provider supplies only its execution
-— core `FilterHandlerInterface`/`SortHandlerInterface` implementations and a
-windowed materialization. A provider failing a spec test therefore differs from
-its peers only in execution, never in interpretation.
+The handler resolves a request's filters, sorts and pagination against the resource's declared vocabulary into a `CollectionCriteria`, and the shared `CriteriaApplier` matches keys, raises the spec errors and folds in core's filter defaults, so a provider supplies only execution: core filter and sort handlers plus a window. Letting each provider interpret raw query parameters would duplicate the spec semantics per store, which is exactly the divergence the in-memory witness exists to catch.
 
-Pagination is push-down: core's `PaginatorInterface::window()` (core ADR 0015,
-forced by this phase) yields the fetch window before any items are
-materialized, the provider returns the windowed items plus the pre-window
-total, and the handler builds the page via `paginate()` /
-`DataResponse::fromPage()`. Providers narrow on the window value object's
-concrete type (`OffsetWindow` today), leaving room for a cursor-shaped window
-without reshaping the SPI.
+## Consequences
+
+Pagination is pushed down: the paginator's window reaches the provider before anything is materialised, and the branch logic (whole set, counted page, count-free probe) is core's `WindowExecutor`, so a provider supplies only the store-specific slice and count. Defaults are folded before the count, so totals describe the defaulted collection.

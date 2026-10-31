@@ -11,7 +11,7 @@ use haddowg\JsonApi\Resource\Field\Str;
 
 /**
  * The related `brands` of the fail-loud eager-load validation fixture (bundle ADR
- * 0085): the type every {@see BaseEagerProductResource} relation points at. It
+ * 0035): the type every {@see BaseEagerProductResource} relation points at. It
  * declares a to-one `region`, so a product's `region.region` is a valid two-hop to-one
  * chain (the SAFE case) and a product's `tags.region` is a two-segment chain whose
  * FIRST segment (`tags`, a to-many) makes the validator throw even though it is an

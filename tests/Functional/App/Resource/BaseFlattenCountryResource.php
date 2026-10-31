@@ -10,7 +10,7 @@ use haddowg\JsonApi\Resource\Field\Str;
 
 /**
  * The shared `countries` declaration of the flattened-attribute (`on()`) conformance
- * fixture (bundle ADR 0085): the SECOND hop the book's multi-hop `on('author.country')`
+ * fixture (bundle ADR 0035): the SECOND hop the book's multi-hop `on('author.country')`
  * walks to. Registering it makes the type known to the serializer resolver and gives the
  * multi-hop eager walk a batching provider for the deeper level — it never renders as a
  * relationship of an author or a book; it exists only so the multi-hop chain has a real

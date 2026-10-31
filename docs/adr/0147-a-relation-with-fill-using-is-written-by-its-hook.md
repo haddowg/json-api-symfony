@@ -1,3 +1,0 @@
-# A relation with fillUsing() is written by its hook
-
-The handler stripped relationships from write bodies and handed each to the persister's `mutateRelationship()`, which writes the relation's column, so a `fillUsing()` hook never ran and a relation stored as two columns failed on a property that does not exist. The handler now calls the hook for such a relation on every write path, in place of the persister, and saves the parent through `update()` at a relationship endpoint. It keeps the scoped linkage resolution and the update gates around it, because the hook decides only how the value is stored, not who may set it.

@@ -1,30 +1,3 @@
-# Relationship linkage load-state is a storage-aware predicate, wired only for Doctrine
+# Relationship load-state is a Doctrine-only predicate that never initialises a collection
 
-> Update: core's opt-in `dataOnlyWhenLoaded()` is **superseded by a per-type lazy
-> default** (core ADR 0067 / bundle ADR 0074) — a to-many and `HasOne` are lazy by
-> default, `withData()` opts back to eager. This `DoctrineRelationshipLoadState`
-> predicate is unchanged; it now serves the lazy *default* rather than an opt-in.
-
-A lazy relation (a to-many or `HasOne` by default) must answer
-"is this linkage already in memory?" **without triggering a load** — but the core
-library is storage-agnostic and cannot know. Core's seam
-(`RelationshipLoadStateInterface`, injected via `Server::withRelationshipLoadState()`,
-default `null` = always-loaded) leaves that answer to the data-layer adapter. The
-bundle implements it as the reference `DoctrineRelationshipLoadState`: for a
-to-many it reports loaded only when the backing association is an
-**already-initialised** `PersistentCollection` (read via `ClassMetadata`,
-`isInitialized()` consulted directly so the check never iterates or initialises
-the collection); for a to-one it reports loaded unconditionally, because a lazy
-`ManyToOne` proxy carries its identifier and emitting the resource identifier
-needs no database round-trip.
-
-It is threaded into the `Server` by the `ServerFactory` through core's injector,
-and registered **only when the Doctrine adapter is wired** — the
-`DoctrineEntityMapPass` removes it on the same empty-entity-map condition as the
-Doctrine provider/persister, so the `ServerFactory`'s optional dependency
-resolves to `null` (core's always-loaded default) in an in-memory or
-non-Doctrine-integrated application, where related objects are materialised
-anyway. The predicate maps the JSON:API relationship to its storage association
-by the relation field's `column()` and `isToMany()`, and treats any relation it
-cannot reason about (an unmapped column, a non-managed model) as loaded — so it
-never changes the behaviour of a relation outside its competence.
+Core renders a lazy relation's linkage only when it is already in memory and leaves "is it loaded?" to the data layer. The bundle answers only when Doctrine is wired: a to-many counts as loaded only when its `PersistentCollection` is already initialised (checked without iterating it), and a to-one always counts as loaded because a proxy carries its identifier. Without Doctrine, or for a relation the predicate cannot map to an association, everything counts as loaded, so the predicate never changes behaviour outside its competence and a plain collection read never initialises a collection just to render identifiers.

@@ -27,7 +27,7 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Product;
  * linkage `id` is an encoded `products` token resolves the right managed reference.
  *
  * Its id is **database-generated** — the **encoded store-provided** id-strategy
- * demonstrator (bundle ADR 0039). A `POST` carries no id; the plain `Id::make()`
+ * demonstrator (docs/validation.md). A `POST` carries no id; the plain `Id::make()`
  * (plus the codec) sets nothing, the database assigns the auto-increment integer on
  * flush, and the `201` body + `Location` render the *encoded* wire token for the
  * newly assigned key. This is now a first-class create — the store-provided default

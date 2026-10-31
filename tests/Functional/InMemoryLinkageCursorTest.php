@@ -9,7 +9,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\JsonApiTestKernel;
 /**
  * {@see LinkageCursorConformanceTestCase} against the in-memory provider — the
  * linkage keyset witness (the ground truth the Doctrine push-down matches;
- * bundle ADR 0114).
+ * bundle ADR 0063).
  */
 final class InMemoryLinkageCursorTest extends LinkageCursorConformanceTestCase
 {

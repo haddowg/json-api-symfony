@@ -45,10 +45,10 @@ use haddowg\JsonApiBundle\Operation\Operation;
  * service, so it may have constructor dependencies) when the field DSL cannot
  * express the wire shape. The generic CRUD engine then drives reads/writes for
  * the type through the override instead of the resource's field inventory
- * (bundle ADR 0023).
+ * (bundle ADR 0024).
  *
  * `operations` is the exposed operation allow-list: the {@see \haddowg\JsonApiBundle\Operation\Operation}
- * cases this type serves, one route emitted per case (bundle ADR 0025). An empty
+ * cases this type serves, one route emitted per case (bundle ADR 0024). An empty
  * array means the default — for a resource, all five operations.
  *
  * `readOnly` is an intent-named shorthand for the common "suppress every write"
@@ -79,7 +79,7 @@ use haddowg\JsonApiBundle\Operation\Operation;
  * referenced-but-undefined tag is auto-synthesized name-only.
  *
  * `description` and `operationDescriptions` declare **OpenAPI description overrides**
- * (bundle ADR 0092): `description` replaces the generated default on the type's
+ * (docs/openapi.md): `description` replaces the generated default on the type's
  * **resource-object** component schema; `operationDescriptions` is a map keyed by the
  * {@see \haddowg\JsonApiBundle\Operation\Operation} case name (e.g.
  * `Operation::Create->name`, since an enum cannot be a PHP array key) overriding the
@@ -99,7 +99,7 @@ use haddowg\JsonApiBundle\Operation\Operation;
  * which wins when both are present. A blank value is a constructor `\LogicException`.
  *
  * `extensions` and `operationExtensions` declare **OpenAPI vendor extensions** (bundle
- * ADR 0127). `extensions` lands on every operation the document emits for the type:
+ * docs/openapi.md). `extensions` lands on every operation the document emits for the type:
  * its CRUD operations, its related and relationship endpoints, and its custom actions.
  * `operationExtensions` is keyed by the {@see \haddowg\JsonApiBundle\Operation\Operation}
  * case name, like `operationDescriptions`, and is merged over `extensions` for that one
@@ -160,7 +160,7 @@ use haddowg\JsonApiBundle\Operation\Operation;
  * with no subject (a role/attribute check) — row-level read filtering still belongs in
  * the query scope. A bool is a **documentation-only** declaration; only an expression is
  * enforced at runtime, and declaring one without symfony/security-core,
- * symfony/expression-language and a firewall fails the build (bundle ADR 0130).
+ * symfony/expression-language and a firewall fails the build (bundle ADR 0043).
  */
 #[\Attribute(\Attribute::TARGET_CLASS)]
 final readonly class AsJsonApiResource

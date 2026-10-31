@@ -10,7 +10,7 @@ use haddowg\JsonApi\Schema\Error\Error;
 /**
  * A core {@see \haddowg\JsonApi\Exception\JsonApiExceptionInterface} the
  * throwing-resource hook raises for `?throwSignal=jsonapi`. It carries its own status
- * (`418`) and a stable `code` so the invariant test (bundle ADR 0073) can assert
+ * (`418`) and a stable `code` so the invariant test (bundle ADR 0003) can assert
  * the {@see \haddowg\JsonApiBundle\EventListener\ExceptionListener} renders it
  * **natively** — never intercepted or overridden by the config map or a tagged
  * mapper — even though the kernel also registers a mapper that *would* match it

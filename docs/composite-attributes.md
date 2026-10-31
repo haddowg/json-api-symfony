@@ -58,8 +58,8 @@ Two wiring notes:
   OpenAPI schema); it just doesn't validate. Install `opis/json-schema` to get
   the `422`s.
 
-Design records: ADR 0111 (the `Obj`/`OneOf` cascade) and ADR 0112 (`Shape` value
-validation through the core validator).
+Design record: [ADR 0020](adr/0020-nested-attribute-child-constraints-cascade-implicitly.md)
+(the `Obj`/`OneOf` cascade and `Shape` value validation through the core validator).
 
 ## Authoring your own composite constraint
 

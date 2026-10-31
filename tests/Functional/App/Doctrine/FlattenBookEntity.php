@@ -8,7 +8,7 @@ use Doctrine\ORM\Mapping as ORM;
 
 /**
  * The Doctrine-mapped `books` of the flattened-attribute (`on()`) fixture (bundle
- * ADR 0085), mirroring the in-memory
+ * ADR 0035), mirroring the in-memory
  * {@see \haddowg\JsonApiBundle\Tests\Functional\App\FlattenBook}. Three `ManyToOne`
  * associations (the owning side, so the FK lives on the book row):
  *

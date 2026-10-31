@@ -14,7 +14,7 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Without an authorization checker the subscriber refuses an operation gated by an
- * expression instead of letting it through (bundle ADR 0130). The build normally
+ * expression instead of letting it through (bundle ADR 0043). The build normally
  * stops this case first; this is the runtime fallback.
  */
 final class ResourceSecuritySubscriberTest extends TestCase

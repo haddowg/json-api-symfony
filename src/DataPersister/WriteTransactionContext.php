@@ -28,7 +28,7 @@ use Symfony\Contracts\Service\ResetInterface;
  * hook that throws does NOT fail the response and rolls nothing back (there is
  * nothing to undo). The executor drains with an error handler that logs each such
  * exception and lets the remaining hooks run; the batch still succeeds (bundle ADR
- * 0088).
+ * 0087).
  *
  * It is a stateful, **request-scoped** service: one instance per request, holding
  * the active flag and the FIFO queue of deferred callables for the in-flight

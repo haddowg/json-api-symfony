@@ -23,13 +23,13 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
  * {@see \haddowg\JsonApiBundle\Security\ResourceSecuritySubscriber} queries. The
  * default server's map is the `$expressions` argument and every other server's goes
  * under `$servers`. A resource assigned to several servers is recorded under each, and
- * a server only ever holds what its own resource declared (bundle ADR 0142).
+ * a server only ever holds what its own resource declared (bundle ADR 0034).
  *
  * The maps flow as plain scalars (the container cannot dump value objects as a
  * service argument); the registry rebuilds the {@see \haddowg\JsonApiBundle\Security\ResourceSecurity}
  * objects from them.
  *
- * It also fails the build (bundle ADR 0130) when a resource or a custom action
+ * It also fails the build (bundle ADR 0043) when a resource or a custom action
  * declares an enforced expression (a string) the application cannot evaluate:
  * symfony/expression-language or symfony/security-core missing, or no
  * `security.authorization_checker` service (no SecurityBundle firewall). The

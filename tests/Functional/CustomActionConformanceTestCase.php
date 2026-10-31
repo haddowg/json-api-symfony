@@ -259,7 +259,7 @@ abstract class CustomActionConformanceTestCase extends JsonApiFunctionalTestCase
     {
         // The `pin` action declares asLink: true with NO security, so its `links.pin`
         // member renders on every rendered actionWidgets resource and resolves to the
-        // action's own route URL (bundle ADR 0091).
+        // action's own route URL (bundle ADR 0076).
         $links = $this->linksOf($this->action('/actionWidgets/1', 'GET'));
 
         self::assertArrayHasKey('pin', $links);
@@ -285,7 +285,7 @@ abstract class CustomActionConformanceTestCase extends JsonApiFunctionalTestCase
     {
         // The `archive` action declares asLink: true AND security: ROLE_ADMIN. The link
         // renders ONLY for a requester who would pass the same gate the BeforeActionEvent
-        // uses — present for `admin`, absent for `user` (bundle ADR 0091).
+        // uses — present for `admin`, absent for `user` (bundle ADR 0076).
         $adminLinks = $this->linksOf($this->action('/actionWidgets/1', 'GET', null, ['HTTP_AUTHORIZATION' => 'Bearer admin']));
         self::assertArrayHasKey('archive', $adminLinks);
         self::assertStringEndsWith('/actionWidgets/1/-actions/archive', $this->href($adminLinks['archive']));

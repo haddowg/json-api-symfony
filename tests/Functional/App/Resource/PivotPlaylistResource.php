@@ -20,7 +20,7 @@ use haddowg\JsonApi\Resource\Field\Str;
  *
  * It also declares a `dataTracks` pivot relation that renders its linkage data BY
  * DEFAULT (`withData()`, reading the same `tracks` property) — the in-memory
- * boundary witness for a PRIMARY document (bundle ADR 0102): because the in-memory
+ * boundary witness for a PRIMARY document (bundle ADR 0045): because the in-memory
  * provider is not pivot-aware, the default-rendered linkage carries NO `meta.pivot`,
  * exactly as the related/relationship endpoints carry none here.
  */

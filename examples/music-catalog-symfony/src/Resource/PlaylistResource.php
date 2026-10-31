@@ -28,12 +28,12 @@ use haddowg\JsonApiBundle\Hook\ResourceLifecycleHooksTrait;
 /**
  * The `playlists` resource type, mapped to its backing {@see Playlist} entity.
  *
- * It is the **hydrator-override witness** (ADR 0023): `hydrator:
+ * It is the **hydrator-override witness** (ADR 0024): `hydrator:
  * PlaylistHydrator::class` delegates writes to a hand-written hydrator (with a
  * bound constructor arg, proving DI resolution) while this resource still
  * serializes reads.
  *
- * It is also the **UUID id-strategy** demonstrator (bundle ADR 0039):
+ * It is also the **UUID id-strategy** demonstrator (docs/validation.md):
  * `Id::make()->uuid()->generated()->build()` keys the {@see Playlist} on a string UUID the
  * *app* mints when a create omits the id, while the custom hydrator additionally
  * accepts a well-formed client `id` (the `uuid()` format both pins the route `{id}`
@@ -69,7 +69,7 @@ use haddowg\JsonApiBundle\Hook\ResourceLifecycleHooksTrait;
  * related/relationship read endpoints become admin-only, OVERRIDING the parent's
  * (ungated) read, while the curated `publicOwner` view of the same User stays open.
  *
- * It is finally the **pivot witness** (bundle ADRs 0045/0046): alongside the plain
+ * It is finally the **pivot witness** (bundle ADR 0045): alongside the plain
  * `belongsToMany` `tracks` (a bare join table, no pivot columns), it declares a
  * second `belongsToMany` `orderedTracks` to the same `tracks` type backed by the
  * {@see \haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\PlaylistEntry}
@@ -176,7 +176,7 @@ final class PlaylistResource extends AbstractResource implements ResourceLifecyc
                 // the relationship-object meta.total on a playlist.
                 ->countable(),
 
-            // The pivot witness (bundle ADRs 0045/0046). `orderedTracks` is the same
+            // The pivot witness (bundle ADR 0045). `orderedTracks` is the same
             // far `tracks` type, but backed by the PlaylistEntry association entity
             // that carries the `position`/`addedAt` pivot columns a plain join table
             // cannot. Declaring fields() (real FieldInterface definitions) makes the
@@ -194,7 +194,7 @@ final class PlaylistResource extends AbstractResource implements ResourceLifecyc
                     // carry it (an absent position on a new row is a 422, never a DB
                     // NOT-NULL 500). On an existing-member partial update the omitted
                     // position is preserved from the MERGED stored row (bundle ADR
-                    // 0050) — no false 422 — so a required field need not be re-sent to
+                    // 0049) — no false 422 — so a required field need not be re-sent to
                     // re-assert a member.
                     Integer::make('position')->example(1)->required()->min(1)->build(),
                     // A second WRITABLE pivot field constrained `weight >= position` —
@@ -205,7 +205,7 @@ final class PlaylistResource extends AbstractResource implements ResourceLifecyc
                     DateTime::make('addedAt')->example('2024-06-01T09:30:00+00:00')->readOnly()->guaranteed()->build(),
                 )
                 // Pivot filters are AUTHOR-DECLARED via the `pivot.` column prefix
-                // (bundle ADR 0067): a filter whose column starts with `pivot.` targets
+                // (bundle ADR 0045): a filter whose column starts with `pivot.` targets
                 // the association-entity join, with the value cast auto-resolved from the
                 // pivot field backing the stripped column. `?filter[position]=2` keeps the
                 // member at pivot position 2; `?sort=position` still works zero-config (a

@@ -35,7 +35,7 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
  * request's `relatedQuery[<rel>][filter]`, and hands it to
  * {@see DataProviderInterface::countRelated()} — so a `?withCount`-named relation that
  * also carries a relatedQuery filter counts the SAME set the related-collection
- * endpoint would page (bundle ADR 0060). In the common no-relatedQuery case the
+ * endpoint would page (bundle ADR 0052). In the common no-relatedQuery case the
  * criteria is empty and the count is raw membership unchanged.
  *
  * The provider returns each relation's counts keyed by the parent's wire id; this
@@ -107,7 +107,7 @@ final class RelationCountBatcher
      * related-collection filter vocabulary, with NO window (a count needs no page) and
      * NO sort (order is irrelevant to a count) — exactly the filter half of the
      * criteria {@see DataProviderInterface::fetchRelatedCollection()} applies (bundle
-     * ADR 0060). Built through the same {@see RelationCriteriaFactory} the related
+     * ADR 0052). Built through the same {@see RelationCriteriaFactory} the related
      * endpoint and the include-window batcher use, so the count honours the identical
      * vocabulary merge (related resource ⊕ relation scope) and the same unknown-key
      * `400`. In the common no-relatedQuery case the request's filter is empty, so the
@@ -126,7 +126,7 @@ final class RelationCountBatcher
      * count criteria is rebuilt with an empty `defaultSort`: sort is dropped on both
      * providers (in-memory sorts an array it then only counts; Doctrine emits no `ORDER
      * BY`), keeping the count crash-free and witness-identical regardless of the related
-     * resource's default order (bundle ADR 0060).
+     * resource's default order (bundle ADR 0052).
      */
     private function countCriteria(Server $server, RelationInterface $relation, JsonApiRequestInterface $request): CollectionCriteria
     {

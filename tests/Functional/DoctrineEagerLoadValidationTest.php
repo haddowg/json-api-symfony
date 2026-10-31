@@ -8,7 +8,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\EagerValidation\EagerValidationDo
 
 /**
  * {@see EagerLoadValidationConformanceTestCase} against the Doctrine kernel (bundle
- * ADR 0085): proves the boot-time eager-load validation throws / accepts identically
+ * ADR 0035): proves the boot-time eager-load validation throws / accepts identically
  * in a Doctrine-configured app — the rule is provider-agnostic metadata, so a
  * malformed `on()` chain fails the build on either provider.
  */

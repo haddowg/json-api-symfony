@@ -15,7 +15,7 @@ use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 
 /**
  * Answers core's questions about the relation data it reaches outside a relation's own
- * endpoints (bundle ADR 0139), with the expressions {@see ResourceSecuritySubscriber}
+ * endpoints (bundle ADR 0100), with the expressions {@see ResourceSecuritySubscriber}
  * evaluates at those endpoints.
  *
  * A rendered relationship carries its data only when the caller passes the relation's
@@ -23,13 +23,13 @@ use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
  * reads require. A `null` read inherits the parent's read gate, which the caller passed
  * to see the parent, and `true`/`false` only document the endpoints, so all three render.
  * A to-many renders no data either when any type it relates to refuses the caller its
- * collection read gate, the check `GET /{type}` makes (bundle ADR 0140). A flattened
+ * collection read gate, the check `GET /{type}` makes (bundle ADR 0100). A flattened
  * `on()` write needs the related type's update expression against the row it lands on,
  * and passes when that type declares none.
  *
  * The shared service is unbound; each server's factory binds its own copy to the server
  * through {@see forServer()}, which resolves the type of a polymorphic relation's row
- * and names the server whose declarations apply (bundle ADR 0142). The unbound service
+ * and names the server whose declarations apply (bundle ADR 0034). The unbound service
  * reads the default server's.
  */
 final class RelationAuthorizer implements RelationAuthorizerInterface
@@ -73,7 +73,7 @@ final class RelationAuthorizer implements RelationAuthorizerInterface
     public function canReadRelationship(mixed $model, RelationInterface $relation, JsonApiRequestInterface $request): bool
     {
         // A permission the relation declares replaces the related type's own gates
-        // (bundle ADR 0141).
+        // (bundle ADR 0100).
         $read = $relation->securityRead();
         if (\is_bool($read)) {
             return true;

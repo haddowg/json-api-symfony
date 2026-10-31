@@ -14,7 +14,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Resource\BaseCursorGroupResource;
  * {@see \haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineDataProvider}. The `widgets`
  * relation is the INVERSE side of {@see CursorGroupEntity}'s `OneToMany` (the related
  * {@see CursorWidgetEntity} carries the owning `group_id` FK), so a cursor-resolved include
- * collapses to the inverse-FK single-window shape (bundle ADR 0118).
+ * collapses to the inverse-FK single-window shape (bundle ADR 0065).
  */
 #[AsJsonApiResource(entity: CursorGroupEntity::class)]
 final class DoctrineCursorGroupResource extends BaseCursorGroupResource {}

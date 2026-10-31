@@ -6,7 +6,7 @@ namespace haddowg\JsonApiBundle\Attribute;
 
 /**
  * Declares the relations of a JSON:API `type` independently of an
- * {@see \haddowg\JsonApi\Resource\AbstractResource} (bundle ADR 0026). Goes on a
+ * {@see \haddowg\JsonApi\Resource\AbstractResource} (bundle ADR 0024). Goes on a
  * class implementing {@see \haddowg\JsonApiBundle\Server\RelationsProviderInterface},
  * whose {@see \haddowg\JsonApiBundle\Server\RelationsProviderInterface::relations()}
  * returns the type's {@see \haddowg\JsonApi\Resource\Field\RelationInterface} list.

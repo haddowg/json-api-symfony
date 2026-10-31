@@ -11,7 +11,7 @@ use Symfony\Component\ExpressionLanguage\Expression;
 use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 
 /**
- * Decides what of another type a response may show through a relation (bundle ADR 0140),
+ * Decides what of another type a response may show through a relation (bundle ADR 0100),
  * with the gates that type's own endpoints apply:
  *
  *  - a single related row (a to-one target) needs the type's read expression
@@ -26,7 +26,7 @@ use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
  * ({@see relationPermission()}); its data then shows under scoping alone.
  *
  * The gates are the ones the related type declares on the server the operation runs on
- * (bundle ADR 0142): the server named in the call, else the one {@see bind()} set, else
+ * (bundle ADR 0034): the server named in the call, else the one {@see bind()} set, else
  * the default server.
  *
  * Answers are memoized per row, server and type, per server and type for a collection,
@@ -84,7 +84,7 @@ final class ReadableRows
     }
 
     /**
-     * The read permission `$relation` declares on `$parent` (bundle ADR 0141), which
+     * The read permission `$relation` declares on `$parent` (bundle ADR 0100), which
      * replaces the related type's own gates for that relation: `true` or `false`, or
      * `null` when it declares none. A string `security(read:)` is evaluated with the
      * parent as subject; a bool only documents the relation, so it allows.

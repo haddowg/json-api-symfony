@@ -54,7 +54,7 @@ final class FavoriteResource extends AbstractResource
             // targetType/targetId pair). This is the one and only extractUsing in the
             // example — the natural place a polymorphic to-one needs a custom resolver.
             //
-            // Include safeguard A (bundle ADR 0037): `favoritable` is `cannotBeIncluded()`
+            // Include safeguard A (bundle ADR 0036): `favoritable` is `cannotBeIncluded()`
             // — a polymorphic to-one whose members span types with no shared include
             // vocabulary, so a client reaches it through the related/relationship
             // endpoints (`/favorites/{id}/favoritable`) rather than `?include`. Its

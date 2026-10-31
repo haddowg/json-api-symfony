@@ -40,7 +40,7 @@ use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
  * `ui.enabled` is true **and** the expose gate passes (`kernel.debug` or
  * `expose_in_prod`), so this controller never re-checks exposure.
  *
- * ReDoc defaults to the pinned 3.x release (bundle ADR 0134). Its standalone bundle is an
+ * ReDoc defaults to the pinned 3.x release (docs/openapi.md). Its standalone bundle is an
  * ES module that initialises itself from the `<redoc spec-url>` tag, so the page loads
  * it with `<script type="module">` and renders `disable-telemetry="true"` on the tag
  * unless `ui.redoc_telemetry` opts in. `ui.redoc_version` set to an exact 2.x release

@@ -19,7 +19,7 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
  * `type → {cache, cache_operations, deprecation}` map per server, injected into the
  * {@see ResponseHeadersRegistry} the {@see \haddowg\JsonApiBundle\EventListener\ResponseHeadersListener}
  * queries. The default server's map is `$byType` and every other server's goes under
- * `$servers`; a resource on several servers is recorded under each (bundle ADR 0144).
+ * `$servers`; a resource on several servers is recorded under each (bundle ADR 0034).
  *
  * The map flows as plain scalars (the container cannot dump value objects as a
  * service argument); the registry rebuilds the {@see \haddowg\JsonApiBundle\Http\CacheHeaders}

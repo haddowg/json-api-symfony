@@ -150,14 +150,14 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  * ({@see DataPersisterInterface::mutateRelationship()}, {@see Mode::Replace}) with
  * the commit deferred so the single {@see DataPersisterInterface::create()}/
  * {@see DataPersisterInterface::update()} flush owns it — a not-yet-persisted create
- * target is never flushed mid-association (ADR 0018).
+ * target is never flushed mid-association (ADR 0017).
  *
  * Relationship reads share the same provider-resolution shape: load the parent
  * through the read provider (a `404` when absent), resolve the named relation on
  * the parent resource via core's {@see \haddowg\JsonApi\Resource\AbstractResource::relationNamed()}
  * (a JSON:API `404` {@see RelationshipNotExists} when the relationship is unknown
  * or its endpoint is suppressed — relationship routes stay parametric, so the
- * handler enforces each relation's endpoint-exposure flags, ADR 0027), then
+ * handler enforces each relation's endpoint-exposure flags, ADR 0016), then
  * render —
  *  - {@see FetchRelatedOperation} renders the related domain value(s) through the
  *    *related* type's serializer: a single resource for a to-one (read off the
@@ -225,7 +225,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // than failing the committed batch. Null on the single-op path (no batch).
         private readonly ?\Psr\Log\LoggerInterface $logger = null,
         // The output timezone holder render paths outside a resource's attributes read
-        // (pivot meta, bundle ADR 0123), set per operation from its Server.
+        // (pivot meta, bundle ADR 0045), set per operation from its Server.
         private readonly ?RequestScopedOutputTimezone $outputTimezone = null,
         // Applies the related endpoint's scope to written linkage (bundle ADR 0126).
         private readonly ?ScopedLinkageGuard $linkageGuard = null,
@@ -233,10 +233,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // the handler without a route the loader gated.
         private readonly ?RouteDescriptorRegistry $descriptors = null,
         // Reads a computed relation into a scoped type as the closure's value narrowed to
-        // that scope (bundle ADR 0125).
+        // that scope (bundle ADR 0035).
         private readonly ?RelatedReadRouter $readRouter = null,
         // Resolves a type's id encoder from the class the operation's server serves it
-        // with; bound per operation (bundle ADR 0145).
+        // with; bound per operation (bundle ADR 0034).
         private readonly ?IdEncoderResolver $idEncoders = null,
     ) {}
 
@@ -359,7 +359,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
             // Load the relations the document renders through their providers (scoped
             // like the related endpoint, no N+1), descending into the windowed pages
-            // (ADRs 0035, 0125); a single resource is a one-element list.
+            // (ADR 0035); a single resource is a one-element list.
             $this->preloadIncludes($provider, [$model], $type, $request, $server);
 
             // Install the ?withCount batched counts for this single resource so its
@@ -369,7 +369,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // Render each rendered-data pivot relation's linkage with its per-member
             // meta.pivot — the primary-document twin of the related/relationship
             // endpoints, where pivot already rides core's identifier-meta path (bundle
-            // ADR 0102). A no-op (the plain serializer) for a type with no rendered-data
+            // ADR 0045). A no-op (the plain serializer) for a type with no rendered-data
             // pivot relation, so there is zero overhead off the pivot path.
             $serializer = $this->withPivotLinkage($server, $type, [$model], $serializer, $request);
 
@@ -412,7 +412,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // provider's silent non-match (or, on a strict driver, a PDO 500). A no-op
         // without the optional validator, or for a filter with no declared
         // constraints; only the raw requested values are checked, never an
-        // author-set default (ADR 0048).
+        // author-set default (docs/data-layer.md).
         $this->validateFilterValues($operation->queryParameters()->filter, $filters);
 
         // A singular filter the client applied collapses the collection to a
@@ -490,7 +490,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         // Load the relations the document renders across the whole page through their
         // providers (scoped like the related endpoint, no N+1), descending into the
-        // windowed pages (ADRs 0035, 0125).
+        // windowed pages (ADR 0035).
         $this->preloadIncludes($provider, $items, $type, $request, $server);
 
         // Install the ?withCount batched counts across the whole page in ONE grouped
@@ -500,7 +500,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         // Render each rendered-data pivot relation's linkage with its per-member
         // meta.pivot across the whole page in ONE batched pivot-map read per relation
-        // (no N+1) — the collection twin of the fetch-one wrap (bundle ADR 0102). A
+        // (no N+1) — the collection twin of the fetch-one wrap (bundle ADR 0045). A
         // no-op (the plain serializer) for a type with no rendered-data pivot relation.
         $serializer = $this->withPivotLinkage($server, $type, $items, $serializer, $request);
 
@@ -631,7 +631,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * `?include` on the related resource flows through the same
      * {@see RelatedResponse} render path. A relation that suppresses its related
      * endpoint ({@see RelationInterface::exposesRelatedEndpoint()}) is enforced
-     * here as a `404`, the route being parametric (ADR 0027).
+     * here as a `404`, the route being parametric (ADR 0016).
      */
     private function fetchRelated(FetchRelatedOperation $operation): RelatedResponse|ErrorResponse
     {
@@ -680,7 +680,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         // A relation that suppresses its related endpoint (`withoutRelatedEndpoint()`)
         // is not reachable: the route stays parametric, so the handler enforces the
-        // exposure flag as a `404` (reusing RelationshipNotExists) — ADR 0027.
+        // exposure flag as a `404` (reusing RelationshipNotExists) — ADR 0016.
         if (!$relation->exposesRelatedEndpoint()) {
             return ErrorResponse::fromException(new RelationshipNotExists($relationshipName));
         }
@@ -755,9 +755,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // /{relatedType} collection — plus, for a pivot relation, the pivot field
             // keys. The merge + criteria assembly + the 3-tier paginator chain are
             // owned by the RelationCriteriaFactory, shared verbatim with the
-            // include/linkage windowing path (bundle ADR 0057). The merged vocabulary
+            // include/linkage windowing path (bundle ADR 0030). The merged vocabulary
             // rides the CollectionCriteria, so both providers' existing handlers apply
-            // it unchanged (ADR 0044), and the related resource's default order applies
+            // it unchanged (ADR 0030), and the related resource's default order applies
             // to its sub-collection when the request sends no `sort` (a polymorphic
             // to-many has no single related resource, so no default).
             $criteria = $this->relationCriteria->criteriaFor(
@@ -774,7 +774,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // criteria carries (the related resource's filters, the relation's own
             // scoped filters, and any pivot filters), so a relation-scoped or
             // related-resource constrained filter rejects a mistyped value with the
-            // same 400 (ADR 0048).
+            // same 400 (docs/data-layer.md).
             $this->validateFilterValues($operation->queryParameters()->filter, $criteria->filters);
 
             if ($pivot) {
@@ -846,7 +846,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $result = match (true) {
                 $this->readRouter?->readsComputed($relation) === true => $this->readRouter->fetchComputed($server, $parent, $relation, $criteria, $request),
                 // A to-many over several types reaching a scoped type serves its members
-                // narrowed per member type (bundle ADR 0125).
+                // narrowed per member type (bundle ADR 0035).
                 \count($relatedTypes) > 1 && $this->readRouter?->isScoped($relation) === true => $this->readRouter->fetchPolymorphic($server, $parent, $relation, $criteria, $request),
                 default => $relatedProvider->fetchRelatedCollection($relatedType, $parent, $relation, $criteria, $request),
             };
@@ -938,7 +938,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // related value has no object to discriminate, so resolveSerializer falls
         // back to the first registered serializer and the response renders
         // `data: null`.
-        // The to-one is scoped exactly as its include is (bundle ADR 0125): a target the
+        // The to-one is scoped exactly as its include is (bundle ADR 0035): a target the
         // related type's provider scope hides renders `data: null`.
         $related = $this->includeBatcher !== null
             ? $this->includeBatcher->scopeToOne($server, $type, $parent, $relation, $request)
@@ -951,7 +951,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // {@see \haddowg\JsonApi\Exception\FilterParamUnrecognized} (source.parameter
         // `filter[<key>]`). Gated on the merged requested filter being present (not on
         // `\is_object($related)`), so a filter on an empty polymorphic to-one still 400s
-        // (bundle ADR 0068 follow-up #1).
+        // (bundle ADR 0053 follow-up #1).
         if ($polymorphic) {
             $filter = $this->toOneRequestedFilter($operation->queryParameters(), $relation, $request);
             if ($filter !== []) {
@@ -961,7 +961,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         // A relation filter that excludes the single related object nulls the to-one,
         // so it renders `data: null` and contributes nothing — the to-one twin of the
-        // to-many endpoint's filtered collection (bundle ADR 0068). The filter is the
+        // to-many endpoint's filtered collection (bundle ADR 0053). The filter is the
         // operation's own `?filter` (a direct GET /{type}/{id}/{toOneRel}?filter[…])
         // merged with any relatedQuery[<rel>][filter] for this path, resolved against the
         // SAME merged vocabulary the to-many endpoint uses, validated the same (unknown
@@ -981,7 +981,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 // Validate the MERGED requested filter map (the operation's own `?filter`
                 // ⊕ the relatedQuery `[filter]` already driven into the criteria), so a
                 // mistyped relatedQuery filter value is the endpoint's same 400, not just
-                // a mistyped `?filter` value (bundle ADR 0068 follow-up #2).
+                // a mistyped `?filter` value (bundle ADR 0053 follow-up #2).
                 $this->validateFilterValues($filter, $criteria->filters);
 
                 if (!$this->providers->forType($relatedType)->relatedToOneMatches($relatedType, $related, $relation, $criteria, $request)) {
@@ -999,7 +999,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         // Load the related resource's own rendered relations (a single related object
         // as a one-element list) so its includes and linkage are scoped and do not
-        // N+1 (ADRs 0035, 0125). Grouped by the object's own type, so a polymorphic
+        // N+1 (ADR 0035). Grouped by the object's own type, so a polymorphic
         // to-one is covered too.
         if (\is_object($related)) {
             if (!$polymorphic) {
@@ -1036,13 +1036,13 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * on `filter[<key>]`), which propagates to the route-scoped exception listener.
      * Only the **raw** requested values are validated, never an author-set
      * `default()` — the default folding happens later in the provider's
-     * {@see \haddowg\JsonApiBundle\DataProvider\CriteriaApplier} (ADR 0048).
+     * {@see \haddowg\JsonApiBundle\DataProvider\CriteriaApplier} (docs/data-layer.md).
      *
      * The `$requested` map is the raw requested `filter[<key>]` to validate. On a
      * to-one related/relationship endpoint this is the MERGED map (the operation's
      * own `?filter` ⊕ the relatedQuery `[filter]`, the same map driven into the
      * criteria), so a mistyped relatedQuery filter value is rejected the same as a
-     * mistyped `?filter` value (bundle ADR 0068 follow-up #2). All values are raw
+     * mistyped `?filter` value (bundle ADR 0053 follow-up #2). All values are raw
      * client input, so an author default is still never validated.
      *
      * @param array<string, mixed>  $requested the raw requested `filter[<key>]` map
@@ -1075,7 +1075,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      *
      * A relation that suppresses its relationship endpoint
      * ({@see RelationInterface::exposesRelationshipEndpoint()}) is enforced here as
-     * a `404`, the route being parametric (ADR 0027).
+     * a `404`, the route being parametric (ADR 0016).
      */
     private function fetchRelationship(FetchRelationshipOperation $operation): IdentifierResponse|ErrorResponse
     {
@@ -1098,7 +1098,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         // A relation that suppresses its relationship endpoint
         // (`withoutRelationshipEndpoint()`) is enforced handler-side as a `404`
-        // because the route is parametric — ADR 0027.
+        // because the route is parametric — ADR 0016.
         if (!$relation->exposesRelationshipEndpoint()) {
             return ErrorResponse::fromException(new RelationshipNotExists($relationshipName));
         }
@@ -1120,7 +1120,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $this->relationshipPagination?->set(null);
 
         // A to-one and a polymorphic relationship render off the parent: apply the related
-        // type's scope first, exactly as an include does (bundle ADR 0125). A monomorphic
+        // type's scope first, exactly as an include does (bundle ADR 0035). A monomorphic
         // to-many is fetched through its provider below.
         if (!$relation->isToMany() || Polymorphism::of($relation)) {
             $this->relationshipLinkage?->setIncluded(
@@ -1131,7 +1131,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // A relation filter that excludes a to-one's single related object nulls the
         // linkage: resolve the merged filter vocabulary, match the one related object,
         // and on a no-match write `null` onto the parent's to-one property BEFORE the
-        // serializer reads linkage off it — so core emits null linkage (bundle ADR 0068).
+        // serializer reads linkage off it — so core emits null linkage (bundle ADR 0053).
         // A GET read, so nothing flushes. Monomorphic only (a polymorphic to-one carries
         // no shared filter vocabulary).
         if (!$relation->isToMany() && Polymorphism::isMonomorphic($relation)) {
@@ -1151,7 +1151,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                     );
                     // Validate the MERGED requested filter map (the operation's own
                     // `?filter` ⊕ the relatedQuery `[filter]`), so a mistyped relatedQuery
-                    // filter value is the endpoint's same 400 (bundle ADR 0068 follow-up #2).
+                    // filter value is the endpoint's same 400 (bundle ADR 0053 follow-up #2).
                     $this->validateFilterValues($filter, $criteria->filters);
 
                     if (!$this->providers->forType($relatedType)->relatedToOneMatches($relatedType, $related, $relation, $criteria, $request)) {
@@ -1166,7 +1166,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // requested filter key is unrecognised — the same `400` the polymorphic
             // to-many surfaces. Gated on the merged requested filter being present (not on
             // a target existing), so a filter on an empty polymorphic to-one still 400s
-            // (bundle ADR 0068 follow-up #1).
+            // (bundle ADR 0053 follow-up #1).
             $request = $this->jsonApiRequest($operation->context());
             $filter = $this->toOneRequestedFilter($operation->queryParameters(), $relation, $request);
             if ($filter !== []) {
@@ -1185,7 +1185,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // through the relationship seams, and renders through a PivotParentSerializer that
         // rebinds this one relationship's linkage to a PivotMetaSerializer over the
         // WINDOWED pivot map — the two compose because PivotSubstitutingResolver delegates
-        // the linkage/pagination seams to the Server (bundle ADR 0096).
+        // the linkage/pagination seams to the Server (bundle ADR 0030).
         if ($relatedProvider instanceof PivotAwareProviderInterface && $relatedProvider->supportsPivot($relatedType, $relation)) {
             $request = $this->jsonApiRequest($operation->context());
             $relatedResource = $this->types->resourceFor($server, $relatedType);
@@ -1250,7 +1250,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // single serializer to render a windowed linkage through — querying it is a
         // fast-follow. Rather than silently ignore a requested `?filter`/`?sort`/`?page`,
         // reject it with the related endpoint's same `400` (the projector advertises no
-        // query parameters for a polymorphic relationship endpoint, bundle ADR 0096); with
+        // query parameters for a polymorphic relationship endpoint, bundle ADR 0030); with
         // none requested it renders the whole association below.
         if ($relation->isToMany() && Polymorphism::of($relation)) {
             $queryParameters = $operation->queryParameters();
@@ -1272,7 +1272,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // mirrors fetchRelated()'s to-many fetch, then supplies the page-1 linkage and
         // its pagination OUT-OF-BAND through the relationship-linkage/pagination seams —
         // NOT a destructive write onto the parent property (which would corrupt a sibling
-        // relation sharing the backing column, bundle ADR 0086).
+        // relation sharing the backing column, bundle ADR 0053).
         if ($relation->isToMany() && Polymorphism::isMonomorphic($relation) && $relatedProvider !== null) {
             $request = $this->jsonApiRequest($operation->context());
             $relatedResource = $this->types->resourceFor($server, $relatedType);
@@ -1337,8 +1337,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * (linkage) endpoint OUT-OF-BAND through the relationship-linkage/pagination seams,
      * keyed by the one rendered parent + relation (single-entry maps) — the shared tail
      * of the monomorphic and pivot windowing branches of {@see fetchRelationship()}
-     * (bundle ADR 0096). No destructive write onto the parent's relation property (which
-     * would corrupt a sibling relation sharing the backing column, bundle ADR 0086).
+     * (bundle ADR 0030). No destructive write onto the parent's relation property (which
+     * would corrupt a sibling relation sharing the backing column, bundle ADR 0053).
      *
      * A paginated relation supplies its page so core emits the relationship object's
      * `first`/`prev`/`next`(/`last`) links in the spec's plain form (the query string
@@ -1475,7 +1475,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // before the persister apply, not after). The relation's existing pivot rows
         // are read off the loaded parent so a pivot member already in the relationship
         // validates its MERGED pivot in the update context (a new member stays create
-        // context); a Remove carries no pivot, so it reads none (ADR 0050).
+        // context); a Remove carries no pivot, so it reads none (ADR 0049).
         $existingPivot = $mode !== Mode::Remove && $relation instanceof BelongsToMany && $relation->pivotFields() !== []
             ? $this->providers->forType($type)->fetchRelationshipPivot($type, $parent, $relation)
             : [];
@@ -1550,7 +1550,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      *    a non-null to-one `PATCH` is a replacement — gated by `allowsReplaceFor()`;
      *  - a to-many `PATCH` is a replacement — gated by `allowsReplaceFor()`; a to-many
      *    `POST` add is gated by the relation's per-relation `allowsAddFor()`
-     *    endpoint-exposure flag (`cannotAdd()` → `403`, ADR 0027); a to-many
+     *    endpoint-exposure flag (`cannotAdd()` → `403`, ADR 0016); a to-many
      *    `DELETE` is a removal — gated by `allowsRemoveFor()`.
      *
      * Each gate is **request-aware** (core ADR 0079): a relation the author declared
@@ -1609,7 +1609,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * provider-agnostic {@see RelatedIncludeBatcher}, on the operation's own server, and
      * installs the scoped to-many linkage it returns into the request-scoped linkage
      * holder, so `included` and linkage `data` match the related endpoint (bundle ADRs
-     * 0062, 0125). Also batches includes so they do not N+1.
+     * 0035, 0125). Also batches includes so they do not N+1.
      *
      * The `$provider` argument is retained for the call sites but unused: the
      * orchestrator resolves the right provider per relation itself.
@@ -1724,7 +1724,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * the {@see RelationshipWindowBatcher} windows each rendered to-many relation to
      * page 1 of its `relatedQuery`-ordered/filtered set and supplies that page-1 LINKAGE
      * + relationship-object PAGINATION out-of-band — WITHOUT writing the page back onto
-     * each parent (bundle ADR 0086) — and both maps are swapped into their request-scoped
+     * each parent (bundle ADR 0053) — and both maps are swapped into their request-scoped
      * holders the memoized Server renders through, so core emits the windowed linkage and
      * the relationship object's pagination links in plain form while a column-sharing
      * bystander relation still renders its own membership.
@@ -1762,7 +1762,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * document renders each `belongsToMany` pivot relation's per-member `meta.pivot` on
      * the linkage in its relationships block — wherever that relation's linkage DATA
      * renders — closing the gap where pivot rode the related/relationship endpoints but
-     * NOT a primary document (bundle ADR 0102). Returns `$serializer` untouched (zero
+     * NOT a primary document (bundle ADR 0045). Returns `$serializer` untouched (zero
      * overhead) when the type has no such relation or no request is available.
      *
      * A pivot relation's linkage data renders for THIS request when it is INCLUDED at
@@ -1833,7 +1833,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // The served `$type` (the document being rendered) keys the batched map's
             // outer key by the parent serializer's OWN encoder — never reverse-resolved
             // from the entity class, which would diverge for a multi-type-backed entity
-            // whose served type carries a different id encoder (BLOCKER, bundle ADR 0102).
+            // whose served type carries a different id encoder (BLOCKER, bundle ADR 0045).
             $maps[$relation->name()] = $relatedProvider->fetchRelatedPivotMapBatch($type, $relatedType, $items, $relation);
         }
 
@@ -1932,13 +1932,13 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
     /**
      * Refuses a to-many related or relationship read the way `GET /{type}` would refuse
-     * the related type's collection (bundle ADR 0140): a list is shown whole or not at
+     * the related type's collection (bundle ADR 0100): a list is shown whole or not at
      * all. A polymorphic to-many is refused when any of its types refuses the caller.
      */
     private function gateRelatedCollection(RelationInterface $relation): void
     {
         // A read permission the relation declares replaces the related type's collection
-        // gate, and the relation's own read gate has already enforced it (bundle ADR 0141).
+        // gate, and the relation's own read gate has already enforced it (bundle ADR 0100).
         if (!$relation->isToMany() || $relation->securityRead() !== null) {
             return;
         }
@@ -1990,16 +1990,16 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // Embedded relationships are stripped from the body so core hydrates only
         // attributes + id; the persister then sets the associations (resolving
         // linkage ids → managed references / stored objects) so a typed entity
-        // never has a scalar id assigned to an association property (ADR 0018).
+        // never has a scalar id assigned to an association property (ADR 0017).
         $relationships = $this->extractRelationships($server, $type, $body, creating: true);
 
         $entity = $this->instantiate($server, $persister, $type, $request);
 
         // Apply the embedded associations BEFORE core hydrates, so a flattened `on()`
         // attribute (which hydrates AFTER relationships and reads its owner off the
-        // parent) sees a related model associated in the SAME request body (ADR 0085).
+        // parent) sees a related model associated in the SAME request body (ADR 0035).
         // Relationships are still stripped from the hydrate body, so core's
-        // hydrateRelationships() stays a no-op (no scalar-id assignment, ADR 0018).
+        // hydrateRelationships() stays a no-op (no scalar-id assignment, ADR 0017).
         $entity = $this->applyRelationships($server, $persister, $type, $entity, $relationships, $body, $request, creating: true);
 
         // As on update: an `on()` attribute writes onto the target its relation's related
@@ -2043,15 +2043,15 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // (only a relation whose data renders — included or withData — is windowed),
         // and the window fills the out-of-band linkage seam, so writes inherit the
         // no-parent-mutation behaviour for free. Both are no-ops when the profile is
-        // not negotiated / no ?withCount was named (bundle ADRs 0052, 0053, 0086).
+        // not negotiated / no ?withCount was named (bundle ADRs 0052, 0053).
         $this->applyRelationshipWindows($server, $type, [$entity], $request);
         // A write response honours ?include too: load the relations it renders, scoped
-        // and batched as a fetch does (ADRs 0035, 0125).
+        // and batched as a fetch does (ADR 0035).
         $this->preloadIncludes($this->providers->forType($type), [$entity], $type, $request, $server);
         $this->applyRelationshipCounts($server, $type, [$entity], $request);
 
         // The Location uses the resource's URI segment (its uriType), so it matches
-        // the route the client will GET (ADR 0022); a bare pair has no resource, so
+        // the route the client will GET (docs/routing.md); a bare pair has no resource, so
         // it falls back to the type.
         $uriType = $this->types->resourceFor($server, $type)?->uriType() ?? $type;
 
@@ -2117,10 +2117,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $persister = $this->persisters->forType($type);
 
         // As for create: replace the associations named in `data.relationships`
-        // through the persister seam (ADR 0018) BEFORE core hydrates, so a flattened
+        // through the persister seam (ADR 0017) BEFORE core hydrates, so a flattened
         // `on()` attribute (hydrated AFTER relationships, reading its owner off the
         // parent) writes onto a related model switched in the SAME request body — not
-        // the previously-associated owner (ADR 0085). Relationships are still stripped
+        // the previously-associated owner (ADR 0035). Relationships are still stripped
         // from the hydrate body, so core's hydrateRelationships() stays a no-op.
         $relationships = $this->extractRelationships($server, $type, $body, creating: false);
 
@@ -2130,7 +2130,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $entity = $this->applyRelationships($server, $persister, $type, $entity, $relationships, $body, $request, creating: false);
 
             // An `on()` attribute writes onto the target its relation's related endpoint
-            // serves: scope the hops this body did not just set (bundle ADR 0125).
+            // serves: scope the hops this body did not just set (bundle ADR 0035).
             if ($this->includeBatcher !== null) {
                 $this->relationshipLinkage?->setIncluded(
                     $this->includeBatcher->scopeEagerLoads($server, $type, $entity, $request, $this->bodyRelationshipNames($body)),
@@ -2171,7 +2171,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // install the ?withCount counts, mirroring the read arms (bundle ADRs 0052,
         // 0053, 0086). No-ops without the profile / a ?withCount.
         $this->applyRelationshipWindows($server, $type, [$entity], $request);
-        // A PATCH response honours ?include as a fetch does (ADRs 0035, 0125).
+        // A PATCH response honours ?include as a fetch does (ADR 0035).
         $this->preloadIncludes($provider, [$entity], $type, $request, $server);
         $this->applyRelationshipCounts($server, $type, [$entity], $request);
 
@@ -2261,7 +2261,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * seam after core hydrates the attributes. Each named relationship is resolved
      * through the dual-source {@see TypeMetadataResolver::relationNamed()} — a
      * resource's own relations or a resource-less type's standalone relations (ADR
-     * 0026) — so a type with no resource can still have its relationships set on a
+     * 0024) — so a type with no resource can still have its relationships set on a
      * whole-resource write. A relationship that is unknown, or read-only for this
      * operation, is skipped — the read-only gate mirrors core's
      * `AbstractResource::hydrateRelationships()`, which never sees these because the
@@ -2343,7 +2343,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * deferring the commit (`$flush = false`) so the subsequent
      * {@see DataPersisterInterface::create()}/{@see DataPersisterInterface::update()}
      * owns the single flush and a not-yet-persisted create target is never flushed
-     * mid-association (ADR 0018).
+     * mid-association (ADR 0017).
      *
      * An embedded relationship in a whole-resource write is a FULL replacement of the
      * named association (never an incremental add/remove), so on an UPDATE each one is
@@ -2359,7 +2359,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      *
      * A relation that declares `fillUsing()` is written by its hook rather than the
      * persister, exactly as core's own whole-resource hydration would, after the same
-     * gates and scoped linkage resolution (bundle ADR 0147).
+     * gates and scoped linkage resolution (bundle ADR 0017).
      *
      * @param list<array{relation: RelationInterface, linkage: ToOneRelationship|ToManyRelationship}> $relationships
      */
@@ -2422,7 +2422,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
     /**
      * The new model a create hydrates: built by the type's resource, or its standalone
      * hydrator, when it implements {@see InstantiatesEntityInterface}, otherwise by the
-     * persister (bundle ADR 0148).
+     * persister (bundle ADR 0029).
      */
     private function instantiate(Server $server, DataPersisterInterface $persister, string $type, JsonApiRequestInterface $request): object
     {
@@ -2520,7 +2520,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * A copy of the write body with `data.relationships` removed, so core's
      * per-type hydrator hydrates only the id + attributes and never assigns a
      * scalar linkage id to a typed association property — the bundle applies the
-     * associations through the persister seam instead (ADR 0018).
+     * associations through the persister seam instead (ADR 0017).
      */
     private function withoutRelationships(JsonApiRequestInterface $body): JsonApiRequestInterface
     {
@@ -2600,7 +2600,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // fold them under the incoming linkage meta per member (an existing member
         // validates the merged pivot in the update context, a new member the incoming
         // meta in create context). On create there is no parent, so the map is empty —
-        // every member is new (ADR 0050).
+        // every member is new (ADR 0049).
         $existingPivots = $existingObject !== null
             ? $this->existingPivots($server, $type, $body, $existingObject)
             : [];
@@ -2615,7 +2615,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * already-loaded parent. Only pivot relations carried in the body are read; a
      * non-pivot relation (or a provider that stores no pivot) returns `[]` and is
      * skipped. The validator uses this to validate an existing member's MERGED pivot in
-     * the update context (ADR 0050).
+     * the update context (ADR 0049).
      *
      * @return array<string, array<string, array<string, mixed>>>
      */
@@ -2652,7 +2652,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * the update context (a writable field absent from meta keeps its stored value),
      * while a genuinely-new member validates the incoming meta in the create (new-row)
      * context (a required writable pivot field absent on it is a `422` before persist,
-     * never a DB NOT-NULL `500`) (ADR 0050).
+     * never a DB NOT-NULL `500`) (ADR 0049).
      *
      * @param ToOneRelationship|ToManyRelationship $linkage
      * @param array<string, array<string, mixed>>  $existingPivot the relation's existing pivot rows, by related id

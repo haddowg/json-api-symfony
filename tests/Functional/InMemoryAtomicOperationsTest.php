@@ -117,7 +117,7 @@ final class InMemoryAtomicOperationsTest extends AtomicOperationsConformanceTest
         // is DEFERRED to the post-commit drain — by which point the batch has already
         // durably committed. A throwing post-commit hook must NOT turn the successful
         // batch into a 500: the executor logs it (best-effort) and still returns the
-        // 200 atomic:results, and the comment IS persisted (bundle ADR 0088).
+        // 200 atomic:results, and the comment IS persisted (bundle ADR 0087).
         //
         // In-memory-only: the throwing-hook `comments` resource is wired on this kernel
         // (the Doctrine kernel keeps the plain comment resource).

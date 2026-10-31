@@ -166,7 +166,7 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
         // handler resolved a COUNT for this fetch (the paginator's withCount() author
         // opt-in, or ?withCount=_self_ under a countable() resource); otherwise the
         // executor fetches count-free via the window+1 probe and reports `hasMore`
-        // (bundle ADR 0075).
+        // (bundle ADR 0052).
         return $this->applyAndWindow($criteria, $this->store->all(), countable: $criteria->wantsCount);
     }
 
@@ -206,7 +206,7 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
     }
 
     /**
-     * The in-memory witness for the batched related fetch (bundle ADR 0061): for
+     * The in-memory witness for the batched related fetch (bundle ADR 0035): for
      * each parent it reads the related object(s) off the parent through the relation's
      * public accessor, applies `$criteria`'s filters/sorts via the shared
      * {@see CriteriaApplier}, and runs the same {@see \haddowg\JsonApi\Collection\WindowExecutor}
@@ -219,7 +219,7 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
      * other (the documented in-memory support, vs the Doctrine boundary).
      *
      * A **to-one** relation is the {@see \haddowg\JsonApiBundle\DataProvider\RelatedIncludeBatcher}
-     * include arm (bundle ADR 0062): each parent's {@see RelationInterface::readValue()}
+     * include arm (bundle ADR 0035): each parent's {@see RelationInterface::readValue()}
      * is the single related object (or `null`), wrapped as a 0-or-1
      * {@see CollectionResult} keyed by the parent's wire id — no window, no criteria
      * (a to-one include has neither). The orchestrator writes back `items[0] ?? null`
@@ -320,7 +320,7 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
      * every parent through the relation's public accessor, applies `$criteria`'s
      * filters via the shared {@see CriteriaApplier} (the same matching the related
      * endpoint runs), and counts the survivors, keying by the parent's wire id (bundle
-     * ADR 0052/0060). With an empty criteria (the common no-relatedQuery case) every
+     * ADR 0052). With an empty criteria (the common no-relatedQuery case) every
      * member survives, so the count is raw membership unchanged; a parent whose
      * filtered set is empty reports `0`. A polymorphic to-many is supported here — the
      * mixed members are still a single iterable off the parent, so they count like any
@@ -360,7 +360,7 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
     }
 
     /**
-     * The in-memory witness for the single to-one match (bundle ADR 0068): wrap the one
+     * The in-memory witness for the single to-one match (bundle ADR 0053): wrap the one
      * related object in a 1-element list and run the same {@see CriteriaApplier} filter
      * pass {@see countRelated()} runs over a parent's related set (filter only — no
      * window/sort, which are irrelevant to a single member), returning whether the object
@@ -379,7 +379,7 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
 
     /**
      * The BATCHED in-memory witness for a to-one match over a page of parents (bundle ADR
-     * 0068): read each parent's single to-one target off the parent via the relation's
+     * 0053): read each parent's single to-one target off the parent via the relation's
      * public accessor and run the same 1-element {@see CriteriaApplier} match per object,
      * keyed by the parent's wire id. A parent whose to-one is `null` is a no-match
      * (`false`); a parent the store cannot identify is skipped (it has no wire id to key
@@ -506,7 +506,7 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
      * boundary, mirrored on the write side by {@see \haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister}).
      * So it returns no existing pivot meta: the validator then treats every incoming
      * member as new (create context), exactly as before the pivot merge-before-validate
-     * (ADR 0050).
+     * (ADR 0049).
      *
      * @return array<string, array<string, mixed>>
      */

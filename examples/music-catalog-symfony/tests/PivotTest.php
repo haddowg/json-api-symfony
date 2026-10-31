@@ -37,7 +37,7 @@ use PHPUnit\Framework\Attributes\Test;
  * (`securityUpdate: is_granted('EDIT', object)`), so the writes authenticate as the
  * seeded owner.
  *
- * The merge-before-validate witnesses (bundle ADR 0050) then prove a partial pivot
+ * The merge-before-validate witnesses (bundle ADR 0049) then prove a partial pivot
  * update of an EXISTING member validates the MERGED pivot row (stored values
  * overlaid by the incoming meta): an existing member re-asserted with no `position`
  * keeps its stored position and 200s (the required field need not be re-sent), the
@@ -375,7 +375,7 @@ final class PivotTest extends MusicCatalogKernelTestCase
     #[Group('spec:updating-relationships')]
     public function anExistingMemberPivotUpdateOmittingTheRequiredPositionKeepsItAnd200s(): void
     {
-        // Merge-before-validate (bundle ADR 0050): `position` is REQUIRED-on-create,
+        // Merge-before-validate (bundle ADR 0049): `position` is REQUIRED-on-create,
         // but Airbag (track 1) is ALREADY a member at stored position 2. A
         // relationship POST (Mode::Add) re-asserting it with NO meta is a partial
         // pivot update of an EXISTING row — the required `position` is taken from the

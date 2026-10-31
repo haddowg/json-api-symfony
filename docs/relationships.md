@@ -1141,7 +1141,7 @@ advertises the same parameters, so adding a second type later changes neither th
 document's shapes nor what a request may send. The members still load as one query
 while there is one type, so the Doctrine provider serves a single-type `MorphToMany`
 without a custom provider
-([ADR 0156](adr/0156-a-morph-relation-is-polymorphic-at-runtime-whatever-its-type-count.md)).
+([ADR 0032](adr/0032-polymorphic-related-endpoints.md)).
 
 The documented `include` enum follows the same rule. It lists `writer` but no path
 through it, so `writer.agency` is not in the parent's enum and `GET /{type}/{id}/writer`
@@ -1220,7 +1220,7 @@ provider that loads the targets for you implements `FetchesByIdsInterface`
 (see [custom providers → loading many rows by id](custom-data-providers.md#loading-many-rows-by-id)).
 Writes still go through `fillUsing()`, shown below in
 [relations written by `fillUsing()`](#relations-written-by-fillusing)
-([ADR 0163](adr/0163-an-identified-morph-to-loads-its-targets-by-id-through-each-types-provider.md)).
+([ADR 0035](adr/0035-doctrine-include-batch-preloading.md)).
 
 ### Polymorphic to-many (`MorphToMany`)
 

@@ -14,7 +14,7 @@ use haddowg\JsonApiBundle\Hook\ResourceLifecycleHooksTrait;
 
 /**
  * The `throwingWidgets` resource — the exception-mapping harness's throw site
- * (bundle ADR 0073). A `GET /throwingWidgets?throwSignal=<signal>` collection read
+ * (bundle ADR 0003). A `GET /throwingWidgets?throwSignal=<signal>` collection read
  * reaches its {@see afterFetchCollection()} hook, which throws a chosen test exception
  * on a JSON:API route so the next phase can assert how each is rendered:
  *

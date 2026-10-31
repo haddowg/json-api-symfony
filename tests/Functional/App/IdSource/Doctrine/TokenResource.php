@@ -10,7 +10,7 @@ use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 
 /**
- * The require-client-id witness (bundle ADR 0039): `requireClientId()` mandates a
+ * The require-client-id witness (docs/validation.md): `requireClientId()` mandates a
  * client-supplied `data.id` on create — a create that omits it 403s
  * `ClientGeneratedIdRequired`, a create that carries it uses it as the natural key.
  */

@@ -22,7 +22,7 @@ use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
 /**
- * The Id source/policy witness kernel (bundle ADR 0039): one Doctrine-sqlite kernel
+ * The Id source/policy witness kernel (docs/validation.md): one Doctrine-sqlite kernel
  * registering a resource per id-sourcing behaviour the model expresses —
  * {@see CounterResource} (store-provided, the DB assigns), {@see MarkerResource}
  * (`allowClientId()` + `uuid()->generated()`), {@see BadgeResource} (`ulid()->generated()`),

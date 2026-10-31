@@ -17,13 +17,13 @@ use Symfony\Component\Routing\RouteCollection;
 /**
  * A Symfony route loader for the custom `type: jsonapi` resource. Emission is
  * **operation-gated**: for every registered type it emits exactly one route per
- * operation that type declares (bundle ADR 0025), drawn from the standard set:
+ * operation that type declares (bundle ADR 0024), drawn from the standard set:
  * `GET /{type}` (collection / `FetchCollection`), `POST /{type}` (`Create`),
  * `GET`/`PATCH`/`DELETE` `/{type}/{id}` (`FetchOne` / `Update` / `Delete`). A
  * resource defaults to all five operations; a standalone serializer to none —
  * so read-only, create-only and serialize-only types all fall out of the same
  * mechanism. For any type that declares relations — a full resource, or a
- * resource-less type that declared standalone relations (ADR 0026) — it
+ * resource-less type that declared standalone relations (ADR 0024) — it
  * additionally emits the relationship endpoints
  * `GET /{type}/{id}/{relationship}` (related resources) and
  * `GET /{type}/{id}/relationships/{relationship}` (relationship linkage), plus
@@ -184,7 +184,7 @@ final class JsonApiRouteLoader extends Loader
             // The path segment may differ from the JSON:API type (e.g. a plural):
             // the descriptor carries it. Route names and the _jsonapi_type default
             // stay the JSON:API type, so Target/serializer resolution and the
-            // rendered `type` member are unaffected (ADR 0022).
+            // rendered `type` member are unaffected (docs/routing.md).
             $uriType = $descriptor['uriType'];
             $operations = $descriptor['operations'];
 
@@ -254,7 +254,7 @@ final class JsonApiRouteLoader extends Loader
 
             // Relationship routes for any type that declares relations — a full
             // resource (which always bundles relations) or a resource-less type that
-            // declared standalone relations via #[AsJsonApiRelations] (ADR 0026).
+            // declared standalone relations via #[AsJsonApiRelations] (ADR 0024).
             // Gating these per-relation is a later slice.
             if (!$descriptor['hasRelations']) {
                 continue;
@@ -468,7 +468,7 @@ final class JsonApiRouteLoader extends Loader
      */
     private function idRequirement(string $type, string $server): string
     {
-        // The pattern of the class this server serves the type with (bundle ADR 0145).
+        // The pattern of the class this server serves the type with (bundle ADR 0034).
         $authorPattern = $this->idEncoders?->routePatternFor($type, $server);
 
         // With no author pattern, keep Symfony's implicit single-segment placeholder

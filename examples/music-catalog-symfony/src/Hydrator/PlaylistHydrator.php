@@ -11,7 +11,7 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Playlist;
 /**
  * A hand-written hydrator for the `playlists` type — the hydrator-override escape
  * hatch, registered on {@see \haddowg\JsonApiBundle\Examples\MusicCatalog\Resource\PlaylistResource}
- * via `#[AsJsonApiResource(hydrator: PlaylistHydrator::class)]` (bundle ADR 0023).
+ * via `#[AsJsonApiResource(hydrator: PlaylistHydrator::class)]` (bundle ADR 0024).
  * It wins for writes while the resource still serializes reads.
  *
  * Re-themed from core's in-memory

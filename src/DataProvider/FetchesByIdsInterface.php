@@ -9,7 +9,7 @@ use haddowg\JsonApi\Request\JsonApiRequestInterface;
 /**
  * A provider that loads many rows of one type by id in one query, applying the scope
  * its related reads apply. The bundle loads the targets of a `MorphTo` declared with
- * `identifiedBy()` through it, one call per target type (bundle ADR 0163). A provider
+ * `identifiedBy()` through it, one call per target type (bundle ADR 0035). A provider
  * that doesn't implement it is asked through {@see DataProviderInterface::fetchOne()},
  * one id at a time, and is taken to scope every type it serves unless it says
  * otherwise through {@see ScopesRelatedReadsInterface}.

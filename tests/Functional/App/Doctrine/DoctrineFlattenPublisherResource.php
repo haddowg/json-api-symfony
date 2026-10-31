@@ -9,7 +9,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Resource\BaseFlattenPublisherReso
 
 /**
  * The Doctrine `publishers` resource of the flattened-attribute (`on()`) fixture
- * (bundle ADR 0085): {@see BaseFlattenPublisherResource} mapped to
+ * (bundle ADR 0035): {@see BaseFlattenPublisherResource} mapped to
  * {@see FlattenPublisherEntity}. A sibling registered type — the book carries a
  * `publisher` FK but no longer flattens or eager-pins it.
  */

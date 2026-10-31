@@ -1,22 +1,10 @@
-# A segregated transaction seam binds post-commit hooks to the batch commit
+# Atomic Operations run each operation through the CRUD handler inside a segregated transaction
 
-Atomic Operations needs every write in a batch to commit or roll back together, but the
-bundle had no transaction boundary — each write flushed autonomously. Rather than break
-the frozen `DataPersisterInterface`, transactionality is a **segregated**
-`TransactionalDataPersisterInterface` (`beginTransaction`/`commit`/`rollback`): the
-Doctrine implementation wraps the connection (commit flushes-then-commits, rollback rolls
-back and clears the unit of work, leaving the manager open and reusable) and the in-memory
-implementation snapshots/restores its store. The existing per-operation `flush()` calls are left
-untouched, because a Doctrine `flush()` inside an already-open transaction is non-durable
-until commit yet still materialises auto-increment ids immediately — empirically verified
-against the Doctrine+sqlite kernel — which is exactly what cross-operation `lid`
-resolution needs.
+`POST /operations` rewrites each operation into the matching core CRUD operation and calls the same `CrudOperationHandler` in-process (not `Server::dispatch()`, so serving fires once per batch), inside a transaction opened through `TransactionalDataPersisterInterface`, a separate interface so `DataPersisterInterface` stays unchanged. `After*` hooks are buffered and drained after the commit (discarded on rollback, and a throwing one logged rather than failing a durably committed batch), and every participating type's persister and the request's scope grants are checked before the transaction opens, so a refused batch never runs a write.
 
-`After*` lifecycle hooks are re-bound from "after the per-operation flush" to "after the
-transaction commits": a request-scoped `WriteTransactionContext` buffers their dispatch
-and drains once, after the batch commits (discarding them on rollback). The
-single-operation path never activates the context, so its hooks fire inline exactly as
-before and the refactor is behaviour-preserving. The honest boundary, documented for
-authors: only side effects routed through `After*` are made atomic — a non-transactional
-side effect performed inside a `Before*` hook, or any external call, cannot be rolled
-back, the same contract any transactional ORM gives.
+## Consequences
+
+- All-or-nothing holds for one transactional persister. A batch spanning several commits them in turn with no two-phase commit, so it is atomic only up to the first failing commit.
+- Handler decorators see the batch, not each operation.
+- Doctrine's per-operation `flush()` inside the open transaction still assigns auto-increment ids, which `lid` resolution needs.
+- A batch always answers `200` with `atomic:results` (never `204`), `?include` and `?fields` are not processed, and an error declares the atomic `ext` only when the request named it.

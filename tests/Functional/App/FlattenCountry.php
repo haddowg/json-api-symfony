@@ -6,7 +6,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App;
 
 /**
  * The in-memory `countries` model of the flattened-attribute (`on()`) conformance
- * fixture (bundle ADR 0085): the SECOND hop the book's multi-hop
+ * fixture (bundle ADR 0035): the SECOND hop the book's multi-hop
  * `on('author.country')` walks to. A {@see FlattenAuthor}'s HIDDEN to-one `country`
  * relation points at it; the multi-hop eager walk loads it level-by-level (load
  * authors across the books, then load each author's country across those authors) and

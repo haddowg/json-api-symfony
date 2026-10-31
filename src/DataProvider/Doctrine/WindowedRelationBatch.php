@@ -28,7 +28,7 @@ use haddowg\JsonApiBundle\DataProvider\RelatedBatch;
 use haddowg\JsonApiBundle\Server\IdEncoderResolver;
 
 /**
- * The bounded ROW_NUMBER windowed-include batch (bundle ADR 0065/0066): ONE native SQL
+ * The bounded ROW_NUMBER windowed-include batch (bundle ADR 0065): ONE native SQL
  * query per relation windows a whole page of parents' related collections to ~limit
  * rows each, returning the REAL per-parent total — the fix for the 6a batch
  * ({@see DoctrineDataProvider::fetchRelatedCollectionBatch()}) materialising every
@@ -55,7 +55,7 @@ use haddowg\JsonApiBundle\Server\IdEncoderResolver;
  * generated SQL column aliases (the parent discriminator, the sort columns, the pk) are
  * READ off the {@see ResultSetMapping} Doctrine built for that query (never predicted), so
  * a filtered windowed include is witness-equivalent FOR FREE — it IS the same executor,
- * just wrapped for the window (bundle ADR 0066). The sort is NOT applied to the inner
+ * just wrapped for the window (bundle ADR 0065). The sort is NOT applied to the inner
  * query (the outer window re-orders); the window ORDER BY is emitted from the read aliases.
  *
  * Two discriminator shapes mirror {@see RelationScope}:
@@ -91,7 +91,7 @@ use haddowg\JsonApiBundle\Server\IdEncoderResolver;
  * portable `CASE WHEN c IS NULL` term so a nullable sort matches PHP's `null <=> value`.
  *
  * The native path now serves a FILTERED and an unfiltered windowed include alike (bundle
- * ADR 0066). Only an extended related type, a polymorphic/composite shape, or
+ * ADR 0065). Only an extended related type, a polymorphic/composite shape, or
  * `window_functions: off` route to the per-parent bounded fallback in the provider.
  */
 final class WindowedRelationBatch
@@ -212,7 +212,7 @@ final class WindowedRelationBatch
 
     /**
      * Runs the native windowed batch for a CURSOR (keyset) included relation — the N→1
-     * collapse of the per-parent keyset loop (bundle ADR 0118). An include carries no cursor
+     * collapse of the per-parent keyset loop (bundle ADR 0065). An include carries no cursor
      * token (the profile pins the included page to page 1), so this is a boundaryless FIRST
      * cursor page per parent: it wraps the SAME derived-table `ROW_NUMBER() OVER (PARTITION
      * BY <parent FK> ORDER BY <keyset>)` the offset {@see fetch()} builds, with only two
@@ -332,7 +332,7 @@ final class WindowedRelationBatch
      * `CASE WHEN c IS NULL THEN 1 ELSE 0 END` term then the column, both in the column's
      * direction — the SAME raw term the offset {@see orderBy()} and the per-parent
      * {@see \haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineKeyset::orderBy()} emit, so
-     * SQL and the witness cannot drift (bundle ADR 0118, the disproven-blocker proof). Unlike
+     * SQL and the witness cannot drift (bundle ADR 0065, the disproven-blocker proof). Unlike
      * the offset ORDER BY there is NO trailing hardcoded PK tiebreak — the PK is the final
      * keyset column already, carrying the direction the last active directive resolved.
      *
@@ -363,7 +363,7 @@ final class WindowedRelationBatch
      * the forward cursor is minted from the boundary rows via the SAME {@see CursorTokenMinter}
      * + row-value reader the per-parent path uses (read each keyset column off the hydrated
      * entity through the ORM accessor), so the single window is byte-identical to the per-parent
-     * minting (bundle ADR 0118, core ADR 0123).
+     * minting (bundle ADR 0065, core ADR 0123).
      *
      * @param list<array<int|string, mixed>> $rows
      * @param ClassMetadata<object>          $parentMetadata
@@ -650,7 +650,7 @@ final class WindowedRelationBatch
      * `setResultSetMapping()` is public), so the supported-but-internal route is reflection
      * on the protected method. `getSQL()` already triggered + cached the parse, so the
      * reflected RSM is the SAME parse (no double parse, no extra query). Pinned to the ORM
-     * 3.x line (bundle ADR 0066).
+     * 3.x line (bundle ADR 0065).
      */
     private function reflectResultSetMapping(Query $query): ResultSetMapping
     {
@@ -668,7 +668,7 @@ final class WindowedRelationBatch
      * Reflects the inner query's named-DQL-param => SQL-position map (0-based positions)
      * off the {@see ParserResult} of the private `Query::parse()` (the SAME cached parse
      * `getSQL()` used). `getSQL()` emits POSITIONAL `?` placeholders, so the named DQL
-     * params are rebound by ordinal at these positions (bundle ADR 0066).
+     * params are rebound by ordinal at these positions (bundle ADR 0065).
      *
      * @return array<string, list<int>>
      */
@@ -700,7 +700,7 @@ final class WindowedRelationBatch
         }
 
         throw new \LogicException(\sprintf(
-            'The windowed-include row-number batch reads the inner query through the internal %s::%s(), which this Doctrine ORM version no longer exposes. Set the bundle config "json_api.doctrine.window_functions" to "off" to use the portable per-parent fallback, or pin doctrine/orm to a compatible release (bundle ADR 0066).',
+            'The windowed-include row-number batch reads the inner query through the internal %s::%s(), which this Doctrine ORM version no longer exposes. Set the bundle config "json_api.doctrine.window_functions" to "off" to use the portable per-parent fallback, or pin doctrine/orm to a compatible release (bundle ADR 0065).',
             Query::class,
             $method,
         ));

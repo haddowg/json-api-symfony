@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The filter-value-constraint acceptance suite (bundle ADR 0048): filters that
+ * The filter-value-constraint acceptance suite (docs/data-layer.md): filters that
  * declare **value constraints** — `id` (`WhereIdIn->integer()`), `numericId`
  * (`Where->integer()`), `byCategory` (`Where->pattern(...)`) on the `articles`
  * resource, and a relation-scoped `commentId` (`Where->integer()`) on the
@@ -185,7 +185,7 @@ abstract class FilterValueConstraintConformanceTestCase extends JsonApiFunctiona
         self::assertSame(['1'], $ids);
     }
 
-    // --- uniform relatedQuery filter-value validation (bundle ADR 0068 follow-up #2) ---
+    // --- uniform relatedQuery filter-value validation (bundle ADR 0053 follow-up #2) ---
 
     #[Test]
     #[Group('spec:fetching-relationships')]

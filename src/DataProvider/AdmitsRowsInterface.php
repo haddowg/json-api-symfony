@@ -9,7 +9,7 @@ use haddowg\JsonApi\Request\JsonApiRequestInterface;
 /**
  * A provider that can say, in one probe, which of a set of rows its scope admits. The
  * bundle narrows a computed (`extractUsing()`) relation's rows through it (bundle ADR
- * 0125): the closure picks the candidates and the provider's scope decides which of them
+ * 0035): the closure picks the candidates and the provider's scope decides which of them
  * exist. A scoped provider that doesn't implement it is asked through
  * {@see DataProviderInterface::fetchOne()}, one row at a time.
  */

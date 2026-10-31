@@ -8,7 +8,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * Declared filter-value validation (core ADR 0055, bundle ADR 0048, backs the
+ * Declared filter-value validation (core ADR 0055, docs/data-layer.md, backs the
  * "Validating filter values" README note): a value-carrying filter may declare
  * **value constraints**, validated by the bundle BEFORE the filter reaches the
  * provider — so a mistyped value is a clean `400` (`FILTER_VALUE_INVALID`,

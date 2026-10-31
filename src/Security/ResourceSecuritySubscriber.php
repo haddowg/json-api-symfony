@@ -66,20 +66,20 @@ use Symfony\Component\Security\Core\Exception\AccessDeniedException;
  * declaring nothing inherits the parent gate unchanged).
  *
  * Collection reads (`GET /{type}`) **are** gated here — all-or-nothing — by the
- * type's `securityList` declaration (bundle ADR 0099), evaluated at
+ * type's `securityList` declaration (bundle ADR 0043), evaluated at
  * {@see BeforeFetchCollectionEvent} **before** the query with a `null` `object` (a
  * collection has no single subject, so use a role/attribute check). Row-level read
  * authorization — hiding individual rows — belongs instead in a query-scope (a
  * Doctrine extension filtering the collection), not this single gate. A type that
  * declared no security is never gated (the subscriber is a no-op for it).
  *
- * Each gate reads the declarations of the server the event names (bundle ADR 0142), so
+ * Each gate reads the declarations of the server the event names (bundle ADR 0034), so
  * a type served by different resource classes on two servers is gated by each server's
  * own resource only.
  *
  * The authorization checker is injected optionally so an app that declares no
  * expression needs no firewall. The build already fails when an expression is declared
- * without one (bundle ADR 0130); if the subscriber still meets an expression it cannot
+ * without one (bundle ADR 0043); if the subscriber still meets an expression it cannot
  * evaluate, it throws rather than let the request through.
  */
 final class ResourceSecuritySubscriber implements EventSubscriberInterface

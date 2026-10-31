@@ -113,7 +113,7 @@ final class EncodedIdTest extends MusicCatalogKernelTestCase
     #[Group('spec:creating-resources')]
     public function aStoreProvidedCreateAssignsTheIdAndRendersTheEncodedWireToken(): void
     {
-        // The id is database-generated — a store-provided create (bundle ADR 0039): the
+        // The id is database-generated — a store-provided create (docs/validation.md): the
         // POST carries no id, the DB assigns the auto-increment integer, and the 201
         // body + Location render the ENCODED wire token for the freshly assigned key
         // (storage key != wire id, with no client-supplied id). The Create operation is

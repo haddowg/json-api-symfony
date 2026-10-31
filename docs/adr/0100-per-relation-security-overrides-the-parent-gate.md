@@ -1,34 +1,14 @@
-# A relation's `security()` is enforced independently of its parent
+# Relation data is gated by the relation's own permission, else by the related type's gates
 
-A relationship's endpoints (the related read `GET /{type}/{id}/{rel}`, the linkage read
-`GET …/relationships/{rel}`, and the mutations `PATCH`/`POST`/`DELETE …/relationships/{rel}`)
-were authorized only by the **parent** resource's security: the read endpoints rode the
-parent's `securityRead` gate (`AfterFetchOneEvent`) and a mutation rode the parent's
-`securityUpdate` gate. There was no way to authorize a single relationship on its own —
-yet a public resource may carry one privileged relationship, or a restricted resource
-one openly-readable one.
+A relation's `security(read:, mutate:)` replaces the parent's gate at its endpoints and the related type's gates for its data. Without one, a to-one target needs its own type's `securityRead` with the row as subject and reads as absent when refused, while a to-many is shown whole only when the caller passes the `securityList` of every type it relates to and is otherwise withheld to its links. Permission decides whether a caller sees a relation's data at all; which rows exist is scoping (Doctrine extensions, scoped providers), which always applies, so a list is never filtered row by row.
 
-Core ADR 0099 added the declaration: `AbstractRelation::security(read:, mutate:)`, each
-`string|bool|null`, overriding the parent's gate (`null` inherits). This ADR is the
-bundle's **enforcement** of it:
+## Considered Options
 
-- **Read.** When a relation declares its own `securityRead`, the handler dispatches a
-  relation-scoped **`BeforeFetchRelatedEvent`** / **`BeforeFetchRelationshipEvent`**
-  (carrying the loaded parent + the relation) *instead of* the parent's
-  `AfterFetchOneEvent`; `ResourceSecuritySubscriber` evaluates the relation's expression
-  against the parent. A relation declaring no read security keeps the parent's read gate
-  unchanged. To make the override reachable, the read gate now runs **after** the
-  relation is resolved (a non-existent/unexposed relation still `404`s first — relation
-  names are public API, and parent existence already leaks via `loadParent`'s `404`
-  before any gate).
-- **Mutation.** The existing `BeforeRelationshipMutateEvent` already carries the
-  relation, so the subscriber resolves `relation.securityMutate() ?? type.securityUpdate()`
-  — the relation's gate when declared, else the parent's.
+- Filter a to-many's rows after the fetch: pages come back short and totals count rows the caller cannot see.
+- Refuse the whole document when an included row is refused: one row fails a valid request and reveals that the row exists.
 
-The subject is the **parent** resource in every case (the relationship hangs off it), so
-expressions read like `is_granted('VIEW_BILLING', object)`. A declared value **replaces**
-the parent's gate, letting a relation be more *or* less permissive; `string` is enforced,
-`true`/`false` are documentation-only, `null` inherits — identical to the resource-level
-keys. `RelationMetadata` surfaces the two declarations so the OpenAPI projection (core
-ADR 0099) reflects the override. Dual-provider conformance (`securedWidgets` over both
-the Doctrine and in-memory kernels) proves the seam is provider-agnostic.
+## Consequences
+
+- A relation hidden from the caller is a `404` at its endpoints, checked straight after the parent loads and before any read gate, so a `401` or `403` never reveals it.
+- Rendering a relationship's data and writing a flattened `on()` attribute onto a related row go through the same expressions, via the `RelationAuthorizer` core consults.
+- A row a to-one refuses can still appear through a to-many whose query returns it, because the two follow different gates.

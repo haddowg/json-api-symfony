@@ -10,7 +10,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The Slice-5 documentation-viewer witness (design §6, D6 — bundle ADR 0079): boots the
+ * The Slice-5 documentation-viewer witness (design §6, D6 — docs/openapi.md): boots the
  * {@see OpenApiTestKernel} (Swagger renderer, the default) and asserts `GET /docs`
  * renders a Swagger UI page wired to the pinned CDN assets and pointed at the configured
  * `/docs.json` spec URL. The renderer switch, CDN override and the disabled/expose gates

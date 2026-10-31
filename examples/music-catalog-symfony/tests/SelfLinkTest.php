@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * The self-links-by-convention acceptance suite (core ADR 0054, bundle ADR 0047).
+ * The self-links-by-convention acceptance suite (core ADR 0054, docs/resources.md).
  * Core emits TWO spec-recommended (SHOULD) `self` links by convention, both derived
  * from ingredients the bundle already exposes (the resource's `baseUri`/`uriType`/`id`
  * and the request URI), so they are **provider-agnostic** — the in-memory `charts`

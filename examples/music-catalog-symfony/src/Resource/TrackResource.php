@@ -34,7 +34,7 @@ use Symfony\Component\Clock\Clock;
 /**
  * The `tracks` resource type, mapped to its backing {@see Track} entity.
  *
- * It is the **serializer-override witness** (ADR 0023): `serializer:
+ * It is the **serializer-override witness** (ADR 0024): `serializer:
  * TrackSerializer::class` delegates reads to a hand-written serializer (with a
  * bound constructor arg, proving DI resolution) while this resource still hydrates
  * writes — read and write capabilities resolved independently.
@@ -163,7 +163,7 @@ final class TrackResource extends AbstractResource
         // false when absent. `genres` matches a membership set.
         //
         // `explicit` also declares a `->boolean()` value constraint (core ADR 0055,
-        // bundle ADR 0048): a client-supplied `filter[explicit]` must be a boolean
+        // docs/data-layer.md): a client-supplied `filter[explicit]` must be a boolean
         // wire form (`true`/`false`/`1`/`0`), so `filter[explicit]=banana` is a clean
         // `400` (`FILTER_VALUE_INVALID`, `source.parameter`) on the primary
         // collection rather than silently coercing to `false` and mis-matching. The

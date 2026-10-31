@@ -10,7 +10,7 @@ use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 
 /**
- * The generated-ULID witness (bundle ADR 0039): `ulid()->generated()` mints a
+ * The generated-ULID witness (docs/validation.md): `ulid()->generated()` mints a
  * Crockford-base32 ULID when a create omits the id, through core's self-contained ULID
  * generator (no `symfony/uid` dependency). A create returns `201` with a ULID-shaped id.
  */

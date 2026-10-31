@@ -11,7 +11,7 @@ use PHPUnit\Framework\Attributes\Test;
 /**
  * The related-collection acceptance suite (backs `relationships.md` / `doctrine.md`):
  * the related to-many endpoint `GET /{type}/{id}/{rel}` as a real queryable,
- * paginated collection, exercising **both** Doctrine push-down branches (ADR 0031)
+ * paginated collection, exercising **both** Doctrine push-down branches (ADR 0030)
  * and the unpaginated baseline.
  *
  *  - FK fast-path — `albums.tracks` (the related `Track` carries the owning album

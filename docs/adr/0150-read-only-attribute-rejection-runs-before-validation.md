@@ -1,3 +1,0 @@
-# Read-only attribute rejection is per server and runs before validation
-
-Core can refuse a write body that sends an attribute the client cannot write (core ADR 0174), as a server opt-in. The bundle maps it to `json_api.reject_read_only_attributes`, with a per-server override, so one API version can start refusing what another still ignores. Core checks while hydrating, but the bundle validates the body before it hydrates, so the bundle runs the same check first: a body that both sends a read-only attribute and breaks a constraint gets the `403`, since a client fixing the `422` alone would only meet the `403` next.

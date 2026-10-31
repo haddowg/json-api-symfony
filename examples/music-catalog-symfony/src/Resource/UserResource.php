@@ -118,7 +118,7 @@ final class UserResource extends AbstractResource
     }
 
     /**
-     * Include safeguard C (bundle ADR 0037): the full dotted include paths a client
+     * Include safeguard C (bundle ADR 0036): the full dotted include paths a client
      * may request when `users` is the request's root. A user may compound their
      * playlists, each playlist's owner, and their library — but NOT a playlist's
      * tracks, even though `tracks` is freely includable when `playlists` is the

@@ -12,7 +12,7 @@ use PHPUnit\Framework\Attributes\TestWith;
 
 /**
  * Included resources, linkage data and counts hold exactly what the related endpoint
- * serves (bundle ADR 0125). Agency 2 ("Soft Hidden") and member 2 are hidden by the
+ * serves (bundle ADR 0035). Agency 2 ("Soft Hidden") and member 2 are hidden by the
  * kernel's scope: a Doctrine query extension, or an application provider for the
  * agency and member types. Every case runs on the `default` server and on the named
  * `partner` server, whose types the default server does not know.

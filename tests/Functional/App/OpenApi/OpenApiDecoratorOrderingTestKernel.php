@@ -20,7 +20,7 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 /**
- * Ordering witness for the decorator seam (design §5, D7 — bundle ADR 0080): registers
+ * Ordering witness for the decorator seam (design §5, D7 — bundle ADR 0077): registers
  * two {@see PriorityDecorator}s at different priorities, both overwriting the document
  * title outright, to prove the documented contract — the **highest-priority** decorator
  * is applied LAST and gets the final word (the bundle's highest-wins convention).

@@ -172,7 +172,7 @@ the OpenAPI document. `tests/ScopesTest.php` covers the refusals and the documen
 
 The JSON:API spec **recommends** (SHOULD) two `self` links, and the bundle emits
 both **by convention** — no hand-written `getLinks()` needed (core ADR 0054, bundle
-ADR 0047). Both derive from ingredients the integration already has — the resource's
+docs/resources.md). Both derive from ingredients the integration already has — the resource's
 `baseUri`/`uriType`/`id` and the request URI — so they are **provider-agnostic**: the
 Doctrine-backed `albums`/`tracks` and the in-memory `charts` render identical self
 URLs. The example's `default` server base URI is `https://music.example`.
@@ -425,7 +425,7 @@ GET /albums/1?include=tracks&rQ[tracks][sort]=-duration
 
 - The vocabulary is exactly the related-collection **endpoint's**: the related
   `tracks` resource's own keys (`?...[sort]=title`, `?...[filter][explicit]=true`)
-  **merged** with the relation's scoped `duration`/`longerThan` (bundle ADR 0044). An
+  **merged** with the relation's scoped `duration`/`longerThan` (bundle ADR 0030). An
   **unknown** key is the same `400` as the endpoint, with the **plain-form** key in
   `source.parameter` (`filter[nope]`, not the `relatedQuery[…]` form).
 - A rendered to-many under the profile carries its pagination links — `first`/`prev`/
@@ -494,7 +494,7 @@ their own `paginate()`, so they stay page-based.
 An **unrecognized** top-level query-parameter family is **rejected with a `400`**
 rather than silently dropped — so a client typo (`?pag[number]=2` for `page[number]`,
 a misspelled custom param) surfaces as an error instead of a wrong-but-`200` result.
-This is **on by default** (`json_api.strict_query_parameters`, bundle ADR 0055, core
+This is **on by default** (`json_api.strict_query_parameters`, docs/configuration.md, core
 ADR 0059); the shipped app's `config/packages/json_api.yaml` omits the key, so it is
 already strict here (`tests/StrictQueryParametersTest.php`):
 
@@ -585,7 +585,7 @@ So (`tests/FilterValueConstraintTest.php`):
 The validation reuses the [validator bridge](../../docs/validation.md)
 (`symfony/validator`), so a constrained filter with no validator installed is inert —
 the same optionality the attribute-constraint bridge has. No new config keys. See
-[`docs/data-layer.md`](../../docs/data-layer.md) (bundle ADR 0048, core ADR 0055).
+[`docs/data-layer.md`](../../docs/data-layer.md) (core ADR 0055).
 
 ## Validating the merged resource on update
 
@@ -617,7 +617,7 @@ sibling is absent from the wire. A required attribute already valid in stored st
 likewise need not be re-sent: the merge folds the stored value in, so a partial
 `PATCH` that omits it stays a `200` rather than a false `422`. The same merge
 semantics apply **per relationship member** to pivot meta — see the next section. See
-[`docs/validation.md`](../../docs/validation.md) (bundle ADRs 0049/0050).
+[`docs/validation.md`](../../docs/validation.md) (bundle ADR 0049).
 
 ## Write-only attributes (a credential a client sets but never reads back)
 
@@ -744,7 +744,7 @@ PATCH /playlists/{id}
   **`422`** pointed at `…/meta/pivot/position` (the relationship endpoint) or
   `/data/relationships/orderedTracks/data/{n}/meta/pivot/position` (a whole-resource
   write), with **no write** — the store is unchanged;
-- **merge-before-validate, per member** (bundle ADR 0050): an update validates each
+- **merge-before-validate, per member** (bundle ADR 0049): an update validates each
   member against its **merged** pivot row (the stored values overlaid by the incoming
   `meta`). So a *genuinely-new* member missing the required `position` is a `422`
   (the new-row context — never a DB NOT-NULL `500`), but re-asserting an *existing*

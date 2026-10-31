@@ -133,7 +133,7 @@ abstract class WriteResponseProfileConformanceTestCase extends JsonApiFunctional
         // `lazyComments` is a lazy, links-only-by-default to-many over the SEPARATE
         // `featuredComments` column (article 1 features [1, 2]). It is NOT included and
         // NOT `withData()`, so its data does not render this PATCH — the window must NOT
-        // fire (bundle ADR 0086), consistent with reads. A relatedQuery filter that
+        // fire (bundle ADR 0053), consistent with reads. A relatedQuery filter that
         // would narrow it to comment 1 alone has NO effect: the relationship is never
         // the filtered singleton, and no window pagination link mirroring the filter
         // appears.

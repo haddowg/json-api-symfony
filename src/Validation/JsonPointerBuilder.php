@@ -96,7 +96,7 @@ final class JsonPointerBuilder
      * `/data/relationships/<rel>/data/meta/pivot/<field>` and a to-many member at
      * `/data/relationships/<rel>/data/<index>/meta/pivot/<field>` (the index supplied
      * for a to-many element, omitted for a to-one). Pivot values nest under
-     * `meta.pivot` symmetric with reads + the OpenAPI request schema (bundle ADR 0103).
+     * `meta.pivot` symmetric with reads + the OpenAPI request schema (bundle ADR 0045).
      * `$bracketedField` is the Symfony Collection property path of the offending meta
      * key (`[position]`).
      */
@@ -117,7 +117,7 @@ final class JsonPointerBuilder
      * points at `/data/meta/pivot/<field>`, a to-many member at
      * `/data/<index>/meta/pivot/<field>` (the index omitted for a to-one). Pivot
      * values nest under `meta.pivot` symmetric with reads + the OpenAPI request schema
-     * (bundle ADR 0103).
+     * (bundle ADR 0045).
      */
     public function forRelationshipEndpointLinkageMeta(string $bracketedField, ?int $index = null): string
     {

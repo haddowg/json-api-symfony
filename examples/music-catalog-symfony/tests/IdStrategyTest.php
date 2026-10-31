@@ -9,8 +9,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * The id-strategy matrix end to end (backs the README id-strategy table; bundle ADR
- * 0039). Each example type keys its entity by a different id source/policy, and this
+ * The id-strategy matrix end to end (backs the README id-strategy table; docs/validation.md). Each example type keys its entity by a different id source/policy, and this
  * suite exercises the ones the rest of the example suite does not already cover as a
  * side effect:
  *

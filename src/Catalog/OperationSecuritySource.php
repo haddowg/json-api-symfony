@@ -21,7 +21,7 @@ use haddowg\JsonApiBundle\Security\ResourceSecurityRegistry;
  * - a CRUD operation: the type's `security*` declaration for it;
  * - a related or relationship read: the relation's read security, else the type's
  *   single-read security; a relationship write: the relation's mutate security, else the
- *   type's update security (bundle ADR 0141);
+ *   type's update security (bundle ADR 0100);
  * - an action: its own `security`;
  * - the Atomic Operations endpoint: none, since each entry is checked as its operation.
  *

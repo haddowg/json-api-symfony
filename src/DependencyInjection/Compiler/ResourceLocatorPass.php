@@ -55,7 +55,7 @@ use Symfony\Component\DependencyInjection\Reference;
  * are scoped. A type assigned to N servers lands in all N buckets.
  *
  * A resource may also declare a custom serializer/hydrator via
- * `#[AsJsonApiResource(serializer: …, hydrator: …)]` (bundle ADR 0023). Those
+ * `#[AsJsonApiResource(serializer: …, hydrator: …)]` (bundle ADR 0024). Those
  * override classes must be registered services too, so each is added to the same
  * locator (keyed by its class-string) — core resolves them through the very same
  * resolver — and a per-server `resourceClass → override` map is handed to that
@@ -71,7 +71,7 @@ use Symfony\Component\DependencyInjection\Reference;
  * {@see \haddowg\JsonApi\Server\Server::registerSerializerHydrator()}.
  *
  * Standalone relations (`#[AsJsonApiRelations]` on a
- * {@see RelationsProviderInterface} class, bundle ADR 0026) declare a type's
+ * {@see RelationsProviderInterface} class, bundle ADR 0024) declare a type's
  * relations with **no** resource: the pass collects them into a service locator keyed
  * by server and type and wires the {@see RelationsRegistry} from it (lazy, because
  * relations are runtime objects, not scalars). A resource-less type that declares
@@ -81,14 +81,14 @@ use Symfony\Component\DependencyInjection\Reference;
  * operation allow-list, the URI segment, whether the type is a full resource, has a
  * hydrator and has relations) and hands it to the {@see JsonApiRouteLoader}, which
  * emits — for the server a routing import names — exactly one route per declared
- * operation (bundle ADR 0025) plus the relationship routes for a type that has
+ * operation (bundle ADR 0024) plus the relationship routes for a type that has
  * relations. Descriptors flow as plain scalar arrays — strings, bools and lists of
  * strings — because Symfony cannot dump arbitrary value objects as a compiled service
  * argument. A write operation (`Create`/`Update`) is compile-time-validated to have a
  * hydrator on each server that exposes it.
  *
  * Everything a resource class, standalone capability or action declares is recorded
- * under the servers that class is assigned to (bundle ADRs 0142 and 0144), so two
+ * under the servers that class is assigned to (bundle ADR 0034), so two
  * servers can serve one type name through different classes without either seeing the
  * other's declarations.
  *
@@ -360,7 +360,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
         // locator, plus the per-server action route descriptors the loader emits. The
         // mount type's uriType resolves from its resource descriptor when present
         // (else the type itself), so an action hangs off the same URI segment as the
-        // resource it mounts on (ADR 0022) on each server.
+        // resource it mounts on (docs/routing.md) on each server.
         $this->collectActions($container, $declaredServers, $descriptorsByServer);
 
         if ($container->hasDefinition(JsonApiRouteLoader::class)) {
@@ -385,7 +385,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
      * the registry cannot receive value objects as compiled arguments).
      *
      * The mount type's URI segment resolves from that type's resource descriptor's
-     * `uriType` when present (a resource may customize it, ADR 0022), else the type
+     * `uriType` when present (a resource may customize it, docs/routing.md), else the type
      * itself. The decoupled-document defaults are applied here:
      * `inputType`/`outputType` fall back to the mount `type` when the attribute left
      * them `null`.
@@ -517,7 +517,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
 
                 // The action's OpenAPI tag refs (design §4.7): explicit refs on the
                 // action, else inherit the tags of the mount type's resource on each
-                // server (bundle ADR 0144) so the action groups with its resource there.
+                // server (bundle ADR 0034) so the action groups with its resource there.
                 // Empty when that resource declared none — the MetadataSource then
                 // resolves the humanized-type default. Carried through the descriptor as
                 // a comma-joined scalar (not a list) so it survives the compiled
@@ -527,7 +527,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
                 foreach ($servers as $server) {
                     $actionTags = $explicitTags !== [] ? $explicitTags : ($descriptorsByServer[$server][$type]['tags'] ?? []);
                     // The mount type's URI segment on this server: its descriptor's
-                    // uriType when registered there (ADR 0022), else the type itself.
+                    // uriType when registered there (docs/routing.md), else the type itself.
                     $uriType = $descriptorsByServer[$server][$type]['uriType'] ?? $type;
 
                     $key = ActionRegistry::key($server, $type, $scope, $path);
@@ -618,7 +618,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
                 ->setArgument('$actionRouteDescriptorsByServer', $routeDescriptorsByServer);
         }
 
-        // Hand the resource-scope actions to the ActionLinkContributor (bundle ADRs 0091
+        // Hand the resource-scope actions to the ActionLinkContributor (bundle ADRs 0076
         // and 0159) so it can render each linked action's URL as a `links` member on its
         // mount type's resources. A no-op when no resource-scope action is declared.
         if ($container->hasDefinition(ActionLinkContributor::class)) {

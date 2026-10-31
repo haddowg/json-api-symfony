@@ -10,7 +10,7 @@ use Doctrine\ORM\Mapping as ORM;
  * The store-provided-id witness entity: its `id` is a database-assigned auto-increment
  * integer ({@see ORM\GeneratedValue}), so a create sets nothing on the id and the DB
  * assigns it on flush — the new store-provided default the auto-UUID was replaced by
- * (bundle ADR 0039). A nullable `marker` association gives the linkage-format witness a
+ * (docs/validation.md). A nullable `marker` association gives the linkage-format witness a
  * relationship to write. Not `final` so Doctrine may proxy it.
  */
 #[ORM\Entity]

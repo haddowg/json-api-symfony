@@ -24,7 +24,7 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Resource\TrackResource;
 /**
  * A hand-written read serializer for the `tracks` type — the serializer-override
  * escape hatch, registered on {@see \haddowg\JsonApiBundle\Examples\MusicCatalog\Resource\TrackResource}
- * via `#[AsJsonApiResource(serializer: TrackSerializer::class)]` (bundle ADR 0023).
+ * via `#[AsJsonApiResource(serializer: TrackSerializer::class)]` (bundle ADR 0024).
  * It wins for serialization while the resource still hydrates writes.
  *
  * Re-themed from core's in-memory

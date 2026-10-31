@@ -12,7 +12,7 @@ use PHPUnit\Framework\Attributes\Test;
 
 /**
  * The witness for the request-aware {@see \haddowg\JsonApiBundle\DataProvider\Doctrine\ExtensionContext}
- * (bundle ADR 0070): a {@see RequestAwareAuthorsExtension} scopes `authors`,
+ * (bundle ADR 0008): a {@see RequestAwareAuthorsExtension} scopes `authors`,
  * branching on the context's parsed JSON:API request.
  *
  *  - On the primary `GET /authors` collection the request is `null` and the purpose

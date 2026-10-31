@@ -474,7 +474,7 @@ abstract class CursorConformanceTestCase extends JsonApiFunctionalTestCase
     /**
      * Fetches a page and returns `[ids, links]`. A cursor page advertises the
      * cursor-pagination profile on its Content-Type (the server registers that profile
-     * by default — bundle ADR 0117, core ADR 0131); a count-based page selected from the
+     * by default — docs/configuration.md, core ADR 0131); a count-based page selected from the
      * same menu does not, so `$expectCursorProfile` is passed `false` for the page-strategy
      * cases. The profile parameter's exact serialization (quoting/spacing) is not pinned.
      *

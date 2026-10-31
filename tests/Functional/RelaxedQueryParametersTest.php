@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The relax toggle for strict query-parameter validation (bundle ADR 0055): with
+ * The relax toggle for strict query-parameter validation (docs/configuration.md): with
  * `json_api.strict_query_parameters` set to `false`, an unrecognized top-level
  * query-parameter family is silently ignored (the pre-strict behaviour) instead
  * of rejected with a `400`. The default-on path is the dual-provider

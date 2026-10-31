@@ -1,23 +1,7 @@
-# Relationship-existence filters translate to EXISTS subqueries on Doctrine
+# Relationship-existence and traversal filters push down as EXISTS subqueries
 
-Core's `WhereHas` / `WhereDoesntHave` filters match rows whose named association
-has (or lacks) at least one related row, ignoring the request value entirely;
-the bundle's `DoctrineFilterHandler` had to choose how to push that down to DQL.
-A `JOIN` onto the association is the obvious path, but it leaks join cardinality
-into the primary `SELECT`: a to-many fans the article rows out per related row,
-so the result needs a `DISTINCT` to undo the fan-out (and `DISTINCT` then
-interacts badly with the pagination `COUNT` and the sort `ORDER BY`). We instead
-translate each to a correlated `EXISTS` (negated for `WhereDoesntHave`) subquery
-that re-roots on the same entity, joins the association, and correlates its root
-back to the outer root — pure set-membership, so the primary-data rows are
-neither duplicated nor in need of a `DISTINCT`, the existing pagination/sort
-pipeline is untouched, and **a to-one and a to-many translate identically** (the
-join is over the association, not its arity). This mirrors core's in-memory
-witness, which matches a non-empty collection/array or a non-null to-one, so the
-same dual-provider conformance assertions pass on both providers.
+Doctrine executes `WhereHas`/`WhereDoesntHave`, dotted `WhereThrough` paths and the bundle's `WhereHasMatching` through one builder that emits a correlated `EXISTS` subquery rooted on the related entity, rather than a join on the primary query. A join fans out to-many rows and needs a `DISTINCT` that interacts badly with the pagination count and the sort; set membership leaves the primary rows, counts and sort untouched and treats to-one and to-many identically.
 
-The subquery is built from the QueryBuilder's own root entity and entity manager
-(no target-entity lookup needed), and the association name is validated as a
-bare identifier before interpolation — the same loud-failure discipline the
-scalar-column `path()` already applies, since the relationship name comes from
-the server-side declaration, never the client.
+## Consequences
+
+`WhereHasMatching` is a Doctrine-only escape hatch (a `Criteria` or a closure over the subquery) for predicates the portable vocabulary cannot express. It is not value-validated, and other providers do not declare it, so they answer `400`.

@@ -9,7 +9,7 @@ use Doctrine\ORM\Mapping as ORM;
 /**
  * The association (pivot) entity backing the `cursorShelves.pivotWidgets`
  * `belongsToMany` relation for the pivot-related CURSOR conformance suite
- * (bundle ADR 0114): the two single-valued (`ManyToOne`) sides — `shelf` back
+ * (bundle ADR 0063): the two single-valued (`ManyToOne`) sides — `shelf` back
  * to the parent, `widget` to the far type — plus the one pivot column, `slot`
  * (an int the suite sorts by, so the keyset walks a PIVOT-aliased column with
  * the far entity's PK tiebreak).

@@ -8,7 +8,7 @@ use haddowg\JsonApi\Resource\Field\IdEncoderInterface;
 
 /**
  * A trivial reversible id codec for the multi-type-backed pivot-parent witness
- * (bundle ADR 0102): {@see PlaylistEntity} backs BOTH the plain `playlists` type
+ * (bundle ADR 0045): {@see PlaylistEntity} backs BOTH the plain `playlists` type
  * (no encoder) AND the {@see EncodedPlaylistResource} `encoded-playlists` type,
  * which attaches THIS encoder so its wire id is a `pl-`-prefixed token distinct
  * from the bare stringified storage id.

@@ -32,7 +32,7 @@ use haddowg\JsonApiBundle\Server\ServerProvider;
  * lazy-build fallback). It is **pure** — no I/O — so it is cheap to call in a test
  * and safe to memoize.
  *
- * The wholesale-customisation decorator seam (design §5, D7 — bundle ADR 0080) is
+ * The wholesale-customisation decorator seam (design §5, D7 — bundle ADR 0077) is
  * applied **here**, after the core projection: every registered
  * {@see OpenApiFactoryInterface} (priority-ordered, lower first) receives the built
  * {@see OpenApi} VO and returns a mutated one. Because every build path — the warmer,

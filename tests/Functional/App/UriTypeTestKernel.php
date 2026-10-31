@@ -23,7 +23,7 @@ use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
  * The uriType witness kernel: a single `book` resource whose `$uriType` is `books`,
  * served by a writable in-memory provider/persister, so the routes, links and
  * Location header can be asserted to use the `books` segment while the document
- * `type` stays `book` (ADR 0022). uriType is a routing/rendering concern, identical
+ * `type` stays `book` (docs/routing.md). uriType is a routing/rendering concern, identical
  * on every provider, so one in-memory kernel witnesses it.
  */
 final class UriTypeTestKernel extends Kernel

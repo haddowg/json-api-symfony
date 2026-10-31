@@ -11,7 +11,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 /**
  * End-to-end witness that the bundle localizes core's error catalogue through the
- * Symfony translator (bundle ADR 0115). Under a non-default locale (`fr`) with a
+ * Symfony translator (docs/errors.md). Under a non-default locale (`fr`) with a
  * `jsonapi_errors.fr.yaml` catalogue, real HTTP requests that trip a core catalogue
  * error and a validation `422` render French copy:
  *

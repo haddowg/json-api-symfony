@@ -18,7 +18,7 @@ use haddowg\JsonApi\Schema\Error\Error;
  * mappers (default priority `0`) are consulted first; the config map is the
  * fallback. It never maps a core
  * {@see \haddowg\JsonApi\Exception\JsonApiExceptionInterface} — the listener never
- * consults a mapper for one (bundle ADR 0073).
+ * consults a mapper for one (bundle ADR 0003).
  *
  * When a throwable is an instance of several mapped classes (a subclass hierarchy),
  * the **most-specific** (most-derived) mapped class wins, so a configured subtype

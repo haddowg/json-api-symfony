@@ -61,7 +61,7 @@ final class ResponseHeadersListener
             return;
         }
 
-        // Each server emits only what its own resource class declares (bundle ADR 0144).
+        // Each server emits only what its own resource class declares (bundle ADR 0034).
         $server = $request->attributes->get('_jsonapi_server');
         $server = \is_string($server) && $server !== '' ? $server : ServerProvider::DEFAULT_SERVER;
 

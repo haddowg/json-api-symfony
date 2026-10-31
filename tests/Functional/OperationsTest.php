@@ -10,7 +10,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\Routing\RouterInterface;
 
 /**
- * The operation-exposure witness (ADR 0025): a type declares which of the five
+ * The operation-exposure witness (ADR 0024): a type declares which of the five
  * CRUD operations it exposes via the operations allow-list, and the route loader
  * emits exactly one route per declared operation. A read-only resource
  * (`ledgers`), a create-only resource (`signals`) and a routed standalone

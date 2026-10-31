@@ -19,7 +19,7 @@ use Psr\Container\ContainerInterface;
 
 /**
  * Characterizes how {@see ServerFactory} registers the server's JSON:API profiles
- * (bundle ADR 0117): data-driven from `json_api.profiles`, defaulting to the three
+ * (docs/configuration.md): data-driven from `json_api.profiles`, defaulting to the three
  * built-ins in the canonical order the OpenAPI `jsonapi.profile` enum lists them
  * (core ADR 0131), and trimmable/overridable by a consumer. Registration order is
  * significant — it is the order the enum is generated in and must match the Laravel

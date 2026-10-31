@@ -1,16 +1,7 @@
 # JSON:API routes render every error as a JSON:API document
 
-A JSON:API endpoint must return JSON:API error documents for *every* failure —
-`401`/`403` from the firewall, `404` from routing, uncaught `500`s — not only the
-handler's own exceptions, yet the bundle must not disturb a mixed app. So its
-`kernel.exception` listener is route-scoped (it acts only when the matched route
-carries `_jsonapi_server`) and there owns every error: a core
-`JsonApiExceptionInterface` natively, a Symfony `HttpExceptionInterface` by its
-status, anything else a `500`; debug meta is gated on `kernel.debug` and unexpected
-throwables are logged via Symfony's logger.
+A JSON:API endpoint must answer every failure, including a firewall `401`/`403`, a routing `404`/`405` and an uncaught `500`, with an error document, without disturbing the rest of a mixed application. So the `kernel.exception` listener is route-scoped: it acts only on a route carrying the bundle's marker, and there it owns every error. A core `JsonApiExceptionInterface` always renders natively through core's mapping and can never be intercepted; any other throwable goes to the tagged `ExceptionMapperInterface`s and the `json_api.exceptions` status map (an application's mappers outrank the config map, and the most-derived mapped class wins), then a Symfony `HttpExceptionInterface` by its status, then a `500`.
 
-The whole endpoint is thus spec-compliant, including failures that never reach the
-handler, while non-JSON:API routes are untouched — the trade-off being that on
-JSON:API routes the bundle deliberately overrides framework error handling. The
-throwable→`Error` mapping delegates to a public core seam rather than being
-reimplemented, so bundle and core stay identical.
+## Consequences
+
+The router refuses a method before any route matches, so for a `405` the listener re-matches the path under each allowed method and answers only when one of those routes carries the marker. Matching the path against each server's mount prefix was rejected because a prefix also covers the application's own routes beneath it.

@@ -40,7 +40,7 @@ use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
  *
  * Beside each JSON artifact it writes the artifact's hash (the served ETag), the
  * document as serialized value objects, which a request with serve decorators loads
- * instead of rebuilding (bundle ADR 0131), and the operations the document carries,
+ * instead of rebuilding (bundle ADR 0077), and the operations the document carries,
  * which each link's `describedby` is checked against ({@see DescribedByResolverProvider}).
  * A document whose values hold an object outside `json_api.openapi.serve_allowed_classes`
  * gets no serialized copy and a logged warning.

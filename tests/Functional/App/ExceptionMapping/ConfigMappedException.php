@@ -10,6 +10,6 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\ExceptionMapping;
  * `HttpExceptionInterface` — that the
  * {@see ExceptionMappingTestKernel}'s `json_api.exceptions` config map points at a
  * status (the config-driven {@see \haddowg\JsonApiBundle\EventListener\ConfiguredExceptionMapper}
- * facet, bundle ADR 0073). The throwing-resource hook raises it for `?throwSignal=config`.
+ * facet, bundle ADR 0003). The throwing-resource hook raises it for `?throwSignal=config`.
  */
 final class ConfigMappedException extends \RuntimeException {}

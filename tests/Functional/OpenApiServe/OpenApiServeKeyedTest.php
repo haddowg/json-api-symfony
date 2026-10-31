@@ -15,7 +15,7 @@ use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Component\Console\Tester\CommandTester;
 
 /**
- * Serve decorators that all supply a cache key (bundle ADR 0131): the document varies per
+ * Serve decorators that all supply a cache key (bundle ADR 0077): the document varies per
  * host, orphaned components are pruned, and a matching `If-None-Match` is answered before
  * any decorator runs.
  */

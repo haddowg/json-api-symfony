@@ -1,26 +1,9 @@
-# Doctrine queries are customized through a tagged extension seam applied before the criteria
+# Doctrine queries are customised by tagged extensions applied before the criteria, and fail closed
 
-Base constraints a client must not be able to undo — soft-delete exclusion,
-tenant scoping, published-only — previously required replacing the whole
-Doctrine provider for a type, re-owning its window/COUNT execution just to add
-one `WHERE`. A `DoctrineExtensionInterface` (tagged, autoconfigured, applied in
-descending priority order) now customizes every QueryBuilder the provider
-executes, *before* the requested criteria: requested filters can only `AND`
-onto the scope, the pre-window COUNT derives from the customized builder so
-paginated totals agree with it, and `fetchOne()` runs through the same pipeline
-(falling back to `find()` only when no extension supports the type) so an
-out-of-scope row is a `404`.
+Base scopes a client must not undo (soft-delete, tenant, published-only) are `DoctrineExtensionInterface` services applied to every query builder the Doctrine layer runs, before the requested criteria, so requested filters can only narrow the scope, counts agree with it and an out-of-scope row is a `404`. Each call receives an `ExtensionContext` (the type, a `QueryPurpose`, and the request when the load has one). `QueryPurpose` is deliberately non-exhaustive and the contract is to apply unconditionally and branch only to exempt a purpose, so a scope fails closed when a new purpose appears instead of silently not applying.
 
-Each application receives an `ExtensionContext` (the type, a `QueryPurpose` and
-a nullable `JsonApiRequestInterface`; see ADR 0070) rather than loose arguments,
-so a scope can be request-aware on the related/include/batch loads that carry the
-request, while staying purpose-driven on the primary loads that do not. The
-`QueryPurpose` is deliberately **non-exhaustive**: the write phase adds purposes
-for the persister's target loads (an update/delete fetches its entity through this
-pipeline, inheriting the scope), and a `FetchRelatedCollection` case (ADR 0070)
-distinguishes a related load from the primary collection — and the documented
-contract (apply unconditionally, branch only to *exempt* a purpose) means a
-scoping rule fails closed when new purposes appear, rather than silently not
-applying. This is the storage-specific half of the design: client-overridable
-*default* filter values are a declaration concern and belong in core's filter
-vocabulary, not in a QueryBuilder hook.
+## Consequences
+
+- Related, include, batch, pivot and to-one loads report `FetchRelatedCollection`; primary loads carry no request, so a request-aware extension may only add constraints when one is present.
+- `IncludeHydration` is the one purpose an extension opts into rather than out of: it loads related entities by ids that are already scoped, so a filtering extension changes nothing there, and a fetch-join that would break the scoping subquery belongs there.
+- Client-overridable default filter values are a declaration concern in core's filter vocabulary, not an extension.

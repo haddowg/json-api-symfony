@@ -156,7 +156,7 @@ final class PolymorphicRelationTest extends JsonApiFunctionalTestCase
         // A polymorphic to-many's members span types, so there is no single related
         // provider or shared vocabulary to window its linkage through — querying it is
         // unsupported. A requested filter is a clean 400, not a silent no-op (bundle ADR
-        // 0096; the projector advertises no query parameters for it).
+        // 0030; the projector advertises no query parameters for it).
         $response = $this->handle(self::BASE_URI . '/boards/1/relationships/items?filter[name]=x');
 
         self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
@@ -248,7 +248,7 @@ final class PolymorphicRelationTest extends JsonApiFunctionalTestCase
     {
         // A polymorphic to-one (`pinned`, a MorphTo) has no single related resource and
         // so no shared filter vocabulary — ANY filter key is unrecognised, mirroring the
-        // polymorphic to-many's 400 (bundle ADR 0068 follow-up #1). Today it was silently
+        // polymorphic to-many's 400 (bundle ADR 0053 follow-up #1). Today it was silently
         // swallowed (200).
         $response = $this->handle(self::BASE_URI . '/boards/1/pinned?filter[name]=x');
 

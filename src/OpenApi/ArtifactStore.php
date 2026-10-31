@@ -109,7 +109,7 @@ final class ArtifactStore
     }
 
     /**
-     * The warmed document as value objects (bundle ADR 0131), or null when it was never
+     * The warmed document as value objects (bundle ADR 0077), or null when it was never
      * written, was written by another installed version of core or this bundle, or
      * doesn't decode.
      */

@@ -378,7 +378,7 @@ final class OpenApiDocsTest extends MusicCatalogKernelTestCase
 
         // The aggregate is the per-type standalone JSON Schema 2020-12 documents keyed by
         // JSON:API type — a single fetch the client codegen consumes for its validation
-        // seam (bundle ADR 0101). Each is self-contained: a `$id` and a `type` const.
+        // seam (bundle ADR 0077). Each is self-contained: a `$id` and a `type` const.
         $aggregate = $this->decode($response);
         foreach (['albums', 'tracks', 'playlists'] as $type) {
             $schema = $this->nested($aggregate, $type);

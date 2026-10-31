@@ -13,7 +13,7 @@ use PHPUnit\Framework\Attributes\Test;
  * {@see \haddowg\JsonApi\Pagination\CursorPaginator} — asserted byte-identical
  * on the in-memory ({@see InMemoryLinkageCursorTest}) and Doctrine-sqlite
  * ({@see DoctrineLinkageCursorTest}) kernels over the shared `cursorShelves`
- * declaration and seed (bundle ADR 0114).
+ * declaration and seed (bundle ADR 0063).
  *
  * The linkage endpoint windows the SAME keyset the related endpoint pages —
  * the members render as resource IDENTIFIERS, the boundary-cursor

@@ -48,7 +48,7 @@ abstract class DoctrineWindowedIncludeBatchBudgetTestCase extends JsonApiFunctio
     /**
      * The captured SQL of a FILTERED windowed pinnedComments include (a relatedQuery
      * `filter[bodyContains]` + a sort + the page-1 window), counted via `?withCount` — the
-     * case the native batch now folds onto ONE bounded query (bundle ADR 0066).
+     * case the native batch now folds onto ONE bounded query (bundle ADR 0065).
      *
      * @return list<string>
      */

@@ -9,7 +9,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Resource\BaseFlattenCountryResour
 
 /**
  * The Doctrine `countries` resource of the flattened-attribute (`on()`) fixture
- * (bundle ADR 0085): {@see BaseFlattenCountryResource} mapped to
+ * (bundle ADR 0035): {@see BaseFlattenCountryResource} mapped to
  * {@see FlattenCountryEntity}. The SECOND level the book's nested `author.country`
  * pin walks to — eager-loaded level-by-level but never rendered as a relationship.
  */

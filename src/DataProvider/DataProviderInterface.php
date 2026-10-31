@@ -99,20 +99,20 @@ interface DataProviderInterface
      * {@see RelatedBatch} keyed by parent wire id — the batched, page-at-a-time twin
      * of {@see fetchRelatedCollection()} the {@see RelationshipWindowBatcher} drives to
      * window a collection include and the {@see RelatedIncludeBatcher} drives to load a
-     * whole `?include` tree without N+1 (bundle ADR 0061/0062).
+     * whole `?include` tree without N+1 (bundle ADR 0035).
      *
      * A **to-many** relation's per-parent result is its windowed page (or, in
      * plain-include fast-path mode — empty criteria + null window — its WHOLE related
      * set). A **to-one** relation's per-parent result is a 0-or-1
      * {@see CollectionResult} carrying its single target (the include arm, bundle ADR
-     * 0062): the reference Doctrine provider projects each parent's target id as a
+     * 0035): the reference Doctrine provider projects each parent's target id as a
      * scalar (`IDENTITY(parent.<assoc>)`, no proxy init), loads the distinct targets in
      * ONE `WHERE id IN (:ids)` query, and partitions 1:1; the in-memory witness wraps
      * each parent's {@see RelationInterface::readValue()} object. A relation whose value
      * the model computes (a column that is not a real association) returns
      * {@see RelatedBatch::computed()}, and one the provider cannot batch (a composite-id
      * target) returns {@see RelatedBatch::unsupported()}; the batcher then reads it off
-     * the model only when that is not scoped (bundle ADR 0125).
+     * the model only when that is not scoped (bundle ADR 0035).
      *
      * Where {@see fetchRelatedCollection()} answers ONE parent and the
      * {@see RelationshipWindowBatcher} looped it M parents x N relations
@@ -175,7 +175,7 @@ interface DataProviderInterface
      * is raw membership unchanged; when a `?withCount`-named relation also carries a
      * relatedQuery filter, the count reflects it, so the relationship-object total and
      * the related-collection endpoint total describe the SAME filtered set (bundle ADR
-     * 0060). An unrecognised filter key still `400`s, since the count criteria carries
+     * 0052). An unrecognised filter key still `400`s, since the count criteria carries
      * the merged vocabulary.
      *
      * `$type` is the **parent** resource type (the relation lives on the parent);
@@ -220,7 +220,7 @@ interface DataProviderInterface
      * surfaces (the related endpoint `GET /{type}/{id}/{toOneRel}?filter[…]` and the
      * relationship endpoint `…/relationships/{toOneRel}?filter[…]`) and the
      * `relatedQuery[<toOneRel>][filter]` profile path on a single parent (bundle ADR
-     * 0068). When it returns `false` the handler nulls the to-one (renders `data: null`
+     * 0053). When it returns `false` the handler nulls the to-one (renders `data: null`
      * / null linkage / omits the include); when `true` it renders the related object
      * unchanged.
      *
@@ -248,7 +248,7 @@ interface DataProviderInterface
     /**
      * The BATCHED twin of {@see relatedToOneMatches()} for a whole PAGE of parents — the
      * include/primary path of the `relatedQuery[<toOneRel>][filter]` profile, run ONCE
-     * over the page so the include does not N+1 (bundle ADR 0068). For each parent it
+     * over the page so the include does not N+1 (bundle ADR 0053). For each parent it
      * answers whether that parent's single to-one target satisfies `$criteria`'s filters,
      * as a `wire-id => bool` map keyed exactly as {@see countRelated()} /
      * {@see fetchRelatedCollectionBatch()} (the serializer's `getId()` / the store's
@@ -291,7 +291,7 @@ interface DataProviderInterface
      * an incoming linkage member's meta so an existing-member partial pivot update
      * validates in the **update** (preserved-value) context while a genuinely-new
      * member still validates in the create (new-row) context (the merge-before-validate
-     * pivot half, ADR 0050).
+     * pivot half, ADR 0049).
      *
      * A non-pivot relation, a pivot relation with no pivot fields, or a provider that
      * cannot store pivot data (the in-memory witness, a custom store) returns `[]` —

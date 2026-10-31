@@ -6,7 +6,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App;
 
 /**
  * The in-memory `books` model of the flattened-attribute (`on()`) conformance
- * fixture (bundle ADR 0085). It carries a HIDDEN backing to-one, a sibling to-one
+ * fixture (bundle ADR 0035). It carries a HIDDEN backing to-one, a sibling to-one
  * and a VISIBLE to-one:
  *
  *  - `author` — the HIDDEN backing of the flattened `authorName` attribute

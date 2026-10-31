@@ -10,14 +10,13 @@ use haddowg\JsonApiBundle\Server\ServerProvider;
 
 /**
  * The registry of declarative OpenAPI **description overrides** declared
- * via `#[AsJsonApiResource(description: …, operationDescriptions: …)]` (bundle ADR
- * 0092). Built from a plain scalar `type → {description, operations}` map the
+ * via `#[AsJsonApiResource(description: …, operationDescriptions: …)]` (docs/openapi.md). Built from a plain scalar `type → {description, operations}` map the
  * {@see \haddowg\JsonApiBundle\DependencyInjection\Compiler\ResourceDescriptionPass}
  * assembles from each resource's tag attributes (the map flows through the container
  * as scalars; the per-operation map is carried as one JSON string, like the response
  * headers, because a nested array is not a dumpable flat tag attribute).
  *
- * Descriptions are keyed by server and type (bundle ADR 0144): each server holds only
+ * Descriptions are keyed by server and type (bundle ADR 0034): each server holds only
  * what its own resource class or standalone serializer declared, a class on several
  * servers is held under each, and a server whose class declared nothing gets the
  * generated default rather than another server's values. The
@@ -32,7 +31,7 @@ use haddowg\JsonApiBundle\Server\ServerProvider;
  * {@see \haddowg\JsonApi\Resource\AbstractResource::getSingularName()} hook the same way.
  *
  * And it carries the declared OpenAPI vendor extensions
- * (`#[AsJsonApiResource(extensions: …, operationExtensions: …)]`, bundle ADR 0127):
+ * (`#[AsJsonApiResource(extensions: …, operationExtensions: …)]`, docs/openapi.md):
  * the type-wide set and the per-CRUD-operation sets, which core merges onto the
  * type's operations. Core has no resource method hook for extensions, so the
  * attribute is their only declaration site.

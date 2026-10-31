@@ -1,44 +1,16 @@
-# The Doctrine provider batch-preloads the effective `?include` tree
+# Every relation a document renders loads through the provider that serves its related endpoint
 
-The reference Doctrine `DataProvider` now batch eager-loads a read's effective
-`?include` tree before rendering, so included relationships do not N+1 against the
-store. It is Laravel-style: **one query per relation per level, no fetch-joins** —
-the `shipmonk/doctrine-entity-preloader` library loads a relation for every source
-entity at a level in a single `WHERE id IN (…)`-style query, and the loaded targets
-seed the next level. Across the example, `GET /albums?include=tracks` over 16 albums
-issues 2 include-load queries (albums + one batched tracks load) instead of the 15 a
-lazy render issues.
+Included resources, rendered linkage, `?withCount`, the Relationship Queries window and the hops of `on()` attributes all load on the request's own server through the related type's provider, batched once per relation per level with `fetchRelatedCollectionBatch()` (per parent when that provider is not the parent's), and the loaded members reach core through its out-of-band linkage seams instead of being written onto the entity. A relation is read straight off the model only when its provider declares that equals its related read (`ScopesRelatedReadsInterface`) or the author computes the value; anything else fails loudly. Loading used to be a pure optimisation with a lazy fallback, but under a scoped provider or a Doctrine extension a lazy read off the entity renders rows the related endpoint hides.
 
-The preloader reuses **core's** include decision
-(`JsonApiRequestInterface::isIncludedRelationship()`, fed each resource's
-`getDefaultIncludedRelationships()`), so it preloads exactly the tree the serializer
-renders — the explicitly requested `?include`, or the resource's **default-include**
-fallback when the request sends none (so a default include is rendered *and*
-preloaded; an explicit `?include=` overrides it to nothing). It is alias-aware: the
-relation's storage column (`column() ?? name()`) drives the batch, honouring a
-`storedAs()` rename.
+## Considered Options
 
-Preloading is a **pure optimization** — the rendered document is byte-identical with
-or without it (a conformance witness proves this by toggling the preloader off). So a
-relation the preloader cannot batch silently **falls back to lazy**: a polymorphic
-relation (more than one related type — no single target class), a computed /
-`extractUsing` / non-association column, a composite-key target (the library does not
-support it), and any preloader limitation surfaced as an exception (caught per
-relation). The capability is **opt-in**: it is wired only when the optional library
-is installed (`suggest` + `require-dev`); without it the provider degrades to lazy
-includes. It is also a provider capability (`PreloadsIncludesInterface`), not part of
-the core read SPI — a custom provider opts in independently, and one that does not
-(the example's `artists` override) renders lazily.
+- Keep the lazy fallback and document it: under a scope it renders hidden rows.
+- Hide unloadable linkage through the load-state predicate: it covers only lazy, not-included relations and changes the document's shape.
+- Write the scoped value onto the entity: it fails on a private collection with no setter, and a later flush in the same request (an atomic batch) would persist a filtered collection or a nulled to-one.
 
 ## Consequences
 
-- The handler materializes a collection/page result once (it was already iterating
-  it) and passes it to both the preloader and the renderer, so the items are
-  traversed once. The to-one related endpoint only preloads when the related type has
-  a provider of its own (a to-one related value is read off the parent, so its type
-  may not be independently provided).
-- `EntityPreloader::preload()` declares its property-name parameter `literal-string`,
-  but the bundle passes a runtime association name; a PHPStan stub relaxes that one
-  parameter to `string` (correcting a third-party type, not suppressing a real bug).
-- The example wires a query-counting DBAL logging middleware purely as a test
-  affordance (the `IncludePreloadTest` witness); a production app would not.
+- Doctrine loads a many-to-many or owning-side batch as scalar `(parent, related)` id pairs plus one id load, because ORM hydration dedups a root entity across rows and would lose parents that share a member.
+- A computed relation whose related type is scoped keeps only the rows that type's provider admits (`AdmitsRowsInterface`, one `IN` probe per relation per level), and a polymorphic to-many narrows each scoped member type the same way, before any page, sort or count.
+- An `identifiedBy()` `MorphTo` loads its targets by id through each type's provider (`FetchesByIdsInterface`), and for linkage alone loads only the types whose rows could be hidden.
+- Author-declared `on()` eager loads ride the same batch, bypass the client include safeguards and never add to `included`.

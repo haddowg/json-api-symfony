@@ -16,7 +16,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\FlattenPublisherEntityFa
 
 /**
  * `afterBoot()` for the Doctrine flattened-attribute (`on()`) suite (bundle ADR
- * 0085): creates the in-memory SQLite schema and seeds the SAME graph the in-memory
+ * 0035): creates the in-memory SQLite schema and seeds the SAME graph the in-memory
  * {@see \haddowg\JsonApiBundle\Tests\Functional\App\FlattenProviderFactory} seeds —
  *
  *  - authors 1 "Ada Lovelace", 2 "Grace Hopper", 3 "Edsger Dijkstra";

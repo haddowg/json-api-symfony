@@ -14,7 +14,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 /**
- * The fail-loud eager-load validation acceptance suite (bundle ADR 0085), run
+ * The fail-loud eager-load validation acceptance suite (bundle ADR 0035), run
  * identically against the in-memory ({@see InMemoryEagerLoadValidationTest}) and
  * Doctrine ({@see DoctrineEagerLoadValidationTest}) kernels — the boot-time throw is
  * pure metadata, so it must fire identically on BOTH providers.

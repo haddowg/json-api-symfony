@@ -9,7 +9,7 @@ use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 
 /**
  * Builds the in-memory providers/persister for the operation-exposure witness
- * (ADR 0025): a read-only `ledgers` provider (no persister), a create-only
+ * (ADR 0024): a read-only `ledgers` provider (no persister), a create-only
  * `signals` provider + persister sharing one store (so a POST is persisted and
  * the SPI resolves a write), and a read-only `beacons` provider for the routed
  * standalone serializer type. Seed objects cannot be service-config literals, so

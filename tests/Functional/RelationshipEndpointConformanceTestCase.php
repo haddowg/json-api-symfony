@@ -161,7 +161,7 @@ abstract class RelationshipEndpointConformanceTestCase extends JsonApiFunctional
         $this->assertNotFound('/articles/1/relationships/bogusrel');
     }
 
-    // --- to-one nulling: a relation filter excludes the single target (ADR 0068) ---
+    // --- to-one nulling: a relation filter excludes the single target (ADR 0053) ---
 
     #[Test]
     #[Group('spec:fetching-relationships')]

@@ -10,7 +10,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 /**
  * The acceptance suite for the flattened-attribute (`on()`) trio + the eager-load
- * declaration (bundle ADR 0085), run identically against the in-memory witness
+ * declaration (bundle ADR 0035), run identically against the in-memory witness
  * ({@see InMemoryFlattenTest}) and the Doctrine reference ({@see DoctrineFlattenTest}),
  * so a failure localises to the provider, not the fixture.
  *

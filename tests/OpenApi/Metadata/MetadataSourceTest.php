@@ -113,7 +113,7 @@ final class MetadataSourceTest extends TestCase
     public function itAdvertisesTheDefaultRegisteredProfilesInCanonicalOrder(): void
     {
         // The bundle registers the three built-in profiles by default, in the canonical
-        // order the OpenAPI jsonapi.profile enum lists them (bundle ADR 0117, core ADR
+        // order the OpenAPI jsonapi.profile enum lists them (docs/configuration.md, core ADR
         // 0131). profiles() reads the live registry the ServerFactory built, not a
         // hardcoded list.
         self::assertSame(
@@ -360,7 +360,7 @@ final class MetadataSourceTest extends TestCase
         self::assertSame('/operations', $atomic->path());
     }
 
-    // --- description overrides (bundle ADR 0092) -------------------------------
+    // --- description overrides (docs/openapi.md) -------------------------------
 
     #[Test]
     public function aTypeWithoutAnyDeclaredDescriptionLeavesTheOverridesNullForTheGeneratedDefault(): void
@@ -819,7 +819,7 @@ final class MetadataSourceTest extends TestCase
 /**
  * A resource exposing two relations (one to-one with a description, one to-many
  * countable to-many), countable, no client id. Non-final so the description-override
- * fixture {@see DescribedArticleResource} can reuse its field set (bundle ADR 0092).
+ * fixture {@see DescribedArticleResource} can reuse its field set (docs/openapi.md).
  */
 class ArticleResource extends AbstractResource
 {
@@ -848,7 +848,7 @@ class ArticleResource extends AbstractResource
 
 /**
  * The `articles` type, but with the author method hooks overriding the OpenAPI
- * resource-object + fetch-one descriptions (bundle ADR 0092) — proves the method hook
+ * resource-object + fetch-one descriptions (docs/openapi.md) — proves the method hook
  * wins over the attribute registry, and that an undescribed operation falls through.
  * The hook results are held as nullable properties so each override is genuinely a
  * `?string` (an author may return null to fall through to the registry / default).

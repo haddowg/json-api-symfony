@@ -9,7 +9,7 @@ use Symfony\Component\HttpFoundation\Request;
 /**
  * Lets a serve decorator ({@see OpenApiServeDecoratorInterface} or
  * {@see JsonSchemaServeDecoratorInterface}) describe its output without producing it
- * (bundle ADR 0131).
+ * (bundle ADR 0077).
  *
  * The key must change whenever {@see OpenApiServeDecoratorInterface::decorate()} would
  * return something different for the same warmed document: the request host, the

@@ -16,7 +16,7 @@ use PHPUnit\Framework\Attributes\Test;
  * proving the related collection itself functions and only the PIVOT keys are
  * absent.
  *
- * The boundary extends to a PRIMARY document (bundle ADR 0102): a `withData()` pivot
+ * The boundary extends to a PRIMARY document (bundle ADR 0045): a `withData()` pivot
  * relation's default-rendered linkage on `GET /playlists/1` carries NO `meta.pivot`,
  * because the in-memory provider is not pivot-aware — the wrap is a clean no-op.
  */
@@ -78,7 +78,7 @@ final class InMemoryPivotBoundaryTest extends JsonApiFunctionalTestCase
         // `dataTracks` renders its linkage data by default (withData()). On a primary
         // GET /playlists/1 over the in-memory provider the linkage identifiers carry NO
         // meta.pivot — the documented boundary holds on a primary document too (bundle
-        // ADR 0102): the in-memory provider is not pivot-aware, so the wrap is a no-op.
+        // ADR 0045): the in-memory provider is not pivot-aware, so the wrap is a no-op.
         $response = $this->handle(self::BASE_URI . '/playlists/1');
 
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());

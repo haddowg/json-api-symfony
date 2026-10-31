@@ -14,7 +14,7 @@ use PHPUnit\Framework\Attributes\Test;
  * the pivot-aware reference: the cursor fetch runs as ONE DQL statement over
  * the {@see \haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\CursorShelfWidgetEntity}
  * association entity, so every member renders `meta.pivot.slot` and the `slot`
- * pivot column joins the sort vocabulary (bundle ADR 0114).
+ * pivot column joins the sort vocabulary (bundle ADR 0063).
  *
  * On top of the shared walks, this side exercises the PIVOT-ALIASED keyset —
  * `?sort=slot` resolves to the `pivot` join alias at SQL-build time, ties on

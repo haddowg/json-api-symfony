@@ -38,7 +38,7 @@ use haddowg\JsonApi\Resource\Sort\SortInterface;
  * the page schema — is sourced independently of the field inventory.
  *
  * It implements core's opt-in {@see DeclaresOperationExtensions} to carry the vendor
- * extensions declared on `#[AsJsonApiResource]` (bundle ADR 0127); a type that
+ * extensions declared on `#[AsJsonApiResource]` (docs/openapi.md); a type that
  * declares none returns empty maps and the projector emits nothing.
  *
  * It also implements core's opt-in {@see DeclaresSingularName}: the noun the generated

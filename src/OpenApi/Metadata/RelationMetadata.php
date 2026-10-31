@@ -157,7 +157,7 @@ final readonly class RelationMetadata implements RelationMetadataInterface, Decl
         // pivot-aware provider sets includePivotFields). Surface them here so the
         // OpenAPI `sort` enum advertises them too — mirroring how the pivot FILTERS,
         // being author-declared in filters(), are already advertised. Empty for a
-        // non-pivot relation (bundle ADR 0097).
+        // non-pivot relation (docs/openapi.md).
         return [...$this->relation->sorts(), ...PivotFields::sortsFor($this->relation)];
     }
 

@@ -45,7 +45,7 @@ use Symfony\Component\HttpFoundation\Response;
  * seam) rather than writing it onto the shared property, so a sibling relation reading
  * the same column renders its OWN membership — asserted by
  * {@see windowingOneSharedColumnRelationDoesNotAlterASiblingBystandersLinkage()}
- * (bundle ADR 0086).
+ * (bundle ADR 0053).
  */
 abstract class RelationshipQueriesConformanceTestCase extends JsonApiFunctionalTestCase
 {
@@ -206,7 +206,7 @@ abstract class RelationshipQueriesConformanceTestCase extends JsonApiFunctionalT
     {
         // `author` is a to-one (BelongsTo) relation: addressing it with a [sort] op is
         // the `400` (a single member has nothing to order), with the offending canonical
-        // profile param in `source.parameter`. [filter] on a to-one is allowed (ADR 0068).
+        // profile param in `source.parameter`. [filter] on a to-one is allowed (ADR 0053).
         $response = $this->profileRequest('/articles/1?relatedQuery[author][sort]=name');
 
         self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
@@ -223,7 +223,7 @@ abstract class RelationshipQueriesConformanceTestCase extends JsonApiFunctionalT
     {
         // A [page] op addressed to a to-one path is a `400` (a single member has nothing
         // to page). Core's parser drops a [page] op silently, so the batcher detects it
-        // off the raw relatedQuery family (ADR 0068).
+        // off the raw relatedQuery family (ADR 0053).
         $response = $this->profileRequest('/articles/1?relatedQuery[author][page][number]=2');
 
         self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
@@ -233,7 +233,7 @@ abstract class RelationshipQueriesConformanceTestCase extends JsonApiFunctionalT
         );
     }
 
-    // --- to-one nulling via relatedQuery[filter] on a primary request (ADR 0068) ---
+    // --- to-one nulling via relatedQuery[filter] on a primary request (ADR 0053) ---
 
     #[Test]
     #[Group('spec:profiles')]
@@ -398,7 +398,7 @@ abstract class RelationshipQueriesConformanceTestCase extends JsonApiFunctionalT
         // The relatedQuery/rQ family is a profile keyword: it is recognized only when
         // the client negotiated the profile. Without negotiation it is an unrecognized
         // top-level family, so strict query-parameter validation (default on, bundle
-        // ADR 0055) rejects it with a 400 keyed on the family base name — rather than
+        // docs/configuration.md) rejects it with a 400 keyed on the family base name — rather than
         // the old silent-ignore. The internal `[editors][sort]` path is irrelevant; the
         // family base `relatedQuery` is what is unrecognized.
         $response = $this->handle(self::BASE_URI . '/articles/1?include=editors&relatedQuery[editors][sort]=-name');
@@ -410,7 +410,7 @@ abstract class RelationshipQueriesConformanceTestCase extends JsonApiFunctionalT
         self::assertSame(['parameter' => 'relatedQuery'], $error['source'] ?? null);
     }
 
-    // --- rendered-data window gate (bundle ADR 0086) ---------------------------
+    // --- rendered-data window gate (bundle ADR 0053) ---------------------------
 
     #[Test]
     #[Group('spec:profiles')]
@@ -420,7 +420,7 @@ abstract class RelationshipQueriesConformanceTestCase extends JsonApiFunctionalT
         // `lazyComments` is a lazy (links-only-by-default) to-many backed by
         // `featuredComments` — article 1 features comments [1,2]. It is NOT included
         // and NOT `withData()`, so its linkage does not render data this request: the
-        // window must NOT fire (bundle ADR 0086). A relatedQuery filter that would
+        // window must NOT fire (bundle ADR 0053). A relatedQuery filter that would
         // narrow it to comment 1 alone has NO effect on the rendered relationship —
         // proving the filtered page was never windowed onto the parent.
         //
@@ -474,7 +474,7 @@ abstract class RelationshipQueriesConformanceTestCase extends JsonApiFunctionalT
     {
         // `comments` is a `withData()` to-many: its linkage data renders unconditionally
         // (`emitsDataOnlyWhenLoaded() === false`), so it is windowed even when NOT
-        // included (bundle ADR 0086). Article 1 owns comments [1,2]; the relatedQuery
+        // included (bundle ADR 0053). Article 1 owns comments [1,2]; the relatedQuery
         // filter `commentBody` (a contains-match on the comment body) narrows the
         // rendered linkage to comment 1 ("First!"). The filter DOES apply because the
         // data renders — windowing a withData relation is correct, never a leak.
@@ -490,7 +490,7 @@ abstract class RelationshipQueriesConformanceTestCase extends JsonApiFunctionalT
     #[Group('spec:fetching-filtering')]
     public function windowingOneSharedColumnRelationDoesNotAlterASiblingBystandersLinkage(): void
     {
-        // REGRESSION (bundle ADR 0086): a windowed relation must not corrupt a SIBLING
+        // REGRESSION (bundle ADR 0053): a windowed relation must not corrupt a SIBLING
         // relation that shares its backing column. `comments` is a `withData()` to-many
         // (windowed) and `lockedComments` is a lazy to-many over the SAME `comments`
         // column (NEITHER addressed NOR included). Filtering `comments` to comment 1 must
@@ -528,7 +528,7 @@ abstract class RelationshipQueriesConformanceTestCase extends JsonApiFunctionalT
     #[Group('spec:fetching-filtering')]
     public function twoCoWindowedRelationsOverOneColumnEachRenderTheirOwnFilteredPage(): void
     {
-        // CO-WINDOWED SHARED COLUMN (bundle ADR 0086): `comments` and `flaggedComments`
+        // CO-WINDOWED SHARED COLUMN (bundle ADR 0053): `comments` and `flaggedComments`
         // are BOTH `withData()` to-many relations over the SAME `comments` backing
         // column, so both render data this request and both are windowed. The
         // relationship-linkage seam is keyed per (parent, relation), so each carries
@@ -556,7 +556,7 @@ abstract class RelationshipQueriesConformanceTestCase extends JsonApiFunctionalT
     #[Group('spec:fetching-filtering')]
     public function aFilteredWithCountOnANotIncludedToManyStillCountsTheFilteredSet(): void
     {
-        // REGRESSION (bundle ADR 0086): gating the WINDOW must not regress the COUNT.
+        // REGRESSION (bundle ADR 0053): gating the WINDOW must not regress the COUNT.
         // `editors` is a countable, lazy (links-only-by-default) many-to-many to
         // `authors`; article 1 has editors Ada Lovelace (1) and Grace Hopper (2). It is
         // NOT included, so the window does NOT fire — but a `?withCount` of its FILTERED
@@ -728,7 +728,7 @@ abstract class RelationshipQueriesConformanceTestCase extends JsonApiFunctionalT
     }
 
     /**
-     * Asserts a relationship object was NOT windowed by the profile (bundle ADR 0086):
+     * Asserts a relationship object was NOT windowed by the profile (bundle ADR 0053):
      * a windowed relation emits a pagination `first`/`prev`/`next` link carrying the
      * relatedQuery sort/filter in plain form, so the absence of any link mentioning the
      * given filter/sort fragment witnesses that the window never fired.

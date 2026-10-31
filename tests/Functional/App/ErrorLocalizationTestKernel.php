@@ -27,7 +27,7 @@ use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
  * locale** (`fr`) with a `jsonapi_errors.fr.yaml` catalogue. So a real HTTP request
  * that trips a core catalogue error, or a validation `422`, renders through the
  * bundle's {@see \haddowg\JsonApiBundle\Server\TranslatorErrorMessageResolver}
- * (bundle ADR 0115) in French — the end-to-end witness of the resolver core's own
+ * (docs/errors.md) in French — the end-to-end witness of the resolver core's own
  * suite proves in isolation.
  */
 final class ErrorLocalizationTestKernel extends Kernel

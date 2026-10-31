@@ -26,7 +26,7 @@ use Zenstruck\Foundry\ZenstruckFoundryBundle;
  * relation is the parent-rooted PAIR-shape batch — the path the related-type
  * extension must reach the RELATED entity on, not the parent root
  * ({@see \haddowg\JsonApiBundle\Tests\Functional\DoctrineRelatedExtensionBatchTest},
- * bundle ADR 0061).
+ * bundle ADR 0035).
  */
 final class DoctrineRelatedExtensionTestKernel extends Kernel
 {

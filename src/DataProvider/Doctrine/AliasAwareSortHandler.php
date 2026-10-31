@@ -12,7 +12,7 @@ use haddowg\JsonApi\Resource\Sort\SortDirective;
  * can append a single sort directive on a NON-root alias of the query. The pivot
  * related-collection path builds the whole `ORDER BY` in the request's directive
  * order across two aliases — a pivot key on the joined `pivot` alias, a related key
- * on the root — so a pivot-first `?sort` stays the primary key (bundle ADR 0059).
+ * on the root — so a pivot-first `?sort` stays the primary key (bundle ADR 0045).
  *
  * It is NOT a core change: core's `SortHandlerInterface` is untouched, and the
  * in-memory handler does not implement this — the applier only ever requests a

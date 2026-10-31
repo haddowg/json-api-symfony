@@ -39,7 +39,7 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  *    assigned to it via `#[AsJsonApiResource(server: …)]`), registered through
  *    core's lazy container resolver — this server's own {@see ResourceLocator},
  *    which hands out a per-server instance of any class another server also
- *    resolves (bundle ADR 0124) — so a Resource can have real constructor
+ *    resolves (bundle ADR 0034) — so a Resource can have real constructor
  *    dependencies;
  *  - this server's base URI and JSON:API version;
  *  - the PSR-17 response / stream factories;
@@ -70,11 +70,11 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  * (`json_api.max_include_depth`, default 3) into the Server through
  * {@see Server::withMaxIncludeDepth()} — a non-positive configured value resolving
  * to `null` (unlimited), which a resource's own `maxIncludeDepth()` may still
- * override per type (bundle ADR 0037).
+ * override per type (bundle ADR 0036).
  *
  * It threads the strict query-parameter toggle
  * (`json_api.strict_query_parameters`, default true) into the Server through
- * {@see Server::withStrictQueryParameters()} (bundle ADR 0055, core ADR 0059): when
+ * {@see Server::withStrictQueryParameters()} (docs/configuration.md, core ADR 0059): when
  * on, an unrecognized top-level query-parameter family is rejected with a `400`
  * {@see \haddowg\JsonApi\Exception\QueryParamUnrecognized}, thrown from
  * `Server::dispatch()` and rendered by the route-scoped exception listener; when
@@ -95,7 +95,7 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 final class ServerFactory
 {
     /**
-     * The JSON:API profiles registered by default (bundle ADR 0117): the three
+     * The JSON:API profiles registered by default (docs/configuration.md): the three
      * built-ins in the canonical order the OpenAPI `jsonapi.profile` enum advertises
      * them (core ADR 0131). The order is significant — it is the byte-order the
      * `jsonapi.profile` enum is generated in — and MUST match the Laravel adapter's
@@ -113,11 +113,11 @@ final class ServerFactory
 
     /**
      * @param list<class-string<\haddowg\JsonApi\Resource\AbstractResource>>                      $resourceClasses       this server's Resource class-strings (ADR 0034)
-     * @param array<class-string, class-string<\haddowg\JsonApi\Serializer\SerializerInterface>> $serializersByClass    override serializer per Resource class-string (ADR 0023), this server only
-     * @param array<class-string, class-string<\haddowg\JsonApi\Hydrator\HydratorInterface>>      $hydratorsByClass      override hydrator per Resource class-string (ADR 0023), this server only
+     * @param array<class-string, class-string<\haddowg\JsonApi\Serializer\SerializerInterface>> $serializersByClass    override serializer per Resource class-string (ADR 0024), this server only
+     * @param array<class-string, class-string<\haddowg\JsonApi\Hydrator\HydratorInterface>>      $hydratorsByClass      override hydrator per Resource class-string (ADR 0024), this server only
      * @param array<string, class-string<\haddowg\JsonApi\Serializer\SerializerInterface>>        $standaloneSerializers standalone serializer per type, no resource (ADR 0024), this server only
      * @param array<string, class-string<\haddowg\JsonApi\Hydrator\HydratorInterface>>            $standaloneHydrators   standalone hydrator per type, no resource (ADR 0024), this server only
-     * @param list<class-string<ProfileInterface>>                                                $profiles              the JSON:API profiles this server registers, in registration order (bundle ADR 0117); default {@see self::DEFAULT_PROFILES}
+     * @param list<class-string<ProfileInterface>>                                                $profiles              the JSON:API profiles this server registers, in registration order (docs/configuration.md); default {@see self::DEFAULT_PROFILES}
      */
     public function __construct(
         private readonly ResourceLocator $resources,
@@ -149,7 +149,7 @@ final class ServerFactory
         private readonly bool $linkObjects = true,
         // Decides per parent whether a rendered relationship carries its data, and
         // whether a flattened `on()` write may land on its related row (bundle ADR
-        // 0139). Bound to this server in create(); null asks nothing.
+        // 0100). Bound to this server in create(); null asks nothing.
         private readonly ?RelationAuthorizer $relationAuthorizer = null,
         private readonly bool $rejectReadOnlyAttributes = false,
         // OAuth scope enforcement (core ADR 0181): on only when the app supplies the
@@ -186,7 +186,7 @@ final class ServerFactory
             // relationship-object pagination links for each rendered to-many; null
             // when the profile read did not negotiate, so no such links are emitted.
             ->withRelationshipPagination($this->relationshipPagination)
-            // The per-request relationship-LINKAGE seam (bundle ADR 0086): the same
+            // The per-request relationship-LINKAGE seam (bundle ADR 0053): the same
             // stable-holder indirection again, threaded in once. The handler swaps its
             // windowed-linkage backing per profile read so core renders a windowed
             // to-many's page-1 linkage WITHOUT the batcher writing it onto the parent
@@ -194,7 +194,7 @@ final class ServerFactory
             // membership. Null when the profile read did not negotiate, so core reads
             // linkage off the model as before.
             ->withRelationshipLinkage($this->relationshipLinkage)
-            // The out-of-band resource-link contributor (bundle ADR 0091): merges
+            // The out-of-band resource-link contributor (bundle ADR 0076): merges
             // host-owned, router-generated links onto a rendered resource alongside its
             // author getLinks() (author keys win) — here, a custom action exposed via
             // #[AsJsonApiAction(asLink: true)], security-aware so the link renders only
@@ -210,7 +210,7 @@ final class ServerFactory
             // maxIncludeDepth() may still override.
             ->withMaxIncludeDepth($this->maxIncludeDepth > 0 ? $this->maxIncludeDepth : null)
             // Reject an unrecognized top-level query-parameter family with a 400
-            // (json_api.strict_query_parameters, default true; bundle ADR 0055, core
+            // (json_api.strict_query_parameters, default true; docs/configuration.md, core
             // ADR 0059). The recognized set is assembled per request from the reserved
             // JSON:API families, the primary resource's declared keys, the always-on
             // `withCount`, and a negotiated profile's keywords — so the Relationship
@@ -218,7 +218,7 @@ final class ServerFactory
             // above) is recognized automatically when the client negotiates it, with
             // no extra registration. False restores the old silent-ignore behaviour.
             ->withStrictQueryParameters($this->strictQueryParameters)
-            // The error-message resolver (bundle ADR 0115): localizes/overrides every
+            // The error-message resolver (docs/errors.md): localizes/overrides every
             // error's title/detail per its stable code through the Symfony translator.
             // Null when symfony/translation is absent, so core renders its inline
             // English copy (byte-identical to today).
@@ -234,7 +234,7 @@ final class ServerFactory
             // A write sending an attribute the client cannot write is a 403 rather than
             // ignored (json_api.reject_read_only_attributes, or the named server's own).
             ->withReadOnlyAttributesRejected($this->rejectReadOnlyAttributes)
-            // The relation authorizer (bundle ADR 0139), bound to this server so it can
+            // The relation authorizer (bundle ADR 0100), bound to this server so it can
             // resolve a polymorphic relation's row type and read this server's security
             // declarations; read lazily, since the server it resolves through is the
             // one being built here.
@@ -243,7 +243,7 @@ final class ServerFactory
             ->withContainer($this->resources);
 
         // Register the JSON:API profiles this server recognizes, data-driven from
-        // `json_api.profiles` (bundle ADR 0117; default {@see self::DEFAULT_PROFILES} —
+        // `json_api.profiles` (docs/configuration.md; default {@see self::DEFAULT_PROFILES} —
         // the three built-ins in the canonical order). Registration makes the server
         // RECOGNIZE a profile — it advertises the URI when a client negotiates it, parses
         // the profile's opt-in query family only under that negotiation, and (core ADR
@@ -256,7 +256,7 @@ final class ServerFactory
         }
 
         foreach ($this->resourceClasses as $resourceClass) {
-            // A resource may override its serializer/hydrator (ADR 0023); core
+            // A resource may override its serializer/hydrator (ADR 0024); core
             // resolves the override class through the same container resolver and
             // drives the type's reads/writes through it instead of the resource.
             $server = $server->register(

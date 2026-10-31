@@ -14,7 +14,7 @@ use PHPUnit\Framework\Attributes\Test;
  * {@see ServerKeyedRegistriesConformance} and {@see ServerKeyedIdPatternConformance} on
  * the Doctrine kernel, plus the id decoding only the Doctrine layer does: `codedWidgets`
  * is served by a different class on each server, whose ids read `a-<key>` on the
- * default server and `b-<key>` on the named one (bundle ADR 0145).
+ * default server and `b-<key>` on the named one (bundle ADR 0034).
  */
 final class DoctrinePerServerRegistriesTest extends JsonApiFunctionalTestCase
 {

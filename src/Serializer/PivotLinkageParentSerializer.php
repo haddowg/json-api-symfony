@@ -16,7 +16,7 @@ use haddowg\JsonApi\Serializer\SerializerInterface;
  * (an `?include`d relation, or one that renders data by default) — so a primary
  * read (`GET /playlists/1?include=tracks`, or a default-data relation with no
  * `?include`) carries pivot exactly as the related/relationship endpoints already do
- * (bundle ADR 0102).
+ * (bundle ADR 0045).
  *
  * It is the multi-relation, per-parent twin of {@see PivotParentSerializer} (which
  * rebinds ONE relation over the WHOLE association's map for the relationship-linkage
@@ -61,7 +61,7 @@ final class PivotLinkageParentSerializer extends AbstractPivotParentSerializer
             // (CrudOperationHandler::withPivotLinkage) only filters UNCONDITIONALLY
             // hidden relations, so a `hidden(fn …)` pivot relation with rendered data
             // would otherwise be RE-ADDED here — leaking a relationship the author hid
-            // for this request (bundle ADR 0102). Respect the inner decision.
+            // for this request (bundle ADR 0045). Respect the inner decision.
             if (!\array_key_exists($name, $relationships)) {
                 continue;
             }

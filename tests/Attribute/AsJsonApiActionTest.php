@@ -16,7 +16,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit coverage for the {@see AsJsonApiAction} `asLink` flag (bundle ADR 0091) and the
+ * Unit coverage for the {@see AsJsonApiAction} `asLink` flag (bundle ADR 0076) and the
  * `responds` success-response set (core ADR 0127): `asLink` is a plain flag that
  * defaults off and is accepted on a resource-scope action, but a `Collection`-scope
  * action with `asLink: true` is a constructor `\LogicException`. `responds` normalises a

@@ -36,7 +36,7 @@ use haddowg\JsonApi\Resource\Field\RelationInterface;
  * core validates the request shape (cardinality + mutability flags), then the
  * persister resolves the linkage's resource-identifier ids to the actual related
  * objects/references and mutates the parent's association — the persister owns the
- * storage mapping (ADR 0010), so it owns the id → object resolution a relationship
+ * storage mapping (ADR 0004), so it owns the id → object resolution a relationship
  * mutation needs. The whole-resource writes ({@see create()}/{@see update()}/
  * {@see delete()}) stay unchanged.
  */
@@ -91,7 +91,7 @@ interface DataPersisterInterface
      * linkage). `$flush` controls whether the mutation is committed immediately:
      * the relationship endpoints commit per mutation (`$flush = true`, the default),
      * but a whole-resource write that embeds relationships in `data.relationships`
-     * (ADR 0018) applies each relationship with `$flush = false` and lets the
+     * (ADR 0017) applies each relationship with `$flush = false` and lets the
      * subsequent {@see create()}/{@see update()} own the single commit — so a
      * not-yet-persisted create target is never flushed mid-association.
      *

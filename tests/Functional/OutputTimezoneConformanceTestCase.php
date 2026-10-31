@@ -22,7 +22,7 @@ use Symfony\Component\HttpFoundation\Response;
  * `outputTimezone()` keeps it; `Date` and `Time` never move.
  *
  * `shared-gigs` and `venues` are served by all three servers, so each server must
- * render them through its own resource instance (bundle ADR 0124).
+ * render them through its own resource instance (bundle ADR 0034).
  */
 abstract class OutputTimezoneConformanceTestCase extends JsonApiFunctionalTestCase
 {

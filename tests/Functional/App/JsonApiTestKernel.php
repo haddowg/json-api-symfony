@@ -124,7 +124,7 @@ final class JsonApiTestKernel extends Kernel
         // to-many `widgets` relation declares its own CursorPaginator, its members drawn live
         // from the `cursorWidgets` store — the complement of the owning-side ManyToMany
         // `cursorShelves`, so the batched include exercises the inverse-FK single-window shape
-        // on the Doctrine half and this witness refereeing it (bundle ADR 0118).
+        // on the Doctrine half and this witness refereeing it (bundle ADR 0065).
         $services->set(CursorGroupResource::class);
         $services->set('test.cursor_groups_provider', InMemoryDataProvider::class)
             ->factory([CursorGroupProviderFactory::class, 'create'])

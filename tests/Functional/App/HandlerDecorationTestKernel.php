@@ -21,7 +21,7 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 /**
- * The handler-override witness kernel (ADR 0028): a single writable in-memory
+ * The handler-override witness kernel (ADR 0021): a single writable in-memory
  * `book` resource plus an {@see InterceptingHandler} registered as a Symfony
  * **decorator** of the generic {@see CrudOperationHandler}. The `ServerFactory`
  * resolves the handler by service id (`service(CrudOperationHandler::class)`), so

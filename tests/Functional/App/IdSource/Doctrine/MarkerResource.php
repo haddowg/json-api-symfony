@@ -10,7 +10,7 @@ use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 
 /**
- * The allowClientId + generated-UUID witness (bundle ADR 0039): `uuid()` declares the
+ * The allowClientId + generated-UUID witness (docs/validation.md): `uuid()` declares the
  * format (and its route/constraint), `allowClientId()` makes a client `data.id`
  * optional, and `generated()` mints a v4 UUID when none is supplied. A create with a
  * well-formed client UUID uses it; a create that omits the id has one minted; a create

@@ -10,7 +10,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\Routing\RouterInterface;
 
 /**
- * The uriType witness (ADR 0022): the `book` resource declares `$uriType = 'books'`,
+ * The uriType witness (docs/routing.md): the `book` resource declares `$uriType = 'books'`,
  * so its routes, relationship convention links and the create Location header use
  * the `books` segment, while the rendered document `type` member stays `book`.
  * uriType is a routing/rendering concern, identical on every provider, so it is

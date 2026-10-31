@@ -1,17 +1,3 @@
-# The Doctrine entity mapping is declared on the resource via `#[AsJsonApiResource(entity: …)]`
+# The Doctrine entity mapping is declared on the resource attribute
 
-The Doctrine provider needs a `type → entity class` map, and the alternatives —
-a central bundle-config map, or a naming convention with inflection — either
-split the declaration away from the resource that owns it or break on irregular
-names. The mapping is instead a parameter on the existing discovery attribute
-(`#[AsJsonApiResource(entity: Article::class)]`): the resource declaration is
-the one place that already knows what it represents, core stays
-storage-agnostic (the attribute is a bundle concept), and the
-`DoctrineEntityMapPass` compiles the map with build-time validation (missing
-entity class, undeterminable type, or one type mapped to two entities all fail
-the container build).
-
-With an empty map the pass removes the `DoctrineDataProvider` definition
-entirely: a provider that can answer for no type must not keep a reference to
-the (possibly absent) `EntityManagerInterface` service alive in non-Doctrine
-applications.
+A type's entity is declared as `#[AsJsonApiResource(entity: …)]` rather than in a central configuration map or by naming convention, because the resource is the one place that already knows what it represents and a convention breaks on irregular names; core stays storage-agnostic. A compiler pass builds the type-to-entity map and fails the build on a missing class or a type mapped twice, and when no type maps an entity it removes the Doctrine services, so a non-Doctrine application never references an `EntityManagerInterface`.

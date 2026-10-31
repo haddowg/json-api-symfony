@@ -15,7 +15,7 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 
 /**
  * Collects the declarative OpenAPI description overrides a resource declares via
- * `#[AsJsonApiResource(description: …, operationDescriptions: …, singular: …)]` (bundle ADR 0092)
+ * `#[AsJsonApiResource(description: …, operationDescriptions: …, singular: …)]` (docs/openapi.md)
  * — the extension records the resource-object description as a scalar `description`
  * tag attribute and the per-operation overrides as one JSON-encoded
  * `operation_descriptions` tag attribute on the {@see JsonApiBundle::RESOURCE_TAG} —
@@ -23,14 +23,14 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
  * into the {@see ResourceDescriptionRegistry} the
  * {@see \haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource} reads.
  *
- * Each class is recorded under each of its servers only (bundle ADR 0144): the default
+ * Each class is recorded under each of its servers only (bundle ADR 0034): the default
  * server's maps are the `$descriptions` and `$extensions` arguments and every other
  * server's go under `$servers`. The values flow as
  * plain scalars (the container cannot dump value objects); the per-operation map rides
  * as one JSON string because a nested array is not a flat tag attribute. The pass only
  * runs when the registry is defined.
  *
- * The declared OpenAPI vendor extensions (bundle ADR 0127) ride the same way, as one
+ * The declared OpenAPI vendor extensions (docs/openapi.md) ride the same way, as one
  * JSON `openapi_extensions` tag attribute, into the registry's `$extensions` argument.
  * A standalone serializer ({@see JsonApiBundle::SERIALIZER_TAG}) can declare them too.
  *
@@ -86,7 +86,7 @@ final class ResourceDescriptionPass implements CompilerPassInterface
             $examples = OperationExampleCodec::decodeMap($this->scalarFromTags($tags, 'operation_examples'));
             $scopes = OperationScopeOverrides::decodeMap($this->scalarFromTags($tags, 'operation_scopes'));
 
-            // Each class is recorded only under its own servers (bundle ADR 0144).
+            // Each class is recorded only under its own servers (bundle ADR 0034).
             foreach ($this->serversFromTags($tags) as $server) {
                 $byServer[$server] ??= ['descriptions' => [], 'extensions' => [], 'examples' => [], 'scopes' => []];
                 if ($set !== []) {

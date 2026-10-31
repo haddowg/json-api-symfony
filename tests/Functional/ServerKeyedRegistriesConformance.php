@@ -11,7 +11,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\NamedServer\ResourcesOnServerPass
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * What each server reads from its own classes (bundle ADRs 0142 and 0144). The
+ * What each server reads from its own classes (bundle ADR 0034). The
  * resource-less `notes` type has one relations provider per server: the default
  * server's `author` only an admin may read, the named server's `author` is ungated and
  * it adds an `editor`. `segmentWidgets` is served by a different class on each server:

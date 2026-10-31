@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The endpoint-exposure witness (ADR 0027): relationship routes stay parametric,
+ * The endpoint-exposure witness (ADR 0016): relationship routes stay parametric,
  * so the {@see \haddowg\JsonApiBundle\Operation\CrudOperationHandler} enforces each
  * relation's endpoint-exposure flags. A `withoutRelatedEndpoint()` /
  * `withoutRelationshipEndpoint()` relation's read is a `404` (reusing

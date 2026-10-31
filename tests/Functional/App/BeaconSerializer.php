@@ -13,7 +13,7 @@ use haddowg\JsonApiBundle\Operation\Operation;
 /**
  * A standalone serializer for the `beacons` type — registered with **no**
  * {@see \haddowg\JsonApi\Resource\AbstractResource} (ADR 0024) — that opts into a
- * single endpoint via the operations allow-list (ADR 0025): only
+ * single endpoint via the operations allow-list (ADR 0024): only
  * {@see Operation::FetchOne}, so just `GET /beacons/{id}` is routed. A standalone
  * serializer is serialize-only by default; this witnesses opening one read route.
  */

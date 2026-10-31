@@ -12,7 +12,7 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Genre;
 
 /**
  * The `genres` resource type — the **client-supplied natural-key** id-strategy
- * demonstrator (bundle ADR 0039). A genre's identity is its slug, a stable key the
+ * demonstrator (docs/validation.md). A genre's identity is its slug, a stable key the
  * client owns, so `Id::make()->requireClientId()` makes a create's `data.id`
  * MANDATORY: `POST /genres` with no id is a `403` (`ClientGeneratedIdRequired`),
  * while a create that supplies `"trip-hop"` uses it verbatim as the primary key.

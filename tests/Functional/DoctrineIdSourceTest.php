@@ -12,7 +12,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * The Id source/policy witnesses (bundle ADR 0039) end-to-end over the Doctrine
+ * The Id source/policy witnesses (docs/validation.md) end-to-end over the Doctrine
  * persister: each new behaviour the model expresses proven by a real create through the
  * `-128` Doctrine fallback persister against an in-memory SQLite database.
  *

@@ -12,7 +12,7 @@ use PHPUnit\Framework\Attributes\Test;
  * The queryable to-many relationship (linkage) endpoint
  * `GET /{type}/{id}/relationships/{rel}` as a real filtered/sorted/paginated
  * collection on both providers — the linkage twin of
- * {@see RelatedCollectionParamsConformanceTestCase} (bundle ADR 0096).
+ * {@see RelatedCollectionParamsConformanceTestCase} (bundle ADR 0030).
  *
  *  - `?sort=…` / `?filter[…]` scope against the **related** type's vocabulary merged
  *    with the relation's own scoped filters/sorts (the `comments` vocabulary, not the
@@ -193,7 +193,7 @@ abstract class RelationshipCollectionParamsConformanceTestCase extends JsonApiFu
         // `pagedComments` is countable(), so `?withCount=_self_` (under the Countable
         // profile) counts the linkage collection — emitting a `last` link the count-free
         // default omits. `_self_` is relation-aware on a relationship render (core ADR
-        // 0068 / bundle ADR 0075).
+        // 0068 / bundle ADR 0052).
         $response = $this->handle(self::BASE_URI . '/articles/1/relationships/pagedComments?withCount=_self_&page[size]=1&page[number]=1', extraServer: [
             'HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . CountableProfile::URI . '"',
         ]);

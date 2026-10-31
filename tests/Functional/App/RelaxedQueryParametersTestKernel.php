@@ -25,8 +25,7 @@ use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
  * The same in-memory `articles` app as {@see JsonApiTestKernel}, but with
  * `json_api.strict_query_parameters` switched off — so an unrecognized top-level
  * query-parameter family is silently ignored (the pre-strict behaviour) rather
- * than rejected with a `400`. Exercises the relax toggle end to end (bundle ADR
- * 0055).
+ * than rejected with a `400`. Exercises the relax toggle end to end (docs/configuration.md).
  */
 final class RelaxedQueryParametersTestKernel extends Kernel
 {

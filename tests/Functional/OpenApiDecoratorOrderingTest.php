@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * Ordering witness for the decorator seam (design §5, D7 — bundle ADR 0080). Two
+ * Ordering witness for the decorator seam (design §5, D7 — bundle ADR 0077). Two
  * decorators both overwrite the document title; the documented contract is that the
  * **highest-priority** decorator is applied last and gets the final word (the bundle's
  * highest-wins convention, consistent with providers/persisters/mappers). This proves

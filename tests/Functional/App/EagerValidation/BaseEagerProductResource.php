@@ -12,7 +12,7 @@ use haddowg\JsonApi\Resource\Field\Str;
 
 /**
  * The subject `products` of the fail-loud eager-load validation fixture (bundle ADR
- * 0085): its relation inventory covers every shape the boot-time
+ * 0035): its relation inventory covers every shape the boot-time
  * {@see \haddowg\JsonApi\Serializer\EagerLoadValidator} discriminates, plus a single
  * flattened attribute whose `on()` chain a subclass overrides via {@see flattenPath()}
  * to pin one shape and witness the throw / acceptance:

@@ -1,10 +1,3 @@
-# Doctrine entities are instantiated without invoking the constructor on create
+# Doctrine entities are created without running their constructor
 
-The reference Doctrine persister builds a new entity on create via Doctrine's
-constructor-less instantiation (`ClassMetadata::newInstance()`) — the same
-mechanism the ORM uses to hydrate entities on read — rather than
-`new $entityClass()`. This lets entities with required constructor arguments work
-under the generic zero-handler engine, keeping the genericity promise intact for
-any mappable entity. Constructor invariants and defaults do not run on create
-(consistent with read-hydration); an application that needs them overrides
-`instantiate()` via a custom `DataPersister`.
+The Doctrine persister instantiates an entity on create with `ClassMetadata::newInstance()`, as the ORM does on read, rather than `new`, so entities with required constructor arguments work under the generic engine with no per-type code. Constructor invariants and defaults therefore do not run on create. A resource that needs them implements `InstantiatesEntityInterface` (or `DeletesEntityInterface` for a custom delete such as a soft delete), which the handler calls in place of the persister; the hooks live on the resource rather than in a Doctrine-only extension point or a delegating persister base class, because the resource already has the type's dependencies injected and the hooks then work over any data layer.

@@ -10,7 +10,7 @@ use haddowg\JsonApi\Schema\Error\ErrorSource;
 use haddowg\JsonApiBundle\EventListener\ExceptionMapperInterface;
 
 /**
- * The application-side {@see ExceptionMapperInterface} witness (bundle ADR 0073):
+ * The application-side {@see ExceptionMapperInterface} witness (bundle ADR 0003):
  * it maps a {@see MapperMappedException} to a **rich** JSON:API error — a custom
  * status, a stable `code`, a `source.pointer`, and `meta` — proving a mapper can do
  * more than the status-only config map.

@@ -11,7 +11,7 @@ use PHPUnit\Framework\Attributes\Test;
 /**
  * The in-memory boundary witness for the Doctrine-only
  * {@see \haddowg\JsonApiBundle\DataProvider\Doctrine\Filter\WhereHasMatching} escape
- * hatch (bundle ADR 0069). The hatch is declared only on the Doctrine resource, so
+ * hatch (bundle ADR 0019). The hatch is declared only on the Doctrine resource, so
  * on the in-memory kernel its `filter[<key>]` keys are **undeclared** — and an
  * undeclared filter key is the deliberate unrecognised-filter `400`
  * ({@see \haddowg\JsonApi\Exception\FilterParamUnrecognized}, `source.parameter`),

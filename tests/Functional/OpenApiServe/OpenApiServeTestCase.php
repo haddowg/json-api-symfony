@@ -19,7 +19,7 @@ use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Symfony\Component\HttpKernel\KernelInterface;
 
 /**
- * Shared scaffolding for the serve-time customisation suites (bundle ADR 0131): boots
+ * Shared scaffolding for the serve-time customisation suites (bundle ADR 0077): boots
  * {@see OpenApiServeTestKernel} in the environment a subclass names, issues requests on a
  * chosen host, and warms the artifacts.
  */

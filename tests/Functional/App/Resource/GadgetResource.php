@@ -12,7 +12,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\GadgetHydrator;
 use haddowg\JsonApiBundle\Tests\Functional\App\GadgetSerializer;
 
 /**
- * The custom serializer/hydrator witness (ADR 0023): the `gadget` type overrides
+ * The custom serializer/hydrator witness (ADR 0024): the `gadget` type overrides
  * both its serializer and hydrator via the attribute, so the generic engine drives
  * its reads/writes through {@see GadgetSerializer} / {@see GadgetHydrator}. The
  * declared fields are inert (the overrides own the I/O); the resource is still the

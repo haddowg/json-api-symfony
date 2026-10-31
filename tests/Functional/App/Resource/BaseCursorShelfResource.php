@@ -27,7 +27,7 @@ use haddowg\JsonApi\Resource\Field\Integer;
  *
  * It also declares a `pivotWidgets` {@see BelongsToMany} carrying a `slot`
  * pivot field under the SAME cursor paginator — the pivot-related cursor
- * conformance surface (bundle ADR 0114). Over the Doctrine kernel the relation
+ * conformance surface (bundle ADR 0063). Over the Doctrine kernel the relation
  * pins its association entity (see the Doctrine subclass's
  * {@see pivotWidgets()} override), so the fetch runs the pivot keyset
  * push-down and each member renders `meta.pivot`; over the in-memory kernel the

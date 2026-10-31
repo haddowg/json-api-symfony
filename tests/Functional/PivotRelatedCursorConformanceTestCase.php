@@ -14,7 +14,7 @@ use PHPUnit\Framework\Attributes\Test;
  * carrying a `slot` pivot field, the relation declaring its OWN
  * {@see \haddowg\JsonApi\Pagination\CursorPaginator}) and the
  * {@see \haddowg\JsonApiBundle\Tests\Functional\App\CursorShelfFixtures} seed —
- * bundle ADR 0114.
+ * bundle ADR 0063.
  *
  * The page-walk assertions are byte-identical on the in-memory
  * ({@see InMemoryPivotRelatedCursorTest}) and Doctrine-sqlite

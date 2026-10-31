@@ -1,11 +1,11 @@
 # Moving a member out of another parent needs that parent's gate or the member's
 
-On the inverse side of a Doctrine one-to-many, an add or replace that names a child belonging to another parent re-points the child, which also removes it from that parent, yet only the target parent's gate was checked. The persister now reports each child whose parent would change (`ReportsMovedMembersInterface`), the handler dispatches `BeforeMemberMoveEvent` for it on the relationship endpoints and for relationships set in a write body, and the security subscriber allows the move when the caller passes the relation's mutate expression (or the type's update expression) for the parent the child leaves, or the related type's update expression for the child. Either one is what the caller would need to make the same change directly, through the other parent's relationship or the child's own to-one, so this rule refuses only moves the caller couldn't otherwise make; a child with no parent needs the child's gate.
+On the inverse side of a Doctrine one-to-many, adding a child that belongs to another parent re-points it and so removes it from that parent, which the target parent's gate alone does not cover. The persister reports each child whose parent would change (`ReportsMovedMembersInterface`) and the handler dispatches `BeforeMemberMoveEvent`, which passes when the caller passes the relation's mutate (or the type's update) expression for the parent the child leaves, or the related type's update expression for the child: either is what the caller would need to make the same change directly.
 
-## Considered options
+## Considered Options
 
-Requiring both gates would refuse moves the caller can already make through the child's own endpoint. A `409` would hide that the refusal depends on who's asking, so a refusal is a `403` like the other gates.
+Requiring both gates would refuse moves the caller can already make through the child's own endpoint, and a `409` would hide that the refusal depends on who is asking, so a refusal is a `403`.
 
 ## Consequences
 
-The in-memory persister doesn't implement the interface: its to-many lists aren't owned by a single parent, so adding a member never takes it from another list and there is nothing to authorize. A custom persister with single-parent children implements the interface to get the same check. A remove only detaches current members, on both providers.
+The in-memory persister does not implement the interface, since its to-many lists are not owned by a single parent; a custom persister with single-parent children implements it to get the same check.

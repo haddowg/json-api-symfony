@@ -38,7 +38,7 @@ use Symfony\Component\HttpFoundation\Response;
  * {@see OpenApiController::COMBINED_KEY}, regardless of the route's `server` default.
  *
  * ETags, conditional requests, `Cache-Control` and {@see JsonSchemaServeDecoratorInterface}
- * work as they do for the OpenAPI document (bundle ADR 0131). The schemas are standalone
+ * work as they do for the OpenAPI document (bundle ADR 0077). The schemas are standalone
  * documents with no shared components, so nothing is pruned after decoration.
  */
 final class JsonSchemaController

@@ -78,7 +78,7 @@ interface PivotAwareProviderInterface
      * in ONE DQL statement scoped to the parent set — the batched twin of
      * {@see fetchRelatedPivotMap()} (no window, no filter) — so a primary-resource
      * document whose pivot relation's linkage data renders carries `meta.pivot` on
-     * each identifier WITHOUT an N+1 of per-parent pivot reads (bundle ADR 0102).
+     * each identifier WITHOUT an N+1 of per-parent pivot reads (bundle ADR 0045).
      *
      * Returns `parentWireId => [farMemberId => [field => typed value]]`, where the
      * outer key is the wire id the PARENT serializer's `getId()` produces for the

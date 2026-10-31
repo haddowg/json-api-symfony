@@ -18,7 +18,7 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 use Zenstruck\Foundry\ZenstruckFoundryBundle;
 
 /**
- * The Doctrine include-safeguards kernel (bundle ADR 0037): FrameworkBundle +
+ * The Doctrine include-safeguards kernel (bundle ADR 0036): FrameworkBundle +
  * DoctrineBundle + JsonApiBundle over an in-memory SQLite database, mapping ONLY
  * this slice's `Include\Doctrine` entities so its `nodes`/`tags` types do not
  * collide with the article kernel's. It leaves `json_api.max_include_depth` UNSET,

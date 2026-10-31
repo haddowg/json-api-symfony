@@ -153,7 +153,7 @@ final class RelationshipReadTest extends MusicCatalogKernelTestCase
     #[Group('spec:fetching-filtering')]
     public function aRelatedToOneFilterThatExcludesTheTargetRendersDataNull(): void
     {
-        // null-a-to-one-when-a-relation-filter-excludes-its-target (bundle ADR 0068):
+        // null-a-to-one-when-a-relation-filter-excludes-its-target (bundle ADR 0053):
         // the album's `artist` to-one declares a relation-scoped `filter[name]` (the
         // related `artists.name` column). On the related endpoint the filter resolves
         // against the single target — a matching name renders the artist; a mismatch

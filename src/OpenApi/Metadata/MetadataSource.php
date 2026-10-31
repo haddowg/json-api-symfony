@@ -55,7 +55,7 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
  * operations carry a security expression (never the expression). The mapping follows
  * the runtime enforcement exactly (the {@see \haddowg\JsonApiBundle\Security\ResourceSecuritySubscriber}):
  * `forCreate`/`forUpdate`/`forDelete` gate Create/Update/Delete, `forRead` gates
- * FetchOne (the single-read hook), and `forList` (`securityList`, bundle ADR 0099)
+ * FetchOne (the single-read hook), and `forList` (`securityList`, bundle ADR 0043)
  * gates FetchCollection — enforced all-or-nothing before the query at the
  * collection-read hook, so it too is projected here. The security *schemes* +
  * *default requirement* are config — carried on the source's config and surfaced on
@@ -372,7 +372,7 @@ final class MetadataSource
             sorts: $resource !== null ? \array_values($resource->allSorts()) : [],
             actions: $actions,
             tags: $this->typeTags($descriptor['tags'], $type),
-            // The OpenAPI description overrides (bundle ADR 0092), each resolved with
+            // The OpenAPI description overrides (docs/openapi.md), each resolved with
             // precedence resource method hook -> attribute override -> null (the
             // projector then supplies the generated default). A standalone serializer
             // has no resource and serves no CRUD operations, so both are naturally
@@ -384,7 +384,7 @@ final class MetadataSource
             // override falls back to the core default in TypeMetadata::responsesFor().
             responseOverrides: $this->responseOverrides($descriptor['responses']),
             includablePaths: $resource !== null ? $this->includePaths->pathsFor($server, $type) : [],
-            // The declared vendor extensions (bundle ADR 0127). Core merges each CRUD
+            // The declared vendor extensions (docs/openapi.md). Core merges each CRUD
             // operation's set over the type-wide one and stamps the type-wide set on
             // every other operation the type emits.
             extensions: $this->descriptions?->extensionsFor($type, $serverName) ?? [],

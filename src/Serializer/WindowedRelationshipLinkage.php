@@ -17,7 +17,7 @@ use haddowg\JsonApi\Serializer\ToOneRelationshipLinkageInterface;
  * pre-computed for the fetched page of parents under the Relationship Queries profile,
  * so a windowed to-many's linkage `data` is the page-1 filtered/sorted set the batcher
  * fetched — WITHOUT the batcher writing that page back onto the parent's relation
- * property (bundle ADR 0086).
+ * property (bundle ADR 0053).
  *
  * The write-back was destructive: core reads every relation's linkage off its backing
  * column, so a windowed relation's filtered page overwrote the column a SIBLING relation
@@ -43,7 +43,7 @@ final class WindowedRelationshipLinkage implements ToOneRelationshipLinkageInter
 {
     /**
      * @param array<int, array<string, RelationshipLinkage>>      $linkages `spl_object_id(parent) => [relationName => linkage]`
-     * @param array<int, array<string, ToOneRelationshipLinkage>> $toOne    `spl_object_id(parent) => [relationName => target]`, the scoped to-one targets (bundle ADR 0125)
+     * @param array<int, array<string, ToOneRelationshipLinkage>> $toOne    `spl_object_id(parent) => [relationName => target]`, the scoped to-one targets (bundle ADR 0035)
      */
     public function __construct(
         private readonly array $linkages,

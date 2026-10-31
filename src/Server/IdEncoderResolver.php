@@ -28,7 +28,7 @@ use haddowg\JsonApi\Resource\Field\IdEncoderInterface;
  *
  * Two servers may serve one type through different resource classes with different
  * {@see Id} fields, so a type resolves to the class its server serves it with (bundle
- * ADR 0145): the server a caller names, else the one the current operation
+ * ADR 0034): the server a caller names, else the one the current operation
  * {@see bind() bound}, else the default server. When that server does not serve the
  * type, the first class that declares it anywhere answers. The class is matched by
  * the {@see AbstractResource}'s static `$type` (read without instantiating, exactly

@@ -11,7 +11,7 @@ use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 
 /**
- * The store-provided-id witness (bundle ADR 0039): a plain `Id::make()` over an entity
+ * The store-provided-id witness (docs/validation.md): a plain `Id::make()` over an entity
  * whose id the database assigns ({@see CounterEntity}'s auto-increment integer). A
  * create sets nothing on the id — the persister flushes and the DB assigns it, and the
  * `201` body + Location read the assigned id back. The `marker` relation drives the

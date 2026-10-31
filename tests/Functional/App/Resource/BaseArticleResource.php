@@ -208,7 +208,7 @@ abstract class BaseArticleResource extends AbstractResource
             // A SECOND `withData()` to-many over the SAME `comments` backing column as
             // the `comments` relation above — so the two are CO-WINDOWED on one column,
             // each addressed by its OWN relatedQuery filter and each rendering its own
-            // filtered page out-of-band (bundle ADR 0086). It carries a distinct scoped
+            // filtered page out-of-band (bundle ADR 0053). It carries a distinct scoped
             // filter key (`flaggedBody`, a contains-match on the comment body) so the
             // two co-windowed relations are filtered to DIFFERENT subsets of the shared
             // membership, witnessing no cross-contamination on either provider.
@@ -244,7 +244,7 @@ abstract class BaseArticleResource extends AbstractResource
             WhereHas::make('hasAuthor', 'author'),
             WhereDoesntHave::make('lacksAuthor', 'author'),
 
-            // Convenience filter library (G8b, core ADRs 0075-0077, bundle ADR 0082) —
+            // Convenience filter library (G8b, core ADRs 0075-0077, docs/doctrine.md) —
             // shared across the article kernels so the dual-provider
             // ConvenienceFilterConformanceTestCase and the DoctrineReadQueryBudgetTest
             // both see them. The intent-named string strategies on `title` and the

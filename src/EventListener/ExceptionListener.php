@@ -43,7 +43,7 @@ use Symfony\Component\Routing\RouterInterface;
  *    `getErrors()` / `getStatusCode()` via {@see ErrorResponse::fromException()}.
  *    This arm is **always first** and is never intercepted or overridden by a
  *    mapper or the `json_api.exceptions` config map — a core JSON:API exception
- *    always renders natively (the seam's invariant, bundle ADR 0073);
+ *    always renders natively (the seam's invariant, bundle ADR 0003);
  *  - otherwise the tagged {@see ExceptionMapperInterface} mappers are consulted in
  *    descending tag `priority` order (default `0`), first non-null result wins —
  *    the application's seam to map its own domain / third-party exceptions
@@ -76,14 +76,14 @@ use Symfony\Component\Routing\RouterInterface;
  * read directly, since the error may come before negotiation ran: a `405`, a firewall
  * `401`/`403`. A request that never named the extension gets a plain JSON:API error. A
  * `415` ({@see MediaTypeUnsupported}) or `406` ({@see MediaTypeUnacceptable}) never
- * declares it, since negotiation failed (bundle ADR 0161).
+ * declares it, since negotiation failed (bundle ADR 0087).
  *
  * **A method the path does not accept.** The router throws a `405` before any route
  * matches, so the request carries no marker. The listener asks the router which route
  * each allowed method reaches on that path; when one of them is a JSON:API route, the
  * `405` renders as core's {@see MethodNotAllowed} under that route's server, with its
  * `Allow` header, and on the atomic path under the rule above. A path none of whose
- * routes is a JSON:API endpoint keeps Symfony's own handling (bundle ADR 0160).
+ * routes is a JSON:API endpoint keeps Symfony's own handling (bundle ADR 0003).
  */
 final class ExceptionListener
 {
@@ -109,7 +109,7 @@ final class ExceptionListener
         private readonly bool $debug = false,
         private readonly ?LoggerInterface $logger = null,
         // The application-extensible exception → JSON:API-error seam (bundle ADR
-        // 0073): consulted for any throwable that is NOT a core
+        // 0003): consulted for any throwable that is NOT a core
         // JsonApiExceptionInterface (that arm stays first and is never overridden).
         private readonly iterable $mappers = [],
         // Optional Symfony Security collaborators, present only when
@@ -238,7 +238,7 @@ final class ExceptionListener
 
     private function toErrorResponse(\Throwable $throwable): ErrorResponse
     {
-        // INVARIANT (bundle ADR 0073): a core JSON:API exception always renders
+        // INVARIANT (bundle ADR 0003): a core JSON:API exception always renders
         // natively. This arm is first and is never intercepted or overridden by a
         // mapper or the json_api.exceptions config map.
         if ($throwable instanceof JsonApiExceptionInterface) {

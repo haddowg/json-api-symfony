@@ -8,7 +8,7 @@ use Doctrine\ORM\Mapping as ORM;
 
 /**
  * The Doctrine-mapped `publishers` of the flattened-attribute (`on()`) fixture
- * (bundle ADR 0085), mirroring the in-memory
+ * (bundle ADR 0035), mirroring the in-memory
  * {@see \haddowg\JsonApiBundle\Tests\Functional\App\FlattenPublisher}. A
  * store-provided `AUTO` integer id. A sibling registered type a book carries a
  * `publisher` FK to — it backs no flattened attribute and is no longer eager-pinned;

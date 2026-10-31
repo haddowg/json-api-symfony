@@ -15,7 +15,7 @@ use haddowg\JsonApiBundle\DataProvider\Doctrine\QueryPurpose;
  * {@see ExtensionContext::$request} is present (the related/include/batch loads,
  * never the primary `GET /authors` collection) — reads a gating header off the
  * parsed JSON:API request and, when it says editors are hidden, applies a SECOND
- * exclusion (`Grace Hopper`, author 2). This is the witness for bundle ADR 0070:
+ * exclusion (`Grace Hopper`, author 2). This is the witness for bundle ADR 0008:
  *
  *  - a primary `GET /authors` collection reports {@see QueryPurpose::FetchCollection}
  *    with a `null` request, so the header branch cannot fire (the base scope still

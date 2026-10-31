@@ -17,12 +17,12 @@ use Psr\Container\ContainerInterface;
  * instance on first lookup — so a Resource may be a Symfony service with real
  * constructor dependencies.
  *
- * It also resolves a type's override serializer/hydrator services (ADR 0023) —
+ * It also resolves a type's override serializer/hydrator services (ADR 0024) —
  * core asks the same resolver for those class-strings — and exposes the discovered
  * {@see classes()} (the global union of every server's resources). The per-server
  * {@see ServerFactory} registers only its own subset, through its own locator: a
  * class several servers resolve maps to a separate service per server, so each
- * server's registry injects itself into its own instance (bundle ADR 0124). The
+ * server's registry injects itself into its own instance (bundle ADR 0034). The
  * service registered as `ResourceLocator` itself is the global one, which other
  * services read resource metadata through (ADR 0034). Every looked-up
  * service must be a {@see SerializerInterface} or {@see HydratorInterface} (an

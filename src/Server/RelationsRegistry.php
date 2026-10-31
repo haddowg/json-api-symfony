@@ -8,8 +8,8 @@ use haddowg\JsonApi\Resource\Field\RelationInterface;
 use Psr\Container\ContainerInterface;
 
 /**
- * A PSR-11 container over the standalone relations providers (bundle ADR 0026), keyed
- * by server and JSON:API type (bundle ADR 0142). It resolves a type's
+ * A PSR-11 container over the standalone relations providers (bundle ADR 0024), keyed
+ * by server and JSON:API type (bundle ADR 0034). It resolves a type's
  * {@see RelationsProviderInterface} lazily — unlike the {@see ResourceLocator}
  * (keyed by class-string), this is keyed by type because relations are runtime
  * objects, not scalars core can read statically: the {@see TypeMetadataResolver}

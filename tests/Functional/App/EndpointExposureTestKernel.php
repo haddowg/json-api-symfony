@@ -22,7 +22,7 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 /**
- * The endpoint-exposure witness kernel (ADR 0027): a `gizmos` resource whose
+ * The endpoint-exposure witness kernel (ADR 0016): a `gizmos` resource whose
  * relations suppress their related / relationship endpoints
  * ({@see GizmoResource}) plus a `cannotAdd()` to-many, served by an in-memory
  * provider. The handler enforces the parametric routes against the per-relation

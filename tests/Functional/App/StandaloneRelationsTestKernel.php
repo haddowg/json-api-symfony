@@ -21,7 +21,7 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 /**
- * The standalone-relations witness kernel (ADR 0026): a resource-less `posts` type
+ * The standalone-relations witness kernel (ADR 0024): a resource-less `posts` type
  * whose wire shape comes from a standalone {@see PostSerializer} and whose relations
  * are declared standalone via {@see PostRelations} (`#[AsJsonApiRelations]`), with no
  * {@see \haddowg\JsonApi\Resource\AbstractResource}. It serves a read-only in-memory

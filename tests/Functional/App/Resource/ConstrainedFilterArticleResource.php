@@ -35,7 +35,7 @@ use haddowg\JsonApi\Resource\Filter\WhereThrough;
  * The to-many `comments` relation also re-declares its scoped `commentId` filter
  * constrained `->integer()`, so the related-collection endpoint
  * (`GET /articles/{id}/comments`) validates a relation-scoped filter value the
- * same way (ADR 0048).
+ * same way (docs/data-layer.md).
  *
  * Not `final` so the Doctrine variant
  * ({@see \haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\DoctrineConstrainedFilterArticleResource})
@@ -59,7 +59,7 @@ class ConstrainedFilterArticleResource extends BaseArticleResource
             // Re-declare the `author` to-one with a relation-scoped, integer-constrained
             // `authorId` filter, so the to-one related/relationship endpoints AND the
             // include/linkage path have a constrained to-one filter to validate — the
-            // to-one twin of the `comments` constrained filter (bundle ADR 0068 follow-up
+            // to-one twin of the `comments` constrained filter (bundle ADR 0053 follow-up
             // #2). A mistyped value (via `?filter[authorId]`, `relatedQuery[author][filter]`,
             // or the include path) is the endpoint's same 400.
             if ($field instanceof BelongsToBuilder && $field->name() === 'author') {

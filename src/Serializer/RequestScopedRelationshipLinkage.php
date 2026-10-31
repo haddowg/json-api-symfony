@@ -18,7 +18,7 @@ use Symfony\Contracts\Service\ResetInterface;
 
 /**
  * A stable, swappable holder for core's {@see RelationshipLinkageInterface} seam under
- * the Relationship Queries profile (bundle ADR 0086). Core consults the seam for every
+ * the Relationship Queries profile (bundle ADR 0053). Core consults the seam for every
  * rendered to-many relation to learn whether its linkage `data` is supplied out-of-band
  * (the windowed page) rather than read off the parent property — but the actual page is
  * per request (it depends on the profile's per-relationship sort/filter and the fetched
@@ -41,7 +41,7 @@ use Symfony\Contracts\Service\ResetInterface;
  * `kernel.reset`): the container resets it between messages.
  *
  * A to-one target the caller may not read through its own type's read gate is supplied
- * as none ({@see ReadableRows}, bundle ADR 0140), so it is missing from `data` and from
+ * as none ({@see ReadableRows}, bundle ADR 0100), so it is missing from `data` and from
  * `included`. To-many linkage is never filtered here: a list holds what its query
  * returned. When nothing is refused it answers as it would without the check. A
  * `MorphTo` declared with `identifiedBy()` is checked only when its target was loaded:
@@ -88,7 +88,7 @@ final class RequestScopedRelationshipLinkage implements ToOneRelationshipLinkage
     public function readableTarget(mixed $target, RelationInterface $relation): mixed
     {
         // The endpoint has already enforced a permission the relation declares, which
-        // replaces the target type's per-row gate (bundle ADR 0141).
+        // replaces the target type's per-row gate (bundle ADR 0100).
         if ($relation->securityRead() !== null) {
             return $target;
         }
@@ -110,7 +110,7 @@ final class RequestScopedRelationshipLinkage implements ToOneRelationshipLinkage
     /**
      * Installs (or clears) the scoped to-many linkage the
      * {@see \haddowg\JsonApiBundle\DataProvider\RelatedIncludeBatcher} loaded for the
-     * read being handled (bundle ADR 0125). The windowed backing from {@see set()} wins
+     * read being handled (bundle ADR 0035). The windowed backing from {@see set()} wins
      * for a relation both supply, since it is the profile's page of the same scoped set.
      */
     public function setIncluded(?RelationshipLinkageInterface $included): void
@@ -146,7 +146,7 @@ final class RequestScopedRelationshipLinkage implements ToOneRelationshipLinkage
 
         // A permission the relation declares replaces the target type's per-row gate:
         // refused, the target reads as none (an `on()` hop included); allowed, it shows
-        // under scoping alone (bundle ADR 0141).
+        // under scoping alone (bundle ADR 0100).
         if ($relation->securityRead() !== null) {
             return \is_object($model) && $this->rows->relationPermission($model, $relation) === false
                 ? ToOneRelationshipLinkage::none()
@@ -163,7 +163,7 @@ final class RequestScopedRelationshipLinkage implements ToOneRelationshipLinkage
         }
 
         // An identified MorphTo's pair renders without its target. The batcher loads the
-        // targets of every guarded type, so one it didn't load needs no check (bundle ADR 0163).
+        // targets of every guarded type, so one it didn't load needs no check (bundle ADR 0035).
         if ($linkage === null && $relation instanceof MorphTo && $relation->storesIdentifiers()) {
             return null;
         }

@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Test;
 
 /**
  * The convenience filter library acceptance suite (G8b, core ADRs 0075-0077,
- * bundle ADR 0082): the intent-named string strategies
+ * docs/doctrine.md): the intent-named string strategies
  * ({@see \haddowg\JsonApi\Resource\Filter\Contains} / `StartsWith` / `EndsWith`)
  * and the structured numeric {@see \haddowg\JsonApi\Resource\Filter\Range},
  * declared on the {@see \haddowg\JsonApiBundle\Tests\Functional\App\Resource\ConstrainedFilterArticleResource}

@@ -11,7 +11,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 /**
  * The same type name served by two resource classes on two servers, each with its own
- * security (bundle ADR 0142). The named server's `securedWidgets` declares the full set:
+ * security (bundle ADR 0034). The named server's `securedWidgets` declares the full set:
  * a `ROLE_USER` default, a read gate only an admin passes for "classified" and a list
  * gate `reader` fails. The default server's declares only a read gate that refuses
  * "classified" to everyone, admin included, and nothing for any other operation.

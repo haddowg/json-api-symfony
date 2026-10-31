@@ -23,7 +23,7 @@ use haddowg\JsonApi\Resource\Sort\UnsupportedSort;
  * {@see \haddowg\JsonApiBundle\DataProvider\CriteriaApplier} can append a directive
  * on a NON-root alias of the query so the pivot related-collection path builds its
  * whole `ORDER BY` in the request's directive order across two aliases (a pivot key
- * on the `pivot` join, a related key on the root — bundle ADR 0059). `apply()` is
+ * on the `pivot` join, a related key on the root — bundle ADR 0045). `apply()` is
  * `applyOn()` on the query root, so every non-pivot path stays byte-identical.
  *
  * A directive whose sort is not a {@see SortByField} is delegated to a registered

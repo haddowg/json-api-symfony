@@ -12,7 +12,7 @@ use haddowg\JsonApi\Resource\Field\Str;
 
 /**
  * The shared `books` declaration both flattened-attribute (`on()`) kernels serve
- * (bundle ADR 0085), so the in-memory and Doctrine providers are exercised by
+ * (bundle ADR 0035), so the in-memory and Doctrine providers are exercised by
  * IDENTICAL assertions. It declares the orthogonal attribute trio plus the multi-hop
  * eager-load surface:
  *
@@ -70,7 +70,7 @@ abstract class BaseFlattenBookResource extends AbstractResource
             // backing relation can carry linkage in a write body, so this is the
             // same-body witness — a write that associates `editor` AND sets `editorName`
             // in one document must flatten onto the editor associated in THAT body
-            // (bundle ADR 0085: `on()` attributes hydrate AFTER relationships).
+            // (bundle ADR 0035: `on()` attributes hydrate AFTER relationships).
             Str::make('editorName')->storedAs('name')->on('editor'),
             // Hidden backing relation: the idiomatic "internal association" — never a
             // rendered relationship, but eager-loaded for the flattened read. It backs

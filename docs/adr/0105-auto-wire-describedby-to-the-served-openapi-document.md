@@ -1,20 +1,9 @@
-# Auto-wire `links.describedby` to the served OpenAPI document
+# Built links point at the operation that describes them in the served document
 
-> Update: superseded by [ADR 0132](0132-built-links-point-into-the-served-openapi-document.md). A response's top-level `describedby` now names the operation that produced it, host-relative, and `DescribedbyListener` is gone.
+Core gives every link it builds a `describedby` naming the operation that describes its target, from a resolver the adapter supplies. The bundle sets that resolver on each request's `Server`, pairing the server's document URL (its document route resolved against the request, found by controller when the application routes the controller itself, or `json_api.openapi.document_url`) with a path-to-methods map the warmer writes beside the document, so a request never builds or loads the document to describe a link.
 
-Core made the top-level `describedby` link first-class (a link to a description
-document, JSON:API 1.1). The bundle serves exactly such a document at the configured
-OpenAPI path, but no response pointed at it, so the member never appeared by default.
+## Considered Options
 
-A `kernel.view` listener (`DescribedbyListener`, higher priority than the
-`ViewListener`) now stamps `links.describedby` onto every JSON:API response via core's
-`AbstractResponse::withDescribedby()`, pointing at the served document for the request's
-server — the default document, or the per-server document in per-server mode — generated
-as a request-host-absolute URL by the router. It is on by default and disabled by
-`json_api.openapi.describedby: false`. When the document routes are not registered
-(generation disabled or the expose gate closed) URL generation fails and no link is
-added, so the member appears only when the document is actually reachable.
-
-We route the link through `withDescribedby()` (a render-time merge) rather than
-reconstructing each response's `DocumentLinks`, so it composes with a handler's
-`self`/pagination/custom links and an author-set `describedby` still wins.
+- Set the resolver once on the memoised `Server`: a long-running worker would freeze the first request's base path into every later one.
+- Stamp the whole-document URL on every response: it would hide every per-operation pointer.
+- Resolve against the per-request decorated document: that decorates the document on every API request, so a `describedby` may instead name an operation a serve decorator removed.

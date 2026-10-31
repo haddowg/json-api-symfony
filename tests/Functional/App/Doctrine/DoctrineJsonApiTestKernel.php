@@ -136,7 +136,7 @@ final class DoctrineJsonApiTestKernel extends Kernel
         // whose to-many `widgets` is the inverse side of a OneToMany (the related widget
         // carries the owning `group_id` FK), so a cursor-resolved include collapses to the
         // inverse-FK single-window shape — the complement of the owning-side ManyToMany
-        // `cursorShelves` (bundle ADR 0118).
+        // `cursorShelves` (bundle ADR 0065).
         $services->set(DoctrineCursorGroupResource::class);
 
         // The genericity witness: a `tags` type served over the Doctrine path by
@@ -166,7 +166,7 @@ final class DoctrineJsonApiTestKernel extends Kernel
         // custom id encoder and a withData() pivot relation — registered AFTER
         // `playlists` so a reverse-lookup from the entity class would pick the
         // first-registered no-encoder type. The primary-document pivot map must key by
-        // the SERVED type's encoder instead (bundle ADR 0102).
+        // the SERVED type's encoder instead (bundle ADR 0045).
         $services->set(EncodedPlaylistResource::class);
     }
 

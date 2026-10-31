@@ -76,7 +76,7 @@ final class DoctrinePlaylistResource extends AbstractResource
                     )->build(),
                 )
                 // Pivot filters are AUTHOR-DECLARED via the `pivot.` column prefix
-                // (bundle ADR 0067): a filter whose column starts with `pivot.` targets
+                // (bundle ADR 0045): a filter whose column starts with `pivot.` targets
                 // the association-entity join. The value cast auto-resolves from the
                 // pivot field backing the stripped column (so `addedAfter` coerces the
                 // wire value to a DateTime exactly as the field renders it). The filter
@@ -113,7 +113,7 @@ final class DoctrinePlaylistResource extends AbstractResource
                 ->extractUsing($this->extractTracks())
                 ->paginate(PagePaginator::make()),
 
-            // The DEFAULT-RENDERED-LINKAGE pivot witness (bundle ADR 0102): the SAME
+            // The DEFAULT-RENDERED-LINKAGE pivot witness (bundle ADR 0045): the SAME
             // association entity, but `withData()` so its linkage data renders on a
             // PRIMARY document with NO `?include`. It proves a primary-resource document
             // carries each member's `meta.pivot` on the relationships block wherever the
@@ -130,7 +130,7 @@ final class DoctrinePlaylistResource extends AbstractResource
                 ->extractUsing($this->extractTracks())
                 ->withData(),
 
-            // The CONDITIONALLY-HIDDEN pivot witness (bundle ADR 0102): the SAME
+            // The CONDITIONALLY-HIDDEN pivot witness (bundle ADR 0045): the SAME
             // association entity, `withData()` so its linkage WOULD render, but
             // `hidden(fn …)` makes it hidden FOR THIS REQUEST. A per-request hidden
             // relation is not UNCONDITIONALLY hidden, so it still flows to the render

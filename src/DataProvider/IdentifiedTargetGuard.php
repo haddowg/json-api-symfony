@@ -10,7 +10,7 @@ use haddowg\JsonApiBundle\Security\ResourceSecurityRegistry;
 /**
  * Decides which types of a `MorphTo` declared with `identifiedBy()` are guarded, so a
  * stored pair naming one can't render until its target is loaded and checked (bundle
- * ADR 0163). A type is guarded on a server when the relation declares its own read
+ * ADR 0035). A type is guarded on a server when the relation declares its own read
  * permission, when the type declares a read gate there, or when its provider may hide
  * a row. The type-level answers are cached per server and type.
  *

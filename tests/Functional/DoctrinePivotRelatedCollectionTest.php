@@ -217,7 +217,7 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
     #[Group('spec:fetching-filtering')]
     public function aPivotFilterAttachesTheFieldCastDeserializer(): void
     {
-        // Cast-thread guard (bundle ADR 0067): a pivot filter is AUTHOR-declared with a
+        // Cast-thread guard (bundle ADR 0045): a pivot filter is AUTHOR-declared with a
         // `pivot.`-prefixed column and carries NO explicit deserializer; the
         // RelationCriteriaFactory must auto-attach the field's own cast (resolved by the
         // STRIPPED column, not the filter key) so the handler binds a typed value — a
@@ -324,7 +324,7 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
     #[Group('spec:fetching-filtering')]
     public function aPivotOperatorFilterNarrowsTheRelatedCollection(): void
     {
-        // An author-declared pivot OPERATOR filter (bundle ADR 0067): `positionGte`
+        // An author-declared pivot OPERATOR filter (bundle ADR 0045): `positionGte`
         // targets `pivot.position` with the `>=` operator. filter[positionGte]=2 keeps
         // the members at pivot position >= 2 (Outro@2, Bridge@3), ordered by position.
         $document = $this->fetchDocument('/playlists/1/tracks?filter[positionGte]=2&sort=position');
@@ -336,7 +336,7 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
     #[Group('spec:fetching-filtering')]
     public function aPivotWhereInFilterNarrowsTheRelatedCollection(): void
     {
-        // An author-declared pivot WhereIn filter (bundle ADR 0067): `positionIn`
+        // An author-declared pivot WhereIn filter (bundle ADR 0045): `positionIn`
         // targets `pivot.position`. filter[positionIn]=1,3 keeps the members at pivot
         // position 1 or 3 (Intro@1, Bridge@3), ordered by position.
         $document = $this->fetchDocument('/playlists/1/tracks?filter[positionIn]=1,3&sort=position');
@@ -348,7 +348,7 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
     #[Group('spec:fetching-filtering')]
     public function aTypedDatePivotOperatorFilterNarrowsTheRelatedCollection(): void
     {
-        // An author-declared TYPED-DATE pivot operator filter (bundle ADR 0067):
+        // An author-declared TYPED-DATE pivot operator filter (bundle ADR 0045):
         // `addedAfter` targets `pivot.addedAt` with `>`, and the DateTime field's cast
         // auto-resolves by the stripped column so the wire value is compared as a date.
         // Playlist 1's rows are added 2024-01-01/02/03; > 2024-01-01 keeps Outro(2) and
@@ -478,7 +478,7 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
     public function anUnknownKeyStill400sOverTheUnifiedPivotVocabulary(): void
     {
         // The unified alias-aware applier owns the WHOLE merged related+pivot vocab in
-        // one pass (bundle ADR 0059), so an undeclared key in NEITHER the related nor
+        // one pass (bundle ADR 0045), so an undeclared key in NEITHER the related nor
         // the pivot vocabulary is still a 400 on the pivot related endpoint.
         $unknownFilter = $this->handle(self::BASE_URI . '/playlists/1/tracks?filter[nope]=x');
         self::assertSame(400, $unknownFilter->getStatusCode(), (string) $unknownFilter->getContent());
