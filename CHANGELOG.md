@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.24.0](https://github.com/haddowg/json-api-symfony/compare/v1.23.1...v1.24.0) (2026-10-31)
+
+
+### Features
+
+* follow core's discriminated resource unions and typed included ([#271](https://github.com/haddowg/json-api-symfony/issues/271)) ([e1eabd4](https://github.com/haddowg/json-api-symfony/commit/e1eabd46681679992cc0b763358cf3dbaae6bf5e))
+* run entity-level constraints after relationship writes ([#269](https://github.com/haddowg/json-api-symfony/issues/269)) ([ec748a6](https://github.com/haddowg/json-api-symfony/commit/ec748a66271db9031359900b5fd246987c161fd6))
+* serve an identified MorphToMany from its stored pairs ([#272](https://github.com/haddowg/json-api-symfony/issues/272)) ([e19a639](https://github.com/haddowg/json-api-symfony/commit/e19a639586dfed09c0d3f004762b0dfdd714ac0b))
+
 ## [1.23.1](https://github.com/haddowg/json-api-symfony/compare/v1.23.0...v1.23.1) (2026-10-31)
 
 
