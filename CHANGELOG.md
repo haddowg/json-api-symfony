@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.23.1](https://github.com/haddowg/json-api-symfony/compare/v1.23.0...v1.23.1) (2026-10-31)
+
+
+### Bug Fixes
+
+* serve a computed polymorphic to-many when no related type is scoped ([#267](https://github.com/haddowg/json-api-symfony/issues/267)) ([cbdecaf](https://github.com/haddowg/json-api-symfony/commit/cbdecaf9dcf4f8a9e3f6484d5b74904ab3d1faa3))
+
 ## [1.23.0](https://github.com/haddowg/json-api-symfony/compare/v1.22.0...v1.23.0) (2026-10-28)
 
 
