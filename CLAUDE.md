@@ -68,7 +68,8 @@ over working around it in the bundle, weighed against the compatibility cost.
   allow-list gates which CRUD endpoints exist and the route loader emits only the
   allowed routes.
 
-Record bundle architecture decisions as ADRs under `docs/adr/` — follow
+[`CONTEXT.md`](CONTEXT.md) is the glossary of the bundle's own terms; core terms
+live in core's `CONTEXT.md`. Record bundle architecture decisions as ADRs under `docs/adr/` — follow
 [`docs/adr/ADR-FORMAT.md`](docs/adr/ADR-FORMAT.md) (a short title stating the
 decision, then 1–3 sentences of *why*).
 
