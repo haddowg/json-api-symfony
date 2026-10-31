@@ -11,7 +11,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\LifecycleHooksTestKernel;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The Slice B seam: the {@see \haddowg\JsonApiBundle\Operation\CrudOperationHandler}
+ * The deferred After* seam: the {@see \haddowg\JsonApiBundle\Operation\CrudOperationHandler}
  * defers its After* lifecycle dispatch to post-commit when (and ONLY when) a
  * {@see WriteTransactionContext} is active — the behaviour the Atomic Operations
  * executor drives next slice. On the single-op path (the context inactive, its

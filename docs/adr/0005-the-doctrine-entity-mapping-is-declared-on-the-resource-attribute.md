@@ -1,0 +1,3 @@
+# The Doctrine entity mapping is declared on the resource attribute
+
+A type's entity is declared as `#[AsJsonApiResource(entity: …)]` rather than in a central configuration map or by naming convention, because the resource is the one place that already knows what it represents and a convention breaks on irregular names; core stays storage-agnostic. A compiler pass builds the type-to-entity map and fails the build on a missing class or a type mapped twice, and when no type maps an entity it removes the Doctrine services, so a non-Doctrine application never references an `EntityManagerInterface`.

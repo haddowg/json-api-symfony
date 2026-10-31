@@ -68,7 +68,8 @@ over working around it in the bundle, weighed against the compatibility cost.
   allow-list gates which CRUD endpoints exist and the route loader emits only the
   allowed routes.
 
-Record bundle architecture decisions as ADRs under `docs/adr/` — follow
+[`CONTEXT.md`](CONTEXT.md) is the glossary of the bundle's own terms; core terms
+live in core's `CONTEXT.md`. Record bundle architecture decisions as ADRs under `docs/adr/` — follow
 [`docs/adr/ADR-FORMAT.md`](docs/adr/ADR-FORMAT.md) (a short title stating the
 decision, then 1–3 sentences of *why*).
 
@@ -94,6 +95,11 @@ composer cs-check   # PHP-CS-Fixer, PER-CS 2.0
 - **PHPStan level 9.** Consider adding `phpstan/phpstan-symfony` if container/magic
   false positives appear; not installed in the scaffold.
 - **CI** mirrors core (PHP 8.3/8.4/8.5 × lowest/highest).
+- **Don't record generator-contract history.** `info.x-generator.contract` is a compatibility
+  check for the code generators, not a changelog. When a core release bumps it, document the new
+  behaviour as current behaviour; never write which contract or release introduced it ("from
+  contract 17…", "every document now carries 18") in `docs/`, this file or a code comment. The
+  changelogs record when it arrived.
 - Existing tests are the contract — seed correct data to satisfy them, never edit a
   test to pass. Functional slices run identical conformance assertions against
   **both** the Doctrine (sqlite) and in-memory kernels, so a finding stays

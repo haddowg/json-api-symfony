@@ -12,8 +12,7 @@ use PHPUnit\Framework\Attributes\Test;
 /**
  * {@see LinkageCursorConformanceTestCase} against the Doctrine provider: the
  * same assertions as the in-memory witness, the linkage window executed as the
- * real DQL keyset push-down inside the RelationScope parent scope (bundle ADR
- * 0114).
+ * real DQL keyset push-down inside the RelationScope parent scope.
  *
  * On top of the shared suite, the PIVOT linkage cursor: the `pivotWidgets`
  * relationship endpoint windows the association-entity keyset (`?sort=slot`

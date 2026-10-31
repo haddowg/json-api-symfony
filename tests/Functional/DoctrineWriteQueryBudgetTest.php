@@ -117,7 +117,7 @@ final class DoctrineWriteQueryBudgetTest extends JsonApiFunctionalTestCase
     public function anInverseOneToManyReplaceResolvesTheNewLinkageWithoutPerIdSelects(): void
     {
         self::markTestSkipped(
-            'ACCEPTED limitation, documented not fixed for v1 (bundle ADR 0072 / '
+            'ACCEPTED limitation, documented not fixed for v1 ('
             . 'doctrine.md#relationship-write-query-cost): replacing an inverse '
             . 'one-to-many (FK on the child, e.g. `comments`) sets the owning-side FK on '
             . 'each incoming member via DoctrineDataPersister::attachOwner() '

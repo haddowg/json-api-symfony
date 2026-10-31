@@ -9,7 +9,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\IdentifierMetaInMemoryTestKernel;
 /**
  * {@see IdentifierMetaConformanceTestCase} against the in-memory provider: the
  * `identifierMeta()` resolvers read the related objects off the fully-materialised
- * object graph (core ADR 0084).
+ * object graph (core docs/relations.md).
  */
 final class InMemoryIdentifierMetaTest extends IdentifierMetaConformanceTestCase
 {

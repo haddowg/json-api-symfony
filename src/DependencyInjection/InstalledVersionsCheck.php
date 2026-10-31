@@ -8,7 +8,7 @@ use Composer\InstalledVersions;
 
 /**
  * Notices a compiled container that an upgrade of this bundle or of haddowg/json-api has
- * left behind (bundle ADR 0143). Symfony checks a non-debug container for freshness only
+ * left behind (ADR 0050). Symfony checks a non-debug container for freshness only
  * when it first builds it, so after an upgrade a cached container keeps running the old
  * service wiring. The container records the versions it was compiled against, and the
  * bundle compares them with Composer's at boot.

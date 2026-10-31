@@ -8,8 +8,7 @@ namespace haddowg\JsonApiBundle\Operation;
  * The five CRUD operations a JSON:API type can expose. The public DX type an
  * application lists on `#[AsJsonApiResource(operations:)]` /
  * `#[AsJsonApiSerializer(operations:)]` to declare exactly which endpoints the
- * type serves; the route loader emits exactly one route per declared case (bundle
- * ADR 0025).
+ * type serves; the route loader emits exactly one route per declared case.
  *
  * Each case value equals its name, so a descriptor can flow through the container
  * as a plain case-value string (objects are not container-dumpable). Each case

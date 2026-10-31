@@ -14,7 +14,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The include-batch-loading acceptance suite (backs ADR 0035/0062 + the `doctrine.md`
+ * The include-batch-loading acceptance suite (backs the `doctrine.md`
  * eager-loading section): the provider-agnostic
  * {@see \haddowg\JsonApiBundle\DataProvider\RelatedIncludeBatcher} batch-loads a read's
  * effective `?include` tree (explicit includes, or a resource's
@@ -29,7 +29,7 @@ use PHPUnit\Framework\Attributes\Test;
  * {@see QueryCountingLogger} and asserts the bound — decisively, by toggling the
  * batcher off on the same request and watching the lazy count grow with the album
  * population. The compound documents are asserted correct and proven byte-identical
- * with batching disabled — the batch is a pure optimization (bundle ADR 0062).
+ * with batching disabled — the batch is a pure optimization.
  *
  * Probes ride the (non-cyclic) include trees rooted at `albums` (which the bundled
  * Doctrine provider serves directly, and whose to-many relations are all load-aware
@@ -65,7 +65,7 @@ final class IncludePreloadTest extends MusicCatalogKernelTestCase
     {
         // Include batching is now always available (no optional library): the
         // RelatedIncludeBatcher drives the reference Doctrine provider's batch SPI, so
-        // the suite always runs (bundle ADR 0062).
+        // the suite always runs.
         parent::setUp();
     }
 

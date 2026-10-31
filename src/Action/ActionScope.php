@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Action;
 
 /**
- * The URL scope a custom action hangs off (bundle ADR 0076, design §1).
+ * The URL scope a custom action hangs off.
  *
  * - {@see Resource}: `POST /{uriType}/{id}/-actions/{action}` — the `{id}` is
  *   resolved to an entity (via the type's `DataProvider`) before the handler runs;

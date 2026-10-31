@@ -1,3 +1,0 @@
-# Actions negotiate with their declared core responses
-
-The request listener now rebuilds an action's declared responses as core objects, negotiates its `Accept` with `AcceptNegotiator::negotiateAction()` and hands the same list to `CustomActionOperation`, so core decides when an action answers with a URL (core ADR 0185) and the bundle keeps no second copy of that rule. A `SeeOther`'s description and media type travel through the compiled action tag like the other response markers. An action declaring `SeeOther` with a media type then never gets a `406` from this negotiation, which amends ADR 0152 for those actions only; it runs on through the JSON:API checks as a JSON:API request would.

@@ -28,18 +28,18 @@ use haddowg\JsonApiBundle\Hook\ResourceLifecycleHooksTrait;
 /**
  * The `playlists` resource type, mapped to its backing {@see Playlist} entity.
  *
- * It is the **hydrator-override witness** (ADR 0023): `hydrator:
+ * It is the **hydrator-override witness**: `hydrator:
  * PlaylistHydrator::class` delegates writes to a hand-written hydrator (with a
  * bound constructor arg, proving DI resolution) while this resource still
  * serializes reads.
  *
- * It is also the **UUID id-strategy** demonstrator (bundle ADR 0039):
+ * It is also the **UUID id-strategy** demonstrator (docs/validation.md):
  * `Id::make()->uuid()->generated()->build()` keys the {@see Playlist} on a string UUID the
  * *app* mints when a create omits the id, while the custom hydrator additionally
  * accepts a well-formed client `id` (the `uuid()` format both pins the route `{id}`
  * shape and validates a client-supplied id on the wire).
  *
- * It is the **per-type lifecycle-hook witness** (bundle ADR 0042): by
+ * It is the **per-type lifecycle-hook witness**: by
  * implementing {@see ResourceLifecycleHooksInterface} (with no-op defaults from
  * {@see ResourceLifecycleHooksTrait}) and overriding two hooks it opts into the
  * lifecycle seam *without registering a subscriber* — the built-in
@@ -49,7 +49,7 @@ use haddowg\JsonApiBundle\Hook\ResourceLifecycleHooksTrait;
  * is a guard that aborts by throwing. The cross-cutting *event* twin of this seam
  * lives on {@see \haddowg\JsonApiBundle\Examples\MusicCatalog\EventListener\AuditLogSubscriber}.
  *
- * It is finally the **declarative-authorization witness** (bundle ADR 0043): the
+ * It is finally the **declarative-authorization witness**: the
  * `securityDelete`/`securityUpdate` expressions on the attribute gate two
  * operations through Symfony Security, evaluated at the lifecycle hooks by the
  * bundle's built-in {@see \haddowg\JsonApiBundle\Security\ResourceSecuritySubscriber}.
@@ -63,13 +63,13 @@ use haddowg\JsonApiBundle\Hook\ResourceLifecycleHooksTrait;
  * route-scoped ExceptionListener renders a JSON:API `403` (or `401` when
  * unauthenticated). See `docs/authorization.md`.
  *
- * The `owner` relation extends this to **per-relation security** (bundle ADR 0100):
+ * The `owner` relation extends this to **per-relation security**:
  * the playlist is publicly readable, but the full owner reference is privileged, so
  * the relation declares `security(read: "is_granted('ROLE_ADMIN')")` — its
  * related/relationship read endpoints become admin-only, OVERRIDING the parent's
  * (ungated) read, while the curated `publicOwner` view of the same User stays open.
  *
- * It is finally the **pivot witness** (bundle ADRs 0045/0046): alongside the plain
+ * It is finally the **pivot witness**: alongside the plain
  * `belongsToMany` `tracks` (a bare join table, no pivot columns), it declares a
  * second `belongsToMany` `orderedTracks` to the same `tracks` type backed by the
  * {@see \haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\PlaylistEntry}
@@ -136,7 +136,7 @@ final class PlaylistResource extends AbstractResource implements ResourceLifecyc
             // at `/admin/users/{id}`. This is the third resolution the projector offers,
             // worked in the demo — see `docs/relationships.md`.
             //
-            // It is the **per-relation security** witness (bundle ADR 0100): the playlist
+            // It is the **per-relation security** witness: the playlist
             // itself is publicly readable, but WHO owns it (the full user reference) is
             // privileged, so the relation declares its own read gate — `security(read:
             // "is_granted('ROLE_ADMIN')")`. Its relationship read endpoint becomes
@@ -171,12 +171,12 @@ final class PlaylistResource extends AbstractResource implements ResourceLifecyc
             BelongsTo::make('publicOwner', 'public-profiles')->storedAs('owner')->withUriFieldName('public-owner'),
             BelongsToMany::make('tracks', 'tracks')
                 ->paginate(PagePaginator::make()->withDefaultPerPage(2))
-                // Countable (bundle ADR 0052): the related-collection endpoint emits
+                // Countable: the related-collection endpoint emits
                 // a total over the many-to-many scope, and ?withCount=tracks activates
                 // the relationship-object meta.total on a playlist.
                 ->countable(),
 
-            // The pivot witness (bundle ADRs 0045/0046). `orderedTracks` is the same
+            // The pivot witness. `orderedTracks` is the same
             // far `tracks` type, but backed by the PlaylistEntry association entity
             // that carries the `position`/`addedAt` pivot columns a plain join table
             // cannot. Declaring fields() (real FieldInterface definitions) makes the
@@ -193,8 +193,8 @@ final class PlaylistResource extends AbstractResource implements ResourceLifecyc
                     // `position` is REQUIRED-on-create: a genuinely-new member must
                     // carry it (an absent position on a new row is a 422, never a DB
                     // NOT-NULL 500). On an existing-member partial update the omitted
-                    // position is preserved from the MERGED stored row (bundle ADR
-                    // 0050) — no false 422 — so a required field need not be re-sent to
+                    // position is preserved from the MERGED stored row — no false 422 — so a
+                    // required field need not be re-sent to
                     // re-assert a member.
                     Integer::make('position')->example(1)->required()->min(1)->build(),
                     // A second WRITABLE pivot field constrained `weight >= position` —
@@ -204,8 +204,8 @@ final class PlaylistResource extends AbstractResource implements ResourceLifecyc
                     Integer::make('weight')->example(2)->compareWith('position', Comparison::GreaterThanOrEqual)->build(),
                     DateTime::make('addedAt')->example('2024-06-01T09:30:00+00:00')->readOnly()->guaranteed()->build(),
                 )
-                // Pivot filters are AUTHOR-DECLARED via the `pivot.` column prefix
-                // (bundle ADR 0067): a filter whose column starts with `pivot.` targets
+                // Pivot filters are AUTHOR-DECLARED via the `pivot.` column prefix: a filter
+                // whose column starts with `pivot.` targets
                 // the association-entity join, with the value cast auto-resolved from the
                 // pivot field backing the stripped column. `?filter[position]=2` keeps the
                 // member at pivot position 2; `?sort=position` still works zero-config (a
@@ -225,7 +225,7 @@ final class PlaylistResource extends AbstractResource implements ResourceLifecyc
                 )
                 ->extractUsing(static function (mixed $playlist): array {
                     // The generic engine instantiates the entity without its
-                    // constructor (bundle ADR 0029), so on a freshly-created playlist
+                    // constructor, so on a freshly-created playlist
                     // the `entries` collection is uninitialized rather than empty —
                     // isset() reads it safely (the 201 create response serializes this
                     // relation before any entry exists).
@@ -262,8 +262,8 @@ final class PlaylistResource extends AbstractResource implements ResourceLifecyc
     {
         \assert($entity instanceof Playlist);
 
-        // The generic engine instantiates the entity without its constructor (bundle
-        // ADR 0029), so a column the write body omitted is uninitialized rather than
+        // The generic engine instantiates the entity without its constructor, so a column the
+        // write body omitted is uninitialized rather than
         // its constructor default — isset() reads that safely.
         if (!isset($entity->externalId) || $entity->externalId === '') {
             $entity->externalId = 'ext-' . $entity->id;

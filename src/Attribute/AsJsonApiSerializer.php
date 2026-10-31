@@ -11,7 +11,7 @@ use haddowg\JsonApiBundle\OpenApi\Metadata\OperationScopeOverrides;
 /**
  * Registers the annotated {@see \haddowg\JsonApi\Serializer\SerializerInterface}
  * as the serializer for a JSON:API `type`, **without** an
- * {@see \haddowg\JsonApi\Resource\AbstractResource} (bundle ADR 0024). A type
+ * {@see \haddowg\JsonApi\Resource\AbstractResource}. A type
  * registered this way is **serialize-only** by default: it renders as primary
  * data, linkage and `included`, but exposes no endpoints of its own — the classic
  * embedded / reference type that only ever appears inside another resource.
@@ -23,7 +23,7 @@ use haddowg\JsonApiBundle\OpenApi\Metadata\OperationScopeOverrides;
  * type writable / fetchable.
  *
  * `operations` is the exposed operation allow-list: the {@see \haddowg\JsonApiBundle\Operation\Operation}
- * cases this type serves, one route emitted per case (bundle ADR 0025). An empty
+ * cases this type serves, one route emitted per case. An empty
  * array means the default — for a standalone serializer, no endpoints (serialize-only).
  *
  * `server` names the server(s) this type is exposed on: a single server name, a
@@ -31,12 +31,12 @@ use haddowg\JsonApiBundle\OpenApi\Metadata\OperationScopeOverrides;
  * the implicit `default` server.
  *
  * `tags` declares the **OpenAPI tag names** every operation of this standalone type
- * is grouped under in the generated OpenAPI document (design §4.7, D15). An empty
+ * is grouped under in the generated OpenAPI document. An empty
  * array means the default: a single tag named the humanized-type form. Tags carry
  * no JSON:API meaning.
  *
  * `extensions` and `operationExtensions` declare **OpenAPI vendor extensions**, as on
- * {@see AsJsonApiResource} (bundle ADR 0127). `extensions` lands on every operation the
+ * {@see AsJsonApiResource} (docs/openapi.md). `extensions` lands on every operation the
  * document emits for the type, including custom actions mounted on it, so a
  * serialize-only type can still mark its actions. `operationExtensions` is keyed by
  * {@see \haddowg\JsonApiBundle\Operation\Operation} case name and may only name an

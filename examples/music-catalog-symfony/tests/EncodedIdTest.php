@@ -13,7 +13,7 @@ use Symfony\Component\Routing\Exception\ResourceNotFoundException;
 use Symfony\Component\Routing\RouterInterface;
 
 /**
- * The custom resource-id encoding witness (bundle ADR 0038, backs `data-layer.md`):
+ * The custom resource-id encoding witness (backs `data-layer.md`):
  * the `products` type keys its entity by a database-generated integer that never
  * reaches the wire — the JSON:API `id` (and the URL) is an opaque `prod-…` token the
  * {@see ProductIdCodec} encodes/decodes. It proves the encode/decode round-trip on
@@ -77,7 +77,7 @@ final class EncodedIdTest extends MusicCatalogKernelTestCase
         self::assertNotNull($show);
         // The author's declared id pattern (`prod-[0-9a-f]+`) is preserved, composed
         // behind a negative lookahead that excludes the reserved `-actions` segment so a
-        // collection-scope custom action is never shadowed by an {id} route (design §7).
+        // collection-scope custom action is never shadowed by an {id} route.
         self::assertSame('(?!\-actions(?:/|$))(?:prod-[0-9a-f]+)', $show->getRequirement('id'));
 
         // The ROUTER itself rejects a malformed id (a bare integer): matching the path
@@ -113,7 +113,7 @@ final class EncodedIdTest extends MusicCatalogKernelTestCase
     #[Group('spec:creating-resources')]
     public function aStoreProvidedCreateAssignsTheIdAndRendersTheEncodedWireToken(): void
     {
-        // The id is database-generated — a store-provided create (bundle ADR 0039): the
+        // The id is database-generated — a store-provided create (docs/validation.md): the
         // POST carries no id, the DB assigns the auto-increment integer, and the 201
         // body + Location render the ENCODED wire token for the freshly assigned key
         // (storage key != wire id, with no client-supplied id). The Create operation is

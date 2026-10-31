@@ -12,7 +12,7 @@ use Symfony\Contracts\Service\ResetInterface;
 
 /**
  * A stable, swappable holder for core's {@see RelationshipPaginationInterface}
- * seam (core ADR 0058) under the Relationship Queries profile (bundle ADR 0053).
+ * seam under the Relationship Queries profile.
  * Core consults the seam for EVERY rendered to-many relation to learn the page-1
  * pagination state it emits as the relationship object's `first`/`prev`/`next`
  * (+`last`) links — but the actual page is per request (it depends on the

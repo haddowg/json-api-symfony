@@ -12,7 +12,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Writes to a pivot `belongsToMany` (through {@see ScopingPlacement}) resolve their
- * linkage through the related endpoint's scope (bundle ADR 0126). Agency 2 is hidden:
+ * linkage through the related endpoint's scope. Agency 2 is hidden:
  * advertiser 1 is placed with agencies 1 ("Lead") and 2, advertiser 2 with agencies 2
  * and 3 ("Support"), and both placements with agency 2 carry the role "Secret Role".
  */

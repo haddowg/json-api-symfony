@@ -6,8 +6,7 @@ namespace haddowg\JsonApiBundle\Event;
 
 /**
  * Dispatched by the {@see \haddowg\JsonApiBundle\Action\ActionInvoker} *after*
- * entity resolution and *before* the action handler runs (bundle ADR 0076,
- * design §6).
+ * entity resolution and *before* the action handler runs.
  *
  * It carries the action's per-action {@see $security} expression (when declared on
  * the {@see \haddowg\JsonApiBundle\Attribute\AsJsonApiAction}) so the

@@ -14,7 +14,7 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
  * mapped to {@see VaultEntity} (whose constructor takes required arguments) via
  * `#[AsJsonApiResource(entity: …)]`. Minimal on purpose — an id and a plain
  * `secret` — so a create exercises the persister's {@see VaultEntity}
- * instantiation alone (ADR 0029).
+ * instantiation alone.
  */
 #[AsJsonApiResource(entity: VaultEntity::class)]
 final class DoctrineVaultResource extends AbstractResource
@@ -25,7 +25,7 @@ final class DoctrineVaultResource extends AbstractResource
     {
         return [
             // Store-provided id: the {@see VaultEntity} keys on a database
-            // auto-increment the persister reads back after flush (core ADR 0048).
+            // auto-increment the persister reads back after flush (core docs/ids.md).
             Id::make(),
             Str::make('secret'),
         ];

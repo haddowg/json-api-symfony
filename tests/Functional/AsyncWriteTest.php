@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The async-write seam witness (bundle ADR 0110): a persister that accepts writes for
+ * The async-write seam witness: a persister that accepts writes for
  * asynchronous processing ({@see \haddowg\JsonApiBundle\Tests\Functional\App\Async\AsyncArticlesPersister})
  * makes `POST`/`PATCH` render a `202 Accepted` with `Content-Location` + `Retry-After`
  * pointing at a pollable job resource, and a completion action drives the `303 See

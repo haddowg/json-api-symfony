@@ -13,11 +13,11 @@ use haddowg\JsonApi\Response\RawResponse;
 use haddowg\JsonApi\Response\SeeOtherResponse;
 
 /**
- * A custom, non-CRUD action (bundle ADR 0076, design §2). An author implements
+ * A custom, non-CRUD action. An author implements
  * this on a standalone handler class declared with
  * {@see \haddowg\JsonApiBundle\Attribute\AsJsonApiAction} — no `AbstractResource`
  * sugar — and is discovered by autoconfiguration exactly like a standalone
- * serializer/hydrator (ADR 0024).
+ * serializer/hydrator.
  *
  * The handler receives the resolved {@see ActionContext} — the entity (resource
  * scope), the hydrated input (Document mode), the request, the query parameters,

@@ -21,8 +21,8 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 use Zenstruck\Foundry\ZenstruckFoundryBundle;
 
 /**
- * The Doctrine functional kernel for the CURSOR (keyset) windowed-include batch SQL proof
- * (bundle ADR 0118): it serves the `cursorShelves` → `widgets` graph (an owning-side
+ * The Doctrine functional kernel for the CURSOR (keyset) windowed-include batch SQL proof: it
+ * serves the `cursorShelves` → `widgets` graph (an owning-side
  * ManyToMany, the join-table window shape) over an in-memory SQLite database with the
  * query-counting DBAL middleware, so {@see \haddowg\JsonApiBundle\Tests\Functional\DoctrineCursorIncludeBatchBudgetTest}
  * inspects the executed SQL and proves a cursor-resolved collection include collapses to ONE
@@ -121,8 +121,7 @@ final class CursorIncludeBatchLoggingKernel extends Kernel
         // The cursor (keyset) conformance types: the `cursorWidgets` related resource, the
         // `cursorShelves` parent whose `widgets` ManyToMany declares a CursorPaginator (the
         // join-table window shape), and the `cursorGroups` parent whose `widgets` OneToMany is
-        // the inverse-FK window shape — so both single-window branches are SQL-proven (bundle
-        // ADR 0118).
+        // the inverse-FK window shape — so both single-window branches are SQL-proven.
         $services->set(DoctrineCursorWidgetResource::class);
         $services->set(DoctrineCursorShelfResource::class);
         $services->set(DoctrineCursorGroupResource::class);

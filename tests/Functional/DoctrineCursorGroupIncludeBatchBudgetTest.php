@@ -19,7 +19,7 @@ use PHPUnit\Framework\Attributes\Test;
 
 /**
  * The SQL PROOF for the INVERSE-FK (Doctrine `OneToMany`) cursor (keyset) windowed-include
- * batch (bundle ADR 0118): a cursor-resolved COLLECTION include over `cursorGroups` →
+ * batch: a cursor-resolved COLLECTION include over `cursorGroups` →
  * `widgets` (the related widget carries the owning `group_id` FK) inspects the
  * {@see QueryCountingLogger}'s captured SQL to prove the N per-parent keyset queries collapsed
  * to ONE bounded `ROW_NUMBER()` window — the inverse-FK complement of the join-table

@@ -8,7 +8,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The Phase-3 S2 acceptance suite: the read related and relationship endpoints,
+ * The acceptance suite: the read related and relationship endpoints,
  * plus the compound (`?include`) document, on both providers.
  *
  *  - `GET /{type}/{id}/{relationship}` — the *related* resource(s): a single full
@@ -33,7 +33,7 @@ abstract class RelationshipEndpointConformanceTestCase extends JsonApiFunctional
 {
     /**
      * The base URI both functional kernels configure under `json_api.base_uri`;
-     * core builds the convention self links against it (core ADR 0054).
+     * core builds the convention self links against it (core docs/links-and-meta.md).
      */
     private const string BASE_URI = 'https://example.test';
 
@@ -161,7 +161,7 @@ abstract class RelationshipEndpointConformanceTestCase extends JsonApiFunctional
         $this->assertNotFound('/articles/1/relationships/bogusrel');
     }
 
-    // --- to-one nulling: a relation filter excludes the single target (ADR 0068) ---
+    // --- to-one nulling: a relation filter excludes the single target ---
 
     #[Test]
     #[Group('spec:fetching-relationships')]
@@ -284,7 +284,7 @@ abstract class RelationshipEndpointConformanceTestCase extends JsonApiFunctional
         self::assertSame('1', $data['id'] ?? null);
     }
 
-    // --- convention self links (core ADR 0054) ---------------------------------
+    // --- convention self links (core docs/links-and-meta.md) ---------------------------------
 
     #[Test]
     #[Group('spec:document-resource-objects')]

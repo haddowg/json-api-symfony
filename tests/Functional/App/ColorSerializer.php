@@ -11,7 +11,7 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiSerializer;
 
 /**
  * A standalone serializer for the `colors` type — registered with **no**
- * {@see \haddowg\JsonApi\Resource\AbstractResource} (ADR 0024). The type is
+ * {@see \haddowg\JsonApi\Resource\AbstractResource}. The type is
  * serialize-only: it renders as linkage and as an `?include`d resource on a
  * {@see Widget}, but exposes no endpoints of its own.
  */

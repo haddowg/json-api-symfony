@@ -21,7 +21,7 @@ use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
  * {@see ResourceLinkContributorInterface} seam — when the action declared
  * `asLink: true` on its {@see \haddowg\JsonApiBundle\Attribute\AsJsonApiAction}, or
  * when the type's resource declares an {@see ActionLink} for the action's path in its
- * `links()` (bundle ADR 0159).
+ * `links()`.
  *
  * It is **per server**: each declared server's memoized
  * {@see \haddowg\JsonApi\Server\Server} is threaded its own contributor (via
@@ -37,7 +37,7 @@ use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
  * cannot invoke. An action with no `security` always renders its link. With no
  * authorization checker a `security`-gated action's link is suppressed, so the
  * document never advertises an action behind a gate it cannot evaluate. The build
- * fails in that case anyway (bundle ADR 0130), so this is a fallback.
+ * fails in that case anyway, so this is a fallback.
  *
  * When security passes, a declared {@see ActionLink}'s `when()` condition decides,
  * with the rendered object and the request. A declared action link wins over
@@ -45,8 +45,8 @@ use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
  *
  * The href is the action route's path relative to the server, `/{uriType}/{id}/-actions/{path}`,
  * and core prefixes it with the same base as the resource's `self` link: the configured
- * `base_uri`, or the request origin plus the recorded mount when that is empty (bundle
- * ADR 0121). Generating it through the router instead would base it on the request
+ * `base_uri`, or the request origin plus the recorded mount when that is empty. Generating it
+ * through the router instead would base it on the request
  * host and ignore a configured `base_uri`.
  *
  * Each link names the action's operation (its path under the type's URI segment and its

@@ -15,7 +15,7 @@ use Doctrine\ORM\Mapping as ORM;
  * assigns on insert, the realistic common pattern; the JSON:API id is that int
  * rendered as a string. Not `final` so Doctrine may proxy it.
  *
- * Relationships (Phase 3 foundation): a to-one `author`
+ * Relationships: a to-one `author`
  * ({@see ORM\ManyToOne} to {@see AuthorEntity}) and a to-many `comments`
  * ({@see ORM\OneToMany} mapped by {@see CommentEntity}'s owning side). Core's
  * accessor reads the public `$author` / `$comments` members directly, so the
@@ -46,7 +46,7 @@ class ArticleEntity
     /**
      * A third, independent to-many of comments (mapped by the comment's
      * `pinnedArticle` owning side), backing the `pinnedComments` relation — a UNIQUE
-     * column no other relation shares, so the windowed-include batch (bundle ADR 0065)
+     * column no other relation shares, so the windowed-include batch
      * asserts per-parent order + the real total on the inverse-FK shape without the
      * shared-column last-writer-wins boundary.
      *
@@ -60,7 +60,7 @@ class ArticleEntity
      * `editors` relation — no inverse field on the author, so the provider's
      * inverseOwningField resolver returns null and the related-collection fetch
      * takes the subquery-scoped branch. Body-initialised like `comments` (not a
-     * constructor parameter), so the constructor-less create path (ADR 0029)
+     * constructor parameter), so the constructor-less create path
      * sees the mapped collection Doctrine initialises when the entity becomes
      * managed.
      *
@@ -79,7 +79,7 @@ class ArticleEntity
         public string $title = '',
         // `body` and `category` are optional `articles` attributes (the resource
         // declares neither `->required()`), so a create may omit them. The reference
-        // persister instantiates without invoking the constructor (ADR 0029), so the
+        // persister instantiates without invoking the constructor, so the
         // `= ''` parameter default no longer fills an omitted value — the columns are
         // therefore nullable, matching the resource's optionality.
         #[ORM\Column(nullable: true)]

@@ -7,7 +7,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional;
 use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\FlattenDoctrineTestKernel;
 
 /**
- * {@see FlattenConformanceTestCase} against the Doctrine provider (bundle ADR 0085):
+ * {@see FlattenConformanceTestCase} against the Doctrine provider:
  * the same flattened single- and multi-hop `on()` read/write, computed attribute, and
  * eager loads resolved over an in-memory SQLite database seeded by {@see SeedsFlatten}
  * (Foundry), served by the bundle's `-128` fallback Doctrine provider/persister. The

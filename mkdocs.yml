@@ -60,10 +60,10 @@ plugins:
 hooks:
   - mkdocs_hooks.py
 
+exclude_docs: |
+  adr/
+
 validation:
-  nav:
-    # The ADRs are built (docs link to them by file) but deliberately not in the nav.
-    omitted_files: ignore
   links:
     anchors: warn
 

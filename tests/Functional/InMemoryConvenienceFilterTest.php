@@ -9,7 +9,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\ConstrainedFilterInMemoryTestKern
 /**
  * {@see ConvenienceFilterConformanceTestCase} against the in-memory provider — the
  * conformance witness half of the dual-provider contract for the convenience filter
- * library (G8b). The in-memory provider is seeded at construction from the canonical
+ * library. The in-memory provider is seeded at construction from the canonical
  * fixtures, so no per-test seeding is needed.
  */
 final class InMemoryConvenienceFilterTest extends ConvenienceFilterConformanceTestCase

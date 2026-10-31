@@ -17,20 +17,20 @@ services:
             - '../src/Entity/'
             - '../src/MusicCatalogKernel.php'
 
-    # The serializer override (bundle ADR 0023): a bound constructor arg surfaced in
+    # The serializer override: a bound constructor arg surfaced in
     # the rendered `meta`, so a successful read proves DI resolution.
     haddowg\JsonApiBundle\Examples\MusicCatalog\Serializer\TrackSerializer:
         arguments:
             $catalogTag: 'music-catalog'
 
-    # The hydrator override (bundle ADR 0023): a bound constructor arg (the slug
+    # The hydrator override: a bound constructor arg (the slug
     # delimiter), so a successful write proves DI resolution.
     haddowg\JsonApiBundle\Examples\MusicCatalog\Hydrator\PlaylistHydrator:
         arguments:
             $slugSeparator: '-'
 
     # The in-memory audit trail the cross-cutting AuditLogSubscriber appends to on
-    # every committed write (bundle ADR 0042). Public so the lifecycle-hooks test can
+    # every committed write. Public so the lifecycle-hooks test can
     # read the recorded entries back; a production app would inject a real logger or
     # message bus and never expose the store.
     haddowg\JsonApiBundle\Examples\MusicCatalog\Hook\AuditLog:

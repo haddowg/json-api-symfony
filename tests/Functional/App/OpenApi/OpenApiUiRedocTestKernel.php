@@ -19,7 +19,7 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 /**
- * The UI renderer-switch + CDN-override + custom-path witness (design D6/§11): the same
+ * The UI renderer-switch + CDN-override + custom-path witness: the same
  * surface as {@see OpenApiTestKernel} but the viewer is configured `renderer: redoc`,
  * a custom `cdn` base, and a non-default `path: /api-docs` — proving the single UI route
  * renders the *configured* renderer from the *configured* asset origin at the *configured*

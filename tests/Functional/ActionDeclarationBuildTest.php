@@ -20,7 +20,7 @@ use Symfony\Component\Routing\RouterInterface;
 
 /**
  * Action declarations whose operation ids would collide, or whose safety or extensions
- * are invalid, fail the container build (core ADR 0179), naming the handler class.
+ * are invalid, fail the container build, naming the handler class.
  */
 #[Group('spec:actions')]
 final class ActionDeclarationBuildTest extends KernelTestCase

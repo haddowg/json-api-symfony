@@ -664,7 +664,7 @@ class JsonApiBrowser extends KernelBrowser
      */
     private function jsonApiRequest(string $method, string $uri, ?array $document, array $server): void
     {
-        // Every POST carries the JSON:API Content-Type, with a body or not (core ADR 0172).
+        // Every POST carries the JSON:API Content-Type, with a body or not.
         $server += $this->defaultRequestServer($document !== null || \strtoupper($method) === 'POST');
         $content = $document !== null
             ? \json_encode($document, \JSON_THROW_ON_ERROR)

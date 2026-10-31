@@ -18,7 +18,7 @@ use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
 /**
- * The declarative-authorization witness kernel (bundle ADR 0043): the Doctrine
+ * The declarative-authorization witness kernel: the Doctrine
  * provider/persister behind a real Symfony firewall (in-memory user provider + a
  * stateless Bearer `access_token` authenticator — the only scheme, no `http_basic`
  * fallback) so the

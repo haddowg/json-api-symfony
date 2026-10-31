@@ -7,8 +7,8 @@ namespace haddowg\JsonApiBundle\Http;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 
 /**
- * The registry of declarative response-header config (bundle ADR 0054), keyed by
- * server and type (bundle ADR 0144):
+ * The registry of declarative response-header config, keyed by
+ * server and type:
  * each JSON:API type's {@see CacheHeaders} (resource-level + per-operation
  * overrides) and {@see DeprecationHeaders}, layered over the global defaults from
  * `json_api.defaults.cache_headers` / `json_api.defaults.deprecation` / `…sunset`.
@@ -25,7 +25,7 @@ use haddowg\JsonApiBundle\Server\ServerProvider;
  * server whose class declared nothing gets the defaults.
  *
  * Resolution layers the resource-level value over the server's own
- * `json_api.servers.<name>.defaults` (bundle ADR 0164) over the global default, field by
+ * `json_api.servers.<name>.defaults` over the global default, field by
  * field, then a per-operation cache override over that, so a type tunes only what it
  * declares and a server replaces only the global values it sets.
  * The {@see \haddowg\JsonApiBundle\EventListener\ResponseHeadersListener} queries it

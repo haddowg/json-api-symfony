@@ -9,8 +9,8 @@ use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiHydrator;
 
 /**
- * The standalone hydrator for the bespoke `renameCommands` command type (bundle ADR
- * 0076, design §3): it reads the `newName` attribute off the validated request
+ * The standalone hydrator for the bespoke `renameCommands` command type: it reads
+ * the `newName` attribute off the validated request
  * document and writes it onto the {@see RenameCommand} DTO the action's
  * {@see \haddowg\JsonApiBundle\Action\ActionInputFactoryInterface::newInput()} supplied.
  */

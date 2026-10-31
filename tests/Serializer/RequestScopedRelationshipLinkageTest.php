@@ -18,7 +18,7 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 
 /**
- * The per-row read gate on a `MorphTo` declared with `identifiedBy()` (bundle ADR 0163).
+ * The per-row read gate on a `MorphTo` declared with `identifiedBy()`.
  * Its linkage renders from the stored pair, so the gate never reads the target off the
  * parent: it answers `null` when nothing was loaded and checks the loaded row otherwise.
  */

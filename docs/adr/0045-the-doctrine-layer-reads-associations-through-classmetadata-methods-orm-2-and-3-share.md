@@ -1,0 +1,3 @@
+# The Doctrine layer reads associations only through the `ClassMetadata` methods ORM 2 and 3 share
+
+ORM 3 returns association mappings as objects and deprecates array access on them, while ORM 2 returns arrays, so neither shape works across the supported `^2.20 || ^3.0`. The layer reads associations only through the `ClassMetadata` methods both majors share (`getAssociationNames()`, `getAssociationTargetClass()`, `isAssociationInverseSide()`, `getAssociationMappedByTargetField()`), which is simpler than a version-sniffing accessor. A dedicated CI job on the lowest supported stack catches a regression, and a `conflict` on unsupported ORM versions fails at install rather than at the first relationship query, since ORM is only suggested.

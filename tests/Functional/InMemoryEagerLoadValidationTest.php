@@ -7,8 +7,8 @@ namespace haddowg\JsonApiBundle\Tests\Functional;
 use haddowg\JsonApiBundle\Tests\Functional\App\EagerValidation\EagerValidationInMemoryKernel;
 
 /**
- * {@see EagerLoadValidationConformanceTestCase} against the in-memory kernel (bundle
- * ADR 0085): the boot-time eager-load validation throws / accepts for each pinned
+ * {@see EagerLoadValidationConformanceTestCase} against the in-memory kernel: the boot-time
+ * eager-load validation throws / accepts for each pinned
  * shape identically to the Doctrine witness — the rule is provider-agnostic metadata.
  */
 final class InMemoryEagerLoadValidationTest extends EagerLoadValidationConformanceTestCase

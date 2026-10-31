@@ -49,7 +49,7 @@ use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 
 /**
- * Characterizes the {@see MetadataSource} (design §3, §4.6, §4.7, D8/D15): it
+ * Characterizes the {@see MetadataSource}: it
  * assembles a server's worth of OpenAPI metadata from the live registry — types,
  * operations (bundle->core enum mapping), relations, paginator kind, client-id
  * policy, tags (explicit + humanized default + definition synthesis), custom actions
@@ -99,7 +99,7 @@ final class MetadataSourceTest extends TestCase
     {
         // With a single declared server, the combined document spans that server's
         // types (the degenerate single-server case) — proving combined() unions the
-        // descriptor servers and carries the info block (D5).
+        // descriptor servers and carries the info block.
         $combined = $this->source()->combined();
 
         $names = \array_map(static fn($type): string => $type->type(), $combined->types());
@@ -113,8 +113,8 @@ final class MetadataSourceTest extends TestCase
     public function itAdvertisesTheDefaultRegisteredProfilesInCanonicalOrder(): void
     {
         // The bundle registers the three built-in profiles by default, in the canonical
-        // order the OpenAPI jsonapi.profile enum lists them (bundle ADR 0117, core ADR
-        // 0131). profiles() reads the live registry the ServerFactory built, not a
+        // order the OpenAPI jsonapi.profile enum lists them (docs/configuration.md). profiles()
+        // reads the live registry the ServerFactory built, not a
         // hardcoded list.
         self::assertSame(
             [CursorPaginationProfile::URI, CountableProfile::URI, RelationshipQueriesProfile::URI],
@@ -125,7 +125,7 @@ final class MetadataSourceTest extends TestCase
     #[Test]
     public function theGeneratedDocumentAdvertisesTheRegisteredProfilesRelatedQueryAndWithCount(): void
     {
-        // Projected through the core registration-aware projector (core ADR 0131), the
+        // Projected through the core registration-aware projector, the
         // default registration pins the jsonapi.profile enum to the three URIs in order,
         // advertises the Relationship Queries `relatedQuery` parameter (articles declares
         // relations) as a $ref to the single shared component, and the Countable
@@ -272,7 +272,7 @@ final class MetadataSourceTest extends TestCase
         // `author` -> people (registered, no includable relations of its own). The
         // `comments` relation is includable but its `comments` type has no serializer on
         // this server (it renders links-only), so `?include=comments` could hydrate
-        // nothing and the path is pruned from the advertised set (D45).
+        // nothing and the path is pruned from the advertised set.
         self::assertEqualsCanonicalizing(['author'], $articles->includablePaths());
     }
 
@@ -360,7 +360,7 @@ final class MetadataSourceTest extends TestCase
         self::assertSame('/operations', $atomic->path());
     }
 
-    // --- description overrides (bundle ADR 0092) -------------------------------
+    // --- description overrides (docs/openapi.md) -------------------------------
 
     #[Test]
     public function aTypeWithoutAnyDeclaredDescriptionLeavesTheOverridesNullForTheGeneratedDefault(): void
@@ -819,7 +819,7 @@ final class MetadataSourceTest extends TestCase
 /**
  * A resource exposing two relations (one to-one with a description, one to-many
  * countable to-many), countable, no client id. Non-final so the description-override
- * fixture {@see DescribedArticleResource} can reuse its field set (bundle ADR 0092).
+ * fixture {@see DescribedArticleResource} can reuse its field set (docs/openapi.md).
  */
 class ArticleResource extends AbstractResource
 {
@@ -848,7 +848,7 @@ class ArticleResource extends AbstractResource
 
 /**
  * The `articles` type, but with the author method hooks overriding the OpenAPI
- * resource-object + fetch-one descriptions (bundle ADR 0092) — proves the method hook
+ * resource-object + fetch-one descriptions (docs/openapi.md) — proves the method hook
  * wins over the attribute registry, and that an undescribed operation falls through.
  * The hook results are held as nullable properties so each override is genuinely a
  * `?string` (an author may return null to fall through to the registry / default).

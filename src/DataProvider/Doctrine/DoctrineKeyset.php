@@ -13,10 +13,10 @@ use haddowg\JsonApi\Pagination\CursorBoundary;
  * Builds the Doctrine push-down for a cursor (keyset) page — the forced
  * NULL=largest `ORDER BY` and the IS-NULL-branched lexicographic keyset `WHERE`
  * — matching the in-memory witness ({@see \haddowg\JsonApi\Collection\Keyset\InMemoryKeyset})
- * byte-for-byte (bundle ADR 0063 / core ADR 0123).
+ * byte-for-byte.
  *
- * The order is forced as a PORTABLE NULL=largest (NOT `NULLS LAST`, which
- * MySQL/SQLite lack): each column emits a leading `CASE WHEN c IS NULL THEN 1
+ * The order is forced as a PORTABLE NULL=largest (ADR 0032; NOT `NULLS LAST`,
+ * which MySQL/SQLite lack): each column emits a leading `CASE WHEN c IS NULL THEN 1
  * ELSE 0 END` boolean term then the column, both in the column's direction — so
  * ascending puts non-nulls (0) before nulls (1) and descending reverses, every
  * engine ordering the 0/1 identically. The keyset `WHERE` is the lexicographic

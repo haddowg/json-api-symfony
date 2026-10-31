@@ -13,14 +13,14 @@ use PHPUnit\Framework\Attributes\Test;
  * {@see \haddowg\JsonApi\Pagination\CursorPaginator} — asserted byte-identical
  * on the in-memory ({@see InMemoryLinkageCursorTest}) and Doctrine-sqlite
  * ({@see DoctrineLinkageCursorTest}) kernels over the shared `cursorShelves`
- * declaration and seed (bundle ADR 0114).
+ * declaration and seed.
  *
  * The linkage endpoint windows the SAME keyset the related endpoint pages —
  * the members render as resource IDENTIFIERS, the boundary-cursor
  * `prev`/`next` links (`page[before]`/`page[after]`) ride the relationship
  * object's links at the relationship URL, and the response advertises the
  * cursor-pagination profile exactly as the related/primary pages do (core
- * ADR 0124: the page is attached to the linkage response for its PROFILE
+ * docs/responses.md: the page is attached to the linkage response for its PROFILE
  * only). The body stays links-only: no `meta.page`, and never a `last` link
  * (count-free by design).
  */
@@ -128,7 +128,7 @@ abstract class LinkageCursorConformanceTestCase extends JsonApiFunctionalTestCas
     #[Group('spec:fetching-pagination')]
     public function theLinkageBodyCarriesNoPageMeta(): void
     {
-        // A linkage document is links-only (core ADR 0124): the windowing page
+        // A linkage document is links-only (core docs/responses.md): the windowing page
         // feeds the links and the profile, never a meta.page (and no meta.total —
         // a cursor page is count-free by design).
         $document = $this->fetchDocument('/cursorShelves/1/relationships/widgets?sort=priority,id&page[size]=2');
@@ -152,7 +152,7 @@ abstract class LinkageCursorConformanceTestCase extends JsonApiFunctionalTestCas
         // The cursor-pagination profile is advertised by the attached page iff the
         // SERVER registers it — so the linkage endpoint's advertisement must be
         // byte-identical to the primary cursor collection's, whatever the server's
-        // profile registry says (core ADR 0124).
+        // profile registry says (core docs/responses.md).
         $primary = $this->handle('/cursorWidgets?sort=priority,id&page[size]=2');
         $linkage = $this->handle('/cursorShelves/1/relationships/widgets?sort=priority,id&page[size]=2');
 

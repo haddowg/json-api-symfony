@@ -9,8 +9,8 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 
 /**
- * A request-wide serving-gate witness for the custom-action suite (bundle ADR 0042 /
- * design §6): it subscribes to the {@see ServingEvent} core fires once per dispatch
+ * A request-wide serving-gate witness for the custom-action suite: it subscribes to
+ * the {@see ServingEvent} core fires once per dispatch
  * inside `Server::dispatch()` — which a {@see \haddowg\JsonApi\Operation\CustomActionOperation}
  * routes through unchanged, so the gate covers actions for free — and **denies** the
  * request (a `403` via the exception listener) when the request carries the

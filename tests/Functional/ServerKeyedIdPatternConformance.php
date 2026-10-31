@@ -11,7 +11,7 @@ use Symfony\Component\Routing\Exception\ResourceNotFoundException;
 use Symfony\Component\Routing\RouterInterface;
 
 /**
- * `patternedWidgets` is served by a different class on each server (bundle ADR 0145):
+ * `patternedWidgets` is served by a different class on each server:
  * the default server's has a numeric id, the named server's a lower-case letters id.
  * Each server's routes and OpenAPI document follow its own class's id pattern.
  *

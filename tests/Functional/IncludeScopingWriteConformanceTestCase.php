@@ -11,8 +11,8 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 
 /**
- * Linkage a write sends is resolved through the related endpoint's scope (bundle ADR
- * 0126): an id the scope hides is rejected exactly like one that does not exist, and a
+ * Linkage a write sends is resolved through the related endpoint's scope: an id the scope hides
+ * is rejected exactly like one that does not exist, and a
  * replace leaves the hidden members alone. Agency 2 and member 2 are hidden; agency 99
  * and member 99 do not exist.
  *

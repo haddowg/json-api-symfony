@@ -22,7 +22,7 @@ use Zenstruck\Foundry\ZenstruckFoundryBundle;
 
 /**
  * The Doctrine functional kernel for the bounded ROW_NUMBER windowed-include batch
- * conformance (bundle ADR 0065). It serves the article graph over an in-memory SQLite
+ * conformance. It serves the article graph over an in-memory SQLite
  * database with the query-counting DBAL middleware (so the bounded-fetch test inspects
  * the executed SQL), and exposes {@see windowFunctions()} so a subclass runs the SAME
  * conformance assertions with `json_api.doctrine.window_functions` ON (the native path)

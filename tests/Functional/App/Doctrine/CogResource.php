@@ -12,7 +12,7 @@ use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 
 /**
- * The Doctrine encoded-id witness resource (bundle ADR 0038): the `cogs` type keys
+ * The Doctrine encoded-id witness resource: the `cogs` type keys
  * its entity by an integer storage key that never reaches the wire — {@see Id::encodeUsing()}
  * attaches a {@see HexIdEncoder} so the JSON:API `id` and URL are an opaque `cog-…`
  * token, and {@see Id::matchAs()} pins the route `{id}` to that shape (a malformed id
@@ -36,7 +36,7 @@ final class CogResource extends AbstractResource
             // key (no DB sequence), so a create must carry the encoded `cog-…` wire
             // id — `requireClientId()` mandates it (a create without one 403s), the
             // policy that supersedes the removed `acceptsClientGeneratedId()` (bundle
-            // ADR 0039). The encoder decodes the wire id to the integer storage key.
+            // docs/validation.md). The encoder decodes the wire id to the integer storage key.
             Id::make()
                 ->requireClientId()
                 ->encodeUsing(new HexIdEncoder())
@@ -48,7 +48,7 @@ final class CogResource extends AbstractResource
 
     /**
      * A `name` filter so the self-referential `parent` to-one is filter-excludable:
-     * the to-one nulling path (bundle ADR 0068) is then exercised on an ENCODED-ID
+     * the to-one nulling path is then exercised on an ENCODED-ID
      * parent type — the parent's wire id is a `cog-…` token, so this proves the
      * batch's `parentWireId()` keys agree with the serializer's `getId()` (follow-up
      * #4). A non-matching `filter[name]` nulls the related cog `data: null`.

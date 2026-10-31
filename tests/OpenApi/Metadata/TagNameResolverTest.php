@@ -11,7 +11,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Characterizes the {@see TagNameResolver} (design §4.7, D15): the default OpenAPI
+ * Characterizes the {@see TagNameResolver}: the default OpenAPI
  * tag name for a type is its humanized, title-cased, pluralized form — a heuristic,
  * always overridable by an explicit `tags` ref.
  */

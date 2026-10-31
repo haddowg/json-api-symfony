@@ -19,7 +19,7 @@ use haddowg\JsonApi\Resource\Field\Str;
  * cursor (keyset) conformance suite. Its `pagination()` returns a
  * {@see MultiPaginator} offering a page-number strategy alongside the cursor
  * (keyset) strategy, defaulting to cursor — so the same endpoint witnesses both
- * client-selectable strategy selection AND the keyset push-down (bundle ADR 0063).
+ * client-selectable strategy selection AND the keyset push-down.
  * Absent a discriminator (or with only the shared `page[size]` key) it resolves to
  * the cursor default, keeping the keyset suite unchanged; `page[kind]=page` (or the
  * page-unique `page[number]`) selects the count-based strategy instead.

@@ -13,7 +13,7 @@ use PHPUnit\Framework\Attributes\Test;
 /**
  * {@see RelationCountConformanceTestCase} against the Doctrine provider: the
  * countable relations are counted by a pushed-down grouped `COUNT` over the
- * related association (bundle ADR 0052). It boots the
+ * related association. It boots the
  * {@see QueryCountingDoctrineKernel}, which wraps the DBAL connection with a
  * {@see DbalLoggingMiddleware} so the batch's grouped-count behaviour is probed:
  * one count query per requested relation across the whole page, never N.

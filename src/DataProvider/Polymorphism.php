@@ -10,7 +10,7 @@ use haddowg\JsonApi\Resource\Field\RelationInterface;
 /**
  * The one rule for whether a relation is polymorphic, shared by the OpenAPI metadata and
  * every runtime read, so an endpoint accepts exactly the parameters its document lists.
- * A `MorphTo` or `MorphToMany` is polymorphic over a single type too (core ADR 0184), and
+ * A `MorphTo` or `MorphToMany` is polymorphic over a single type too, and
  * any relation listing several types is.
  *
  * It decides what a request may ask of the relation. How its members are loaded still

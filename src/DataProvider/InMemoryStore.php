@@ -174,7 +174,7 @@ final class InMemoryStore
      * store to snapshot in a batch captures the item maps of EVERY registered store in
      * ONE serialize pass, so a parent in this store that references a related object in
      * another store is encoded once and restored as a SINGLE shared instance —
-     * cross-store object identity survives a {@see restore()} (the Slice C carry-forward).
+     * cross-store object identity survives a {@see restore()}.
      *
      * **Isolated path (a store used alone).** With no coordinator each stored object is
      * **deep-cloned** (a `serialize(unserialize())` round-trip), because the persister's

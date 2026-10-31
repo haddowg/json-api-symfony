@@ -15,8 +15,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\DoctrineJsonApiTestKerne
  * assertions as the in-memory witness, executed as real DQL (the forced
  * NULL=largest ORDER BY + the IS-NULL-branched keyset WHERE) over an in-memory
  * SQLite database seeded through the {@see CursorWidgetEntityFactory}. A
- * divergence from the witness localizes to the Doctrine keyset push-down
- * (bundle ADR 0063).
+ * divergence from the witness localizes to the Doctrine keyset push-down.
  */
 final class DoctrineCursorTest extends CursorConformanceTestCase
 {

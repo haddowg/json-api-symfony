@@ -17,7 +17,7 @@ use Symfony\Component\HttpKernel\Event\RequestEvent;
  * name a relation is declared under.
  *
  * The segment is the relation's URI field name, or its name for a client still on
- * the old URL (bundle ADR 0133). A segment no relation answers to is left as it is,
+ * the old URL. A segment no relation answers to is left as it is,
  * and the handler answers `404` for it as before.
  */
 final class RelationshipSegmentListener

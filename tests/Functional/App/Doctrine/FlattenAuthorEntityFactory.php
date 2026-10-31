@@ -8,7 +8,7 @@ use Zenstruck\Foundry\Persistence\PersistentObjectFactory;
 
 /**
  * Foundry factory for {@see FlattenAuthorEntity}: seeds an `authors` row of the
- * flattened-attribute (`on()`) Doctrine fixture (bundle ADR 0085).
+ * flattened-attribute (`on()`) Doctrine fixture.
  *
  * @extends PersistentObjectFactory<FlattenAuthorEntity>
  */

@@ -13,7 +13,7 @@ use PHPUnit\Framework\Attributes\Test;
  * relation declares a WRITABLE `position` (an `Integer` pivot field with `min(1)`)
  * and a server-owned readOnly `addedAt` (a `DateTime`), both on the auto-detected
  * {@see \haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\PlaylistTrackEntity}
- * association entity (bundle ADR 0046).
+ * association entity.
  *
  * It proves the association-entity diff: adding a member with pivot meta creates the
  * join row with the value; a full replacement REORDERS the existing rows in place

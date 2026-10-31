@@ -26,7 +26,7 @@ use haddowg\JsonApi\Resource\Sort\SortInterface;
  *   the declared {@see $sorts} (validated by the applier exactly as a requested
  *   sort is), so a default flows through the provider's sort handler on the same
  *   path. A default order keeps an otherwise unsorted collection — and its
- *   pagination window — deterministic (core ADR 0044);
+ *   pagination window — deterministic (core docs/sorts.md);
  * - {@see $window} — the pagination fetch window to push down to the store, or
  *   `null` for an unpaginated fetch. Carried as the polymorphic
  *   {@see WindowInterface}; a provider narrows to the concrete window types it
@@ -41,15 +41,15 @@ use haddowg\JsonApi\Resource\Sort\SortInterface;
  *   Doctrine pivot related-collection path (the pivot keys → the `pivot` join
  *   alias, see {@see RelationCriteriaFactory}); it is empty on every other Doctrine
  *   path and on EVERY in-memory path, so the alias-aware branches are provably inert
- *   off the pivot path (bundle ADR 0059).
+ *   off the pivot path.
  * - {@see $wantsCount} — whether the handler resolved a `COUNT` for this windowed
  *   fetch: `true` when the paginator's `withCount()` author opt-in flipped it, or
- *   when `?withCount=_self_` was requested under a `countable()` resource/relation
- *   (G21). The provider issues the `COUNT` (the count-based page with
+ *   when `?withCount=_self_` was requested under a `countable()` resource/relation.
+ *   The provider issues the `COUNT` (the count-based page with
  *   `meta.page.total`/`links.last`) iff `true`, else fetches count-free (the
  *   window+1 probe → `hasMore`, no total). Defaulted `false` so every existing
  *   construction site stays count-free unless the handler explicitly asks for a
- *   count (bundle ADR 0075).
+ *   count.
  */
 final readonly class CollectionCriteria
 {
@@ -58,7 +58,7 @@ final readonly class CollectionCriteria
      * @param list<SortInterface>       $sorts       the sort vocabulary declared for the type
      * @param list<SortDirective>       $defaultSort the resource's default sort order, applied when no `sort` is requested
      * @param array<string, string>     $aliasOf     directive KEY → target query alias; an absent key resolves to the root alias (bundle-only, empty off the Doctrine pivot path)
-     * @param bool                      $wantsCount  whether the provider should run the `COUNT` for this windowed fetch (G21 author/client opt-in; default false = count-free)
+     * @param bool                      $wantsCount  whether the provider should run the `COUNT` for this windowed fetch (author/client opt-in; default false = count-free)
      */
     public function __construct(
         public QueryParameters $queryParameters,

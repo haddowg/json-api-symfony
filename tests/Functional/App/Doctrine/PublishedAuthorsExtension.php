@@ -16,7 +16,7 @@ use haddowg\JsonApiBundle\DataProvider\Doctrine\QueryPurpose;
  * `articles → authors`). Per the {@see DoctrineExtensionInterface} contract it reads
  * the builder's root alias and constrains it there, so the bundle must hand it a
  * builder rooted on the AUTHOR entity even on the parent-rooted batched pair-shape
- * fetch (bundle ADR 0061) — otherwise the constraint lands on the parent (`articles`)
+ * fetch — otherwise the constraint lands on the parent (`articles`)
  * and silently fails or errors. Records each purpose it saw so the test can assert the
  * extension was actually invoked on the windowed include path.
  */

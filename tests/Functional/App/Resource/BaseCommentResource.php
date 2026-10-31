@@ -23,14 +23,14 @@ abstract class BaseCommentResource extends AbstractResource
     public function fields(): array
     {
         return [
-            // Store-provided id: a database auto-increment assigns it (core ADR 0048).
+            // Store-provided id: a database auto-increment assigns it (core docs/ids.md).
             Id::make(),
             Str::make('body')->sortable(),
         ];
     }
 
     /**
-     * The related-collection vocabulary (Phase 4 P7): this is what scopes
+     * The related-collection vocabulary: this is what scopes
      * `GET /articles/{id}/comments?filter[body]=…&sort=…` — the comment filters
      * and sorts the related to-many endpoint resolves against, not the article's.
      */

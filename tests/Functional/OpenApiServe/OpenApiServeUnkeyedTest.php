@@ -13,7 +13,7 @@ use PHPUnit\Framework\Attributes\Test;
 
 /**
  * One serve decorator without a cache key makes the ETag a hash of the served body, even
- * though the others have keys (bundle ADR 0131).
+ * though the others have keys.
  */
 final class OpenApiServeUnkeyedTest extends OpenApiServeTestCase
 {

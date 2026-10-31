@@ -18,8 +18,8 @@ use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
 /**
- * The response-header witness kernel **with** global `json_api.defaults` (bundle
- * ADR 0054): a default `max_age: 120` cache plus a default `Deprecation: true`.
+ * The response-header witness kernel **with** global `json_api.defaults`: a default
+ * `max_age: 120` cache plus a default `Deprecation: true`.
  * `plainWidgets` (declares nothing) inherits both defaults; `cachedWidgets`
  * (declares `max_age: 60`) overrides the default cache — proving the resource-level
  * value merges over / wins against the global default.

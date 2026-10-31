@@ -9,7 +9,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\JsonApiTestKernel;
 /**
  * {@see RelationCountConformanceTestCase} against the in-memory provider: the
  * countable relations are counted by reading the related set off each parent in
- * the fully-materialised object graph (bundle ADR 0052).
+ * the fully-materialised object graph.
  */
 final class InMemoryRelationCountTest extends RelationCountConformanceTestCase
 {

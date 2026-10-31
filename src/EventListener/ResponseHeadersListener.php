@@ -15,14 +15,14 @@ use Symfony\Component\HttpKernel\Event\ResponseEvent;
 
 /**
  * The route-scoped `kernel.response` listener that emits the declarative response
- * headers a JSON:API type declares (bundle ADR 0054):
+ * headers a JSON:API type declares:
  *
- *  - **HTTP cache headers (gap G7)** — the resolved {@see \haddowg\JsonApiBundle\Http\CacheHeaders}
+ *  - **HTTP cache headers** — the resolved {@see \haddowg\JsonApiBundle\Http\CacheHeaders}
  *    (resource-level + per-operation override, layered over the global
  *    `json_api.defaults.cache_headers`) on a **safe (`GET`) successful** read only.
  *    A write (`POST`/`PATCH`/`DELETE`) or an error document never gets a
  *    `Cache-Control` — caching a write or an error is wrong, so both are skipped.
- *  - **deprecation + sunset (gap G16)** — `Deprecation` (IETF Deprecation-header draft) + `Sunset` (RFC 8594) — the resolved
+ *  - **deprecation + sunset** — `Deprecation` (IETF Deprecation-header draft) + `Sunset` (RFC 8594) — the resolved
  *    {@see \haddowg\JsonApiBundle\Http\DeprecationHeaders} on **every** response for
  *    the type (reads and writes alike — a deprecated endpoint is deprecated
  *    regardless of method).
@@ -61,7 +61,7 @@ final class ResponseHeadersListener
             return;
         }
 
-        // Each server emits only what its own resource class declares (bundle ADR 0144).
+        // Each server emits only what its own resource class declares.
         $server = $request->attributes->get('_jsonapi_server');
         $server = \is_string($server) && $server !== '' ? $server : ServerProvider::DEFAULT_SERVER;
 

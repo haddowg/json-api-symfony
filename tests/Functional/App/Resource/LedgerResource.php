@@ -11,7 +11,7 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 use haddowg\JsonApiBundle\Operation\Operation;
 
 /**
- * The read-only witness for operation exposure (ADR 0025): a `ledgers` resource
+ * The read-only witness for operation exposure: a `ledgers` resource
  * that declares only the two read operations, so the route loader emits exactly
  * `GET /ledgers` and `GET /ledgers/{id}` and nothing else — no create/update/delete
  * routes even though it is a full resource.

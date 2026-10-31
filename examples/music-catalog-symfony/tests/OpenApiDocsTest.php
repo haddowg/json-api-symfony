@@ -18,7 +18,7 @@ use PHPUnit\Framework\Attributes\Test;
  * configured surface — the info block, the `Catalog`/`Library` tags, the `bearer`
  * security scheme, and the reusable, *described* `AlbumStatus` enum component — and,
  * via {@see SchemaConformanceTrait}, that the generated schemas actually **describe the
- * real catalogue responses** (the round-trip guarantee, design §8/G6).
+ * real catalogue responses** (the round-trip guarantee).
  *
  * `expose_in_prod: true` in the example config registers the docs routes even though
  * the kernel boots `debug=false`, so `GET /docs.json` resolves here.
@@ -183,7 +183,7 @@ final class OpenApiDocsTest extends MusicCatalogKernelTestCase
     {
         // `playlists.owner` targets the `users` type, which is admin-only
         // (`server: 'admin'`). On the default server `users` is unserializable, so
-        // `?include=owner` could hydrate nothing — the projection prunes it (D45),
+        // `?include=owner` could hydrate nothing — the projection prunes it,
         // while include paths to default-serializable types remain.
         $document = $this->decode($this->handle('/docs.json'));
         $include = $this->parameterNamed($this->nested($document, 'paths', '/playlists', 'get', 'parameters'), 'include');
@@ -306,7 +306,7 @@ final class OpenApiDocsTest extends MusicCatalogKernelTestCase
     {
         // `UserResource::pagination()` pins a CursorPaginator — the catalogue's sole
         // cursor (keyset) witness — so the `users` primary collection's single `page`
-        // deepObject parameter (ADR 0130) carries the keyset object schema: the opaque
+        // deepObject parameter carries the keyset object schema: the opaque
         // `page[after]`/`page[before]` cursor tokens plus `page[size]`, and NOT the
         // `number` of the page-based default. `users` is admin-only, so this rides the
         // `admin` server's document; the path keys are unprefixed (the `/admin` mount
@@ -378,7 +378,7 @@ final class OpenApiDocsTest extends MusicCatalogKernelTestCase
 
         // The aggregate is the per-type standalone JSON Schema 2020-12 documents keyed by
         // JSON:API type — a single fetch the client codegen consumes for its validation
-        // seam (bundle ADR 0101). Each is self-contained: a `$id` and a `type` const.
+        // seam. Each is self-contained: a `$id` and a `type` const.
         $aggregate = $this->decode($response);
         foreach (['albums', 'tracks', 'playlists'] as $type) {
             $schema = $this->nested($aggregate, $type);

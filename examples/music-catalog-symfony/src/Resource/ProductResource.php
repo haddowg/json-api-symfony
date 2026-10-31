@@ -12,8 +12,8 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Product;
 
 /**
- * The `products` resource type — the **encoded resource id** witness (bundle ADR
- * 0038). Its {@see Product} entity is keyed by a database-generated integer that
+ * The `products` resource type — the **encoded resource id** witness. Its {@see Product} entity
+ * is keyed by a database-generated integer that
  * never reaches the wire: {@see Id::encodeUsing()} attaches a
  * {@see ProductIdCodec} so the JSON:API `id` and the URL are an opaque `prod-…`
  * token, and {@see Id::matchAs()} constrains the route `{id}` to that token shape
@@ -27,7 +27,7 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Product;
  * linkage `id` is an encoded `products` token resolves the right managed reference.
  *
  * Its id is **database-generated** — the **encoded store-provided** id-strategy
- * demonstrator (bundle ADR 0039). A `POST` carries no id; the plain `Id::make()`
+ * demonstrator (docs/validation.md). A `POST` carries no id; the plain `Id::make()`
  * (plus the codec) sets nothing, the database assigns the auto-increment integer on
  * flush, and the `201` body + `Location` render the *encoded* wire token for the
  * newly assigned key. This is now a first-class create — the store-provided default

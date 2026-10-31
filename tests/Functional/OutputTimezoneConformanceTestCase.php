@@ -12,7 +12,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * The server output timezone (`json_api.output_timezone`, core ADR 0143), run against
+ * The server output timezone (`json_api.output_timezone`), run against
  * the in-memory provider ({@see InMemoryOutputTimezoneTest}) and the Doctrine provider
  * ({@see DoctrineOutputTimezoneTest}).
  *
@@ -22,7 +22,7 @@ use Symfony\Component\HttpFoundation\Response;
  * `outputTimezone()` keeps it; `Date` and `Time` never move.
  *
  * `shared-gigs` and `venues` are served by all three servers, so each server must
- * render them through its own resource instance (bundle ADR 0124).
+ * render them through its own resource instance.
  */
 abstract class OutputTimezoneConformanceTestCase extends JsonApiFunctionalTestCase
 {

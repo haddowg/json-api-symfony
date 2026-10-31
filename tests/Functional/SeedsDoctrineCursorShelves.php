@@ -20,7 +20,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\CursorWidgetEntityFactor
  * {@see CursorShelfWidgetEntity} association row per membership carrying the
  * shared {@see CursorShelfFixtures::slots()} pivot value — so the `pivotWidgets`
  * pivot keyset pages assert against the same content the in-memory plain keyset
- * pages walk (bundle ADR 0114).
+ * pages walk.
  */
 trait SeedsDoctrineCursorShelves
 {

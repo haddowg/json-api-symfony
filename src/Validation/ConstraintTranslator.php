@@ -110,8 +110,7 @@ final class ConstraintTranslator
      * The Symfony constraints enforcing one core constraint.
      *
      * The optional `$request` is threaded only into the closure-carrying
-     * {@see When} (its condition is widened to `($value, ?$request)`, core ADR
-     * 0080); every other constraint is request-independent. A `null` request — the
+     * {@see When} (its condition is widened to `($value, ?$request)`, core docs/constraints.md); every other constraint is request-independent. A `null` request — the
      * filter-side validator, the id-format check and the entity-level pass all pass
      * none — invokes the condition with `null` as its second argument, so an
      * existing `fn($value)` closure keeps binding unchanged.
@@ -232,7 +231,7 @@ final class ConstraintTranslator
      * closure, which Symfony's own `When` (an ExpressionLanguage string) cannot
      * express — so the conditional logic runs in the callback.
      *
-     * The condition is widened (core ADR 0080) to receive the request as its second
+     * The condition is widened (core docs/constraints.md) to receive the request as its second
      * argument, so an author can branch on the caller
      * (`when(fn($v, $req) => $req?->getHeaderLine('X-Role') === 'admin', …)`); the
      * `$request` captured here is whatever the validation context passed
@@ -246,8 +245,8 @@ final class ConstraintTranslator
 
         // Presence rules ({@see Required}/{@see Nullable}) carry no Symfony *value*
         // constraint — they are resolved by the {@see ResourceValidator} into the
-        // field's Required/Optional wrapper, request-aware even inside a `When`
-        // (ADR 0084). So a `when(…, fn($f) => $f->required())` is realised by
+        // field's Required/Optional wrapper, request-aware even inside a `When`. So a `when(…,
+        // fn($f) => $f->required())` is realised by
         // presence resolution, not here; the When-callback only validates the inner
         // *value* rules, skipping the presence markers (translating them would fail
         // loud — they have no value-constraint translation).

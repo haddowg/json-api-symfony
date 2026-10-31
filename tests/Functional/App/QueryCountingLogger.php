@@ -10,8 +10,7 @@ use Psr\Log\AbstractLogger;
  * A minimal PSR-3 logger that counts the SQL statements Doctrine's DBAL
  * {@see \Doctrine\DBAL\Logging\Middleware} reports — the query-count probe the
  * Doctrine relation-count suite uses to prove the `?withCount` batch issues ONE
- * grouped count per relation across a page of parents, not one count per parent
- * (bundle ADR 0052).
+ * grouped count per relation across a page of parents, not one count per parent.
  *
  * The DBAL logging middleware logs `"Executing query: …"` (and a `"statement"`
  * variant for prepared statements) at debug level once per executed statement, so

@@ -11,7 +11,7 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\RouterInterface;
 
 /**
- * The multi-server witness (bundle ADR 0034): a `default` server (top-level
+ * The multi-server witness: a `default` server (top-level
  * base_uri) and a named `admin` server (its own base_uri), with three resources —
  * one default-only, one admin-only, one on both — and the route loader imported once
  * per server (the admin import under `/admin`). Asserts each resource mounts only on

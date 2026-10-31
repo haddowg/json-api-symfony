@@ -8,12 +8,12 @@ use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Serializer\RelationshipCountInterface;
 
 /**
- * The bundle's fill of core's {@see RelationshipCountInterface} count seam (core
- * ADR 0057): a render-time lookup over a map the
+ * The bundle's fill of core's {@see RelationshipCountInterface} count seam: a render-time
+ * lookup over a map the
  * {@see \haddowg\JsonApiBundle\DataProvider\RelationCountBatcher} pre-computed for
  * the fetched page of parents, so the per-relationship `meta.total` core renders
  * for a `?withCount`-named countable relation reads a batched count rather than
- * triggering a per-object query (bundle ADR 0052).
+ * triggering a per-object query.
  *
  * The map is keyed by the parent's object identity ({@see \spl_object_id()}) then
  * by relation name, because the very object instances the batcher counted are the

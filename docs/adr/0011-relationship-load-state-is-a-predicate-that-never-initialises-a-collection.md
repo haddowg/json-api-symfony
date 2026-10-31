@@ -1,0 +1,3 @@
+# Relationship load-state is a Doctrine-only predicate that never initialises a collection
+
+Core renders a lazy relation's linkage only when it is already in memory and leaves "is it loaded?" to the data layer. The bundle answers only when Doctrine is wired: a to-many counts as loaded only when its `PersistentCollection` is already initialised (checked without iterating it), and a to-one always counts as loaded because a proxy carries its identifier. Without Doctrine, or for a relation the predicate cannot map to an association, everything counts as loaded, so the predicate never changes behaviour outside its competence and a plain collection read never initialises a collection just to render identifiers.

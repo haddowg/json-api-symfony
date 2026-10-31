@@ -11,7 +11,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Action\Doctrine\WidgetEntityFacto
 
 /**
  * {@see CustomActionConformanceTestCase} against the reference Doctrine
- * provider/persister: the same §10 action matrix as the in-memory witness, executed
+ * provider/persister: the same action matrix as the in-memory witness, executed
  * over an in-memory SQLite database created and seeded per test. Two `actionWidgets`
  * rows (ids 1, 2) are seeded so the resource-scope cases resolve their entity.
  */

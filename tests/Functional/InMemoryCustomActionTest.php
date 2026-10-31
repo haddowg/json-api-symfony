@@ -10,7 +10,7 @@ use PHPUnit\Framework\Attributes\Test;
 
 /**
  * {@see CustomActionConformanceTestCase} against the in-memory provider/persister:
- * the witness for the Doctrine action path, running the same §10 action matrix over
+ * the witness for the Doctrine action path, running the same action matrix over
  * the shared {@see \haddowg\JsonApiBundle\DataProvider\InMemoryStore} with no database.
  */
 final class InMemoryCustomActionTest extends CustomActionConformanceTestCase
@@ -25,7 +25,7 @@ final class InMemoryCustomActionTest extends CustomActionConformanceTestCase
     public function anAsLinkActionRendersOnAnIncludedResourceToo(): void
     {
         // The asLink contributor runs for EVERY rendered resource of the type, not only
-        // the primary one (bundle ADR 0091). Widget 1's `related` to-one points at widget
+        // the primary one. Widget 1's `related` to-one points at widget
         // 2, so `?include=related` renders widget 2 as an included member — which carries
         // the ungated `links.pin` member exactly as the primary resource does.
         //

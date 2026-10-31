@@ -15,7 +15,7 @@ use haddowg\JsonApiBundle\Operation\Operation;
 use haddowg\JsonApiBundle\Server\RelationsRegistry;
 
 /**
- * A standalone serializer for the resource-less `posts` type (ADR 0026): it renders
+ * A standalone serializer for the resource-less `posts` type: it renders
  * relationships without an {@see \haddowg\JsonApi\Resource\AbstractResource} by
  * opting into the resolver via {@see SerializerResolverAwareInterface} and building
  * the relationship callables from the type's standalone relations

@@ -21,7 +21,7 @@ use haddowg\JsonApi\Resource\Sort\SortByField;
  *
  * Pivot FILTERS are author-declared, not auto-derived: an app declares each pivot
  * filter explicitly in the relation's {@see RelationInterface::filters()} as a normal
- * core filter whose column is `pivot.`-prefixed (bundle ADR 0067). Sorts still
+ * core filter whose column is `pivot.`-prefixed. Sorts still
  * auto-derive (`?sort=position` works zero-config) — a deliberate filter/sort
  * asymmetry. The cast threads onto an author-declared pivot filter by the stripped
  * pivot column via {@see fieldForColumn()}.

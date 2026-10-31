@@ -11,7 +11,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The round-trip conformance guarantee (design §8, D11/G6 — bundle ADR 0081): the
+ * The round-trip conformance guarantee (docs/openapi.md): the
  * OpenAPI document the bundle **generates** is proven to **describe the responses the
  * bundle serves**. Each test fetches a real response and validates its body against the
  * generated component schema for that document kind, via the shipped

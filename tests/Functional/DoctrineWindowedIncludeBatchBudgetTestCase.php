@@ -9,7 +9,7 @@ use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
 use haddowg\JsonApiBundle\Tests\Functional\App\QueryCountingLogger;
 
 /**
- * The shared bounded-fetch PROOF for the windowed-include batch (bundle ADR 0065): a
+ * The shared bounded-fetch PROOF for the windowed-include batch: a
  * windowed include over a LARGE relation (article 1 with 50 comments) inspects the
  * {@see QueryCountingLogger}'s captured SQL to prove the over-fetch is GONE — the 6a batch
  * materialised every parent's whole related set then sliced in PHP.
@@ -30,7 +30,7 @@ abstract class DoctrineWindowedIncludeBatchBudgetTestCase extends JsonApiFunctio
 
     /**
      * Negotiates BOTH the Relationship-Queries (windowing) and Countable (`?withCount`)
-     * profiles — the count rides the bounded scan only when the count is opted into (G21).
+     * profiles — the count rides the bounded scan only when the count is opted into.
      */
     protected const string COUNTING_ACCEPT = 'application/vnd.api+json;profile="' . RelationshipQueriesProfile::URI . ' ' . CountableProfile::URI . '"';
 
@@ -48,7 +48,7 @@ abstract class DoctrineWindowedIncludeBatchBudgetTestCase extends JsonApiFunctio
     /**
      * The captured SQL of a FILTERED windowed pinnedComments include (a relatedQuery
      * `filter[bodyContains]` + a sort + the page-1 window), counted via `?withCount` — the
-     * case the native batch now folds onto ONE bounded query (bundle ADR 0066).
+     * case the native batch now folds onto ONE bounded query.
      *
      * @return list<string>
      */

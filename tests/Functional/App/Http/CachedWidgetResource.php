@@ -10,7 +10,7 @@ use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 
 /**
- * The declarative HTTP cache witness (bundle ADR 0054, gap G7): a resource-level
+ * The declarative HTTP cache witness: a resource-level
  * `cacheHeaders` (a one-minute public lifetime that varies on `Accept`) plus a
  * per-operation `collection` override (a shorter 30s lifetime) — proving the
  * resource-level directives apply to a single read and the per-read-shape override

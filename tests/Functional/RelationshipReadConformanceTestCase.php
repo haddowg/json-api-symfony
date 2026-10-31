@@ -8,7 +8,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The Phase-3 foundation acceptance suite: a resource's declared relationships
+ * The relationship-read acceptance suite: a resource's declared relationships
  * render as JSON:API linkage on reads. `GET /articles/{id}` and a collection
  * item from `GET /articles` must each carry a `relationships` member whose
  * to-one `author` is a single resource identifier and whose to-many `comments`
@@ -129,7 +129,7 @@ abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTest
     public function aRelationshipWithoutTheLoadStatePolicyAlwaysEmitsData(): void
     {
         // Regression: the `comments` to-many opts into eager linkage with
-        // `withData()` (a to-many is lazy by default since core ADR 0067), so its
+        // `withData()` (a to-many is lazy by default), so its
         // `data` member is always present on both providers regardless of any
         // injected load-state predicate — `withData()` overrides the lazy default.
         $relationships = $this->relationshipsOf($this->fetchResource('/articles/1'));
@@ -150,8 +150,8 @@ abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTest
     #[Group('spec:fetching-relationships')]
     public function aToOneRelationshipUnderTheLoadStatePolicyStillEmitsData(): void
     {
-        // `lazyAuthor` is a `BelongsTo` to-one, EAGER by default (core ADR 0067:
-        // its id is on the owner). Its `data` is always present — mirroring the
+        // `lazyAuthor` is a `BelongsTo` to-one, EAGER by default
+        // (its id is on the owner). Its `data` is always present — mirroring the
         // Doctrine predicate's "a to-one is always loaded" verdict (a lazy ManyToOne
         // proxy carries its identifier, so emitting it needs no DB load); the
         // in-memory kernel injects no predicate at all. So on BOTH providers the
@@ -200,7 +200,7 @@ abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTest
         );
     }
 
-    // --- convention self links (core ADR 0054) ---------------------------------
+    // --- convention self links (core docs/links-and-meta.md) ---------------------------------
 
     #[Test]
     #[Group('spec:document-resource-objects')]

@@ -74,7 +74,7 @@ final class DoctrineExtensionTest extends JsonApiFunctionalTestCase
     public function windowedTotalsCountTheScopedCollection(): void
     {
         // The scoped COUNT is opted into with `?withCount=_self_` under the Countable
-        // profile (G21: the `articles` paginator is count-free by default), so the
+        // profile (the `articles` paginator is count-free by default), so the
         // total reflects the extension-scoped (guide-only) collection.
         $document = $this->decode($this->handle('/articles?sort=title&page[number]=2&page[size]=2&withCount=_self_', extraServer: [
             'HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . CountableProfile::URI . '"',

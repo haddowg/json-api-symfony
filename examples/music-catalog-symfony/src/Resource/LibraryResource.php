@@ -14,7 +14,7 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Library;
 /**
  * The `libraries` resource type, mapped to its backing {@see Library} entity.
  *
- * It is the **polymorphic to-many witness** (seam 2, ADR 0032): `items` is a mixed
+ * It is the **polymorphic to-many witness** (seam 2): `items` is a mixed
  * collection of tracks, albums, and artists. The Doctrine reference provider
  * **throws** on a `MorphToMany` (members span entity classes), so the NET-NEW
  * `LibraryItemsProvider` (built in the next phase) resolves the mixed members

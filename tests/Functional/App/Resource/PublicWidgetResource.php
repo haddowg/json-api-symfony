@@ -11,7 +11,7 @@ use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 
 /**
- * The default-only resource of the multi-server witness (ADR 0034): exposed on the
+ * The default-only resource of the multi-server witness: exposed on the
  * implicit `default` server (no `server` argument). The self-referential `related`
  * relation renders a convention `links.self` carrying the server's base_uri, so the
  * resolved Server can be asserted by URL.

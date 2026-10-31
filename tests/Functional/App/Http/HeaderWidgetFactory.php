@@ -8,8 +8,8 @@ use haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 
 /**
- * Wires a shared in-memory store per response-header witness type (bundle ADR
- * 0054): a provider seeded with one row + a persister over the same store, so a
+ * Wires a shared in-memory store per response-header witness type: a provider seeded with one
+ * row + a persister over the same store, so a
  * write is immediately readable and a missing id is a clean `404` (the
  * not-cached-on-error witness). One provider instance per type is memoized so the
  * provider and its persister share a store within a boot.

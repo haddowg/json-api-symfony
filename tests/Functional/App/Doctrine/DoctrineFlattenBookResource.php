@@ -8,8 +8,8 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\BaseFlattenBookResource;
 
 /**
- * The Doctrine `books` resource of the flattened-attribute (`on()`) fixture (bundle
- * ADR 0085): {@see BaseFlattenBookResource} mapped to {@see FlattenBookEntity} via
+ * The Doctrine `books` resource of the flattened-attribute (`on()`) fixture: {@see
+ * BaseFlattenBookResource} mapped to {@see FlattenBookEntity} via
  * `#[AsJsonApiResource(entity: …)]`, served by the bundle's `-128` fallback Doctrine
  * provider/persister. The flattened `authorName` read/write, the computed `display`,
  * and the `author`/`publisher` eager loads must behave identically to the in-memory

@@ -13,13 +13,13 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 
 /**
  * Collects the declarative response-header config a resource declares via
- * `#[AsJsonApiResource(cacheHeaders: …, deprecation: …, sunset: …)]` (bundle ADR
- * 0054) — the extension JSON-encodes it into the `response_headers` tag attribute
+ * `#[AsJsonApiResource(cacheHeaders: …, deprecation: …, sunset: …)]` — the extension
+ * JSON-encodes it into the `response_headers` tag attribute
  * on the {@see JsonApiBundle::RESOURCE_TAG} — and assembles a scalar
  * `type → {cache, cache_operations, deprecation}` map per server, injected into the
  * {@see ResponseHeadersRegistry} the {@see \haddowg\JsonApiBundle\EventListener\ResponseHeadersListener}
  * queries. The default server's map is `$byType` and every other server's goes under
- * `$servers`; a resource on several servers is recorded under each (bundle ADR 0144).
+ * `$servers`; a resource on several servers is recorded under each.
  *
  * The map flows as plain scalars (the container cannot dump value objects as a
  * service argument); the registry rebuilds the {@see \haddowg\JsonApiBundle\Http\CacheHeaders}

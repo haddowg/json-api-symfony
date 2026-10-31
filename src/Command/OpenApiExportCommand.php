@@ -16,8 +16,8 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 use Symfony\Component\Yaml\Yaml;
 
 /**
- * Exports a server's OpenAPI 3.1 document to JSON or YAML — to a file, or to stdout
- * (design §7, D6/D13). The CLI export is **always available** (independent of the
+ * Exports a server's OpenAPI 3.1 document to JSON or YAML — to a file, or to stdout.
+ * The CLI export is **always available** (independent of the
  * HTTP expose gate), so a CI pipeline can spec-diff or publish the document with no
  * web exposure.
  *
@@ -27,7 +27,7 @@ use Symfony\Component\Yaml\Yaml;
  * `--compact` writes the JSON on one line, with the same encoding as the pretty default.
  * YAML has no compact form, so `--compact` with `--format=yaml` is rejected.
  *
- * Each operation example the projector could not build (core ADR 0176) is printed as a
+ * Each operation example the projector could not build is printed as a
  * warning on stderr, so stdout stays a clean document. An output with no separate stderr
  * gets them only when the document goes to a file. `--strict` turns any of them into a
  * failure and writes no document.

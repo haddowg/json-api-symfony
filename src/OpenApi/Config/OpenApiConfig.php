@@ -8,7 +8,7 @@ use haddowg\JsonApi\OpenApi\EnumDescriptionMode;
 use haddowg\JsonApiBundle\OpenApi\Metadata\ServerDocumentConfig;
 
 /**
- * The resolved `json_api.openapi.*` configuration (design §6), built once at compile
+ * The resolved `json_api.openapi.*` configuration, built once at compile
  * time by {@see OpenApiConfigResolver} and threaded through the bundle's OpenAPI
  * wiring.
  *

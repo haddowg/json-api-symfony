@@ -12,7 +12,7 @@ use haddowg\JsonApi\Resource\Sort\UnsupportedSort;
 
 /**
  * Executes a requested sort order against a Doctrine `QueryBuilder`: the
- * directives arrive most significant first (one composite call, core ADR 0016)
+ * directives arrive most significant first (one composite call)
  * and append as sequential `addOrderBy` terms, so the request's first `sort`
  * field is the primary key, as the spec requires. Any non-{@see SortByField}
  * directive (a computed/multi-column sort) has no generic DQL translation and
@@ -23,7 +23,7 @@ use haddowg\JsonApi\Resource\Sort\UnsupportedSort;
  * {@see \haddowg\JsonApiBundle\DataProvider\CriteriaApplier} can append a directive
  * on a NON-root alias of the query so the pivot related-collection path builds its
  * whole `ORDER BY` in the request's directive order across two aliases (a pivot key
- * on the `pivot` join, a related key on the root — bundle ADR 0059). `apply()` is
+ * on the `pivot` join, a related key on the root). `apply()` is
  * `applyOn()` on the query root, so every non-pivot path stays byte-identical.
  *
  * A directive whose sort is not a {@see SortByField} is delegated to a registered

@@ -21,7 +21,7 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 /**
- * The operation-exposure witness kernel (ADR 0025): three types that each declare
+ * The operation-exposure witness kernel: three types that each declare
  * a different operation allow-list, so the route loader's per-operation emission
  * can be asserted against the route collection.
  *

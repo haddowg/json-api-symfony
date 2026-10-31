@@ -11,8 +11,8 @@ use PHPUnit\Framework\Attributes\Test;
  * Dual-provider acceptance for the server-composed filter groups
  * ({@see \haddowg\JsonApi\Resource\Filter\WhereAll} /
  * {@see \haddowg\JsonApi\Resource\Filter\WhereAny}) and the
- * {@see \haddowg\JsonApi\Resource\Filter\Where::fixed()} wither (#24b, core ADR
- * 0129), declared on {@see \haddowg\JsonApiBundle\Tests\Functional\App\Resource\ConstrainedFilterArticleResource}
+ * {@see \haddowg\JsonApi\Resource\Filter\Where::fixed()} wither (#24b), declared on {@see
+ * \haddowg\JsonApiBundle\Tests\Functional\App\Resource\ConstrainedFilterArticleResource}
  * and asserted end-to-end over HTTP.
  *
  * Abstract over the kernel so the **same assertions** run against the in-memory

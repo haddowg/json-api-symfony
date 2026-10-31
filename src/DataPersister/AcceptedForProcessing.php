@@ -19,7 +19,7 @@ namespace haddowg\JsonApiBundle\DataPersister;
  * `303 See Other` (see {@see \haddowg\JsonApiBundle\Action\ActionContext::seeOther()})
  * pointing at the produced resource — the JSON:API 1.1 asynchronous-processing
  * lifecycle. Nothing about *how* the work is queued is baked in; the persister owns
- * that decision (bundle ADR 0110).
+ * that decision.
  *
  * The `202` body is either the pollable job resource ({@see withJob()}, rendered
  * through the job type's registered serializer) or a meta-only status document

@@ -10,7 +10,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The Slice-4 stage-B serving witness: boots the {@see OpenApiTestKernel}, hits
+ * The serving witness: boots the {@see OpenApiTestKernel}, hits
  * `GET /docs.json`, and asserts the served OpenAPI document is **well-formed** (a valid
  * OAS 3.1 document by the official meta-schema) and **structurally matches** the
  * kernel's actual surface — the products/categories paths exist with the right methods,
@@ -109,7 +109,7 @@ final class OpenApiServingTest extends JsonApiFunctionalTestCase
         self::assertArrayHasKey('post', $this->nested($paths, '/products/-actions/recalculate-prices'));
 
         // The action returns 204 (responds: [new NoContent()]), so the document advertises a 204
-        // response and NOT a 200 document body (§4.5).
+        // response and NOT a 200 document body.
         // The declared summary and description project onto the operation.
         $actionOperation = $this->nested($paths, '/products/-actions/recalculate-prices', 'post');
         self::assertSame('Recalculate every product price', $actionOperation['summary'] ?? null);
@@ -120,8 +120,7 @@ final class OpenApiServingTest extends JsonApiFunctionalTestCase
         self::assertArrayNotHasKey('200', $actionResponses);
 
         // The meta-output action (responds: [new MetaResult()]) advertises a 200 referencing the
-        // shared MetaDocument component — not a products resource body and not a 204
-        // (core ADR 0102).
+        // shared MetaDocument component — not a products resource body and not a 204.
         self::assertArrayHasKey('/products/-actions/summarize', $paths);
         $summarizeResponses = $this->nested($paths, '/products/-actions/summarize', 'post', 'responses');
         self::assertArrayHasKey('200', $summarizeResponses);
@@ -148,12 +147,12 @@ final class OpenApiServingTest extends JsonApiFunctionalTestCase
         self::assertArrayHasKey('CategoriesResource', $schemas);
         // The shared error document.
         self::assertArrayHasKey('ErrorDocument', $schemas);
-        // The backed enum is hoisted into a reusable named component (§4.8).
+        // The backed enum is hoisted into a reusable named component.
         self::assertArrayHasKey('CatalogStatus', $schemas);
         self::assertSame(['draft', 'published', 'archived'], $this->nested($schemas, 'CatalogStatus')['enum'] ?? null);
         // The meta-output action (SummarizeCatalog, responds: [new MetaResult()]) causes the shared
         // meta-document component to join the schema set: a meta-required object with no
-        // `data` (core ADR 0102).
+        // `data`.
         self::assertArrayHasKey('MetaDocument', $schemas);
         self::assertSame(['meta'], $this->nested($schemas, 'MetaDocument', 'required'));
         self::assertArrayNotHasKey('data', $this->nested($schemas, 'MetaDocument', 'properties'));
@@ -229,7 +228,7 @@ final class OpenApiServingTest extends JsonApiFunctionalTestCase
         // include + the sparse-fieldset param for the primary type.
         self::assertContains('include', $names);
         self::assertContains('fields[products]', $names);
-        // The page family projects as one `page` deepObject parameter (ADR 0130),
+        // The page family projects as one `page` deepObject parameter,
         // whose object schema carries the page-based number/size keys.
         self::assertContains('page', $names);
         $pageIndex = (string) (int) \array_search('page', $names, true);

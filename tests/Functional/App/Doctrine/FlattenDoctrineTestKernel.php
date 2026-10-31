@@ -21,8 +21,8 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 use Zenstruck\Foundry\ZenstruckFoundryBundle;
 
 /**
- * The Doctrine half of the flattened-attribute (`on()`) conformance pair (bundle ADR
- * 0085): {@see DoctrineFlattenBookResource} (flattened single-hop `authorName`,
+ * The Doctrine half of the flattened-attribute (`on()`) conformance pair: {@see
+ * DoctrineFlattenBookResource} (flattened single-hop `authorName`,
  * multi-hop `authorCountry` (`on('author.country')`), computed `display`) mapped to
  * {@see FlattenBookEntity}, with the related {@see DoctrineFlattenAuthorResource} /
  * {@see DoctrineFlattenCountryResource} / {@see DoctrineFlattenPublisherResource}

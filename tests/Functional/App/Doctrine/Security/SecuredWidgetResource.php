@@ -17,11 +17,11 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 /**
  * The `securedWidgets` resource: a default `is_granted('ROLE_USER')` gates read and
  * update, while per-operation `ROLE_ADMIN` overrides gate create and delete — so the
- * per-operation overrides are exercised independently of the default (bundle ADR 0043).
+ * per-operation overrides are exercised independently of the default.
  *
  * It is also the Doctrine twin of the in-memory
  * {@see \haddowg\JsonApiBundle\Tests\Functional\App\Security\InMemorySecuredWidgetResource}
- * for **per-relation security** (core ADR 0099 / bundle ADR 0100) — a relation
+ * for **per-relation security** — a relation
  * authorized independently of its parent. Four self-relations share the `partner`
  * backing, differing only in their gate:
  *  - `partner`       inherits the parent's read/update gate (the baseline);

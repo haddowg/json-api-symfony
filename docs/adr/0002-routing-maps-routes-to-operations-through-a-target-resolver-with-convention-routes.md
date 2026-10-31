@@ -1,0 +1,3 @@
+# Routing maps Symfony routes to operations through a Target resolver, with convention routes on top
+
+Core ships no router, so the bundle's stable contract is a Target resolver that builds the `Operation\Target` from route defaults (`_jsonapi_type`, `_jsonapi_server`), and the route loader that emits the standard endpoint set per registered type is removable sugar over it; an application wanting explicit routes declares its own and uses the resolver. This keeps routing router-native (real named routes, per-route firewall and security, no catch-all path parsing), and server selection is just a route default.

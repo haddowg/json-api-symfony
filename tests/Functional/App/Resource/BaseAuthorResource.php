@@ -29,7 +29,7 @@ use haddowg\JsonApi\Resource\Sort\SortDirective;
  * count needs no order and roots on the parent, so the related resource's default
  * order MUST be dropped from the count criteria — otherwise the grouped count
  * would emit `ORDER BY parent.name`, a related-entity column against the parent
- * root, which a SQL engine rejects (bundle ADR 0060). The default order still
+ * root, which a SQL engine rejects. The default order still
  * applies to the real `/authors` and `/articles/{id}/editors` fetches (every
  * order-asserting test there passes an explicit `?sort`, which overrides it).
  */
@@ -40,7 +40,7 @@ abstract class BaseAuthorResource extends AbstractResource
     public function fields(): array
     {
         return [
-            // Store-provided id: a database auto-increment assigns it (core ADR 0048).
+            // Store-provided id: a database auto-increment assigns it (core docs/ids.md).
             Id::make(),
             Str::make('name')->sortable(),
         ];

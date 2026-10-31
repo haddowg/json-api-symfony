@@ -21,7 +21,7 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 /**
- * The Doctrine half of the fail-loud eager-load validation pair (bundle ADR 0085):
+ * The Doctrine half of the fail-loud eager-load validation pair:
  * the same subject `products` + related `brands` / `regions` resources as the
  * in-memory kernel, but booted in a Doctrine-configured app (DoctrineBundle + a DBAL
  * connection), so the {@see \haddowg\JsonApiBundle\Serializer\EagerLoadWarmer} is

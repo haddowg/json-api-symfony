@@ -21,22 +21,22 @@ use haddowg\JsonApiBundle\Operation\Operation;
  *  - a **constrained id** (`matchAs('[0-9]+')`) so the `{id}` path parameter advertises
  *    the anchored `^(?:[0-9]+)$` pattern — the idPattern-derivation witness;
  *  - **explicit OpenAPI tags** (`Catalog`) so its operations group under a config-
- *    defined tag (design §4.7);
+ *    defined tag;
  *  - a **backed-enum** attribute (`status`) so the document emits the reusable named
- *    `CatalogStatus` component (§4.8);
+ *    `CatalogStatus` component;
  *  - **filters** + **sorts** so the collection operation enumerates `filter[…]` and
- *    `sort` parameters (§4.4);
+ *    `sort` parameters;
  *  - a to-one `category` and a to-many `tags` **relation** so the relationship /
  *    related endpoints appear; and
  *  - a `securityRead` + `securityCreate` **expression** so `FetchOne` and `Create`
- *    are reported as secured operations (§4.6/D8) — the expression is `true` so it is
+ *    are reported as secured operations — the expression is `true` so it is
  *    inert at runtime but present for the metadata projection.
  */
 #[AsJsonApiResource(
     tags: ['Catalog'],
     securityRead: 'true',
     securityCreate: 'true',
-    // OpenAPI description overrides via the attribute (bundle ADR 0092): the
+    // OpenAPI description overrides via the attribute (docs/openapi.md): the
     // resource-object schema description, and a per-operation override on the
     // collection read (keyed by the Operation case name). Operations without an
     // override (FetchOne/Create/Update/Delete) keep the generated default.
@@ -44,7 +44,7 @@ use haddowg\JsonApiBundle\Operation\Operation;
     operationDescriptions: [
         Operation::FetchCollection->name => 'Browse the product catalog.',
     ],
-    // Vendor extensions (bundle ADR 0127): x-feature on every products operation,
+    // Vendor extensions (docs/openapi.md): x-feature on every products operation,
     // overridden for Create and joined by x-rate-limit on Delete.
     extensions: ['x-feature' => 'catalog'],
     operationExtensions: [
@@ -69,7 +69,7 @@ final class ProductResource extends AbstractResource
             Str::make('name')->sortable()->required()->minLength(2)->maxLength(120),
             Str::make('status')->sortable()->enum(CatalogStatus::class),
             // A relation description (->describedAs()) flows onto the related +
-            // relationship operation descriptions for this relation (bundle ADR 0092).
+            // relationship operation descriptions for this relation (docs/openapi.md).
             BelongsTo::make('category', 'categories')->describedAs('The catalog category this product belongs to.'),
             HasMany::make('tags', 'categories')->storedAs('tagIds'),
         ];

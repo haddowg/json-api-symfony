@@ -52,7 +52,7 @@ abstract class WriteConformanceTestCase extends JsonApiFunctionalTestCase
 
         // The created resource carries its convention self link: the persister has
         // assigned the id by render time, so the resource self is present and equal
-        // to the Location (core ADR 0054).
+        // to the Location (core docs/links-and-meta.md).
         $links = $data['links'] ?? null;
         self::assertIsArray($links);
         self::assertSame(['href' => 'https://example.test/articles/' . $id], $links['self'] ?? null);
@@ -213,7 +213,7 @@ abstract class WriteConformanceTestCase extends JsonApiFunctionalTestCase
     public function creatingWithALocalIdOnThePrimaryResourceReturns400(): void
     {
         // `lid` is an Atomic Operations member; a standalone create carrying one is a
-        // 400 (not silently ignored), on both providers (core ADR 0104).
+        // 400 (not silently ignored), on both providers.
         $response = $this->handle('/articles', 'POST', [
             'data' => [
                 'type' => 'articles',

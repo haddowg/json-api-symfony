@@ -18,8 +18,8 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * A write response (`POST /{type}`, `PATCH /{type}/{id}`) is the SAME
  * {@see \haddowg\JsonApi\Response\DataResponse::fromResource()} value object a read
- * renders, so it honours the profile and `?withCount` identically (bundle ADRs
- * 0052, 0053, 0086): a write with `?include` + a `relatedQuery` filter renders the
+ * renders, so it honours the profile and `?withCount` identically: a write with `?include` + a
+ * `relatedQuery` filter renders the
  * included members FILTERED to page 1 of the filtered set, a write with
  * `?withCount` reports the relationship object's `meta.total`, and a `relatedQuery`
  * on a relation whose data does NOT render this request (a lazy, not-included
@@ -133,7 +133,7 @@ abstract class WriteResponseProfileConformanceTestCase extends JsonApiFunctional
         // `lazyComments` is a lazy, links-only-by-default to-many over the SEPARATE
         // `featuredComments` column (article 1 features [1, 2]). It is NOT included and
         // NOT `withData()`, so its data does not render this PATCH — the window must NOT
-        // fire (bundle ADR 0086), consistent with reads. A relatedQuery filter that
+        // fire, consistent with reads. A relatedQuery filter that
         // would narrow it to comment 1 alone has NO effect: the relationship is never
         // the filtered singleton, and no window pagination link mirroring the filter
         // appears.

@@ -71,7 +71,7 @@ final class RelationshipReadTest extends MusicCatalogKernelTestCase
     public function aLoadStateOptInToManyEmitsLinksWithoutForcingAFetch(): void
     {
         // AlbumResource's `tracks` to-many is lazy by default (a to-many's per-type
-        // default since core ADR 0067): on a lazy Doctrine collection it emits the
+        // default): on a lazy Doctrine collection it emits the
         // convention links but NO `data` member — the load-state seam reports the
         // uninitialised collection as "not loaded", so the identifiers are not
         // materialised.
@@ -153,7 +153,7 @@ final class RelationshipReadTest extends MusicCatalogKernelTestCase
     #[Group('spec:fetching-filtering')]
     public function aRelatedToOneFilterThatExcludesTheTargetRendersDataNull(): void
     {
-        // null-a-to-one-when-a-relation-filter-excludes-its-target (bundle ADR 0068):
+        // null-a-to-one-when-a-relation-filter-excludes-its-target:
         // the album's `artist` to-one declares a relation-scoped `filter[name]` (the
         // related `artists.name` column). On the related endpoint the filter resolves
         // against the single target — a matching name renders the artist; a mismatch

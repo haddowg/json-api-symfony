@@ -124,8 +124,12 @@ final readonly class AsJsonApiResource
 > `sunsetLink`) documented in [configuration](configuration.md#response-headers-caching-and-deprecation),
 > and the per-operation **response-declaration** arguments (`create`, `update`,
 > `delete`, `fetchOne`, `fetchCollection`) documented in
-> [Per-operation response declarations](#per-operation-response-declarations) below —
-> all omitted from the snippet above for brevity.
+> [Per-operation response declarations](#per-operation-response-declarations) below,
+> the OpenAPI description arguments (`tags`, `description`, `operationDescriptions`,
+> `singular`, `extensions`, `operationExtensions`, `operationExamples`) documented in
+> [OpenAPI customisation](openapi.md#customisation), and the per-operation OAuth
+> `operationScopes` documented in [scopes](scopes.md#overriding-one-operation) — all
+> omitted from the snippet above for brevity.
 
 A second job: the attribute **also tags a class that is *not* an `AbstractResource`
 subclass** as a resource. So if you build a type from capabilities rather than the
@@ -365,7 +369,7 @@ skipped on every request that does not ask for it. It stays a fully declared mem
 field — naming it is *not* rejected. This is the opt-in inverse of the usual sparse
 fieldset (present unless excluded), and is orthogonal to `hidden()` / `writeOnly()`
 (never rendered even when named). Applies to relations too. Witnessed over HTTP in
-`tests/Functional/SparseByDefaultFieldTest.php` (core ADR 0117).
+`tests/Functional/SparseByDefaultFieldTest.php` (see core's [fields](https://github.com/haddowg/json-api/blob/main/docs/fields.md)).
 
 ### Choosing a relationship's target type
 

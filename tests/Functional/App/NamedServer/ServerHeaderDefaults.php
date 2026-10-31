@@ -7,7 +7,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\NamedServer;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 
 /**
- * The named server's own response-header defaults (bundle ADR 0164): a sunset and its
+ * The named server's own response-header defaults: a sunset and its
  * link, a 30s cache varying on Accept-Language, and no deprecation of its own.
  */
 final class ServerHeaderDefaults

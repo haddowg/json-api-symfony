@@ -13,8 +13,7 @@ use PHPUnit\Framework\Attributes\Test;
  * the shared `cursorShelves` → `pivotWidgets` declaration (a `belongsToMany`
  * carrying a `slot` pivot field, the relation declaring its OWN
  * {@see \haddowg\JsonApi\Pagination\CursorPaginator}) and the
- * {@see \haddowg\JsonApiBundle\Tests\Functional\App\CursorShelfFixtures} seed —
- * bundle ADR 0114.
+ * {@see \haddowg\JsonApiBundle\Tests\Functional\App\CursorShelfFixtures} seed.
  *
  * The page-walk assertions are byte-identical on the in-memory
  * ({@see InMemoryPivotRelatedCursorTest}) and Doctrine-sqlite

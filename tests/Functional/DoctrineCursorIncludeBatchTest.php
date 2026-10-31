@@ -19,8 +19,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\DoctrineJsonApiTestKerne
  * {@see CursorIncludeBatchConformanceTestCase} against the Doctrine provider: the
  * same assertions as the in-memory witness, with each parent's included cursor page
  * minted through the per-parent keyset push-down inside the RelationScope parent
- * scope. A divergence from the witness localizes to the Doctrine keyset execution
- * (bundle ADR 0063).
+ * scope. A divergence from the witness localizes to the Doctrine keyset execution.
  */
 final class DoctrineCursorIncludeBatchTest extends CursorIncludeBatchConformanceTestCase
 {

@@ -9,7 +9,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\ConstrainedFilterInMemoryTestKern
 /**
  * {@see FilterValueConstraintConformanceTestCase} against the in-memory provider —
  * the conformance witness half of the dual-provider contract for filter-value
- * constraints (bundle ADR 0048). The in-memory provider is seeded at construction
+ * constraints (docs/data-layer.md). The in-memory provider is seeded at construction
  * from the canonical fixtures, so no per-test seeding is needed.
  */
 final class InMemoryFilterValueConstraintTest extends FilterValueConstraintConformanceTestCase

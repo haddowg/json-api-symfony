@@ -14,7 +14,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\DoctrineJsonApiTestKerne
  * {@see ReadQueryConformanceTestCase} against the Doctrine provider: the same
  * assertions as the in-memory suite, executed as real DQL over an in-memory
  * SQLite database created per test and seeded through the
- * {@see ArticleEntityFactory} (Foundry). This is the Phase-1 functional slice —
+ * {@see ArticleEntityFactory} (Foundry). This is the read-query functional slice —
  * filter/sort/pagination pushed down to a real QueryBuilder.
  */
 final class DoctrineReadQueryTest extends ReadQueryConformanceTestCase

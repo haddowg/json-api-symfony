@@ -8,7 +8,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * Relation-scoped filters/sorts (bundle ADR 0044, backs `relationships.md`): a
+ * Relation-scoped filters/sorts (backs `relationships.md`): a
  * RELATION may declare extra `filter`/`sort` keys that augment ONLY its
  * related-collection endpoint `GET /{type}/{id}/{rel}` — not the primary
  * collection of the related type.

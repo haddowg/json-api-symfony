@@ -11,7 +11,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Links from a server whose routes are imported under `/api/v5` with an empty
- * `base_uri` (bundle ADR 0121). Core bases every link on the request origin alone,
+ * `base_uri`. Core bases every link on the request origin alone,
  * which knows nothing of the import prefix; the bundle hands core the effective base
  * `origin + mount` per request, so resource links gain the mount and document links
  * (which reuse the request path) carry it exactly once.

@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The Phase-4 P7 acceptance suite: the related to-many endpoint
+ * The acceptance suite: the related to-many endpoint
  * `GET /{type}/{id}/{relationship}` as a real queryable, paginated collection on
  * both providers.
  *
@@ -106,7 +106,7 @@ abstract class RelatedCollectionParamsConformanceTestCase extends JsonApiFunctio
         // → related resource → server default) — which carries the page-size cap.
         // All members render, with page meta from that default. `comments` is NOT
         // countable(), so the page is count-FREE: page meta is present (number/size)
-        // but carries no `total`, and the links carry no `last` (bundle ADR 0052).
+        // but carries no `total`, and the links carry no `last`.
         $document = $this->fetchDocument('/articles/1/comments');
 
         self::assertSame(['1', '2'], $this->ids($document));
@@ -151,11 +151,11 @@ abstract class RelatedCollectionParamsConformanceTestCase extends JsonApiFunctio
     #[Group('spec:fetching-pagination')]
     public function aCountableRelatedCollectionEmitsTotalAndLastUnderWithCountSelf(): void
     {
-        // G21 §6b: `pagedComments` is countable(), so a client opts into the total via
+        // `pagedComments` is countable(), so a client opts into the total via
         // `?withCount=_self_` under the Countable profile, and the single total fans to
         // BOTH the top-level meta.total and meta.page.total, plus a `last` link. Core's
         // `_self_` gate is relation-aware on a related render (it keys on the *relation*,
-        // not the related-type resource — core ADR 0068 / bundle ADR 0075), so the
+        // not the related-type resource), so the
         // countable relation's collection is counted even though the `comments` resource
         // is not itself countable().
         $response = $this->handle(self::BASE_URI . '/articles/1/pagedComments?withCount=_self_&page[size]=1&page[number]=1', extraServer: [
@@ -184,7 +184,7 @@ abstract class RelatedCollectionParamsConformanceTestCase extends JsonApiFunctio
     #[Group('spec:fetching-pagination')]
     public function aCountableRelatedCollectionPaginatesCountFreeWithoutWithCount(): void
     {
-        // The G21 §6b default: even a countable() relation paginates count-FREE until
+        // The default: even a countable() relation paginates count-FREE until
         // the client asks — a bare windowed `pagedComments` fetch carries no total/last,
         // only `next` (driven by the over-fetch probe).
         $document = $this->fetchDocument('/articles/1/pagedComments?page[size]=1&page[number]=1');
@@ -211,7 +211,7 @@ abstract class RelatedCollectionParamsConformanceTestCase extends JsonApiFunctio
     {
         // `comments` is NOT countable(), so `?withCount=_self_` on its related endpoint
         // is rejected by the handler's gate (CollectionDocument runs no document-level
-        // countable validation) — G21 §6b row 4.
+        // countable validation).
         $response = $this->handle(self::BASE_URI . '/articles/1/comments?withCount=_self_', extraServer: [
             'HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . CountableProfile::URI . '"',
         ]);
@@ -228,7 +228,7 @@ abstract class RelatedCollectionParamsConformanceTestCase extends JsonApiFunctio
         // `?withCount=_self_` is invalid there regardless of the related resource's
         // countability — rejected by the handler's to-one gate (and core's document
         // gate, which `RelatedResponse::fromResource` carries `selfCountable:false`
-        // into). G21 §6b: `_self_` names the *primary collection*; a to-one has none.
+        // into). `_self_` names the *primary collection*; a to-one has none.
         $response = $this->handle(self::BASE_URI . '/articles/1/author?withCount=_self_', extraServer: [
             'HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . CountableProfile::URI . '"',
         ]);
@@ -255,7 +255,7 @@ abstract class RelatedCollectionParamsConformanceTestCase extends JsonApiFunctio
         self::assertSame(100, $page['perPage'] ?? null, 'page[size] is clamped to the cap, not 1000000');
     }
 
-    // --- relation-scoped filters and sorts (core ADR 0051) -------------------
+    // --- relation-scoped filters and sorts (core docs/relations.md) -------------------
 
     #[Test]
     #[Group('spec:fetching-relationships')]
@@ -378,7 +378,7 @@ abstract class RelatedCollectionParamsConformanceTestCase extends JsonApiFunctio
     /**
      * Fetches `$path` with `?withCount=_self_` appended and the Countable profile
      * negotiated, so a `countable()` relation's related endpoint renders the total
-     * (`meta.total` + `meta.page.total` + the `last` link) — the §6b client count.
+     * (`meta.total` + `meta.page.total` + the `last` link) — the client-requested count.
      *
      * @return array<string, mixed>
      */

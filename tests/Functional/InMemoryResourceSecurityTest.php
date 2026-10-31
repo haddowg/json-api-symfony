@@ -9,8 +9,8 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Security\InMemorySecurityTestKern
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The declarative-authorization suite over the **in-memory** provider/persister
- * (bundle ADR 0043): proves the authorization seam is provider-agnostic — the same
+ * The declarative-authorization suite over the **in-memory** provider/persister: proves the
+ * authorization seam is provider-agnostic — the same
  * `securedWidgets` role gates behave identically without Doctrine, and a denied
  * write leaves the in-memory store unchanged.
  *

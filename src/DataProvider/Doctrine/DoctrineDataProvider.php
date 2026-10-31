@@ -68,12 +68,12 @@ use haddowg\JsonApiBundle\Server\IdEncoderResolver;
  * the JSON:API `id` is the wire form of a distinct storage key, so this provider
  * **decodes** the route `{id}` to its storage key (via the injected
  * {@see IdEncoderResolver}) before every lookup — the wire-id SPI never changes,
- * only the Doctrine impl decodes (ADR 0038). An undecodable id short-circuits to a
+ * only the Doctrine impl decodes. An undecodable id short-circuits to a
  * `404` (no query runs). A type with no encoder decodes to itself, so the path is
  * identical to today.
  *
  * Includes are batch eager-loaded by the provider-agnostic
- * {@see \haddowg\JsonApiBundle\DataProvider\RelatedIncludeBatcher} (bundle ADR 0062),
+ * {@see \haddowg\JsonApiBundle\DataProvider\RelatedIncludeBatcher},
  * which drives this provider's {@see fetchRelatedCollectionBatch()} in plain-include
  * (fast-path) mode one query per level — the successor to the dissolved
  * `PreloadsIncludesInterface` + `shipmonk/doctrine-entity-preloader`. A relation this
@@ -120,10 +120,10 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
      * @param IdEncoderResolver                      $idEncoders        resolves a type's id encoder (route `{id}` decode)
      * @param iterable<DoctrineExtensionInterface>   $extensions        in descending tag-priority order
      * @param ?PivotAssociationResolver              $pivotAssociations resolves a `belongsToMany` pivot relation's association entity (always wired under Doctrine)
-     * @param bool                                   $windowFunctions   whether the windowed-include batch runs the bounded ROW_NUMBER/COUNT OVER native query (`json_api.doctrine.window_functions`, default true) or the per-parent bounded fallback (bundle ADR 0065)
+     * @param bool                                   $windowFunctions   whether the windowed-include batch runs the bounded ROW_NUMBER/COUNT OVER native query (`json_api.doctrine.window_functions`, default true) or the per-parent bounded fallback
      * @param iterable<DoctrineFilterArmInterface>   $filterArms        author arms for custom `FilterInterface` types (autoconfigured tag)
      * @param iterable<DoctrineSortArmInterface>     $sortArms          author arms for custom `SortInterface` types (autoconfigured tag)
-     * @param ?RequestScopedOutputTimezone           $outputTimezone    the current server's output zone, applied to the pivot DateTime values the provider renders (bundle ADR 0123)
+     * @param ?RequestScopedOutputTimezone           $outputTimezone    the current server's output zone, applied to the pivot DateTime values the provider renders
      */
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
@@ -168,7 +168,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
         // Decode the wire id to its storage key when the type declares an encoder.
         // An undecodable id is a 404: no entity holds that key, so short-circuit
-        // without querying (the SPI stays wire-id — only this impl decodes; ADR 0038).
+        // without querying (the SPI stays wire-id — only this impl decodes).
         $encoder = $this->idEncoders->encoderFor($type);
         if ($encoder !== null) {
             $storageKey = $encoder->decode($id);
@@ -265,18 +265,18 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         // WHERE + the forced NULL=largest ORDER BY); the OffsetWindow / null-window
         // path stays byte-identical below. The keyset still applies the FILTERS via
         // the shared applier (and validates `?sort` through the resolver) but builds
-        // its OWN order, never the plain sort handler (bundle ADR 0063).
+        // its OWN order, never the plain sort handler.
         if ($criteria->window instanceof CursorWindow) {
             return $this->runCursor($type, $entityClass, $builder, $criteria, $criteria->window);
         }
 
         $builder = $this->applier->apply($criteria, $builder, $this->filterHandler, $this->sortHandler);
 
-        // Count-free by default (G21): the executor counts the pre-window total and
+        // Count-free by default: the executor counts the pre-window total and
         // fetches the windowed page only when the handler resolved a COUNT for this
         // fetch (the paginator's withCount() author opt-in, or ?withCount=_self_ under
         // a countable() resource); otherwise it fetches count-free via the window+1
-        // probe (no COUNT) and reports `hasMore` (bundle ADR 0075).
+        // probe (no COUNT) and reports `hasMore`.
         return $this->windowExecutor->run(
             $criteria->window,
             countable: $criteria->wantsCount,
@@ -295,7 +295,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
     /**
      * The cursor (keyset) execution pushed down to DQL — the twin of the in-memory
      * witness ({@see \haddowg\JsonApi\Collection\Keyset\InMemoryKeyset}),
-     * which is the ground truth (bundle ADR 0063 / core ADR 0123). It resolves the keyset columns
+     * which is the ground truth. It resolves the keyset columns
      * (the active sort + the appended/deduped PK; validates `?sort`), applies the
      * filters, checks the cursor against the resolved columns (a stale cursor →
      * 400), then via {@see DoctrineKeyset} builds the forced NULL=largest
@@ -378,7 +378,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
     /**
      * Resolves the keyset columns for `$criteria` through the core
-     * {@see KeysetResolver} (core ADR 0123), feeding it the criteria's sort
+     * {@see KeysetResolver}, feeding it the criteria's sort
      * inputs — the requested `?sort`, the declared vocabulary and the resource
      * default — so the cursor path's sort validation stays byte-identical to the
      * plain (offset) path's.
@@ -432,7 +432,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
      * against a single related entity class, and a polymorphic collection's members
      * span entity classes, so there is no single query to run. It throws; a host
      * that needs it supplies a custom {@see DataProviderInterface} that resolves the
-     * related members across types (ADR 0032).
+     * related members across types.
      */
     public function fetchRelatedCollection(
         string $relatedType,
@@ -467,16 +467,16 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         // A cursor (keyset) window on the related endpoint runs the SAME keyset
         // push-down as the primary collection: the builder is already scoped to
         // the parent above, so the parent-membership predicate simply rides the
-        // WHERE alongside the filters while the keyset owns the order (bundle
-        // ADR 0063). The OffsetWindow / null-window tail below stays byte-identical.
+        // WHERE alongside the filters while the keyset owns the order. The OffsetWindow /
+        // null-window tail below stays byte-identical.
         if ($criteria->window instanceof CursorWindow) {
             return $this->runCursor($relatedType, $relatedClass, $builder, $criteria, $criteria->window);
         }
 
         $builder = $this->applier->apply($criteria, $builder, $this->filterHandler, $this->sortHandler);
 
-        // The window/count/count-free tail runs through the shared executor (core
-        // ADR 0061). Count-free by default (G21): the related endpoint counts only
+        // The window/count/count-free tail runs through the shared executor. Count-free by
+        // default: the related endpoint counts only
         // when the handler resolved a COUNT for this fetch (`$criteria->wantsCount` —
         // the relation paginator's withCount() author opt-in, or ?withCount=_self_
         // under a countable() relation; the handler 400s an un-countable `_self_`
@@ -499,8 +499,8 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
     }
 
     /**
-     * The batched related-collection fetch for a page of parents (Approach B, bundle
-     * ADR 0061): ONE query scopes the related entity to the WHOLE page and projects
+     * The batched related-collection fetch for a page of parents (Approach B): ONE query scopes
+     * the related entity to the WHOLE page and projects
      * the parent discriminator, the shared {@see CriteriaApplier} applies the
      * filters/sorts IN that query, the flat result is materialized, partitioned by
      * parent in PHP, and each partition windowed through the shared
@@ -544,15 +544,15 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             return new RelatedBatch([]);
         }
 
-        // The opt-out moves into how the provider batches (bundle ADR 0062): a column
+        // The opt-out moves into how the provider batches: a column
         // that is not a real Doctrine association (a computed/extractUsing value, or an
         // alias that is not the association name), or a target with a composite id, is
         // not batchable here. A non-association is the model's own computed value, rendered
         // as it is; an association this cannot batch is unsupported, which the
-        // orchestrator refuses when the related type is scoped (bundle ADR 0125).
+        // orchestrator refuses when the related type is scoped.
         // A pivot belongsToMany reaches its members through the association entity, not a
         // parent property, so it is read per parent through the same scoped pivot query
-        // the related endpoint runs (bundle ADR 0125).
+        // the related endpoint runs.
         $pivotRelatedType = $relation->relatedTypes()[0] ?? $parentType;
         if ($relation->isToMany() && $this->supportsPivot($pivotRelatedType, $relation)) {
             $parentMetadata = $this->entityManager->getClassMetadata($parents[0]::class);
@@ -581,7 +581,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $relatedType = $relation->relatedTypes()[0] ?? $parentType;
         $relatedClass = $this->entityClassFor($relatedType);
 
-        // A to-one include is the WHERE id IN (:targetIds) arm (bundle ADR 0062): the
+        // A to-one include is the WHERE id IN (:targetIds) arm: the
         // page's target ids are projected as scalars off the already-loaded parents (no
         // proxy init), loaded in ONE id-IN query, and partitioned 1:1 to their parents.
         if (!$relation->isToMany()) {
@@ -589,18 +589,18 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         }
 
         // A WINDOWED to-many include (an OffsetWindow, the profile's page-1 slice) is
-        // BOUNDED rather than materialised whole (bundle ADRs 0065/0066). With window
+        // BOUNDED rather than materialised whole. With window
         // functions on (the default) and no query extension on the related type, ONE
         // native ROW_NUMBER/COUNT OVER query fetches only ~limit rows per parent AND the
         // REAL per-parent total — for a FILTERED include too: the inner scoped+filtered
         // query is built by the same DQL filter executor the endpoint runs, then wrapped
-        // for the window (bundle ADR 0066), so the per-parent fallback no longer serves a
+        // for the window, so the per-parent fallback no longer serves a
         // filtered include on the `on` path. Only an extended related type (or window
         // functions off) routes to the per-parent BOUNDED fallback: a loop over the proven
         // single-parent fetch, each a real LIMIT push-down. A PLAIN include (no window)
         // keeps the materialise-and-partition fast path below, UNTOUCHED.
         // A CURSOR (keyset) windowed include collapses to the SAME single native ROW_NUMBER
-        // window the offset include uses (bundle ADR 0118), gated IDENTICALLY: window
+        // window the offset include uses, gated IDENTICALLY: window
         // functions on AND no query extension on the related type. An include carries no
         // cursor token (the profile pins the included page to page 1), so the window is
         // boundaryless — a FIRST cursor page per parent (offset 0, limit N+1 for hasMore under
@@ -610,7 +610,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         // <keyset>)` query bounds every parent's partition, ordered by the resolved keyset
         // columns (the forced NULL=largest CASE term, the PK tiebreak riding the last active
         // directive) and minting each parent's forward cursor through the same shared keyset
-        // machinery (core ADR 0063) — byte-identical to the in-memory witness (which windows
+        // machinery — byte-identical to the in-memory witness (which windows
         // each parent per-parent). Otherwise the per-parent keyset loop (the related-endpoint
         // path, also the non-windowable / window-functions-off fallback).
         if ($criteria->window instanceof CursorWindow) {
@@ -646,7 +646,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         // wrong entity; instead the extension constraint is built on a related-rooted
         // subquery and the pair query's related membership is filtered to it, so a
         // soft-delete / tenant / published-only related extension excludes the right
-        // members exactly as the related-rooted unbatched fetch does (bundle ADR 0061).
+        // members exactly as the related-rooted unbatched fetch does.
         $builder = $this->applyRelatedBatchExtensions($builder, $scope, $relatedType, $request);
 
         // Apply the related vocabulary on the scope's related alias (the query root for
@@ -680,15 +680,15 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
     /**
      * Whether a windowed to-many include can run the native ROW_NUMBER batch
-     * ({@see WindowedRelationBatch}) rather than the per-parent bounded fallback (bundle
-     * ADRs 0065/0066). The native path now serves a FILTERED and an unfiltered windowed
+     * ({@see WindowedRelationBatch}) rather than the per-parent bounded fallback. The native
+     * path now serves a FILTERED and an unfiltered windowed
      * include alike — the inner scoped query is built by the EXACT same DQL machinery the
      * related endpoint runs (RelationScope-style parent-scope + the shared
      * {@see CriteriaApplier} driving the #1 DQL {@see DoctrineFilterHandler}), then wrapped
      * with the window functions over the generated SQL aliases READ off its
      * {@see \Doctrine\ORM\Query\ResultSetMapping}; so a filtered windowed include is
-     * witness-equivalent for free (it IS the same executor) and runs in ONE bounded query
-     * (bundle ADR 0066). The filter check is therefore RETIRED from this gate.
+     * witness-equivalent for free (it IS the same executor) and runs in ONE bounded query. The
+     * filter check is therefore RETIRED from this gate.
      *
      * It still requires **no query extension** on the related type — a soft-delete /
      * tenant / published-only extension adds a DQL `WHERE` keyed on the query root that the
@@ -710,7 +710,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
     }
 
     /**
-     * The OFF / EXTENDED fallback for a windowed to-many include (bundle ADRs 0065/0066):
+     * The OFF / EXTENDED fallback for a windowed to-many include:
      * a per-parent BOUNDED loop over the proven single-parent
      * {@see fetchRelatedCollection()}, assembled into a {@see RelatedBatch} keyed by
      * parent wire id. Each call pushes down a REAL `LIMIT`/`OFFSET` (a countable relation
@@ -720,7 +720,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
      * by construction (it IS the per-parent twin the in-memory witness mirrors) and
      * BOUNDED (M queries, each a LIMIT, never the whole-set materialise the 6a batch ran).
      * A FILTERED include no longer routes here on the `on` path — the native batch now
-     * serves it in ONE bounded query (bundle ADR 0066); this fallback serves only window
+     * serves it in ONE bounded query; this fallback serves only window
      * functions OFF and an EXTENDED related type.
      *
      * @param list<object> $parents
@@ -750,7 +750,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
     }
 
     /**
-     * The to-one include arm of {@see fetchRelatedCollectionBatch()} (bundle ADR 0062):
+     * The to-one include arm of {@see fetchRelatedCollectionBatch()}:
      * the successor to ShipMonk's to-one preload (one `WHERE id IN (:targetIds)` over the
      * page's distinct target ids — ONE query for the level, matching ShipMonk's budget).
      * It reads each parent's target id directly off the already-managed parent (a Doctrine
@@ -909,7 +909,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
     /**
      * Whether `$relation` is a real, single-identifier Doctrine association on the
      * `$parent`'s entity that {@see fetchRelatedCollectionBatch()} can batch — the
-     * provider-side opt-out (bundle ADR 0062), replacing the retired preloader's
+     * provider-side opt-out, replacing the retired preloader's
      * pre-call guards. Lazy (an empty batch) when the column is not an association (a
      * computed/`extractUsing` value, or an alias that is not the association name) or
      * the target carries a composite identifier (the batch id-loads by a single id).
@@ -941,8 +941,8 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
      *    related-ROOTED subquery builder (whose root alias IS the related entity, so the
      *    contract holds), and the pair query's related membership is constrained `IN` the
      *    extension-narrowed related ids — so a soft-delete / tenant / published-only related
-     *    extension excludes the right members, matching the related-rooted unbatched fetch
-     *    (bundle ADR 0061). With no related extension the subquery is never built and the
+     *    extension excludes the right members, matching the related-rooted unbatched fetch.
+     *    With no related extension the subquery is never built and the
      *    pair query is unchanged.
      */
     private function applyRelatedBatchExtensions(QueryBuilder $builder, BatchScope $scope, string $relatedType, ?JsonApiRequestInterface $request): QueryBuilder
@@ -1119,8 +1119,8 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
     }
 
     /**
-     * The batched, pushed-down cardinality of `$relation` for a page of parents
-     * (bundle ADR 0052). ONE grouped query rooted on the PARENT entity joins the
+     * The batched, pushed-down cardinality of `$relation` for a page of parents. ONE grouped
+     * query rooted on the PARENT entity joins the
      * related collection and counts it per parent —
      *
      *     SELECT parent.<id>, COUNT(related.<relatedId>)
@@ -1141,7 +1141,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
      * The count is over the relation's **filtered** set: `$criteria`'s filters are
      * applied on the `related` JOIN alias via the shared alias-aware
      * {@see CriteriaApplier} (the count passes `related` as the default alias, so a
-     * related filter lands on the join, not the `parent` root — bundle ADR 0060).
+     * related filter lands on the join, not the `parent` root).
      * Because an `andWhere` on a `LEFT JOIN` drops a parent with no matching member,
      * the grouped result OMITS such a parent; so the page is **zero-filled** — every
      * parent is seeded to `0` first, then the query rows overlay it — restoring a
@@ -1220,7 +1220,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         // association for a through-entity pivot. A plain to-many counts the related
         // members via a left join on the parent property. Either way `$criteria`'s
         // filters land on the related members so the count reflects the relation's
-        // filtered set (bundle ADR 0060); an empty criteria adds no predicate, so the
+        // filtered set; an empty criteria adds no predicate, so the
         // common no-filter count is the unchanged grouped query.
         if ($relatedType !== null && $this->supportsPivot($relatedType, $relation)) {
             $builder = $this->pivotCountQuery($relation, $parents[0], $relatedType, $parentIds, $criteria);
@@ -1275,8 +1275,8 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
     /**
      * Restricts a count to the related members the related type's query extensions
-     * admit, so `?withCount` totals the same set the related endpoint serves (bundle ADR
-     * 0125). The extensions build on a related-rooted subquery, as their contract
+     * admit, so `?withCount` totals the same set the related endpoint serves. The extensions
+     * build on a related-rooted subquery, as their contract
      * expects, and `$memberExpr` (the counted member's id) is constrained `IN` it.
      */
     private function constrainToExtendedRelated(QueryBuilder $builder, string $memberExpr, string $relatedType, ?JsonApiRequestInterface $request): QueryBuilder
@@ -1310,7 +1310,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
     /**
      * Whether the single related object of a monomorphic to-one survives `$criteria`'s
-     * filters (bundle ADR 0068): a cheap `SELECT 1 FROM <relatedClass> related WHERE
+     * filters: a cheap `SELECT 1 FROM <relatedClass> related WHERE
      * related.<idField> = :id` probe with the shared {@see CriteriaApplier} driving the
      * {@see DoctrineFilterHandler} (so column/operator/cast semantics match the to-many
      * endpoint exactly), `setMaxResults(1)`, returning whether a row survived. Read-only —
@@ -1352,7 +1352,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
     }
 
     /**
-     * The batched to-one match over a page of parents (bundle ADR 0068): ONE
+     * The batched to-one match over a page of parents: ONE
      * `SELECT related.<idField> … WHERE related.<idField> IN (:targetIds) AND <filters>`
      * query over the page's distinct to-one target ids (projected off each managed parent
      * with no proxy init, reusing {@see toOneTargetId()}/{@see parentWireId()}), then the
@@ -1516,10 +1516,10 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
      * related-collection endpoint, which groups one row per distinct far member
      * ({@see count()} counts `DISTINCT` too) and renders deduped linkage: the
      * `?withCount` relationship-object total and the endpoint pagination total are the
-     * one consistent `total` semantic the contract requires (bundle ADR 0052).
+     * one consistent `total` semantic the contract requires.
      *
      * When `$criteria` carries a related filter (a `relatedQuery` filter on this
-     * relation, bundle ADR 0060), the far member is joined as `related` and the filter
+     * relation), the far member is joined as `related` and the filter
      * is applied on it, so the distinct-member count reflects the relation's filtered
      * set exactly as the endpoint pages it; with no filter the far join is omitted and
      * the query is the unchanged distinct-member count (the budget is preserved for the
@@ -1544,7 +1544,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $builder = $this->entityManager->createQueryBuilder()
             ->select(\sprintf('parent.%s AS parent_id', $parentIdField))
             // DISTINCT far members so duplicate membership counts once, matching the
-            // endpoint's deduped total and rendered linkage (bundle ADR 0052).
+            // endpoint's deduped total and rendered linkage.
             ->addSelect(\sprintf('COUNT(DISTINCT pivot.%s) AS related_count', $association->farProperty))
             ->from($association->entityClass, 'pivot')
             ->innerJoin(\sprintf('pivot.%s', $association->parentProperty), 'parent')
@@ -1555,7 +1555,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         // A related filter needs the far member to scope against, so join it as
         // `related` (the count's default alias) and apply the filters there — the far
         // join is added ONLY when there is a filter, so the unfiltered count keeps its
-        // original distinct-member query and budget (bundle ADR 0060).
+        // original distinct-member query and budget.
         if (FilterDefaults::apply($criteria->queryParameters->filter, $criteria->filters) === []) {
             return $builder;
         }
@@ -1629,7 +1629,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         // the pivot-key→`pivot`-alias routing map (RelationCriteriaFactory populated
         // both for this endpoint), so the shared alias-aware applier owns the WHOLE
         // pivot vocabulary in one pass — related keys on the root, pivot keys on the
-        // joined `pivot` alias — replacing the hand-rolled split (bundle ADR 0059).
+        // joined `pivot` alias — replacing the hand-rolled split.
         $builder = $this->applier->apply($criteria, $builder, $this->filterHandler, $this->sortHandler);
 
         $window = $criteria->window;
@@ -1647,7 +1647,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         }
 
         // The pivot tail stays hand-rolled rather than delegating to the shared
-        // WindowExecutor (core ADR 0061): the executor is generic over OBJECT entities,
+        // WindowExecutor: the executor is generic over OBJECT entities,
         // but a pivot fetch windows over "mixed" rows (each `[0 => farEntity,
         // 'pivot_<field>' => value]`), and the far-entity windowing cannot be separated
         // from the per-member pivot map — they ride the SAME grouped query. So this
@@ -1655,13 +1655,13 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         // countable count), keeping it behaviour-identical until the pivot row shape is
         // reconciled with the executor's entity contract.
         //
-        // Count-free by default (G21): the pivot endpoint counts only when the handler
+        // Count-free by default: the pivot endpoint counts only when the handler
         // resolved a COUNT for this fetch (`$criteria->wantsCount` — the relation
         // paginator's withCount() author opt-in, or ?withCount=_self_ under a
         // countable() relation; the handler 400s an un-countable `_self_` first).
         // Otherwise it paginates count-FREE: no COUNT runs; the page is over-fetched by
         // one (limit+1) and the surplus far member signals a further page, driving the
-        // count-free page's `next` link without a total (bundle ADR 0052).
+        // count-free page's `next` link without a total.
         if (!$criteria->wantsCount) {
             return $this->countFreePivotPage($builder, $window, $relatedType, $relation);
         }
@@ -1682,7 +1682,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
      * distinct far member (see {@see pivotQuery()}), so the over-fetch and slice are
      * over distinct members. The surplus is dropped before the pivot map is built; the
      * result carries a `null` total with {@see PivotCollectionResult::$windowed} true so
-     * the handler builds a count-free page (bundle ADR 0052).
+     * the handler builds a count-free page.
      *
      * @return PivotCollectionResult<object>
      */
@@ -1832,7 +1832,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
      * {@see SortByField} whose key routes to a non-root alias contributes its
      * COLUMN under that alias (a {@see KeysetColumn} carries only column +
      * direction, so the key → column translation happens here). Empty off the
-     * pivot path (`aliasOf` is only populated there, bundle ADR 0059).
+     * pivot path (`aliasOf` is only populated there).
      *
      * @return array<string, string>
      */
@@ -1874,7 +1874,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
      * The whole-association pivot map for a PAGE of parents in ONE DQL statement — the
      * batched twin of {@see fetchRelatedPivotMap()} (no window, no filter), so a
      * primary-resource document whose pivot relation's linkage data renders carries
-     * `meta.pivot` without an N+1 of per-parent pivot reads (bundle ADR 0102).
+     * `meta.pivot` without an N+1 of per-parent pivot reads.
      *
      * It scopes the join's parent-side `ManyToOne` to the parent SET (`WHERE
      * pivot.<parentProperty> IN (:parents)`) and projects the parent FK, the far FK and
@@ -1998,7 +1998,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
     /**
      * The EXISTING pivot meta for the parent's pivot relation — the validation
-     * read-seam (ADR 0050). It reuses the same association-entity projection the
+     * read-seam. It reuses the same association-entity projection the
      * relationship-linkage endpoint reads ({@see fetchRelatedPivotMap()}): one DQL
      * statement over the association entity, each row's writable/readOnly pivot column
      * cast to its wire value, keyed by the related (far) member's id. The validator
@@ -2040,7 +2040,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
      * row. The pivot relation therefore renders **one** membership's values per
      * member: where a member appears more than once the rendered pivot meta reflects
      * a representative row (the contract — pivot meta is a single per-member value
-     * set, not a list; ADR 0045).
+     * set, not a list).
      */
     private function pivotQuery(string $relatedType, object $parent, RelationInterface $relation): QueryBuilder
     {
@@ -2245,7 +2245,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
     /**
      * A relation is scoped when a query extension applies to any of its related types:
-     * its include and linkage then load through the extended query (bundle ADR 0125).
+     * its include and linkage then load through the extended query.
      */
     public function scopesRelatedReads(RelationInterface $relation): bool
     {

@@ -9,8 +9,8 @@ use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 use haddowg\JsonApiBundle\Tests\Functional\WindowedSeedData;
 
 /**
- * Seeds the in-memory providers for the windowed-include-batch conformance witness
- * (bundle ADR 0065) with the SAME large graph the Doctrine kernel seeds
+ * Seeds the in-memory providers for the windowed-include-batch conformance witness with the
+ * SAME large graph the Doctrine kernel seeds
  * ({@see \haddowg\JsonApiBundle\Tests\Functional\SeedsLargeWindowedRelations}), so the
  * in-memory and Doctrine (on/off) documents are asserted identical:
  *

@@ -31,7 +31,7 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
  *
  * The `comments` resource is the {@see ThrowingAfterCreateCommentResource}: its
  * post-commit `afterCreate` hook throws for the sentinel `BOOM` body, the witness that
- * a committed batch is NOT failed by a throwing After* hook (Slice D, bundle ADR 0088).
+ * a committed batch is NOT failed by a throwing After* hook.
  */
 final class AtomicInMemoryTestKernel extends Kernel
 {
@@ -98,7 +98,7 @@ final class AtomicInMemoryTestKernel extends Kernel
         $services->set(AuthorResource::class);
         // The `comments` resource here carries a throwing post-commit `afterCreate` hook
         // (gated on the BOOM sentinel body) — the witness that a committed batch is not
-        // failed by a throwing After* hook (Slice D, bundle ADR 0088).
+        // failed by a throwing After* hook.
         $services->set(ThrowingAfterCreateCommentResource::class);
         $services->set(TagResource::class);
 

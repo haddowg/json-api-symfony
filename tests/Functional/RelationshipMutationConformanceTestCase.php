@@ -10,7 +10,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * The Phase-3 S3 + S4 acceptance suite: the relationship-mutation endpoints
+ * The acceptance suite: the relationship-mutation endpoints
  * (`PATCH`/`POST`/`DELETE /{type}/{id}/relationships/{relationship}`) **and** the
  * whole-resource writes that embed relationships in `data.relationships`, on both
  * providers, each mutation re-fetched to prove the change persisted through the
@@ -26,7 +26,7 @@ use Symfony\Component\HttpFoundation\Response;
  *    relation `DELETE` → `403`.
  *  - cardinality: `POST`/`DELETE` on a to-one → `400`.
  *  - unknown relationship → `404`; missing parent → `404`.
- *  - S4: `POST /articles {…, relationships:{author, comments}}` — a whole-resource
+ *  - `POST /articles {…, relationships:{author, comments}}` — a whole-resource
  *    create sets both associations through the persister seam (`201` + Location);
  *    `PATCH /articles/{id}` replacing `author`/`comments` via `data.relationships`
  *    (`200`); a create/update with no relationships is unchanged, and a partial

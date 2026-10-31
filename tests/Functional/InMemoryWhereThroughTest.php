@@ -9,7 +9,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\ConstrainedFilterInMemoryTestKern
 /**
  * {@see WhereThroughConformanceTestCase} against the in-memory provider — the
  * conformance witness half of the dual-provider contract for the `WhereThrough`
- * traversal filter (core ADR 0063). Core's `ArrayFilterHandler` walks the dotted
+ * traversal filter. Core's `ArrayFilterHandler` walks the dotted
  * path via the `Accessor`, fanning out across each to-many hop and matching on
  * EXISTS-ANY. The in-memory provider is seeded at construction from the canonical
  * fixtures (the comment → article back-references wired so the multi-hop case

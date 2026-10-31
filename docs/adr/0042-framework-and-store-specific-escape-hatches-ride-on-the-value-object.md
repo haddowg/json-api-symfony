@@ -1,0 +1,3 @@
+# Framework- and store-specific escape hatches ride on the value object
+
+A one-off rule that is already a Symfony constraint attaches through a `NativeConstraints` carrier on core's `constrain()`, and a Doctrine-only filter applies itself by implementing `AppliesToQueryBuilder`, so neither needs a bespoke value object plus a registered translator or handler arm. Both trade portability for zero registration: `NativeConstraints` couples the field to Symfony and documents a schema only when the author declares one, and a self-applying filter is undeclared, so a `400`, on any other provider. A core constraint, or a portable filter with an arm per store, is preferred whenever one exists.

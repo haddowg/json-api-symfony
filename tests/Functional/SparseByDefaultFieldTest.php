@@ -10,7 +10,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * The sparse-by-default field witness (core ADR 0117): the `sparseWidgets` resource's
+ * The sparse-by-default field witness (core docs/fields.md): the `sparseWidgets` resource's
  * `expensiveScore` attribute renders only when the client explicitly names it in a
  * `fields[sparseWidgets]` member, proving core's opt-in visibility tier flows through
  * the bundle's serializer → transformer → response stack end-to-end over HTTP.

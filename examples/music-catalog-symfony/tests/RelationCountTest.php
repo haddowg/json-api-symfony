@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The countable-relations witness (bundle ADR 0052, core ADR 0057; backs the
+ * The countable-relations witness (backs the
  * `relationships.md` "Counting a to-many relation" note). A to-many relation
  * declared `countable()` exposes its cardinality two ways, both keyed `total`:
  *
@@ -48,8 +48,8 @@ final class RelationCountTest extends MusicCatalogKernelTestCase
         // object — the count is pushed down (never materialising the collection).
         // Album 1 holds three tracks, but the `tracks` resource's explicit=false
         // default filter hides the explicit one (Paranoid Android), so the count is
-        // 2 — the SAME filtered set the related endpoint pages, not raw membership
-        // (bundle ADR 0060). It matches GET /albums/1/tracks (see RelatedCollectionTest).
+        // 2 — the SAME filtered set the related endpoint pages, not raw membership. It matches
+        // GET /albums/1/tracks (see RelatedCollectionTest).
         $document = $this->fetch('/albums/1?withCount=tracks');
 
         self::assertSame(2, $this->relationshipTotal($document['data'] ?? null, 'tracks'));
@@ -62,7 +62,7 @@ final class RelationCountTest extends MusicCatalogKernelTestCase
         // tracks total, counted in ONE grouped query across the page — proving the
         // batch is per-parent, not a single repeated value. The count honours the
         // `tracks` explicit=false default filter, so album 1 reports 2 (its explicit
-        // track is hidden, as on the endpoint) and album 2 reports 1 (bundle ADR 0060).
+        // track is hidden, as on the endpoint) and album 2 reports 1.
         $document = $this->fetch('/albums?withCount=tracks');
 
         $data = $document['data'] ?? null;
@@ -103,7 +103,7 @@ final class RelationCountTest extends MusicCatalogKernelTestCase
     #[Test]
     public function aCountableRelatedEndpointPaginatesCountFreeByDefault(): void
     {
-        // Since G21 the related-collection endpoint is count-free BY DEFAULT even for a
+        // The related-collection endpoint is count-free BY DEFAULT even for a
         // COUNTABLE relation: a bare fetch windows without a COUNT, so there is no
         // meta.page.total. (perPage is 2, album 1 has two non-explicit visible tracks,
         // so it is one full page with no further page — hence no `next`/`last`.) The
@@ -126,7 +126,7 @@ final class RelationCountTest extends MusicCatalogKernelTestCase
         // `artists.albums` is NOT countable(), so its related endpoint paginates
         // COUNT-FREE: no COUNT query runs, so there is no meta.page.total and no
         // `last` link — only self/first (a `next` would signal a further page). This
-        // is the gap-G21 partial-pagination mechanism for relationships.
+        // is the partial-pagination mechanism for relationships.
         $document = $this->fetch('/artists/1/albums');
 
         $page = $this->pageMeta($document);

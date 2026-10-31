@@ -15,7 +15,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 
 /**
- * The wholesale-customisation decorator witness (design §5, D7 — bundle ADR 0080): a
+ * The wholesale-customisation decorator witness: a
  * registered {@see StampDecorator} (autoconfigured onto the OpenAPI factory tag in
  * {@see OpenApiTestKernel}) appends a uniquely-named tag to the built document. The test
  * proves the decorator runs on **both** build paths the bundle exposes — the controller's

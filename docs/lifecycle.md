@@ -202,13 +202,16 @@ when enabled — `validateSchema`, all detailed under
 
 | Call | When | Enforces | On failure |
 | --- | --- | --- | --- |
-| `RequestValidator::negotiate()` | every request | The `Content-Type`/`Accept` media-type rules and extension support | `415` (unsupported `ext` on Content-Type), `406` (on Accept) |
+| `RequestValidator::negotiate()` | every request | The `Content-Type`/`Accept` media-type rules and extension support; a write must send `Content-Type: application/vnd.api+json` | `415` (missing or non-JSON:API `Content-Type` on a write, or an unsupported `ext`), `406` (on Accept) |
 | `validateQueryParams()` | every request | Well-formed JSON:API query parameters | `400` |
 | `validateJsonBody()` | write verbs with a body | The request body is well-formed JSON | `400` |
 
 The bundle adds **no** default `Accept` or `Content-Type`. The client must send
 the JSON:API media type — core enforces it, and the bundle does not paper over a
-missing header. (Every example test issues requests with
+missing header. Every `POST` needs a `Content-Type`, even with no body, and so does a
+`PATCH` or `DELETE` that sends one; a CRUD write sent as anything other than
+`application/vnd.api+json` is a `415`. Custom actions can accept other media types; see
+[actions](actions.md#the-request-content-type). (Every example test issues requests with
 `Accept: application/vnd.api+json`, and a `Content-Type: application/vnd.api+json`
 on a write; see [`JsonApiFunctionalTestCase::handle()`](../tests/Functional/JsonApiFunctionalTestCase.php).)
 

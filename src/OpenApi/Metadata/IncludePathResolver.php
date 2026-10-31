@@ -10,7 +10,7 @@ use haddowg\JsonApiBundle\DataProvider\Polymorphism;
 use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
 
 /**
- * Derives the dotted `?include` paths a type advertises (design §4.4 / the contract's
+ * Derives the dotted `?include` paths a type advertises (the contract's
  * {@see \haddowg\JsonApi\OpenApi\Metadata\TypeMetadataInterface::includablePaths()}),
  * by walking the relation graph from a root type — neither core nor the bundle
  * stores the resolved path set, so the metadata source derives it here.
@@ -105,7 +105,7 @@ final class IncludePathResolver
             // (e.g. `owner` → `users`, where `users` lives on the admin server): the
             // relation renders links-only here and an `?include` of it hydrates nothing,
             // so advertising the path would emit an include token — and a dead codegen
-            // accessor — the server can never fulfil (D45).
+            // accessor — the server can never fulfil.
             if (!$this->relatedTypesSerializable($server, $relation)) {
                 continue;
             }

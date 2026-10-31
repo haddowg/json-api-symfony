@@ -13,12 +13,12 @@ use Symfony\Component\Routing\Route;
 use Symfony\Component\Routing\RouteCollection;
 
 /**
- * A Symfony route loader for the OpenAPI document endpoints (design §3, D9/D13).
+ * A Symfony route loader for the OpenAPI document endpoints.
  * An application imports it once — `$routes->import('.', 'jsonapi_openapi')` — exactly
  * as it imports the JSON:API CRUD routes (`'jsonapi'`); both share the import-driven
  * convention, and prefix/host stay in the app's routing config.
  *
- * It emits, **only when exposure is allowed** (the expose gate, D9 — `kernel.debug`
+ * It emits, **only when exposure is allowed** (the expose gate — `kernel.debug`
  * is true **or** `json_api.openapi.expose_in_prod` is true), the document routes:
  *  - `GET {json.path}` (default `/docs.json`) → the implicit `default` server's
  *    document;
@@ -29,7 +29,7 @@ use Symfony\Component\Routing\RouteCollection;
  *
  * In **combined** multi-server mode (`json_api.openapi.multi_server: combined`) only
  * the single `{json.path}` route is emitted — it serves one document spanning every
- * server (D5); the per-server `{server}/docs.json` route is not registered.
+ * server; the per-server `{server}/docs.json` route is not registered.
  *
  * Alongside the document it emits, gated additionally on
  * `json_api.openapi.json_schema.enabled`, the **aggregate JSON Schema** routes —
@@ -38,7 +38,7 @@ use Symfony\Component\Routing\RouteCollection;
  * server — serving the per-type JSON Schemas keyed by type (the
  * {@see JsonSchemaController}).
  *
- * It also emits the single config-driven **documentation viewer** route (design D6) at
+ * It also emits the single config-driven **documentation viewer** route at
  * `json_api.openapi.ui.path` (default `/docs`) — when `json_api.openapi.ui.enabled` is
  * true **and** the same expose gate passes — serving the {@see OpenApiUiController}
  * (Swagger UI or ReDoc per config). The viewer rides the same import / prefix / host as
@@ -47,7 +47,7 @@ use Symfony\Component\Routing\RouteCollection;
  *
  * When generation is disabled (`json_api.openapi.enabled: false`) or exposure is not
  * allowed, **no** route is emitted — so the document is unreachable over HTTP exactly
- * as configured (the CLI export stays available regardless, D6/D9). These routes
+ * as configured (the CLI export stays available regardless). These routes
  * carry **no** JSON:API route marker — the document is OpenAPI JSON, not a JSON:API
  * operation, so the bundle's exception listener does not scope to them.
  */
@@ -58,7 +58,7 @@ final class OpenApiRouteLoader extends Loader
     /**
      * @param list<string> $servers      the declared server names (`haddowg_json_api.servers`)
      * @param bool         $enabled      `json_api.openapi.enabled`
-     * @param bool         $debug        `kernel.debug` — auto-exposes the routes (D9)
+     * @param bool         $debug        `kernel.debug` — auto-exposes the routes
      * @param bool         $exposeInProd `json_api.openapi.expose_in_prod` — exposes outside debug
      * @param bool         $combined     `json_api.openapi.multi_server === combined`
      * @param string       $jsonPath     `json_api.openapi.json.path` (default `/docs.json`)
@@ -86,7 +86,7 @@ final class OpenApiRouteLoader extends Loader
     {
         $routes = new RouteCollection();
 
-        // The expose gate (D9): the routes exist when generation is enabled AND
+        // The expose gate: the routes exist when generation is enabled AND
         // (kernel.debug auto-exposes them OR expose_in_prod opts in). Otherwise the
         // document is unreachable over HTTP (the CLI export stays available).
         if (!$this->enabled || (!$this->debug && !$this->exposeInProd)) {
@@ -100,7 +100,7 @@ final class OpenApiRouteLoader extends Loader
             methods: ['GET'],
         ));
 
-        // The documentation viewer (design D6) — gated on ui.enabled in addition to the
+        // The documentation viewer — gated on ui.enabled in addition to the
         // shared expose gate. One route regardless of multi-server mode; it points at the
         // configured json path (the controller selects per-server / combined).
         if ($this->uiEnabled) {
@@ -123,7 +123,7 @@ final class OpenApiRouteLoader extends Loader
             ));
         }
 
-        // A combined document spans every server in one doc (D5), so no per-server
+        // A combined document spans every server in one doc, so no per-server
         // route is emitted in that mode.
         if ($this->combined) {
             return $routes;

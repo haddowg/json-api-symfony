@@ -24,7 +24,7 @@ use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 /**
  * The `articles` app with its routes imported under `/api/v5` and a configured
  * `base_uri` that already carries that mount. A configured base is used verbatim,
- * whatever host or mount the request arrives on (bundle ADR 0121).
+ * whatever host or mount the request arrives on.
  */
 final class ConfiguredBaseMountedInMemoryTestKernel extends Kernel
 {

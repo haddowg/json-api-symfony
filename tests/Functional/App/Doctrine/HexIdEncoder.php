@@ -7,8 +7,8 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\Doctrine;
 use haddowg\JsonApi\Resource\Field\IdEncoderInterface;
 
 /**
- * A trivial reversible id codec for the Doctrine encoded-id witness (bundle ADR
- * 0038): the storage key is the entity's integer primary key, the wire id its
+ * A trivial reversible id codec for the Doctrine encoded-id witness: the storage key is the
+ * entity's integer primary key, the wire id its
  * `cog-`-prefixed hex encoding, so storage != wire. {@see decode()} returns the
  * integer storage key (the type {@see CogEntity}'s int-typed `id` column requires —
  * Doctrine's strict typed-property assignment on create does not coerce a string),

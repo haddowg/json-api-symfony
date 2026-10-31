@@ -13,7 +13,7 @@ use haddowg\JsonApi\Resource\Field\Str;
  * The uriType witness: a resource whose JSON:API type (`book`) differs from its
  * URL path segment (`books`). The route loader emits the routes at `/books`, the
  * Location header and the relationship convention links use `/books`, but the
- * rendered document `type` member stays `book` (ADR 0022 / core ADR 0031). The
+ * rendered document `type` member stays `book` (docs/routing.md / core docs/resources.md). The
  * self-referential `related` relationship exists only to render convention links
  * whose segment can be asserted.
  */
@@ -27,7 +27,7 @@ final class BookResource extends AbstractResource
     {
         return [
             // Store-provided id: the in-memory store assigns the next sequential int
-            // on an id-less create, mirroring a database auto-increment (core ADR 0048).
+            // on an id-less create, mirroring a database auto-increment (core docs/ids.md).
             Id::make(),
             Str::make('title')->required(),
             BelongsTo::make('related', 'book'),

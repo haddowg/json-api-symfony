@@ -7,7 +7,7 @@ namespace haddowg\JsonApiBundle\OpenApi;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
- * Adjusts the served `schemas.json` aggregate for one request (bundle ADR 0131), the
+ * Adjusts the served `schemas.json` aggregate for one request, the
  * per-type JSON Schema counterpart of {@see OpenApiServeDecoratorInterface}.
  *
  * A service implementing it is autoconfigured onto

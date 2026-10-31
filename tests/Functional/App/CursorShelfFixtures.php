@@ -44,7 +44,7 @@ final class CursorShelfFixtures
     /**
      * The per-membership `slot` PIVOT value the Doctrine association entity
      * ({@see \haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\CursorShelfWidgetEntity})
-     * carries for the pivot-related cursor suite (bundle ADR 0114) — `widgetId =>
+     * carries for the pivot-related cursor suite — `widgetId =>
      * slot`, the same value on every shelf the widget sits on. Slots deliberately
      * TIE in pairs (1:{4,5}, 2:{3,7}, 3:{2,6}, 4:{1,8}), so a `?sort=slot` keyset
      * order is `slot asc, id asc` = 4,5,3,7,2,6,1,8 — a walk that differs from

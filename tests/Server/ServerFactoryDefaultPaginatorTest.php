@@ -18,7 +18,7 @@ use Psr\Container\ContainerInterface;
 
 /**
  * Characterizes how {@see ServerFactory} resolves the server-wide default
- * paginator (bundle ADR 0036): a per-server custom paginator wins over a generic
+ * paginator: a per-server custom paginator wins over a generic
  * one, which wins over the built-in {@see PagePaginator} capped at
  * `json_api.pagination.max_per_page`, which a cap of `0` disables (no default).
  */

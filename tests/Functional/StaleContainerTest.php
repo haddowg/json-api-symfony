@@ -11,7 +11,7 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * A non-debug container compiled against other versions than the installed ones is
- * refused at boot (bundle ADR 0143).
+ * refused at boot.
  */
 final class StaleContainerTest extends TestCase
 {

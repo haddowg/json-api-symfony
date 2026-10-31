@@ -26,7 +26,7 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 /**
- * The exception-mapping harness kernel (gap G15 / bundle ADR 0073). It serves a
+ * The exception-mapping harness kernel. It serves a
  * `throwingWidgets` type whose read hook throws a chosen test exception on a
  * JSON:API route (`GET /throwingWidgets?throwSignal=config|mapper|both|unmapped|jsonapi`),
  * and wires **both** facets of the mapping seam:

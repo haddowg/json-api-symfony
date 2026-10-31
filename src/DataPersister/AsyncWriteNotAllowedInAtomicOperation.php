@@ -12,7 +12,7 @@ use haddowg\JsonApi\Schema\Error\Error;
  * Operations batch was in flight. Async accept is incompatible with the batch's
  * all-or-nothing synchronous commit — a `202` deferred write cannot participate in
  * a transaction the batch commits or rolls back at the end — so the offending
- * sub-operation fails and the whole batch rolls back (bundle ADR 0110).
+ * sub-operation fails and the whole batch rolls back.
  */
 final class AsyncWriteNotAllowedInAtomicOperation extends \RuntimeException implements JsonApiExceptionInterface
 {

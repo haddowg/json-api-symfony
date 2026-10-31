@@ -21,7 +21,7 @@ use haddowg\JsonApiBundle\Operation\CrudOperationHandler;
 use Symfony\Component\DependencyInjection\Attribute\AsDecorator;
 
 /**
- * The handler-override witness (ADR 0028): a Symfony decorator of the generic
+ * The handler-override witness: a Symfony decorator of the generic
  * {@see CrudOperationHandler}. The generic engine is wired into the `ServerFactory`
  * by service id (`service(CrudOperationHandler::class)`), so decorating that id is
  * transparently picked up — the factory resolves this decorator, which wraps the

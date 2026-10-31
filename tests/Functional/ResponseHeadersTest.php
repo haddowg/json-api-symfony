@@ -10,8 +10,8 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The declarative response-header suite over a kernel with **no** global defaults
- * (bundle ADR 0054): a resource's own `cacheHeaders` reach a successful `GET` (and
+ * The declarative response-header suite over a kernel with **no** global defaults: a resource's
+ * own `cacheHeaders` reach a successful `GET` (and
  * never a write or an error), the per-operation override layers onto the collection
  * read, `Deprecation`/`Sunset` reach every method, and a resource
  * declaring nothing gets no headers at all (unchanged behaviour).

@@ -8,7 +8,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The extensible-handler-seam acceptance suite (core ADR 0078, bundle ADR 0083): a
+ * The extensible-handler-seam acceptance suite (core docs/adapters.md, docs/doctrine.md): a
  * **custom filter** ({@see \haddowg\JsonApiBundle\Tests\Functional\App\Query\RelationCountAtLeast})
  * and a **custom sort** ({@see \haddowg\JsonApiBundle\Tests\Functional\App\Query\OrderByRelationCount})
  * that neither built-in handler recognises, executed end-to-end over HTTP only

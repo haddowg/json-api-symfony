@@ -10,7 +10,8 @@ use Doctrine\ORM\Mapping as ORM;
  * The constructor-less instantiation witness: a Doctrine entity whose constructor
  * takes **required** arguments with no defaults, so `new VaultEntity()` would
  * `TypeError`. Create therefore only works if the reference Doctrine persister
- * builds the instance without invoking the constructor (the point of ADR 0029).
+ * builds the instance without invoking the constructor (the point of the constructor-less
+ * persister).
  * Not `final` so Doctrine may proxy it.
  */
 #[ORM\Entity]

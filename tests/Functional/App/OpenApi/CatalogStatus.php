@@ -11,8 +11,8 @@ use haddowg\JsonApi\Resource\Enum\EnumCaseDescription;
 /**
  * A backed status enum for the OpenAPI document witness: an `In`-constrained
  * attribute sourced from a backed enum becomes a **named, reusable component**
- * (`#/components/schemas/CatalogStatus`) with per-value descriptions (design §4.8,
- * D16). It opts into the per-value descriptions via core's
+ * (`#/components/schemas/CatalogStatus`) with per-value descriptions.
+ * It opts into the per-value descriptions via core's
  * {@see DescribedEnum} + {@see DescribesEnumCases}.
  */
 enum CatalogStatus: string implements DescribedEnum

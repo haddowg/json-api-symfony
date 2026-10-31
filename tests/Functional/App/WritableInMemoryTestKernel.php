@@ -121,7 +121,7 @@ final class WritableInMemoryTestKernel extends Kernel
 
         // The genericity witness: a `tags` type added with nothing but its
         // resource + POJO + the same in-memory provider/persister wiring shape —
-        // no per-type engine code (ADR 0021).
+        // no per-type engine code.
         $services->set(TagResource::class);
 
         $services->set('test.tags_provider', InMemoryDataProvider::class)

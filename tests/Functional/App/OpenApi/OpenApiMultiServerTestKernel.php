@@ -22,7 +22,7 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 /**
- * The multi-server OpenAPI witness (design D5): a `default` server (a `public-items`
+ * The multi-server OpenAPI witness: a `default` server (a `public-items`
  * resource) and a named `admin` server (an `admin-items` resource). With
  * `multi_server: per_server` (the default), `GET /docs.json` serves the default
  * server's document and `GET /admin/docs.json` the admin server's — each scoped to its

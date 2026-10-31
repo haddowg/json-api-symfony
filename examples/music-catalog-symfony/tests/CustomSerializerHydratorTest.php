@@ -8,7 +8,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The per-resource serializer/hydrator override witnesses (ADR 0023; backs
+ * The per-resource serializer/hydrator override witnesses (backs
  * `custom-serializers-hydrators.md`): a resource keeps its type/route/registration
  * role but delegates the wire shape to a hand-written serializer/hydrator, each
  * resolved through the container **with a bound constructor argument** — so a

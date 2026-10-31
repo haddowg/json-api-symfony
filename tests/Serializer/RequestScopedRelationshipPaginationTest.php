@@ -16,13 +16,13 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Contracts\Service\ResetInterface;
 
 /**
- * The swappable per-request relationship-pagination holder (bundle ADR 0053): it
+ * The swappable per-request relationship-pagination holder: it
  * delegates to the windowed backing the handler installs for the profile read in
  * flight, answers `null` with no backing (so core emits no relationship-object
  * pagination links — the profile-not-negotiated default), and clears its backing on
  * {@see RequestScopedRelationshipPagination::reset()} so a profile read's windowed
  * pages never leak into a later render in a long-lived container. Mirrors the
- * slice-1 count holder.
+ * batched count holder.
  */
 final class RequestScopedRelationshipPaginationTest extends TestCase
 {

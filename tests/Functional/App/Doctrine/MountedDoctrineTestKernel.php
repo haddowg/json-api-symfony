@@ -21,7 +21,7 @@ use Zenstruck\Foundry\ZenstruckFoundryBundle;
  * The Doctrine half of the mounted-server conformance pair: the `articles`,
  * `authors` and `comments` entities over in-memory SQLite, an empty `base_uri`, and
  * the `default` server's routes imported under `/api/v5`, so every link has to
- * recover the mount from the matched route (bundle ADR 0121).
+ * recover the mount from the matched route.
  */
 final class MountedDoctrineTestKernel extends Kernel
 {

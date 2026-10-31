@@ -12,7 +12,7 @@ use Symfony\Component\HttpFoundation\Response;
 /**
  * The include-safeguards acceptance suite (backs `relationships.md` →
  * "Controlling what can be included" and `configuration.md` → `max_include_depth`).
- * It witnesses the three composing safeguards (bundle ADR 0037) over the reference
+ * It witnesses the three composing safeguards over the reference
  * Doctrine provider, each on the example's real relationship graph:
  *
  *  - Capability A — `FavoriteResource::favoritable` (a polymorphic to-one whose

@@ -98,7 +98,7 @@ final class RelationScope
     /**
      * The batched generalisation of {@see scopeToParent()}: scopes a query to a
      * whole PAGE of parents and PROJECTS the parent discriminator so the caller can
-     * partition the flat result by parent in PHP (Approach B, bundle ADR 0061). It
+     * partition the flat result by parent in PHP (Approach B). It
      * returns a {@see BatchScope} carrying the query, the related entity's row alias,
      * and the discriminator's select alias.
      *

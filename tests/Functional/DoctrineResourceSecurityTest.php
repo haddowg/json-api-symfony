@@ -13,7 +13,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\Security\SecurityTestKer
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The declarative-authorization suite over the Doctrine path (bundle ADR 0043): a
+ * The declarative-authorization suite over the Doctrine path: a
  * resource declares `#[AsJsonApiResource(security: …)]` expressions, the built-in
  * {@see \haddowg\JsonApiBundle\Security\ResourceSecuritySubscriber} evaluates them at
  * the lifecycle hooks behind a real firewall, and a denial renders a JSON:API `403`

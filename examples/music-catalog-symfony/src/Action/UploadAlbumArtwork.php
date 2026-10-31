@@ -15,8 +15,8 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Album;
 use Psr\Http\Message\UploadedFileInterface;
 
 /**
- * `POST /albums/{id}/-actions/artwork` — a **Raw-input** custom action (G13, bundle
- * ADR 0076, design §3): a binary cover-artwork upload, the escape hatch for a
+ * `POST /albums/{id}/-actions/artwork` — a **Raw-input** custom action:
+ * a binary cover-artwork upload, the escape hatch for a
  * non-JSON:API body. It accepts a `multipart/form-data` form or a bare image blob
  * (`image/*`), so the request content type is matched against those two and no
  * JSON:API body parsing runs; a form type has to be listed to be accepted. The handler

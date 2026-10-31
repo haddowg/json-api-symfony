@@ -16,7 +16,7 @@ use PHPUnit\Framework\Attributes\Test;
  * walks the same effective tree (driving the Doctrine provider's batch SPI), so the
  * safeguards bound the real batch recursion too — a too-deep request 400s before the
  * batcher runs, and the mutual default-include cycle terminates at the cap rather than
- * recursing the batcher forever (bundle ADR 0037).
+ * recursing the batcher forever.
  */
 final class DoctrineIncludeSafeguardsTest extends IncludeSafeguardsConformanceTestCase
 {

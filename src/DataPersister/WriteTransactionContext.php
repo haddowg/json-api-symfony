@@ -27,8 +27,7 @@ use Symfony\Contracts\Service\ResetInterface;
  * the time the queue {@see drain()}s, the batch's writes are already durable — so a
  * hook that throws does NOT fail the response and rolls nothing back (there is
  * nothing to undo). The executor drains with an error handler that logs each such
- * exception and lets the remaining hooks run; the batch still succeeds (bundle ADR
- * 0088).
+ * exception and lets the remaining hooks run; the batch still succeeds.
  *
  * It is a stateful, **request-scoped** service: one instance per request, holding
  * the active flag and the FIFO queue of deferred callables for the in-flight

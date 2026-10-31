@@ -26,7 +26,7 @@ use haddowg\JsonApiBundle\Validation\Constraint\UniqueEntity;
 /**
  * The `users` resource type, mapped to its backing {@see User} entity.
  *
- * It is the **admin-only multi-server witness** (ADR 0034): `server: 'admin'`
+ * It is the **admin-only multi-server witness**: `server: 'admin'`
  * exposes it on the named `admin` server alone (mounted under `/admin`), so
  * `/users` 404s on the default surface while `/admin/users` resolves.
  *
@@ -41,8 +41,8 @@ use haddowg\JsonApiBundle\Validation\Constraint\UniqueEntity;
  * seam that queries this repository through `symfony/doctrine-bridge` to reject a
  * duplicate before commit.
  *
- * It is finally the **cursor (keyset) pagination witness** (core ADR 0123, bundle
- * ADR 0063): {@see pagination()} pins a {@see CursorPaginator} for the primary
+ * It is finally the **cursor (keyset) pagination witness**: {@see pagination()} pins a {@see
+ * CursorPaginator} for the primary
  * `users` collection, so `GET /users` (admin server) pages by opaque
  * `page[after]`/`page[before]` cursor tokens rather than `page[number]`. It is the
  * catalogue's only cursor-only collection (`tracks` offers cursor as one choice in its
@@ -69,7 +69,7 @@ final class UserResource extends AbstractResource
             // serialization for a stable wire shape.
             ArrayHash::make('preferences')->example(['theme' => 'dark'])->minProperties(0)->maxProperties(20)->sortKeys()->guaranteed(),
             Ip::make('lastSeenIp')->example('203.0.113.7')->nullable(),
-            // A genuine write-only credential (Tier-0 G18, core ADR 0060): accepted on
+            // A genuine write-only credential (core docs/fields.md): accepted on
             // BOTH create and update and still validated (required on create, min 8) —
             // but skipped in the attribute render, so it appears on NO read (single,
             // collection, included, related) and a `fields[users]=password` cannot
@@ -118,7 +118,7 @@ final class UserResource extends AbstractResource
     }
 
     /**
-     * Include safeguard C (bundle ADR 0037): the full dotted include paths a client
+     * Include safeguard C: the full dotted include paths a client
      * may request when `users` is the request's root. A user may compound their
      * playlists, each playlist's owner, and their library — but NOT a playlist's
      * tracks, even though `tracks` is freely includable when `playlists` is the

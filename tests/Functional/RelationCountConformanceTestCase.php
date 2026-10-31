@@ -10,8 +10,8 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The Slice-1 acceptance suite for countable relations + `?withCount` (bundle ADR
- * 0052, core ADR 0057), run identically against the in-memory provider
+ * The acceptance suite for countable relations + `?withCount`, run identically against
+ * the in-memory provider
  * ({@see InMemoryRelationCountTest}) and the Doctrine provider
  * ({@see DoctrineRelationCountTest}).
  *
@@ -33,7 +33,7 @@ use PHPUnit\Framework\Attributes\Test;
  *  - a relationship NOT named in `?withCount` carries no `meta.total`, even though
  *    it is countable (the relationship-object total is gated by `?withCount`);
  *  - a `?withCount`-named relation that also carries a `relatedQuery[<rel>][filter]`
- *    counts its FILTERED set (bundle ADR 0060): the count matches the related
+ *    counts its FILTERED set: the count matches the related
  *    endpoint's filtered `meta.page.total`, a parent with no matching member reports
  *    `0` (zero-filled on Doctrine, the empty filtered set in memory), and the filter
  *    narrows each parent independently across a collection — while the common
@@ -47,7 +47,7 @@ abstract class RelationCountConformanceTestCase extends JsonApiFunctionalTestCas
     // fetch negotiates it.
     private const string COUNTS_ACCEPT = 'application/vnd.api+json;profile="' . CountableProfile::URI . '"';
 
-    // The D5 filtered-count tests carry BOTH `?withCount` and a `relatedQuery[<rel>]`
+    // The filtered-count tests carry BOTH `?withCount` and a `relatedQuery[<rel>]`
     // filter, so they negotiate the Relationship Counts and Relationship Queries
     // profiles together (a space-separated list in the one `profile` parameter).
     private const string PROFILE_ACCEPT = 'application/vnd.api+json;profile="' . CountableProfile::URI . ' ' . RelationshipQueriesProfile::URI . '"';
@@ -157,7 +157,7 @@ abstract class RelationCountConformanceTestCase extends JsonApiFunctionalTestCas
         self::assertSame(['parameter' => 'withCount'], $this->firstError($this->decode($response))['source'] ?? null);
     }
 
-    // --- D5: ?withCount honours the relation's active filters (bundle ADR 0060) --
+    // --- ?withCount honours the relation's active filters --
 
     #[Test]
     #[Group('spec:fetching-relationships')]
@@ -165,7 +165,7 @@ abstract class RelationCountConformanceTestCase extends JsonApiFunctionalTestCas
     {
         // editors is a countable many-to-many to authors. Article 1's editors are
         // Ada Lovelace (1) and Grace Hopper (2); the relatedQuery filter[name]=Grace
-        // Hopper narrows the counted set to one (bundle ADR 0060) — the SAME set the
+        // Hopper narrows the counted set to one — the SAME set the
         // related endpoint pages, not raw membership (which is 2).
         $document = $this->profileFetchDocument('/articles/1?withCount=editors&relatedQuery[editors][filter][name]=Grace%20Hopper');
 
@@ -220,8 +220,8 @@ abstract class RelationCountConformanceTestCase extends JsonApiFunctionalTestCas
     public function withCountIsRawMembershipWhenTheRelationHasNoRelatedQueryFilter(): void
     {
         // The common case: no relatedQuery filter, so the count is unchanged raw
-        // membership — article 1 has two editors, exactly as before D5 (bundle ADR
-        // 0060). This pins the "no-filter case unchanged" half of the behaviour.
+        // membership — article 1 has two editors, exactly as without a filter. This pins the
+        // "no-filter case unchanged" half of the behaviour.
         //
         // `editors` -> `authors`, and the authors resource declares a defaultSort() on
         // `name` (a column on the AUTHOR entity, not the article parent). A count needs
@@ -232,7 +232,7 @@ abstract class RelationCountConformanceTestCase extends JsonApiFunctionalTestCas
         // never crashes. This case therefore doubles as the regression witness: it runs
         // against the count path of a related resource that DOES declare a defaultSort,
         // and a raw membership of 2 on BOTH providers proves the default order is dropped
-        // crash-free, not silently applied (bundle ADR 0060).
+        // crash-free, not silently applied.
         $document = $this->fetchDocument('/articles/1?withCount=editors');
 
         self::assertSame(2, $this->relationshipTotal($document['data'] ?? null, 'editors'));
@@ -248,8 +248,8 @@ abstract class RelationCountConformanceTestCase extends JsonApiFunctionalTestCas
         // groups, so an un-dropped related default order would emit `ORDER BY
         // parent.name` on a grouped aggregate over a column the parent does not have —
         // a hard SQL error. Dropping the default order keeps the count crash-free and
-        // byte-identical to the in-memory witness's per-parent membership (bundle ADR
-        // 0060): article 1 -> 2, article 2 -> 1, article 3 -> 1.
+        // byte-identical to the in-memory witness's per-parent membership: article 1 -> 2,
+        // article 2 -> 1, article 3 -> 1.
         $document = $this->fetchDocument('/articles?withCount=editors');
 
         $data = $document['data'] ?? null;
@@ -277,7 +277,7 @@ abstract class RelationCountConformanceTestCase extends JsonApiFunctionalTestCas
     /**
      * The related-collection endpoint's pagination `meta.page.total` for the given
      * path — the filtered total a `?withCount` count must agree with. The endpoint is
-     * count-free by default (G21), so the total is opted into with `?withCount=_self_`
+     * count-free by default, so the total is opted into with `?withCount=_self_`
      * (the `editors` relation is countable()).
      */
     protected function endpointTotal(string $path): int
@@ -310,7 +310,7 @@ abstract class RelationCountConformanceTestCase extends JsonApiFunctionalTestCas
     /**
      * A profile-negotiated fetch: the `Accept` carries the Relationship Queries profile
      * URI so the `relatedQuery`/`rQ` family parses (without it strict query-parameter
-     * validation rejects the family with a 400). Used by the D5 filtered-count tests,
+     * validation rejects the family with a 400). Used by the filtered-count tests,
      * which address a relation's filter through `relatedQuery[<rel>][filter]`.
      *
      * @return array<string, mixed>

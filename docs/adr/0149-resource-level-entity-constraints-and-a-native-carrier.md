@@ -1,3 +1,0 @@
-# Resource-level entity constraints and a native class-constraint carrier
-
-Entity-level rules could only be attached to a field, and an application's own Symfony class constraint needed a constraint value object plus a translator. A resource can now return entity constraints from `DeclaresEntityConstraintsInterface::entityConstraints()`, and `NativeEntityConstraints` carries ready-made Symfony class constraints there, mirroring the field-level `NativeConstraints`. A violation with no property path points at `/data` rather than at an empty attribute pointer, because it is about the resource as a whole.

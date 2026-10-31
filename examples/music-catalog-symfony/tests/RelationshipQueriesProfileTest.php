@@ -11,7 +11,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * The Relationship Queries profile witness (bundle ADR 0053, core ADR 0058; backs
+ * The Relationship Queries profile witness (backs
  * the README "Filtering and sorting a relationship from the primary request"
  * section and `docs/relationships.md`). A client filters and sorts a *relationship's*
  * linkage from the PRIMARY request — addressing the relationship by its include path
@@ -22,7 +22,7 @@ use Symfony\Component\HttpFoundation\Response;
  * `AlbumResource`'s `tracks` is the countable witness: its related-collection
  * vocabulary (the `tracks` resource's own `title`/`trackNumber` sorts and
  * `like`/`explicit` filters, MERGED with the relation's own scoped `duration` sort
- * and `longerThan` filter, bundle ADR 0044) is now reachable from a primary
+ * and `longerThan` filter) is now reachable from a primary
  * `GET /albums/{id}?include=tracks` request, and — because it is `countable()` — its
  * relationship object emits a `last` pagination link. Album 1 seeds tracks 1 (Airbag,
  * 284s), 2 (Paranoid Android, 383s, explicit) and 3 (Exit Music, 264s); the related
@@ -31,7 +31,7 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * `users.playlists` is the count-free witness (it is to-many, includable, and
  * deliberately NOT `countable()`): under the profile its relationship object
- * paginates count-free — a `first` link but no `last`, preserving the Slice 1
+ * paginates count-free — a `first` link but no `last`, preserving the
  * count-free vs countable distinction. (`playlists.orderedTracks` is left to its own
  * endpoint: a pivot/derived relation has no plain Doctrine association for the
  * per-parent window to scope, so it is not addressed from a parent request.)
@@ -203,7 +203,7 @@ final class RelationshipQueriesProfileTest extends MusicCatalogKernelTestCase
     #[Group('spec:fetching-filtering')]
     public function aRelatedQueryFilterOnAToOneNullsTheLinkageWhenItExcludesTheTarget(): void
     {
-        // null-a-to-one-when-a-relation-filter-excludes-its-target (bundle ADR 0068):
+        // null-a-to-one-when-a-relation-filter-excludes-its-target:
         // on a PRIMARY request, `relatedQuery[artist][filter][name]` resolves the
         // album's `artist` relation-scoped `filter[name]` against the single target.
         // A `[filter]` op is the ONE relaxation for a to-one (a `[sort]`/`[page]` is a
@@ -226,7 +226,7 @@ final class RelationshipQueriesProfileTest extends MusicCatalogKernelTestCase
     #[Group('spec:fetching-pagination')]
     public function aCountableRelationshipObjectEmitsPlainFormPaginationLinksWithLast(): void
     {
-        // tracks is countable(); with `?withCount=tracks` opting into the count (G21: a
+        // tracks is countable(); with `?withCount=tracks` opting into the count (a
         // windowed include is count-free until asked) its relationship object carries
         // first + last pagination links, in the PLAIN form against the relationship-linkage
         // endpoint, mirroring the relatedQuery sort — never the relatedQuery[…] form.
@@ -255,7 +255,7 @@ final class RelationshipQueriesProfileTest extends MusicCatalogKernelTestCase
     {
         // users.playlists is a to-many that is NOT countable(): under the profile its
         // relationship object paginates count-free — a first link but no last (the
-        // Slice 1 count-free vs countable distinction, preserved). The users type is
+        // count-free vs countable distinction, preserved). The users type is
         // admin-only, so this rides the named `admin` server.
         $document = $this->adminProfileDocument('/admin/users/1?include=playlists');
 

@@ -18,7 +18,7 @@ use Symfony\Component\Security\Core\User\UserInterface;
 
 /**
  * Judges a caller against an operation's security rule with Symfony Security, the way the
- * bundle enforces it, without performing the operation (core ADR 0183).
+ * bundle enforces it, without performing the operation.
  *
  * A rule that reads the resource ({@see SecurityLevel::Entity}) is
  * {@see SecurityVerdict::Depends}. No rule, or `false`, is

@@ -14,7 +14,7 @@ use haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 
 /**
- * Builds the OpenAPI 3.1 {@see OpenApi} document for one server (design §3, D17) —
+ * Builds the OpenAPI 3.1 {@see OpenApi} document for one server —
  * the bundle's pure-projection entry point: it composes the bundle
  * {@see MetadataSource} (which reads the live registry into core's metadata
  * contract) with the core {@see OpenApiProjector} (which projects that contract into
@@ -26,13 +26,13 @@ use haddowg\JsonApiBundle\Server\ServerProvider;
  * {@see OperationProjector} so component schemas and operation-body schemas surface
  * backed-enum descriptions identically.
  *
- * Building is never per-request (D17): the {@see DocumentWarmer} pre-builds each
+ * Building is never per-request: the {@see DocumentWarmer} pre-builds each
  * server's document at `cache:warmup` and the controller serves the artifact; this
  * factory is the build itself (the warmer's source, and the controller's dev
  * lazy-build fallback). It is **pure** — no I/O — so it is cheap to call in a test
  * and safe to memoize.
  *
- * The wholesale-customisation decorator seam (design §5, D7 — bundle ADR 0080) is
+ * The wholesale-customisation decorator seam is
  * applied **here**, after the core projection: every registered
  * {@see OpenApiFactoryInterface} (priority-ordered, lower first) receives the built
  * {@see OpenApi} VO and returns a mutated one. Because every build path — the warmer,
@@ -89,7 +89,7 @@ final class DocumentFactory
     /**
      * The decorated document for `$serverName` with the operation examples the projector
      * could not build, one {@see \haddowg\JsonApi\OpenApi\MissingExample} per missing
-     * declared value (core ADR 0176), and the scope diagnostics (core ADR 0182). The
+     * declared value, and the scope diagnostics. The
      * export command prints them.
      *
      * @throws \LogicException when an unknown server name is requested
@@ -108,8 +108,8 @@ final class DocumentFactory
     }
 
     /**
-     * The single **combined** OpenAPI document spanning every declared server (design
-     * D5, §10) — the `multi_server: combined` document, unioning every server's types,
+     * The single **combined** OpenAPI document spanning every declared server
+     * — the `multi_server: combined` document, unioning every server's types,
      * advertised base URIs, tag definitions and security schemes into one document.
      *
      * @throws \LogicException when two servers declare the same JSON:API type (one

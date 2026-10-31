@@ -75,12 +75,12 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
         // three association rows over TWO distinct tracks. The ?withCount total counts
         // DISTINCT far members (2), so it agrees with the related-collection endpoint's
         // page total (also 2, see aPivotRelatedCollectionDedupesDuplicateMembership)
-        // and the deduped rendered linkage — one consistent `total` semantic (ADR 0052).
+        // and the deduped rendered linkage — one consistent `total` semantic.
         $document = $this->countsFetchDocument('/playlists/3?withCount=tracks');
 
-        // The inline `?withCount=tracks` relationship-object count (the §6c path,
-        // unchanged by G21) reports the DISTINCT far-member count (2), agreeing with the
-        // deduped rendered linkage — one consistent `total` semantic (ADR 0052).
+        // The inline `?withCount=tracks` relationship-object count (the inline
+        // count path) reports the DISTINCT far-member count (2), agreeing with the
+        // deduped rendered linkage — one consistent `total` semantic.
         self::assertSame(2, $this->relationshipTotal($document, 'tracks'));
     }
 
@@ -217,7 +217,7 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
     #[Group('spec:fetching-filtering')]
     public function aPivotFilterAttachesTheFieldCastDeserializer(): void
     {
-        // Cast-thread guard (bundle ADR 0067): a pivot filter is AUTHOR-declared with a
+        // Cast-thread guard: a pivot filter is AUTHOR-declared with a
         // `pivot.`-prefixed column and carries NO explicit deserializer; the
         // RelationCriteriaFactory must auto-attach the field's own cast (resolved by the
         // STRIPPED column, not the filter key) so the handler binds a typed value — a
@@ -302,7 +302,7 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
         // filter[title] (the related `tracks` vocabulary, contains "o" → Intro,
         // Outro, NOT Bridge) composes with the pivot sort in ONE query; a page of
         // size 2 holds both, so the page is full (no short page). Count-free by
-        // default (G21): the page carries no total, and with both matches on page 1
+        // default: the page carries no total, and with both matches on page 1
         // there is no further page (no `next`).
         $document = $this->fetchDocument('/playlists/1/tracks?filter[title]=o&sort=position&page[size]=2&page[number]=1');
 
@@ -324,7 +324,7 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
     #[Group('spec:fetching-filtering')]
     public function aPivotOperatorFilterNarrowsTheRelatedCollection(): void
     {
-        // An author-declared pivot OPERATOR filter (bundle ADR 0067): `positionGte`
+        // An author-declared pivot OPERATOR filter: `positionGte`
         // targets `pivot.position` with the `>=` operator. filter[positionGte]=2 keeps
         // the members at pivot position >= 2 (Outro@2, Bridge@3), ordered by position.
         $document = $this->fetchDocument('/playlists/1/tracks?filter[positionGte]=2&sort=position');
@@ -336,7 +336,7 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
     #[Group('spec:fetching-filtering')]
     public function aPivotWhereInFilterNarrowsTheRelatedCollection(): void
     {
-        // An author-declared pivot WhereIn filter (bundle ADR 0067): `positionIn`
+        // An author-declared pivot WhereIn filter: `positionIn`
         // targets `pivot.position`. filter[positionIn]=1,3 keeps the members at pivot
         // position 1 or 3 (Intro@1, Bridge@3), ordered by position.
         $document = $this->fetchDocument('/playlists/1/tracks?filter[positionIn]=1,3&sort=position');
@@ -348,7 +348,7 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
     #[Group('spec:fetching-filtering')]
     public function aTypedDatePivotOperatorFilterNarrowsTheRelatedCollection(): void
     {
-        // An author-declared TYPED-DATE pivot operator filter (bundle ADR 0067):
+        // An author-declared TYPED-DATE pivot operator filter:
         // `addedAfter` targets `pivot.addedAt` with `>`, and the DateTime field's cast
         // auto-resolves by the stripped column so the wire value is compared as a date.
         // Playlist 1's rows are added 2024-01-01/02/03; > 2024-01-01 keeps Outro(2) and
@@ -382,7 +382,7 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
         self::assertSame(['1', '2'], [...$firstIds, ...$secondIds]);
 
         // Page 1 of two distinct members signals a further page via `next` (count-free
-        // by default, G21); the dedup holds without a total being needed.
+        // by default); the dedup holds without a total being needed.
         $links = $first['links'] ?? null;
         self::assertIsArray($links);
         self::assertNotNull($links['next'] ?? null, 'a second distinct member follows on page 2');
@@ -393,8 +393,8 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
     public function aNonCountablePivotRelatedEndpointPaginatesCountFree(): void
     {
         // `orderedTracks` is the SAME association entity as `tracks` but left
-        // NON-countable, so its related endpoint paginates count-free (bundle ADR
-        // 0052): page one of two over playlist 1's three distinct members holds two
+        // NON-countable, so its related endpoint paginates count-free: page one of two over
+        // playlist 1's three distinct members holds two
         // items, signals a further page through `next`, and emits NO total and NO
         // `last` — the universal countable() gate reaches the pivot path.
         $document = $this->fetchDocument('/playlists/1/orderedTracks?sort=position&page[size]=2&page[number]=1');
@@ -478,7 +478,7 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
     public function anUnknownKeyStill400sOverTheUnifiedPivotVocabulary(): void
     {
         // The unified alias-aware applier owns the WHOLE merged related+pivot vocab in
-        // one pass (bundle ADR 0059), so an undeclared key in NEITHER the related nor
+        // one pass, so an undeclared key in NEITHER the related nor
         // the pivot vocabulary is still a 400 on the pivot related endpoint.
         $unknownFilter = $this->handle(self::BASE_URI . '/playlists/1/tracks?filter[nope]=x');
         self::assertSame(400, $unknownFilter->getStatusCode(), (string) $unknownFilter->getContent());

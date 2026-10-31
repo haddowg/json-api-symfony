@@ -11,7 +11,7 @@ use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 
 /**
- * The both-servers resource of the multi-server witness (ADR 0034): exposed on
+ * The both-servers resource of the multi-server witness: exposed on
  * **both** the `default` and `admin` servers (`server: ['default', 'admin']`), so
  * the same type is reachable from each — at the root and under `/admin` — with each
  * route resolving its own Server (distinct base_uri in the rendered links).

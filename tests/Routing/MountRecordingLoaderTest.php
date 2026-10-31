@@ -16,7 +16,7 @@ use Symfony\Component\Routing\RouteCollection;
 
 /**
  * The {@see MountRecordingLoader} records each JSON:API route's import prefix as
- * its mount once the whole collection is loaded (bundle ADR 0121).
+ * its mount once the whole collection is loaded.
  */
 #[Group('spec:document-links')]
 final class MountRecordingLoaderTest extends TestCase

@@ -12,8 +12,8 @@ use haddowg\JsonApiBundle\Action\ActionScope;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiAction;
 
 /**
- * `POST /actionWidgets/-actions/import` — the **collection-scope** witness (bundle
- * ADR 0076, design §10): no `{id}`, so {@see ActionContext::entity()} is `null`. The
+ * `POST /actionWidgets/-actions/import` — the **collection-scope** witness: no
+ * `{id}`, so {@see ActionContext::entity()} is `null`. The
  * handler returns a meta-only document (so it declares `responds: [new MetaResult()]`), proving a
  * collection-scope action dispatches and renders without resolving an entity.
  */

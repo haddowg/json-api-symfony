@@ -63,6 +63,10 @@ witness).
 | `defaults.cache_headers` | map | `{}` | Fleet-wide default HTTP cache directives for `GET` reads. A server's own `defaults.cache_headers` and then a resource's own `cacheHeaders` merge over these. |
 | `defaults.deprecation` / `sunset` / `sunset_link` | scalar | `null` | Fleet-wide default deprecation/sunset headers. A server's own `defaults` and then a resource's own `deprecation`/`sunset`/`sunsetLink` override these, key by key. |
 | `reject_read_only_attributes` | bool | `false` | Answer a create or update that sends an attribute the client cannot write in that request, such as a `readOnly()` or computed one, with a `403 ATTRIBUTE_WRITE_PROHIBITED` pointing at each such attribute, instead of ignoring it. The check runs before validation, so it wins over a `422`. Named servers inherit it. |
+| `exceptions` | map | `{}` | Map an exception class to an HTTP status, so a thrown instance renders as a JSON:API error with that status. See [errors](errors.md#facet-1--the-json_apiexceptions-config-map). |
+| `error_codes.paths` | list | `[]` | Directories scanned at build time for your `DescribedErrorInterface` exceptions, which the OpenAPI error catalogue then documents beside core's. See [errors](errors.md#documenting-your-own-error-codes). |
+| `profiles` | list | the three built-ins | The `ProfileInterface` classes every server recognizes: `CursorPaginationProfile`, `CountableProfile` and `RelationshipQueriesProfile` by default. Drop one to stop recognizing and advertising it (its query parameters leave the OpenAPI document too), or add your own class. |
+| `openapi` | map | see [OpenAPI](openapi.md) | Document generation, serving, the viewer, `describedby` links, examples and security schemes. Every key is covered on the [OpenAPI](openapi.md) page. |
 | `servers` | map | `[]` | Additional **named** servers, keyed by name. Each takes `base_uri`, `version`, `output_timezone`, `link_objects`, `reject_read_only_attributes`, `openapi_examples` and a [`defaults`](#per-server-defaults) block of its own. |
 
 `base_uri` and `version` configure the implicit `default` server — link core
@@ -129,7 +133,8 @@ request origin alone.
 
 ### Container parameters
 
-Two of the keys surface as container parameters you can read elsewhere:
+The bundle sets these container parameters, which you can read elsewhere (for example
+as `%haddowg_json_api.base_uri%` in a service definition):
 
 | Parameter | Source | Value |
 | --- | --- | --- |
@@ -138,7 +143,16 @@ Two of the keys surface as container parameters you can read elsewhere:
 | `haddowg_json_api.max_include_depth` | `max_include_depth` | the resolved include-depth cap (default `3`, `0` = unlimited) |
 | `haddowg_json_api.pagination.max_per_page` | `pagination.max_per_page` | the resolved page-size cap (default `100`, `0` = no built-in default) |
 | `haddowg_json_api.doctrine.window_functions` | `doctrine.window_functions` | whether the Doctrine provider runs the native windowed-include batch (default `true`) or the per-parent bounded fallback |
+| `haddowg_json_api.atomic_operations.enabled` | `atomic_operations.enabled` | whether each server gets the Atomic Operations endpoint (default `false`) |
+| `haddowg_json_api.atomic_operations.path` | `atomic_operations.path` | the endpoint's path (default `/operations`) |
+| `haddowg_json_api.atomic_operations.scopes` | `atomic_operations.scopes` | the endpoint's own scope list, or `null` to ask the scope resolver (the default) |
+| `haddowg_json_api.openapi` | `openapi` | the whole `openapi` block as plain arrays and scalars, rebuilt into the document config at runtime |
+| `haddowg_json_api.openapi.scope_scheme` | `openapi.security.scope_scheme` | the security scheme operation scopes are listed under (default `oauth2`) |
+| `json_api.exceptions` | `exceptions` | the exception class → HTTP status map (default `[]`) |
+| `haddowg_json_api.error_code_paths` | `error_codes.paths` | the directories scanned for your described error codes (default `[]`) |
 | `haddowg_json_api.servers` | derived | the list of all server names, e.g. `['default', 'admin']` |
+| `haddowg_json_api.entity_class_by_type` | derived | the `type → entity class` map declared through `#[AsJsonApiResource(entity:)]`, published with or without Doctrine |
+| `haddowg_json_api.installed_versions` | derived | the version and commit of `haddowg/json-api-symfony` and `haddowg/json-api` the container was compiled against, checked on boot (see [upgrading](install.md#upgrading)) |
 
 `haddowg_json_api.servers` is the resolved name list — always including the implicit
 `default` — that the compiler pass reads to validate resource-to-server assignments
@@ -384,7 +398,7 @@ by one route-scoped `kernel.response` listener that reads
 the resource attribute (falling back to the global `json_api.defaults`) — you never
 mutate the response in an after-hook for these.
 
-### Cache headers (G7)
+### Cache headers
 
 Declare cache directives on `#[AsJsonApiResource(cacheHeaders: …)]`. The map keys
 are `max_age`, `s_maxage` (the shared/CDN lifetime), `public`/`private`,
@@ -429,7 +443,7 @@ json_api:
             vary: ['Accept']
 ```
 
-### Deprecation + Sunset (G16)
+### Deprecation + Sunset
 
 Declare a deprecation on `#[AsJsonApiResource(deprecation: …, sunset: …,
 sunsetLink: …)]`. `deprecation` is `true` (emit a bare `Deprecation: true`) or a

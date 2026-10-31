@@ -10,7 +10,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * The include-safeguards acceptance suite (bundle ADR 0037), run identically
+ * The include-safeguards acceptance suite, run identically
  * against the in-memory provider ({@see InMemoryIncludeSafeguardsTest}) and the
  * Doctrine-sqlite provider ({@see DoctrineIncludeSafeguardsTest}) so a failure
  * localizes to a provider, not the fixture. It exercises the three composing

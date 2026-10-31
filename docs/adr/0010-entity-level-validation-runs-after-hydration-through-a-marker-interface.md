@@ -1,0 +1,3 @@
+# Entity-level validation runs after hydration, through a marker interface
+
+Some rules, uniqueness above all, need the hydrated object or the database rather than the request attributes. A constraint implementing `EntityConstraintInterface` is skipped in the document-first pass and validated against the hydrated entity as a Symfony class constraint before the persister commits. The seam is general rather than a special case for `UniqueEntity`: an application adds its own rule through the translator extension point, or returns resource-level rules from `DeclaresEntityConstraintsInterface` (`NativeEntityConstraints` carries ready-made Symfony class constraints), and a violation with no property path points at `/data`.

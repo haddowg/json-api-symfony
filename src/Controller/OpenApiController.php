@@ -16,7 +16,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Serves the OpenAPI 3.1 document for a server (design §3, D9/D17):
+ * Serves the OpenAPI 3.1 document for a server:
  * `GET {json.path}` (default `/docs.json`) for the implicit `default` server and
  * `GET /{server}/docs.json` for a named one.
  *
@@ -34,12 +34,12 @@ use Symfony\Component\HttpFoundation\Response;
  * the bundle's exception listener does not own their errors.
  *
  * The route is registered only when `kernel.debug` is true **or**
- * `json_api.openapi.expose_in_prod` is true (the loader's expose gate, D9), so the
+ * `json_api.openapi.expose_in_prod` is true (the loader's expose gate), so the
  * controller need not re-check exposure.
  *
  * In **combined** multi-server mode (`json_api.openapi.multi_server: combined`) the
  * loader emits only the json-path route, and this controller serves the single
- * combined document spanning every server (D5) — the {@see DocumentFactory::combined()}
+ * combined document spanning every server — the {@see DocumentFactory::combined()}
  * build, stored under {@see ArtifactStore} the combined key — regardless of the route's
  * `server` default.
  *
@@ -47,7 +47,7 @@ use Symfony\Component\HttpFoundation\Response;
  * as they are, tagged with the hash the warmer stored beside them, so a matching
  * `If-None-Match` costs one small read. With serve decorators it loads the warmed value
  * objects, runs the decorators with the request, prunes what they orphaned and serialises
- * the result (bundle ADR 0131).
+ * the result.
  */
 final class OpenApiController
 {

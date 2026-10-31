@@ -15,8 +15,8 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiAction;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Album;
 
 /**
- * `POST /albums/-actions/summary` — a **collection-scope** custom action (G13, bundle
- * ADR 0076, design §1): no `{id}`, so {@see ActionContext::entity()} is `null`. It
+ * `POST /albums/-actions/summary` — a **collection-scope** custom action:
+ * no `{id}`, so {@see ActionContext::entity()} is `null`. It
  * computes a catalogue-wide summary (the published / unpublished album counts) and
  * returns it as a meta-only JSON:API document — a non-CRUD report that has no natural
  * place in the CRUD verb set. It declares `responds: [new MetaResult()]` so the

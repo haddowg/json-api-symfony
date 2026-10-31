@@ -74,8 +74,8 @@ final class ArtistResource extends AbstractResource
             // `albums` is includable (the back-reference of `albums.artist`): an
             // artist's discography is a natural `GET /artists/{id}?include=albums`, and
             // the include-path resolver bounds the depth of the enumerated paths, so the
-            // back-and-forth `albums.artist` cycle does not run away. (Contrast bundle
-            // ADR 0037's cannotBeIncluded() opt-out, demonstrated elsewhere.)
+            // back-and-forth `albums.artist` cycle does not run away. (Contrast the
+            // cannotBeIncluded() opt-out, demonstrated elsewhere.)
             HasMany::make('albums', 'albums'),
         ];
     }

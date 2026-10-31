@@ -11,13 +11,13 @@ use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * The dual-provider conformance contract for custom / non-CRUD actions (G13, bundle
- * ADR 0076, design §10): identical assertions run against the in-memory kernel
+ * The dual-provider conformance contract for custom / non-CRUD actions:
+ * identical assertions run against the in-memory kernel
  * ({@see InMemoryCustomActionTest}) and the Doctrine-sqlite kernel
  * ({@see DoctrineCustomActionTest}), so a failure on one provider but not the other
  * localizes to that data layer.
  *
- * Every row of the §10 acceptance matrix is covered: a resource-scope `Document`
+ * Every row of the acceptance matrix is covered: a resource-scope `Document`
  * (here input-`None`) action returning the mount resource; a collection-scope action;
  * a Raw-input upload returning `204`; a custom `inputType`/`outputType` (a bespoke
  * command in, a bespoke document out); a per-action `security` deny → `403`; the
@@ -200,7 +200,7 @@ abstract class CustomActionConformanceTestCase extends JsonApiFunctionalTestCase
     #[Group('spec:actions')]
     public function anActionPathIsNotShadowedByTheResourceOrRelationshipRoutes(): void
     {
-        // Route ordering (design §7): the action routes are emitted before the generic
+        // Route ordering: the action routes are emitted before the generic
         // /{type}/{id} and /{type}/{id}/{relationship} routes, so the literal -actions
         // segment is never captured as an {id} or a {relationship} name.
         //
@@ -226,7 +226,7 @@ abstract class CustomActionConformanceTestCase extends JsonApiFunctionalTestCase
     #[Group('spec:actions')]
     public function aNonActionMethodOnACollectionScopeActionPathIsNotShadowedByTheRelatedRoute(): void
     {
-        // Regression guard for the collection-scope shadow (design §7's "the literal
+        // Regression guard for the collection-scope shadow (the guarantee that "the literal
         // `-actions` is never captured as an {id}" guarantee). A collection-scope
         // action path `/{type}/-actions/{name}` is three segments — structurally
         // identical to the generic related route `GET /{type}/{id}/{relationship}`.
@@ -259,7 +259,7 @@ abstract class CustomActionConformanceTestCase extends JsonApiFunctionalTestCase
     {
         // The `pin` action declares asLink: true with NO security, so its `links.pin`
         // member renders on every rendered actionWidgets resource and resolves to the
-        // action's own route URL (bundle ADR 0091).
+        // action's own route URL.
         $links = $this->linksOf($this->action('/actionWidgets/1', 'GET'));
 
         self::assertArrayHasKey('pin', $links);
@@ -285,7 +285,7 @@ abstract class CustomActionConformanceTestCase extends JsonApiFunctionalTestCase
     {
         // The `archive` action declares asLink: true AND security: ROLE_ADMIN. The link
         // renders ONLY for a requester who would pass the same gate the BeforeActionEvent
-        // uses — present for `admin`, absent for `user` (bundle ADR 0091).
+        // uses — present for `admin`, absent for `user`.
         $adminLinks = $this->linksOf($this->action('/actionWidgets/1', 'GET', null, ['HTTP_AUTHORIZATION' => 'Bearer admin']));
         self::assertArrayHasKey('archive', $adminLinks);
         self::assertStringEndsWith('/actionWidgets/1/-actions/archive', $this->href($adminLinks['archive']));

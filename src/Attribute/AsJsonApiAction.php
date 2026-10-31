@@ -16,8 +16,8 @@ use haddowg\JsonApiBundle\OpenApi\Metadata\OperationScopeOverrides;
 /**
  * Registers the annotated {@see \haddowg\JsonApiBundle\Action\ActionHandlerInterface}
  * as a **custom, non-CRUD action** hanging off a JSON:API `type` under the reserved
- * `-actions` segment (bundle ADR 0076). Discovery is by autoconfiguration, exactly
- * the standalone-serializer/hydrator pattern (ADR 0024) — there is no
+ * `-actions` segment. Discovery is by autoconfiguration, exactly
+ * the standalone-serializer/hydrator pattern — there is no
  * `AbstractResource` sugar; an action is a standalone handler class.
  *
  * `type` is the **mount type**: the `{uriType}` URL segment the action hangs off,
@@ -32,7 +32,7 @@ use haddowg\JsonApiBundle\OpenApi\Metadata\OperationScopeOverrides;
  * `methods` is the author-declared HTTP method allow-list (default `['POST']`; any
  * of GET/POST/PATCH/PUT/DELETE).
  *
- * `input` chooses the request-body contract (design §3): {@see ActionInput::None}
+ * `input` chooses the request-body contract: {@see ActionInput::None}
  * (default) reads no body; {@see ActionInput::Document} parses + validates +
  * hydrates a JSON:API document into an `inputType` instance; {@see ActionInput::Raw}
  * relaxes request content-type negotiation for a non-JSON:API upload.
@@ -44,7 +44,7 @@ use haddowg\JsonApiBundle\OpenApi\Metadata\OperationScopeOverrides;
  * `inputType` resolves to `type`.
  *
  * `responds` declares the action's success response set for the generated OpenAPI
- * document (core's per-operation response declarations, ADR 0127) — the same atomic
+ * document (core's per-operation response declarations) — the same atomic
  * response objects a resource declares, restricted to those valid on an action:
  *  - `new ActionResource('type')` → `200` with that type's document schema (a resource
  *    body; the handler returns a {@see \haddowg\JsonApi\Response\DataResponse} through
@@ -72,12 +72,12 @@ use haddowg\JsonApiBundle\OpenApi\Metadata\OperationScopeOverrides;
  * {@see https://symfony.com/doc/current/security/expressions.html ExpressionLanguage}
  * string, evaluated against the resolved entity (resource scope) / `null`
  * (collection scope) at the per-action `BeforeActionEvent` gate, denying with a
- * `403` on a false result (design §6). It rides on the action, not the type.
+ * `403` on a false result. It rides on the action, not the type.
  *
  * `name` is an optional route-name override.
  *
  * `tags` declares the **OpenAPI tag names** this action's operation is grouped under
- * in the generated OpenAPI document (design §4.7, D15). An empty array means the
+ * in the generated OpenAPI document. An empty array means the
  * default: inherit the resource tag(s) of the action's mount `type`, so actions
  * group with their resource. Tags carry no JSON:API meaning.
  *
@@ -94,12 +94,12 @@ use haddowg\JsonApiBundle\OpenApi\Metadata\OperationScopeOverrides;
  * `asLink: true` with a collection scope is a build-time error.
  *
  * `example` replaces or switches off the worked example the OpenAPI document generates
- * for the action's operation (core ADR 0176): `null` keeps the generated one, `false`
+ * for the action's operation: `null` keeps the generated one, `false`
  * emits none, and a core `OperationExample` replaces the request and the per-status
  * responses it names.
  *
- * `readOnly`, `destructive` and `idempotent` say how safe the action is to call (core ADR
- * 0179). The OpenAPI document stamps whichever are declared on the action's operation as
+ * `readOnly`, `destructive` and `idempotent` say how safe the action is to call. The OpenAPI
+ * document stamps whichever are declared on the action's operation as
  * one `x-safety` object; `null` leaves a flag out. An action declared both read-only and
  * destructive fails the container build.
  *

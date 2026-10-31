@@ -63,10 +63,16 @@ use haddowg\JsonApi\Response\NoContentResponse;
     security: "is_granted('PUBLISH', subject)",   // optional authz expression (see Authorization)
     name: null,                     // optional route-name override
     asLink: false,                  // expose as a security-aware `links` member (resource scope only)
+    tags: [],                       // OpenAPI tags; empty inherits the mount type's resource tags
+    summary: null,                  // OpenAPI operation summary / description
+    description: null,
+    accepts: [],                    // request media types the action takes; empty = its input mode's default
+    example: null,                  // OperationExample override for the generated example; false emits none
     readOnly: null,                 // declared safety, stamped as OpenAPI x-safety; null leaves a flag out
     destructive: null,
     idempotent: null,
     extensions: [],                 // OpenAPI x- extensions for this action's operation only
+    scopes: null,                   // OAuth scopes this action needs; null asks the scope resolver (see Scopes)
 )]
 final class PublishArticle implements ActionHandlerInterface
 {
@@ -244,8 +250,8 @@ operation lists the `415`.
 
 Every `POST` must send a `Content-Type`, even one with no body, and so must a `PATCH`,
 `PUT` or `DELETE` that has a body. For CRUD writes, Atomic Operations and `None` or
-`Document` actions it must be `application/vnd.api+json`; anything else is a `415`
-(core ADR 0172). A bodyless `POST` sent as `application/vnd.api+json` passes any action,
+`Document` actions it must be `application/vnd.api+json`; anything else is a `415`.
+A bodyless `POST` sent as `application/vnd.api+json` passes any action,
 whatever its `accepts`, and the handler sees no body: clients send that type on every
 `POST`, and it cannot be sent cross-origin without a preflight. A bodyless `PATCH`,
 `PUT` or `DELETE` needs no `Content-Type`.
@@ -414,10 +420,6 @@ and the action's value wins on a shared name. The names follow the same rules as
 type's: a full `x-` name, outside the reserved `x-oai-` and `x-oas-` prefixes, or the
 build fails. A declared `x-safety` wins over an extension of that name.
 
-Generator contract 15 introduced these: multi-method actions, declared safety and an
-action's own extensions. Contract 18 then raised the baseline past it, so every document is
-stamped 18 in `info.x-generator`, whether it uses them or not.
-
 ### Raw responses (CSV, PDF, plain JSON)
 
 An action can answer with a body that is not JSON:API by declaring a core `RawResult`
@@ -503,7 +505,7 @@ document with the URL as its `location` link:
 ```json
 {
   "links": {
-    "self": "https://music.example/albums/1/-actions/download",
+    "self": { "href": "https://music.example/albums/1/-actions/download" },
     "location": {
       "href": "https://storage.example.com/albums/1.csv?signature=example",
       "type": "text/csv",
@@ -528,8 +530,7 @@ response, and `$context->seeOther($url, $expiresAt)` is the same response.
 The media type is the opt-in. A bare `new SeeOther()`, or one with only a description,
 stays the plain `303` it always was. The OpenAPI document shows both responses. The
 `200` references the shared `LocationDocument` component, and the `303` documents
-`Location`. Contract 17 introduced this response. Every document now carries contract 18,
-the baseline since the links components were shared.
+`Location`.
 Core's [location responses](https://github.com/haddowg/json-api/blob/main/docs/responses.md#location-responses)
 describe the rendering in full.
 
@@ -543,13 +544,16 @@ exposes both the resolved request state and pre-wired response factories:
 | `entity()` | the resolved entity (resource scope) or `null` (collection scope) |
 | `input()` | the hydrated input (`Document` mode) or `null` |
 | `request()` | the JSON:API request — always; the raw body + uploaded files for `Raw` mode |
+| `requestMediaType()` | the request body's media type as matched against `accepts`, without parameters, or `null` with no body |
+| `responseMediaType()` | the media type the `Accept` header picked from `responds`: `application/vnd.api+json` or a raw result's type |
 | `queryParameters()` | the parsed, strict-validated query parameters |
 | `serializer()` | the `outputType` serializer |
 | `server()` | the resolving server |
 | `data($data)` | a `DataResponse` pre-wired to the response serializer |
 | `meta($array)` | a `MetaResponse` |
 | `noContent()` | a `NoContentResponse` (`204`) |
-| `accepted($url)` | an `AcceptedResponse` (`202`) — an async accept pointing at the poll URL (chain `->withRetryAfter()`) |
+| `raw($body, $mediaType, $status, $headers)` | a `RawResponse`: a string, stream resource or PSR-7 stream sent as it is, in the negotiated raw type by default |
+| `accepted($url, $job)` | an `AcceptedResponse` (`202`) — an async accept pointing at the poll URL, with the job as `data` when given (chain `->withRetryAfter()`) |
 | `seeOther($url, $expiresAt)` | a `SeeOtherResponse` (`303`): an async-completion redirect, or the URL a download action hands out, with an optional expiry |
 
 The `data()` / `meta()` / `noContent()` factories are the ergonomic path; reach for

@@ -41,7 +41,7 @@ use Symfony\Component\Clock\Clock;
  * `title` and `category` are sortable (`category` carries ties, so multi-field
  * sort composition is observable); `body` deliberately is not, so sorting on a
  * declared-but-unsortable field is testable. The filters cover the exact /
- * contains / id-set shapes of the Phase-1 vocabulary.
+ * contains / id-set shapes of the read-query vocabulary.
  *
  * `title` and `category` also carry validation constraints (required + length,
  * and an enum) that are inert on reads but exercised by the write/validation
@@ -61,7 +61,7 @@ abstract class BaseArticleResource extends AbstractResource
 
     public function __construct()
     {
-        // The primary collection is client-countable (G21 §6a): `?withCount=_self_`
+        // The primary collection is client-countable: `?withCount=_self_`
         // under the Countable profile renders the total; the paginator stays
         // count-free by default, so an unrequested page never counts.
         $this->countable();
@@ -73,7 +73,7 @@ abstract class BaseArticleResource extends AbstractResource
             // Store-provided id: the `articles` entity keys on a database
             // auto-increment, so a create omits `data.id` and the store assigns the
             // next sequential int (rendered as a string on the wire) — the realistic,
-            // common pattern. `Id::make()` sets nothing on create (core ADR 0048).
+            // common pattern. `Id::make()` sets nothing on create (core docs/ids.md).
             Id::make(),
             Str::make('title')->sortable()->required()->minLength(3)->maxLength(50),
             Str::make('body'),
@@ -95,7 +95,7 @@ abstract class BaseArticleResource extends AbstractResource
             // Cross-field rule: expiresAt must be after publishedAt — exercises the
             // document-level CompareField execution path.
             DateTime::make('expiresAt')->nullable()->compareWith('publishedAt', Comparison::GreaterThan),
-            // Structured attribute (Phase 3 S6): a nested `address` object whose two
+            // Structured attribute: a nested `address` object whose two
             // children carry their own constraints. The bridge validates them by
             // recursion (the implicit Valid-cascade), so a too-short `street` or a
             // pattern-violating `postcode` surfaces a 422 at
@@ -134,13 +134,13 @@ abstract class BaseArticleResource extends AbstractResource
 
                 return $model;
             }),
-            // Relationships (Phase 3 foundation): a to-one `author` and a
+            // Relationships: a to-one `author` and a
             // to-many `comments`. Core reads the related objects off the model
             // (`$model->author` / `$model->comments`) and emits resource-identifier
             // linkage via the serializer registered for each related type.
             BelongsTo::make('author', 'authors'),
             // The to-many `comments` relation also declares its OWN scoped filter
-            // and sort (core ADR 0051), available ONLY on
+            // and sort (core docs/relations.md), available ONLY on
             // `GET /articles/{id}/comments` — never the primary `/comments`
             // collection (which exposes just the comment resource's `filter[body]`).
             // `filter[commentBody]` is a contains-match on the comment body and
@@ -148,19 +148,19 @@ abstract class BaseArticleResource extends AbstractResource
             // contextual vocabulary the related type does not expose globally. The
             // host merges these with the comment resource's own vocabulary.
             // `withData()` keeps this to-many EAGER (a to-many is lazy by default since
-            // the flip to per-type defaults, core ADR 0067): it is the always-emitting
+            // the flip to per-type defaults): it is the always-emitting
             // regression baseline its data-presence assertions rely on, distinct from
             // the lazy `lazyComments`/`pinnedComments` witnesses below.
             HasMany::make('comments', 'comments')
                 ->withData()
                 ->withFilters(Where::make('commentBody', 'body', 'like'))
                 ->withSorts(SortByField::make('recent', 'id')),
-            // Per-relation default paginator (Phase 4 P7): reuses the `comments`
+            // Per-relation default paginator: reuses the `comments`
             // property but carries its own PagePaginator, so
             // `GET /articles/1/pagedComments` paginates by `page[number]`/`page[size]`
             // while plain `comments` stays unpaginated. The same related collection,
             // two pagination policies — pinning that pagination is per-relation.
-            // Marked countable() (bundle ADR 0052) so its related-collection endpoint
+            // Marked countable() so its related-collection endpoint
             // computes the total and emits `meta.page.total` + a `last` link, and
             // `?withCount=pagedComments` activates the relationship-object `meta.total`.
             HasMany::make('pagedComments', 'comments')->storedAs('comments')->paginate(PagePaginator::make())->countable(),
@@ -170,16 +170,16 @@ abstract class BaseArticleResource extends AbstractResource
             // the related-collection fetch scopes membership via an IN subquery.
             // Paginated, so the endpoint witnesses page/filter/sort over the
             // subquery. Countable so its endpoint still emits a total over the
-            // subquery scope (bundle ADR 0052).
+            // subquery scope.
             HasMany::make('editors', 'authors')->storedAs('editors')->paginate(PagePaginator::make())->countable(),
             // A countable, paginated inverse-FK to-many over the UNIQUE `pinnedComments`
-            // column (no other relation shares it), so the windowed-include batch (bundle
-            // ADR 0065) asserts per-parent order + the REAL total on the inverse-FK shape
+            // column (no other relation shares it), so the windowed-include batch asserts
+            // per-parent order + the REAL total on the inverse-FK shape
             // without the shared-column last-writer-wins boundary the `comments`-backed
             // relations carry.
             HasMany::make('pinnedComments', 'comments')->storedAs('pinnedComments')->paginate(PagePaginator::make())->countable()
                 ->withFilters(Where::make('bodyContains', 'body', 'like')),
-            // Load-aware relationships under the lazy default (core ADR 0067) so the
+            // Load-aware relationships under the lazy default so the
             // storage-aware load-state predicate decides whether `data` is emitted.
             // They exercise the predicate on both providers, distinct from the
             // eager `withData()` `comments` baseline above.
@@ -196,7 +196,7 @@ abstract class BaseArticleResource extends AbstractResource
             // predicate, so it always emits.
             BelongsTo::make('lazyAuthor', 'authors')->storedAs('author'),
             HasMany::make('lazyComments', 'comments')->storedAs('featuredComments'),
-            // Mutability variants (Phase 3 S3): relationship-endpoint mutation
+            // Mutability variants: relationship-endpoint mutation
             // guards. `lockedAuthor` reuses the `author` property but forbids
             // replacement (a PATCH to its endpoint is FullReplacementProhibited);
             // `lockedComments` reuses the `comments` property but forbids removal
@@ -208,7 +208,7 @@ abstract class BaseArticleResource extends AbstractResource
             // A SECOND `withData()` to-many over the SAME `comments` backing column as
             // the `comments` relation above — so the two are CO-WINDOWED on one column,
             // each addressed by its OWN relatedQuery filter and each rendering its own
-            // filtered page out-of-band (bundle ADR 0086). It carries a distinct scoped
+            // filtered page out-of-band. It carries a distinct scoped
             // filter key (`flaggedBody`, a contains-match on the comment body) so the
             // two co-windowed relations are filtered to DIFFERENT subsets of the shared
             // membership, witnessing no cross-contamination on either provider.
@@ -229,12 +229,12 @@ abstract class BaseArticleResource extends AbstractResource
         return [
             Where::make('title'),
             Where::make('titleContains', 'title', 'like'),
-            // Singular filter (core ADR 0039): a zero-to-one filter on the unique
+            // Singular filter (core docs/filters.md): a zero-to-one filter on the unique
             // title. Applying it collapses the collection to a single resource (or
             // null), so the same `/articles` endpoint serves a to-one shape.
             Where::make('exactTitle', 'title')->singular(),
             WhereIdIn::make(),
-            // Relationship-existence filters (Phase 3 S5). The request value is
+            // Relationship-existence filters. The request value is
             // ignored — presence on the named association decides the match. The
             // to-many `comments` and the to-one `author` both exercise the
             // EXISTS/NOT EXISTS translation on Doctrine and core's non-empty /
@@ -244,7 +244,7 @@ abstract class BaseArticleResource extends AbstractResource
             WhereHas::make('hasAuthor', 'author'),
             WhereDoesntHave::make('lacksAuthor', 'author'),
 
-            // Convenience filter library (G8b, core ADRs 0075-0077, bundle ADR 0082) —
+            // Convenience filter library (docs/doctrine.md) —
             // shared across the article kernels so the dual-provider
             // ConvenienceFilterConformanceTestCase and the DoctrineReadQueryBudgetTest
             // both see them. The intent-named string strategies on `title` and the
@@ -271,7 +271,7 @@ abstract class BaseArticleResource extends AbstractResource
 
     /**
      * The `articles` collection paginates with the default page strategy and is
-     * **count-free by default** (G21): a bare `?page[size]=…` windows without a
+     * **count-free by default**: a bare `?page[size]=…` windows without a
      * `COUNT`. The resource is {@see countable()} (in the constructor), so a client
      * may opt into the total per request with `?withCount=_self_` under the
      * negotiated Countable profile — the matrix witness for the primary-collection

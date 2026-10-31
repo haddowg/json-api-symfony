@@ -9,8 +9,7 @@ namespace haddowg\JsonApiBundle\Serializer;
  * computes for a fetched page of parents under the Relationship Queries profile: the
  * windowed relationship-object PAGINATION (core's `first`/`prev`/`next` (+`last`)
  * links) and the windowed LINKAGE data (the page-1 filtered/sorted set, supplied to
- * core out-of-band so the page is never written onto the parent property — bundle ADR
- * 0086).
+ * core out-of-band so the page is never written onto the parent property).
  *
  * The handler installs each member into its own request-scoped holder
  * ({@see RequestScopedRelationshipPagination} / {@see RequestScopedRelationshipLinkage})

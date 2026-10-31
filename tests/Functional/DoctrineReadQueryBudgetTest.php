@@ -44,8 +44,8 @@ final class DoctrineReadQueryBudgetTest extends JsonApiFunctionalTestCase
         // preloader batches the INCLUDED comments in ONE query across the page
         // (SELECT … FROM comment WHERE article_id IN (…)), so the include load is O(1)
         // in the parent count — a per-parent preloader regression would emit five
-        // `WHERE article_id = ?` loads instead. (Since the lazy-by-default flip, core
-        // ADR 0067, a non-included to-many renders links-only and forces no per-parent
+        // `WHERE article_id = ?` loads instead. (Since the lazy-by-default flip in
+        // core, a non-included to-many renders links-only and forces no per-parent
         // load at all — see the Finding-2 witness below — so this isolates the include
         // batch by its `IN (…)` fingerprint.)
         $response = $this->handle(self::BASE_URI . '/articles?include=comments');
@@ -140,7 +140,7 @@ final class DoctrineReadQueryBudgetTest extends JsonApiFunctionalTestCase
         $logger->reset();
 
         // GET /articles (5 parents) — a plain collection, no `?include`. The Finding-2
-        // fix (core ADR 0067): a to-many is lazy by default, so a non-included to-many
+        // fix: a to-many is lazy by default, so a non-included to-many
         // renders its links only and never initialises its collection just to serialize
         // identifiers. The `pinnedComments` relation is an inverse one-to-many keyed by
         // the UNIQUE `pinned_article_id` FK on the comment table, so a per-parent
@@ -174,7 +174,7 @@ final class DoctrineReadQueryBudgetTest extends JsonApiFunctionalTestCase
         $logger = $this->logger();
         $logger->reset();
 
-        // The G21 default flip: a bare `?page[size]=2` (no `?withCount`) now windows
+        // The count-free default: a bare `?page[size]=2` (no `?withCount`) now windows
         // count-free — ZERO COUNT queries, one primary SELECT (the windowed page over
         // the limit+1 probe).
         $response = $this->handle(self::BASE_URI . '/articles?page[size]=2');
@@ -238,7 +238,7 @@ final class DoctrineReadQueryBudgetTest extends JsonApiFunctionalTestCase
 
         // A resource that disables pagination (pagination() returns null) is fetched
         // whole, so its size is free — `meta.total` is rendered unconditionally with
-        // NO COUNT query (the size comes from the materialised set, G21 §5). The
+        // NO COUNT query (the size comes from the materialised set). The
         // `unpaginatedArticles` resource serves the same article rows with no paginator.
         $response = $this->handle(self::BASE_URI . '/unpaginatedArticles');
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());

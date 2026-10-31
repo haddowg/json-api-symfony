@@ -18,7 +18,7 @@ use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Symfony\Component\Yaml\Yaml;
 
 /**
- * The CLI export (D13) and cache-warmer (D17) witnesses: the `json-api:openapi:export`
+ * The CLI export and cache-warmer witnesses: the `json-api:openapi:export`
  * command writes JSON and YAML; the `json-api:json-schema:export` command emits a
  * per-type JSON Schema; and the {@see DocumentWarmer} dumps the per-server artifact the
  * controller then serves O(file read).
@@ -153,7 +153,7 @@ final class OpenApiExportAndWarmerTest extends JsonApiFunctionalTestCase
 
         $publicPath = \sys_get_temp_dir() . '/json-api-symfony-tests/openapi-public/' . \bin2hex(\random_bytes(6));
 
-        // A warmer configured with a public_path (D17/§6): it also emits a fully static
+        // A warmer configured with a public_path: it also emits a fully static
         // <server>.json (+ .yaml when symfony/yaml is present) the CDN serves with zero
         // PHP. The directory does not exist yet — writeStatic() must mkdir it.
         $warmer = new DocumentWarmer(

@@ -14,7 +14,7 @@ use haddowg\JsonApi\Resource\Field\BelongsTo;
  * {@see Widget::$related} property) so `?include=related` renders another
  * `actionWidgets` resource as an INCLUDED member — the witness that the asLink
  * resource-link contributor runs for every rendered resource of the type, not only the
- * primary one (bundle ADR 0091). The Doctrine kernel keeps the bare base (no relation),
+ * primary one. The Doctrine kernel keeps the bare base (no relation),
  * since the included-member render is provider-agnostic and proven on the in-memory side.
  */
 final class WidgetResource extends BaseWidgetResource

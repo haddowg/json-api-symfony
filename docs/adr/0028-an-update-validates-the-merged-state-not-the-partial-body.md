@@ -1,0 +1,3 @@
+# An update validates the merged state, not the partial body
+
+A `PATCH` is partial, so cross-field and conditional rules would otherwise judge a partial picture. The validator merges the stored resource's wire-form attributes under the incoming ones and validates the result, dropping stored nulls so an absent optional field does not become a present null. Pivot meta does the same per member: an existing member merges its stored pivot row (read through `DataProviderInterface::fetchRelationshipPivot()`) and validates in the update context, while a new member validates in the create context, so a required pivot field is a `422` on a new row and never a false refusal on a reorder.

@@ -58,9 +58,6 @@ Two wiring notes:
   OpenAPI schema); it just doesn't validate. Install `opis/json-schema` to get
   the `422`s.
 
-Design records: ADR 0111 (the `Obj`/`OneOf` cascade) and ADR 0112 (`Shape` value
-validation through the core validator).
-
 ## Authoring your own composite constraint
 
 `Shape` is not privileged — it is just a core

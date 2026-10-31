@@ -17,7 +17,7 @@ use haddowg\JsonApiBundle\Validation\JsonPointerBuilder;
 use haddowg\JsonApiBundle\Validation\RelationshipTypeUnacceptable;
 
 /**
- * Applies the related endpoint's scope to the linkage a write sends (bundle ADR 0126),
+ * Applies the related endpoint's scope to the linkage a write sends,
  * before the persister resolves it.
  *
  * Each identifier must name one of the relation's related types, whether or not the

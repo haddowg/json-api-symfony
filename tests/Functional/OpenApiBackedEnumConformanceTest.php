@@ -11,7 +11,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The backed-enum leg of the conformance guarantee (design §4.8/§8): a real `products`
+ * The backed-enum leg of the conformance guarantee: a real `products`
  * response — whose `status` attribute is a `->enum(CatalogStatus::class)` field the
  * projector hoists into the reusable `#/components/schemas/CatalogStatus` component and
  * `$ref`s from the resource schema — validates against that generated component.

@@ -10,7 +10,7 @@ use Symfony\Component\Routing\RouteCollection;
 
 /**
  * Decorates the application's root route loader (`routing.loader`) to record where
- * each JSON:API server is mounted (bundle ADR 0121).
+ * each JSON:API server is mounted.
  *
  * {@see JsonApiRouteLoader} cannot see the `prefix` of the import that loads it,
  * because Symfony applies the prefix to the returned collection afterwards. Once the

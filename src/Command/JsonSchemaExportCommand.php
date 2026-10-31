@@ -17,7 +17,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 /**
  * Exports a server's standalone per-type JSON Schema 2020-12 documents — the resource
  * object (`type` const, `id`, `attributes`, …) for one type to a file / stdout, or
- * every type to a directory (design §7, D11/D13).
+ * every type to a directory.
  *
  * `--type` exports one type (stdout, or `--output=FILE`); omitting it exports every
  * type to `--output=DIR` (one `<type>.json` per type). The schema is the **same**

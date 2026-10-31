@@ -20,7 +20,7 @@ use Symfony\Component\DependencyInjection\Reference;
  * Assembles the {@see ErrorCatalogSourceInterface}s the {@see MetadataSource} hands
  * every server's {@see \haddowg\JsonApiBundle\OpenApi\Metadata\ServerMetadata}, so an
  * application's own described errors are catalogued in the OpenAPI document beside
- * core's (core ADR 0136).
+ * core's.
  *
  * Two ways in, because an exception is not a service and cannot be autoconfigured:
  *

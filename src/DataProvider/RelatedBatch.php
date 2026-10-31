@@ -11,7 +11,7 @@ use haddowg\JsonApi\Collection\CollectionResult;
  * for **every parent in a page**, keyed by the parent's JSON:API (wire) id — the
  * collection/include twin of a single {@see CollectionResult}, the read-side
  * analogue of the count-only map {@see DataProviderInterface::countRelated()}
- * returns (bundle ADR 0061).
+ * returns.
  *
  * {@see DataProviderInterface::fetchRelatedCollectionBatch()} produces it for ONE
  * relation across the whole page of parents in a single store round-trip
@@ -50,8 +50,7 @@ final readonly class RelatedBatch
     /**
      * A batch for a relation that is not backed by anything the provider loads: its
      * value comes from a getter or other model member, which the author owns. The
-     * {@see RelatedIncludeBatcher} renders it as the model returns it, scoped or not
-     * (bundle ADR 0125).
+     * {@see RelatedIncludeBatcher} renders it as the model returns it, scoped or not.
      */
     public static function computed(): self
     {
@@ -71,7 +70,7 @@ final readonly class RelatedBatch
      * target). Every parent reads as empty through
      * {@see for()}, and {@see isSupported()} is `false` so the
      * {@see RelatedIncludeBatcher} can tell "no members" from "not loaded": it leaves an
-     * unscoped relation lazy and refuses a scoped one (bundle ADR 0125).
+     * unscoped relation lazy and refuses a scoped one.
      */
     public static function unsupported(): self
     {

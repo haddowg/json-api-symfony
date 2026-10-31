@@ -11,8 +11,8 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Characterizes the {@see OpenApiConfigResolver} security-scheme resolution (design §4.6,
- * D8): every advertised scheme type resolves into a typed VO — including **oauth2** (its
+ * Characterizes the {@see OpenApiConfigResolver} security-scheme resolution:
+ * every advertised scheme type resolves into a typed VO — including **oauth2** (its
  * `flows` graph → an `OAuthFlows`/`OAuthFlow` VO) — and a `default_requirement` that names
  * a scheme which did not resolve is dropped so the document never carries a dangling
  * security reference.

@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * Prefixed-mount witness for the documentation viewer (design D6): the OpenAPI routes are
+ * Prefixed-mount witness for the documentation viewer: the OpenAPI routes are
  * imported under `->prefix('/api')`, so the document lives at `/api/docs.json`. The viewer
  * must point at that prefixed URL — generated from the document route, not joined from the
  * front-controller base URL (which carries no routing prefix). This regression-guards the

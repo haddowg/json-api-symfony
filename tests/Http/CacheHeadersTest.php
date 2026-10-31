@@ -10,7 +10,7 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Characterizes the {@see CacheHeaders} value object (bundle ADR 0054): the scalar
+ * Characterizes the {@see CacheHeaders} value object: the scalar
  * `fromArray()` round-trip, the directive-wise `mergeOver()` precedence, and the
  * `Cache-Control` + `Vary` it writes onto a {@see Response}.
  */

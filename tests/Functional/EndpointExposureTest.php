@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The endpoint-exposure witness (ADR 0027): relationship routes stay parametric,
+ * The endpoint-exposure witness: relationship routes stay parametric,
  * so the {@see \haddowg\JsonApiBundle\Operation\CrudOperationHandler} enforces each
  * relation's endpoint-exposure flags. A `withoutRelatedEndpoint()` /
  * `withoutRelationshipEndpoint()` relation's read is a `404` (reusing
@@ -115,7 +115,7 @@ final class EndpointExposureTest extends JsonApiFunctionalTestCase
     #[Group('spec:document-resource-objects')]
     public function aResourceOptedOutOfTheSelfLinkOmitsItsResourceSelfButKeepsTheDocumentSelf(): void
     {
-        // GizmoResource::emitsSelfLink() returns false (core ADR 0054), so the
+        // GizmoResource::emitsSelfLink() returns false (core docs/links-and-meta.md), so the
         // resource object carries no convention `data.links.self`. The opt-out is
         // resource-scoped: the top-level document `self` (the request URI) is
         // unaffected and still present.

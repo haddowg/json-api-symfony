@@ -96,7 +96,7 @@ most frameworks offer. But its coverage is of JSON:API **1.0**, incompletely:
 1.1-era mechanisms (`ext` extensions, the `profile` parameter, `lid`) are
 unimplemented and untracked — a
 ["JSON:API v1.1 support" request (#8022)](https://github.com/api-platform/core/issues/8022)
-has been open since 2021 — and even base-1.0 client-generated-ID support (§7.3)
+has been open since 2021 — and even base-1.0 support for client-generated IDs
 only landed in mid-2026
 ([PR #7930](https://github.com/api-platform/core/pull/7930), merged 2026-06-05).
 
@@ -131,11 +131,9 @@ direct consequence of 1.1 support being unimplemented
 ### JSON:API format maintenance & stability signal
 
 JSON:API is the *sole, purpose-built* output of these libraries — not a secondary
-format alongside a different-first design. Every conformance decision is recorded
-in a public ADR trail (131 decision records in core alone, plus the bundle's
-own), and the test suites (149 test classes in core, 184 in the bundle) group
-spec-requirement tests by spec section, so coverage is auditable
-section-by-section.
+format alongside a different-first design. The test suites (149 test classes in core,
+184 in the bundle) group spec-requirement tests by spec section, so coverage is
+auditable section-by-section.
 
 API Platform's JSON:API support is actively maintained — 19 JSON:API-touching
 PRs merged January–June 2026 — and it would be wrong to call it abandoned. But

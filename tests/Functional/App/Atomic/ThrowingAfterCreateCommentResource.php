@@ -13,9 +13,8 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Resource\BaseCommentResource;
 
 /**
  * The `comments` resource for the in-memory Atomic Operations kernel, augmented with
- * a throwing post-commit hook — the witness for the Slice D guarantee that a
- * SUCCESSFUL, durably-committed batch is NOT failed by a throwing `After*` hook
- * (bundle ADR 0088).
+ * a throwing post-commit hook — the witness for the guarantee that a
+ * SUCCESSFUL, durably-committed batch is NOT failed by a throwing `After*` hook.
  *
  * `afterCreate` runs post-commit; under an atomic batch it is DEFERRED to the
  * post-commit drain. It throws only for the sentinel body `BOOM`, so the ordinary

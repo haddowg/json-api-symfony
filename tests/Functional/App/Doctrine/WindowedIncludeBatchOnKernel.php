@@ -6,7 +6,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\Doctrine;
 
 /**
  * The `json_api.doctrine.window_functions: true` kernel — the bounded ROW_NUMBER/COUNT
- * OVER native windowed-include batch (bundle ADR 0065).
+ * OVER native windowed-include batch.
  */
 final class WindowedIncludeBatchOnKernel extends WindowedIncludeBatchKernel
 {

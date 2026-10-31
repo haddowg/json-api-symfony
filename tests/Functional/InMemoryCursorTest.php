@@ -8,7 +8,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\JsonApiTestKernel;
 
 /**
  * {@see CursorConformanceTestCase} against the in-memory provider — the keyset
- * witness (the ground truth the Doctrine push-down matches; bundle ADR 0063).
+ * witness (the ground truth the Doctrine push-down matches).
  */
 final class InMemoryCursorTest extends CursorConformanceTestCase
 {

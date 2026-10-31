@@ -12,7 +12,7 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 /**
  * A declared security expression with no authorization checker to evaluate it fails
- * the build instead of leaving the operation open (bundle ADR 0130). Resource and
+ * the build instead of leaving the operation open. Resource and
  * action expressions fail the container compile; relation expressions fail the
  * warm-up that runs when a cold-cache kernel boots. The documentation-only
  * `true`/`false` values and an app with no security at all still build.

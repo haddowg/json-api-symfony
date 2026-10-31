@@ -22,7 +22,7 @@ use Symfony\Component\DependencyInjection\Reference;
  * How `json_api.output_timezone` and `json_api.servers.<name>.output_timezone` reach
  * each server's {@see \haddowg\JsonApiBundle\Server\ServerFactory}, that a zone PHP
  * does not recognise fails the container build, and that a class on several servers
- * gets one service per server (bundle ADR 0124).
+ * gets one service per server.
  */
 #[Group('spec:multi-server')]
 final class OutputTimezoneConfigTest extends TestCase

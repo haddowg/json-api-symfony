@@ -10,8 +10,8 @@ use haddowg\JsonApi\Serializer\SerializerInterface;
 
 /**
  * A custom serializer for the `gadget` type, proving the generic engine drives
- * reads through a registered override instead of the resource's field DSL (ADR
- * 0023). It renders a distinguishable shape — `name` upper-cased and a
+ * reads through a registered override instead of the resource's field DSL. It renders a
+ * distinguishable shape — `name` upper-cased and a
  * `served_by` meta marker — and takes a constructor dependency (the marker
  * value), so the test passing proves it was container-resolved *with* its
  * dependency (a plain `new` would fatal on the missing argument).

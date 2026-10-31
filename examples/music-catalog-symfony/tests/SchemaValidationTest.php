@@ -12,8 +12,8 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The optional opis structural linter (`json_api.schema_validation: true`,
- * bundle ADR 0013) end to end over the example app: a write body is validated
+ * The optional opis structural linter (`json_api.schema_validation: true`) end to end over the
+ * example app: a write body is validated
  * against the JSON:API JSON Schema before dispatch, so a structurally malformed
  * document is rejected with `400` — a layer distinct from the Symfony Validator
  * bridge's semantic `422` (do the *values* satisfy the constraints?). The linter

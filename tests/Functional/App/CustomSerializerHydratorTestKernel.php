@@ -20,7 +20,7 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 /**
- * The custom serializer/hydrator witness kernel (ADR 0023): the `gadget` resource
+ * The custom serializer/hydrator witness kernel: the `gadget` resource
  * declares override serializer/hydrator services (each with a bound constructor
  * argument, so resolution-with-DI is exercised), served by a writable in-memory
  * provider/persister. The override is storage-orthogonal, so one in-memory kernel

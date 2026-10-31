@@ -12,7 +12,7 @@ use PHPUnit\Framework\Attributes\Test;
 
 /**
  * Each server's OpenAPI document tags a type's operations, and an untagged action on
- * it, with the tags of that server's own resource class (bundle ADR 0144).
+ * it, with the tags of that server's own resource class.
  * `taggedWidgets` is tagged Alpha on the default server and Beta on the named one;
  * `plainWidgets` is tagged Gamma on the default server and declares no tags on the
  * named one, which gets the default tag.

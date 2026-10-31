@@ -13,7 +13,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * The custom / non-CRUD actions acceptance suite (G13, bundle ADR 0076): the example
+ * The custom / non-CRUD actions acceptance suite: the example
  * app's three witness actions hanging off the `albums` type under the reserved
  * `-actions` segment, exercised end to end over the reference Doctrine data layer.
  *
@@ -36,7 +36,7 @@ final class CustomActionTest extends MusicCatalogKernelTestCase
     public function aResourceScopeDocumentActionReissuesAnAlbumForAnAdmin(): void
     {
         // The reissue document is validated against the mount `albums` type before the
-        // security gate runs (design §5), so it carries the required `title` alongside
+        // security gate runs, so it carries the required `title` alongside
         // the new `releasedAt`.
         $body = [
             'data' => [

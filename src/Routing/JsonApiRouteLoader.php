@@ -17,13 +17,13 @@ use Symfony\Component\Routing\RouteCollection;
 /**
  * A Symfony route loader for the custom `type: jsonapi` resource. Emission is
  * **operation-gated**: for every registered type it emits exactly one route per
- * operation that type declares (bundle ADR 0025), drawn from the standard set:
+ * operation that type declares, drawn from the standard set:
  * `GET /{type}` (collection / `FetchCollection`), `POST /{type}` (`Create`),
  * `GET`/`PATCH`/`DELETE` `/{type}/{id}` (`FetchOne` / `Update` / `Delete`). A
  * resource defaults to all five operations; a standalone serializer to none —
  * so read-only, create-only and serialize-only types all fall out of the same
  * mechanism. For any type that declares relations — a full resource, or a
- * resource-less type that declared standalone relations (ADR 0026) — it
+ * resource-less type that declared standalone relations — it
  * additionally emits the relationship endpoints
  * `GET /{type}/{id}/{relationship}` (related resources) and
  * `GET /{type}/{id}/relationships/{relationship}` (relationship linkage), plus
@@ -35,7 +35,7 @@ use Symfony\Component\Routing\RouteCollection;
  * types — matching the bundle's "router-native, no catch-all path parsing"
  * stance. When a type's resource Id field declares a route pattern (via
  * {@see \haddowg\JsonApi\Resource\Field\Id::matchAs()} or the
- * `uuid()`/`ulid()`/`numeric()`/`pattern()` shortcuts, ADR 0038), every route that
+ * `uuid()`/`ulid()`/`numeric()`/`pattern()` shortcuts), every route that
  * carries `{id}` constrains that segment with it — resolved through the injected
  * {@see IdEncoderResolver} — so a malformed id `404`s at routing before any handler
  * runs. No pattern means the `{id}` stays unconstrained (today's behaviour). Each
@@ -45,7 +45,7 @@ use Symfony\Component\Routing\RouteCollection;
  *  - the {@see JsonApiRoute::MARKER} default that scopes the
  *    JSON:API exception listener to these routes only.
  *
- * Multi-server (bundle ADR 0034): each routing import names a server through its
+ * Multi-server: each routing import names a server through its
  * resource string (`$routes->import('admin', 'jsonapi')`; the bare `.` / empty
  * import is the `default` server). The loader emits only that server's descriptors,
  * stamps each route's `_jsonapi_server` with the resolved name, and namespaces the
@@ -78,7 +78,7 @@ final class JsonApiRouteLoader extends Loader
     /**
      * The route default carrying a custom action's name (the `{action}` segment),
      * read by the {@see \haddowg\JsonApiBundle\EventListener\RequestListener} to
-     * branch into the action dispatch path (bundle ADR 0076).
+     * branch into the action dispatch path.
      */
     public const string ACTION_ATTRIBUTE = '_jsonapi_action';
 
@@ -102,7 +102,7 @@ final class JsonApiRouteLoader extends Loader
     /**
      * The route default carrying the path this loader emitted for the route, before
      * any import `prefix` is applied. {@see MountRecordingLoader} compares it with the
-     * route's final path to find the server's mount (bundle ADR 0121).
+     * route's final path to find the server's mount.
      */
     public const string PATH_ATTRIBUTE = '_jsonapi_path';
 
@@ -110,19 +110,19 @@ final class JsonApiRouteLoader extends Loader
      * The route default carrying the server's mount: the import prefix Symfony put in
      * front of {@see PATH_ATTRIBUTE}, e.g. `/api/v5`. Absent when the import has no
      * prefix. Set by {@see MountRecordingLoader}, read by
-     * {@see ServerProvider::forRequest()} (bundle ADR 0121).
+     * {@see ServerProvider::forRequest()}.
      */
     public const string MOUNT_ATTRIBUTE = '_jsonapi_mount';
 
     /**
-     * The reserved path segment custom actions hang off (design §1/§7). It is a
+     * The reserved path segment custom actions hang off. It is a
      * **literal** in every action path and must never be captured as a resource
      * `{id}`: a collection-scope action `/{uriType}/-actions/{name}` is three
      * segments — structurally identical to the generic related route
      * `GET /{uriType}/{id}/{relationship}` — so the action route (declared methods
      * only) shields just its own verbs, and any other method would otherwise fall
      * through to the related route with `{id}` = the literal `-actions`. Excluding
-     * it from every `{id}` requirement (see {@see idRequirement()}) makes §7's
+     * it from every `{id}` requirement (see {@see idRequirement()}) makes the
      * "the literal `-actions` is never captured as an `{id}`" guarantee hold for
      * *all* methods, not only the ordering between same-method routes.
      */
@@ -130,7 +130,7 @@ final class JsonApiRouteLoader extends Loader
 
     /**
      * @param array<string, array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string, raw?: array<string, mixed>, description?: string, mediaType?: string}>>}>> $routeDescriptorsByServer       keyed by server name, then by JSON:API type
-     * @param array<string, list<array{uriType: string, type: string, path: string, methods: list<string>, scope: string, name: string}>>            $actionRouteDescriptorsByServer keyed by server name; the custom-action routes to emit before the generic routes (bundle ADR 0076)
+     * @param array<string, list<array{uriType: string, type: string, path: string, methods: list<string>, scope: string, name: string}>>            $actionRouteDescriptorsByServer keyed by server name; the custom-action routes to emit before the generic routes
      * @param ?IdEncoderResolver                                                                                                                          $idEncoders                     resolves each type's route `{id}` pattern (null in a bare scalar-only test wiring)
      */
     public function __construct(
@@ -168,7 +168,7 @@ final class JsonApiRouteLoader extends Loader
         // its own verb cleanly.
         $this->addAtomicRoute($routes, $server);
 
-        // Custom action routes (bundle ADR 0076) are emitted FIRST so the literal
+        // Custom action routes are emitted FIRST so the literal
         // `-actions` segment is never captured as an `{id}` (a collection-scope
         // action's `/{uriType}/-actions/{action}` would otherwise be shadowed by the
         // related route `/{uriType}/{id}/{relationship}`) or a `{relationship}` name.
@@ -184,7 +184,7 @@ final class JsonApiRouteLoader extends Loader
             // The path segment may differ from the JSON:API type (e.g. a plural):
             // the descriptor carries it. Route names and the _jsonapi_type default
             // stay the JSON:API type, so Target/serializer resolution and the
-            // rendered `type` member are unaffected (ADR 0022).
+            // rendered `type` member are unaffected (docs/routing.md).
             $uriType = $descriptor['uriType'];
             $operations = $descriptor['operations'];
 
@@ -207,7 +207,7 @@ final class JsonApiRouteLoader extends Loader
             $relatedPath = $resourcePath . '/{relationship}';
 
             // A resource whose Id field declares a route pattern (matchAs / the
-            // uuid()/ulid()/numeric()/pattern() shortcuts, ADR 0038) constrains the
+            // uuid()/ulid()/numeric()/pattern() shortcuts) constrains the
             // {id} segment on every route that carries it, so a malformed id 404s at
             // routing before any handler runs. The requirement always excludes the
             // reserved `-actions` segment (see {@see idRequirement()}) so an action
@@ -254,7 +254,7 @@ final class JsonApiRouteLoader extends Loader
 
             // Relationship routes for any type that declares relations — a full
             // resource (which always bundles relations) or a resource-less type that
-            // declared standalone relations via #[AsJsonApiRelations] (ADR 0026).
+            // declared standalone relations via #[AsJsonApiRelations].
             // Gating these per-relation is a later slice.
             if (!$descriptor['hasRelations']) {
                 continue;
@@ -386,7 +386,7 @@ final class JsonApiRouteLoader extends Loader
     }
 
     /**
-     * Emits the custom-action routes for `$server` (bundle ADR 0076, design §7),
+     * Emits the custom-action routes for `$server`,
      * each under the reserved `-actions` segment with the action's author-declared
      * HTTP methods. The single `{action}` segment is emitted as a **literal** (the
      * action's own name), not a parametric `{action}`, so two actions of the same
@@ -394,7 +394,7 @@ final class JsonApiRouteLoader extends Loader
      * path — each is its own concrete route the router dispatches by method:
      *  - resource scope: `/{uriType}/{id}/-actions/{name}` (4 segments) — the `{id}`
      *    is resolved to an entity before the handler runs; it carries the type's
-     *    route `{id}` pattern when one is declared (ADR 0038);
+     *    route `{id}` pattern when one is declared;
      *  - collection scope: `/{uriType}/-actions/{name}` (3 segments) — no id.
      *
      * Each route carries the standard JSON:API defaults plus `_jsonapi_action` (the
@@ -432,7 +432,7 @@ final class JsonApiRouteLoader extends Loader
             if ($resourceScope) {
                 $actionPath = \sprintf('/%s/{id}/-actions/%s', $uriType, $path);
 
-                // Constrain {id} with the type's declared id pattern (ADR 0038) so a
+                // Constrain {id} with the type's declared id pattern so a
                 // malformed id 404s at routing, exactly as the CRUD resource routes;
                 // the requirement also excludes the reserved `-actions` segment.
                 $requirements['id'] = $this->idRequirement($type, $server);
@@ -454,13 +454,13 @@ final class JsonApiRouteLoader extends Loader
      *
      * It always excludes the reserved {@see RESERVED_ACTIONS_SEGMENT} via a leading
      * negative lookahead, so the literal `-actions` can never be captured as a
-     * resource id (design §7) — closing the collection-scope action shadow where a
+     * resource id — closing the collection-scope action shadow where a
      * non-action method (e.g. `GET /{uriType}/-actions/{name}`) would otherwise fall
      * through to the generic related route `GET /{uriType}/{id}/{relationship}` with
      * `{id}` = `-actions`, bypassing the action's authz/dispatch entirely.
      *
      * When the type's Id field declares a route pattern (matchAs / the
-     * uuid()/ulid()/numeric()/pattern() shortcuts, ADR 0038), the author pattern is
+     * uuid()/ulid()/numeric()/pattern() shortcuts), the author pattern is
      * preserved and the lookahead is composed in front of it (so a malformed id
      * still 404s at routing); with no declared pattern the requirement is the
      * single-segment default `[^/]+` (Symfony's implicit placeholder regex), now
@@ -468,7 +468,7 @@ final class JsonApiRouteLoader extends Loader
      */
     private function idRequirement(string $type, string $server): string
     {
-        // The pattern of the class this server serves the type with (bundle ADR 0145).
+        // The pattern of the class this server serves the type with.
         $authorPattern = $this->idEncoders?->routePatternFor($type, $server);
 
         // With no author pattern, keep Symfony's implicit single-segment placeholder

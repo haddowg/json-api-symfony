@@ -18,8 +18,8 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 use Zenstruck\Foundry\ZenstruckFoundryBundle;
 
 /**
- * The Doctrine half of the request-aware-predicates conformance pair (bundle ADR
- * 0084): the {@see DoctrineBadgeResource} (every request-aware predicate) mapped to
+ * The Doctrine half of the request-aware-predicates conformance pair: the {@see
+ * DoctrineBadgeResource} (every request-aware predicate) mapped to
  * {@see BadgeEntity} and the related {@see DoctrineMedalResource} mapped to
  * {@see MedalEntity}, served by the bundle's `-128` fallback Doctrine
  * provider/persister over an in-memory SQLite database seeded by the test

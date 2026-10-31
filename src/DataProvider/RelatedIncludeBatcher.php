@@ -24,7 +24,7 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
 /**
  * Loads every relation a read renders data for through the provider, so `included`
  * and linkage `data` hold exactly what the related endpoint returns, and so includes
- * do not N+1 (bundle ADRs 0062, 0125).
+ * do not N+1.
  *
  * It walks the document level by level, starting from the primary resources. At each
  * level it looks at every relation of the level's type:
@@ -53,13 +53,13 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
  * render the unscoped value. A `MorphTo` target is checked against the provider of the
  * type it renders as. A `MorphTo` declared with `identifiedBy()` renders its linkage
  * from the stored pair. Its targets load by id through each type's provider when they
- * render, and for linkage alone only the guarded types load (bundle ADR 0163). {@see disable()} turns off only the optional
- * batching of unscoped relations.
+ * render, and for linkage alone only the guarded types load. {@see disable()} turns off only
+ * the optional batching of unscoped relations.
  *
  * Metadata is resolved on the request's own server, so a type registered only on a
  * named server is walked like any other.
  *
- * It also runs the eager-load pass for `on()` flattened attributes (bundle ADR 0085):
+ * It also runs the eager-load pass for `on()` flattened attributes:
  * the to-one chains a resource declares via
  * {@see DeclaresEagerLoadsInterface::eagerLoadRelationshipPaths()} are loaded segment by
  * segment under the same rules, so a flattened attribute reads a scoped target (or
@@ -174,7 +174,7 @@ final class RelatedIncludeBatcher
                 continue;
             }
 
-            // The include safeguards (bundle ADR 0037) are a property of the root
+            // The include safeguards are a property of the root
             // resource: its depth cap and allowed paths hold for the whole tree.
             $rootSerializer = $server->serializerFor($type);
             $maxDepth = $this->effectiveMaxDepth($rootSerializer, $server);
@@ -414,8 +414,8 @@ final class RelatedIncludeBatcher
         }
 
         // An extractUsing() relation's closure picks its candidates. Into a scoped type the
-        // scope still decides which of them exist, so they are narrowed through the router
-        // (bundle ADR 0125); otherwise they render as the closure returns them. A pivot
+        // scope still decides which of them exist, so they are narrowed through the router;
+        // otherwise they render as the closure returns them. A pivot
         // belongsToMany is not computed: the provider's pivot query is what it serves.
         if ($this->router->isComputed($relation)) {
             if (!$this->router->readsComputed($relation)) {
@@ -438,7 +438,7 @@ final class RelatedIncludeBatcher
             }
 
             // A polymorphic to-many reaching a scoped type renders its members narrowed per
-            // member type to the rows each scoped type's provider admits (bundle ADR 0125).
+            // member type to the rows each scoped type's provider admits.
             $targets = [];
             foreach ($this->router->admitMembers($server, $entities, $relation, $request) as $index => $members) {
                 $linkages[\spl_object_id($entities[$index])][$relation->name()] = new RelationshipLinkage($members);
@@ -601,7 +601,7 @@ final class RelatedIncludeBatcher
     /**
      * Loads the targets of a `MorphTo` declared with `identifiedBy()` from the parents'
      * stored pairs, one query per type through that type's provider, and supplies each
-     * parent's target, or none when the provider's scope hides it (bundle ADR 0163).
+     * parent's target, or none when the provider's scope hides it.
      * With `$types`, only those types load and the rest keep their pairs. Otherwise a
      * type no provider serves is left to core, which reads the relation's usual value.
      *
@@ -666,7 +666,7 @@ final class RelatedIncludeBatcher
     }
 
     /**
-     * The eager-load pass (bundle ADR 0085, load-not-render) for the `on()` chains the
+     * The eager-load pass (load-not-render) for the `on()` chains the
      * serializer declares, walked segment by segment. A shared prefix loads once.
      *
      * @param list<object>                                   $entities
@@ -742,7 +742,7 @@ final class RelatedIncludeBatcher
     /**
      * Whether `$relation` is part of the rendered include tree at this level: includable
      * for this caller, named (or defaulted) at `$basePath`, within the root's depth cap
-     * and allowed paths (bundle ADR 0037). Includability is read off the level's first
+     * and allowed paths. Includability is read off the level's first
      * entity; the transformer stays the per-object authority.
      *
      * @param array<string, int> $defaults

@@ -10,8 +10,8 @@ use haddowg\JsonApi\Serializer\SerializerInterface;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiSerializer;
 
 /**
- * A standalone serializer for the bespoke `renameCommands` command type (bundle ADR
- * 0076, design §3): registered with no {@see \haddowg\JsonApi\Resource\AbstractResource}
+ * A standalone serializer for the bespoke `renameCommands` command type: registered
+ * with no {@see \haddowg\JsonApi\Resource\AbstractResource}
  * and no endpoints of its own. It exists so the type is registered (its serializer
  * resolves) — the command rides into a custom action as its `inputType`. It is paired
  * with {@see RenameCommandHydrator} (which hydrates the request document onto the DTO).

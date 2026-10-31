@@ -13,7 +13,7 @@ use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Symfony\Component\Routing\RouterInterface;
 
 /**
- * The expose-gate (D9) and multi-server (D5) document witnesses: a non-exposed kernel
+ * The expose-gate and multi-server document witnesses: a non-exposed kernel
  * registers no docs route and advertises no `describedby`; a per-server kernel serves a
  * per-server document at `/docs.json` and `/admin/docs.json`; the combined mode serves
  * one document at the json path only.
@@ -54,7 +54,7 @@ final class OpenApiExposeAndMultiServerTest extends \Symfony\Bundle\FrameworkBun
         $paths = \array_map(static fn($r) => $r->getPath(), $router->getRouteCollection()->all());
 
         // Neither the document, the viewer, nor the JSON Schema route is emitted: all
-        // ride the same expose gate as the document (D6/D9).
+        // ride the same expose gate as the document.
         self::assertNotContains('/docs.json', $paths);
         self::assertNotContains('/docs', $paths);
         self::assertNotContains('/schemas.json', $paths);
@@ -66,7 +66,7 @@ final class OpenApiExposeAndMultiServerTest extends \Symfony\Bundle\FrameworkBun
     #[Group('spec:openapi')]
     public function noDescribedbyLinkIsAdvertisedWhenTheDocumentIsNotExposed(): void
     {
-        // describedby rides the same expose gate as the routes (D9/D14), so the negative
+        // describedby rides the same expose gate as the routes, so the negative
         // of OpenApiServingTest::aJsonApiResponseCarriesADescribedbyLinkToTheServedDocument:
         // with no document route emitted the link must be absent rather than dangle at a
         // 404.
@@ -209,8 +209,8 @@ final class OpenApiExposeAndMultiServerTest extends \Symfony\Bundle\FrameworkBun
         $kernel = new OpenApiMultiServerTestKernel('test', false, true);
         $kernel->boot();
 
-        // The single combined document at the json path describes BOTH servers' types
-        // (D5 / §10): the default server's public-items AND the admin server's
+        // The single combined document at the json path describes BOTH servers' types:
+        // the default server's public-items AND the admin server's
         // admin-items, with both servers' base URIs advertised.
         $combined = $this->document($kernel, '/docs.json');
 

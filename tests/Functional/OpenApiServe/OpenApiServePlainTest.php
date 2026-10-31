@@ -12,7 +12,7 @@ use Symfony\Component\HttpKernel\EventListener\AbstractSessionListener;
 
 /**
  * With no serve decorator registered the warmed artifact is served byte for byte, tagged
- * with the hash the warmer stored beside it (bundle ADR 0131).
+ * with the hash the warmer stored beside it.
  */
 final class OpenApiServePlainTest extends OpenApiServeTestCase
 {

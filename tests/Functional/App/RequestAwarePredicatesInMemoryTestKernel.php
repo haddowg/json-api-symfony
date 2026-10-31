@@ -19,8 +19,8 @@ use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
 /**
- * The in-memory half of the request-aware-predicates conformance pair (bundle ADR
- * 0084): the {@see BadgeResource} (every request-aware predicate, keyed off the
+ * The in-memory half of the request-aware-predicates conformance pair: the {@see BadgeResource}
+ * (every request-aware predicate, keyed off the
  * inbound `X-Role` header) and the related {@see MedalResource} over a writable
  * in-memory graph ({@see RequestAwarePredicatesFactory}), with an
  * {@see InMemoryDataPersister} for `badges` so the gated relationship mutations

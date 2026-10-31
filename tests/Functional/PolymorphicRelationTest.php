@@ -17,7 +17,7 @@ use PHPUnit\Framework\Attributes\Test;
  * It proves the to-one serializer is resolved from the actual related object (not
  * `relatedTypes()[0]`) — board 1 pins a note, board 2 an image — and the to-many
  * renders its mixed-type members through a `PolymorphicSerializer` that
- * discriminates `notes` from `images` per member (ADR 0032). In-memory only:
+ * discriminates `notes` from `images` per member. In-memory only:
  * the Doctrine provider throws "unsupported" for a polymorphic to-many (its
  * boundary unit test covers that).
  */
@@ -104,7 +104,7 @@ final class PolymorphicRelationTest extends JsonApiFunctionalTestCase
     {
         // items is a countable() polymorphic to-many; the in-memory provider counts
         // the mixed member set (board 1: n1, i1, n2 = 3), so ?withCount=items emits
-        // meta.total on the items relationship object (bundle ADR 0052). `?withCount`
+        // meta.total on the items relationship object. `?withCount`
         // is gated behind the Relationship Counts profile, so the read negotiates it.
         $response = $this->handle(self::BASE_URI . '/boards/1?withCount=items', extraServer: [
             'HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . \haddowg\JsonApi\Schema\Profile\CountableProfile::URI . '"',
@@ -155,8 +155,8 @@ final class PolymorphicRelationTest extends JsonApiFunctionalTestCase
     {
         // A polymorphic to-many's members span types, so there is no single related
         // provider or shared vocabulary to window its linkage through — querying it is
-        // unsupported. A requested filter is a clean 400, not a silent no-op (bundle ADR
-        // 0096; the projector advertises no query parameters for it).
+        // unsupported. A requested filter is a clean 400, not a silent no-op (the projector
+        // advertises no query parameters for it).
         $response = $this->handle(self::BASE_URI . '/boards/1/relationships/items?filter[name]=x');
 
         self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
@@ -248,7 +248,7 @@ final class PolymorphicRelationTest extends JsonApiFunctionalTestCase
     {
         // A polymorphic to-one (`pinned`, a MorphTo) has no single related resource and
         // so no shared filter vocabulary — ANY filter key is unrecognised, mirroring the
-        // polymorphic to-many's 400 (bundle ADR 0068 follow-up #1). Today it was silently
+        // polymorphic to-many's 400. Today it was silently
         // swallowed (200).
         $response = $this->handle(self::BASE_URI . '/boards/1/pinned?filter[name]=x');
 

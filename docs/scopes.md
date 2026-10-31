@@ -172,8 +172,7 @@ json_api:
 
 Each operation that needs a scope then reads `security: [{oauth2: [scopes]}]`, and the
 flows list your scope catalogue after any scopes the config declares. A document where no
-operation needs a scope is unchanged. Scopes arrived in contract 16, but every document
-now carries 18, the baseline since the links components were shared.
+operation needs a scope is unchanged.
 
 `json-api:openapi:export` warns about any required scope neither the catalogue nor the
 flows describe, and `--strict` fails on them. A `scope_scheme` that isn't `oauth2` is a

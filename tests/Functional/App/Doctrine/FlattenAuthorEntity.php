@@ -7,8 +7,8 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\Doctrine;
 use Doctrine\ORM\Mapping as ORM;
 
 /**
- * The Doctrine-mapped `authors` of the flattened-attribute (`on()`) fixture (bundle
- * ADR 0085), mirroring the in-memory
+ * The Doctrine-mapped `authors` of the flattened-attribute (`on()`) fixture, mirroring the
+ * in-memory
  * {@see \haddowg\JsonApiBundle\Tests\Functional\App\FlattenAuthor}. A store-provided
  * `AUTO` integer id; `name` is the member a book's `authorName` flattens. A
  * flattened-attribute PATCH mutates the managed author's `name`, which Doctrine's

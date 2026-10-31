@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The Phase-1 acceptance suite: filtering, sorting, pagination and sparse
+ * The read-query acceptance suite: filtering, sorting, pagination and sparse
  * fieldsets on `GET /articles`, asserted as spec-compliant JSON:API documents.
  *
  * Abstract over the kernel so the **same assertions** run against the
@@ -19,7 +19,7 @@ use PHPUnit\Framework\Attributes\Test;
  * seeds, so a test failing on one provider and not the other localizes the bug
  * to that provider's execution.
  *
- * Since G21 the `articles` paginator is **count-free by default** but the resource
+ * The `articles` paginator is **count-free by default** but the resource
  * is `countable()`, so the count-dependent pagination assertions (`meta.page.total`,
  * `lastPage`, the `last` link) opt into the total with `?withCount=_self_` under the
  * negotiated Countable profile ({@see fetchCountedDocument()}); the count-free
@@ -105,7 +105,7 @@ abstract class ReadQueryConformanceTestCase extends JsonApiFunctionalTestCase
     {
         // `exactTitle` is declared singular(): applying it renders the matched
         // resource as the document's primary `data` *object*, not a one-element
-        // array — the JSON:API zero-to-one shape (core ADR 0039).
+        // array — the JSON:API zero-to-one shape (core docs/filters.md).
         $document = $this->fetchDocument('/articles?filter[exactTitle]=Zebra%20patterns');
 
         $data = $document['data'] ?? null;
@@ -213,7 +213,7 @@ abstract class ReadQueryConformanceTestCase extends JsonApiFunctionalTestCase
     #[Group('spec:fetching-pagination')]
     public function paginationWindowsTheSortedCollection(): void
     {
-        // Counted under `?withCount=_self_` (G21 §6a): the total fans to BOTH the
+        // Counted under `?withCount=_self_`: the total fans to BOTH the
         // top-level meta.total AND meta.page.total, from one count.
         $document = $this->fetchCountedDocument('/articles?sort=title&page[number]=2&page[size]=2');
 
@@ -232,7 +232,7 @@ abstract class ReadQueryConformanceTestCase extends JsonApiFunctionalTestCase
     #[Group('spec:fetching-pagination')]
     public function aCountFreePageWindowsWithoutATotalOrLastLink(): void
     {
-        // The G21 default: a bare `?page` (no `?withCount`) windows count-free — no
+        // The default: a bare `?page` (no `?withCount`) windows count-free — no
         // top-level meta.total, no meta.page.total/lastPage, no `last` link; `next`
         // is driven by the over-fetch `hasMore`, not a total.
         $document = $this->fetchDocument('/articles?sort=title&page[number]=2&page[size]=2');
@@ -385,7 +385,7 @@ abstract class ReadQueryConformanceTestCase extends JsonApiFunctionalTestCase
 
     /**
      * Fetches `$path` with `?withCount=_self_` appended and the Countable profile
-     * negotiated, so the count-free-by-default `articles` collection (G21) renders
+     * negotiated, so the count-free-by-default `articles` collection renders
      * the total — `meta.total`, `meta.page.total`, `lastPage` and the `last` link.
      *
      * @return array<string, mixed>

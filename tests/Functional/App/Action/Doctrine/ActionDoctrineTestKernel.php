@@ -37,7 +37,7 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 use Zenstruck\Foundry\ZenstruckFoundryBundle;
 
 /**
- * The Doctrine custom-action conformance kernel (bundle ADR 0076): the witness twin of
+ * The Doctrine custom-action conformance kernel: the witness twin of
  * {@see \haddowg\JsonApiBundle\Tests\Functional\App\Action\ActionInMemoryTestKernel},
  * running the SAME actions and the SAME conformance assertions over the reference
  * Doctrine provider/persister against an in-memory SQLite database. It maps the

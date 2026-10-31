@@ -10,7 +10,7 @@ use haddowg\JsonApi\Resource\Field\Accessor;
 
 /**
  * The shared `articles` declaration for the identifier-meta conformance suite
- * (core ADR 0084): the {@see BaseArticleResource} vocabulary with a **parent-aware
+ * (core docs/relations.md): the {@see BaseArticleResource} vocabulary with a **parent-aware
  * `identifierMeta()`** declared on the to-one `author` and the to-many `comments`.
  *
  * Each resolver reads both the owning article and the related object, so the meta

@@ -2,7 +2,7 @@
 # there is no Configuration.php). The top-level base_uri/version define the
 # implicit `default` server, so a single-API app needs no `servers:` block.
 #
-# This example declares a second, named `admin` server (ADR 0034) — the minimal
+# This example declares a second, named `admin` server — the minimal
 # multi-server witness. It carries its own base_uri and inherits the top-level
 # version (omitted here). Types join a server via the resource attribute's
 # `server:` argument (AlbumResource on both; UserResource admin-only), and each
@@ -10,7 +10,7 @@
 json_api:
     base_uri: 'https://music.example'
     version: '1.1'
-    # Include safeguard B (bundle ADR 0037): cap the nesting depth of a `?include`
+    # Include safeguard B: cap the nesting depth of a `?include`
     # (relationship hops from the primary resource). The bundle default is 3; set
     # to 2 here so the cap is witnessable — `?include=tracks.album` (depth 2) is
     # allowed, but a depth-3 path is a 400. `0` would be unlimited. A resource's own
@@ -27,8 +27,7 @@ json_api:
     # own cap via withMaxPerPage().
     pagination:
         max_per_page: !php/const haddowg\JsonApiBundle\Examples\MusicCatalog\DataFixtures\SeedManifest::MAX_PER_PAGE
-    # Reject an unrecognized top-level query-parameter family with a 400 (bundle ADR
-    # 0055) rather than silently dropping it — so a client typo (?bogus, a misspelled
+    # Reject an unrecognized top-level query-parameter family with a 400 (docs/configuration.md) rather than silently dropping it — so a client typo (?bogus, a misspelled
     # ?pag[number]) surfaces as an error instead of a wrong-but-200 result. This is the
     # DEFAULT (true), so the key is omitted here and strict validation is already on;
     # set it to false to restore the pre-strict silent-ignore behaviour. withCount and a
@@ -58,7 +57,7 @@ json_api:
         # checked against its own scopes before anything is written.
         scopes: [batch]
 
-    # OpenAPI 3.1 generation (G1–G6). The document is projected from the live
+    # OpenAPI 3.1 generation. The document is projected from the live
     # registry and served at /docs.json (+ /admin/docs.json for the named server),
     # with a Swagger UI viewer at /docs. `expose_in_prod: true` registers the HTTP
     # routes even outside kernel.debug — the example's functional kernel boots

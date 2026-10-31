@@ -14,7 +14,7 @@ use haddowg\JsonApi\Resource\Field\Str;
  * type added with **nothing but** this resource (+ a Doctrine entity / in-memory
  * POJO) — no per-type handler, route, serializer or persister code — yet the full
  * JSON:API endpoint set works on both providers. It proves the capstone claim
- * that the CRUD engine is the zero-handler default (ADR 0021).
+ * that the CRUD engine is the zero-handler default.
  *
  * Minimal on purpose: an id, a required `name`, and one to-one `article`
  * relationship (to the existing `articles` type) so the relationship endpoints
@@ -30,7 +30,7 @@ abstract class BaseTagResource extends AbstractResource
     public function fields(): array
     {
         return [
-            // Store-provided id: a database auto-increment assigns it (core ADR 0048).
+            // Store-provided id: a database auto-increment assigns it (core docs/ids.md).
             Id::make(),
             Str::make('name')->required(),
             BelongsTo::make('article', 'articles'),

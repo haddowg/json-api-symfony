@@ -10,8 +10,8 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Action\MutableWidget;
 /**
  * The Doctrine-mapped `actionWidgets` entity: the persisted twin of the in-memory
  * {@see \haddowg\JsonApiBundle\Tests\Functional\App\Action\Widget}, so the
- * custom-action conformance suite runs identical assertions against both providers
- * (bundle ADR 0076, design §10). It implements {@see MutableWidget} so the
+ * custom-action conformance suite runs identical assertions against both providers.
+ * It implements {@see MutableWidget} so the
  * storage-agnostic action handlers mutate it through the same interface. The id is
  * store-provided (an `AUTO` integer). Not `final` so Doctrine may proxy it.
  */

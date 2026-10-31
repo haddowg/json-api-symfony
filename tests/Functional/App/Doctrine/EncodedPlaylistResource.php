@@ -13,7 +13,7 @@ use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 
 /**
- * The MULTI-TYPE-BACKED pivot-parent witness (bundle ADR 0102): a SECOND JSON:API
+ * The MULTI-TYPE-BACKED pivot-parent witness: a SECOND JSON:API
  * type over the SAME {@see PlaylistEntity} the plain `playlists`
  * ({@see DoctrinePlaylistResource}) backs — one entity, two types. Unlike `playlists`
  * (no encoder) this type attaches a {@see PrefixedPlaylistIdEncoder}, so its wire id

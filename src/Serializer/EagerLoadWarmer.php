@@ -13,7 +13,7 @@ use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
  * Validates every registered resource type's eager-load declaration
  * ({@see \haddowg\JsonApi\Serializer\DeclaresEagerLoadsInterface::eagerLoadRelationshipPaths()}
  * — the dedup set of every `on()` flattened attribute's backing relation chain) at
- * `cache:warmup` (the bundle ADR 0085 fail-loud seam), so an author mistake fails the
+ * `cache:warmup` (a fail-loud seam), so an author mistake fails the
  * BUILD — `cache:clear` / deploy — rather than surfacing as a runtime 500 on a user
  * request.
  *

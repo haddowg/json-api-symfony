@@ -15,8 +15,7 @@ use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
  * Pre-builds the per-server OpenAPI documents (+ the per-type JSON Schemas and the
  * aggregate schema document the {@see \haddowg\JsonApiBundle\Controller\JsonSchemaController}
  * serves) at `cache:warmup` — every prod deploy — into the cache dir, so the
- * controllers serve an `O(file read)` artifact and never build per request (design
- * D17, the bundle ADR 0077 warmer).
+ * controllers serve an `O(file read)` artifact and never build per request.
  *
  * It is deliberately **optional** ({@see isOptional()} returns `true`): a docs build
  * failure (a misconfigured resource, an exotic paginator) must never break a deploy,
@@ -33,14 +32,14 @@ use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
  * web server / CDN can serve the document with zero PHP.
  *
  * In **combined** multi-server mode (`json_api.openapi.multi_server: combined`) the
- * warmer additionally builds the single combined document spanning every server (D5)
+ * warmer additionally builds the single combined document spanning every server
  * and stores it under the controller's combined key, so the controller serves it
  * `O(file read)`; a static `combined.json`/`.yaml` is also emitted when a
  * `public_path` is set.
  *
  * Beside each JSON artifact it writes the artifact's hash (the served ETag), the
  * document as serialized value objects, which a request with serve decorators loads
- * instead of rebuilding (bundle ADR 0131), and the operations the document carries,
+ * instead of rebuilding, and the operations the document carries,
  * which each link's `describedby` is checked against ({@see DescribedByResolverProvider}).
  * A document whose values hold an object outside `json_api.openapi.serve_allowed_classes`
  * gets no serialized copy and a logged warning.
@@ -84,7 +83,7 @@ final class DocumentWarmer implements CacheWarmerInterface
             try {
                 $this->warmServer($store, $server);
             } catch (\Throwable $e) {
-                // A docs failure must not break the deploy (D17): log and continue.
+                // A docs failure must not break the deploy: log and continue.
                 $this->logger?->error('Failed to warm the OpenAPI document for server "{server}": {message}', [
                     'server' => $server,
                     'message' => $e->getMessage(),
@@ -93,7 +92,7 @@ final class DocumentWarmer implements CacheWarmerInterface
             }
         }
 
-        // In combined mode also warm the single document spanning every server (D5),
+        // In combined mode also warm the single document spanning every server,
         // stored under the controller's combined key — the same isolated try/catch so a
         // combined-build failure never breaks the deploy either.
         if ($this->combined) {

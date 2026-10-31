@@ -12,7 +12,7 @@ use Symfony\Component\HttpKernel\EventListener\AbstractSessionListener;
 
 /**
  * The ETag, `If-None-Match` and `Cache-Control` handling shared by the `docs.json` and
- * `schemas.json` controllers (bundle ADR 0131).
+ * `schemas.json` controllers.
  *
  * @internal
  */

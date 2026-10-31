@@ -1,0 +1,3 @@
+# The Doctrine layer decodes and converts ids; the SPI stays in wire ids
+
+Provider and persister methods take ids as the client sees them. Core encodes and decodes an entity's own id, while the Doctrine implementation decodes the ids the SPI passes as lookup keys (the route `{id}`, linkage ids) with the encoder of the type on the request's server, then converts them through the identifier field's Doctrine type before binding or `getReference()`; a failed decode is a `404` with no query. The mapped Doctrine type is used rather than a bundle id codec because it already knows every form of the id, so a binary `uuid` key needs no encoder, and encoders stay application-supplied.

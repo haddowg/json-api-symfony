@@ -12,8 +12,7 @@ use Symfony\Component\Routing\RouterInterface;
 
 /**
  * The OpenAPI `servers` for a server with an empty `base_uri`, read from the mounts
- * {@see \haddowg\JsonApiBundle\Routing\MountRecordingLoader} recorded on its routes
- * (bundle ADR 0121).
+ * {@see \haddowg\JsonApiBundle\Routing\MountRecordingLoader} recorded on its routes.
  *
  * Each distinct mount becomes one relative server URL (`/api/v5`), sorted so the
  * document doesn't depend on route order. A mount with placeholders

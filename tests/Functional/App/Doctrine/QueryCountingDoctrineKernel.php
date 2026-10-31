@@ -24,8 +24,8 @@ use Zenstruck\Foundry\ZenstruckFoundryBundle;
  * A Doctrine functional kernel that additionally registers a DBAL
  * {@see DbalLoggingMiddleware} backed by a {@see QueryCountingLogger}, so the
  * relation-count suite can prove the `?withCount` batch issues ONE grouped count
- * per relation across a page of parents — not one count per parent (bundle ADR
- * 0052). It serves the same `articles`/`authors`/`comments` declarations as
+ * per relation across a page of parents — not one count per parent. It serves the same
+ * `articles`/`authors`/`comments` declarations as
  * {@see DoctrineJsonApiTestKernel} (the count probe only needs the article graph),
  * over the same in-memory SQLite database.
  */
@@ -124,7 +124,7 @@ final class QueryCountingDoctrineKernel extends Kernel
         $services->set(DoctrineAuthorResource::class);
         $services->set(DoctrineCommentResource::class);
         // A second type over the SAME ArticleEntity with pagination disabled — the
-        // G21 fetch-all witness (renders meta.total with no COUNT).
+        // Fetch-all witness (renders meta.total with no COUNT).
         $services->set(UnpaginatedArticleResource::class);
     }
 

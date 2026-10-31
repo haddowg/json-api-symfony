@@ -89,7 +89,7 @@ final class WriteTransactionContextTest extends TestCase
     #[Test]
     public function drainWithAnErrorHandlerCatchesAThrowingHookAndRunsTheRest(): void
     {
-        // The best-effort post-commit drain (Slice D, bundle ADR 0088): the batch has
+        // The best-effort post-commit drain: the batch has
         // already durably committed by the time the drain runs, so a hook that throws
         // must NOT abort the drain — the error is handed to the $onError handler and the
         // remaining hooks still run. (With no handler the first exception propagates,

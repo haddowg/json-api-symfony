@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Action;
 
 /**
- * The resolved, scalar declaration of a single custom action (bundle ADR 0076) —
+ * The resolved, scalar declaration of a single custom action —
  * the {@see \haddowg\JsonApiBundle\Attribute\AsJsonApiAction} metadata flattened
  * into the values the {@see ActionInvoker} and the route loader consume, with the
  * decoupled-document defaults already applied: `inputType`/`outputType` resolve to
@@ -21,8 +21,8 @@ namespace haddowg\JsonApiBundle\Action;
  * a {@see \haddowg\JsonApi\Response\DataResponse} through — the type named by the
  * `responds` set's `ActionResource` entry when present, else the mount `type`.
  *
- * `responds` is the declared success-response set the OpenAPI projection advertises
- * (core ADR 0127): each entry a `kind` discriminator (`resource`/`meta`/`nocontent`/
+ * `responds` is the declared success-response set the OpenAPI projection advertises: each entry
+ * a `kind` discriminator (`resource`/`meta`/`nocontent`/
  * `accepted`/`seeother`) plus the `type` an `ActionResource` names or the `jobType` an
  * `Accepted` names. The {@see \haddowg\JsonApiBundle\OpenApi\Metadata\ActionMetadata}
  * rehydrates each into a core response object. It stays a plain scalar list so the
@@ -32,8 +32,8 @@ namespace haddowg\JsonApiBundle\Action;
  * keeps the generated example, `false` emits none, and `{request, responses}` replaces
  * those parts.
  *
- * `readOnly`, `destructive` and `idempotent` are the declared safety flags (core ADR
- * 0179), `null` when undeclared, and `extensions` the action's own OpenAPI vendor
+ * `readOnly`, `destructive` and `idempotent` are the declared safety flags, `null` when
+ * undeclared, and `extensions` the action's own OpenAPI vendor
  * extensions.
  */
 final readonly class ActionDescriptor

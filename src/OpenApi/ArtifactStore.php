@@ -11,8 +11,7 @@ use haddowg\JsonApi\OpenApi\Serve\ServeArtifactCodec;
 /**
  * The shared filesystem contract between the {@see DocumentWarmer} (which writes the
  * pre-built OpenAPI documents at `cache:warmup`) and the
- * {@see \haddowg\JsonApiBundle\Controller\OpenApiController} (which serves them) —
- * design D17.
+ * {@see \haddowg\JsonApiBundle\Controller\OpenApiController} (which serves them).
  *
  * It owns the **one** stable sub-path of `%kernel.cache_dir%` both sides agree on, so
  * the controller serves the warmer's artifact with an `O(file read)` (never a
@@ -109,7 +108,7 @@ final class ArtifactStore
     }
 
     /**
-     * The warmed document as value objects (bundle ADR 0131), or null when it was never
+     * The warmed document as value objects, or null when it was never
      * written, was written by another installed version of core or this bundle, or
      * doesn't decode.
      */

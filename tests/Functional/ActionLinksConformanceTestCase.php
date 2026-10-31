@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * Action links a resource declares (bundle ADR 0159), run against the in-memory
+ * Action links a resource declares, run against the in-memory
  * ({@see InMemoryActionLinksTest}) and Doctrine ({@see DoctrineActionLinksTest}) kernels.
  *
  * Articles 1, 2 and 4 are guides and 3 and 5 are news. `review` links guides, `feature`

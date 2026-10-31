@@ -7,7 +7,7 @@ namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Entity;
 use Doctrine\ORM\Mapping as ORM;
 
 /**
- * A merch product — the encoded-id witness (bundle ADR 0038). Its primary key is a
+ * A merch product — the encoded-id witness. Its primary key is a
  * database-generated **integer**, never exposed on the wire: the {@see \haddowg\JsonApiBundle\Examples\MusicCatalog\Resource\ProductResource}
  * attaches a {@see \haddowg\JsonApiBundle\Examples\MusicCatalog\Resource\ProductIdCodec}
  * so the JSON:API `id` (and the URL) is an opaque `prod-…` token that encodes this

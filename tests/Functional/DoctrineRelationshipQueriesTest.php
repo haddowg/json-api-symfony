@@ -10,8 +10,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\DoctrineJsonApiTestKerne
  * {@see RelationshipQueriesConformanceTestCase} against the Doctrine provider: a
  * relationship is windowed to page 1 of its relatedQuery-ordered/filtered set by a
  * scoped DQL push-down on the related repo (the many-to-many `editors` subquery
- * scope for the countable case), over an in-memory SQLite database seeded per test
- * (bundle ADR 0053).
+ * scope for the countable case), over an in-memory SQLite database seeded per test.
  */
 final class DoctrineRelationshipQueriesTest extends RelationshipQueriesConformanceTestCase
 {

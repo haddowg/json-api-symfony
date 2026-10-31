@@ -24,7 +24,7 @@ use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 /**
  * The multi-server widgets with an empty `base_uri` on both servers: the `default`
  * server imported under `/api/v5` and the named `admin` server under `/admin`. Each
- * route's links carry its own server's mount (bundle ADR 0121).
+ * route's links carry its own server's mount.
  */
 final class MountedMultiServerTestKernel extends Kernel
 {

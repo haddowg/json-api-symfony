@@ -17,7 +17,7 @@ use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
 /**
- * The in-memory declarative-authorization witness kernel (bundle ADR 0043): the same
+ * The in-memory declarative-authorization witness kernel: the same
  * `securedWidgets` role gates as the Doctrine
  * {@see \haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\Security\SecurityTestKernel},
  * but over the in-memory provider/persister — proving authorization is

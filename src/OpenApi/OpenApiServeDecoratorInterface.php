@@ -8,7 +8,7 @@ use haddowg\JsonApi\OpenApi\OpenApi;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
- * Adjusts the served OpenAPI document for one request (bundle ADR 0131).
+ * Adjusts the served OpenAPI document for one request.
  *
  * {@see OpenApiFactoryInterface} runs once per deploy, when the document is built. This
  * interface runs when `docs.json` is served, with the request in hand, so a document can

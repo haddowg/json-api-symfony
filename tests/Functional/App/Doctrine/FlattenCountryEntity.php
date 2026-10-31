@@ -7,8 +7,8 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\Doctrine;
 use Doctrine\ORM\Mapping as ORM;
 
 /**
- * The Doctrine-mapped `countries` of the flattened-attribute (`on()`) fixture
- * (bundle ADR 0085), mirroring the in-memory
+ * The Doctrine-mapped `countries` of the flattened-attribute (`on()`) fixture, mirroring the
+ * in-memory
  * {@see \haddowg\JsonApiBundle\Tests\Functional\App\FlattenCountry}. The SECOND hop
  * the book's multi-hop `on('author.country')` walks to: a {@see FlattenAuthorEntity}'s
  * HIDDEN `ManyToOne` `country` points at it, LAZY by default so the multi-hop eager

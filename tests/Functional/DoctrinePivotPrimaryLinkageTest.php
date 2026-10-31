@@ -9,8 +9,8 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The PRIMARY-document pivot-linkage acceptance suite (Doctrine only, bundle ADR
- * 0102): a `belongsToMany` pivot relation's per-member pivot values render as identifier
+ * The PRIMARY-document pivot-linkage acceptance suite (Doctrine only): a `belongsToMany` pivot
+ * relation's per-member pivot values render as identifier
  * `meta.pivot` in a PRIMARY-resource document's relationships block — wherever that
  * relation's linkage data renders — exactly as they already do on the related
  * (`GET /playlists/1/tracks`) and relationship-linkage (`GET
@@ -77,7 +77,7 @@ final class DoctrinePivotPrimaryLinkageTest extends JsonApiFunctionalTestCase
         // document's `included` expansion through the SAME relationship-bound serializer
         // it builds the linkage identifier with, so a member expanded into `included`
         // carries the same `meta.pivot` as its linkage identifier — consistent with the
-        // existing pivot model (bundle ADR 0102). This is asserted (not merely
+        // existing pivot model. This is asserted (not merely
         // tolerated) so the behaviour is intentional and pinned.
         $document = $this->fetchDocument('/playlists/1?include=orderedTracks');
 
@@ -203,8 +203,8 @@ final class DoctrinePivotPrimaryLinkageTest extends JsonApiFunctionalTestCase
     #[Group('spec:fetching-relationships')]
     public function aLazyNotIncludedPivotRelationCarriesNoPivotEvenIfItsLinkageRenders(): void
     {
-        // The rendered-data gate (bundle ADR 0102, mirroring the include-windowing gate
-        // of bundle ADR 0086) keys off `included OR !emitsDataOnlyWhenLoaded()` — NOT a
+        // The rendered-data gate (mirroring the include-windowing gate)
+        // keys off `included OR !emitsDataOnlyWhenLoaded()` — NOT a
         // post-hoc check of whether the linkage happened to render. `tracks` is a LAZY
         // pivot relation (emitsDataOnlyWhenLoaded) that is NOT included on a plain
         // GET /playlists/1, so it is gated OUT of the pivot wrap (no batched pivot-map
@@ -282,7 +282,7 @@ final class DoctrinePivotPrimaryLinkageTest extends JsonApiFunctionalTestCase
         // Core's getRelationships() excludes a per-request hidden relation, so the
         // primary document must omit it entirely. The pivot decorator must honour that
         // exclusion — NOT re-add the relation (and its pivot meta) the author hid for
-        // this request (bundle ADR 0102). Before the guard the decorator iterated EVERY
+        // this request. Before the guard the decorator iterated EVERY
         // selected pivot relation and re-added the omitted key, leaking it.
         $document = $this->fetchDocument('/playlists/1');
 

@@ -21,8 +21,8 @@ use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
 /**
- * The in-memory half of the flattened-attribute (`on()`) conformance pair (bundle
- * ADR 0085): the {@see InMemoryFlattenBookResource} (flattened single-hop `authorName`,
+ * The in-memory half of the flattened-attribute (`on()`) conformance pair: the {@see
+ * InMemoryFlattenBookResource} (flattened single-hop `authorName`,
  * multi-hop `authorCountry` (`on('author.country')`), computed `display`) and its
  * related types {@see InMemoryFlattenAuthorResource} / {@see InMemoryFlattenCountryResource}
  * / {@see InMemoryFlattenPublisherResource} over a writable in-memory graph

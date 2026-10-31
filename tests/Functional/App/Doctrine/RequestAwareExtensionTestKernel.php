@@ -20,7 +20,7 @@ use Zenstruck\Foundry\ZenstruckFoundryBundle;
 /**
  * The article/author/comment setup plus the {@see RequestAwareAuthorsExtension},
  * registered by plain autoconfiguration — the witness for the request-aware
- * extension context (bundle ADR 0070): the extension scopes `authors` and branches
+ * extension context: the extension scopes `authors` and branches
  * on the {@see \haddowg\JsonApiBundle\DataProvider\Doctrine\ExtensionContext::$request},
  * which is present on the related `editors` load and `null` on the primary
  * `GET /authors` collection.

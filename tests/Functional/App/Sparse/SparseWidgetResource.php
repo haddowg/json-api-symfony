@@ -14,7 +14,7 @@ use haddowg\JsonApi\Resource\Field\Str;
  * {@see \haddowg\JsonApi\Resource\Field\AbstractFieldBuilder::sparseByDefault()}: omitted
  * from the default response and rendered only when the client names it in
  * `fields[sparseWidgets]`. The bundle witness that core's sparse-by-default field
- * tier (core ADR 0117) flows through the bundle's serializer → transformer → response
+ * tier (core docs/fields.md) flows through the bundle's serializer → transformer → response
  * stack over HTTP.
  */
 final class SparseWidgetResource extends AbstractResource

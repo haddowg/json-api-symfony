@@ -12,7 +12,7 @@ use Symfony\Contracts\Service\ResetInterface;
  * attributes. Pivot meta is one: the Doctrine provider casts each pivot column to
  * its wire value while it reads the association rows, long before the render, and
  * the provider is shared by every server. The {@see \haddowg\JsonApiBundle\Operation\CrudOperationHandler}
- * sets it from the operation's Server at the start of each operation (bundle ADR 0123).
+ * sets it from the operation's Server at the start of each operation.
  *
  * @internal
  */

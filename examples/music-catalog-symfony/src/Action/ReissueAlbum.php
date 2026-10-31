@@ -13,14 +13,14 @@ use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Album;
 
 /**
- * `POST /albums/{id}/-actions/reissue` — a **resource-scope `Document`** custom action
- * (G13, bundle ADR 0076, design §2): a non-CRUD verb (re-releasing an album under a
+ * `POST /albums/{id}/-actions/reissue` — a **resource-scope `Document`** custom action:
+ * a non-CRUD verb (re-releasing an album under a
  * new date) hanging off the `albums` type under the reserved `-actions` segment.
  *
  * It is a `Document` action with the default `inputType` (the mount `albums` type), so
  * the request body is negotiated, structurally + semantically validated and hydrated
  * into a fresh {@see Album} — from which the handler reads the new `releasedAt` and
- * applies it onto the resolved album (the two are independent: design §3, "no implicit
+ * applies it onto the resolved album (the two are independent: "no implicit
  * merge"). It is gated by `security: is_granted('ROLE_ADMIN')`, evaluated at the
  * before-action gate against the resolved album, so only an admin may reissue. The
  * change is persisted through the storage-agnostic {@see DataPersisterRegistry}

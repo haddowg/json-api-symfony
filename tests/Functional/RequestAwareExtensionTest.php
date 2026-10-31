@@ -11,8 +11,9 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The witness for the request-aware {@see \haddowg\JsonApiBundle\DataProvider\Doctrine\ExtensionContext}
- * (bundle ADR 0070): a {@see RequestAwareAuthorsExtension} scopes `authors`,
+ * The witness for the request-aware {@see
+ * \haddowg\JsonApiBundle\DataProvider\Doctrine\ExtensionContext}: a {@see
+ * RequestAwareAuthorsExtension} scopes `authors`,
  * branching on the context's parsed JSON:API request.
  *
  *  - On the primary `GET /authors` collection the request is `null` and the purpose

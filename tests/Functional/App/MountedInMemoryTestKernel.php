@@ -25,7 +25,7 @@ use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
  * The in-memory half of the mounted-server conformance pair: the writable `articles`
  * with their `authors` and `comments`, an empty `base_uri`, and the `default`
  * server's routes imported under `/api/v5`, so every link has to recover the mount
- * from the matched route (bundle ADR 0121).
+ * from the matched route.
  */
 final class MountedInMemoryTestKernel extends Kernel
 {

@@ -19,7 +19,7 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 /**
- * The `ui.enabled: false` witness (design D6): exposure is on (`expose_in_prod`) so the
+ * The `ui.enabled: false` witness: exposure is on (`expose_in_prod`) so the
  * `/docs.json` document route IS registered, but the viewer is disabled, so **no** UI
  * route is emitted — proving the viewer is independently switchable from the document.
  */

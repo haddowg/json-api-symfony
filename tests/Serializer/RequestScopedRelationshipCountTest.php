@@ -13,7 +13,7 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Contracts\Service\ResetInterface;
 
 /**
- * The swappable per-request count holder (bundle ADR 0052): it delegates to the
+ * The swappable per-request count holder: it delegates to the
  * backing the handler installs for the read in flight, answers `null` with no
  * backing, and — crucially for a long-lived container (a worker reusing the kernel)
  * — clears its backing on {@see RequestScopedRelationshipCount::reset()} so a

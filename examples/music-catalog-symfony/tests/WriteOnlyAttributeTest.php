@@ -11,7 +11,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * The write-only attribute witness (Tier-0 G18, core ADR 0060). `users.password` is
+ * The write-only attribute witness (core docs/fields.md). `users.password` is
  * declared `Str::make('password')->writeOnly()->minLength(8)->requiredOnCreate()` —
  * the exact inverse of `readOnly()`: a credential a client SETS on write but the
  * server NEVER echoes back.

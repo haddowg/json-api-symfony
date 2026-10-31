@@ -13,7 +13,7 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Model\Chart;
 use haddowg\JsonApiBundle\Operation\Operation;
 
 /**
- * The standalone serialize-plus-fetch witness (capability composition, ADR 0024):
+ * The standalone serialize-plus-fetch witness (capability composition):
  * a hand-written serializer for the `charts` type registered with
  * {@see AsJsonApiSerializer} — there is **no** `charts` Resource, **no** entity,
  * and **no** hydrator. The type is read-only, opened to exactly two endpoints by

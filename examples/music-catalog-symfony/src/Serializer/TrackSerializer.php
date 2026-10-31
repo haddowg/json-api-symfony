@@ -24,7 +24,7 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Resource\TrackResource;
 /**
  * A hand-written read serializer for the `tracks` type — the serializer-override
  * escape hatch, registered on {@see \haddowg\JsonApiBundle\Examples\MusicCatalog\Resource\TrackResource}
- * via `#[AsJsonApiResource(serializer: TrackSerializer::class)]` (bundle ADR 0023).
+ * via `#[AsJsonApiResource(serializer: TrackSerializer::class)]`.
  * It wins for serialization while the resource still hydrates writes.
  *
  * Re-themed from core's in-memory
@@ -165,7 +165,7 @@ final class TrackSerializer extends AbstractSerializer implements SerializerReso
                     DateTime::make('addedAt')->readOnly()->build(),
                 )
                 ->cannotReplace()
-                // A to-many is lazy by default (core ADR 0067); withData() opts this
+                // A to-many is lazy by default; withData() opts this
                 // one back to EAGER so its linkage renders on a track read — the
                 // deliberate contrast with AlbumResource's lazy `tracks`.
                 ->withData()

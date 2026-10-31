@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Test;
 
 /**
  * The same type names served by a different resource class on each of two servers,
- * each class with its own response headers (bundle ADR 0144), over global defaults of
+ * each class with its own response headers, over global defaults of
  * a public 120s cache and `Deprecation: true`. `cachedWidgets` is public for 60s on the
  * named server and private for 10s on the default one; `plainWidgets` declares nothing
  * on the named server and a private 15s cache on the default one. Widget 1 is seeded.

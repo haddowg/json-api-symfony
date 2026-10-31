@@ -10,7 +10,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\LifecycleHooksTestKernel;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The lifecycle-hooks keystone suite (bundle ADR 0042). It proves the full hook
+ * The lifecycle-hooks keystone suite. It proves the full hook
  * set fires at the right points and in the right order, that a before-hook
  * mutation is persisted, that a before-hook throw aborts with the thrown status
  * (and no commit happens), that an after-hook replaces the response, that the

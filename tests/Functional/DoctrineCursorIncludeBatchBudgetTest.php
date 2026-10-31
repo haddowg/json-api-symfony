@@ -11,7 +11,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The SQL PROOF for the CURSOR (keyset) windowed-include batch (bundle ADR 0118): a
+ * The SQL PROOF for the CURSOR (keyset) windowed-include batch: a
  * cursor-resolved COLLECTION include over `cursorShelves` → `widgets` (an owning-side
  * ManyToMany, the join-table window shape) inspects the {@see QueryCountingLogger}'s captured
  * SQL to prove the N per-parent keyset queries collapsed to ONE bounded `ROW_NUMBER()` window

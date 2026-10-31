@@ -21,7 +21,7 @@ use Doctrine\ORM\Mapping as ORM;
  *
  * `position` is a **required-on-create** writable field and `weight` a second
  * writable field constrained `weight >= position` — together they back the
- * merge-before-validate witness (bundle ADR 0050): on an existing-member partial
+ * merge-before-validate witness: on an existing-member partial
  * pivot update the omitted `position` is preserved from the stored row (no false
  * `422`), and the cross-pivot `weight >= position` rule compares an incoming
  * `weight` against the MERGED (stored) `position`.
@@ -66,8 +66,8 @@ class PlaylistEntry
     // — a cross-pivot-field rule the merge-before-validate witness exercises over
     // the MERGED pivot row (a partial update sending `weight` alone compares it
     // against the stored `position`). Nullable so a row created without a `weight`
-    // in meta inserts cleanly through the constructor-less persister (bundle ADR
-    // 0029); the `weight >= position` rule simply does not fire when weight is
+    // in meta inserts cleanly through the constructor-less persister; the `weight >= position`
+    // rule simply does not fire when weight is
     // absent (a comparison needs both values present).
     #[ORM\Column(type: 'integer', nullable: true)]
     public ?int $weight = null;

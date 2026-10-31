@@ -6,7 +6,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App;
 
 /**
  * A plain `posts` model — the resource-less type whose relations are declared
- * standalone via {@see PostRelations} (ADR 0026). Its wire shape comes from the
+ * standalone via {@see PostRelations}. Its wire shape comes from the
  * standalone {@see PostSerializer}; its `author` / `comments` relations come off
  * these properties, rendered by core's `RendersRelationsTrait` through the
  * standalone relations.

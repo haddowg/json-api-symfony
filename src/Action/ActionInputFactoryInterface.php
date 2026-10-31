@@ -11,8 +11,7 @@ use haddowg\JsonApi\Request\JsonApiRequestInterface;
  * {@see ActionInput::Document} action whose `inputType` is a **bespoke command
  * DTO** carrying only a serializer/hydrator pair (no persister) — there is no
  * persister to {@see \haddowg\JsonApiBundle\DataPersister\DataPersisterInterface::instantiate()}
- * the blank instance, so the handler supplies it itself (bundle ADR 0076,
- * design §3).
+ * the blank instance, so the handler supplies it itself.
  *
  * When a handler implements this, the {@see ActionInvoker} calls {@see newInput()}
  * to obtain the fresh instance, runs the Validator bridge against `inputType`, then

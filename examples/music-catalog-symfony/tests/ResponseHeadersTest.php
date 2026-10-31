@@ -10,18 +10,18 @@ use Symfony\Component\HttpFoundation\Response;
 
 /**
  * The declarative response-header witness (backs the README caching/deprecation
- * section; bundle ADR 0054). Two example types opt into the bundle's route-scoped
+ * section). Two example types opt into the bundle's route-scoped
  * `ResponseHeadersListener` purely through `#[AsJsonApiResource(...)]` metadata — no
  * kernel wiring beyond the attribute:
  *
- *  - **`genres` — declarative HTTP cache headers (gap G7).** A reference/lookup type
+ *  - **`genres` — declarative HTTP cache headers.** A reference/lookup type
  *    declares `cacheHeaders` (a one-hour `max_age`, a one-day CDN `s_maxage`,
  *    `public`, `Vary: Accept`) with a shorter `operations.collection` override. The
  *    listener emits `Cache-Control` + `Vary` on a successful `GET` only — the
  *    collection carries the override's `max-age=300`, a single genre the
  *    resource-level `max-age=3600`, and a write (`POST /genres`) gets no
  *    `Cache-Control` at all.
- *  - **`devices` — RFC 8594 deprecation (gap G16).** A legacy type declares
+ *  - **`devices` — RFC 8594 deprecation.** A legacy type declares
  *    `deprecation: true` + a `sunset` HTTP-date + a `sunsetLink`. The listener emits
  *    `Deprecation`, `Sunset` and a companion `Link: …; rel="sunset"` on **every**
  *    response for the type — a read *and* a write — because a deprecated endpoint is
@@ -36,7 +36,7 @@ final class ResponseHeadersTest extends MusicCatalogKernelTestCase
     /** The companion sunset migration-notes URL the `devices` type declares. */
     private const string DEVICES_SUNSET = 'Sat, 31 Dec 2050 23:59:59 GMT';
 
-    // --- G7: declarative HTTP cache headers ----------------------------------
+    // --- declarative HTTP cache headers ----------------------------------
 
     #[Test]
     #[Group('spec:fetching-pagination')]
@@ -100,7 +100,7 @@ final class ResponseHeadersTest extends MusicCatalogKernelTestCase
         );
     }
 
-    // --- G16: RFC 8594 deprecation + sunset ----------------------------------
+    // --- RFC 8594 deprecation + sunset ----------------------------------
 
     #[Test]
     public function aDeprecatedTypeReadCarriesTheDeprecationAndSunsetHeaders(): void

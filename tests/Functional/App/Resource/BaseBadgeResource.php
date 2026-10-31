@@ -15,7 +15,7 @@ use haddowg\JsonApi\Resource\Field\StrBuilder;
  * The shared `badges` declaration both request-aware-predicate kernels serve: one
  * set of fields and relations, so the in-memory and Doctrine providers are
  * exercised by **identical** assertions and a failure localizes to the provider,
- * not the fixture (core ADRs 0079/0080, bundle ADR 0084).
+ * not the fixture.
  *
  * Every member declares a request-aware predicate keyed off the inbound `X-Role`
  * header (no security plumbing — {@see JsonApiRequestInterface} is a PSR-7 request,

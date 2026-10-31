@@ -8,7 +8,7 @@ use Doctrine\ORM\Mapping as ORM;
 
 /**
  * A physical or digital release of an {@see Album} — the composite-attribute
- * showcase (core ADRs 0118–0121). Each composite attribute persists as a
+ * showcase. Each composite attribute persists as a
  * **single `json` column**, the storage decision for composite types: `format`
  * backs a discriminated {@see \haddowg\JsonApi\Resource\Field\OneOf} (its
  * `medium` key selects the vinyl/cd/digital variant), `packaging` a typed

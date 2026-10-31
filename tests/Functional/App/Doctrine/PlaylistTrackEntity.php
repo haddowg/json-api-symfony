@@ -38,7 +38,7 @@ class PlaylistTrackEntity
         #[ORM\Column(type: 'integer')]
         public int $position = 0,
         // Nullable so a freshly-created row created through the constructor-less
-        // persister (ADR 0029) without a `weight` in meta inserts cleanly; the
+        // persister without a `weight` in meta inserts cleanly; the
         // `weight >= position` cross-pivot rule simply does not fire when weight is
         // absent (a comparison needs both values present).
         #[ORM\Column(type: 'integer', nullable: true)]

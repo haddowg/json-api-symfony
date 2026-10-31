@@ -17,7 +17,7 @@ use Symfony\Component\Routing\Exception\ResourceNotFoundException;
 use Symfony\Component\Routing\RouterInterface;
 
 /**
- * The custom resource-id encoding contract on the Doctrine kernel (bundle ADR 0038):
+ * The custom resource-id encoding contract on the Doctrine kernel:
  * the `cogs` type keys its entity by an integer storage key that never reaches the
  * wire — the `id` (and URL) is an opaque `cog-…` token. Encoding is **Doctrine-only**
  * (the in-memory provider has no encoder), so this proves the encode/decode round-trip
@@ -73,8 +73,8 @@ final class DoctrineEncodedIdTest extends JsonApiFunctionalTestCase
         self::assertNotNull($show);
         // The author's declared id pattern (`cog-[0-9a-f]+`) is preserved, composed
         // behind a negative lookahead that excludes the reserved `-actions` segment so
-        // a collection-scope custom action is never shadowed by an {id} route (design
-        // §7). The lookahead is anchored to the segment boundary (`/` or end of path),
+        // a collection-scope custom action is never shadowed by an {id} route.
+        // The lookahead is anchored to the segment boundary (`/` or end of path),
         // not the whole string.
         self::assertSame('(?!\-actions(?:/|$))(?:cog-[0-9a-f]+)', $show->getRequirement('id'));
 
@@ -177,8 +177,7 @@ final class DoctrineEncodedIdTest extends JsonApiFunctionalTestCase
         // Cog 1's parent is cog 2 (Flywheel). A non-matching `filter[name]` on the
         // related endpoint excludes it, so the to-one renders `data: null` — the
         // single-probe nulling path (relatedToOneMatches) on an ENCODED-ID parent,
-        // proving the encoded `cog-…` parent id does not break the lookup (bundle ADR
-        // 0068 follow-up #4).
+        // proving the encoded `cog-…` parent id does not break the lookup.
         $response = $this->handle('/cogs/' . $this->wireIds[1] . '/parent?filter[name]=Nonexistent');
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
 
@@ -201,7 +200,7 @@ final class DoctrineEncodedIdTest extends JsonApiFunctionalTestCase
         // (cog 2) is excluded, so its linkage is nulled AND cog 2 is omitted from
         // included[] — proving parentWireId() keys (encoder-aware) agree with the
         // serializer's getId(), so the encoded parent is not erroneously left intact nor
-        // every parent wrongly nulled (bundle ADR 0068 follow-up #4).
+        // every parent wrongly nulled.
         $response = $this->handle(
             '/cogs?include=parent&relatedQuery[parent][filter][name]=Nonexistent',
             extraServer: ['HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . \haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile::URI . '"'],
@@ -299,7 +298,7 @@ final class DoctrineEncodedIdTest extends JsonApiFunctionalTestCase
 
         $cog2 = new CogEntity(2, 'Flywheel');
         // Cog 1's parent is cog 2 — a self-referential to-one whose target carries an
-        // ENCODED `cog-…` wire id, so the to-one nulling path (bundle ADR 0068) can be
+        // ENCODED `cog-…` wire id, so the to-one nulling path can be
         // exercised on an encoded-id parent (follow-up #4).
         $cog1 = new CogEntity(1, 'Sprocket', $cog2);
         $entityManager->persist($cog2);

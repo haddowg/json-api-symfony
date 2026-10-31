@@ -123,35 +123,35 @@ final class DoctrineJsonApiTestKernel extends Kernel
 
         // The cursor (keyset) conformance type: a `cursorWidgets` resource whose
         // pagination() returns a CursorPaginator, mapped to its entity so the
-        // Doctrine provider runs the keyset push-down (bundle ADR 0063).
+        // Doctrine provider runs the keyset push-down.
         $services->set(DoctrineCursorWidgetResource::class);
 
         // The RELATED-collection cursor (keyset) conformance type: a `cursorShelves`
         // parent whose to-many `widgets` relation declares its own CursorPaginator,
         // mapped to an owning-side ManyToMany so the keyset push-down runs inside
-        // the RelationScope IN-subquery parent scope (bundle ADR 0063).
+        // the RelationScope IN-subquery parent scope.
         $services->set(DoctrineCursorShelfResource::class);
 
         // The INVERSE-FK cursor (keyset) INCLUDE conformance type: a `cursorGroups` parent
         // whose to-many `widgets` is the inverse side of a OneToMany (the related widget
         // carries the owning `group_id` FK), so a cursor-resolved include collapses to the
         // inverse-FK single-window shape — the complement of the owning-side ManyToMany
-        // `cursorShelves` (bundle ADR 0118).
+        // `cursorShelves`.
         $services->set(DoctrineCursorGroupResource::class);
 
         // The genericity witness: a `tags` type served over the Doctrine path by
         // the `-128` fallback provider/persister from its `#[AsJsonApiResource]`
-        // entity map alone — no per-type engine code (ADR 0021).
+        // entity map alone — no per-type engine code.
         $services->set(DoctrineTagResource::class);
 
         // The constructor-less instantiation witness: a `vaults` type whose entity
         // has required constructor arguments, so create only works because the
-        // persister instantiates it without invoking the constructor (ADR 0029).
+        // persister instantiates it without invoking the constructor.
         $services->set(DoctrineVaultResource::class);
 
         // The encoded-id witness: a `cogs` type whose integer storage key is encoded
         // to an opaque wire token, so the Doctrine provider/persister decode the route
-        // {id} and linkage ids before find/getReference (ADR 0038).
+        // {id} and linkage ids before find/getReference.
         $services->set(CogResource::class);
 
         // The belongsToMany pivot witnesses: a `playlists` parent whose `tracks`
@@ -166,7 +166,7 @@ final class DoctrineJsonApiTestKernel extends Kernel
         // custom id encoder and a withData() pivot relation — registered AFTER
         // `playlists` so a reverse-lookup from the entity class would pick the
         // first-registered no-encoder type. The primary-document pivot map must key by
-        // the SERVED type's encoder instead (bundle ADR 0102).
+        // the SERVED type's encoder instead.
         $services->set(EncodedPlaylistResource::class);
     }
 

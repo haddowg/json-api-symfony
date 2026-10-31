@@ -73,7 +73,7 @@ final class InMemoryAtomicOperationsTest extends AtomicOperationsConformanceTest
         // wrongly `400`ed as a forward reference (LOCAL_ID_NOT_FOUND).
         //
         // In-memory-only: the Doctrine reference persister instantiates entities
-        // constructor-less (ADR 0029), so the entity's NOT-NULL attribute defaults do not
+        // constructor-less, so the entity's NOT-NULL attribute defaults do not
         // run and a genuinely zero-attribute create is infeasible there — an orthogonal
         // storage constraint, not a property of this (storage-agnostic) executor fix.
         $response = $this->atomic([
@@ -117,7 +117,7 @@ final class InMemoryAtomicOperationsTest extends AtomicOperationsConformanceTest
         // is DEFERRED to the post-commit drain — by which point the batch has already
         // durably committed. A throwing post-commit hook must NOT turn the successful
         // batch into a 500: the executor logs it (best-effort) and still returns the
-        // 200 atomic:results, and the comment IS persisted (bundle ADR 0088).
+        // 200 atomic:results, and the comment IS persisted.
         //
         // In-memory-only: the throwing-hook `comments` resource is wired on this kernel
         // (the Doctrine kernel keeps the plain comment resource).
