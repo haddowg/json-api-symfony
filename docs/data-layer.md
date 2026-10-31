@@ -107,9 +107,11 @@ interface DataProviderInterface
   It is what the include batcher (`?include`, no N+1) and the windowed-include batch
   drive — so it serves the same automatic include batching the Doctrine layer does
   ([doctrine → eager-loading includes](doctrine.md#eager-loading-includes-no-n1)). A
-  relation a provider cannot batch returns an **empty `RelatedBatch`**, and the
+  relation a provider cannot batch returns **`RelatedBatch::unsupported()`**, and the
   caller renders that relation's includes lazily — which is also the
-  `AbstractDataProvider` default.
+  `AbstractDataProvider` default. An empty `new RelatedBatch([])` instead says every
+  parent has no members (see
+  [custom data providers](custom-data-providers.md#eager-loading-include-is-automatic-no-extension-no-extra-dependency)).
 - `relatedToOneMatches()` / `relatedToOneMatchesBatch()` answer "does this to-one's
   target survive the relation's `?filter`?" for the single-resource (`relatedToOneMatches`)
   and the batched include/primary (`relatedToOneMatchesBatch`) paths. When the answer
@@ -137,6 +139,18 @@ is `DataProviderInterface<Album>`; a multi-type provider (like the Doctrine one)
 is `DataProviderInterface<object>`. The covariance lets the registry hold a
 heterogeneous set as `DataProviderInterface<object>` while a single-model provider
 stays precisely typed.
+
+A provider can also implement three optional interfaces the bundle checks for. Each
+is covered on [custom data providers](custom-data-providers.md#saying-whether-related-reads-are-scoped):
+
+| Interface | Method | Answers |
+| --- | --- | --- |
+| [`ScopesRelatedReadsInterface`](../src/DataProvider/ScopesRelatedReadsInterface.php) | `scopesRelatedReads(RelationInterface $relation): bool` | whether the provider's related reads filter rows, so included and linkage data must be loaded through it rather than read off the parent. `AbstractDataProvider` answers `false`; a provider without the interface counts as scoping every relation. |
+| [`AdmitsRowsInterface`](../src/DataProvider/AdmitsRowsInterface.php) | `admitRows(string $type, array $rows, JsonApiRequestInterface $request): array` | which of a set of rows the provider's scope admits, in one probe: used for computed (`extractUsing()`) relations and polymorphic members. Without it each row goes through `fetchOne()`. |
+| [`FetchesByIdsInterface`](../src/DataProvider/FetchesByIdsInterface.php) | `fetchByIds(string $type, array $ids, JsonApiRequestInterface $request): array` and `scopesFetchByIds(string $type): bool` | the rows for a list of wire ids, in one query: used to load a `MorphTo` declared with `identifiedBy()`. Without it each id goes through `fetchOne()`. |
+
+The Doctrine provider implements all three; the in-memory one implements
+`ScopesRelatedReadsInterface` and `FetchesByIdsInterface`.
 
 Tagged `haddowg.json_api.data_provider`
 ([`JsonApiBundle::DATA_PROVIDER_TAG`](../src/JsonApiBundle.php)). Implement the
@@ -215,6 +229,23 @@ it leaves the five write methods abstract and supplies a default
 `mutateRelationship()` only for a relationship write, so a persister that never
 mutates relationships simply never triggers it; one that exposes a writable
 relationship overrides it.
+
+Two optional interfaces extend a persister. The Doctrine persister implements both,
+the in-memory one only the first:
+
+- [`TransactionalDataPersisterInterface`](../src/DataPersister/TransactionalDataPersisterInterface.php)
+  lets the handler wrap a write in one transaction, so a subscriber that throws after
+  the change is applied rolls it back, and an
+  [Atomic Operations](atomic-operations.md) batch can commit as one.
+- [`ReportsMovedMembersInterface`](../src/DataPersister/ReportsMovedMembersInterface.php)
+  (`movedMembers()`) reports each child a to-many add or replace would take from
+  another parent, so the handler can dispatch a `BeforeMemberMoveEvent` and the
+  security subscriber can check it (see
+  [doctrine → moving a child between parents](doctrine.md#moving-a-child-between-parents)).
+
+A resource can also take instantiation and deletion away from the persister by
+implementing `InstantiatesEntityInterface` or `DeletesEntityInterface` (see
+[doctrine → constructor-less instantiation](doctrine.md#constructor-less-instantiation) and [deleting without the persister](doctrine.md#deleting-without-the-persister)).
 
 Tagged `haddowg.json_api.data_persister`
 ([`JsonApiBundle::DATA_PERSISTER_TAG`](../src/JsonApiBundle.php)).

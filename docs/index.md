@@ -128,6 +128,7 @@ and that path is simply absent:
 | `symfony/validator` | The Symfony Validator [bridge](validation.md) — core's declared constraints become enforced `422` validation. |
 | `egulias/email-validator` | Strict (RFC 5322) email validation; without it the email rule degrades to HTML5 mode. |
 | `opis/json-schema` | The optional structural document linter (`json_api.schema_validation`). |
+| `symfony/security-core` + `symfony/expression-language` | Declarative [authorization](authorization.md) through `security:` expressions; declaring one without them fails the build. |
 
 The full matrix, with the degradation behaviour when each is missing, is on
 [configuration](configuration.md).
@@ -163,6 +164,17 @@ JSON:API service needs. Each links the page that covers it in full:
 - **Declarative authorization** — per-resource Symfony Security `security:`
   expressions evaluated at the right hook, denying with a JSON:API `403`/`401`
   before any persistence. See [authorization](authorization.md).
+- **OAuth scopes** — limit each access token to the operations its scopes cover, on
+  every route, include and Atomic Operations batch, with the scopes listed in the
+  OpenAPI document. See [scopes](scopes.md).
+- **Custom actions** — non-CRUD endpoints under `/{type}/{id}/-actions/{name}` that take
+  a JSON:API document, a raw upload or nothing, and answer with a document, a raw body
+  (CSV, PDF) or a URL. See [actions](actions.md).
+- **Atomic Operations** — the JSON:API `atomic` extension: a batch of writes applied in
+  order, all or nothing, with local ids. See [atomic operations](atomic-operations.md).
+- **OpenAPI 3.1** — a generated document with worked examples, served with a Swagger
+  UI or ReDoc viewer, exported from the CLI, and linked from every built link through
+  `describedby`. See [OpenAPI](openapi.md).
 - **Custom & encoded resource ids** — client-supplied natural keys, app-minted
   UUID/ULID, or an opaque encoded id over a store-assigned integer, with wire-format
   validation. See [resources](resources.md#sourcing-the-resource-id).
@@ -208,7 +220,9 @@ These docs read in six arcs:
    [serializers and hydrators](custom-serializers-hydrators.md) (and handler
    decoration), [multi-server and testing](multi-server-and-testing.md),
    [security and deployment](security.md), and declarative
-   [authorization](authorization.md) (per-resource `security:` expressions).
+   [authorization](authorization.md) (per-resource `security:` expressions),
+   [OAuth scopes](scopes.md), custom [actions](actions.md),
+   [Atomic Operations](atomic-operations.md) and the [OpenAPI](openapi.md) document.
 
 If you are new to JSON:API itself, read core's
 [getting-started](https://github.com/haddowg/json-api/blob/main/docs/getting-started.md)
