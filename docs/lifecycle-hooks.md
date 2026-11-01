@@ -103,6 +103,14 @@ $context)`.
 `serving` is before-only — it carries no response. Request-wide response shaping
 belongs to the per-operation after hooks.
 
+`AfterFetchCollectionEvent` also exposes `$paginator`, the paginator that paged the
+collection, already resolved for the request. A `MultiPaginator` arrives as the
+child the client selected, so `$event->paginator->kind()` names the concrete
+strategy (`page`, `offset`, `cursor` and so on). It is `null` when no pagination
+ran, either because the resource's `pagination()` returned `null` or because a
+singular filter collapsed the collection. The resource hook method doesn't receive
+it, so subscribe to the event when a response replacement depends on it.
+
 ## Mechanism 1 — an event subscriber (cross-cutting)
 
 Every hook is a plain event under
