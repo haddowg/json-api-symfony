@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.25.0](https://github.com/haddowg/json-api-symfony/compare/v1.24.0...v1.25.0) (2026-11-01)
+
+
+### Features
+
+* expose the resolved paginator on the after-fetch-collection event ([#273](https://github.com/haddowg/json-api-symfony/issues/273)) ([c50a56c](https://github.com/haddowg/json-api-symfony/commit/c50a56cb9a74a74966758219f49b229b8fcfde81))
+
 ## [1.24.0](https://github.com/haddowg/json-api-symfony/compare/v1.23.1...v1.24.0) (2026-10-31)
 
 
