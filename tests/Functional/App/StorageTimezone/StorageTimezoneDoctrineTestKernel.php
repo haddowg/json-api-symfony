@@ -16,7 +16,7 @@ use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigura
 use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
-final class StorageTimezoneDoctrineTestKernel extends Kernel
+class StorageTimezoneDoctrineTestKernel extends Kernel
 {
     use MicroKernelTrait;
 
@@ -29,7 +29,7 @@ final class StorageTimezoneDoctrineTestKernel extends Kernel
 
     public function getProjectDir(): string
     {
-        $dir = \sys_get_temp_dir() . '/json-api-symfony-tests/storage-timezone-doctrine-app';
+        $dir = \sys_get_temp_dir() . '/json-api-symfony-tests/' . $this->stem() . '-app';
         if (!\is_dir($dir . '/config')) {
             \mkdir($dir . '/config', 0o777, true);
         }
@@ -39,12 +39,25 @@ final class StorageTimezoneDoctrineTestKernel extends Kernel
 
     public function getCacheDir(): string
     {
-        return \sys_get_temp_dir() . '/json-api-symfony-tests/storage-timezone-doctrine-cache/' . $this->environment;
+        return \sys_get_temp_dir() . '/json-api-symfony-tests/' . $this->stem() . '-cache/' . $this->environment;
     }
 
     public function getLogDir(): string
     {
-        return \sys_get_temp_dir() . '/json-api-symfony-tests/storage-timezone-doctrine-log';
+        return \sys_get_temp_dir() . '/json-api-symfony-tests/' . $this->stem() . '-log';
+    }
+
+    /**
+     * The configured `storage_timezone`; null leaves PHP's default timezone in charge.
+     */
+    protected function storageTimezone(): ?string
+    {
+        return null;
+    }
+
+    protected function stem(): string
+    {
+        return 'storage-timezone-doctrine';
     }
 
     protected function configureContainer(ContainerConfigurator $container, LoaderInterface $loader, ContainerBuilder $builder): void
@@ -85,6 +98,7 @@ final class StorageTimezoneDoctrineTestKernel extends Kernel
             'base_uri' => 'https://example.test',
             'version' => '1.1',
             'output_timezone' => 'UTC',
+            'storage_timezone' => $this->storageTimezone(),
         ]);
 
         $container->services()

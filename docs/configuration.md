@@ -52,6 +52,7 @@ witness).
 | `version` | scalar | `'1.1'` | The JSON:API version the implicit `default` server advertises. Defaults to `'1.1'`, so set it **only** to pin a non-default version — most apps omit it (the example app's `'1.1'` above is just the explicit-version witness). |
 | `max_include_depth` | int | `3` | The cap on `?include` nesting depth (relationship hops from the primary resource). `0` is unlimited. A resource's own `maxIncludeDepth()` overrides it. |
 | `output_timezone` | scalar | `null` | The zone every `DateTime` attribute of the `default` server renders in, such as `UTC`, unless the field sets its own `outputTimezone()`. `Date` and `Time` attributes are left alone. `null` or `''` renders each value in the zone it carries. Named servers inherit it. See [`output_timezone`](#output_timezone). |
+| `storage_timezone` | scalar | `null` | The zone the Doctrine data layer stores naive `datetime` columns in, such as `UTC`. Filter bounds and written values are converted to it. `null` or `''` uses PHP's default timezone, read at each bind and write. Not set per server. See [`storage_timezone`](#storage_timezone). |
 | `link_objects` | bool | `true` | Render the links the server builds as JSON:API link objects (`{"href": …}`), which carry a [`describedby`](openapi.md#links-and-describedby) into the OpenAPI document. `false` renders bare URL strings. Named servers inherit it. |
 | `strict_query_parameters` | bool | `true` | Reject an unrecognized top-level query-parameter family — and an unknown [`fields[type]` sparse-fieldset member](#unknown-sparse-fieldset-members) — with a `400`. `false` restores the old silent-ignore behaviour. |
 | `pagination.max_per_page` | int | `100` | The page-size cap the built-in server default paginator clamps `page[size]`/`page[limit]` to. `0` installs no built-in default (those collections render unpaginated). |
@@ -328,6 +329,35 @@ timezone PHP recognises. ...
 
 A named server inherits the top-level zone, sets its own, or turns conversion off
 with `''`. See [named servers](#named-servers-json_apiservers).
+
+### `storage_timezone`
+
+Doctrine's `datetime` and `datetime_immutable` columns have no offset, so the Doctrine
+data layer converts a client date-time to one zone before it binds a filter bound or
+flushes a write. See [date-times in naive columns](doctrine.md#date-times-in-naive-columns).
+By default that zone is PHP's default timezone, read with `date_default_timezone_get()`
+each time a value is converted. An application that calls `date_default_timezone_set()`
+per request, for example per tenant, gets each request's zone.
+
+Set `storage_timezone` when the columns hold one fixed zone whatever the default is:
+
+```yaml
+json_api:
+    storage_timezone: UTC
+```
+
+Under `America/New_York`, `filter[startsAt][min]=2026-10-01T11:00:00-04:00` then compares
+against `2026-10-01 15:00:00`, and a write of the same value stores `15:00:00`.
+
+Doctrine's own types still read a naive column back in PHP's default timezone. So when
+`storage_timezone` differs from it, map those columns to a type that reads them in the
+storage zone too, or reads render the stored time in the wrong zone. `datetimetz` and
+`date` columns are never converted.
+
+The setting belongs to the data layer, so there is no per-server override. The value
+is checked like [`output_timezone`](#output_timezone): a zone PHP's `\DateTimeZone`
+accepts, with `null` and `''` meaning the default timezone. Anything else fails the
+container build.
 
 ### `strict_query_parameters`
 

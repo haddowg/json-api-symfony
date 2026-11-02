@@ -13,14 +13,15 @@ use Doctrine\ORM\Mapping\ClassMetadata;
 
 /**
  * Moves a date-time into the zone a naive Doctrine `datetime` column is stored in,
- * before it is bound to a query or persisted.
+ * before it is bound to a query or persisted: the configured `storage_timezone`, or
+ * PHP's default timezone when none is set.
  *
  * `datetime` and `datetime_immutable` write `Y-m-d H:i:s` and drop the offset, and
  * Doctrine reads them back in PHP's default timezone. A client value like
  * `2026-10-01T15:00:00Z` therefore has to become the same instant in that zone first,
- * or a filter compares against the wrong wall-clock time and a write stores one. The
- * zone is read when each value is converted, never cached, because an application may
- * switch the default timezone per request.
+ * or a filter compares against the wrong wall-clock time and a write stores one. With
+ * no zone configured, the default is read when each value is converted, never cached,
+ * because an application may switch it per request.
  *
  * Only the naive date-time types convert, including subclasses. A `datetimetz` column
  * keeps its own offset handling. A `date` column never converts, because moving a
@@ -31,9 +32,16 @@ use Doctrine\ORM\Mapping\ClassMetadata;
  */
 final class NaiveDateTimeStorage
 {
+    /**
+     * @param ?string $timezone the zone naive columns are stored in; null for PHP's default timezone
+     */
+    public function __construct(
+        private readonly ?string $timezone = null,
+    ) {}
+
     public function zone(): \DateTimeZone
     {
-        return new \DateTimeZone(\date_default_timezone_get());
+        return new \DateTimeZone($this->timezone ?? \date_default_timezone_get());
     }
 
     /**

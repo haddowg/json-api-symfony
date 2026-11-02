@@ -49,6 +49,17 @@ final class NaiveDateTimeStorageTest extends TestCase
     }
 
     #[Test]
+    public function aConfiguredZoneOverridesTheDefault(): void
+    {
+        $storage = new NaiveDateTimeStorage('UTC');
+        \date_default_timezone_set('Europe/Paris');
+
+        $stored = $storage->toStorage(new \DateTimeImmutable('2026-10-01T12:00:00-04:00'), Types::DATETIME_IMMUTABLE);
+        self::assertInstanceOf(\DateTimeInterface::class, $stored);
+        self::assertSame('2026-10-01 16:00:00', $stored->format('Y-m-d H:i:s'));
+    }
+
+    #[Test]
     public function aMutableDateTimeIsCopiedNotMoved(): void
     {
         $value = new \DateTime('2026-10-01T16:00:00Z');

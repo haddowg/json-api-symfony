@@ -658,7 +658,8 @@ default timezone before binding it. That covers `DateRange`, `Where` and its
 comparison presets when their deserializer yields a date, and a `WhereThrough` leaf.
 The timezone is read with `date_default_timezone_get()` on every bind, so an
 application that switches it per request, say per tenant, gets the right zone each
-time. The persister does the same on [writes](#the-write-pipeline).
+time. To store one fixed zone instead, set
+[`storage_timezone`](configuration.md#storage_timezone). The persister does the same on [writes](#the-write-pipeline).
 
 Two column kinds are left alone. A `datetimetz` column keeps its own offset handling.
 A `date` column is not converted, because moving a midnight bound into another zone

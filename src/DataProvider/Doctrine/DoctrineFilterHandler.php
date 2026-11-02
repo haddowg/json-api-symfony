@@ -118,10 +118,10 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
     /**
      * @param iterable<DoctrineFilterArmInterface> $arms author arms for custom filter types, consulted in order
      */
-    public function __construct(iterable $arms = [])
+    public function __construct(iterable $arms = [], ?NaiveDateTimeStorage $dates = null)
     {
         $this->arms = \is_array($arms) ? \array_values($arms) : \iterator_to_array($arms, false);
-        $this->dates = new NaiveDateTimeStorage();
+        $this->dates = $dates ?? new NaiveDateTimeStorage();
     }
 
     public function apply(FilterInterface $filter, mixed $query, mixed $value): mixed

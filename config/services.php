@@ -434,6 +434,11 @@ return static function (ContainerConfigurator $container): void {
                 '$entityManager' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\Doctrine\ORM\EntityManagerInterface::class),
             ]);
 
+        // The zone naive datetime columns are stored in (json_api.storage_timezone);
+        // null reads PHP's default timezone at each bind and write.
+        $services->set(\haddowg\JsonApiBundle\DataProvider\Doctrine\NaiveDateTimeStorage::class)
+            ->args(['$timezone' => '%haddowg_json_api.storage_timezone%']);
+
         $services->set(DoctrineDataProvider::class)
             ->args([
                 '$entityManager' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\Doctrine\ORM\EntityManagerInterface::class),
@@ -455,6 +460,7 @@ return static function (ContainerConfigurator $container): void {
                 // The current server's output zone, so rendered pivot DateTime values
                 // follow it the way attributes do.
                 '$outputTimezone' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Serializer\RequestScopedOutputTimezone::class),
+                '$dateStorage' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataProvider\Doctrine\NaiveDateTimeStorage::class),
             ])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG, ['priority' => -128]);
 
@@ -469,6 +475,7 @@ return static function (ContainerConfigurator $container): void {
                 // Resolves a belongsToMany pivot relation's association entity for the
                 // writable-pivot association-entity diff (upsert / reorder / remove).
                 '$pivotAssociations' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataProvider\Doctrine\PivotAssociationResolver::class),
+                '$dateStorage' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataProvider\Doctrine\NaiveDateTimeStorage::class),
             ])
             ->tag(JsonApiBundle::DATA_PERSISTER_TAG, ['priority' => -128]);
 

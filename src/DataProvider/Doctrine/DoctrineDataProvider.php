@@ -125,6 +125,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
      * @param iterable<DoctrineFilterArmInterface>   $filterArms        author arms for custom `FilterInterface` types (autoconfigured tag)
      * @param iterable<DoctrineSortArmInterface>     $sortArms          author arms for custom `SortInterface` types (autoconfigured tag)
      * @param ?RequestScopedOutputTimezone           $outputTimezone    the current server's output zone, applied to the pivot DateTime values the provider renders
+     * @param ?NaiveDateTimeStorage                  $dateStorage       the zone naive datetime filter bounds are converted to (`json_api.storage_timezone`)
      */
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
@@ -136,11 +137,12 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         iterable $filterArms = [],
         iterable $sortArms = [],
         private readonly ?RequestScopedOutputTimezone $outputTimezone = null,
+        ?NaiveDateTimeStorage $dateStorage = null,
     ) {
         $this->extensions = \is_array($extensions) ? \array_values($extensions) : \iterator_to_array($extensions, false);
         $this->applier = new CriteriaApplier();
         $this->windowExecutor = new WindowExecutor();
-        $this->filterHandler = new DoctrineFilterHandler($filterArms);
+        $this->filterHandler = new DoctrineFilterHandler($filterArms, $dateStorage);
         $this->sortHandler = new DoctrineSortHandler($sortArms);
         $this->ids = new DoctrineIdentifiers($this->entityManager);
         $this->relationScope = new RelationScope($this->entityManager, $this->ids);

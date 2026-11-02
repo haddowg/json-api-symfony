@@ -76,15 +76,17 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
      * @param array<string, class-string>    $entityClassByType a `type → entity FQCN` map
      * @param IdEncoderResolver               $idEncoders        resolves a related type's id encoder (linkage decode)
      * @param ?PivotAssociationResolver       $pivotAssociations resolves a belongsToMany pivot relation's association entity (always wired under Doctrine), for the writable-pivot association-entity diff
+     * @param ?NaiveDateTimeStorage           $dateStorage       the zone naive datetime fields are converted to before a flush (`json_api.storage_timezone`)
      */
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
         private readonly array $entityClassByType,
         private readonly IdEncoderResolver $idEncoders,
         private readonly ?PivotAssociationResolver $pivotAssociations = null,
+        ?NaiveDateTimeStorage $dateStorage = null,
     ) {
         $this->ids = new DoctrineIdentifiers($entityManager);
-        $this->dates = new NaiveDateTimeStorage();
+        $this->dates = $dateStorage ?? new NaiveDateTimeStorage();
     }
 
     /**

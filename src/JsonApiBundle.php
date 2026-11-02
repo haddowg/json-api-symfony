@@ -241,6 +241,14 @@ final class JsonApiBundle extends AbstractBundle
                         ->thenInvalid(self::INVALID_TIMEZONE_MESSAGE)
                     ->end()
                 ->end()
+                ->scalarNode('storage_timezone')
+                    ->info('The timezone the Doctrine data layer stores naive datetime and datetime_immutable columns in, e.g. UTC. Filter bounds and written values with an offset are converted to it before they are bound or flushed. The default, null (or an empty string), uses PHP\'s default timezone, read at the moment each value is bound or written. The column type must read values back in the same zone.')
+                    ->defaultNull()
+                    ->validate()
+                        ->ifTrue(static fn(mixed $value): bool => !self::isOutputTimezoneSetting($value))
+                        ->thenInvalid(self::INVALID_TIMEZONE_MESSAGE)
+                    ->end()
+                ->end()
                 ->booleanNode('link_objects')
                     ->info('Render the links the server builds (resource, relationship, top-level self, pagination and action links) as JSON:API link objects, {"href": ...}, which carry a describedby into the OpenAPI document. False renders them as bare URL strings, with no describedby. Named servers inherit it. Default true.')
                     ->defaultTrue()
@@ -696,6 +704,7 @@ final class JsonApiBundle extends AbstractBundle
         $builder->setParameter('haddowg_json_api.pagination.max_per_page', $maxPerPage);
         $builder->setParameter('haddowg_json_api.max_include_depth', $maxIncludeDepth);
         $builder->setParameter('haddowg_json_api.doctrine.window_functions', $windowFunctions);
+        $builder->setParameter('haddowg_json_api.storage_timezone', \is_string($config['storage_timezone'] ?? null) && $config['storage_timezone'] !== '' ? $config['storage_timezone'] : null);
         // The Atomic Operations endpoint config (opt-in, default off): the route loader
         // reads these to emit one POST {path} route per server when enabled.
         $builder->setParameter('haddowg_json_api.atomic_operations.enabled', $atomicEnabled);
