@@ -115,6 +115,18 @@ final class DoctrineStorageTimezoneTest extends StorageTimezoneConformanceTestCa
     }
 
     #[Test]
+    #[Group('spec:updating-relationships')]
+    public function aPivotDateTimeOnAMutableColumnIsStoredAsLocalTime(): void
+    {
+        $response = $this->handle('/shifts/1/relationships/workers', 'POST', ['data' => [
+            ['type' => 'workers', 'id' => '1', 'meta' => ['pivot' => ['checkedOutAt' => '2026-10-01T18:30:00+02:00']]],
+        ]]);
+        self::assertContains($response->getStatusCode(), [200, 204], (string) $response->getContent());
+
+        self::assertSame('2026-10-01 12:30:00', $this->connection()->fetchOne('SELECT checkedOutAt FROM tz_shift_worker WHERE shift_id = 1 AND worker_id = 1'));
+    }
+
+    #[Test]
     public function aDateBoundBindsWithTheColumnsMappedType(): void
     {
         $bounds = ['min' => '2026-10-01T15:00:00Z'];

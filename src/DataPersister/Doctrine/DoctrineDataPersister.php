@@ -539,13 +539,19 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
     /**
      * A client date-time written to `$column` of `$entity`, moved into the zone a naive
      * `datetime` column is stored in, so a value sent with an offset is persisted as the
-     * right local time. Any other value, or a column that is not naive, is unchanged.
+     * right local time, and given the date class the column's type converts. Any other
+     * value, or a column that is not naive, keeps its zone.
      */
     public function dateTimeForColumn(object $entity, string $column, mixed $value): mixed
     {
         $metadata = $this->entityManager->getClassMetadata($entity::class);
+        if (!$metadata->hasField($column)) {
+            return $value;
+        }
 
-        return $metadata->hasField($column) ? $this->dates->toStorage($value, $metadata->getTypeOfField($column)) : $value;
+        $type = $metadata->getTypeOfField($column);
+
+        return $this->dates->asColumnClass($this->dates->toStorage($value, $type), $type);
     }
 
     /**
