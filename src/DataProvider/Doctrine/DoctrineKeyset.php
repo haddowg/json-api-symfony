@@ -48,6 +48,8 @@ final class DoctrineKeyset
 {
     private int $bindCount = 0;
 
+    private readonly NaiveDateTimeStorage $dates;
+
     /**
      * @param ClassMetadata<object>                 $metadata        the root entity's metadata (column → DBAL type)
      * @param array<string, string>                 $aliasOfColumn   keyset column → non-root query alias; an absent column resolves to the root alias
@@ -58,7 +60,9 @@ final class DoctrineKeyset
         private readonly string $rootAlias,
         private readonly array $aliasOfColumn = [],
         private readonly array $metadataOfAlias = [],
-    ) {}
+    ) {
+        $this->dates = new NaiveDateTimeStorage();
+    }
 
     /**
      * Emits the forced NULL=largest `ORDER BY` for `$columns` onto `$builder`.
@@ -211,12 +215,14 @@ final class DoctrineKeyset
 
     /**
      * Coerces the wire boundary value back to the PHP form the DBAL `$type`
-     * converts to SQL. A datetime-family type's ISO-8601 wire string becomes a
-     * `DateTimeImmutable` (a typed DBAL parameter converts a PHP value, not the
-     * wire string — binding the raw string against a datetime column errors), so a
-     * boundary date compares chronologically, not lexically. Every other type's
-     * value passes through unchanged (an int/uuid string binds as-is); a string
-     * that does not parse as a date is bound verbatim (the lenient fallback).
+     * converts to SQL. A datetime-family type's ISO-8601 wire string becomes the
+     * date class that type converts, a `\DateTime` for a mutable type and a
+     * `\DateTimeImmutable` for an immutable one, in the offset it was minted with
+     * (a typed DBAL parameter converts a PHP value, not the wire string — binding
+     * the raw string against a datetime column errors), so a boundary date compares
+     * chronologically, not lexically. Every other type's value passes through
+     * unchanged (an int/uuid string binds as-is); a string that does not parse as a
+     * date is bound verbatim (the lenient fallback).
      */
     private function toPhpValue(mixed $value, string $type): mixed
     {
@@ -224,7 +230,9 @@ final class DoctrineKeyset
             return $value;
         }
 
-        return DateTimeParser::tryParse($value) ?? $value;
+        $parsed = DateTimeParser::tryParse($value);
+
+        return $parsed !== null ? $this->dates->asColumnClass($parsed, $type) : $value;
     }
 
     /**

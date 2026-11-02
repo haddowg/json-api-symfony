@@ -7,7 +7,8 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\StorageTimezone;
 use Doctrine\ORM\Mapping as ORM;
 
 /**
- * The association entity behind a shift's workers, with a writable naive `checkedInAt`.
+ * The association entity behind a shift's workers, with writable naive date-times:
+ * an immutable `checkedInAt` and a mutable `checkedOutAt`.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'tz_shift_worker')]
@@ -24,5 +25,7 @@ class ShiftWorkerEntity
         public ?WorkerEntity $worker = null,
         #[ORM\Column(type: 'datetime_immutable', nullable: true)]
         public ?\DateTimeImmutable $checkedInAt = null,
+        #[ORM\Column(type: 'datetime', nullable: true)]
+        public ?\DateTime $checkedOutAt = null,
     ) {}
 }

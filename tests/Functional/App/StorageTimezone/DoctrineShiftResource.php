@@ -29,7 +29,10 @@ final class DoctrineShiftResource extends BaseShiftResource implements ResourceL
             ...parent::fields(),
             BelongsToMany::make('workers', 'workers')
                 ->through(ShiftWorkerEntity::class)
-                ->fields(DateTime::make('checkedInAt')->nullable()->build())
+                ->fields(
+                    DateTime::make('checkedInAt')->nullable()->build(),
+                    DateTime::make('checkedOutAt')->nullable()->build(),
+                )
                 ->extractUsing(static function (mixed $shift): array {
                     if (!$shift instanceof ShiftEntity) {
                         return [];

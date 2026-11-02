@@ -77,7 +77,14 @@ final class StorageTimezoneDoctrineTestKernel extends Kernel
         }
 
         $container->extension('doctrine', [
-            'dbal' => ['driver' => 'pdo_sqlite', 'memory' => true],
+            'dbal' => [
+                'driver' => 'pdo_sqlite',
+                'memory' => true,
+                'types' => [
+                    UtcDateTimeType::NAME => UtcDateTimeType::class,
+                    UtcDateTimeImmutableType::NAME => UtcDateTimeImmutableType::class,
+                ],
+            ],
             'orm' => $orm,
         ]);
 
@@ -92,7 +99,8 @@ final class StorageTimezoneDoctrineTestKernel extends Kernel
             ->autowire()
             ->autoconfigure()
             ->set(DoctrineShiftResource::class)
-            ->set(DoctrineWorkerResource::class);
+            ->set(DoctrineWorkerResource::class)
+            ->set(UtcShiftResource::class);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

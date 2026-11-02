@@ -77,30 +77,58 @@ final class NaiveDateTimeStorage
      */
     public function parameter(mixed $value, ?string $type): array
     {
-        $instance = $this->type($type);
-
-        if (!$value instanceof \DateTimeInterface || $type === null || $instance === null) {
-            return [$value, null];
-        }
-
-        $immutable = $instance instanceof DateTimeImmutableType
-            || $instance instanceof DateTimeTzImmutableType
-            || $instance instanceof DateImmutableType;
-        $mutable = $instance instanceof DateTimeType
-            || $instance instanceof DateTimeTzType
-            || $instance instanceof DateType;
-
-        if (!$immutable && !$mutable) {
+        if (!$value instanceof \DateTimeInterface || $type === null || $this->dateClass($type) === null) {
             return [$value, null];
         }
 
         $value = $this->toStorage($value, $type);
         \assert($value instanceof \DateTimeInterface);
 
-        return [
-            $immutable ? \DateTimeImmutable::createFromInterface($value) : \DateTime::createFromInterface($value),
-            $type,
-        ];
+        return [$this->asColumnClass($value, $type), $type];
+    }
+
+    /**
+     * `$value` as the PHP class a date, date-time or zoned date-time column of DBAL type
+     * `$type` converts, keeping its instant and offset. DBAL 4 rejects a
+     * `\DateTimeImmutable` for a mutable type and the reverse. A value for any other
+     * type is returned unchanged.
+     */
+    public function asColumnClass(mixed $value, ?string $type): mixed
+    {
+        if (!$value instanceof \DateTimeInterface) {
+            return $value;
+        }
+
+        return match ($this->dateClass($type)) {
+            \DateTimeImmutable::class => \DateTimeImmutable::createFromInterface($value),
+            \DateTime::class => \DateTime::createFromInterface($value),
+            default => $value,
+        };
+    }
+
+    /**
+     * The date class the date, date-time or zoned date-time type `$type` converts,
+     * including subclasses, or null for any other type.
+     *
+     * @return class-string<\DateTimeInterface>|null
+     */
+    private function dateClass(?string $type): ?string
+    {
+        $instance = $this->type($type);
+
+        if ($instance instanceof DateTimeImmutableType
+            || $instance instanceof DateTimeTzImmutableType
+            || $instance instanceof DateImmutableType) {
+            return \DateTimeImmutable::class;
+        }
+
+        if ($instance instanceof DateTimeType
+            || $instance instanceof DateTimeTzType
+            || $instance instanceof DateType) {
+            return \DateTime::class;
+        }
+
+        return null;
     }
 
     private function type(?string $type): ?Type
