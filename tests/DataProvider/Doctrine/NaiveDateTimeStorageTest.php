@@ -89,13 +89,47 @@ final class NaiveDateTimeStorageTest extends TestCase
     }
 
     #[Test]
-    public function aDateTimeColumnBindsWithAnInferredType(): void
+    public function aNaiveColumnBindsTheConvertedValueWithItsOwnType(): void
     {
-        [$value, $type] = (new NaiveDateTimeStorage())->parameter(new \DateTimeImmutable('2026-10-01T16:00:00Z'), Types::DATETIME_IMMUTABLE);
+        $storage = new NaiveDateTimeStorage();
+        $bound = new \DateTimeImmutable('2026-10-01T16:00:00Z');
 
-        self::assertNull($type);
-        self::assertInstanceOf(\DateTimeInterface::class, $value);
+        [$value, $type] = $storage->parameter($bound, Types::DATETIME_IMMUTABLE);
+        self::assertSame(Types::DATETIME_IMMUTABLE, $type);
+        self::assertInstanceOf(\DateTimeImmutable::class, $value);
         self::assertSame('2026-10-01 12:00:00', $value->format('Y-m-d H:i:s'));
+
+        [$value, $type] = $storage->parameter($bound, Types::DATETIME_MUTABLE);
+        self::assertSame(Types::DATETIME_MUTABLE, $type);
+        self::assertInstanceOf(\DateTime::class, $value);
+        self::assertSame('2026-10-01 12:00:00', $value->format('Y-m-d H:i:s'));
+    }
+
+    #[Test]
+    public function aZonedColumnBindsTheValueWithItsOffsetAndItsOwnType(): void
+    {
+        $storage = new NaiveDateTimeStorage();
+        $bound = new \DateTimeImmutable('2026-10-01T16:00:00Z');
+
+        [$value, $type] = $storage->parameter($bound, Types::DATETIMETZ_IMMUTABLE);
+        self::assertSame(Types::DATETIMETZ_IMMUTABLE, $type);
+        self::assertInstanceOf(\DateTimeImmutable::class, $value);
+        self::assertSame('2026-10-01T16:00:00+00:00', $value->format(\DateTimeInterface::ATOM));
+
+        [$value, $type] = $storage->parameter($bound, Types::DATETIMETZ_MUTABLE);
+        self::assertSame(Types::DATETIMETZ_MUTABLE, $type);
+        self::assertInstanceOf(\DateTime::class, $value);
+        self::assertSame('2026-10-01T16:00:00+00:00', $value->format(\DateTimeInterface::ATOM));
+    }
+
+    #[Test]
+    public function aTimeOrNonDateColumnBindsWithAnInferredType(): void
+    {
+        $bound = new \DateTimeImmutable('2026-10-01T16:00:00Z');
+
+        self::assertSame([$bound, null], (new NaiveDateTimeStorage())->parameter($bound, Types::TIME_IMMUTABLE));
+        self::assertSame([$bound, null], (new NaiveDateTimeStorage())->parameter($bound, Types::STRING));
+        self::assertSame([$bound, null], (new NaiveDateTimeStorage())->parameter($bound, null));
     }
 
     #[Test]

@@ -91,7 +91,8 @@ final class StorageTimezoneDoctrineTestKernel extends Kernel
             ->defaults()
             ->autowire()
             ->autoconfigure()
-            ->set(DoctrineShiftResource::class);
+            ->set(DoctrineShiftResource::class)
+            ->set(DoctrineWorkerResource::class);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

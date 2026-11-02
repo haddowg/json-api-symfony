@@ -34,10 +34,15 @@ use haddowg\JsonApi\Pagination\PageInterface;
 use haddowg\JsonApi\Pagination\PaginatorInterface;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Request\RelatedQuery;
+use haddowg\JsonApi\Resource\AbstractResource;
+use haddowg\JsonApi\Resource\DateTimeParser;
 use haddowg\JsonApi\Resource\Field\AbstractFieldValue;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
+use haddowg\JsonApi\Resource\Field\Date;
+use haddowg\JsonApi\Resource\Field\DateTime;
 use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\Field\Time;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\SupportsSingular;
 use haddowg\JsonApi\Resource\ResolvesCompletionRedirect;
@@ -64,6 +69,7 @@ use haddowg\JsonApiBundle\DataPersister\AsyncWriteNotAllowedInAtomicOperation;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataPersister\ReportsMovedMembersInterface;
+use haddowg\JsonApiBundle\DataPersister\StoresDateTimesInterface;
 use haddowg\JsonApiBundle\DataPersister\TransactionalDataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\WriteTransactionContext;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
@@ -2100,7 +2106,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             );
         }
 
-        $entity = $server->hydratorFor($type)->hydrate($this->withoutRelationships($body), $entity);
+        $entity = $server->hydratorFor($type)->hydrate($this->datesForStorage($this->types->resourceFor($server, $type), $persister, $entity, $this->withoutRelationships($body)), $entity);
         \assert(\is_object($entity));
 
         $this->validateEntity($server, $type, $entity, creating: true);
@@ -2227,7 +2233,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 );
             }
 
-            $entity = $server->hydratorFor($type)->hydrate($this->withoutRelationships($body), $entity);
+            $entity = $server->hydratorFor($type)->hydrate($this->datesForStorage($this->types->resourceFor($server, $type), $persister, $entity, $this->withoutRelationships($body)), $entity);
             \assert(\is_object($entity));
 
             $this->validateEntity($server, $type, $entity, creating: false);
@@ -2612,6 +2618,59 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * scalar linkage id to a typed association property — the bundle applies the
      * associations through the persister seam instead.
      */
+    /**
+     * The body with each `DateTime` attribute it sends put in the form the persister
+     * stores, when the persister asks for one. Doctrine drops the offset of a naive
+     * `datetime` column, so a value sent in `Z` arrives as the same instant in the zone
+     * the column is stored in. Only attributes the request wrote are touched; a value
+     * that does not parse is left for core's cast to reject.
+     */
+    private function datesForStorage(?AbstractResource $resource, DataPersisterInterface $persister, object $entity, JsonApiRequestInterface $body): JsonApiRequestInterface
+    {
+        if ($resource === null || !$persister instanceof StoresDateTimesInterface) {
+            return $body;
+        }
+
+        /** @var array<string, mixed> $document */
+        $document = (array) $body->getParsedBody();
+        $data = $document['data'] ?? null;
+        $attributes = \is_array($data) ? ($data['attributes'] ?? null) : null;
+        if (!\is_array($data) || !\is_array($attributes)) {
+            return $body;
+        }
+
+        $changed = false;
+        foreach ($resource->allFields() as $field) {
+            if (!$field instanceof DateTime || $field instanceof Date || $field instanceof Time) {
+                continue;
+            }
+
+            $value = DateTimeParser::tryParse($attributes[$field->name()] ?? null);
+            if ($value === null) {
+                continue;
+            }
+
+            $stored = $persister->dateTimeForColumn($entity, $field->column() ?? $field->name(), $value);
+            if (!$stored instanceof \DateTimeInterface || $stored->getTimezone()->getName() === $value->getTimezone()->getName()) {
+                continue;
+            }
+
+            $attributes[$field->name()] = $stored->format('Y-m-d\\TH:i:s.uP');
+            $changed = true;
+        }
+
+        if (!$changed) {
+            return $body;
+        }
+
+        $data['attributes'] = $attributes;
+        $document['data'] = $data;
+        $converted = $body->withParsedBody($document);
+        \assert($converted instanceof JsonApiRequestInterface);
+
+        return $converted;
+    }
+
     private function withoutRelationships(JsonApiRequestInterface $body): JsonApiRequestInterface
     {
         /** @var array<string, mixed> $document */

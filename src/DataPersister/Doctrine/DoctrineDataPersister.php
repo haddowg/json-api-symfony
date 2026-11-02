@@ -21,6 +21,7 @@ use haddowg\JsonApi\Schema\ResourceIdentifier;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\MovedMember;
 use haddowg\JsonApiBundle\DataPersister\ReportsMovedMembersInterface;
+use haddowg\JsonApiBundle\DataPersister\StoresDateTimesInterface;
 use haddowg\JsonApiBundle\DataPersister\TransactionalDataPersisterInterface;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineIdentifiers;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\NaiveDateTimeStorage;
@@ -66,7 +67,7 @@ use haddowg\JsonApiBundle\Validation\RelationshipTypeUnacceptable;
  * (`404`), rather than passing the raw wire string to `getReference` (which would
  * build a proxy that errors on initialization, surfacing as a `500`).
  */
-final class DoctrineDataPersister implements DataPersisterInterface, TransactionalDataPersisterInterface, ReportsMovedMembersInterface
+final class DoctrineDataPersister implements DataPersisterInterface, TransactionalDataPersisterInterface, ReportsMovedMembersInterface, StoresDateTimesInterface
 {
     private readonly DoctrineIdentifiers $ids;
 
@@ -159,7 +160,6 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
 
     public function create(string $type, object $entity): object
     {
-        $this->storeDatesInStorageZone($entity);
         $this->entityManager->persist($entity);
         $this->entityManager->flush();
 
@@ -170,7 +170,6 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
     {
         // The target was loaded through the provider's EntityManager, so it is a
         // managed instance the hydrator mutated in place; flushing commits it.
-        $this->storeDatesInStorageZone($entity);
         $this->entityManager->flush();
 
         return $entity;
@@ -533,19 +532,20 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
             }
 
             $column = $field->column() ?? $field->name();
-            $row->{$column} = $this->coercePivotValue($field, $meta[$field->name()]);
+            $row->{$column} = $this->dateTimeForColumn($row, $column, $this->coercePivotValue($field, $meta[$field->name()]));
         }
-
-        $this->storeDatesInStorageZone($row);
     }
 
     /**
-     * Moves the entity's naive `datetime` values into the zone Doctrine stores them in,
-     * so a client value sent with an offset is persisted as the right local time.
+     * A client date-time written to `$column` of `$entity`, moved into the zone a naive
+     * `datetime` column is stored in, so a value sent with an offset is persisted as the
+     * right local time. Any other value, or a column that is not naive, is unchanged.
      */
-    private function storeDatesInStorageZone(object $entity): void
+    public function dateTimeForColumn(object $entity, string $column, mixed $value): mixed
     {
-        $this->dates->normaliseEntity($this->entityManager->getClassMetadata($entity::class), $entity);
+        $metadata = $this->entityManager->getClassMetadata($entity::class);
+
+        return $metadata->hasField($column) ? $this->dates->toStorage($value, $metadata->getTypeOfField($column)) : $value;
     }
 
     /**

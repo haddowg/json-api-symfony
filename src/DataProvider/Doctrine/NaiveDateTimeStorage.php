@@ -7,13 +7,14 @@ namespace haddowg\JsonApiBundle\DataProvider\Doctrine;
 use Doctrine\DBAL\Types\DateImmutableType;
 use Doctrine\DBAL\Types\DateTimeImmutableType;
 use Doctrine\DBAL\Types\DateTimeType;
+use Doctrine\DBAL\Types\DateTimeTzImmutableType;
+use Doctrine\DBAL\Types\DateTimeTzType;
 use Doctrine\DBAL\Types\DateType;
 use Doctrine\DBAL\Types\Type;
-use Doctrine\ORM\Mapping\ClassMetadata;
 
 /**
- * Moves a date-time into the zone a naive Doctrine `datetime` column is stored in,
- * before it is bound to a query or persisted.
+ * Prepares a client date-time for a Doctrine date column, before it is bound to a query
+ * or written to an entity.
  *
  * `datetime` and `datetime_immutable` write `Y-m-d H:i:s` and drop the offset, and
  * Doctrine reads them back in PHP's default timezone. A client value like
@@ -23,9 +24,10 @@ use Doctrine\ORM\Mapping\ClassMetadata;
  * switch the default timezone per request.
  *
  * Only the naive date-time types convert, including subclasses. A `datetimetz` column
- * keeps its own offset handling. A `date` column never converts, because moving a
- * midnight bound into another zone can change its calendar day: a date bound binds
- * with the column's own type instead, so it compares as the day the client wrote.
+ * keeps the value's offset, and a `date` column keeps the bound's own calendar day,
+ * because moving a midnight bound into another zone can change its day. Query
+ * parameters bind with the column's mapped type, since Doctrine otherwise infers the
+ * type from the value and formats a `datetimetz` bound without its offset.
  *
  * @internal
  */
@@ -41,11 +43,7 @@ final class NaiveDateTimeStorage
      */
     public function isNaive(?string $type): bool
     {
-        if ($type === null || !Type::hasType($type)) {
-            return false;
-        }
-
-        $instance = Type::getType($type);
+        $instance = $this->type($type);
 
         return $instance instanceof DateTimeType || $instance instanceof DateTimeImmutableType;
     }
@@ -70,58 +68,43 @@ final class NaiveDateTimeStorage
 
     /**
      * The value and explicit DBAL type to bind `$value` with against a column of type
-     * `$type`. A naive date-time moves into the storage zone. A date bound for a
-     * `date` column binds with that type, so it is written as its own `Y-m-d` rather
-     * than a date-time string that a text-compared column such as SQLite's would
-     * order after the stored day. Anything else binds as before, with an inferred type.
+     * `$type`. A date-time bound for a date, date-time or zoned date-time column binds
+     * with that column's type, as the PHP class the type converts, and moves into the
+     * storage zone first when the column is naive. Anything else binds as before, with
+     * a type Doctrine infers from the value.
      *
      * @return array{mixed, ?string}
      */
     public function parameter(mixed $value, ?string $type): array
     {
-        if (!$value instanceof \DateTimeInterface || $type === null || !Type::hasType($type)) {
+        $instance = $this->type($type);
+
+        if (!$value instanceof \DateTimeInterface || $type === null || $instance === null) {
             return [$value, null];
         }
 
-        $instance = Type::getType($type);
+        $immutable = $instance instanceof DateTimeImmutableType
+            || $instance instanceof DateTimeTzImmutableType
+            || $instance instanceof DateImmutableType;
+        $mutable = $instance instanceof DateTimeType
+            || $instance instanceof DateTimeTzType
+            || $instance instanceof DateType;
 
-        if ($instance instanceof DateImmutableType) {
-            return [\DateTimeImmutable::createFromInterface($value), $type];
+        if (!$immutable && !$mutable) {
+            return [$value, null];
         }
 
-        if ($instance instanceof DateType) {
-            return [\DateTime::createFromInterface($value), $type];
-        }
+        $value = $this->toStorage($value, $type);
+        \assert($value instanceof \DateTimeInterface);
 
-        return [$this->toStorage($value, $type), null];
+        return [
+            $immutable ? \DateTimeImmutable::createFromInterface($value) : \DateTime::createFromInterface($value),
+            $type,
+        ];
     }
 
-    /**
-     * Moves every naive date-time field of `$entity` into the storage zone, writing a
-     * field back only when its zone differs, so a value Doctrine itself hydrated is
-     * left untouched and never shows up as a change.
-     *
-     * @param ClassMetadata<object> $metadata
-     */
-    public function normaliseEntity(ClassMetadata $metadata, object $entity): void
+    private function type(?string $type): ?Type
     {
-        $zone = $this->zone()->getName();
-
-        foreach ($metadata->getFieldNames() as $field) {
-            if (!$this->isNaive($metadata->getTypeOfField($field))) {
-                continue;
-            }
-
-            $value = $metadata->getFieldValue($entity, $field);
-            if (!$value instanceof \DateTimeInterface || $value->getTimezone()->getName() === $zone) {
-                continue;
-            }
-
-            try {
-                $metadata->setFieldValue($entity, $field, $this->toStorage($value, $metadata->getTypeOfField($field)));
-            } catch (\Error) {
-                // A readonly property keeps the value its constructor gave it.
-            }
-        }
+        return $type !== null && Type::hasType($type) ? Type::getType($type) : null;
     }
 }
