@@ -25,7 +25,9 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
  *    detection still terminates the walk);
  *  - **allow-list**: when the root resource declares a `getAllowedIncludePaths()`
  *    whitelist, only paths it permits (a path is permitted when it is a prefix of,
- *    or equal to, an allowed path) are advertised.
+ *    or equal to, an allowed path) are advertised;
+ *  - **exclude-list**: a path equal to, or below, one of the root resource's
+ *    `getExcludedIncludePaths()` is neither advertised nor descended.
  *
  * Cycle safety: a path that revisits a type already on the current branch is not
  * descended again (so a mutual `author`/`articles` cycle yields the finite prefix
@@ -53,8 +55,9 @@ final class IncludePathResolver
         $resource = $this->types->resourceFor($server, $type);
         $maxDepth = $resource?->maxIncludeDepth() ?? $server->maxIncludeDepth();
         $allowList = $resource?->getAllowedIncludePaths();
+        $excludeList = $resource?->getExcludedIncludePaths() ?? [];
 
-        return $this->walk($server, $type, '', [$type], $maxDepth, $allowList);
+        return $this->walk($server, $type, '', [$type], $maxDepth, $allowList, $excludeList);
     }
 
     /**
@@ -80,14 +83,15 @@ final class IncludePathResolver
      * Depth-first walk of `$type`'s includable relations, accumulating dotted paths
      * under `$prefix`. `$branch` is the list of types already on the current branch
      * (cycle guard); `$maxDepth` is the effective cap; `$allowList` (when non-null)
-     * filters paths to the root's whitelist.
+     * filters paths to the root's whitelist; `$excludeList` prunes the root's excluded subtrees.
      *
      * @param list<string>      $branch
      * @param list<string>|null $allowList
+     * @param list<string>      $excludeList
      *
      * @return list<string>
      */
-    private function walk(Server $server, string $type, string $prefix, array $branch, ?int $maxDepth, ?array $allowList): array
+    private function walk(Server $server, string $type, string $prefix, array $branch, ?int $maxDepth, ?array $allowList, array $excludeList): array
     {
         $depth = $prefix === '' ? 0 : \substr_count($prefix, '.') + 1;
         if ($maxDepth !== null && $depth >= $maxDepth) {
@@ -111,7 +115,7 @@ final class IncludePathResolver
             }
 
             $path = $prefix === '' ? $relation->name() : $prefix . '.' . $relation->name();
-            if (!$this->allowed($path, $allowList)) {
+            if (!$this->allowed($path, $allowList) || $this->excluded($path, $excludeList)) {
                 continue;
             }
 
@@ -128,7 +132,7 @@ final class IncludePathResolver
                 continue;
             }
 
-            foreach ($this->walk($server, $relatedType, $path, [...$branch, $relatedType], $maxDepth, $allowList) as $nested) {
+            foreach ($this->walk($server, $relatedType, $path, [...$branch, $relatedType], $maxDepth, $allowList, $excludeList) as $nested) {
                 $paths[] = $nested;
             }
         }
@@ -175,6 +179,22 @@ final class IncludePathResolver
 
         foreach ($allowList as $allowed) {
             if ($allowed === $path || \str_starts_with($allowed, $path . '.')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether `$path` is, or lies below, one of the root resource's excluded paths.
+     *
+     * @param list<string> $excludeList
+     */
+    private function excluded(string $path, array $excludeList): bool
+    {
+        foreach ($excludeList as $excluded) {
+            if ($excluded === $path || \str_starts_with($path, $excluded . '.')) {
                 return true;
             }
         }
