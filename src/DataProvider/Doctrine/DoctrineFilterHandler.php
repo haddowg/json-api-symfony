@@ -113,12 +113,15 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
      */
     private readonly array $arms;
 
+    private readonly NaiveDateTimeStorage $dates;
+
     /**
      * @param iterable<DoctrineFilterArmInterface> $arms author arms for custom filter types, consulted in order
      */
     public function __construct(iterable $arms = [])
     {
         $this->arms = \is_array($arms) ? \array_values($arms) : \iterator_to_array($arms, false);
+        $this->dates = new NaiveDateTimeStorage();
     }
 
     public function apply(FilterInterface $filter, mixed $query, mixed $value): mixed
@@ -601,7 +604,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         $placeholder = $this->placeholder($bindOn);
 
         $predicateOn->andWhere(\sprintf('%s %s :%s', $path, $dqlOperator, $placeholder));
-        $bindOn->setParameter($placeholder, $expected);
+        $bindOn->setParameter($placeholder, ...$this->dateParameter($predicateOn, $path, $expected));
     }
 
     /**
@@ -661,12 +664,12 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
 
         if ($min !== null) {
             $placeholder = $this->placeholder($query);
-            $query->andWhere(\sprintf('%s >= :%s', $path, $placeholder))->setParameter($placeholder, $min);
+            $query->andWhere(\sprintf('%s >= :%s', $path, $placeholder))->setParameter($placeholder, ...$this->dateParameter($query, $path, $min));
         }
 
         if ($max !== null) {
             $placeholder = $this->placeholder($query);
-            $query->andWhere(\sprintf('%s <= :%s', $path, $placeholder))->setParameter($placeholder, $max);
+            $query->andWhere(\sprintf('%s <= :%s', $path, $placeholder))->setParameter($placeholder, ...$this->dateParameter($query, $path, $max));
         }
 
         return $query;
@@ -780,6 +783,73 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         }
 
         return $alias . '.' . $column;
+    }
+
+    /**
+     * The value and DBAL type to bind `$value` with when it is compared against the
+     * column at `$path` (`alias.field`), from {@see NaiveDateTimeStorage::parameter()}.
+     * The column's type comes from the metadata of the entity `alias` names on
+     * `$query`; a value whose column cannot be resolved binds unchanged.
+     *
+     * @return array{mixed, ?string}
+     */
+    private function dateParameter(QueryBuilder $query, string $path, mixed $value): array
+    {
+        if (!$value instanceof \DateTimeInterface) {
+            return [$value, null];
+        }
+
+        [$alias, $field] = \explode('.', $path, 2);
+        $metadata = $this->metadataOfAlias($query, $alias);
+
+        if ($metadata === null || !$metadata->hasField($field)) {
+            return [$value, null];
+        }
+
+        return $this->dates->parameter($value, $metadata->getTypeOfField($field));
+    }
+
+    /**
+     * The metadata of the entity `$alias` names on `$query`: a `FROM` root, an entity
+     * joined by class, or the target of an association joined off another alias.
+     *
+     * @return ClassMetadata<object>|null
+     */
+    private function metadataOfAlias(QueryBuilder $query, string $alias): ?ClassMetadata
+    {
+        $entityManager = $query->getEntityManager();
+
+        /** @var list<\Doctrine\ORM\Query\Expr\From> $froms */
+        $froms = $query->getDQLPart('from');
+        foreach ($froms as $from) {
+            if ($from->getAlias() === $alias) {
+                return $entityManager->getClassMetadata($from->getFrom());
+            }
+        }
+
+        /** @var array<string, list<\Doctrine\ORM\Query\Expr\Join>> $joinsByRoot */
+        $joinsByRoot = $query->getDQLPart('join');
+        foreach ($joinsByRoot as $joins) {
+            foreach ($joins as $join) {
+                if ($join->getAlias() !== $alias) {
+                    continue;
+                }
+
+                $target = $join->getJoin();
+                if (!\str_contains($target, '.')) {
+                    return \class_exists($target) ? $entityManager->getClassMetadata($target) : null;
+                }
+
+                [$parentAlias, $association] = \explode('.', $target, 2);
+                $parent = $parentAlias === $alias ? null : $this->metadataOfAlias($query, $parentAlias);
+
+                return $parent !== null && $parent->hasAssociation($association)
+                    ? $entityManager->getClassMetadata($parent->getAssociationTargetClass($association))
+                    : null;
+            }
+        }
+
+        return null;
     }
 
     private function rootAlias(QueryBuilder $query): string

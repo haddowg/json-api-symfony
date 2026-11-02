@@ -21,8 +21,10 @@ use haddowg\JsonApi\Schema\ResourceIdentifier;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\MovedMember;
 use haddowg\JsonApiBundle\DataPersister\ReportsMovedMembersInterface;
+use haddowg\JsonApiBundle\DataPersister\StoresDateTimesInterface;
 use haddowg\JsonApiBundle\DataPersister\TransactionalDataPersisterInterface;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineIdentifiers;
+use haddowg\JsonApiBundle\DataProvider\Doctrine\NaiveDateTimeStorage;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\PivotAssociation;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\PivotAssociationResolver;
 use haddowg\JsonApiBundle\Server\IdEncoderResolver;
@@ -65,9 +67,11 @@ use haddowg\JsonApiBundle\Validation\RelationshipTypeUnacceptable;
  * (`404`), rather than passing the raw wire string to `getReference` (which would
  * build a proxy that errors on initialization, surfacing as a `500`).
  */
-final class DoctrineDataPersister implements DataPersisterInterface, TransactionalDataPersisterInterface, ReportsMovedMembersInterface
+final class DoctrineDataPersister implements DataPersisterInterface, TransactionalDataPersisterInterface, ReportsMovedMembersInterface, StoresDateTimesInterface
 {
     private readonly DoctrineIdentifiers $ids;
+
+    private readonly NaiveDateTimeStorage $dates;
 
     /**
      * @param array<string, class-string>    $entityClassByType a `type → entity FQCN` map
@@ -81,6 +85,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
         private readonly ?PivotAssociationResolver $pivotAssociations = null,
     ) {
         $this->ids = new DoctrineIdentifiers($entityManager);
+        $this->dates = new NaiveDateTimeStorage();
     }
 
     /**
@@ -527,8 +532,20 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
             }
 
             $column = $field->column() ?? $field->name();
-            $row->{$column} = $this->coercePivotValue($field, $meta[$field->name()]);
+            $row->{$column} = $this->dateTimeForColumn($row, $column, $this->coercePivotValue($field, $meta[$field->name()]));
         }
+    }
+
+    /**
+     * A client date-time written to `$column` of `$entity`, moved into the zone a naive
+     * `datetime` column is stored in, so a value sent with an offset is persisted as the
+     * right local time. Any other value, or a column that is not naive, is unchanged.
+     */
+    public function dateTimeForColumn(object $entity, string $column, mixed $value): mixed
+    {
+        $metadata = $this->entityManager->getClassMetadata($entity::class);
+
+        return $metadata->hasField($column) ? $this->dates->toStorage($value, $metadata->getTypeOfField($column)) : $value;
     }
 
     /**
