@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.26.0](https://github.com/haddowg/json-api-symfony/compare/v1.25.2...v1.26.0) (2026-11-02)
+
+
+### Features
+
+* honour excluded include paths in the bundle ([#280](https://github.com/haddowg/json-api-symfony/issues/280)) ([a5fe946](https://github.com/haddowg/json-api-symfony/commit/a5fe946341c481fc766a4e5efa4a1862ad699692))
+
 ## [1.25.2](https://github.com/haddowg/json-api-symfony/compare/v1.25.1...v1.25.2) (2026-11-02)
 
 
