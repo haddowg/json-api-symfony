@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.25.1](https://github.com/haddowg/json-api-symfony/compare/v1.25.0...v1.25.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* compare and store client date-times in the default timezone ([#275](https://github.com/haddowg/json-api-symfony/issues/275)) ([87fc97c](https://github.com/haddowg/json-api-symfony/commit/87fc97cdfe40c6d89c9d0819afd9c85f043512ce))
+
 ## [1.25.0](https://github.com/haddowg/json-api-symfony/compare/v1.24.0...v1.25.0) (2026-11-01)
 
 
