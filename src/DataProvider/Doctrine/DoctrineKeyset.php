@@ -8,6 +8,7 @@ use Doctrine\ORM\Mapping\ClassMetadata;
 use Doctrine\ORM\QueryBuilder;
 use haddowg\JsonApi\Collection\Keyset\KeysetColumn;
 use haddowg\JsonApi\Pagination\CursorBoundary;
+use haddowg\JsonApi\Resource\DateTimeParser;
 
 /**
  * Builds the Doctrine push-down for a cursor (keyset) page — the forced
@@ -189,6 +190,8 @@ final class DoctrineKeyset
      * converts a PHP value (`DateTimeImmutable`) to SQL — so the wire value is first
      * coerced back to the column's PHP form via the DBAL {@see Type::convertToPHPValue()}
      * before binding, then bound WITH the type so DBAL emits the type-correct literal.
+     * A naive `datetime` boundary is deliberately left in the offset it was minted
+     * with: it is the row's stored wall-clock time, which is what the column compares.
      */
     private function bind(QueryBuilder $builder, string $column, mixed $value): string
     {
@@ -221,11 +224,7 @@ final class DoctrineKeyset
             return $value;
         }
 
-        try {
-            return new \DateTimeImmutable($value);
-        } catch (\Exception) {
-            return $value;
-        }
+        return DateTimeParser::tryParse($value) ?? $value;
     }
 
     /**

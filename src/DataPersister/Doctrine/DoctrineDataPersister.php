@@ -23,6 +23,7 @@ use haddowg\JsonApiBundle\DataPersister\MovedMember;
 use haddowg\JsonApiBundle\DataPersister\ReportsMovedMembersInterface;
 use haddowg\JsonApiBundle\DataPersister\TransactionalDataPersisterInterface;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineIdentifiers;
+use haddowg\JsonApiBundle\DataProvider\Doctrine\NaiveDateTimeStorage;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\PivotAssociation;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\PivotAssociationResolver;
 use haddowg\JsonApiBundle\Server\IdEncoderResolver;
@@ -69,6 +70,8 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
 {
     private readonly DoctrineIdentifiers $ids;
 
+    private readonly NaiveDateTimeStorage $dates;
+
     /**
      * @param array<string, class-string>    $entityClassByType a `type → entity FQCN` map
      * @param IdEncoderResolver               $idEncoders        resolves a related type's id encoder (linkage decode)
@@ -81,6 +84,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
         private readonly ?PivotAssociationResolver $pivotAssociations = null,
     ) {
         $this->ids = new DoctrineIdentifiers($entityManager);
+        $this->dates = new NaiveDateTimeStorage();
     }
 
     /**
@@ -155,6 +159,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
 
     public function create(string $type, object $entity): object
     {
+        $this->storeDatesInStorageZone($entity);
         $this->entityManager->persist($entity);
         $this->entityManager->flush();
 
@@ -165,6 +170,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
     {
         // The target was loaded through the provider's EntityManager, so it is a
         // managed instance the hydrator mutated in place; flushing commits it.
+        $this->storeDatesInStorageZone($entity);
         $this->entityManager->flush();
 
         return $entity;
@@ -529,6 +535,17 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
             $column = $field->column() ?? $field->name();
             $row->{$column} = $this->coercePivotValue($field, $meta[$field->name()]);
         }
+
+        $this->storeDatesInStorageZone($row);
+    }
+
+    /**
+     * Moves the entity's naive `datetime` values into the zone Doctrine stores them in,
+     * so a client value sent with an offset is persisted as the right local time.
+     */
+    private function storeDatesInStorageZone(object $entity): void
+    {
+        $this->dates->normaliseEntity($this->entityManager->getClassMetadata($entity::class), $entity);
     }
 
     /**

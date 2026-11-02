@@ -1,0 +1,3 @@
+# Naive datetime bounds and writes use the default timezone
+
+Doctrine's `datetime` types drop the offset and read the column back in PHP's default timezone, so a client value in `Z` or another offset compared or stored its own wall-clock time against local times. The Doctrine filter handler and persister now convert a date-time to `date_default_timezone_get()` before binding or flushing it for a naive `datetime` column, reading the zone each time because applications switch it per request. A `date` column binds with its own type in the bound's own offset instead, because converting a midnight bound can move it to the previous day, and cursor keys are left alone because they already carry the stored wall-clock time.

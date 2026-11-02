@@ -37,6 +37,7 @@ use haddowg\JsonApi\Resource\Constraint\UniqueItems;
 use haddowg\JsonApi\Resource\Constraint\UrlFormat;
 use haddowg\JsonApi\Resource\Constraint\UuidFormat;
 use haddowg\JsonApi\Resource\Constraint\When;
+use haddowg\JsonApi\Resource\DateTimeParser;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApiBundle\Validation\Constraint\NativeConstraints;
 use haddowg\JsonApiBundle\Validation\Constraint\NativeEntityConstraints;
@@ -324,15 +325,7 @@ final class ConstraintTranslator
      */
     private static function toDateTime(mixed $value): ?\DateTimeImmutable
     {
-        if (!\is_string($value) || $value === '') {
-            return null;
-        }
-
-        try {
-            return new \DateTimeImmutable($value);
-        } catch (\Exception) {
-            return null;
-        }
+        return DateTimeParser::tryParse($value);
     }
 
     /**

@@ -381,6 +381,13 @@ extension** (or `window_functions: false`) takes the per-parent bounded fallback
   mutated in place — the provider loaded it through this same `EntityManager`, so
   `update()` is just `flush()`. There is no `persist`/`merge`.
 - **`delete()`** is `remove()` + `flush()`.
+- **Date-times move into the storage zone before the flush.** A client may send
+  `2026-10-01T16:00:00Z` to a naive `datetime` column. Before `create()` and `update()`
+  flush, and when it writes pivot fields, the persister converts each naive date-time
+  field of the entity to PHP's default timezone. Without that, the column would store
+  `16:00:00` as local time. Under `America/New_York` that reads back four hours late.
+  A field already in that zone, such as one Doctrine hydrated, is left alone, and so
+  is a readonly property. Reads render through the usual `output_timezone`.
 
 The managed-update coupling is the one constraint a custom data layer must respect:
 a provider that returns a **detached** entity from `fetchOne` would silently break
@@ -576,7 +583,8 @@ A few translations carry nuance:
   primary query — one query, no join, no subquery, no N+1. A blank/absent bound is
   open-ended (treated as absent, byte-for-byte with the in-memory `bound()`), so an
   open `filter[<key>][max]=` is a no-op rather than a `400`; `DateRange` binds each
-  bound as a coerced `\DateTimeImmutable`.
+  bound as a coerced `\DateTimeImmutable`, converted for the column as described in
+  [Date-times in naive columns](#date-times-in-naive-columns).
 - **Empty-list semantics.** `WhereIn`/`WhereIdIn` with an empty list match nothing
   (`IN ()` is not valid SQL, so the handler emits `1 = 0`); the negated variants
   then match everything (a no-op).
@@ -634,6 +642,32 @@ the [`DoctrineExtensionTest`](../examples/music-catalog-symfony/tests/DoctrineEx
 asserts exactly that composition.
 
 Source: [`DoctrineFilterHandler`](../src/DataProvider/Doctrine/DoctrineFilterHandler.php).
+
+### Date-times in naive columns
+
+Doctrine's `datetime` and `datetime_immutable` types write `Y-m-d H:i:s` and drop the
+offset, and read the column back in PHP's default timezone. So the column holds local
+time in that zone. A client bound such as `filter[startsAt][min]=2026-10-01T15:00:00Z`
+is an instant, and binding its `15:00:00` against local times would compare the wrong
+moment. Under `America/New_York` a row stored as `2026-10-01 12:00:00`, which is 16:00Z,
+would be left out.
+
+The handler therefore looks up the compared column's mapped type and, for a naive
+`datetime` type or a subclass of one, converts a `\DateTimeInterface` value to PHP's
+default timezone before binding it. That covers `DateRange`, `Where` and its
+comparison presets when their deserializer yields a date, and a `WhereThrough` leaf.
+The timezone is read with `date_default_timezone_get()` on every bind, so an
+application that switches it per request, say per tenant, gets the right zone each
+time. The persister does the same on [writes](#the-write-pipeline).
+
+Two column kinds are left alone. A `datetimetz` column keeps its own offset handling.
+A `date` column is not converted, because moving a midnight bound into another zone
+can change its day: `2026-10-01T00:00:00Z` is still 30 September in New York. A date
+bound instead binds with the column's own `date` type, so it compares as the calendar
+day the client wrote, in the bound's own offset.
+
+Cursor pagination keys are not converted. A cursor carries the row's value as the
+provider read it, so its wall-clock time already matches the stored column.
 
 ### Relationship-existence filtering: `WhereHas`, `WhereThrough`, `WhereHasMatching`
 
