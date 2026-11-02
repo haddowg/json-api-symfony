@@ -984,7 +984,7 @@ wherever the server registers it.
 `?include` is a compound-document amplifier — a deeply nested path or a
 default-include cascade can walk the relationship graph without bound, and a
 default-include pointing back at its own type (or a mutual pair) loops the renderer
-forever. Three composing **include safeguards** bound it. All three
+forever. Four composing **include safeguards** bound it. All four
 live in **core** (an opt-in `IncludeControlsInterface` the transformer reads via
 `instanceof`, plus a relation-level wither); the bundle supplies the opinionated depth
 default and makes the built-in include batcher respect them.
@@ -994,10 +994,12 @@ default and makes the built-in include batcher respect them.
 | **A — per-relation opt-out** | `cannotBeIncluded()` on the relation | A `?include` naming it is a `400` `INCLUSION_NOT_ALLOWED` at any path, and it is excluded from the default-include cascade. |
 | **B — max include depth** | `json_api.max_include_depth` (default `3`), overridable per resource via `IncludeControlsInterface::maxIncludeDepth()` | A `?include` deeper than the effective cap is a `400` `INCLUSION_DEPTH_EXCEEDED`; a default cascade stops at the cap (so a mutual default-include cycle terminates). |
 | **C — allowed include paths** | `IncludeControlsInterface::getAllowedIncludePaths()` on the root resource | A list of the full dotted paths a client may request when **this** resource is the request's root (a listed deep path implies its ancestors); any requested path neither listed nor an ancestor of one is a `400` `INCLUSION_NOT_ALLOWED`. `null` is unrestricted; `[]` permits no includes. |
+| **D — excluded include paths** | `IncludeControlsInterface::getExcludedIncludePaths()` on the root resource | A list of the full dotted paths a client may **not** request when this resource is the root. An excluded path also refuses everything below it, so excluding `author` refuses `author.company`. A request for one is a `400` `INCLUSION_NOT_ALLOWED`. The default `[]` excludes nothing. |
 
 They **compose**: a requested path is permitted only if every hop's relation is
-includable (A), it is within the effective max depth (B), and — when the root sets a
-whitelist — it is a member of that list (C).
+includable (A), it is within the effective max depth (B), when the root sets a
+whitelist it is a member of that list (C), and it is not at or below one of the root's
+excluded paths (D).
 
 A relation marks itself non-includable like any other flag:
 
@@ -1028,6 +1030,27 @@ final class UserResource extends AbstractResource
 A listed deep path **implies its ancestors**, so `['posts.author']` permits both
 `posts` and `posts.author` without enumerating every prefix; only the unlisted
 sibling `posts.comments` is rejected.
+
+When nearly everything should stay includable, Capability D is the shorter way to
+write it. List only the paths to refuse:
+
+```php
+final class UserResource extends AbstractResource
+{
+    // Everything stays includable except a post's comments and anything below them.
+    public function getExcludedIncludePaths(): array
+    {
+        return ['posts.comments'];
+    }
+}
+```
+
+`posts` and `posts.author` still work, while `posts.comments` and
+`posts.comments.author` are both rejected. Declaring C and D together lets a resource
+allow a deep tree and carve one branch out of it. Both lists take plain dotted paths
+with no wildcards, and both check only the paths a client requests: a relation
+included by default still renders, so use `cannotBeIncluded()` to stop that. The
+generated OpenAPI document leaves excluded paths out of the `include` parameter.
 
 `max_include_depth` is the one config-driven safeguard — see
 [configuration → `max_include_depth`](configuration.md#max_include_depth) for the cap,

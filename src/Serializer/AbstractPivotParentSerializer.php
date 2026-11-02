@@ -119,6 +119,13 @@ abstract class AbstractPivotParentSerializer implements
         return $inner instanceof IncludeControlsInterface ? $inner->getAllowedIncludePaths() : null;
     }
 
+    public function getExcludedIncludePaths(): array
+    {
+        $inner = $this->inner();
+
+        return $inner instanceof IncludeControlsInterface ? $inner->getExcludedIncludePaths() : [];
+    }
+
     /**
      * @return list<string>
      */

@@ -222,12 +222,13 @@ final class CommentResource extends AbstractResource
 }
 ```
 
-The depth cap is one of three composing **include safeguards**. The
-other two are author-declared, not config: a per-relation `cannotBeIncluded()` opt-out
-and a root-scoped allowed-include-paths whitelist
-(`IncludeControlsInterface::getAllowedIncludePaths()`). See
+The depth cap is one of four composing **include safeguards**. The
+other three are author-declared, not config: a per-relation `cannotBeIncluded()` opt-out,
+a root-scoped allowed-include-paths whitelist
+(`IncludeControlsInterface::getAllowedIncludePaths()`) and a root-scoped excluded-paths
+list (`IncludeControlsInterface::getExcludedIncludePaths()`). See
 [relationships → controlling what can be included](relationships.md#controlling-what-can-be-included)
-for all three. The depth-cap concept and the `IncludeControlsInterface` seam are owned by
+for all four. The depth-cap concept and the `IncludeControlsInterface` seam are owned by
 **core**; the bundle supplies only the opinionated default of `3` and threads it to each
 server.
 

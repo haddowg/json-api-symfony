@@ -144,4 +144,11 @@ final class PivotMetaSerializer implements SerializerInterface, IncludeControlsI
             ? $this->inner->getAllowedIncludePaths()
             : null;
     }
+
+    public function getExcludedIncludePaths(): array
+    {
+        return $this->inner instanceof IncludeControlsInterface
+            ? $this->inner->getExcludedIncludePaths()
+            : [];
+    }
 }

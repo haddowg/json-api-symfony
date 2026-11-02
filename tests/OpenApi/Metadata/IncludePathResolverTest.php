@@ -48,6 +48,26 @@ final class IncludePathResolverTest extends TestCase
     }
 
     #[Test]
+    public function anExcludedPathAndEverythingBelowItIsNotAdvertised(): void
+    {
+        [$resolver, $server] = $this->resolver(3, new IncGuardedArticle(), new IncPerson(), new IncCompany(), new IncComment());
+
+        // editor.company sits below the excluded editor, so it goes too.
+        self::assertEqualsCanonicalizing(
+            ['author', 'author.company', 'comments'],
+            $resolver->pathsFor($server, 'guarded-articles'),
+        );
+    }
+
+    #[Test]
+    public function anExcludedDeepPathLeavesItsAncestorsAdvertised(): void
+    {
+        [$resolver, $server] = $this->resolver(3, new IncAuthorGuardedArticle(), new IncPerson(), new IncCompany(), new IncComment());
+
+        self::assertEqualsCanonicalizing(['author', 'comments'], $resolver->pathsFor($server, 'author-guarded-articles'));
+    }
+
+    #[Test]
     public function aDepthCapOfOneStopsAtTheFirstHop(): void
     {
         [$resolver, $server] = $this->resolver(1, new IncArticle(), new IncPerson(), new IncCompany(), new IncComment());
@@ -190,6 +210,45 @@ final class IncArticle extends AbstractResource
             BelongsTo::make('author', 'people'),
             HasMany::make('comments', 'comments'),
         ];
+    }
+}
+
+final class IncGuardedArticle extends AbstractResource
+{
+    public static string $type = 'guarded-articles';
+
+    public function fields(): array
+    {
+        return [
+            Id::make(),
+            BelongsTo::make('author', 'people'),
+            BelongsTo::make('editor', 'people'),
+            HasMany::make('comments', 'comments'),
+        ];
+    }
+
+    public function getExcludedIncludePaths(): array
+    {
+        return ['editor'];
+    }
+}
+
+final class IncAuthorGuardedArticle extends AbstractResource
+{
+    public static string $type = 'author-guarded-articles';
+
+    public function fields(): array
+    {
+        return [
+            Id::make(),
+            BelongsTo::make('author', 'people'),
+            HasMany::make('comments', 'comments'),
+        ];
+    }
+
+    public function getExcludedIncludePaths(): array
+    {
+        return ['author.company'];
     }
 }
 
