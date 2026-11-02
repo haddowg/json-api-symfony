@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.25.2](https://github.com/haddowg/json-api-symfony/compare/v1.25.1...v1.25.2) (2026-11-02)
+
+
+### Bug Fixes
+
+* bind a cursor key as the date class its column type expects ([#278](https://github.com/haddowg/json-api-symfony/issues/278)) ([fa47cb8](https://github.com/haddowg/json-api-symfony/commit/fa47cb8b9eb737440c99373271463a0203436d5f))
+
 ## [1.25.1](https://github.com/haddowg/json-api-symfony/compare/v1.25.0...v1.25.1) (2026-11-02)
 
 
