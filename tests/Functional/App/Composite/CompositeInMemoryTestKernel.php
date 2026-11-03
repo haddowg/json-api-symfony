@@ -99,6 +99,18 @@ final class CompositeInMemoryTestKernel extends Kernel
             ->factory([ChecklistFactory::class, 'createPersister'])
             ->args([service('test.checklists_provider')])
             ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
+
+        $services->set(PipelineResource::class);
+        $services->set(StopCodeTranslator::class);
+
+        $services->set('test.pipelines_provider', InMemoryDataProvider::class)
+            ->factory([PipelineFactory::class, 'createProvider'])
+            ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+
+        $services->set('test.pipelines_persister', InMemoryDataPersister::class)
+            ->factory([PipelineFactory::class, 'createPersister'])
+            ->args([service('test.pipelines_provider')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

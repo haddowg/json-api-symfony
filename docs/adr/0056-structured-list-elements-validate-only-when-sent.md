@@ -1,0 +1,3 @@
+# Structured list elements validate only when the client sends the list
+
+The validator checks each element of an `ArrayList` of `Obj` or `OneOf` elements as core builds it, whole, so a required child must be present on a `PATCH` as on a create. That check runs only on a list in the request: a stored list folded into an update renders its elements without their write-only children, so re-checking it would reject a `PATCH` that never touched the list. Values core's hydration rejects structurally (an object for the list, a list for an element or an object child) are left to core, so the client gets its `ATTRIBUTE_VALUE_INVALID` rather than a pile of missing-child errors.

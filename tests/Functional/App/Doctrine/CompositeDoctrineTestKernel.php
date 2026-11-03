@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\Doctrine;
 use Doctrine\Bundle\DoctrineBundle\DoctrineBundle;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
+use haddowg\JsonApiBundle\Tests\Functional\App\Composite\StopCodeTranslator;
 use haddowg\JsonApiBundle\Tests\Functional\App\PinnedConfigDefaults;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
@@ -114,6 +115,8 @@ final class CompositeDoctrineTestKernel extends Kernel
 
         $services->set(DoctrineCompositeWidgetResource::class);
         $services->set(DoctrineChecklistResource::class);
+        $services->set(DoctrinePipelineResource::class);
+        $services->set(StopCodeTranslator::class);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void
