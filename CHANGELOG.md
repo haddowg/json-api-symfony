@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.28.1](https://github.com/haddowg/json-api-symfony/compare/v1.28.0...v1.28.1) (2026-11-03)
+
+
+### Bug Fixes
+
+* render json-stored dates inside composite attributes ([#286](https://github.com/haddowg/json-api-symfony/issues/286)) ([3736bb4](https://github.com/haddowg/json-api-symfony/commit/3736bb4bb83968eacf331290b227c8c75a6e9bb7))
+
 ## [1.28.0](https://github.com/haddowg/json-api-symfony/compare/v1.27.0...v1.28.0) (2026-11-03)
 
 
