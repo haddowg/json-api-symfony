@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.28.0](https://github.com/haddowg/json-api-symfony/compare/v1.27.0...v1.28.0) (2026-11-03)
+
+
+### Features
+
+* validate each element of a structured list ([#284](https://github.com/haddowg/json-api-symfony/issues/284)) ([8551381](https://github.com/haddowg/json-api-symfony/commit/855138128cd24a2746dcc05111ec4fb008b7a7a6))
+
 ## [1.27.0](https://github.com/haddowg/json-api-symfony/compare/v1.26.0...v1.27.0) (2026-11-03)
 
 
