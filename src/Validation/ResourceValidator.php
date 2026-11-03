@@ -17,6 +17,7 @@ use haddowg\JsonApi\Resource\Constraint\Required;
 use haddowg\JsonApi\Resource\Constraint\Shape;
 use haddowg\JsonApi\Resource\Constraint\When;
 use haddowg\JsonApi\Resource\DateTimeParser;
+use haddowg\JsonApi\Resource\Field\ArrayList;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\Boolean;
 use haddowg\JsonApi\Resource\Field\Decimal;
@@ -32,6 +33,7 @@ use haddowg\JsonApi\Schema\Error\Error;
 use haddowg\JsonApi\Schema\Error\ErrorSource;
 use haddowg\JsonApi\Validation\SchemaValueValidator;
 use haddowg\JsonApiBundle\Server\IdEncoderResolver;
+use Symfony\Component\Validator\Constraints\Callback;
 use Symfony\Component\Validator\Constraints\Collection;
 use Symfony\Component\Validator\Constraints\Count;
 use Symfony\Component\Validator\Constraints\Length;
@@ -39,6 +41,7 @@ use Symfony\Component\Validator\Constraints\NotBlank;
 use Symfony\Component\Validator\Constraints\NotNull;
 use Symfony\Component\Validator\Constraints\Optional;
 use Symfony\Component\Validator\Constraints\Required as RequiredField;
+use Symfony\Component\Validator\Context\ExecutionContextInterface;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
@@ -88,11 +91,19 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
  * nests the property path (`[address][postcode]`) and the {@see JsonPointerBuilder}
  * already flattens it. This is an *implicit* cascade: a structured attribute's
  * children validate consistently with top-level attributes, with no `Valid` marker.
- * Only one level deep (a Map's direct children); a child that is itself a Map, and
- * a list-of-objects, are out of scope here (see ADR 0015).
+ * Only one level deep (a Map's direct children); a child that is itself a Map is
+ * out of scope here (see ADR 0015).
+ *
+ * An {@see ArrayList} of {@see Obj} or {@see OneOf} elements validates each element
+ * as that shape would validate as an attribute, at `/data/attributes/<list>/<index>`.
+ * A write builds every element whole, so a child required on update must be present
+ * in each element of a `PATCH` as well as a create.
  */
 final class ResourceValidator
 {
+    private const string NOT_AN_OBJECT = 'This value should be an object.';
+    private const string UNKNOWN_VARIANT = 'This value is not one of the allowed types.';
+
     public function __construct(
         private readonly ValidatorInterface $validator,
         private readonly ConstraintTranslator $translator,
@@ -193,7 +204,10 @@ final class ResourceValidator
             // evaluate a request-aware `when()` condition during presence resolution
             // (a conditionally-required field).
             $value = $attributes[$field->name()] ?? null;
-            $fields[$field->name()] = $this->fieldConstraint($field, $creating, request: $request, value: $value);
+            // A stored list folded in on update is not re-validated element by element:
+            // its elements render without their write-only children, so a whole-element
+            // check would fail a list the client never sent.
+            $fields[$field->name()] = $this->fieldConstraint($field, $creating, request: $request, value: $value, elements: $creating || \array_key_exists($field->name(), $incoming));
             foreach ($this->compareConstraints($field, $creating) as $compare) {
                 $compares[] = [$field->name(), $compare];
             }
@@ -224,7 +238,7 @@ final class ResourceValidator
         // which variant's rules apply. A variant child violation maps to
         // /data/attributes/<field>/<child>; an unknown discriminator to
         // /data/attributes/<field>/<discriminator>.
-        foreach ($this->oneOfErrors($resource, $attributes, $creating, $request) as $error) {
+        foreach ($this->oneOfErrors($resource, $attributes, $incoming, $creating, $request) as $error) {
             $errors[] = $error;
         }
 
@@ -1186,10 +1200,14 @@ final class ResourceValidator
      *                     resolution so a *conditionally*-required field (a `Required`
      *                     wrapped in a `When` whose condition holds for the caller) is
      *                     required for the matching caller
+     * @param bool $whole    whether the field belongs to a value written whole (a
+     *                       structured list element), so its presence is required on
+     *                       update as on create
+     * @param bool $elements whether a structured list's elements are validated
      */
-    private function fieldConstraint(FieldInterface $field, bool $creating, bool $descend = true, ?JsonApiRequestInterface $request = null, mixed $value = null): RequiredField|Optional
+    private function fieldConstraint(FieldInterface $field, bool $creating, bool $descend = true, ?JsonApiRequestInterface $request = null, mixed $value = null, bool $whole = false, bool $elements = true): RequiredField|Optional
     {
-        $constraints = $this->valueConstraints($field, $creating, $descend, $request);
+        $constraints = $this->valueConstraints($field, $creating, $descend, $request, $elements);
 
         $isRequired = $this->hasRequired($field, $creating, $request, $value);
         $isNullable = $this->hasNullable($field, $creating, $request, $value);
@@ -1202,8 +1220,9 @@ final class ResourceValidator
             \array_unshift($constraints, new NotNull());
         }
 
-        // Presence is only mandatory on create; a partial update never requires a member.
-        return $creating && $isRequired
+        // Presence is only mandatory on create; a partial update never requires a member,
+        // except inside a value it writes whole.
+        return ($creating || $whole) && $isRequired
             ? new RequiredField($constraints)
             : new Optional($constraints);
     }
@@ -1257,10 +1276,11 @@ final class ResourceValidator
      *                      nested Collection; false stops the cascade one level in
      * @param ?JsonApiRequestInterface $request threaded into a widened {@see \haddowg\JsonApi\Resource\Constraint\When}
      *                                           condition (null on the filter/pivot/id paths)
+     * @param bool $elements whether a structured {@see ArrayList}'s elements are validated
      *
      * @return list<\Symfony\Component\Validator\Constraint>
      */
-    private function valueConstraints(FieldInterface $field, bool $creating, bool $descend = true, ?JsonApiRequestInterface $request = null): array
+    private function valueConstraints(FieldInterface $field, bool $creating, bool $descend = true, ?JsonApiRequestInterface $request = null, bool $elements = true): array
     {
         $constraints = [];
 
@@ -1270,7 +1290,13 @@ final class ResourceValidator
         // One level only — a child that is itself structured is not descended into here
         // ($descend is false one level in), which also bounds the recursion.
         if ($descend && ($field instanceof Map || $field instanceof Obj)) {
-            $constraints[] = $this->nestedCollection($field, $creating, $request);
+            $constraints[] = $this->nestedCollection($field, $creating, $request, elements: $elements);
+        }
+
+        // A structured list validates its elements at any depth: each element is a fresh
+        // level of its own, so the declaration tree bounds the recursion.
+        if ($elements && $field instanceof ArrayList && $field->element() !== null) {
+            $constraints[] = $this->elementsConstraint($field->element(), $creating, $request);
         }
 
         foreach ($field->constraints() as $constraint) {
@@ -1305,25 +1331,104 @@ final class ResourceValidator
      * {@see fieldConstraint()} (so its Required/Optional and Nullable resolution
      * honours the create/update context exactly as a top-level field would), and
      * unknown keys are ignored (`allowExtraFields: true`). The recursion is one level
-     * deep by design — a child that is itself a {@see Map}, or a list-of-objects, is
-     * out of scope here, so a nested Map's *own* children are not
+     * deep by design — a child that is itself a {@see Map} is out of scope here, so a
+     * nested Map's *own* children are not
      * descended into, which also guards against unbounded recursion.
      */
-    private function nestedCollection(Map|Obj $structured, bool $creating, ?JsonApiRequestInterface $request = null): Collection
+    private function nestedCollection(Map|Obj $structured, bool $creating, ?JsonApiRequestInterface $request = null, bool $whole = false, bool $elements = true): Collection
     {
         $fields = [];
         foreach ($structured->children() as $child) {
             // A Map child's *visibility* (read-only / hidden) is an explicit non-goal
             // of request-aware predicates, so this skip
             // stays static; only the child's `when()` condition sees the request,
-            // which is why the request still threads into fieldConstraint() below.
-            if ($child->isReadOnly($creating)) {
+            // which is why the request still threads into fieldConstraint() below. A
+            // list element's skip follows core's hydration instead (skipsChild()).
+            if ($this->skipsChild($child, $creating, $request, $whole)) {
                 continue;
             }
 
             // descend: false — one level only; a nested Map child's own children are
             // not validated here, which also bounds the recursion.
-            $fields[$child->name()] = $this->fieldConstraint($child, $creating, descend: false, request: $request);
+            $fields[$child->name()] = $this->fieldConstraint($child, $creating, descend: false, request: $request, whole: $whole, elements: $elements);
+        }
+
+        return new Collection(fields: $fields, allowExtraFields: true);
+    }
+
+    /**
+     * Whether a child is left out of its parent's nested Collection. An element of a
+     * structured list is built by core's hydration, which skips a child read-only for
+     * this caller, so its validation follows the same request-aware rule.
+     */
+    private function skipsChild(FieldInterface $child, bool $creating, ?JsonApiRequestInterface $request, bool $whole): bool
+    {
+        return $whole && $request !== null
+            ? $child->isReadOnlyFor($creating, $request)
+            : $child->isReadOnly($creating);
+    }
+
+    /**
+     * Validates each element of a structured {@see ArrayList} at `[<index>]` under the
+     * list: an {@see Obj} element through the same nested Collection an `Obj` attribute
+     * gets, a {@see OneOf} element through the variant its discriminator names, as the
+     * {@see oneOfErrors()} pass does for an attribute. A scalar or `null` element is a
+     * violation at the element. A value that is not a list, and an element sent as a
+     * list, are left to core's hydration, which rejects both with their own pointers.
+     */
+    private function elementsConstraint(Obj|OneOf $element, bool $creating, ?JsonApiRequestInterface $request): Callback
+    {
+        $objCollection = $element instanceof Obj ? $this->nestedCollection($element, $creating, $request, whole: true) : null;
+
+        return new Callback(callback: function (mixed $list, ExecutionContextInterface $context) use ($element, $objCollection, $creating, $request): void {
+            if (!\is_array($list) || !\array_is_list($list)) {
+                return;
+            }
+
+            foreach ($list as $index => $item) {
+                $path = '[' . $index . ']';
+                if (!\is_array($item)) {
+                    $context->buildViolation(self::NOT_AN_OBJECT)->atPath($path)->addViolation();
+
+                    continue;
+                }
+                if ($item !== [] && \array_is_list($item)) {
+                    continue;
+                }
+
+                $collection = $objCollection;
+                if ($element instanceof OneOf) {
+                    $discriminator = $element->discriminatorName();
+                    $variant = $element->variantFor($item[$discriminator] ?? null);
+                    if ($variant === null) {
+                        $context->buildViolation(self::UNKNOWN_VARIANT)->atPath($path . '[' . $discriminator . ']')->addViolation();
+
+                        continue;
+                    }
+                    $collection = $this->variantCollection($variant, $item, $creating, $request, whole: true);
+                }
+
+                if ($collection !== null) {
+                    $context->getValidator()->inContext($context)->atPath($path)->validate($item, $collection);
+                }
+            }
+        });
+    }
+
+    /**
+     * The nested {@see Collection} validating a {@see OneOf} variant's children against
+     * the value that selected it, so a child's `when()` condition sees its own value.
+     *
+     * @param array<array-key, mixed> $value
+     */
+    private function variantCollection(Obj $variant, array $value, bool $creating, ?JsonApiRequestInterface $request, bool $whole = false, bool $elements = true): Collection
+    {
+        $fields = [];
+        foreach ($variant->children() as $child) {
+            if ($this->skipsChild($child, $creating, $request, $whole)) {
+                continue;
+            }
+            $fields[$child->name()] = $this->fieldConstraint($child, $creating, descend: false, request: $request, value: $value[$child->name()] ?? null, whole: $whole, elements: $elements);
         }
 
         return new Collection(fields: $fields, allowExtraFields: true);
@@ -1338,11 +1443,12 @@ final class ResourceValidator
      * non-array value one at `/data/attributes/<field>`. Absent or explicit-null values
      * are the main pass's concern (presence / nullability), so they are skipped here.
      *
-     * @param array<string, mixed> $attributes the merged incoming attribute map
+     * @param array<string, mixed>    $attributes the merged incoming attribute map
+     * @param array<array-key, mixed> $incoming   the attributes the request sent
      *
      * @return list<Error>
      */
-    private function oneOfErrors(AbstractResource $resource, array $attributes, bool $creating, JsonApiRequestInterface $request): array
+    private function oneOfErrors(AbstractResource $resource, array $attributes, array $incoming, bool $creating, JsonApiRequestInterface $request): array
     {
         $errors = [];
         foreach ($resource->allFields() as $field) {
@@ -1358,7 +1464,7 @@ final class ResourceValidator
                 continue;
             }
             if (!\is_array($value)) {
-                $errors[] = $this->error('This value should be an object.', '[' . $field->name() . ']');
+                $errors[] = $this->error(self::NOT_AN_OBJECT, '[' . $field->name() . ']');
 
                 continue;
             }
@@ -1366,23 +1472,13 @@ final class ResourceValidator
             $discriminator = $field->discriminatorName();
             $variant = $field->variantFor($value[$discriminator] ?? null);
             if ($variant === null) {
-                $errors[] = $this->error('This value is not one of the allowed types.', '[' . $field->name() . '][' . $discriminator . ']');
+                $errors[] = $this->error(self::UNKNOWN_VARIANT, '[' . $field->name() . '][' . $discriminator . ']');
 
                 continue;
             }
 
-            $fields = [];
-            foreach ($variant->children() as $child) {
-                if ($child->isReadOnly($creating)) {
-                    continue;
-                }
-                $fields[$child->name()] = $this->fieldConstraint($child, $creating, descend: false, request: $request, value: $value[$child->name()] ?? null);
-            }
-            if ($fields === []) {
-                continue;
-            }
-
-            $violations = $this->validator->validate($value, new Collection(fields: $fields, allowExtraFields: true));
+            $elements = $creating || \array_key_exists($field->name(), $incoming);
+            $violations = $this->validator->validate($value, $this->variantCollection($variant, $value, $creating, $request, elements: $elements));
             foreach ($violations as $violation) {
                 $errors[] = $this->error((string) $violation->getMessage(), '[' . $field->name() . ']' . (string) $violation->getPropertyPath());
             }

@@ -58,6 +58,41 @@ Two wiring notes:
   OpenAPI schema); it just doesn't validate. Install `opis/json-schema` to get
   the `422`s.
 
+## Lists of structured elements
+
+An `ArrayList` whose elements are an `Obj` or a `OneOf` holds a list of objects in
+one value. Core's [field docs](https://github.com/haddowg/json-api/blob/main/docs/field-types.md#lists-of-structured-elements)
+cover the semantics; this list of edits is their example:
+
+```php
+ArrayList::make('steps')
+    ->of(OneOf::make('step')
+        ->discriminator('operation')
+        ->variant('trim')
+        ->variant('find_replace', Str::make('find')->required(), Str::make('replace')->required()))
+    ->maxItems(50),
+```
+
+The bridge validates each element the client sends the way the element's shape
+validates as an attribute, with the index in the pointer. A bad child of the third
+element points at `/data/attributes/steps/2/replace`, and an unknown or missing
+discriminator at `/data/attributes/steps/2/operation`. A scalar or `null` where an
+element belongs is a `422` at `/data/attributes/steps/2`. The list's own
+`minItems()`, `maxItems()` and `uniqueItems()` still point at
+`/data/attributes/steps`, and a list nested inside an element validates at both
+indexes, `/data/attributes/stops/0/legs/1/mode`.
+
+A write replaces the whole list and builds each element fresh, so a `required()`
+child must be in every element of a `PATCH` too, matching the update schema core
+projects. A child read-only for the caller is skipped, as core's hydration skips
+it. A `PATCH` that leaves the list out keeps it and doesn't re-check the stored
+elements.
+
+Core rejects the structural mistakes itself, with `ATTRIBUTE_VALUE_INVALID`: an
+object sent for the list, a list sent for an element, and a list sent for an
+object child. The bridge leaves those values alone so core's `422` is the one the
+client sees.
+
 ## Authoring your own composite constraint
 
 `Shape` is not privileged — it is just a core
@@ -149,9 +184,11 @@ showcases all three kinds on one type — a `OneOf` format discriminated by
 `medium` (vinyl / cd / digital), an `Obj` packaging, and `Shape`'d
 availability/dimensions maps — each a single `json` column, and each keyword
 (`oneOf`, `anyOf`, `allOf`, `discriminator`) visible in the served OpenAPI
-document. The dual-provider conformance witness is
-[`CompositeConformanceTestCase`](../tests/Functional/CompositeConformanceTestCase.php),
-which runs the same validation-pointer and json-column round-trip assertions
+document. The dual-provider conformance witnesses are
+[`CompositeConformanceTestCase`](../tests/Functional/CompositeConformanceTestCase.php)
+and, for structured lists,
+[`StructuredListConformanceTestCase`](../tests/Functional/StructuredListConformanceTestCase.php),
+which run the same validation-pointer and json-column round-trip assertions
 against the in-memory and Doctrine kernels.
 
 ## Next

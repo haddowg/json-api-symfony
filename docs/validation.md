@@ -475,9 +475,14 @@ violation arises there — add a constraint to a Map child (the cascade itself i
 exercised by the bundle's own conformance suite) to see the nested pointer.
 
 > The cascade is **one level deep, by design**: a `Map` child that is
-> itself a `Map`, or a list-of-objects, is *not* descended into. See core's
+> itself a `Map` is *not* descended into. See core's
 > [field-types](https://github.com/haddowg/json-api/blob/main/docs/field-types.md)
 > doc for the `Map` field itself.
+
+An `ArrayList` of `Obj` or `OneOf` elements is the exception. Each element validates
+as its shape would as an attribute, at `/data/attributes/<list>/<index>/<child>`,
+and a list nested inside an element validates too, one index per level. See
+[Lists of structured elements](composite-attributes.md#lists-of-structured-elements).
 
 ## Custom constraints: the extension point
 
