@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\Resource;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\ArrayList;
 use haddowg\JsonApi\Resource\Field\Date;
+use haddowg\JsonApi\Resource\Field\DateTime;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Integer;
 use haddowg\JsonApi\Resource\Field\Obj;
@@ -19,7 +20,8 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Composite\StopCode;
  * {@see OneOf} elements picked by `operation`, and `stops` a list of {@see Obj}
  * elements whose `code` carries a custom constraint and whose `legs` nest a second
  * structured list. Each list stores as a single array, the shape a `json` column
- * round-trips.
+ * round-trips; on Doctrine the `arrives` and `departsAt` children come back from
+ * it as each date object's JSON dump.
  */
 abstract class BasePipelineResource extends AbstractResource
 {
@@ -40,6 +42,7 @@ abstract class BasePipelineResource extends AbstractResource
                 Str::make('code')->required()->constrain(new StopCode()),
                 Integer::make('nights')->min(1),
                 Date::make('arrives')->after(new \DateTimeImmutable('2020-01-01')),
+                DateTime::make('departsAt'),
                 ArrayList::make('legs')->of(Obj::make('leg')->fields(
                     Str::make('mode')->required()->in(['rail', 'road']),
                 )),

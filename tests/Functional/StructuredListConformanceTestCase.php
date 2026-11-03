@@ -27,7 +27,7 @@ abstract class StructuredListConformanceTestCase extends JsonApiFunctionalTestCa
     ];
 
     private const array STOPS = [
-        ['city' => 'Paris', 'code' => 'PAR', 'nights' => 2, 'legs' => [['mode' => 'rail'], ['mode' => 'road']]],
+        ['city' => 'Paris', 'code' => 'PAR', 'nights' => 2, 'arrives' => '2024-07-01', 'departsAt' => '2024-07-03T09:15:00+00:00', 'legs' => [['mode' => 'rail'], ['mode' => 'road']]],
         ['city' => 'Lyon', 'code' => 'LYS', 'nights' => 1, 'legs' => []],
     ];
 
@@ -37,7 +37,9 @@ abstract class StructuredListConformanceTestCase extends JsonApiFunctionalTestCa
     {
         $created = $this->create(['steps' => self::STEPS, 'stops' => self::STOPS]);
         self::assertSame(201, $created->getStatusCode(), (string) $created->getContent());
+        self::assertSame(self::readBack(self::STOPS), $this->at($this->decode($created), 'data', 'attributes', 'stops'));
 
+        $this->detachPersistedState();
         $attributes = $this->attributesOf($this->handle('/pipelines/' . $this->createdId($created)));
         self::assertSame(self::STEPS, $attributes['steps'] ?? null);
         self::assertSame(self::readBack(self::STOPS), $attributes['stops'] ?? null);
@@ -265,8 +267,14 @@ abstract class StructuredListConformanceTestCase extends JsonApiFunctionalTestCa
         self::assertSame(['city', 'code'], $this->at($attributes, 'stops', 'items', 'required'));
         $properties = $this->at($attributes, 'stops', 'items', 'properties');
         self::assertIsArray($properties);
-        self::assertSame(['city', 'code', 'nights', 'arrives', 'legs'], \array_keys($properties));
+        self::assertSame(['city', 'code', 'nights', 'arrives', 'departsAt', 'legs'], \array_keys($properties));
     }
+
+    /**
+     * Detaches persisted state before a re-read, so the read decodes what the store
+     * holds. The Doctrine provider overrides this to clear the identity map.
+     */
+    protected function detachPersistedState(): void {}
 
     /**
      * The stops as a read renders them: every declared child, an unsent one as `null`.
@@ -282,6 +290,7 @@ abstract class StructuredListConformanceTestCase extends JsonApiFunctionalTestCa
             'code' => $stop['code'],
             'nights' => $stop['nights'] ?? null,
             'arrives' => $stop['arrives'] ?? null,
+            'departsAt' => $stop['departsAt'] ?? null,
             'legs' => $stop['legs'] ?? null,
         ], $stops);
     }

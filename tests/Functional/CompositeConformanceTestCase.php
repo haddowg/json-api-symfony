@@ -46,13 +46,15 @@ abstract class CompositeConformanceTestCase extends JsonApiFunctionalTestCase
     #[Group('spec:crud')]
     public function compositeValuesRoundTripThroughPersistence(): void
     {
-        // Scalar children of all three composite kinds, written as one value per
-        // attribute and read back byte-equal — on the Doctrine kernel this is the
-        // single-json-column round-trip (an int `level` survives json encoding).
+        // Children of all three composite kinds, written as one value per attribute
+        // and read back byte-equal — on the Doctrine kernel this is the
+        // single-json-column round-trip (an int `level` survives json encoding, and
+        // a date child comes back from its JSON dump in the field's format).
         $attributes = [
             'name' => 'Gadget',
             'address' => ['street' => '1 High St', 'city' => 'London', 'postcode' => 'EC1'],
-            'block' => ['kind' => 'heading', 'text' => 'Hello', 'level' => 2],
+            'block' => ['kind' => 'heading', 'text' => 'Hello', 'level' => 2, 'publishedAt' => '2024-07-01T12:30:00+00:00'],
+            'schedule' => ['startsAt' => '2024-07-01T09:00:00+00:00', 'endsOn' => '2024-07-05'],
             'contact' => ['kind' => 'phone', 'number' => '+44 20 7946 0000'],
             'prefs' => ['theme' => 'dark'],
         ];
@@ -65,8 +67,10 @@ abstract class CompositeConformanceTestCase extends JsonApiFunctionalTestCase
         $body = $this->decode($created);
         self::assertIsArray($body['data'] ?? null);
         self::assertIsString($body['data']['id'] ?? null);
+        self::assertSame($attributes, $body['data']['attributes'] ?? null);
         $id = $body['data']['id'];
 
+        $this->detachPersistedState();
         $fetched = $this->handle('/composites/' . $id);
         self::assertSame(200, $fetched->getStatusCode());
 
@@ -404,6 +408,12 @@ abstract class CompositeConformanceTestCase extends JsonApiFunctionalTestCase
         self::assertSame(422, $response->getStatusCode(), (string) $response->getContent());
         self::assertSame(['/atomic:operations/1/data/attributes/prefs'], $this->fieldPointersOf($response));
     }
+
+    /**
+     * Detaches persisted state before a re-read, so the read decodes what the store
+     * holds. The Doctrine provider overrides this to clear the identity map.
+     */
+    protected function detachPersistedState(): void {}
 
     /**
      * @return list<string>
