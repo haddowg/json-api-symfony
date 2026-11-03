@@ -9,6 +9,7 @@ use Doctrine\ORM\QueryBuilder;
 use haddowg\JsonApi\Collection\Keyset\KeysetColumn;
 use haddowg\JsonApi\Pagination\CursorBoundary;
 use haddowg\JsonApi\Resource\DateTimeParser;
+use haddowg\JsonApi\Resource\Sort\UnsupportedSort;
 
 /**
  * Builds the Doctrine push-down for a cursor (keyset) page — the forced
@@ -43,10 +44,21 @@ use haddowg\JsonApi\Resource\DateTimeParser;
  * `$metadataOfAlias` supplies that alias's entity metadata so the boundary
  * value still binds with the RIGHT DBAL type. Both default empty, so every
  * non-pivot keyset is byte-identical to before.
+ *
+ * A level ordered by a custom sort (a {@see KeysetColumn} carrying a `$sort`) has no
+ * column. Its expression and boundary type come from the sort's
+ * {@see DoctrineKeysetSortArmInterface} through `$sorts`, and the level is
+ * otherwise built exactly as a column's: the same NULL=largest terms, the same four
+ * AFTER cases and the same equality prefix.
  */
 final class DoctrineKeyset
 {
     private int $bindCount = 0;
+
+    /**
+     * @var array<string, KeysetExpression> each custom sort level's expression, by sort key
+     */
+    private array $expressions = [];
 
     private readonly NaiveDateTimeStorage $dates;
 
@@ -54,12 +66,14 @@ final class DoctrineKeyset
      * @param ClassMetadata<object>                 $metadata        the root entity's metadata (column → DBAL type)
      * @param array<string, string>                 $aliasOfColumn   keyset column → non-root query alias; an absent column resolves to the root alias
      * @param array<string, ClassMetadata<object>>  $metadataOfAlias non-root alias → its entity's metadata (for typed boundary binds)
+     * @param ?DoctrineSortHandler                  $sorts           supplies a custom sort level's expression through its keyset arm
      */
     public function __construct(
         private readonly ClassMetadata $metadata,
         private readonly string $rootAlias,
         private readonly array $aliasOfColumn = [],
         private readonly array $metadataOfAlias = [],
+        private readonly ?DoctrineSortHandler $sorts = null,
     ) {
         $this->dates = new NaiveDateTimeStorage();
     }
@@ -76,7 +90,7 @@ final class DoctrineKeyset
     {
         foreach ($columns as $column) {
             $direction = $column->descending ? 'DESC' : 'ASC';
-            $path = $this->path($column->column);
+            $path = $this->expression($builder, $column);
             $builder->addOrderBy(\sprintf('CASE WHEN %s IS NULL THEN 1 ELSE 0 END', $path), $direction);
             $builder->addOrderBy($path, $direction);
         }
@@ -113,7 +127,7 @@ final class DoctrineKeyset
             // boundary (a null boundary value → IS NULL, never `= null`).
             for ($i = 0; $i < $level; $i++) {
                 $higher = $columns[$i];
-                $andParts[] = $this->equals($builder, $higher->column, $boundary->values[$higher->column] ?? null);
+                $andParts[] = $this->equals($builder, $higher, $boundary->values[$higher->column] ?? null);
             }
 
             $andParts[] = $after;
@@ -137,9 +151,9 @@ final class DoctrineKeyset
      * boundary value is `IS NULL` (never `= :v`, which is UNKNOWN and would drop
      * the row); a non-null value binds a typed placeholder.
      */
-    private function equals(QueryBuilder $builder, string $column, mixed $value): string
+    private function equals(QueryBuilder $builder, KeysetColumn $column, mixed $value): string
     {
-        $path = $this->path($column);
+        $path = $this->expression($builder, $column);
         if ($value === null) {
             return \sprintf('%s IS NULL', $path);
         }
@@ -157,7 +171,7 @@ final class DoctrineKeyset
      */
     private function after(QueryBuilder $builder, KeysetColumn $column, mixed $value): ?string
     {
-        $path = $this->path($column->column);
+        $path = $this->expression($builder, $column);
 
         if (!$column->descending) {
             if ($value === null) {
@@ -168,7 +182,7 @@ final class DoctrineKeyset
             }
 
             // Non-nulls greater than the boundary, plus ALL nulls (nulls follow).
-            $placeholder = $this->bind($builder, $column->column, $value);
+            $placeholder = $this->bind($builder, $column, $value);
 
             return \sprintf('(%s > :%s OR %s IS NULL)', $path, $placeholder, $path);
         }
@@ -179,7 +193,7 @@ final class DoctrineKeyset
         }
 
         // Only smaller non-nulls follow (nulls are first in desc, already before).
-        $placeholder = $this->bind($builder, $column->column, $value);
+        $placeholder = $this->bind($builder, $column, $value);
 
         return \sprintf('%s < :%s', $path, $placeholder);
     }
@@ -196,16 +210,27 @@ final class DoctrineKeyset
      * before binding, then bound WITH the type so DBAL emits the type-correct literal.
      * A naive `datetime` boundary is deliberately left in the offset it was minted
      * with: it is the row's stored wall-clock time, which is what the column compares.
+     *
+     * A custom sort level binds with the type its {@see KeysetExpression} declares
+     * instead. Its value came from the sort's `keysetValue()`, which may report a
+     * date-time in any offset, so a naive date-time type also moves it into the
+     * storage zone.
      */
-    private function bind(QueryBuilder $builder, string $column, mixed $value): string
+    private function bind(QueryBuilder $builder, KeysetColumn $column, mixed $value): string
     {
         $placeholder = 'jsonapi_cursor_' . $this->bindCount++;
 
-        $metadata = $this->metadataFor($column);
-        $type = $metadata->hasField($column) ? $metadata->getTypeOfField($column) : null;
-
-        if ($type !== null) {
-            $value = $this->toPhpValue($value, $type);
+        if ($column->sort !== null) {
+            $type = $this->expressions[$column->column]->type ?? null;
+            if ($type !== null) {
+                $value = $this->dates->toStorage($this->toPhpValue($value, $type), $type);
+            }
+        } else {
+            $metadata = $this->metadataFor($column->column);
+            $type = $metadata->hasField($column->column) ? $metadata->getTypeOfField($column->column) : null;
+            if ($type !== null) {
+                $value = $this->toPhpValue($value, $type);
+            }
         }
 
         $builder->setParameter($placeholder, $value, $type);
@@ -244,6 +269,23 @@ final class DoctrineKeyset
     private function isDateType(string $type): bool
     {
         return \str_contains(\strtolower($type), 'date') || \str_contains(\strtolower($type), 'time');
+    }
+
+    /**
+     * The DQL a level orders and compares by: the column's path, or for a custom sort
+     * level the expression its keyset arm supplies, asked for once per query.
+     */
+    private function expression(QueryBuilder $builder, KeysetColumn $column): string
+    {
+        if ($column->sort === null) {
+            return $this->path($column->column);
+        }
+
+        if ($this->sorts === null) {
+            throw new UnsupportedSort($column->sort);
+        }
+
+        return ($this->expressions[$column->column] ??= $this->sorts->keysetExpression($column->sort, $builder, $this->rootAlias))->dql;
     }
 
     private function path(string $column): string

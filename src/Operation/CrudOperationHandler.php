@@ -459,6 +459,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // bare serializer/hydrator pair has no resource and so no default.
             $resource?->defaultSort() ?? [],
             wantsCount: $wantsCount,
+            request: $request,
         ));
 
         // Materialize once so the items can be both preloaded and rendered (and a
@@ -774,6 +775,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $window,
                 includePivotFields: $pivot,
                 wantsCount: $relWantsCount,
+                request: $request,
             );
 
             // The related endpoint validates a client-supplied filter value against
@@ -995,6 +997,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                     $relation,
                     null,
                     includePivotFields: false,
+                    request: $request,
                 );
                 // Validate the MERGED requested filter map (the operation's own `?filter`
                 // ⊕ the relatedQuery `[filter]` already driven into the criteria), so a
@@ -1198,6 +1201,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                         $relation,
                         null,
                         includePivotFields: false,
+                        request: $request,
                     );
                     // Validate the MERGED requested filter map (the operation's own
                     // `?filter` ⊕ the relatedQuery `[filter]`), so a mistyped relatedQuery
@@ -1263,6 +1267,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $window,
                 includePivotFields: true,
                 wantsCount: $relWantsCount,
+                request: $request,
             );
             $this->validateFilterValues($operation->queryParameters()->filter, $criteria->filters);
 
@@ -1319,6 +1324,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $paginator?->window($request),
                 includePivotFields: false,
                 wantsCount: $relWantsCount,
+                request: $request,
             );
 
             $result = $this->readRouter->pageIdentified($server, $parent, $relation, $criteria, $request);
@@ -1392,6 +1398,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $window,
                 includePivotFields: false,
                 wantsCount: $relWantsCount,
+                request: $request,
             );
             $this->validateFilterValues($operation->queryParameters()->filter, $criteria->filters);
 

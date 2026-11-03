@@ -14,6 +14,7 @@ use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Request\RelatedQuery;
 use haddowg\JsonApi\Resource\Field\Accessor;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\Sort\SortMatcher;
 use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
 use haddowg\JsonApi\Schema\Relationship\RelationshipLinkage;
 use haddowg\JsonApi\Schema\Relationship\RelationshipPagination;
@@ -277,6 +278,7 @@ final class RelationshipWindowBatcher
             $window,
             includePivotFields: false,
             wantsCount: $wantsCount,
+            request: $request,
         );
 
         // Validate the relatedQuery filter VALUE against the per-relation merged
@@ -484,6 +486,7 @@ final class RelationshipWindowBatcher
                 $relation,
                 null,
                 includePivotFields: false,
+                request: $request,
             );
 
             $this->assertRelatedQueryKeysRecognised($relatedQuery, $criteria);
@@ -500,9 +503,10 @@ final class RelationshipWindowBatcher
      * filter/sort key, mirroring {@see CriteriaApplier}'s key recognition exactly (so the
      * gated links-only path and the fetched windowed path agree): each requested filter key
      * must name a declared {@see \haddowg\JsonApi\Resource\Filter\FilterInterface}; each
-     * requested sort field (with any leading `-` stripped) must name a declared
-     * {@see \haddowg\JsonApi\Resource\Sort\SortInterface}, and a sort requested against a
-     * relation that declares none is {@see \haddowg\JsonApi\Exception\SortingUnsupported}.
+     * requested sort field (with any leading `-` stripped) must match a declared
+     * {@see \haddowg\JsonApi\Resource\Sort\SortInterface} through core's {@see SortMatcher}
+     * (sort families included), and a sort requested against a relation that declares
+     * none is {@see \haddowg\JsonApi\Exception\SortingUnsupported}.
      *
      * @throws \haddowg\JsonApi\Exception\FilterParamUnrecognized on an unrecognised filter key
      * @throws \haddowg\JsonApi\Exception\SortParamUnrecognized   on an unrecognised sort field
@@ -517,21 +521,7 @@ final class RelationshipWindowBatcher
             }
         }
 
-        $sortFields = $relatedQuery->sortFields();
-        if ($sortFields === []) {
-            return;
-        }
-
-        if ($criteria->sorts === []) {
-            throw new \haddowg\JsonApi\Exception\SortingUnsupported();
-        }
-
-        foreach ($sortFields as $field) {
-            $key = \str_starts_with($field, '-') ? \substr($field, 1) : $field;
-            if (!$this->declaresSort($criteria->sorts, $key)) {
-                throw new \haddowg\JsonApi\Exception\SortParamUnrecognized($key);
-            }
-        }
+        SortMatcher::directives($relatedQuery->sortFields(), $criteria->sorts, $criteria->request);
     }
 
     /**
@@ -543,22 +533,6 @@ final class RelationshipWindowBatcher
     {
         foreach ($filters as $filter) {
             if ($filter->key() === $key) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * Whether the criteria's declared sorts carry one keyed `$key`.
-     *
-     * @param list<\haddowg\JsonApi\Resource\Sort\SortInterface> $sorts
-     */
-    private function declaresSort(array $sorts, string $key): bool
-    {
-        foreach ($sorts as $sort) {
-            if ($sort->key() === $key) {
                 return true;
             }
         }
@@ -636,6 +610,7 @@ final class RelationshipWindowBatcher
                 $relation,
                 null,
                 includePivotFields: false,
+                request: $request,
             );
 
             // Validate the relatedQuery filter VALUE against the per-relation merged

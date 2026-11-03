@@ -149,6 +149,7 @@ final class RelationCountBatcher
             $relation,
             null,
             includePivotFields: false,
+            request: $request,
         );
 
         // Drop the related resource's default order — a count needs none, and on the
@@ -160,6 +161,7 @@ final class RelationCountBatcher
             $criteria->window,
             defaultSort: [],
             aliasOf: $criteria->aliasOf,
+            request: $criteria->request,
         );
     }
 

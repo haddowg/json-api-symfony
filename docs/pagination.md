@@ -278,6 +278,22 @@ enforce this identical NULL=largest order (the Doctrine provider via a forced
 `ORDER BY` with a leading `IS NULL` term, the in-memory provider via the matching
 comparator), so a nullable cursor sort behaves the same on either data layer.
 
+### Sort families and custom sorts
+
+A [sort family](https://github.com/haddowg/json-api/blob/main/docs/sorts.md#sort-families-keys-matched-by-prefix)
+key pages like any other: `?sort=-value.cap` resolves to its concrete sort first, and
+the cursor token stores the boundary value under the full key `value.cap`. A token
+minted under one key is stale under another, so switching from `?sort=value.cap` to
+`?sort=value.ends` mid-walk is the usual `400`.
+
+A family that resolves to a field sort needs nothing more. One that resolves to a
+custom sort, or any custom sort, orders a cursor page only when the sort implements
+core's `KeysetSortInterface` and, on Doctrine, its arm implements
+`DoctrineKeysetSortArmInterface`; see
+[custom sorts under a cursor](doctrine.md#custom-sorts-under-a-cursor). The level then
+follows the same NULL=largest order as a nullable column. Without both it is a `500`
+`UnsupportedSort`, as before.
+
 ### The cursor token is opaque
 
 A cursor token is a URL-safe, base64url-encoded snapshot of the boundary row's
