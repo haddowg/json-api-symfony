@@ -152,7 +152,7 @@ ArrayHash::make('location')->nullable()->constrain(GeoJson::geometry());
 ## Storage: one `json` column
 
 A composite attribute is **one value** — the natural Doctrine mapping is a single
-`json` column with scalar children:
+`json` column:
 
 ```php
 #[ORM\Entity]
@@ -170,10 +170,16 @@ class Release
 
 No custom DBAL type is involved: the whole object round-trips as one JSON
 document, an `Obj`'s partial `PATCH` merges per-child before the column is
-written, and an explicit `null` clears it. A child value that needs a richer PHP
-type than JSON scalars (a `DateTime` inside the object, a value object) rides the
-field-level `serializeUsing()`/`fillUsing()` escape hatch rather than a recursive
-column type — the same pattern the example app's `releaseInfo` map uses.
+written, and an explicit `null` clears it.
+
+A `DateTime`, `Date` or `Time` child needs nothing extra. The column stores the
+date object as PHP's JSON dump of it, and core reads that dump back and renders
+it in the field's format, so a re-read returns the same RFC 3339 string the
+create did. Core's
+[stored values](https://github.com/haddowg/json-api/blob/main/docs/field-types.md#reading-a-stored-value-back)
+section has the exact rules. A child that needs a richer PHP type than JSON can
+hold, such as a value object, still goes through the field-level
+`serializeUsing()`/`fillUsing()` hooks rather than a recursive column type.
 
 ## Worked example
 

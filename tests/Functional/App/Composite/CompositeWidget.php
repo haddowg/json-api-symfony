@@ -16,6 +16,7 @@ final class CompositeWidget
     /**
      * @param array<string, mixed>|null $address
      * @param array<string, mixed>|null $block
+     * @param array<string, mixed>|null $schedule
      * @param array<string, mixed>|null $contact
      * @param array<string, mixed>|null $prefs
      */
@@ -24,6 +25,7 @@ final class CompositeWidget
         public string $name = '',
         public ?array $address = null,
         public ?array $block = null,
+        public ?array $schedule = null,
         public ?array $contact = null,
         public ?array $prefs = null,
     ) {}

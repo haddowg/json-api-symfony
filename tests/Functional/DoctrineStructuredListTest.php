@@ -39,4 +39,11 @@ final class DoctrineStructuredListTest extends StructuredListConformanceTestCase
         $entityManager->flush();
         $entityManager->clear();
     }
+
+    protected function detachPersistedState(): void
+    {
+        $entityManager = static::getContainer()->get('doctrine.orm.entity_manager');
+        \assert($entityManager instanceof EntityManagerInterface);
+        $entityManager->clear();
+    }
 }

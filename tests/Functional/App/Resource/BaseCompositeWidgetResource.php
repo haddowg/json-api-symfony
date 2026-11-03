@@ -8,6 +8,8 @@ use haddowg\JsonApi\OpenApi\Schema;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Constraint\Shape;
 use haddowg\JsonApi\Resource\Field\ArrayHash;
+use haddowg\JsonApi\Resource\Field\Date;
+use haddowg\JsonApi\Resource\Field\DateTime;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Integer;
 use haddowg\JsonApi\Resource\Field\Obj;
@@ -26,7 +28,8 @@ use haddowg\JsonApi\Resource\Field\Url;
  * exercises the core opis {@see \haddowg\JsonApi\Validation\SchemaValueValidator}
  * value-validation pass (`/data/attributes/contact/...`). A second
  * {@see ArrayHash} `prefs` must be a JSON object of at most five keys, so an
- * empty `{}` is valid and an empty `[]` is not. Each stores as a single array — the shape a
+ * empty `{}` is valid and an empty `[]` is not. The `schedule` Obj and the heading
+ * variant carry date children. Each stores as a single array — the shape a
  * `json` column round-trips.
  */
 abstract class BaseCompositeWidgetResource extends AbstractResource
@@ -44,8 +47,12 @@ abstract class BaseCompositeWidgetResource extends AbstractResource
                 Str::make('postcode')->required()->maxLength(10),
             ),
             OneOf::make('block')->nullable()->discriminator('kind')
-                ->variant('heading', Str::make('text')->required(), Integer::make('level')->min(1)->max(6))
+                ->variant('heading', Str::make('text')->required(), Integer::make('level')->min(1)->max(6), DateTime::make('publishedAt'))
                 ->variant('image', Url::make('src')->required(), Str::make('alt')),
+            Obj::make('schedule')->nullable()->fields(
+                DateTime::make('startsAt')->required(),
+                Date::make('endsOn'),
+            ),
             ArrayHash::make('contact')->nullable()->constrain(
                 Shape::oneOf(
                     Schema::ofType('object')
