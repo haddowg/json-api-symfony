@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.27.0](https://github.com/haddowg/json-api-symfony/compare/v1.26.0...v1.27.0) (2026-11-03)
+
+
+### Features
+
+* support sort families and custom sorts on cursor pages ([#282](https://github.com/haddowg/json-api-symfony/issues/282)) ([0adf75c](https://github.com/haddowg/json-api-symfony/commit/0adf75ce0d900c39642bea9a1dc049c96fb11888))
+
 ## [1.26.0](https://github.com/haddowg/json-api-symfony/compare/v1.25.2...v1.26.0) (2026-11-02)
 
 
