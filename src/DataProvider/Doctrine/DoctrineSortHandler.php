@@ -44,6 +44,11 @@ final class DoctrineSortHandler implements SortHandlerInterface, AliasAwareSortH
     private const string ARM_HINT = 'To run a custom sort on the Doctrine provider, register a DoctrineSortArmInterface (tag: json_api.doctrine_sort_arm) — see the "custom filters and sorts: the arm seam" section of the doctrine docs.';
 
     /**
+     * The remediation when a custom sort orders a cursor page and its arm cannot.
+     */
+    private const string KEYSET_ARM_HINT = 'To order a cursor page by a custom sort on the Doctrine provider, its arm must implement DoctrineKeysetSortArmInterface — see the "custom sorts under a cursor" section of the doctrine docs.';
+
+    /**
      * @var list<DoctrineSortArmInterface>
      */
     private readonly array $arms;
@@ -111,6 +116,29 @@ final class DoctrineSortHandler implements SortHandlerInterface, AliasAwareSortH
         }
 
         throw new UnsupportedSort($sort, self::ARM_HINT);
+    }
+
+    /**
+     * The keyset expression for a custom sort level of a cursor page, from the first
+     * registered arm that {@see DoctrineSortArmInterface::supports()} `$sort`. That arm
+     * must be a {@see DoctrineKeysetSortArmInterface}; otherwise, or with no arm at
+     * all, the level is an {@see UnsupportedSort}.
+     */
+    public function keysetExpression(SortInterface $sort, QueryBuilder $query, string $alias): KeysetExpression
+    {
+        foreach ($this->arms as $arm) {
+            if (!$arm->supports($sort)) {
+                continue;
+            }
+
+            if (!$arm instanceof DoctrineKeysetSortArmInterface) {
+                throw new UnsupportedSort($sort, self::KEYSET_ARM_HINT);
+            }
+
+            return $arm->keysetExpression($sort, $query, $alias);
+        }
+
+        throw new UnsupportedSort($sort, self::KEYSET_ARM_HINT);
     }
 
     /**

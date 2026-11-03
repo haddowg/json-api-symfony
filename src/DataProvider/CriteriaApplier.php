@@ -12,7 +12,7 @@ use haddowg\JsonApi\Resource\Filter\FilterHandlerInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Sort\SortDirective;
 use haddowg\JsonApi\Resource\Sort\SortHandlerInterface;
-use haddowg\JsonApi\Resource\Sort\SortInterface;
+use haddowg\JsonApi\Resource\Sort\SortMatcher;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\AliasAwareFilterHandler;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\AliasAwareSortHandler;
 
@@ -29,11 +29,12 @@ use haddowg\JsonApiBundle\DataProvider\Doctrine\AliasAwareSortHandler;
  * {@see FilterDefaults}, unknown filter key → 400 {@see FilterParamUnrecognized},
  * sorting against an empty sort vocabulary → 400 {@see SortingUnsupported},
  * unknown sort field → 400 {@see SortParamUnrecognized}, `-` prefix →
- * descending — are decided once, and a provider only ever differs in
- * *execution*. That is what keeps the in-memory provider an attributable
- * conformance witness for the Doctrine one. Because defaults are folded before
- * the filters reach a handler, they also narrow the pre-window `COUNT` of a
- * paginated fetch, so totals describe the defaulted collection.
+ * descending, sort families through core's {@see SortMatcher} — are decided
+ * once, and a provider only ever differs in *execution*. That is what keeps the
+ * in-memory provider an attributable conformance witness for the Doctrine one.
+ * Because defaults are folded before the filters reach a handler, they also
+ * narrow the pre-window `COUNT` of a paginated fetch, so totals describe the
+ * defaulted collection.
  *
  * The applier is **alias-aware** but inert unless the criteria carries a non-empty
  * {@see CollectionCriteria::$aliasOf} map (only the Doctrine pivot related-collection
@@ -186,23 +187,14 @@ final class CriteriaApplier
             return $handler->applyOn($directives, $query, $defaultAlias);
         }
 
-        if ($criteria->sorts === []) {
-            throw new SortingUnsupported();
-        }
-
         // Resolve the requested directives in request order, carrying each key so a
         // non-root alias can route it (the pivot path); the alias is the criteria's
-        // map, defaulting to the root for every related/non-pivot key.
-        $directives = [];
-        foreach ($requested as $field) {
-            $descending = \str_starts_with($field, '-');
-            $key = $descending ? \substr($field, 1) : $field;
-
-            $sort = $this->sortFor($criteria->sorts, $key)
-                ?? throw new SortParamUnrecognized($key);
-
-            $directives[] = [$key, new SortDirective($sort, $descending)];
-        }
+        // map, defaulting to the root for every related/non-pivot key. A sort family
+        // resolves to a sort keyed by the full requested key, so the key routes as is.
+        $directives = \array_map(
+            static fn(SortDirective $directive): array => [$directive->sort->key(), $directive],
+            SortMatcher::directives($requested, $criteria->sorts, $criteria->request),
+        );
 
         // Empty aliasOf and no caller-supplied default alias — every non-pivot fetch
         // path and the whole in-memory provider: one composite call, most significant
@@ -253,7 +245,7 @@ final class CriteriaApplier
 
         foreach ($criteria->defaultSort as $directive) {
             $key = $directive->sort->key();
-            if ($this->sortFor($criteria->sorts, $key) === null) {
+            if (SortMatcher::match($criteria->sorts, $key, $criteria->request) === null) {
                 throw new SortParamUnrecognized($key);
             }
         }
@@ -269,20 +261,6 @@ final class CriteriaApplier
         foreach ($filters as $filter) {
             if ($filter->key() === $key) {
                 return $filter;
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * @param list<SortInterface> $sorts
-     */
-    private function sortFor(array $sorts, string $key): ?SortInterface
-    {
-        foreach ($sorts as $sort) {
-            if ($sort->key() === $key) {
-                return $sort;
             }
         }
 

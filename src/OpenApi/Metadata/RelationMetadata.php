@@ -15,6 +15,7 @@ use haddowg\JsonApi\OpenApi\Schema;
 use haddowg\JsonApi\Resource\Field\AbstractRelationValue;
 use haddowg\JsonApi\Resource\Field\ExemplifiedRelationInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\Sort\SortMatcher;
 use haddowg\JsonApiBundle\DataProvider\PivotFields;
 use haddowg\JsonApiBundle\DataProvider\Polymorphism;
 use haddowg\JsonApiBundle\DataProvider\RelatedReadRouter;
@@ -165,7 +166,7 @@ final readonly class RelationMetadata implements RelationMetadataInterface, Decl
         // OpenAPI `sort` enum advertises them too — mirroring how the pivot FILTERS,
         // being author-declared in filters(), are already advertised. Empty for a
         // non-pivot relation (docs/openapi.md).
-        return [...$this->relation->sorts(), ...PivotFields::sortsFor($this->relation)];
+        return SortMatcher::merge($this->relation->sorts(), PivotFields::sortsFor($this->relation));
     }
 
     public function relatedIncludablePaths(): array

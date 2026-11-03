@@ -376,7 +376,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $backward = $window->before !== null;
         $boundary = $backward ? $window->before : $window->after;
         $orderColumns = $backward
-            ? \array_map(static fn(KeysetColumn $c): KeysetColumn => new KeysetColumn($c->column, !$c->descending), $columns)
+            ? \array_map(static fn(KeysetColumn $c): KeysetColumn => $c->flipped(), $columns)
             : $columns;
 
         if ($boundary !== null) {
@@ -384,7 +384,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             $this->keysetResolver->assertFresh($boundary, $columns, $parameter);
         }
 
-        $keyset = new DoctrineKeyset($metadata, self::ROOT_ALIAS);
+        $keyset = new DoctrineKeyset($metadata, self::ROOT_ALIAS, sorts: $this->sortHandler);
         if ($boundary !== null) {
             $keyset->applyAfter($builder, $boundary, $orderColumns);
         }
@@ -431,6 +431,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             $criteria->sorts,
             $criteria->defaultSort,
             $pkColumn,
+            request: $criteria->request,
         );
     }
 
@@ -1792,7 +1793,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $backward = $window->before !== null;
         $boundary = $backward ? $window->before : $window->after;
         $orderColumns = $backward
-            ? \array_map(static fn(KeysetColumn $c): KeysetColumn => new KeysetColumn($c->column, !$c->descending), $columns)
+            ? \array_map(static fn(KeysetColumn $c): KeysetColumn => $c->flipped(), $columns)
             : $columns;
 
         if ($boundary !== null) {
@@ -1800,7 +1801,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             $this->keysetResolver->assertFresh($boundary, $columns, $parameter);
         }
 
-        $keyset = new DoctrineKeyset($metadata, self::ROOT_ALIAS, $aliasOfColumn, ['pivot' => $pivotMetadata]);
+        $keyset = new DoctrineKeyset($metadata, self::ROOT_ALIAS, $aliasOfColumn, ['pivot' => $pivotMetadata], $this->sortHandler);
         if ($boundary !== null) {
             $keyset->applyAfter($builder, $boundary, $orderColumns);
         }
@@ -1819,13 +1820,21 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         // The minter's row contract is object-shaped; a pivot row is a "mixed"
         // array (`[0 => farEntity, 'pivot_<field>' => scalar]`), so each row is
         // wrapped for the read: a pivot column reads its scalar alias, a root
-        // column reads off the hydrated far entity via the metadata.
+        // column reads off the hydrated far entity via the metadata. A custom sort's
+        // keysetValue() expects the far entity, not the wrapper, so its levels are
+        // minted as plain columns and read here.
+        $sortOfColumn = [];
+        foreach ($columns as $column) {
+            if ($column->sort !== null) {
+                $sortOfColumn[$column->column] = $column->sort;
+            }
+        }
         $minted = $this->minter->mint(
             $window,
-            $columns,
+            \array_map(static fn(KeysetColumn $c): KeysetColumn => new KeysetColumn($c->column, $c->descending), $columns),
             \array_map(static fn(array $row): \ArrayObject => new \ArrayObject($row), $page),
             $hasSurplus,
-            static function (object $row, string $column) use ($metadata, $rowKeyOfColumn): string|int|float|bool|null {
+            static function (object $row, string $column) use ($metadata, $rowKeyOfColumn, $sortOfColumn): string|int|float|bool|null {
                 \assert($row instanceof \ArrayObject);
                 $rowKey = $rowKeyOfColumn[$column] ?? null;
                 if ($rowKey !== null) {
@@ -1834,6 +1843,10 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
                 $far = $row[0] ?? null;
                 \assert(\is_object($far));
+
+                if (isset($sortOfColumn[$column])) {
+                    return CursorTokenMinter::coerce($sortOfColumn[$column]->keysetValue($far));
+                }
 
                 return CursorTokenMinter::coerce($metadata->getFieldValue($far, $column));
             },

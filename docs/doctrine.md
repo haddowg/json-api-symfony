@@ -757,6 +757,13 @@ sort is not a `SortByField` is delegated to a registered
 [`DoctrineSortArmInterface`](#custom-filters-and-sorts-the-arm-seam); if none supports
 it, core's `UnsupportedSort` is raised.
 
+A [sort family](https://github.com/haddowg/json-api/blob/main/docs/sorts.md#sort-families-keys-matched-by-prefix)
+never reaches the handler. `?sort=value.cap` is matched by core's `SortMatcher`, the
+family resolves `cap` with the request, and the handler sees the sort it returned: a
+`SortByField` translates as above, anything else goes to its arm like any custom sort.
+The same matching runs for the primary collection, related and relationship
+endpoints, `relatedQuery[<path>][sort]` and cursor pages.
+
 Source: [`DoctrineSortHandler`](../src/DataProvider/Doctrine/DoctrineSortHandler.php).
 
 ## Custom filters and sorts (the arm seam)
@@ -850,6 +857,123 @@ For a **portable** custom filter/sort that must also run on the in-memory provid
 hand-built, so its arms are not DI-tagged). An inherently Doctrine-specific filter (a
 raw-DQL scope) ships only the Doctrine arm; it is simply not declared on an in-memory
 resource.
+
+### Custom sorts under a cursor
+
+A [cursor page](pagination.md#cursor-keyset-pagination) orders by a custom sort only
+when both halves opt in. The sort implements core's
+[`KeysetSortInterface`](https://github.com/haddowg/json-api/blob/main/docs/sorts.md#sorting-a-cursor-page-by-a-custom-sort),
+whose `keysetValue($row)` is the value a boundary row writes into the cursor token.
+Its arm implements
+[`DoctrineKeysetSortArmInterface`](../src/DataProvider/Doctrine/DoctrineKeysetSortArmInterface.php),
+which adds one method to the sort arm:
+
+```php
+public function keysetExpression(SortInterface $sort, QueryBuilder $query, string $alias): KeysetExpression;
+```
+
+It returns a [`KeysetExpression`](../src/DataProvider/Doctrine/KeysetExpression.php):
+the DQL the level orders and compares by, and the DBAL type the boundary value binds
+with. The arm may add joins and parameters to `$query` first. The provider asks once
+per query and builds the level exactly as it builds a column's: a leading
+`CASE WHEN <expr> IS NULL THEN 1 ELSE 0 END` term so a null sorts as the largest
+value, the expression in the level's direction, and the same null-aware keyset
+`WHERE`. On a cursor page `keysetExpression()` replaces `apply()`; on every other
+page `apply()` runs as before. The arm is registered like any sort arm, since the
+interface extends `DoctrineSortArmInterface`.
+
+Here campaigns are sorted by a placeholder value kept as text in an EAV table, so
+`?sort=value.cap` has to cast it to compare numerically:
+
+```php
+use Doctrine\DBAL\Types\Types;
+use haddowg\JsonApi\Resource\Sort\KeysetSortInterface;
+use haddowg\JsonApi\Resource\Sort\SortFamily;
+
+// The resource: a family resolving `value.<placeholder>` to the sort below.
+public function sorts(): array
+{
+    return [
+        SortFamily::make('value', fn(string $suffix, JsonApiRequestInterface $request): ?SortInterface
+            => $this->placeholders->exists($suffix) ? new PlaceholderValueSort('value.' . $suffix, $suffix) : null)
+            ->withSuffixPattern('[a-z_]+'),
+    ];
+}
+
+final readonly class PlaceholderValueSort implements KeysetSortInterface
+{
+    public function __construct(public string $key, public string $placeholder) {}
+
+    public function key(): string
+    {
+        return $this->key;
+    }
+
+    // What the cursor token carries: the same number the SQL compares.
+    public function keysetValue(mixed $row): ?int
+    {
+        $value = $row->placeholderValue($this->placeholder);
+
+        return $value !== null ? (int) $value : null;
+    }
+}
+
+final class PlaceholderValueSortArm implements DoctrineKeysetSortArmInterface
+{
+    public function supports(SortInterface $sort): bool
+    {
+        return $sort instanceof PlaceholderValueSort;
+    }
+
+    public function apply(SortInterface $sort, QueryBuilder $query, bool $descending, string $alias): void
+    {
+        $query->addOrderBy($this->keysetExpression($sort, $query, $alias)->dql, $descending ? 'DESC' : 'ASC');
+    }
+
+    public function keysetExpression(SortInterface $sort, QueryBuilder $query, string $alias): KeysetExpression
+    {
+        \assert($sort instanceof PlaceholderValueSort);
+        $join = 'placeholder_' . $sort->placeholder; // the suffix pattern keeps it an identifier
+
+        $query
+            ->leftJoin(PlaceholderValue::class, $join, 'WITH', \sprintf('%1$s.campaign = %2$s AND %1$s.name = :%1$s_name', $join, $alias))
+            ->setParameter($join . '_name', $sort->placeholder);
+
+        return new KeysetExpression(\sprintf('CAST_INTEGER(%s.value)', $join), Types::INTEGER);
+    }
+}
+```
+
+DQL has no `CAST`, so the application registers one, here as `CAST_INTEGER`, under
+`doctrine.orm.dql.numeric_functions`. The bundle's own test suite has a short
+`FunctionNode` that emits `CAST(<expr> AS INTEGER)`; a library such as
+`beberlei/doctrineextensions` ships portable ones. A `LEFT JOIN` matters: a campaign
+with no `cap` row yields null and sorts last ascending, first descending, and keeps
+its place in the page.
+
+The rules for the expression and its type:
+
+- The expression appears inside `CASE WHEN … IS NULL`, in `ORDER BY` and on the left
+  of `=`, `<` and `>`, so it must be something DQL accepts in all of them: a field path
+  (`placeholder_cap.amount`), a DQL function call, or `COALESCE`/`NULLIF`. Arithmetic
+  is not accepted in `IS NULL`.
+- It must order the same rows the same way `keysetValue()` reports them, because the
+  token carries `keysetValue()` and the next page compares the expression against it.
+  The value arrives in its token form: a `DateTimeInterface` as an RFC 3339 string with
+  microseconds, a `Stringable` as its string, a backed enum as its value.
+- `$type` null binds that token value as is. A date or date-time type parses it back
+  to the PHP date class the type converts. A naive `datetime` or `datetime_immutable`
+  type also moves it into PHP's default timezone, the zone Doctrine stores and reads
+  those columns in, since `keysetValue()` may report a date-time in any offset. A
+  `datetimetz` or `date` type keeps the value's own offset or day. Any other type binds
+  the value with that type.
+
+A custom sort level whose arm does not implement `DoctrineKeysetSortArmInterface`, or
+whose sort does not implement `KeysetSortInterface`, is a `500` `UnsupportedSort` on a
+cursor page. The windowed include limit above applies here too: a cursor-paginated
+include under the default window-function batch can only order by fields, so a custom
+sort there needs `window_functions: false`. The in-memory provider needs no arm for the
+cursor itself; it orders a cursor page by `keysetValue()` directly.
 
 ### Self-applying filters: no arm to register
 

@@ -333,6 +333,8 @@ final readonly class CollectionCriteria
         public ?WindowInterface $window = null,
         public array $defaultSort = [], // list<SortDirective>   — applied only with no ?sort
         public array $aliasOf = [],     // array<string,string>  — bundle-only pivot-alias routing hint
+        public bool $wantsCount = false,
+        public ?JsonApiRequestInterface $request = null,
     ) {}
 }
 ```
@@ -351,7 +353,10 @@ count-based provider narrows to the `OffsetWindow` it can execute. `$aliasOf` is
 non-root query alias the `CriteriaApplier` applies it on — populated **only** on the
 Doctrine pivot related-collection path (pivot keys → the `pivot` join alias) and
 empty (so provably inert) on every other Doctrine path and **every** in-memory path,
-where each key resolves to the query root.
+where each key resolves to the query root. `$request` is the request the fetch
+answers. A [sort family](https://github.com/haddowg/json-api/blob/main/docs/sorts.md#sort-families-keys-matched-by-prefix)
+needs it to resolve a key, so a provider that builds its own criteria should pass it
+along. A programmatic fetch with no request can still sort by exact keys.
 
 ### `CriteriaApplier` — spec semantics, decided once
 
@@ -380,6 +385,10 @@ one place and a provider only ever differs in *execution*:
 - an unknown filter key → `400` (`FilterParamUnrecognized`);
 - sorting against an empty sort vocabulary → `400` (`SortingUnsupported`);
 - an unknown sort field → `400` (`SortParamUnrecognized`);
+- sort keys match through core's
+  [`SortMatcher`](https://github.com/haddowg/json-api/blob/main/docs/sorts.md#reading-the-requested-sorts),
+  so an exact key wins and a sort family answers `<prefix>.<suffix>`, handing the
+  handler the concrete sort it resolves to;
 - with no `sort` requested, the resource's `defaultSort()` directives apply (an
   explicit `?sort=` overrides them); each default is validated against the declared
   sort vocabulary just like a requested sort;

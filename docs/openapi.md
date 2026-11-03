@@ -13,6 +13,14 @@ attribute schemas from your constraints, linkage and compound-document envelopes
 enumerated `filter[…]` / `sort` / `include` / `fields[…]` / `page[…]` parameters, and the
 standard error-status set per operation.
 
+A `sort` parameter whose vocabulary holds a
+[sort family](https://github.com/haddowg/json-api/blob/main/docs/sorts.md#sort-families-keys-matched-by-prefix)
+lists the fixed keys alongside one pattern per family, and names the families under
+`x-sort-families`
+([core's projection](https://github.com/haddowg/json-api/blob/main/docs/openapi.md#sort-families-x-sort-families)).
+That holds on related and relationship endpoints too, whose vocabulary merges the
+related type's sorts with the relation's own.
+
 ## Per-operation response declarations
 
 By default each operation advertises one success response — `POST` → `201`,

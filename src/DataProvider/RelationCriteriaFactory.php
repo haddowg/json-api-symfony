@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\DataProvider;
 use haddowg\JsonApi\Operation\QueryParameters;
 use haddowg\JsonApi\Pagination\PaginatorInterface;
 use haddowg\JsonApi\Pagination\WindowInterface;
+use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
@@ -15,7 +16,7 @@ use haddowg\JsonApi\Resource\Filter\WhereIn;
 use haddowg\JsonApi\Resource\Filter\WhereNotIn;
 use haddowg\JsonApi\Resource\Filter\WhereNotNull;
 use haddowg\JsonApi\Resource\Filter\WhereNull;
-use haddowg\JsonApi\Resource\Sort\SortInterface;
+use haddowg\JsonApi\Resource\Sort\SortMatcher;
 use haddowg\JsonApi\Server\Server;
 
 /**
@@ -104,7 +105,9 @@ final class RelationCriteriaFactory
      * by the stripped column and the key routed to the `pivot` alias via `aliasOf`.
      *
      * On a key clash the relation wins over the related resource, preserving the merge
-     * order `[...resourceFilters, ...relationFilters]` then keyed by `->key()`.
+     * order `[...resourceFilters, ...relationFilters]` then keyed by `->key()`. Sorts
+     * merge through core's {@see SortMatcher::merge()}, which keeps a sort family
+     * beside an exact sort sharing its key.
      * `defaultSort` is the related resource's default order (empty for a polymorphic
      * to-many); the merged vocabulary rides the criteria so both providers' existing
      * handlers apply it unchanged.
@@ -119,6 +122,9 @@ final class RelationCriteriaFactory
      * asked `?withCount=_self_` under a countable() relation); the include/linkage/
      * count batchers leave the default `false`, so those paths stay count-free (their
      * relationship-object totals come from the separate RelationCountInterface seam).
+     *
+     * `$request` rides onto the criteria too, so a sort family in the merged
+     * vocabulary can resolve a requested key.
      */
     public function criteriaFor(
         QueryParameters $queryParameters,
@@ -127,6 +133,7 @@ final class RelationCriteriaFactory
         ?WindowInterface $window,
         bool $includePivotFields,
         bool $wantsCount = false,
+        ?JsonApiRequestInterface $request = null,
     ): CollectionCriteria {
         $relationFilters = $includePivotFields
             ? $this->withPivotCasts($relation)
@@ -135,8 +142,9 @@ final class RelationCriteriaFactory
         return new CollectionCriteria(
             $queryParameters,
             $this->mergeFilters($relatedResource?->allFilters() ?? [], $relationFilters),
-            $this->mergeSorts(
-                $this->mergeSorts($relatedResource?->allSorts() ?? [], $relation->sorts()),
+            SortMatcher::merge(
+                $relatedResource?->allSorts() ?? [],
+                $relation->sorts(),
                 $includePivotFields ? PivotFields::sortsFor($relation) : [],
             ),
             $window,
@@ -156,6 +164,7 @@ final class RelationCriteriaFactory
             // count-free (their relationship-object totals ride the separate
             // RelationCountInterface seam).
             wantsCount: $wantsCount,
+            request: $request,
         );
     }
 
@@ -324,27 +333,6 @@ final class RelationCriteriaFactory
         $merged = [];
         foreach ([...$resourceFilters, ...$relationFilters] as $filter) {
             $merged[$filter->key()] = $filter;
-        }
-
-        return \array_values($merged);
-    }
-
-    /**
-     * Merges two sort vocabularies, keyed by {@see SortInterface::key()} so a clash
-     * resolves to the later list's declaration (core docs/relations.md). The order
-     * `[...$resourceSorts, ...$relationSorts]` is preserved before the dedup;
-     * returned as a list for the {@see CollectionCriteria}.
-     *
-     * @param list<SortInterface> $resourceSorts
-     * @param list<SortInterface> $relationSorts
-     *
-     * @return list<SortInterface>
-     */
-    private function mergeSorts(array $resourceSorts, array $relationSorts): array
-    {
-        $merged = [];
-        foreach ([...$resourceSorts, ...$relationSorts] as $sort) {
-            $merged[$sort->key()] = $sort;
         }
 
         return \array_values($merged);

@@ -15,13 +15,12 @@ use haddowg\JsonApi\Collection\CollectionResult;
 use haddowg\JsonApi\Collection\Keyset\CursorTokenMinter;
 use haddowg\JsonApi\Collection\Keyset\KeysetColumn;
 use haddowg\JsonApi\Collection\Keyset\KeysetResolver;
-use haddowg\JsonApi\Exception\SortingUnsupported;
-use haddowg\JsonApi\Exception\SortParamUnrecognized;
 use haddowg\JsonApi\Operation\QueryParameters;
 use haddowg\JsonApi\Pagination\CursorWindow;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApi\Resource\Sort\SortDirective;
+use haddowg\JsonApi\Resource\Sort\SortMatcher;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\CriteriaApplier;
 use haddowg\JsonApiBundle\DataProvider\RelatedBatch;
@@ -255,6 +254,7 @@ final class WindowedRelationBatch
             $criteria->sorts,
             $criteria->defaultSort,
             $relatedMetadata->getSingleIdentifierFieldName(),
+            request: $criteria->request,
         );
 
         // Feed the keyset columns to the SAME inner-query projection the offset path uses (the
@@ -317,13 +317,16 @@ final class WindowedRelationBatch
      */
     private function keysetSortDirectives(array $columns): array
     {
-        return \array_map(
+        $directives = \array_map(
             static fn(KeysetColumn $column): SortDirective => new SortDirective(
-                SortByField::make($column->column, $column->column),
+                $column->sort ?? SortByField::make($column->column, $column->column),
                 $column->descending,
             ),
             $columns,
         );
+        $this->assertFieldSorts($directives);
+
+        return $directives;
     }
 
     /**
@@ -902,33 +905,8 @@ final class WindowedRelationBatch
 
         // Validate the requested sort against the declared vocabulary EXACTLY as
         // CriteriaApplier::applySorts does, so an unknown/unsupported sort is the
-        // endpoint's same 400 on the native path (not a silently-dropped directive):
-        // an empty sort vocabulary -> SortingUnsupported, an unknown field ->
-        // SortParamUnrecognized.
-        if ($criteria->sorts === []) {
-            throw new SortingUnsupported();
-        }
-
-        $directives = [];
-        foreach ($requested as $field) {
-            $descending = \str_starts_with($field, '-');
-            $key = $descending ? \substr($field, 1) : $field;
-
-            $sort = null;
-            foreach ($criteria->sorts as $declared) {
-                if ($declared->key() === $key) {
-                    $sort = $declared;
-
-                    break;
-                }
-            }
-
-            if ($sort === null) {
-                throw new SortParamUnrecognized($key);
-            }
-
-            $directives[] = new SortDirective($sort, $descending);
-        }
+        // endpoint's same 400 on the native path (not a silently-dropped directive).
+        $directives = SortMatcher::directives($requested, $criteria->sorts, $criteria->request);
 
         $this->assertFieldSorts($directives);
 
