@@ -247,11 +247,26 @@ final class ExceptionListener
                 if (\in_array(\strtolower((string) $name), ['content-type', 'content-length'], true)) {
                     continue;
                 }
-                $response->headers->set((string) $name, $value);
+                $response->headers->set((string) $name, self::headerValue($value));
             }
         }
 
         return $response;
+    }
+
+    /**
+     * An exception header as `HeaderBag` takes it: a `TooManyRequestsHttpException`
+     * built with an integer `Retry-After` keeps it as an integer.
+     *
+     * @return list<string>|string|null
+     */
+    private static function headerValue(mixed $value): array|string|null
+    {
+        if (\is_array($value)) {
+            return \array_values(\array_map(static fn(mixed $item): string => \is_scalar($item) ? (string) $item : '', $value));
+        }
+
+        return \is_scalar($value) ? (string) $value : null;
     }
 
     /**
