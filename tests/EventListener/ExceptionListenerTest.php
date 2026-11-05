@@ -268,6 +268,14 @@ final class ExceptionListenerTest extends TestCase
             authenticated: false,
         );
         self::assertSame('Bearer realm="api"', $unauthorized->headers->get('WWW-Authenticate'));
+
+        $throttled = $this->fire(
+            new \Symfony\Component\HttpKernel\Exception\TooManyRequestsHttpException(60, headers: ['X-RateLimit-Remaining' => 0]),
+            authenticated: true,
+        );
+        self::assertSame(429, $throttled->getStatusCode());
+        self::assertSame('60', $throttled->headers->get('Retry-After'));
+        self::assertSame('0', $throttled->headers->get('X-RateLimit-Remaining'));
     }
 
     /**
