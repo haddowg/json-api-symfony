@@ -276,6 +276,7 @@ final class ExceptionListenerTest extends TestCase
         self::assertSame(429, $throttled->getStatusCode());
         self::assertSame('60', $throttled->headers->get('Retry-After'));
         self::assertSame('0', $throttled->headers->get('X-RateLimit-Remaining'));
+        self::assertSame('Too Many Requests', $this->firstError($throttled)['title'] ?? null);
     }
 
     /**

@@ -134,6 +134,7 @@ The reason-phrase table:
 | 409 | `Conflict` |
 | 415 | `Unsupported Media Type` |
 | 422 | `Unprocessable Entity` |
+| 429 | `Too Many Requests` |
 | any other `>= 500` | `Server Error` |
 | anything else | `Error` |
 
