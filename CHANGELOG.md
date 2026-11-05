@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.28.3](https://github.com/haddowg/json-api-symfony/compare/v1.28.2...v1.28.3) (2026-11-05)
+
+
+### Bug Fixes
+
+* accept integer header values from http exceptions ([#290](https://github.com/haddowg/json-api-symfony/issues/290)) ([8e47e39](https://github.com/haddowg/json-api-symfony/commit/8e47e399970eed0bf33ca9ac82afecc97c2335b1))
+
 ## [1.28.2](https://github.com/haddowg/json-api-symfony/compare/v1.28.1...v1.28.2) (2026-11-05)
 
 
