@@ -26,6 +26,8 @@ HttpKernel insists every route resolve to one.
 | [`JsonApiController`](../src/Controller/JsonApiController.php) | (controller) | — | Returns the stashed response VO |
 | [`ViewListener`](../src/EventListener/ViewListener.php) | `kernel.view` | default | Renders the VO to an HttpFoundation response |
 | [`ExceptionListener`](../src/EventListener/ExceptionListener.php) | `kernel.exception` | **128** | Renders any failure as a JSON:API error document (→ [errors](errors.md)) |
+| [`ExceptionListener`](../src/EventListener/ExceptionListener.php) | `kernel.exception` | **-64** | Renders what the firewall's entry point left behind (→ [errors](errors.md)) |
+| [`ExceptionListener`](../src/EventListener/ExceptionListener.php) | `kernel.response` | default | Gives the entry point's `401` a JSON:API body, keeping its headers |
 
 The priorities matter. `RequestListener` runs at **4**, *after* Symfony's
 `RouterListener` (priority 32) — so by the time it runs, the route is matched and
@@ -35,7 +37,9 @@ is already in the token storage when the listener dispatches the operation. That
 ordering is load-bearing: the declarative-authorization layer evaluates
 `is_granted()` at the lifecycle hooks the dispatch fires, so the firewall must have
 authenticated first. `ExceptionListener` runs at **128**, high enough to win over
-Symfony's own error handling on a JSON:API route. The error listener is the subject
+Symfony's own error handling on a JSON:API route. It steps aside only for an
+authentication failure behind a firewall with an entry point, so the entry point's
+challenge headers survive, and picks the failure up again at **-64**. The error listener is the subject
 of its own page; the rest of this one is the happy path.
 
 ## `RequestListener` — `kernel.request`, priority 4

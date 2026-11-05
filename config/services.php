@@ -412,8 +412,13 @@ return static function (ContainerConfigurator $container): void {
             '$trustResolver' => \Symfony\Component\DependencyInjection\Loader\Configurator\service('security.authentication.trust_resolver')->nullOnInvalid(),
             // Tells a 405 on a JSON:API path from one elsewhere.
             '$router' => \Symfony\Component\DependencyInjection\Loader\Configurator\service('router')->nullOnInvalid(),
+            '$firewallMap' => \Symfony\Component\DependencyInjection\Loader\Configurator\service('security.firewall.map')->nullOnInvalid(),
         ])
-        ->tag('kernel.event_listener', ['event' => 'kernel.exception', 'method' => 'onKernelException', 'priority' => 128]);
+        ->tag('kernel.event_listener', ['event' => 'kernel.exception', 'method' => 'onKernelException', 'priority' => 128])
+        // Below Security's firewall listener (1) so the entry point runs first, above
+        // Symfony's ErrorListener (-128) so a JSON:API route never gets its error page.
+        ->tag('kernel.event_listener', ['event' => 'kernel.exception', 'method' => 'onKernelExceptionAfterFirewall', 'priority' => -64])
+        ->tag('kernel.event_listener', ['event' => 'kernel.response', 'method' => 'onKernelResponse']);
 
     // --- Doctrine reference provider (only when doctrine/orm is installed) -----
 

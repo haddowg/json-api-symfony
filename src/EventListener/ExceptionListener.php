@@ -24,7 +24,9 @@ use Psr\Log\LoggerInterface;
 use Symfony\Bridge\PsrHttpMessage\Factory\HttpFoundationFactory;
 use Symfony\Bridge\PsrHttpMessage\Factory\PsrHttpFactory;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Event\ExceptionEvent;
+use Symfony\Component\HttpKernel\Event\ResponseEvent;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
 use Symfony\Component\Routing\Exception\ExceptionInterface as RoutingException;
@@ -52,18 +54,33 @@ use Symfony\Component\Routing\RouterInterface;
  *    configured HTTP status);
  *  - a Symfony {@see HttpExceptionInterface} (routing `404`, …) maps to a
  *    status-keyed JSON:API error, except a `401`/`403`, which renders as core's
- *    {@see AuthenticationRequired}/{@see AccessDenied} like the Security exceptions;
+ *    {@see AuthenticationRequired}/{@see AccessDenied} like the Security exceptions.
+ *    The exception's own headers (`WWW-Authenticate`, `Retry-After`, …) carry onto
+ *    the response, apart from `Content-Type` and `Content-Length`;
  *  - a Symfony Security {@see \Symfony\Component\Security\Core\Exception\AccessDeniedException}
- *    (thrown by the declarative-authorization layer) renders as
+ *    (thrown by the declarative-authorization layer or `access_control`) renders as
  *    core's {@see AccessDenied} (`403`, `ACCESS_DENIED`), or {@see AuthenticationRequired}
  *    (`401`, `AUTHENTICATION_REQUIRED`) when the request is unauthenticated, and an
  *    {@see \Symfony\Component\Security\Core\Exception\AuthenticationException}
- *    (an unauthenticated request the firewall surfaces) as {@see AuthenticationRequired}.
- *    Neither is an `HttpExceptionInterface`, so both are mapped explicitly (guarded by
- *    `\class_exists` so the listener compiles without `symfony/security-core`). The
- *    detail is the exception message in debug only;
+ *    as {@see AuthenticationRequired}. Neither is an `HttpExceptionInterface`, so both
+ *    are mapped explicitly (guarded by `\class_exists` so the listener compiles without
+ *    `symfony/security-core`). The detail is the exception message in debug only;
  *  - anything else becomes a `500`, with `{exception, file, line, trace}` in the
  *    error object's `meta` gated on `kernel.debug` and the throwable logged.
+ *
+ * **Authentication failures go to the firewall first.** When the request's firewall
+ * has an entry point, {@see onKernelException()} (priority `128`) leaves an `AuthenticationException`
+ * and an unauthenticated access denial on the event and records it in
+ * {@see DEFERRED_AUTHENTICATION_ATTRIBUTE}, so Symfony Security's own listener
+ * (priority `1`) runs the firewall's entry point. A `401` the entry point returns
+ * gets a JSON:API {@see AuthenticationRequired} body in {@see onKernelResponse()},
+ * keeping every header the entry point set apart from `Content-Type` and
+ * `Content-Length`; any other status it returns, such as a login redirect, passes
+ * through. If the entry point declines by throwing, Security leaves a `401`
+ * `HttpException`, which {@see onKernelExceptionAfterFirewall()} (priority `-64`)
+ * renders like any other error. Without an entry point, and for an authenticated
+ * access denial (`403`), there is nothing to defer to, so both render at priority
+ * `128`.
  *
  * The throwable→500 mapping delegates to core's public, stateless
  * {@see InternalServerError::for()} seam, so this listener and core's
@@ -94,6 +111,12 @@ final class ExceptionListener
     public const string ROUTE_MARKER = JsonApiRoute::MARKER;
 
     /**
+     * The request attribute holding the authentication failure this listener left to
+     * the firewall's entry point.
+     */
+    public const string DEFERRED_AUTHENTICATION_ATTRIBUTE = '_jsonapi_deferred_authentication';
+
+    /**
      * @param iterable<ExceptionMapperInterface> $mappers the tagged exception
      *                                                     mappers, in descending
      *                                                     tag-priority order; the
@@ -122,12 +145,21 @@ final class ExceptionListener
         // Re-matches the path of a request the router refused with a 405, to tell
         // whether the path belongs to a JSON:API server.
         private readonly ?RouterInterface $router = null,
+        // Tells whether the request's firewall has an entry point, so an
+        // authentication failure can go to it first.
+        private readonly ?\Symfony\Component\Security\Http\FirewallMapInterface $firewallMap = null,
     ) {}
 
     public function onKernelException(ExceptionEvent $event): void
     {
         $request = $event->getRequest();
         $throwable = $event->getThrowable();
+
+        if (JsonApiRoute::matches($request) && $this->defersToFirewall($request, $throwable)) {
+            $request->attributes->set(self::DEFERRED_AUTHENTICATION_ATTRIBUTE, $throwable);
+
+            return;
+        }
 
         if (!JsonApiRoute::matches($request)) {
             $routed = $this->jsonApiRouteForUnroutedMethod($request, $throwable);
@@ -141,6 +173,56 @@ final class ExceptionListener
             $request = $routed;
         }
 
+        $event->setResponse($this->render($request, $throwable));
+    }
+
+    /**
+     * Renders what the firewall left on the event for a JSON:API route, such as the
+     * `401` Security throws when the entry point declines, or any error a listener
+     * between this one and {@see onKernelException()} did not answer.
+     */
+    public function onKernelExceptionAfterFirewall(ExceptionEvent $event): void
+    {
+        $request = $event->getRequest();
+        if (!JsonApiRoute::matches($request)) {
+            return;
+        }
+
+        $request->attributes->remove(self::DEFERRED_AUTHENTICATION_ATTRIBUTE);
+        $event->setResponse($this->render($request, $event->getThrowable()));
+    }
+
+    /**
+     * Gives the firewall entry point's `401` a JSON:API body, keeping its headers. Any
+     * other status the entry point chose, such as a login redirect, passes through.
+     */
+    public function onKernelResponse(ResponseEvent $event): void
+    {
+        $request = $event->getRequest();
+        $deferred = $request->attributes->get(self::DEFERRED_AUTHENTICATION_ATTRIBUTE);
+        $response = $event->getResponse();
+        if (!$deferred instanceof \Throwable || $response->getStatusCode() !== 401 || !JsonApiRoute::matches($request)) {
+            return;
+        }
+
+        $request->attributes->remove(self::DEFERRED_AUTHENTICATION_ATTRIBUTE);
+        $rendered = $this->render($request, new AuthenticationRequired($this->debugDetail($deferred), $deferred));
+        $content = $rendered->getContent();
+        if ($content === false) {
+            return;
+        }
+
+        $response->setContent($content);
+        $response->headers->set('Content-Type', $rendered->headers->get('Content-Type'));
+        $response->headers->remove('Content-Length');
+    }
+
+    /**
+     * Renders `$throwable` as a JSON:API error document under the request's server,
+     * declaring the atomic extension where the request named it.
+     */
+    private function render(Request $request, \Throwable $throwable): Response
+    {
         $server = $this->servers->forRequest($request);
 
         $psrRequest = $request->attributes->get(RequestListener::PSR_REQUEST_ATTRIBUTE);
@@ -158,9 +240,43 @@ final class ExceptionListener
             $errorResponse = $errorResponse->withExtensions([AtomicExtension::URI]);
         }
 
-        $psrResponse = $errorResponse->toPsrResponse($server, $psrRequest);
+        $response = $this->httpFoundationFactory->createResponse($errorResponse->toPsrResponse($server, $psrRequest));
 
-        $event->setResponse($this->httpFoundationFactory->createResponse($psrResponse));
+        if ($throwable instanceof HttpExceptionInterface && !$throwable instanceof JsonApiExceptionInterface) {
+            foreach ($throwable->getHeaders() as $name => $value) {
+                if (\in_array(\strtolower((string) $name), ['content-type', 'content-length'], true)) {
+                    continue;
+                }
+                $response->headers->set((string) $name, $value);
+            }
+        }
+
+        return $response;
+    }
+
+    /**
+     * Whether Symfony's firewall should answer this authentication failure first, so
+     * its entry point can add the challenge headers: an {@see \Symfony\Component\Security\Core\Exception\AuthenticationException},
+     * or an access denial for an unauthenticated request, behind a firewall that has
+     * an entry point.
+     */
+    private function defersToFirewall(Request $request, \Throwable $throwable): bool
+    {
+        if (!$this->firewallMap instanceof \Symfony\Bundle\SecurityBundle\Security\FirewallMap
+            || $this->firewallMap->getFirewallConfig($request)?->getEntryPoint() === null
+        ) {
+            return false;
+        }
+
+        if (\class_exists(\Symfony\Component\Security\Core\Exception\AuthenticationException::class)
+            && $throwable instanceof \Symfony\Component\Security\Core\Exception\AuthenticationException
+        ) {
+            return true;
+        }
+
+        return \class_exists(\Symfony\Component\Security\Core\Exception\AccessDeniedException::class)
+            && $throwable instanceof \Symfony\Component\Security\Core\Exception\AccessDeniedException
+            && !$this->isAuthenticated();
     }
 
     /**

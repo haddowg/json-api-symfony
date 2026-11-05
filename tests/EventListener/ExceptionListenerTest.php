@@ -244,6 +244,162 @@ final class ExceptionListenerTest extends TestCase
         self::assertSame('application/vnd.api+json', $unacceptable->headers->get('Content-Type'));
     }
 
+    #[Test]
+    #[Group('spec:errors')]
+    public function anHttpExceptionsHeadersCarryOntoTheRenderedResponse(): void
+    {
+        $unavailable = $this->fire(
+            new \Symfony\Component\HttpKernel\Exception\HttpException(503, 'down', headers: ['Retry-After' => '120', 'Content-Type' => 'text/html']),
+            authenticated: true,
+        );
+        self::assertSame(503, $unavailable->getStatusCode());
+        self::assertSame('120', $unavailable->headers->get('Retry-After'));
+        self::assertSame('application/vnd.api+json', $unavailable->headers->get('Content-Type'));
+
+        $notAllowed = $this->fire(
+            new \Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException(['GET', 'PATCH']),
+            authenticated: true,
+        );
+        self::assertSame(405, $notAllowed->getStatusCode());
+        self::assertSame(['GET, PATCH'], $notAllowed->headers->all('allow'));
+
+        $unauthorized = $this->fire(
+            new \Symfony\Component\HttpKernel\Exception\UnauthorizedHttpException('Bearer realm="api"'),
+            authenticated: false,
+        );
+        self::assertSame('Bearer realm="api"', $unauthorized->headers->get('WWW-Authenticate'));
+    }
+
+    /**
+     * @return iterable<string, array{\Throwable}>
+     */
+    public static function authenticationFailures(): iterable
+    {
+        yield 'unauthenticated access denial' => [new \Symfony\Component\Security\Core\Exception\AccessDeniedException('denied')];
+        yield 'authentication exception' => [new \Symfony\Component\Security\Core\Exception\AuthenticationException('login required')];
+    }
+
+    #[Test]
+    #[Group('spec:errors')]
+    #[DataProvider('authenticationFailures')]
+    public function anAuthenticationFailureIsLeftToAFirewallWithAnEntryPoint(\Throwable $throwable): void
+    {
+        $event = $this->exceptionEvent($throwable);
+        $this->firewalledListener(authenticated: false, entryPoint: 'app.entry_point')->onKernelException($event);
+
+        self::assertNull($event->getResponse());
+        self::assertSame($throwable, $event->getThrowable());
+        self::assertSame($throwable, $event->getRequest()->attributes->get(ExceptionListener::DEFERRED_AUTHENTICATION_ATTRIBUTE));
+    }
+
+    #[Test]
+    #[Group('spec:errors')]
+    #[DataProvider('authenticationFailures')]
+    public function anAuthenticationFailureRendersAtOnceWhenTheFirewallHasNoEntryPoint(\Throwable $throwable): void
+    {
+        $event = $this->exceptionEvent($throwable);
+        $this->firewalledListener(authenticated: false, entryPoint: null)->onKernelException($event);
+
+        $response = $event->getResponse();
+        self::assertInstanceOf(Response::class, $response);
+        self::assertSame(401, $response->getStatusCode());
+        self::assertFalse($event->getRequest()->attributes->has(ExceptionListener::DEFERRED_AUTHENTICATION_ATTRIBUTE));
+    }
+
+    #[Test]
+    #[Group('spec:errors')]
+    public function anAuthenticatedAccessDenialRendersAt403WithoutDeferring(): void
+    {
+        $event = $this->exceptionEvent(new \Symfony\Component\Security\Core\Exception\AccessDeniedException('denied'));
+        $this->firewalledListener(authenticated: true, entryPoint: 'app.entry_point')->onKernelException($event);
+
+        $response = $event->getResponse();
+        self::assertInstanceOf(Response::class, $response);
+        self::assertSame(403, $response->getStatusCode());
+        self::assertSame('ACCESS_DENIED', $this->firstError($response)['code'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:errors')]
+    public function theLateListenerRendersWhatTheFirewallLeftOnAJsonApiRoute(): void
+    {
+        $listener = $this->firewalledListener(authenticated: false, entryPoint: 'app.entry_point');
+        $event = $this->exceptionEvent(new \Symfony\Component\Security\Core\Exception\AuthenticationException('login required'));
+        $listener->onKernelException($event);
+
+        // What Security leaves when the entry point declines.
+        $event->setThrowable(new \Symfony\Component\HttpKernel\Exception\HttpException(401, 'login required'));
+        $listener->onKernelExceptionAfterFirewall($event);
+
+        $response = $event->getResponse();
+        self::assertInstanceOf(Response::class, $response);
+        self::assertSame(401, $response->getStatusCode());
+        self::assertSame('AUTHENTICATION_REQUIRED', $this->firstError($response)['code'] ?? null);
+        self::assertFalse($event->getRequest()->attributes->has(ExceptionListener::DEFERRED_AUTHENTICATION_ATTRIBUTE));
+
+        $plain = new ExceptionEvent($this->createStub(HttpKernelInterface::class), Request::create('/plain'), HttpKernelInterface::MAIN_REQUEST, new \RuntimeException('boom'));
+        $listener->onKernelExceptionAfterFirewall($plain);
+        self::assertNull($plain->getResponse());
+    }
+
+    #[Test]
+    #[Group('spec:errors')]
+    public function theEntryPoints401GetsAJsonApiBodyAndKeepsItsHeaders(): void
+    {
+        $request = $this->deferredRequest(new \Symfony\Component\Security\Core\Exception\AuthenticationException('login required'));
+        $entryPoint = new Response('Sign in', 401, [
+            'WWW-Authenticate' => 'Bearer realm="api"',
+            'Content-Type' => 'text/plain',
+            'Content-Length' => '7',
+        ]);
+        $entryPoint->headers->setCookie(\Symfony\Component\HttpFoundation\Cookie::create('seen', '1'));
+
+        $response = $this->respond($request, $entryPoint, debug: true);
+
+        self::assertSame($entryPoint, $response);
+        self::assertSame(401, $response->getStatusCode());
+        self::assertSame('application/vnd.api+json', $response->headers->get('Content-Type'));
+        self::assertFalse($response->headers->has('Content-Length'));
+        self::assertSame('Bearer realm="api"', $response->headers->get('WWW-Authenticate'));
+        self::assertCount(1, $response->headers->getCookies());
+        $error = $this->firstError($response);
+        self::assertSame('AUTHENTICATION_REQUIRED', $error['code'] ?? null);
+        self::assertSame('login required', $error['detail'] ?? null);
+        self::assertFalse($request->attributes->has(ExceptionListener::DEFERRED_AUTHENTICATION_ATTRIBUTE));
+    }
+
+    #[Test]
+    #[Group('spec:errors')]
+    public function anEntryPointRedirectAndAnUndeferredResponsePassThrough(): void
+    {
+        $redirect = new \Symfony\Component\HttpFoundation\RedirectResponse('/login');
+        $response = $this->respond($this->deferredRequest(new \Symfony\Component\Security\Core\Exception\AuthenticationException('login required')), $redirect);
+        self::assertSame(302, $response->getStatusCode());
+        self::assertSame('/login', $response->headers->get('Location'));
+        self::assertStringNotContainsString('errors', (string) $response->getContent());
+
+        $request = Request::create('/articles');
+        $request->attributes->set(ExceptionListener::ROUTE_MARKER, true);
+        $untouched = $this->respond($request, new Response('nope', 401));
+        self::assertSame('nope', $untouched->getContent());
+    }
+
+    #[Test]
+    #[Group('spec:atomic')]
+    public function theEntryPoints401OnTheAtomicRouteDeclaresTheExtWhenTheRequestNamedIt(): void
+    {
+        $atomic = 'application/vnd.api+json; ext="https://jsonapi.org/ext/atomic"';
+        $request = $this->deferredRequest(
+            new \Symfony\Component\Security\Core\Exception\AuthenticationException('login required'),
+            Request::create('/operations', 'POST', server: ['HTTP_ACCEPT' => $atomic, 'CONTENT_TYPE' => $atomic]),
+        );
+        $request->attributes->set(JsonApiRouteLoader::ATOMIC_ATTRIBUTE, true);
+
+        $response = $this->respond($request, new Response('', 401));
+
+        self::assertSame($atomic, $response->headers->get('Content-Type'));
+    }
+
     /**
      * Fires the listener for `$throwable` on the atomic route of a request carrying `$server`.
      *
@@ -347,6 +503,78 @@ final class ExceptionListenerTest extends TestCase
         self::assertInstanceOf(Response::class, $response);
 
         return $response;
+    }
+
+    /**
+     * A listener behind a firewall whose entry point is `$entryPoint`, with a token
+     * reflecting `$authenticated`.
+     */
+    private function firewalledListener(bool $authenticated, ?string $entryPoint, bool $debug = false): ExceptionListener
+    {
+        $tokenStorage = new \Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorage();
+        $trustResolver = $this->createStub(\Symfony\Component\Security\Core\Authentication\AuthenticationTrustResolverInterface::class);
+        $trustResolver->method('isAuthenticated')->willReturn($authenticated);
+        if ($authenticated) {
+            $tokenStorage->setToken($this->createStub(\Symfony\Component\Security\Core\Authentication\Token\TokenInterface::class));
+        }
+
+        $context = new \Symfony\Bundle\SecurityBundle\Security\FirewallContext(
+            [],
+            null,
+            null,
+            new \Symfony\Bundle\SecurityBundle\Security\FirewallConfig('main', 'security.user_checker', entryPoint: $entryPoint),
+        );
+        $contexts = new class ($context) implements ContainerInterface {
+            public function __construct(private readonly \Symfony\Bundle\SecurityBundle\Security\FirewallContext $context) {}
+
+            public function get(string $id): mixed
+            {
+                return $this->context;
+            }
+
+            public function has(string $id): bool
+            {
+                return true;
+            }
+        };
+
+        return new ExceptionListener(
+            $this->serverProvider(),
+            $this->psrHttpFactory(),
+            new HttpFoundationFactory(),
+            debug: $debug,
+            tokenStorage: $tokenStorage,
+            trustResolver: $trustResolver,
+            firewallMap: new \Symfony\Bundle\SecurityBundle\Security\FirewallMap($contexts, ['security.firewall.map.context.main' => null]),
+        );
+    }
+
+    private function exceptionEvent(\Throwable $throwable): ExceptionEvent
+    {
+        $request = Request::create('/articles', 'GET');
+        $request->attributes->set(ExceptionListener::ROUTE_MARKER, true);
+
+        return new ExceptionEvent($this->createStub(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST, $throwable);
+    }
+
+    /**
+     * A JSON:API route request the listener left to the firewall for `$throwable`.
+     */
+    private function deferredRequest(\Throwable $throwable, ?Request $request = null): Request
+    {
+        $request ??= Request::create('/articles', 'GET');
+        $request->attributes->set(ExceptionListener::ROUTE_MARKER, true);
+        $request->attributes->set(ExceptionListener::DEFERRED_AUTHENTICATION_ATTRIBUTE, $throwable);
+
+        return $request;
+    }
+
+    private function respond(Request $request, Response $response, bool $debug = false): Response
+    {
+        $event = new \Symfony\Component\HttpKernel\Event\ResponseEvent($this->createStub(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST, $response);
+        $this->firewalledListener(authenticated: false, entryPoint: 'app.entry_point', debug: $debug)->onKernelResponse($event);
+
+        return $event->getResponse();
     }
 
     /**
