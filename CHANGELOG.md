@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.28.2](https://github.com/haddowg/json-api-symfony/compare/v1.28.1...v1.28.2) (2026-11-05)
+
+
+### Bug Fixes
+
+* keep the firewall entry point's headers on json:api 401s ([#288](https://github.com/haddowg/json-api-symfony/issues/288)) ([1af1ed2](https://github.com/haddowg/json-api-symfony/commit/1af1ed23af22ad6e7e0afffd85e3ab42b78da546))
+
 ## [1.28.1](https://github.com/haddowg/json-api-symfony/compare/v1.28.0...v1.28.1) (2026-11-03)
 
 
