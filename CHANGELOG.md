@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.28.4](https://github.com/haddowg/json-api-symfony/compare/v1.28.3...v1.28.4) (2026-11-05)
+
+
+### Bug Fixes
+
+* title a 429 error Too Many Requests ([#292](https://github.com/haddowg/json-api-symfony/issues/292)) ([ef2fc2b](https://github.com/haddowg/json-api-symfony/commit/ef2fc2be5a13c82830f4f896d1875bf0b600b8e2))
+
 ## [1.28.3](https://github.com/haddowg/json-api-symfony/compare/v1.28.2...v1.28.3) (2026-11-05)
 
 
