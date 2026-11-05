@@ -26,6 +26,14 @@ Every route the bundle's loader emits stamps that default (see
 listener returns immediately and Symfony handles the error as usual — the bundle
 never hijacks the rest of your app.
 
+Two more hooks on the same class back it up. An authentication failure behind a
+firewall with an entry point is left for Symfony Security's listener at priority 1,
+and `onKernelExceptionAfterFirewall()` at priority **-64** renders whatever the
+firewall leaves on the event, still ahead of Symfony's error page at -128. When the
+entry point returns its own `401`, the `kernel.response` hook `onKernelResponse()`
+swaps in the JSON:API body. See
+[authentication and authorization failures](#authentication-and-authorization-failures).
+
 ```php
 public function onKernelException(ExceptionEvent $event): void
 {
@@ -145,6 +153,11 @@ layer refused the request:
 | `AccessDeniedException` (Security), request authenticated | `403` | `ACCESS_DENIED` | `Forbidden` |
 | `HttpExceptionInterface` with status `401`, e.g. `UnauthorizedHttpException` | `401` | `AUTHENTICATION_REQUIRED` | `Unauthorized` |
 | `HttpExceptionInterface` with status `403`, e.g. `AccessDeniedHttpException` | `403` | `ACCESS_DENIED` | `Forbidden` |
+
+When the firewall has an `entry_point`, the two unauthenticated rows go to it first,
+and its `401` keeps every header it set, such as `WWW-Authenticate`, under the
+JSON:API body. An `HttpExceptionInterface` keeps its own headers the same way. See
+[security](security.md#the-firewalls-entry-point-still-runs).
 
 The `detail` is the exception's message in debug only, as for every other mapped
 exception. The declarative [authorization](authorization.md) layer throws
@@ -330,7 +343,8 @@ a 401/403 still comes back as `application/vnd.api+json` with a `401`/`403` stat
 the matching title and the `AUTHENTICATION_REQUIRED`/`ACCESS_DENIED` code. Per-route firewall configuration and
 JSON:API error rendering compose with no extra wiring — there is a real route and
 real kernel events, so Symfony's security machinery runs normally (see
-[lifecycle](lifecycle.md)). The example app ships no firewall, so this arm is
+[lifecycle](lifecycle.md)). That includes the firewall's entry point: its challenge
+headers stay on the JSON:API `401`. The example app ships no firewall, so this arm is
 exercised in the bundle's own functional suite rather than the example tests.
 
 ## Logging

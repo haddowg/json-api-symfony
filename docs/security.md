@@ -71,12 +71,27 @@ so the listener maps them explicitly (guarded so it compiles without
 `symfony/security-core`) — this is what lets the declarative-authorization layer
 ([authorization](authorization.md)) render a clean `403`/`401`.
 
-So authentication and authorization compose with JSON:API rendering for free. The
-one thing to configure on your side: point the firewall's `entry_point` and
-`access_denied_handler` at handlers that **return** the relevant `HttpException`
-(or a `vnd.api+json` response) rather than redirecting to a login form — otherwise
-an unauthenticated API client gets a `302` to HTML. The listener owns the body once
-the exception is thrown; the firewall owns what gets thrown.
+### The firewall's entry point still runs
+
+An authentication failure on a JSON:API route goes to the firewall's `entry_point`
+before the bundle renders it. That covers an `AuthenticationException` and an
+`AccessDeniedException` for an unauthenticated request, whether `access_control` or
+the declarative layer threw it. When the entry point returns a `401`, the client gets
+the JSON:API `AUTHENTICATION_REQUIRED` document with every header the entry point
+set, so a `WWW-Authenticate: Bearer` challenge (RFC 9110 section 15.5.2, and the
+discovery hint OAuth and MCP clients look for) reaches the client. Only
+`Content-Type` and `Content-Length` change, to match the JSON:API body. An entry
+point that answers with anything other than a `401`, such as a `form_login`
+redirect, is left alone, because that status was its choice.
+
+A firewall without an entry point needs no setup: its failures render as the
+JSON:API `401` directly. An authenticated request that is denied never reaches the
+entry point and gets the `403`.
+
+The same goes for headers on a Symfony `HttpException`. An
+`UnauthorizedHttpException`'s challenge, a `Retry-After` on a `503` and any other
+header the exception carries come through on the JSON:API response, again apart
+from `Content-Type` and `Content-Length`.
 
 The error model the mapping rides on is core's — see
 [errors-and-exceptions](https://github.com/haddowg/json-api/blob/main/docs/errors-and-exceptions.md).
