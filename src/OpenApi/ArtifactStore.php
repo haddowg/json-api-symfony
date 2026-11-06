@@ -183,14 +183,14 @@ final class ArtifactStore
     }
 
     /**
-     * The route serving each server's document, as the {@see DocumentRouteLocator} found
-     * it, or null when the map was never written or can't be read.
+     * The route serving each server's document in `$format`, as the {@see DocumentRouteLocator}
+     * found it, or null when the map was never written or can't be read.
      *
      * @return array<string, array{route: string, parameters: array<string, string>}|null>|null
      */
-    public function readDocumentRoutes(): ?array
+    public function readDocumentRoutes(DocumentFormat $format = DocumentFormat::Json): ?array
     {
-        $json = $this->get($this->baseDir() . '/document-routes.json');
+        $json = $this->get($this->documentRoutesPath($format));
         if ($json === null) {
             return null;
         }
@@ -231,11 +231,11 @@ final class ArtifactStore
     /**
      * @param array<string, array{route: string, parameters: array<string, string>}|null> $routes
      */
-    public function writeDocumentRoutes(array $routes): void
+    public function writeDocumentRoutes(array $routes, DocumentFormat $format = DocumentFormat::Json): void
     {
         $encoded = \array_map(static fn(?array $route): ?array => $route === null ? null : ['route' => $route['route'], 'parameters' => (object) $route['parameters']], $routes);
 
-        $this->put($this->baseDir() . '/document-routes.json', (string) \json_encode((object) $encoded, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES));
+        $this->put($this->documentRoutesPath($format), (string) \json_encode((object) $encoded, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES));
     }
 
     /**
@@ -317,6 +317,11 @@ final class ArtifactStore
     public function writeSchemaAggregate(string $server, string $json): void
     {
         $this->put($this->schemaAggregatePath($server), $json);
+    }
+
+    private function documentRoutesPath(DocumentFormat $format): string
+    {
+        return $this->baseDir() . ($format === DocumentFormat::Json ? '/document-routes.json' : '/document-routes.' . $format->value . '.json');
     }
 
     private function operationsPath(string $server): string

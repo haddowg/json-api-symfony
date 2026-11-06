@@ -71,7 +71,7 @@ json_api:
 
 json_api_openapi:
   resource: .
-  type: jsonapi_openapi   # mounts /docs.json (+ /{server}/docs.json) and /docs
+  type: jsonapi_openapi   # mounts /docs.json and /docs.yaml (+ /{server}/docs.*) and /docs
 ```
 
 ## The routes
@@ -80,14 +80,16 @@ json_api_openapi:
 |-------|------|--------|
 | Document (default server) | `GET /docs.json` | the OpenAPI 3.1 JSON document |
 | Document (named server) | `GET /{server}/docs.json` | that server's document (per-server mode) |
+| YAML document (default server) | `GET /docs.yaml` | the same document as YAML, when [YAML is on](#the-yaml-document) |
+| YAML document (named server) | `GET /{server}/docs.yaml` | that server's document as YAML (per-server mode) |
 | Viewer | `GET /docs` | a Swagger UI **or** ReDoc page rendering the document |
 | JSON Schemas (default server) | `GET /schemas.json` | the per-type [JSON Schemas](#serving-the-json-schemas), keyed by type |
 | JSON Schemas (named server) | `GET /{server}/schemas.json` | that server's schemas (per-server mode) |
 
-All paths are configurable (`json_api.openapi.json.path`, `…ui.path`,
-`…json_schema.path`). The document and the schemas are served as `application/json`;
-they are **not** JSON:API routes, so they carry no `application/vnd.api+json`
-negotiation.
+All paths are configurable (`json_api.openapi.json.path`, `…yaml.path`, `…ui.path`,
+`…json_schema.path`). The document and the schemas are served as `application/json`,
+and the YAML document as `application/yaml`; they are **not** JSON:API routes, so they
+carry no `application/vnd.api+json` negotiation.
 
 > **Try it live.** The `examples/music-catalog-symfony` app serves these routes. Run
 > `docker compose up` in that directory, then open **<http://localhost:8080/docs>** for
@@ -102,7 +104,7 @@ and **off in production** unless you opt in. The CLI export is always available.
 ```yaml
 json_api:
   openapi:
-    expose_in_prod: true   # serve /docs.json + /docs + /schemas.json outside kernel.debug too
+    expose_in_prod: true   # serve /docs.json + /docs.yaml + /docs + /schemas.json outside kernel.debug too
 ```
 
 The viewer route additionally honours `ui.enabled`, and the JSON Schema routes honour
@@ -137,6 +139,32 @@ does not negotiate that profile should treat the parameter as inert. For example
 The extension is produced by the core projection (so it is present on every served
 build path — the warmer, the controllers, and the CLI export alike); the bundle
 simply serves the projected document verbatim.
+
+### The YAML document
+
+The document is also served as YAML at `/docs.yaml`, and at `/{server}/docs.yaml` for a
+named server. In combined mode the one YAML document sits at the YAML path, as the JSON
+one sits at the JSON path. It needs `symfony/yaml`:
+
+```yaml
+json_api:
+  openapi:
+    yaml:
+      enabled: ~         # on when symfony/yaml is installed, off otherwise
+      path: /docs.yaml
+```
+
+`enabled: true` without `symfony/yaml` installed fails the container build and tells you
+to `composer require symfony/yaml`. The YAML routes sit behind the same expose gate as
+the JSON ones.
+
+The YAML is the JSON document in another syntax. Each request builds the JSON body,
+[serve decorators](#per-request-customisation), pruning and all, and dumps that as YAML.
+An empty object stays `{}`, an empty array stays `[]`, and a string that reads like a
+number or a boolean, such as `'200'` or `'true'`, is quoted, so a YAML parser reads back
+exactly what `docs.json` holds. The response carries the same `Cache-Control` and answers
+`If-None-Match` the same way, with its own ETag: the JSON document's tag with the format
+folded in, so a cache never hands out one for the other.
 
 ## Links and `describedby`
 
@@ -223,7 +251,17 @@ use haddowg\JsonApiBundle\Controller\OpenApiController;
 $routes->add('api_v5_docs', '/api/v5/docs.json')
     ->controller(OpenApiController::class)
     ->defaults(['server' => 'v5']);
+
+// The same document as YAML: the same controller with a format default.
+$routes->add('api_v5_docs_yaml', '/api/v5/docs.yaml')
+    ->controller(OpenApiController::class)
+    ->defaults(['server' => 'v5', 'format' => 'yaml']);
 ```
+
+A route with no `format` default serves JSON, so `describedby` only ever points at a JSON
+route. A hand-declared YAML route gets everything the bundle's does: the serve decorators,
+the cache keys and ETag, `application/yaml`, and the expose gate, which the controller
+checks itself for YAML. It answers `404` while `yaml.enabled` is off or the gate is closed.
 
 The third step reads the whole route collection, so it doesn't run per request. The
 warmer scans the routes at `cache:warmup` and writes the result beside the documents.
@@ -313,6 +351,46 @@ attribute off and let ReDoc send it.
 (the `OpenApiUiController::REDOC_VERSION_2` constant) switches the page to the 2.x
 loader, a classic `<script>` that defines the `Redoc` global. ReDoc 2 has no telemetry,
 so `redoc_telemetry` does nothing there. Any other value fails the container build.
+
+ReDoc offers the document for download through its `downloadUrls` option: a `JSON` entry,
+and a `YAML` one when [the YAML document](#the-yaml-document) is served. ReDoc 3 reads it
+as JSON from a `download-urls` attribute on the `<redoc>` tag. ReDoc 2 reads attributes
+only as strings, so its page mounts on a plain `<div>` and calls `Redoc.init` with the
+option. Swagger UI's page has no download list and is unchanged.
+
+The viewer shows the default server's document. A viewer route you declare yourself can
+set a `server` default to show a named server's, and its downloads follow:
+
+```php
+use haddowg\JsonApiBundle\Controller\OpenApiUiController;
+
+$routes->add('api_v5_viewer', '/api/v5/docs')
+    ->controller(OpenApiUiController::class)
+    ->defaults(['server' => 'v5']);
+```
+
+#### Your own documentation page
+
+The viewer gets its URLs from the public `DocumentUrls` service, and a page of your own
+can do the same instead of hard-coding them:
+
+```php
+use haddowg\JsonApiBundle\OpenApi\DocumentUrls;
+
+public function __construct(private readonly DocumentUrls $urls) {}
+
+$this->urls->json('v5');      // '/api/v5/docs.json'
+$this->urls->yaml('v5');      // '/api/v5/docs.yaml', or null when YAML isn't served
+$this->urls->downloads('v5'); // [['title' => 'JSON', 'url' => …], ['title' => 'YAML', 'url' => …]]
+```
+
+The server defaults to the default server, and in combined mode every server gets the
+combined document's URLs. Each URL is generated by the router, host-relative and with the
+current request's script base and any import prefix. It comes from the bundle's document
+route when the `jsonapi_openapi` routes are imported. Otherwise it comes from a route you
+declared to `OpenApiController` whose `server` and `format` defaults match, found the same
+way `describedby` finds the JSON one. Either method returns null when no route serves the
+document in that format.
 
 The page loads Swagger UI / ReDoc from a pinned public CDN (jsDelivr) and points it at
 the document route, generated via the router (so the spec URL honours any routing prefix
@@ -802,8 +880,8 @@ priority runs first, the highest-priority decorator gets the final mutation.
 `OpenApiFactoryInterface` runs once per deploy, so it can't see who is asking. When one
 deployment serves several hosts that each need their own view of the spec (absolute
 `servers` URLs, operations a tenant hasn't paid for, example hosts), implement
-`OpenApiServeDecoratorInterface` instead. It runs every time `docs.json` is served and
-gets the `Request`:
+`OpenApiServeDecoratorInterface` instead. It runs every time `docs.json` or `docs.yaml` is
+served and gets the `Request`:
 
 ```php
 use haddowg\JsonApi\OpenApi\OpenApi;
@@ -919,10 +997,11 @@ serve decorators the copy is never read, so the warning costs nothing.
 
 #### Caching at the edge
 
-Both `docs.json` and `schemas.json` always send an `ETag` and answer a matching
+`docs.json`, `docs.yaml` and `schemas.json` always send an `ETag` and answer a matching
 `If-None-Match` with a `304`. The comparison is weak, so the `W/` prefix a CDN adds when
 it compresses the body still matches. How the ETag is computed depends on the
-decorators:
+decorators, and `docs.yaml` hashes the format into the result, so it never shares a tag
+with `docs.json`:
 
 | Serve decorators | ETag | Cost of a 304 |
 |---|---|---|
@@ -946,7 +1025,7 @@ json_api:
 It is off by default, which leaves Symfony's `private` default in place. The docs routes
 are often behind a firewall in production, and a `public` default would let a shared
 cache hand an authenticated document to anyone. The responses carry no `Vary` header:
-the routes don't negotiate (always JSON), and a CDN already keys on the host. If a
+the routes don't negotiate (the format is in the path), and a CDN already keys on the host. If a
 decorator reads anything other than the host, such as a cookie or an `Authorization`
 header, keep `cache_control` private.
 
@@ -999,12 +1078,12 @@ when the API is reached through one.
 
 With several JSON:API [servers](multi-server-and-testing.md), the default is **one
 document per server** (`/docs.json` for the default server, `/{server}/docs.json` for
-each named server). Switch to a single union document with `multi_server: combined`:
+each named server, and the same paths ending `.yaml`). Switch to a single union document with `multi_server: combined`:
 
 ```yaml
 json_api:
   openapi:
-    multi_server: combined   # one document spanning every server, at the json path only
+    multi_server: combined   # one document spanning every server, at the json and yaml paths only
 ```
 
 ## Conformance: proving the document describes reality

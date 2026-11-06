@@ -460,7 +460,7 @@ final class JsonApiBundle extends AbstractBundle
                     ->end()
                 ->end()
                 ->enumNode('multi_server')
-                    ->info('per_server (default): one document per server, served at /{server}/docs.json. combined: a single document spanning every server at the json path only.')
+                    ->info('per_server (default): one document per server, served at /{server}/docs.json. combined: a single document spanning every server at the json path (and the yaml path) only.')
                     ->values(['per_server', 'combined'])
                     ->defaultValue('per_server')
                 ->end()
@@ -497,6 +497,24 @@ final class JsonApiBundle extends AbstractBundle
                         ->scalarNode('path')
                             ->info('The path the default server\'s document is served at. Default /docs.json.')
                             ->defaultValue('/docs.json')
+                        ->end()
+                    ->end()
+                ->end()
+                ->arrayNode('yaml')
+                    ->info('Serve the OpenAPI document as YAML (application/yaml) beside the JSON one, built from the same document with the same serve decorators and cache keys, behind the same expose gate. Needs symfony/yaml.')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->scalarNode('enabled')
+                            ->info('Register the YAML document routes: GET /docs.yaml, plus /{server}/docs.yaml per named server. Null (the default) turns it on when symfony/yaml is installed; true without symfony/yaml fails the container build.')
+                            ->defaultNull()
+                            ->validate()
+                                ->ifTrue(static fn(mixed $value): bool => $value !== null && !\is_bool($value))
+                                ->thenInvalid('json_api.openapi.yaml.enabled must be true, false or null, got %s.')
+                            ->end()
+                        ->end()
+                        ->scalarNode('path')
+                            ->info('The path the default server\'s YAML document is served at. Default /docs.yaml.')
+                            ->defaultValue('/docs.yaml')
                         ->end()
                     ->end()
                 ->end()
@@ -1262,9 +1280,24 @@ final class JsonApiBundle extends AbstractBundle
                 // Per-request customisation, never run by the CLI export.
                 '$serveDecorators' => tagged_iterator(self::OPENAPI_SERVE_DECORATOR_TAG),
                 '$cacheControl' => $openApiConfig->cacheControl,
+                '$yaml' => $openApiConfig->enabled && $openApiConfig->yamlEnabled,
+                '$exposeInProd' => $openApiConfig->exposeInProd,
             ])
             ->public()
             ->tag('controller.service_arguments');
+
+        // The JSON and YAML document URLs per server, for the viewer's downloads and for
+        // an app's own documentation page.
+        $services->set(\haddowg\JsonApiBundle\OpenApi\DocumentUrls::class)
+            ->args([
+                '$urlGenerator' => service('router'),
+                '$enabled' => $openApiConfig->enabled,
+                '$yaml' => $openApiConfig->yamlEnabled,
+                '$exposed' => $openApiConfig->exposeInProd ? true : '%kernel.debug%',
+                '$combined' => $openApiConfig->combined,
+                '$routes' => service(\haddowg\JsonApiBundle\OpenApi\DocumentRouteLocator::class),
+            ])
+            ->public();
 
         // The documentation viewer controller: renders Swagger UI or ReDoc
         // (one, per config) pointed at the configured json path; CDN-linked, overridable.
@@ -1277,6 +1310,7 @@ final class JsonApiBundle extends AbstractBundle
                 '$cacheControl' => $openApiConfig->cacheControl,
                 '$redocVersion' => $openApiConfig->ui->redocVersion,
                 '$redocTelemetry' => $openApiConfig->ui->redocTelemetry,
+                '$urls' => service(\haddowg\JsonApiBundle\OpenApi\DocumentUrls::class),
             ])
             ->public()
             ->tag('controller.service_arguments');
@@ -1312,6 +1346,8 @@ final class JsonApiBundle extends AbstractBundle
                 '$uiPath' => $openApiConfig->ui->path,
                 '$jsonSchemaEnabled' => $openApiConfig->jsonSchemaEnabled,
                 '$jsonSchemaPath' => $openApiConfig->jsonSchemaPath,
+                '$yamlEnabled' => $openApiConfig->yamlEnabled,
+                '$yamlPath' => $openApiConfig->yamlPath,
             ])
             ->tag('routing.loader');
 

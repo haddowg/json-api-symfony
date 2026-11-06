@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Functional\OpenApiServe;
 
 use haddowg\JsonApiBundle\OpenApi\ArtifactStore;
+use haddowg\JsonApiBundle\OpenApi\DocumentFormat;
 use haddowg\JsonApiBundle\Tests\Functional\App\OpenApi\Serve\OpenApiServeTestKernel;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
@@ -131,5 +132,24 @@ final class OpenApiServePlainTest extends OpenApiServeTestCase
         \sort($expected);
 
         return $directives === $expected ? OpenApiServeTestKernel::CACHE_CONTROL : $value;
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    public function theWarmedArtifactIsServedAsYamlTaggedFromItsStoredHash(): void
+    {
+        $this->warm();
+        $hash = $this->store()->readHash('default');
+        self::assertIsString($hash);
+
+        $json = $this->get('/docs.json');
+        $yaml = $this->get('/docs.yaml');
+        self::assertYamlMatchesJson($json, $yaml);
+        self::assertSame(self::quoted($hash), $json->getEtag());
+        self::assertSame(self::quoted(DocumentFormat::Yaml->etag($hash)), $yaml->getEtag());
+
+        $notModified = $this->get('/docs.yaml', headers: ['If-None-Match' => $this->etagOf($yaml)]);
+        self::assertSame(304, $notModified->getStatusCode());
+        self::assertSame(200, $this->get('/docs.yaml', headers: ['If-None-Match' => $this->etagOf($json)])->getStatusCode());
     }
 }

@@ -17,6 +17,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Symfony\Component\HttpKernel\KernelInterface;
+use Symfony\Component\Yaml\Yaml;
 
 /**
  * Shared scaffolding for the serve-time customisation suites: boots
@@ -125,6 +126,21 @@ abstract class OpenApiServeTestCase extends JsonApiFunctionalTestCase
         self::assertIsArray($value);
 
         return $value;
+    }
+
+    /**
+     * Asserts a YAML response carries the same document as a JSON one, and is served as
+     * YAML with the same `Cache-Control`.
+     */
+    protected static function assertYamlMatchesJson(Response $json, Response $yaml): void
+    {
+        self::assertSame(200, $yaml->getStatusCode());
+        self::assertSame('application/yaml', $yaml->headers->get('Content-Type'));
+        self::assertSame($json->headers->get('Cache-Control'), $yaml->headers->get('Cache-Control'));
+        self::assertSame(
+            \json_encode(\json_decode((string) $json->getContent(), false, 512, \JSON_THROW_ON_ERROR), \JSON_THROW_ON_ERROR),
+            \json_encode(Yaml::parse((string) $yaml->getContent(), Yaml::PARSE_OBJECT_FOR_MAP), \JSON_THROW_ON_ERROR),
+        );
     }
 
     protected function assertValidOpenApi(Response $response): void

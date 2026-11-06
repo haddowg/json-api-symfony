@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Functional\OpenApiServe;
 
 use haddowg\JsonApiBundle\OpenApi\ArtifactStore;
+use haddowg\JsonApiBundle\OpenApi\DocumentFormat;
 use haddowg\JsonApiBundle\Tests\Functional\App\OpenApi\Serve\FeatureGateDecorator;
 use haddowg\JsonApiBundle\Tests\Functional\App\OpenApi\Serve\UnkeyedDecorator;
 use haddowg\JsonApiBundle\Tests\Functional\App\OpenApi\Serve\UnkeyedSchemaDecorator;
@@ -57,5 +58,19 @@ final class OpenApiServeUnkeyedTest extends OpenApiServeTestCase
         $notModified = $this->get('/schemas.json', 'one.test', ['If-None-Match' => $this->etagOf($response)]);
         self::assertSame(304, $notModified->getStatusCode());
         self::assertSame(2, UnkeyedSchemaDecorator::$decorated);
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    public function theYamlEtagFoldsTheFormatIntoTheHashOfTheJsonBody(): void
+    {
+        $json = $this->get('/docs.json', 'one.test');
+        $yaml = $this->get('/docs.yaml', 'one.test');
+        self::assertYamlMatchesJson($json, $yaml);
+        self::assertSame('Served to one.test', self::arr($this->json($json)['info'] ?? null)['description'] ?? null);
+
+        self::assertSame(self::quoted(DocumentFormat::Yaml->etag(ArtifactStore::hash((string) $json->getContent()))), $yaml->getEtag());
+        self::assertNotSame($json->getEtag(), $yaml->getEtag());
+        self::assertSame(304, $this->get('/docs.yaml', 'one.test', ['If-None-Match' => $this->etagOf($yaml)])->getStatusCode());
     }
 }

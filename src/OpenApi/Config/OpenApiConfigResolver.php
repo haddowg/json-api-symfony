@@ -15,7 +15,9 @@ use haddowg\JsonApi\OpenApi\SecurityScheme;
 use haddowg\JsonApi\OpenApi\Server;
 use haddowg\JsonApi\OpenApi\Tag;
 use haddowg\JsonApiBundle\Controller\OpenApiUiController;
+use haddowg\JsonApiBundle\OpenApi\DocumentFormat;
 use haddowg\JsonApiBundle\OpenApi\Metadata\ServerDocumentConfig;
+use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 
 /**
  * Resolves the `json_api.openapi.*` configuration array (already normalised by the
@@ -35,6 +37,16 @@ use haddowg\JsonApiBundle\OpenApi\Metadata\ServerDocumentConfig;
  */
 final class OpenApiConfigResolver
 {
+    private readonly bool $yamlAvailable;
+
+    /**
+     * @param ?bool $yamlAvailable whether symfony/yaml is installed; null checks
+     */
+    public function __construct(?bool $yamlAvailable = null)
+    {
+        $this->yamlAvailable = $yamlAvailable ?? DocumentFormat::yamlAvailable();
+    }
+
     /**
      * @param array<string, mixed> $config  the full `json_api` config array
      * @param list<string>         $servers the declared server names
@@ -86,7 +98,40 @@ final class OpenApiConfigResolver
             cacheControl: $this->scalarOrNull($openapi, 'cache_control'),
             documentUrl: $this->scalarOrNull($openapi, 'document_url'),
             serveAllowedClasses: $this->serveAllowedClasses($openapi),
+            yamlEnabled: $this->yamlEnabled($openapi),
+            yamlPath: $this->yamlPath($openapi),
         );
+    }
+
+    /**
+     * @param array<string, mixed> $openapi
+     *
+     * @throws InvalidConfigurationException when YAML is turned on without symfony/yaml
+     */
+    private function yamlEnabled(array $openapi): bool
+    {
+        $yaml = \is_array($openapi['yaml'] ?? null) ? $openapi['yaml'] : [];
+        $enabled = $yaml['enabled'] ?? null;
+        if (!\is_bool($enabled)) {
+            return $this->yamlAvailable;
+        }
+
+        if ($enabled && !$this->yamlAvailable) {
+            throw new InvalidConfigurationException('json_api.openapi.yaml.enabled is true, but serving the OpenAPI document as YAML needs symfony/yaml. Install it with "composer require symfony/yaml", or set json_api.openapi.yaml.enabled to false.');
+        }
+
+        return $enabled;
+    }
+
+    /**
+     * @param array<string, mixed> $openapi
+     */
+    private function yamlPath(array $openapi): string
+    {
+        $yaml = \is_array($openapi['yaml'] ?? null) ? $openapi['yaml'] : [];
+        $path = $this->scalarOrNull($yaml, 'path') ?? '/docs.yaml';
+
+        return '/' . \ltrim($path, '/');
     }
 
     /**

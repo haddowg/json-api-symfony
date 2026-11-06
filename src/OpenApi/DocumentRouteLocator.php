@@ -16,7 +16,8 @@ use Symfony\Component\Routing\RouterInterface;
  * routes aren't registered, because the app routes {@see OpenApiController} itself.
  *
  * A route serves a server's document when its `_controller` is the controller (the class,
- * `Class::__invoke`, `Class:__invoke` or `[Class, '__invoke']`) and its `server` route
+ * `Class::__invoke`, `Class:__invoke` or `[Class, '__invoke']`), its `format` default names
+ * the format looked for (none means JSON, see {@see DocumentFormat}), and its `server` route
  * attribute is that server: a `server` default naming it, no `server` at all for the
  * default server, or a `{server}` path variable whose requirement accepts the name. In
  * combined mode every such route serves the one document. A route with a fixed server
@@ -36,8 +37,8 @@ use Symfony\Component\Routing\RouterInterface;
  */
 final class DocumentRouteLocator
 {
-    /** @var array<string, DocumentRoute|null>|null */
-    private ?array $routes = null;
+    /** @var array<string, array<string, DocumentRoute|null>> the scan per format */
+    private array $routes = [];
 
     /**
      * @param list<string> $servers  the declared server names
@@ -56,9 +57,9 @@ final class DocumentRouteLocator
      *
      * @return DocumentRoute|null
      */
-    public function find(string $server): ?array
+    public function find(string $server, DocumentFormat $format = DocumentFormat::Json): ?array
     {
-        return $this->routes()[$this->combined ? OpenApiController::COMBINED_KEY : $server] ?? null;
+        return $this->routes($format)[$this->combined ? OpenApiController::COMBINED_KEY : $server] ?? null;
     }
 
     /**
@@ -67,9 +68,9 @@ final class DocumentRouteLocator
      *
      * @return array<string, DocumentRoute|null>
      */
-    public function rescan(): array
+    public function rescan(DocumentFormat $format = DocumentFormat::Json): array
     {
-        return $this->routes = $this->scan();
+        return $this->routes[$format->value] = $this->scan($format);
     }
 
     /**
@@ -78,19 +79,19 @@ final class DocumentRouteLocator
      *
      * @return array<string, DocumentRoute|null>
      */
-    private function scan(): array
+    private function scan(DocumentFormat $format): array
     {
         $collection = $this->router->getRouteCollection()->all();
         $mounted = self::mountedServers($collection);
         $servers = \array_values(\array_filter($this->servers, static fn(string $server): bool => isset($mounted[$server])));
 
         if ($this->combined) {
-            return $servers === [] ? [] : [OpenApiController::COMBINED_KEY => $this->firstFor($collection, $this->servers[0] ?? ServerProvider::DEFAULT_SERVER)];
+            return $servers === [] ? [] : [OpenApiController::COMBINED_KEY => $this->firstFor($collection, $this->servers[0] ?? ServerProvider::DEFAULT_SERVER, $format)];
         }
 
         $routes = [];
         foreach ($servers as $server) {
-            $routes[$server] = $this->firstFor($collection, $server);
+            $routes[$server] = $this->firstFor($collection, $server, $format);
         }
 
         return $routes;
@@ -121,25 +122,25 @@ final class DocumentRouteLocator
     /**
      * @return array<string, DocumentRoute|null>
      */
-    private function routes(): array
+    private function routes(DocumentFormat $format): array
     {
-        if ($this->routes !== null) {
-            return $this->routes;
+        if (isset($this->routes[$format->value])) {
+            return $this->routes[$format->value];
         }
 
-        $routes = $this->debug ? null : $this->store->readDocumentRoutes();
+        $routes = $this->debug ? null : $this->store->readDocumentRoutes($format);
         if ($routes === null) {
-            $routes = $this->scan();
+            $routes = $this->scan($format);
             if (!$this->debug) {
                 try {
-                    $this->store->writeDocumentRoutes($routes);
+                    $this->store->writeDocumentRoutes($routes, $format);
                 } catch (\Throwable) {
                     // A read-only cache dir only costs this process the scan it just did.
                 }
             }
         }
 
-        return $this->routes = $routes;
+        return $this->routes[$format->value] = $routes;
     }
 
     /**
@@ -147,11 +148,11 @@ final class DocumentRouteLocator
      *
      * @return DocumentRoute|null
      */
-    private function firstFor(array $collection, string $server): ?array
+    private function firstFor(array $collection, string $server, DocumentFormat $format): ?array
     {
         $parametric = [];
         foreach ($collection as $name => $route) {
-            if (!self::servesDocument($route->getDefault('_controller'))) {
+            if (!self::servesDocument($route->getDefault('_controller')) || DocumentFormat::ofRoute($route->getDefault(DocumentFormat::ROUTE_DEFAULT)) !== $format) {
                 continue;
             }
 

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\OpenApi;
 
 use haddowg\JsonApiBundle\Server\ServerProvider;
-use Symfony\Component\Routing\Exception\ExceptionInterface as RoutingException;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 
 /**
@@ -24,18 +23,22 @@ final readonly class DocumentUrlProvider
 {
     public const string SERVER_PLACEHOLDER = '{server}';
 
+    private DocumentUrls $urls;
+
     /**
      * @param bool    $enabled       `json_api.openapi.enabled` and `json_api.openapi.describedby` both on
      * @param bool    $combined      `json_api.openapi.multi_server === combined`, where every server shares the one document
      * @param ?string $configuredUrl `json_api.openapi.document_url`
      */
     public function __construct(
-        private UrlGeneratorInterface $urlGenerator,
+        UrlGeneratorInterface $urlGenerator,
         private bool $enabled = true,
         private bool $combined = false,
         private ?string $configuredUrl = null,
-        private ?DocumentRouteLocator $routes = null,
-    ) {}
+        ?DocumentRouteLocator $routes = null,
+    ) {
+        $this->urls = new DocumentUrls($urlGenerator, combined: $combined, routes: $routes);
+    }
 
     public function forServer(?string $server = null): ?string
     {
@@ -44,30 +47,11 @@ final readonly class DocumentUrlProvider
         }
 
         $server ??= ServerProvider::DEFAULT_SERVER;
-        $name = $this->combined ? 'combined' : $server;
 
         if ($this->configuredUrl !== null) {
-            return \str_replace(self::SERVER_PLACEHOLDER, $name, $this->configuredUrl);
+            return \str_replace(self::SERVER_PLACEHOLDER, $this->combined ? 'combined' : $server, $this->configuredUrl);
         }
 
-        try {
-            if (!$this->combined && $server !== ServerProvider::DEFAULT_SERVER) {
-                return $this->urlGenerator->generate('jsonapi.openapi.server', ['server' => $server]);
-            }
-
-            return $this->urlGenerator->generate('jsonapi.openapi.default');
-        } catch (RoutingException) {
-        }
-
-        $route = $this->routes?->find($server);
-        if ($route === null) {
-            return null;
-        }
-
-        try {
-            return $this->urlGenerator->generate($route['route'], $route['parameters']);
-        } catch (RoutingException) {
-            return null;
-        }
+        return $this->urls->json($server);
     }
 }
