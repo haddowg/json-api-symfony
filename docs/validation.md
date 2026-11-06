@@ -498,7 +498,10 @@ from the interface, but only when `symfony/validator` is installed):
 
 `ConstraintTranslator` consults the registered translators in priority order (first
 `supports()` match wins) for anything it does not translate itself; if none
-matches, it raises a clear `LogicException` naming the constraint class. This is the
+matches, it raises a clear `LogicException` naming the constraint class. The one
+exception is a [composite constraint you author](composite-attributes.md#authoring-your-own-composite-constraint),
+whose `contribute()` adds a `oneOf`, `anyOf` or `allOf`: with no translator it
+documents its shape and validates nothing. This is the
 typed replacement for the removed `$id`-keyed `Custom` hatch — a translator matches
 on the constraint's **class**, not a string id. (An entity-level custom rule uses
 the same seam, additionally implementing `EntityConstraintInterface`.)
