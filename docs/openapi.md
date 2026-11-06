@@ -155,8 +155,8 @@ json_api:
 ```
 
 `enabled: true` without `symfony/yaml` installed fails the container build and tells you
-to `composer require symfony/yaml`. The YAML routes sit behind the same expose gate as
-the JSON ones.
+to `composer require symfony/yaml`. The bundle registers the YAML routes behind the same
+expose gate as the JSON ones.
 
 The YAML is the JSON document in another syntax. Each request builds the JSON body,
 [serve decorators](#per-request-customisation), pruning and all, and dumps that as YAML.
@@ -164,7 +164,8 @@ An empty object stays `{}`, an empty array stays `[]`, and a string that reads l
 number or a boolean, such as `'200'` or `'true'`, is quoted, so a YAML parser reads back
 exactly what `docs.json` holds. The response carries the same `Cache-Control` and answers
 `If-None-Match` the same way, with its own ETag: the JSON document's tag with the format
-folded in, so a cache never hands out one for the other.
+folded in, so a cache never hands out one for the other. The `--format=yaml` export and the
+`public_path` `.yaml` file are dumped the same way.
 
 ## Links and `describedby`
 
@@ -260,8 +261,9 @@ $routes->add('api_v5_docs_yaml', '/api/v5/docs.yaml')
 
 A route with no `format` default serves JSON, so `describedby` only ever points at a JSON
 route. A hand-declared YAML route gets everything the bundle's does: the serve decorators,
-the cache keys and ETag, `application/yaml`, and the expose gate, which the controller
-checks itself for YAML. It answers `404` while `yaml.enabled` is off or the gate is closed.
+the cache keys and ETag, and `application/yaml`. It answers `404` while `yaml.enabled` is
+off. Like a hand-declared JSON route it isn't held to the expose gate, which only decides
+whether the bundle registers its own routes, so expose it as you route it.
 
 The third step reads the whole route collection, so it doesn't run per request. The
 warmer scans the routes at `cache:warmup` and writes the result beside the documents.

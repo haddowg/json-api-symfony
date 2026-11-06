@@ -1281,7 +1281,6 @@ final class JsonApiBundle extends AbstractBundle
                 '$serveDecorators' => tagged_iterator(self::OPENAPI_SERVE_DECORATOR_TAG),
                 '$cacheControl' => $openApiConfig->cacheControl,
                 '$yaml' => $openApiConfig->enabled && $openApiConfig->yamlEnabled,
-                '$exposeInProd' => $openApiConfig->exposeInProd,
             ])
             ->public()
             ->tag('controller.service_arguments');
@@ -1293,7 +1292,6 @@ final class JsonApiBundle extends AbstractBundle
                 '$urlGenerator' => service('router'),
                 '$enabled' => $openApiConfig->enabled,
                 '$yaml' => $openApiConfig->yamlEnabled,
-                '$exposed' => $openApiConfig->exposeInProd ? true : '%kernel.debug%',
                 '$combined' => $openApiConfig->combined,
                 '$routes' => service(\haddowg\JsonApiBundle\OpenApi\DocumentRouteLocator::class),
             ])

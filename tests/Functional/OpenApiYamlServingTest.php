@@ -114,17 +114,19 @@ final class OpenApiYamlServingTest extends \Symfony\Bundle\FrameworkBundle\Test\
     }
 
     #[Test]
-    public function theExposeGateHoldsTheYamlDocumentAsItDoesTheJson(): void
+    public function theExposeGateTreatsTheYamlDocumentAsItDoesTheJson(): void
     {
         $hidden = $this->boot(new OpenApiMultiServerTestKernel('test', false, exposed: false));
         self::assertNotContains('/docs.yaml', $this->paths($hidden));
         self::assertNotContains('/docs.json', $this->paths($hidden));
+        self::assertNull($this->urls($hidden)->yaml());
         $hidden->shutdown();
 
-        // A route the app declares by hand is still held to it.
+        // A route the app declares itself is exposed as the app routes it, for either format.
         $custom = $this->boot(new OpenApiMultiServerTestKernel('test', false, docsRoutes: 'custom_yaml', exposed: false));
-        self::assertSame(404, $this->get($custom, '/api/v5/docs.yaml')->getStatusCode());
-        self::assertNull($this->urls($custom)->yaml('admin'));
+        self::assertSame(200, $this->get($custom, '/api/v5/docs.json')->getStatusCode());
+        self::assertSame(200, $this->get($custom, '/api/v5/docs.yaml')->getStatusCode());
+        self::assertSame('/api/v5/docs.yaml', $this->urls($custom)->yaml('admin'));
         $custom->shutdown();
 
         // kernel.debug opens the gate.

@@ -33,7 +33,9 @@ use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
  *  - `unkeyed`: the keyed set plus one decorator without a key, per document kind;
  *  - `objects`: the keyed set over a document holding a `DateTimeImmutable` value, which
  *    the serve artifact can't cache, with a logger keeping the warmer's warnings;
- *  - `objects_allowed`: the same, with `DateTimeImmutable` in `serve_allowed_classes`.
+ *  - `objects_allowed`: the same, with `DateTimeImmutable` in `serve_allowed_classes`;
+ *  - `public_op`: no serve decorators, `GET /products` marked `security: []` and a
+ *    `public_path` under the cache dir, for the YAML encodings.
  *
  * Every environment configures `cache_control` and runs behind a stateful, lazy firewall
  * with sessions enabled, so the no-cookie guarantee is tested where a cookie could appear.
@@ -105,6 +107,9 @@ final class OpenApiServeTestKernel extends Kernel
         if ($this->environment === 'objects_allowed') {
             $openapi['serve_allowed_classes'] = [\DateTimeImmutable::class];
         }
+        if ($this->environment === 'public_op') {
+            $openapi['public_path'] = $this->getCacheDir() . '/public';
+        }
 
         $container->extension('json_api', [
             'base_uri' => 'https://catalog.test',
@@ -129,7 +134,10 @@ final class OpenApiServeTestKernel extends Kernel
         $services->set(FeatureMarkingDecorator::class);
         $services->set(TokenReadingListener::class);
 
-        if ($this->environment !== 'plain') {
+        if ($this->environment === 'public_op') {
+            $services->set(PublicOperationDecorator::class);
+        }
+        if (!\in_array($this->environment, ['plain', 'public_op'], true)) {
             $services->set(HostServersDecorator::class);
             $services->set(FeatureGateDecorator::class);
             $services->set(FeatureGateSchemaDecorator::class);

@@ -20,22 +20,21 @@ use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
  * host-relative and carries the current request's script base and any import prefix. In
  * combined mode every server gets the one combined document's URLs.
  *
- * {@see yaml()} is null when YAML isn't served (`json_api.openapi.yaml.enabled` off, or
- * the expose gate closed), and either URL is null when no route serves the document.
+ * {@see yaml()} is null while `json_api.openapi.yaml.enabled` is off, and either URL is
+ * null when no route serves the document, as when the expose gate keeps the bundle's
+ * routes out.
  */
 final readonly class DocumentUrls
 {
     /**
      * @param bool $enabled  `json_api.openapi.enabled`
      * @param bool $yaml     `json_api.openapi.yaml.enabled`
-     * @param bool $exposed  the expose gate: `kernel.debug` or `json_api.openapi.expose_in_prod`
      * @param bool $combined `json_api.openapi.multi_server === combined`
      */
     public function __construct(
         private UrlGeneratorInterface $urlGenerator,
         private bool $enabled = true,
         private bool $yaml = false,
-        private bool $exposed = true,
         private bool $combined = false,
         private ?DocumentRouteLocator $routes = null,
     ) {}
@@ -55,7 +54,7 @@ final readonly class DocumentUrls
      */
     public function yaml(?string $server = null): ?string
     {
-        return $this->enabled && $this->yaml && $this->exposed ? $this->url(DocumentFormat::Yaml, $server ?? ServerProvider::DEFAULT_SERVER) : null;
+        return $this->enabled && $this->yaml ? $this->url(DocumentFormat::Yaml, $server ?? ServerProvider::DEFAULT_SERVER) : null;
     }
 
     /**

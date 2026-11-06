@@ -4,4 +4,4 @@
 
 ## Consequences
 
-The YAML route checks `yaml.enabled` and the expose gate in the controller, because a hand-declared route skips the loader's gate. The JSON route still relies on the loader alone, as before. The export command and the `public_path` file still dump the value objects' arrays, so their YAML can differ from `docs.yaml` on empty lists.
+The export command and the `public_path` file dump YAML the same way. Dumping the arrays with `DUMP_EMPTY_ARRAY_AS_SEQUENCE` alone would only swap the bug, since the arrays can't tell an empty object from an empty list. Like the JSON route, a hand-declared YAML route isn't held to the expose gate; the controller only answers `404` while `yaml.enabled` is off. JSON ETags are unchanged.

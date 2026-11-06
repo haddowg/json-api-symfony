@@ -11,8 +11,9 @@ use Symfony\Component\Yaml\Yaml;
  * The encodings the {@see \haddowg\JsonApiBundle\Controller\OpenApiController} serves a
  * document in, picked by the `format` route default (`json` when a route sets none).
  *
- * Every format is encoded from the JSON body the controller builds, so the YAML document
- * is the JSON one in another syntax: the same decorators, pruning and cache keys.
+ * Every format is encoded from the JSON body, so the YAML document is the JSON one in
+ * another syntax: served, it has the same decorators, pruning and cache keys, and the
+ * export command and the `public_path` file dump it the same way.
  */
 enum DocumentFormat: string
 {

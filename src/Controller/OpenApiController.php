@@ -26,9 +26,8 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
  * The `format` route default picks the encoding ({@see DocumentFormat}): `json` when a
  * route sets none, or `yaml`. Both are encoded from one JSON body, built the same way, so
  * the YAML document has the same decorators, pruning and cache keys as the JSON one. Its
- * ETag folds the format in, and it is served as `application/yaml`. YAML is served only
- * when `json_api.openapi.yaml.enabled` is on and the expose gate is open, which the
- * controller checks itself so a route an app declares by hand is held to it too.
+ * ETag folds the format in, and it is served as `application/yaml`. YAML answers `404`
+ * while `json_api.openapi.yaml.enabled` is off, on any route.
  *
  * It serves the **pre-built artifact** the {@see \haddowg\JsonApiBundle\OpenApi\DocumentWarmer}
  * wrote at `cache:warmup` (an `O(file read)`, never a per-request build). When the
@@ -45,7 +44,8 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
  *
  * The route is registered only when `kernel.debug` is true **or**
  * `json_api.openapi.expose_in_prod` is true (the loader's expose gate), so the
- * controller doesn't re-check exposure for JSON. It does for YAML, as said above.
+ * controller doesn't re-check exposure, for either format. A route an app declares itself
+ * is exposed as the app routes it.
  *
  * In **combined** multi-server mode (`json_api.openapi.multi_server: combined`) the
  * loader emits only the json-path and yaml-path routes, and this controller serves the single
@@ -78,7 +78,6 @@ final class OpenApiController
      * @param iterable<OpenApiServeDecoratorInterface> $serveDecorators the tagged serve decorators, highest priority first
      * @param ?string                                  $cacheControl    `json_api.openapi.cache_control`
      * @param bool                                     $yaml            `json_api.openapi.enabled` and `json_api.openapi.yaml.enabled` both on
-     * @param bool                                     $exposeInProd    `json_api.openapi.expose_in_prod`
      */
     public function __construct(
         private readonly DocumentFactory $documents,
@@ -88,7 +87,6 @@ final class OpenApiController
         iterable $serveDecorators = [],
         ?string $cacheControl = null,
         private readonly bool $yaml = false,
-        private readonly bool $exposeInProd = false,
     ) {
         $this->decorators = ConditionalResponder::order($serveDecorators);
         $this->keyed = ConditionalResponder::allKeyed($this->decorators);
@@ -155,7 +153,7 @@ final class OpenApiController
     private function encoding(string $format): DocumentFormat
     {
         $encoding = DocumentFormat::tryFrom($format);
-        if ($encoding === null || ($encoding === DocumentFormat::Yaml && !($this->yaml && ($this->debug || $this->exposeInProd)))) {
+        if ($encoding === null || ($encoding === DocumentFormat::Yaml && !$this->yaml)) {
             throw new NotFoundHttpException(\sprintf('The OpenAPI document is not served as "%s".', $format));
         }
 
