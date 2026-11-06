@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.30.0](https://github.com/haddowg/json-api-symfony/compare/v1.29.0...v1.30.0) (2026-11-06)
+
+
+### Features
+
+* serve the OpenAPI document as YAML ([#296](https://github.com/haddowg/json-api-symfony/issues/296)) ([3a78568](https://github.com/haddowg/json-api-symfony/commit/3a78568132f74e2707bf1493f3d5184a0b448587))
+
+
+### Bug Fixes
+
+* let an authored composite constraint skip the translator ([#298](https://github.com/haddowg/json-api-symfony/issues/298)) ([6ad3719](https://github.com/haddowg/json-api-symfony/commit/6ad3719e4355c82cd135b1d17fa561fb59df7123))
+
 ## [1.29.0](https://github.com/haddowg/json-api-symfony/compare/v1.28.4...v1.29.0) (2026-11-06)
 
 
