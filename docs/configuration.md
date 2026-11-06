@@ -340,14 +340,13 @@ query was ignored. Strict mode turns that silent failure into a loud one.
 
 A family is **recognized** when its base name is:
 
-- a reserved JSON:API family — `include`, `fields`, `filter`, `sort`, `page` (their
-  *internal* key validation is unchanged: an unknown `filter[…]`/`sort` key or a bad
-  `page` still `400`s on its own);
-- a key the resolved primary resource declares;
+- a reserved JSON:API family — `include`, `fields`, `filter`, `sort`, `page`,
+  `profile` (their *internal* key validation is unchanged: an unknown `filter[…]`/`sort`
+  key or a bad `page` still `400`s on its own);
 - a [negotiated profile](relationships.md)'s keyword — the Relationship Queries
   profile's `relatedQuery`/`rQ` and the Countable profile's `withCount`
-  are recognized only when the client negotiated the relevant profile, so addressing
-  one without negotiation now `400`s rather than being ignored;
+  are recognized only when the profile is registered and the client negotiated it in
+  `Accept`, so addressing one without negotiation `400`s rather than being ignored;
 - any param an app registers via `Server::withCustomQueryParameter()`.
 
 Anything else is a `400` (`QUERY_PARAM_UNRECOGNIZED`, `source.parameter` = the

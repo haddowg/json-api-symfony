@@ -250,7 +250,7 @@ final class AuditingOperationHandler implements OperationHandlerInterface
 
     public function handle(
         JsonApiOperationInterface $operation,
-    ): DataResponse|MetaResponse|RelatedResponse|IdentifierResponse|NoContentResponse|AtomicResultsResponse|ErrorResponse {
+    ): DataResponse|MetaResponse|RelatedResponse|IdentifierResponse|NoContentResponse|AcceptedResponse|SeeOtherResponse|AtomicResultsResponse|ErrorResponse|RawResponse {
         // intercept the operations you care about; delegate the rest:
         if ($operation instanceof CreateResourceOperation) {
             // … audit the write …
@@ -271,10 +271,11 @@ Reproduce core's `OperationHandlerInterface::handle()` exactly — a single
 union **verbatim** from
 [`OperationHandlerInterface`](https://github.com/haddowg/json-api/blob/main/src/Operation/OperationHandlerInterface.php)
 rather than hand-retyping it: the set of response value objects grows as core gains
-response shapes (the `AtomicResultsResponse` above arrived with
-[atomic operations](atomic-operations.md)), and a decorator that narrows the union —
-omitting a member core can still return — breaks that operation with a `TypeError` the
-moment it fires, even though the rest works. Dispatch on the operation type with
+response shapes. The handler returns every member: `AtomicResultsResponse` for
+[atomic operations](atomic-operations.md), `AcceptedResponse` and `SeeOtherResponse`
+for [async processing](async.md), and `RawResponse` for a [raw action response](actions.md#raw-responses-csv-pdf-plain-json). A
+decorator that narrows the union, omitting a member core can still return, breaks
+that operation with a `TypeError` the moment it fires, even though the rest works. Dispatch on the operation type with
 `instanceof`, as [`CrudOperationHandler`](../src/Operation/CrudOperationHandler.php)
 does, and delegate everything you do not intercept to the inner handler so every
 member flows through untouched — see core

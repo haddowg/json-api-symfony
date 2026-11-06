@@ -56,6 +56,11 @@ update's target is loaded, before validation or any of the body is applied, carr
 the entity as stored. The bundle's security subscriber evaluates `securityUpdate`
 there as well as at `BeforeUpdate`.
 
+`BeforeRelationshipCommit` is an event only as well. It fires once a relationship
+change has been applied to the parent and before it commits: on the relationship
+endpoints, and once for each relationship a whole-resource update body sets. Throwing
+from a subscriber aborts the write.
+
 A create or update whose body carries `data.relationships` also dispatches
 `BeforeEmbeddedRelationshipWriteEvent` (an event only, no hook method) once per
 relationship, before the persister applies it. The bundle's security subscriber uses
@@ -81,13 +86,19 @@ public function beforeUpdate(object $entity, object $original, HookContext $cont
 
 The same snapshot rides the event: `BeforeUpdateEvent` exposes `$original` alongside
 `$entity` (the other before events carry only the entity, since there is nothing yet
-to diff against). All other hook methods take just `(object $entity, HookContext
-$context)`.
+to diff against). The other hook methods differ only in what comes before the
+`HookContext`:
+
+- `beforeSave` and `afterSave` take `(object $entity, bool $creating, HookContext $context)`.
+- `afterFetchCollection` takes `(array $items, HookContext $context)`, the fetched items.
+- `beforeRelationshipMutate` and `afterRelationshipMutate` take the parent entity.
+- The rest take `(object $entity, HookContext $context)`.
 
 ## Two semantics: *before* aborts, *after* replaces
 
 - A **before** hook (`serving`, `BeforeSave`, `BeforeCreate`, `BeforeUpdate`,
-  `BeforeDelete`, `BeforeRelationshipMutate`, `BeforeRelationshipCommit`) receives the entity **mutable** and
+  `BeforeDelete`, `BeforeRelationshipMutate`, and the event-only
+  `BeforeRelationshipCommit`) receives the entity **mutable** and
   runs *before* the persister commits. Two things you can do:
   - **Mutate the entity** — a field you set is persisted by the ensuing flush.
   - **Abort** — `throw` a core `JsonApiExceptionInterface`. The route-scoped
@@ -212,10 +223,11 @@ final class AlbumResource extends AbstractResource implements ResourceLifecycleH
 The built-in [`ResourceHookSubscriber`](../src/EventListener/ResourceHookSubscriber.php)
 listens to every lifecycle event, resolves the resource for the event's type, and
 — when it implements the interface — calls the matching method, passing the entity
-and a [`HookContext`](../src/Hook/HookContext.php) (the request, server name, type,
-and the relation/linkage/mode for the relationship hooks). The one exception to the
-`(object $entity, HookContext $context)` shape is `beforeUpdate`, which also receives
-the pre-change `$original` snapshot (above). A before method throws to abort; an
+and a [`HookContext`](../src/Hook/HookContext.php). The context is a readonly value
+object with public properties, not getters: `$context->request`,
+`$context->serverName`, `$context->type`, and for the relationship hooks
+`$context->relation`, `$context->linkage` and `$context->mode`. The method signatures
+are listed [above](#beforeupdate-carries-the-pre-change-snapshot). A before method throws to abort; an
 after method returns a response to replace it. A resource that does not implement the
 interface (or a bare serializer/hydrator pair with no resource) is untouched.
 

@@ -1,7 +1,7 @@
 # The Symfony Validator bridge and the optional schema linter
 
 Core declares a rich constraint vocabulary on your fields — `required()`, `min()`,
-`minItems()`, `emailFormat()`, `compareWith()`, `when()` — but it **never executes
+`minItems()`, `email()`, `compareWith()`, `when()` — but it **never executes
 it**. The constraints are metadata: a serializer/hydrator reads them for
 documentation and schema generation, not enforcement. This bundle supplies the
 missing half — a **Symfony Validator bridge** that translates that vocabulary into

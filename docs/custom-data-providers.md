@@ -442,6 +442,9 @@ new InMemoryDataProvider(
     ?\Closure $identify = null, // reads an item's id; required ONLY for writes
     ?\Closure $assignId = null, // writes a minted id onto an item (store-provided/auto-increment ids on create)
     string $idColumn = 'id',    // the member the cursor (keyset) page reads as the PK tiebreaker
+    iterable $filterArms = [],  // ArrayFilterArmInterface arms for custom filters
+    iterable $sortArms = [],    // ArraySortArmInterface arms for custom sorts
+    ?InMemorySnapshotCoordinator $coordinator = null, // shared across stores for atomic rollback
 );
 ```
 
@@ -449,7 +452,11 @@ Reads need only the seed map; the `$identify` closure is consulted only when a
 persister writes through the store, and `$assignId`/`$idColumn` are write-path /
 keyset concerns — `$assignId` lets the shared store mint a store-provided
 (auto-increment) id on an id-less create, and `$idColumn` names the model member the
-cursor (keyset) page reads as its primary-key tiebreaker (defaults to `id`). Pair it
+cursor (keyset) page reads as its primary-key tiebreaker (defaults to `id`). This
+provider is built by hand rather than from the container, so arms for custom filter
+and sort value objects go in `$filterArms` and `$sortArms` instead of being tagged.
+Pass the same `$coordinator` to every store that takes part in an atomic batch, so a
+rollback restores them together and keeps object identity across them. Pair it
 with a persister over the **same** store (via `$provider->store()`) so a create is
 immediately readable:
 

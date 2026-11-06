@@ -172,14 +172,24 @@ No custom DBAL type is involved: the whole object round-trips as one JSON
 document, an `Obj`'s partial `PATCH` merges per-child before the column is
 written, and an explicit `null` clears it.
 
-A `DateTime`, `Date` or `Time` child needs nothing extra. The column stores the
-date object as PHP's JSON dump of it, and core reads that dump back and renders
-it in the field's format, so a re-read returns the same RFC 3339 string the
-create did. Core's
-[stored values](https://github.com/haddowg/json-api/blob/main/docs/field-types.md#reading-a-stored-value-back)
+A `DateTime`, `Date` or `Time` child needs nothing extra. Core hydrates a nested
+date to a string, so the column holds plain JSON. A `DateTime` child stores its
+instant in UTC as `Y-m-d\TH:i:s.uP`, and a `Date` or `Time` child stores its value
+in the field's own format. On a read a stored `DateTime` moves into the output
+timezone and renders in the field's format, and a `Date` or `Time` renders as
+stored. Code that reads a nested date off the entity gets that string, not a
+`\DateTimeImmutable`. Core's
+[nested dates](https://github.com/haddowg/json-api/blob/main/docs/field-types.md#nested-dates-are-stored-as-strings)
 section has the exact rules. A child that needs a richer PHP type than JSON can
 hold, such as a value object, still goes through the field-level
 `serializeUsing()`/`fillUsing()` hooks rather than a recursive column type.
+
+A `serializeUsing()` or `extractUsing()` hook on an `Obj`, `Map` or `OneOf` changes
+its read schema: the OpenAPI document keeps the children's properties but requires
+none of them, and a `OneOf` no longer requires its discriminator. An `extractUsing()`
+value still renders through the children. A `serializeUsing()` value skips them and
+goes out as the hook returns it, so keep it to the declared shape or the response
+won't match the document.
 
 ## Worked example
 
