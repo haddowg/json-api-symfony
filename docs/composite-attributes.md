@@ -40,7 +40,10 @@ vocabulary translates to native Symfony constraints, and a violation points at t
 child: `/data/attributes/address/city`, `/data/attributes/block/level`. For a
 `OneOf`, only the **selected variant's** children are validated, and an unknown or
 missing discriminator is itself the violation — a `422` pointing at
-`/data/attributes/block/kind`.
+`/data/attributes/block/kind`. An undiscriminated `OneOf` (no `discriminator()`) selects
+its variant by the required member only that variant declares; a value carrying no
+variant's signature, or two, is a `422` at the field itself, and since every write
+replaces the whole value, a `PATCH` must carry every member the variant requires.
 
 **A `Shape` is value-validated by core's `SchemaValueValidator`** (opis), not by
 constraint translation — its members are raw JSON Schema no Symfony constraint can

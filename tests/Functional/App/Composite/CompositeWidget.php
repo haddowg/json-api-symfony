@@ -7,7 +7,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\Composite;
 /**
  * A plain model for the composite-attribute witness: `address` backs an {@see \haddowg\JsonApi\Resource\Field\Obj}
  * (a typed object in one value), `block` a {@see \haddowg\JsonApi\Resource\Field\OneOf}
- * (a discriminated union), and `contact` an {@see \haddowg\JsonApi\Resource\Field\ArrayHash}
+ * (a discriminated union), `shape` an undiscriminated one, and `contact` an {@see \haddowg\JsonApi\Resource\Field\ArrayHash}
  * carrying a {@see \haddowg\JsonApi\Resource\Constraint\Shape} — all stored as a single
  * array, the shape a `json` column round-trips.
  */
@@ -19,6 +19,7 @@ final class CompositeWidget
      * @param array<string, mixed>|null $schedule
      * @param array<string, mixed>|null $contact
      * @param array<string, mixed>|null $prefs
+     * @param array<string, mixed>|null $shape
      */
     public function __construct(
         public string $id = '',
@@ -28,5 +29,6 @@ final class CompositeWidget
         public ?array $schedule = null,
         public ?array $contact = null,
         public ?array $prefs = null,
+        public ?array $shape = null,
     ) {}
 }
