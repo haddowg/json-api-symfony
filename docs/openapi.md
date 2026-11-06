@@ -399,6 +399,7 @@ php bin/console json-api:openapi:export --compact --output=openapi.min.json   # 
 php bin/console json-api:json-schema:export --type=articles            # one type → stdout
 php bin/console json-api:json-schema:export --output=build/schemas/    # every type → directory
 php bin/console json-api:json-schema:export --output=build/schemas/ --compact
+php bin/console json-api:json-schema:export --server=admin --output=build/schemas/admin/
 ```
 
 Both commands pretty-print JSON by default. `--compact` writes each document on a single

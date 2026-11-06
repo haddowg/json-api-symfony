@@ -127,10 +127,11 @@ its identity-map fast path) only when **no** extension supports the type. A row 
 scope excludes comes back as `null`, which the handler renders as a JSON:API
 `404`.
 
-Only an `OffsetWindow` is executable: any other `WindowInterface` throws a
-`\LogicException` (the Doctrine layer pushes offset/limit to SQL; it cannot
-execute a cursor window). The page-based paginators core ships all resolve to an
-`OffsetWindow`.
+The provider executes two windows, both pushed down to SQL. An `OffsetWindow` becomes
+`LIMIT`/`OFFSET`, and a `CursorWindow` becomes a keyset `WHERE` with its forced
+`ORDER BY`; see [cursor pagination](pagination.md#cursor-keyset-pagination).
+Any other `WindowInterface` throws a `\LogicException`. The page-based paginators core
+ships all resolve to an `OffsetWindow`, and cursor pagination to a `CursorWindow`.
 
 Source: [`DoctrineDataProvider`](../src/DataProvider/Doctrine/DoctrineDataProvider.php).
 
