@@ -149,6 +149,14 @@ final class AsJsonApiResourceTest extends TestCase
         yield 'type-wide reserved x-oas-' => [['x-oas-thing' => true], [], 'reserved'];
         yield 'operation name without x-' => [[], [Operation::Update->name => ['feature' => 'agency']], 'operationExtensions["Update"]'];
         yield 'unknown operation key' => [[], ['Publish' => ['x-feature' => 'agency']], 'unknown operation key "Publish"'];
+        yield 'unknown operation name' => [[], ['publish' => ['x-feature' => 'agency']], 'unknown operation key "publish"'];
+        yield 'relation operation without a relation' => [[], ['fetchRelated' => ['x-mcp' => false]], 'unknown operation key "fetchRelated"'];
+        yield 'relation operation with an empty relation' => [[], ['fetchRelated.' => ['x-mcp' => false]], 'unknown operation key "fetchRelated."'];
+        yield 'crud operation with a relation' => [[], ['delete.agencies' => ['x-mcp' => false]], 'unknown operation key "delete.agencies"'];
+        yield 'atomic is not a type operation' => [[], ['atomic' => ['x-mcp' => false]], 'unknown operation key "atomic"'];
+        yield 'named operation without x-' => [[], ['fetchRelated.agencies' => ['mcp' => false]], 'operationExtensions["fetchRelated.agencies"] declares "mcp"'];
+        yield 'named operation reserved x-oai-' => [[], ['fetchRelationship.agencies' => ['x-oai-thing' => true]], 'reserved'];
+        yield 'same operation named both ways' => [[], [Operation::Delete->name => ['x-rate-limit' => 10], 'delete' => ['x-feature' => 'agency']], 'names the same operation as both "Delete" and "delete"'];
     }
 
     /**
@@ -172,6 +180,71 @@ final class AsJsonApiResourceTest extends TestCase
         $this->expectExceptionMessage('operationExtensions["Create"] targets an operation this type does not expose');
 
         new AsJsonApiResource(readOnly: true, operationExtensions: [Operation::Create->name => ['x-feature' => 'agency']]);
+    }
+
+    #[Test]
+    public function operationExtensionsTakeCoreOperationNamesBesideCaseNames(): void
+    {
+        $attribute = new AsJsonApiResource(operationExtensions: [
+            Operation::Delete->name => ['x-rate-limit' => 10],
+            'fetchRelated.agencies' => ['x-mcp' => false],
+            'updateRelationship.agencies' => ['x-feature' => 'agency-admin'],
+            'create' => ['x-feature' => 'agency-admin'],
+        ]);
+
+        self::assertSame([
+            'Delete' => ['x-rate-limit' => 10],
+            'fetchRelated.agencies' => ['x-mcp' => false],
+            'updateRelationship.agencies' => ['x-feature' => 'agency-admin'],
+            'create' => ['x-feature' => 'agency-admin'],
+        ], $attribute->operationExtensions);
+    }
+
+    #[Test]
+    public function aReadOnlyTypeMayNameItsReadEndpoints(): void
+    {
+        $attribute = new AsJsonApiResource(readOnly: true, operationExtensions: [
+            'fetchOne' => ['x-cache' => 'long'],
+            'fetchRelated.agencies' => ['x-mcp' => false],
+            'fetchRelationship.agencies' => ['x-mcp' => false],
+        ]);
+
+        self::assertCount(3, $attribute->operationExtensions);
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function namedOperationsAReadOnlyTypeDoesNotExpose(): iterable
+    {
+        yield 'create' => ['create'];
+        yield 'update' => ['update'];
+        yield 'delete' => ['delete'];
+        yield 'updateRelationship' => ['updateRelationship.agencies'];
+        yield 'addRelationship' => ['addRelationship.agencies'];
+        yield 'removeRelationship' => ['removeRelationship.agencies'];
+    }
+
+    #[Test]
+    #[DataProvider('namedOperationsAReadOnlyTypeDoesNotExpose')]
+    public function aNamedOperationTheTypeDoesNotExposeIsRejected(string $name): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage(\sprintf('operationExtensions["%s"] targets', $name));
+
+        new AsJsonApiResource(readOnly: true, operationExtensions: [$name => ['x-feature' => 'agency']]);
+    }
+
+    #[Test]
+    public function aRelationshipMutationNeedsUpdateEvenWhenOtherWritesAreExposed(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('operationExtensions["addRelationship.agencies"] targets a relationship mutation');
+
+        new AsJsonApiResource(
+            operations: [Operation::FetchOne, Operation::Create],
+            operationExtensions: ['addRelationship.agencies' => ['x-feature' => 'agency']],
+        );
     }
 
     #[Test]

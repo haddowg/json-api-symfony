@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\OpenApi\Metadata;
 use haddowg\JsonApi\OpenApi\Metadata\ActionMetadataInterface;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresActionLinks;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresAlwaysCounted;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresNamedOperationExtensions;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationExamples;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationExtensions;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationScopes;
@@ -37,9 +38,11 @@ use haddowg\JsonApi\Resource\Sort\SortInterface;
  * a permissive resource-object schema. Everything else — uriType, operations, tags,
  * the page schema — is sourced independently of the field inventory.
  *
- * It implements core's opt-in {@see DeclaresOperationExtensions} to carry the vendor
- * extensions declared on `#[AsJsonApiResource]` (docs/openapi.md); a type that
- * declares none returns empty maps and the projector emits nothing.
+ * It implements core's opt-in {@see DeclaresOperationExtensions} and
+ * {@see DeclaresNamedOperationExtensions} to carry the vendor extensions declared on
+ * `#[AsJsonApiResource]` (docs/openapi.md): the CRUD sets keyed by Operation case name
+ * go through the first, the sets keyed by core operation name through the second. A type
+ * that declares none returns empty maps and the projector emits nothing.
  *
  * It also implements core's opt-in {@see DeclaresSingularName}: the noun the generated
  * prose uses for one resource, or `null` to let core inflect it from the type name.
@@ -57,7 +60,7 @@ use haddowg\JsonApi\Resource\Sort\SortInterface;
  * `#[AsJsonApiResource(operationScopes:)]`, and {@see DeclaresResourceClass}, the class
  * the type is declared by, so a scope resolver can read the app's own attributes off it.
  */
-final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOperationExtensions, DeclaresSingularName, DeclaresOperationExamples, DeclaresAlwaysCounted, DeclaresResourceLinks, DeclaresActionLinks, DeclaresOperationScopes, DeclaresResourceClass
+final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOperationExtensions, DeclaresNamedOperationExtensions, DeclaresSingularName, DeclaresOperationExamples, DeclaresAlwaysCounted, DeclaresResourceLinks, DeclaresActionLinks, DeclaresOperationScopes, DeclaresResourceClass
 {
     /**
      * @param list<FieldInterface>            $fields
@@ -81,6 +84,7 @@ final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOper
      * @param array<string, list<string>>     $operationScopes     the declared OAuth scope overrides, keyed by core's operation name
      * @param class-string|null               $resourceClass       the resource or standalone serializer class the type is declared by
      * @param list<ActionLink>                $actionLinks         the resource's built action links, in declaration order
+     * @param array<string, array<string, mixed>> $namedOperationExtensions vendor extensions keyed by core's operation name
      */
     public function __construct(
         private string $type,
@@ -113,6 +117,7 @@ final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOper
         private array $operationScopes = [],
         private ?string $resourceClass = null,
         private array $actionLinks = [],
+        private array $namedOperationExtensions = [],
     ) {}
 
     public function type(): string
@@ -228,6 +233,11 @@ final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOper
     public function operationExtensions(OperationType $operation): array
     {
         return $this->operationExtensions[$operation->value] ?? [];
+    }
+
+    public function namedOperationExtensions(): array
+    {
+        return $this->namedOperationExtensions;
     }
 
     public function singularName(): ?string

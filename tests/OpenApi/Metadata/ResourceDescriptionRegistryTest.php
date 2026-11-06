@@ -34,4 +34,18 @@ final class ResourceDescriptionRegistryTest extends TestCase
         self::assertSame([], $registry->extensionsFor('widgets', 'v5'));
         self::assertNull($registry->descriptionFor('widgets', 'v6'));
     }
+
+    #[Test]
+    public function itHoldsTheSetsKeyedByOperationNamePerServer(): void
+    {
+        $registry = new ResourceDescriptionRegistry(
+            [],
+            ['widgets' => ['named' => ['fetchRelated.parts' => ['x-mcp' => false]]]],
+            ['v5' => ['extensions' => ['widgets' => ['type' => ['x-feature' => 'widgets']]]]],
+        );
+
+        self::assertSame(['fetchRelated.parts' => ['x-mcp' => false]], $registry->namedOperationExtensionsFor('widgets'));
+        self::assertSame([], $registry->namedOperationExtensionsFor('widgets', 'v5'));
+        self::assertSame([], $registry->namedOperationExtensionsFor('gadgets'));
+    }
 }

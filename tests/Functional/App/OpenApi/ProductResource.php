@@ -45,11 +45,16 @@ use haddowg\JsonApiBundle\Operation\Operation;
         Operation::FetchCollection->name => 'Browse the product catalog.',
     ],
     // Vendor extensions (docs/openapi.md): x-feature on every products operation,
-    // overridden for Create and joined by x-rate-limit on Delete.
+    // overridden for Create and joined by x-rate-limit on Delete. The core-name keys
+    // reach single endpoints: the tags related endpoint drops out of MCP, the tags
+    // linkage read gets its own x-feature, and Update gets an x-audit.
     extensions: ['x-feature' => 'catalog'],
     operationExtensions: [
         Operation::Create->name => ['x-feature' => 'catalog-admin'],
         Operation::Delete->name => ['x-rate-limit' => ['per-minute' => 10]],
+        'update' => ['x-audit' => true],
+        'fetchRelated.tags' => ['x-mcp' => false],
+        'fetchRelationship.tags' => ['x-feature' => 'catalog-tags'],
     ],
     // The singular noun the generated prose uses ("Fetch a catalog item").
     singular: 'catalog item',

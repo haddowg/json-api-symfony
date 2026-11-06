@@ -53,6 +53,11 @@ final class AsJsonApiSerializerTest extends TestCase
         yield 'unknown operation key' => [[Operation::FetchOne], [], ['Publish' => ['x-feature' => 'shelving']], 'unknown operation key "Publish"'];
         yield 'operation not in the allow-list' => [[Operation::FetchOne], [], [Operation::Update->name => ['x-feature' => 'shelving']], 'does not expose'];
         yield 'any operation on a serialize-only type' => [[], [], [Operation::FetchOne->name => ['x-feature' => 'shelving']], 'it exposes none'];
+        yield 'unknown operation name' => [[Operation::FetchOne], [], ['restock' => ['x-feature' => 'shelving']], 'unknown operation key "restock"'];
+        yield 'named operation not in the allow-list' => [[Operation::FetchOne], [], ['update' => ['x-feature' => 'shelving']], 'operationExtensions["update"] targets an operation this type does not expose'];
+        yield 'named relationship mutation without Update' => [[Operation::FetchOne], [], ['removeRelationship.books' => ['x-feature' => 'shelving']], 'targets a relationship mutation'];
+        yield 'named operation without x-' => [[Operation::FetchOne], [], ['fetchOne' => ['cache' => 'long']], 'operationExtensions["fetchOne"] declares "cache"'];
+        yield 'same operation named both ways' => [[Operation::FetchOne], [], [Operation::FetchOne->name => ['x-cache' => 'long'], 'fetchOne' => ['x-cache' => 'short']], 'names the same operation as both "FetchOne" and "fetchOne"'];
     }
 
     /**
