@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.31.0](https://github.com/haddowg/json-api-symfony/compare/v1.30.0...v1.31.0) (2026-11-06)
+
+
+### Features
+
+* mark deprecated types, operations and actions in openapi ([#300](https://github.com/haddowg/json-api-symfony/issues/300)) ([5f6b244](https://github.com/haddowg/json-api-symfony/commit/5f6b244a24fa07357edc5f4778d5ec8bece3a72d))
+
 ## [1.30.0](https://github.com/haddowg/json-api-symfony/compare/v1.29.0...v1.30.0) (2026-11-06)
 
 
