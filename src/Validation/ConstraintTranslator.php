@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Validation;
 
 use Egulias\EmailValidator\EmailValidator;
+use haddowg\JsonApi\OpenApi\Schema;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Constraint\After;
 use haddowg\JsonApi\Resource\Constraint\AtLeastOneOf;
@@ -29,6 +30,7 @@ use haddowg\JsonApi\Resource\Constraint\MultipleOf;
 use haddowg\JsonApi\Resource\Constraint\NotIn;
 use haddowg\JsonApi\Resource\Constraint\Nullable;
 use haddowg\JsonApi\Resource\Constraint\Pattern;
+use haddowg\JsonApi\Resource\Constraint\ProvidesJsonSchema;
 use haddowg\JsonApi\Resource\Constraint\Required;
 use haddowg\JsonApi\Resource\Constraint\Sequentially;
 use haddowg\JsonApi\Resource\Constraint\SlugFormat;
@@ -362,7 +364,8 @@ final class ConstraintTranslator
 
     /**
      * Delegates a constraint outside the built-in vocabulary to the first
-     * registered {@see ConstraintTranslatorInterface} that supports it.
+     * registered {@see ConstraintTranslatorInterface} that supports it. An authored
+     * composite no translator supports documents its shape and translates to nothing.
      *
      * @return list<Constraint>
      */
@@ -374,11 +377,30 @@ final class ConstraintTranslator
             }
         }
 
+        if (self::isComposite($constraint)) {
+            return [];
+        }
+
         throw new \LogicException(\sprintf(
             'No translator is registered for the JSON:API constraint %s. Implement a %s and tag it, or use a built-in constraint.',
             $constraint::class,
             ConstraintTranslatorInterface::class,
         ));
+    }
+
+    /**
+     * Whether the constraint contributes a `oneOf`/`anyOf`/`allOf` of raw JSON Schema,
+     * which no Symfony rule can express.
+     */
+    private static function isComposite(ConstraintInterface $constraint): bool
+    {
+        if (!$constraint instanceof ProvidesJsonSchema) {
+            return false;
+        }
+
+        $keywords = $constraint->contribute(Schema::create())->toArray();
+
+        return isset($keywords['oneOf']) || isset($keywords['anyOf']) || isset($keywords['allOf']);
     }
 
     private function url(UrlFormat $constraint): Url
