@@ -123,7 +123,7 @@ abstract class SortFamilyConformanceTestCase extends JsonApiFunctionalTestCase
 
         $info = $document['info'] ?? null;
         self::assertIsArray($info);
-        self::assertSame(['contract' => GeneratorContract::SORT_FAMILIES], $info['x-generator'] ?? null);
+        self::assertSame(['contract' => \max(GeneratorContract::BASELINE, GeneratorContract::SORT_FAMILIES)], $info['x-generator'] ?? null);
 
         $sort = null;
         foreach ($this->at($document, 'paths', '/campaigns', 'get', 'parameters') as $parameter) {

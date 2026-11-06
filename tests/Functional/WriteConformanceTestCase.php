@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use haddowg\JsonApi\Testing\JsonApiErrors;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Response;
@@ -96,11 +97,11 @@ abstract class WriteConformanceTestCase extends JsonApiFunctionalTestCase
 
     #[Test]
     #[Group('spec:crud')]
-    public function anUndeclaredAttributeInAWriteBodyIsSilentlyIgnored(): void
+    public function anUndeclaredAttributeInAWriteBodyIsRefused(): void
     {
-        // Allow-list hydration: an attribute the resource did not declare (the classic
-        // mass-assignment over-post) is dropped — never written, and the declared-only
-        // resource the engine renders never surfaces it.
+        // The attributes object is closed: an attribute the resource did not declare
+        // (the classic mass-assignment over-post) is a 400 naming each member, and
+        // nothing is written.
         $response = $this->handle('/articles/1', 'PATCH', [
             'data' => [
                 'type' => 'articles',
@@ -113,12 +114,12 @@ abstract class WriteConformanceTestCase extends JsonApiFunctionalTestCase
             ],
         ]);
 
-        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+        JsonApiErrors::of((string) $response->getContent())
+            ->assertHasError('400', '/data/attributes/isAdmin', 'ATTRIBUTE_MEMBER_UNRECOGNIZED')
+            ->assertHasError('400', '/data/attributes/undeclared', 'ATTRIBUTE_MEMBER_UNRECOGNIZED');
 
-        $attributes = $this->attributesOf($response);
-        self::assertSame('Edited via allow-list', $attributes['title'] ?? null);
-        self::assertArrayNotHasKey('isAdmin', $attributes);
-        self::assertArrayNotHasKey('undeclared', $attributes);
+        self::assertNotSame('Edited via allow-list', $this->attributesOf($this->handle('/articles/1'))['title'] ?? null);
     }
 
     #[Test]

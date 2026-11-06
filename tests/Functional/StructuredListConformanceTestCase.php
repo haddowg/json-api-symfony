@@ -252,7 +252,7 @@ abstract class StructuredListConformanceTestCase extends JsonApiFunctionalTestCa
 
         $info = $document['info'] ?? null;
         self::assertIsArray($info);
-        self::assertSame(['contract' => GeneratorContract::STRUCTURED_LIST_ELEMENTS], $info['x-generator'] ?? null);
+        self::assertSame(['contract' => \max(GeneratorContract::BASELINE, GeneratorContract::STRUCTURED_LIST_ELEMENTS)], $info['x-generator'] ?? null);
 
         $attributes = $this->at($document, 'components', 'schemas', 'PipelinesUpdateAttributes', 'properties');
 
