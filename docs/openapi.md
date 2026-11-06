@@ -741,6 +741,78 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiSerializer;
 final class ChartSerializer extends AbstractSerializer { /* … */ }
 ```
 
+### Deprecation
+
+The document marks what you deprecate with OpenAPI's own `deprecated: true`, so Swagger
+UI, ReDoc and client generators show it without extra setup. Nothing changes at runtime
+beyond the `Deprecation` and `Sunset` headers described under
+[response headers](configuration.md#response-headers-caching-and-deprecation).
+
+A type is deprecated by the same `deprecation` and `sunset` that send its headers:
+
+```php
+#[AsJsonApiResource(deprecation: true, sunset: 'Sat, 31 Dec 2050 23:59:59 GMT')]
+final class LegacyTrackResource extends AbstractResource { /* … */ }
+```
+
+With `deprecation` set, every operation the document emits for the type is
+`deprecated: true`: its CRUD operations, its related and relationship endpoints and its
+custom actions. A `sunset` adds a sentence naming the date to the end of each of those
+operations' descriptions, "This operation may stop responding on or after 2050-12-31,
+its sunset date.", whether or not the type is deprecated. The bundle reads the date out
+of an HTTP-date in any of its three forms, a structured-field date such as
+`@2556143999`, or an ISO 8601 date. Any other value still goes out in the `Sunset` header
+as written, but the document leaves the sentence out. The `json_api.defaults` and
+per-server defaults send their headers without marking anything in the document.
+
+To deprecate single operations instead, list them in `deprecatedOperations`, by the names
+[`operationExamples`](#operation-examples) uses:
+
+```php
+#[AsJsonApiResource(deprecatedOperations: ['delete', 'fetchRelated.agencies'])]
+final class UserResource extends AbstractResource { /* … */ }
+```
+
+Each operation listed is `deprecated: true`, and a response from it carries
+`Deprecation: true`, plus the type's `Sunset` if it declares one. An unknown name, an
+operation outside the type's `operations` or `readOnly` set, or a relationship mutation
+on a type without `Update` fails the container build. A relation the type doesn't have
+fails when the document is generated. A [standalone serializer](capability-composition.md)
+takes `deprecatedOperations` on `#[AsJsonApiSerializer]` the same way, checked against its
+own `operations` list.
+
+A custom action declares its own with `#[AsJsonApiAction(deprecated: true)]`. Each of its
+methods is marked, and its responses carry the `Deprecation` header too.
+
+Fields, relations, filters and sorts take a `deprecated()` call on their builders. A field
+is marked on its property in the attribute schemas, a relation on its property under
+`relationships`, a filter on its `filter[…]` parameter, and a sort is listed under the
+`sort` parameter's `x-deprecated-sorts`. These are documentation only, with no header,
+because the request still works and the member is still served. Core's
+[fields](https://github.com/haddowg/json-api/blob/main/docs/fields.md#deprecation-deprecated),
+[filters](https://github.com/haddowg/json-api/blob/main/docs/filters.md) and
+[sorts](https://github.com/haddowg/json-api/blob/main/docs/sorts.md) docs cover each one:
+
+```php
+public function fields(): array
+{
+    return [
+        Id::make(),
+        Str::make('subtitle')->deprecated()->describedAs('Use `tagline` instead.'),
+        BelongsTo::make('legacyOwner', 'users')->deprecated(),
+    ];
+}
+
+public function filters(): array
+{
+    return [Where::make('code')->deprecated()];
+}
+```
+
+A document with any of these markers declares the deprecation tier of its
+`info.x-generator.contract`, so a client generator that doesn't know about the markers
+warns rather than drops them. A sunset on its own is prose and leaves the stamp alone.
+
 ### Tagging (grouping operations)
 
 OAS tags drive how Swagger UI / ReDoc group operations. Each resource's operations are

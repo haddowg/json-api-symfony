@@ -32,6 +32,7 @@ use haddowg\JsonApiBundle\DependencyInjection\Compiler\ResponseHeadersPass;
 use haddowg\JsonApiBundle\DependencyInjection\InstalledVersionsCheck;
 use haddowg\JsonApiBundle\EventListener\ConfiguredExceptionMapper;
 use haddowg\JsonApiBundle\EventListener\ExceptionMapperInterface;
+use haddowg\JsonApiBundle\OpenApi\Metadata\DeprecatedOperations;
 use haddowg\JsonApiBundle\OpenApi\Metadata\OperationExampleCodec;
 use haddowg\JsonApiBundle\OpenApi\Metadata\OperationScopeOverrides;
 use haddowg\JsonApiBundle\Operation\CrudOperationHandler;
@@ -1011,6 +1012,9 @@ final class JsonApiBundle extends AbstractBundle
                     'operation_examples' => OperationExampleCodec::encodeMap('AsJsonApiResource', $attribute->operationExamples),
                     // The OAuth scope overrides, JSON-encoded like the examples.
                     'operation_scopes' => OperationScopeOverrides::encodeMap($attribute->operationScopes),
+                    // The operations deprecated on their own, comma-joined; read by the
+                    // ResponseHeadersPass for both the headers and the OpenAPI document.
+                    'deprecated_operations' => DeprecatedOperations::encode($attribute->deprecatedOperations),
                     // The per-operation OpenAPI response declarations (typed response
                     // objects): the five create/update/delete/fetchOne/fetchCollection
                     // sets JSON-encoded into a single scalar tag attribute the
@@ -1041,6 +1045,7 @@ final class JsonApiBundle extends AbstractBundle
                     'openapi_extensions' => self::extensionsTag($attribute->extensions, $attribute->operationExtensions),
                     'operation_examples' => OperationExampleCodec::encodeMap('AsJsonApiSerializer', $attribute->operationExamples),
                     'operation_scopes' => OperationScopeOverrides::encodeMap($attribute->operationScopes),
+                    'deprecated_operations' => DeprecatedOperations::encode($attribute->deprecatedOperations),
                 ], static fn(mixed $value): bool => $value !== null));
             },
         );
@@ -1115,6 +1120,7 @@ final class JsonApiBundle extends AbstractBundle
                     'extensions' => $attribute->extensions !== [] ? \json_encode($attribute->extensions, \JSON_THROW_ON_ERROR) : null,
                     // The OAuth scope override, JSON-encoded; absent asks the scope resolver.
                     'scopes' => OperationScopeOverrides::encodeList($attribute->scopes),
+                    'deprecated' => $attribute->deprecated ? true : null,
                 ], static fn(mixed $value): bool => $value !== null));
             },
         );

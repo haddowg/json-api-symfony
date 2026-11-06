@@ -46,6 +46,7 @@ use Psr\Container\ContainerInterface;
  *     idempotent?: ?bool,
  *     extensions?: array<string, mixed>,
  *     scopes?: list<string>|null,
+ *     deprecated?: bool,
  * }
  */
 final class ActionRegistry
@@ -129,6 +130,7 @@ final class ActionRegistry
             $descriptor['idempotent'] ?? null,
             $descriptor['extensions'] ?? [],
             $descriptor['scopes'] ?? null,
+            $descriptor['deprecated'] ?? false,
         );
     }
 

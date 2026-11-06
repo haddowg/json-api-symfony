@@ -10,13 +10,15 @@ use haddowg\JsonApiBundle\Operation\Operation;
 
 /**
  * Checks the operation names an attribute keys a per-operation map by, with core's
- * {@see OperationKey} grammar, so `operationExamples` and `operationScopes` accept the
- * same keys.
+ * {@see OperationKey} grammar, so `operationExamples`, `operationScopes`,
+ * `operationExtensions` and `deprecatedOperations` accept the same names.
  *
  * @internal
  */
 final class OperationKeys
 {
+    private const array RELATIONSHIP_MUTATIONS = [OperationKind::UpdateRelationship, OperationKind::AddRelationship, OperationKind::RemoveRelationship];
+
     /**
      * Parses `$key` and refuses a CRUD operation the type does not expose. A relation key
      * is only parsed here; core checks the relation exists when it reads the map.
@@ -53,6 +55,28 @@ final class OperationKeys
         }
 
         return $operation;
+    }
+
+    /**
+     * Refuses a relationship mutation name on a type that does not expose
+     * {@see Operation::Update}, since the mutation endpoints are only routed with it.
+     *
+     * @param list<Operation> $exposed the CRUD operations the type exposes
+     *
+     * @throws \LogicException when `$operation` is a relationship mutation and the type does not expose Update
+     */
+    public static function assertRelationshipMutationExposed(string $attribute, string $member, string $key, OperationKey $operation, array $exposed): void
+    {
+        if (\in_array($operation->kind, self::RELATIONSHIP_MUTATIONS, true) && !\in_array(Operation::Update, $exposed, true)) {
+            throw new \LogicException(\sprintf(
+                '%s %s["%s"] targets a relationship mutation, which a type only exposes '
+                . 'with %s in its operations; add it or drop the entry.',
+                $attribute,
+                $member,
+                $key,
+                Operation::Update->name,
+            ));
+        }
     }
 
     /**

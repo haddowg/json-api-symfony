@@ -106,6 +106,10 @@ use haddowg\JsonApiBundle\OpenApi\Metadata\OperationScopeOverrides;
  * `extensions` are OpenAPI vendor extensions (`x-…` keys) for the action's own
  * operation, merged over the mount type's type-wide `extensions` so the action's value
  * wins on a shared key.
+ *
+ * `deprecated` marks every method of the action `deprecated: true` in the OpenAPI
+ * document, and a request to it gets a `Deprecation` header, plus `Sunset` when the mount
+ * type declares one. An action on a deprecated type is already marked either way.
  */
 #[\Attribute(\Attribute::TARGET_CLASS)]
 final readonly class AsJsonApiAction
@@ -141,6 +145,7 @@ final readonly class AsJsonApiAction
      * @param ?bool                              $idempotent  whether calling the action again with the same input has no further effect; null leaves it undeclared
      * @param array<string, mixed>               $extensions  OpenAPI vendor extensions (`x-…` keys) for the action's own operation
      * @param list<string>|null                  $scopes      the OAuth scopes every method of the action needs, overriding the app's scope resolver; `[]` needs none, null asks the resolver
+     * @param bool                               $deprecated  whether the action is deprecated
      */
     public function __construct(
         public string $type,
@@ -164,6 +169,7 @@ final readonly class AsJsonApiAction
         public ?bool $idempotent = null,
         public array $extensions = [],
         public ?array $scopes = null,
+        public bool $deprecated = false,
     ) {
         VendorExtensions::assertValid('AsJsonApiAction', $extensions, [], []);
         if ($scopes !== null) {

@@ -21,6 +21,8 @@ use haddowg\JsonApiBundle\Action\ActionDescriptor;
 use haddowg\JsonApiBundle\Action\ActionRegistry;
 use haddowg\JsonApiBundle\DataProvider\Polymorphism;
 use haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory;
+use haddowg\JsonApiBundle\Http\ResponseHeadersRegistry;
+use haddowg\JsonApiBundle\Http\SunsetDate;
 use haddowg\JsonApiBundle\OpenApi\DocumentUrlProvider;
 use haddowg\JsonApiBundle\Operation\Operation;
 use haddowg\JsonApiBundle\Scope\ScopeTableProvider;
@@ -98,6 +100,7 @@ final class MetadataSource
         private readonly string $scopeScheme = 'oauth2',
         private readonly ?ScopeCatalogInterface $scopeCatalog = null,
         private readonly ?array $atomicScopes = null,
+        private readonly ?ResponseHeadersRegistry $responseHeaders = null,
     ) {}
 
     /**
@@ -344,6 +347,8 @@ final class MetadataSource
         $paginator = $resource?->pagination($serverDefaultPaginator);
         $pageSchema = $paginator?->describePageSchema();
 
+        $declaredDeprecation = $this->responseHeaders?->declaredDeprecationFor($type, $serverName);
+
         return new TypeMetadata(
             type: $type,
             uriType: $descriptor['uriType'],
@@ -398,6 +403,11 @@ final class MetadataSource
             operationScopes: $this->descriptions?->operationScopesFor($type, $serverName) ?? [],
             resourceClass: $resource !== null ? $resource::class : ($server->hasSerializerFor($type) ? $server->serializerFor($type)::class : null),
             actionLinks: $resource?->allActionLinks() ?? [],
+            // The same declaration that drives the Deprecation and Sunset headers, minus
+            // the json_api.defaults layered under it at runtime.
+            deprecated: $declaredDeprecation !== null && ($declaredDeprecation->deprecation === true || \is_string($declaredDeprecation->deprecation)),
+            sunset: SunsetDate::parse($declaredDeprecation?->sunset),
+            deprecatedOperations: $this->responseHeaders?->deprecatedOperationsFor($type, $serverName) ?? [],
         );
     }
 
@@ -658,6 +668,7 @@ final class MetadataSource
             $action->idempotent,
             $action->extensions,
             $action->scopes,
+            $action->deprecated,
         );
     }
 

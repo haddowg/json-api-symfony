@@ -27,8 +27,6 @@ use haddowg\JsonApiBundle\Operation\Operation;
  */
 final class VendorExtensions
 {
-    private const RELATIONSHIP_MUTATIONS = [OperationKind::UpdateRelationship, OperationKind::AddRelationship, OperationKind::RemoveRelationship];
-
     /**
      * @param string               $attribute           the declaring attribute's short name, for the error message
      * @param array<mixed>         $extensions          the type-wide extensions
@@ -134,17 +132,7 @@ final class VendorExtensions
         }
 
         $operation = OperationKeys::assertExposed($attribute, 'operationExtensions', $key, $exposed);
-
-        // The relationship mutation endpoints are routed only when the type exposes Update.
-        if (\in_array($operation->kind, self::RELATIONSHIP_MUTATIONS, true) && !\in_array(Operation::Update, $exposed, true)) {
-            throw new \LogicException(\sprintf(
-                '%s operationExtensions["%s"] targets a relationship mutation, which a type only exposes '
-                . 'with %s in its operations; add it or drop the entry.',
-                $attribute,
-                $key,
-                Operation::Update->name,
-            ));
-        }
+        OperationKeys::assertRelationshipMutationExposed($attribute, 'operationExtensions', $key, $operation, $exposed);
     }
 
     /**

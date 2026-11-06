@@ -93,9 +93,21 @@ trait ServerDefaultResponseHeadersConformance
 
         foreach ([null, ResourcesOnServerPass::SERVER] as $server) {
             $json = \json_encode($factory->forServer($server)->toArray(), \JSON_THROW_ON_ERROR);
-            self::assertStringNotContainsString('"deprecated":true', $json);
             self::assertStringNotContainsString('"Sunset"', $json);
             self::assertStringNotContainsString('"Deprecation"', $json);
+        }
+
+        // The defaults deprecate nothing in the documents. Only the type that declares
+        // its own deprecation is marked.
+        self::assertStringNotContainsString('"deprecated":true', \json_encode($factory->forServer()->toArray(), \JSON_THROW_ON_ERROR));
+        $paths = $factory->forServer(ResourcesOnServerPass::SERVER)->toArray()['paths'] ?? null;
+        self::assertIsArray($paths);
+        foreach (['/deprecatedWidgets/{id}' => true, '/plainWidgets/{id}' => null] as $path => $deprecated) {
+            $item = $paths[$path] ?? null;
+            self::assertIsArray($item, $path);
+            $get = $item['get'] ?? null;
+            self::assertIsArray($get, $path);
+            self::assertSame($deprecated, $get['deprecated'] ?? null, $path);
         }
     }
 }

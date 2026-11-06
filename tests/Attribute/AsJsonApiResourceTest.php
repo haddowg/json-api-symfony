@@ -317,4 +317,42 @@ final class AsJsonApiResourceTest extends TestCase
         // @phpstan-ignore argument.type
         new AsJsonApiResource(operationScopes: ['delete' => 'articles:admin']);
     }
+
+    #[Test]
+    public function deprecatedOperationsNameOperationsLikeOperationExamples(): void
+    {
+        $attribute = new AsJsonApiResource(deprecatedOperations: ['delete', 'fetchRelated.author', 'removeRelationship.tags']);
+
+        self::assertSame(['delete', 'fetchRelated.author', 'removeRelationship.tags'], $attribute->deprecatedOperations);
+    }
+
+    /**
+     * @return iterable<string, array{array<mixed>, bool|null, string}>
+     */
+    public static function invalidDeprecatedOperations(): iterable
+    {
+        yield 'a bundle case name' => [['Delete'], false, 'AsJsonApiResource deprecatedOperations has an unknown operation key "Delete"'];
+        yield 'an unknown name' => [['archive'], false, 'AsJsonApiResource deprecatedOperations has an unknown operation key "archive"'];
+        yield 'a relation kind without a relation' => [['fetchRelated'], false, 'unknown operation key "fetchRelated"'];
+        yield 'a CRUD operation the type does not expose' => [['update'], true, 'AsJsonApiResource deprecatedOperations["update"] targets an operation this type does not expose'];
+        yield 'a read the type does not expose' => [['fetchOne'], null, 'deprecatedOperations["fetchOne"] targets an operation this type does not expose'];
+        yield 'a relationship mutation without Update' => [['addRelationship.tags'], true, 'AsJsonApiResource deprecatedOperations["addRelationship.tags"] targets a relationship mutation'];
+        yield 'a map rather than a list' => [['delete' => true], false, 'AsJsonApiResource deprecatedOperations must be a list of operation names, not a map.'];
+        yield 'a name that is not a string' => [[Operation::Delete], false, 'AsJsonApiResource deprecatedOperations must list operation names as strings, got haddowg\\JsonApiBundle\\Operation\\Operation.'];
+    }
+
+    /**
+     * @param array<mixed> $names
+     * @param bool|null    $readOnly true for a read-only type, null for a type exposing only Create
+     */
+    #[Test]
+    #[DataProvider('invalidDeprecatedOperations')]
+    public function anInvalidDeprecatedOperationIsRejected(array $names, ?bool $readOnly, string $message): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage($message);
+
+        // @phpstan-ignore argument.type
+        new AsJsonApiResource(operations: $readOnly === null ? [Operation::Create] : [], readOnly: $readOnly ?? false, deprecatedOperations: $names);
+    }
 }

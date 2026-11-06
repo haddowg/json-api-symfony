@@ -24,6 +24,9 @@ use haddowg\JsonApiBundle\Server\ServerProvider;
  * different classes on two servers emits each class's headers on its own server, and a
  * server whose class declared nothing gets the defaults.
  *
+ * It also holds the operations each type deprecates on their own
+ * (`deprecatedOperations:`), which get a `Deprecation` header even when the type does not.
+ *
  * Resolution layers the resource-level value over the server's own
  * `json_api.servers.<name>.defaults` over the global default, field by
  * field, then a per-operation cache override over that, so a type tunes only what it
@@ -46,6 +49,9 @@ final class ResponseHeadersRegistry
     /** @var array<string, array<string, DeprecationHeaders>> */
     private array $deprecationByType = [];
 
+    /** @var array<string, array<string, list<string>>> */
+    private array $deprecatedOperationsByType = [];
+
     /** @var array<string, CacheHeaders> each server's defaults, already layered over the global ones */
     private array $serverCache = [];
 
@@ -57,6 +63,7 @@ final class ResponseHeadersRegistry
      *     cache?: array<string, mixed>,
      *     cache_operations?: array<string, array<string, mixed>>,
      *     deprecation?: array<string, mixed>,
+     *     deprecated_operations?: list<string>,
      * }> $byType the default server's per-type scalar config the compiler pass assembled
      * @param array<string, mixed> $defaultCache the global `cache_headers` default
      * @param array<string, mixed> $defaultDeprecation the global `deprecation`/`sunset` default
@@ -64,6 +71,7 @@ final class ResponseHeadersRegistry
      *     cache?: array<string, mixed>,
      *     cache_operations?: array<string, array<string, mixed>>,
      *     deprecation?: array<string, mixed>,
+     *     deprecated_operations?: list<string>,
      * }>> $servers every other server's, keyed by server name then type
      * @param array<string, array{
      *     cache?: array<string, mixed>,
@@ -106,6 +114,10 @@ final class ResponseHeadersRegistry
                     $deprecation = $config['deprecation'];
                     $this->deprecationByType[$server][$type] = DeprecationHeaders::fromArray($deprecation);
                 }
+
+                if (($config['deprecated_operations'] ?? []) !== []) {
+                    $this->deprecatedOperationsByType[$server][$type] = $config['deprecated_operations'];
+                }
             }
         }
     }
@@ -133,10 +145,38 @@ final class ResponseHeadersRegistry
      * layered over the server's defaults layered over the global default, field by field. Returns `null` when the result is empty (no
      * deprecation/sunset anywhere).
      */
-    public function deprecationFor(string $type, string $server = ServerProvider::DEFAULT_SERVER): ?DeprecationHeaders
+    public function deprecationFor(string $type, string $server = ServerProvider::DEFAULT_SERVER, bool $operationDeprecated = false): ?DeprecationHeaders
     {
         $resolved = ($this->deprecationByType[$server][$type] ?? new DeprecationHeaders())->mergeOver($this->serverDeprecation[$server] ?? $this->defaultDeprecation);
 
+        // A deprecated operation of a type that is not deprecated itself announces a
+        // bare `Deprecation: true`; a date the type or a default declares wins.
+        if ($operationDeprecated && ($resolved->deprecation === null || $resolved->deprecation === false)) {
+            $resolved = new DeprecationHeaders(true, $resolved->sunset, $resolved->sunsetLink);
+        }
+
         return $resolved->isEmpty() ? null : $resolved;
+    }
+
+    /**
+     * The deprecation and sunset `$type` itself declares on `$server`, without the
+     * defaults layered under it, or `null` when it declares neither. The OpenAPI document
+     * reads it, so it marks only the types an author marked.
+     */
+    public function declaredDeprecationFor(string $type, string $server = ServerProvider::DEFAULT_SERVER): ?DeprecationHeaders
+    {
+        $declared = $this->deprecationByType[$server][$type] ?? null;
+
+        return $declared === null || $declared->isEmpty() ? null : $declared;
+    }
+
+    /**
+     * The operations `$type` deprecates on their own on `$server`, by core operation name.
+     *
+     * @return list<string>
+     */
+    public function deprecatedOperationsFor(string $type, string $server = ServerProvider::DEFAULT_SERVER): array
+    {
+        return $this->deprecatedOperationsByType[$server][$type] ?? [];
     }
 }

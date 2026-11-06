@@ -420,6 +420,11 @@ and the action's value wins on a shared name. The names follow the same rules as
 type's: a full `x-` name, outside the reserved `x-oai-` and `x-oas-` prefixes, or the
 build fails. A declared `x-safety` wins over an extension of that name.
 
+`deprecated: true` marks every method of the action `deprecated: true` in the document,
+and its responses carry a `Deprecation` header, plus `Sunset` when the mount type
+declares one. An action on a [deprecated type](openapi.md#deprecation) is marked either
+way.
+
 ### Raw responses (CSV, PDF, plain JSON)
 
 An action can answer with a body that is not JSON:API by declaring a core `RawResult`

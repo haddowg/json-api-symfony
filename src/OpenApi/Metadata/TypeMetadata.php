@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\OpenApi\Metadata;
 use haddowg\JsonApi\OpenApi\Metadata\ActionMetadataInterface;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresActionLinks;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresAlwaysCounted;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresDeprecation;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresNamedOperationExtensions;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationExamples;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationExtensions;
@@ -59,8 +60,12 @@ use haddowg\JsonApi\Resource\Sort\SortInterface;
  * And core's opt-in {@see DeclaresOperationScopes}, the OAuth scope overrides declared on
  * `#[AsJsonApiResource(operationScopes:)]`, and {@see DeclaresResourceClass}, the class
  * the type is declared by, so a scope resolver can read the app's own attributes off it.
+ *
+ * And core's opt-in {@see DeclaresDeprecation}: whether `#[AsJsonApiResource(deprecation:)]`
+ * deprecates the whole type, the date its `sunset:` names, and the operations its
+ * `deprecatedOperations:` lists.
  */
-final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOperationExtensions, DeclaresNamedOperationExtensions, DeclaresSingularName, DeclaresOperationExamples, DeclaresAlwaysCounted, DeclaresResourceLinks, DeclaresActionLinks, DeclaresOperationScopes, DeclaresResourceClass
+final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOperationExtensions, DeclaresNamedOperationExtensions, DeclaresSingularName, DeclaresOperationExamples, DeclaresAlwaysCounted, DeclaresResourceLinks, DeclaresActionLinks, DeclaresOperationScopes, DeclaresResourceClass, DeclaresDeprecation
 {
     /**
      * @param list<FieldInterface>            $fields
@@ -85,6 +90,9 @@ final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOper
      * @param class-string|null               $resourceClass       the resource or standalone serializer class the type is declared by
      * @param list<ActionLink>                $actionLinks         the resource's built action links, in declaration order
      * @param array<string, array<string, mixed>> $namedOperationExtensions vendor extensions keyed by core's operation name
+     * @param bool                            $deprecated          whether the whole type is declared deprecated
+     * @param ?\DateTimeInterface             $sunset              the declared sunset date, or null
+     * @param list<string>                    $deprecatedOperations the operations deprecated on their own, by core's operation name
      */
     public function __construct(
         private string $type,
@@ -118,6 +126,9 @@ final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOper
         private ?string $resourceClass = null,
         private array $actionLinks = [],
         private array $namedOperationExtensions = [],
+        private bool $deprecated = false,
+        private ?\DateTimeInterface $sunset = null,
+        private array $deprecatedOperations = [],
     ) {}
 
     public function type(): string
@@ -273,5 +284,20 @@ final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOper
     public function actionLinks(): array
     {
         return $this->actionLinks;
+    }
+
+    public function isDeprecated(): bool
+    {
+        return $this->deprecated;
+    }
+
+    public function sunset(): ?\DateTimeInterface
+    {
+        return $this->sunset;
+    }
+
+    public function deprecatedOperations(): array
+    {
+        return $this->deprecatedOperations;
     }
 }

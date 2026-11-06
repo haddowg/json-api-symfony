@@ -471,6 +471,23 @@ The same `json_api.defaults.deprecation` / `sunset` / `sunset_link` keys supply 
 fleet-wide default a resource overrides. An explicit `Deprecation`/`Sunset` header
 your app already set is never clobbered.
 
+To deprecate some of a type's operations rather than all of it, list them by core
+operation name in `deprecatedOperations`:
+
+```php
+#[AsJsonApiResource(
+    sunset: 'Sat, 31 Dec 2050 23:59:59 GMT',
+    deprecatedOperations: ['delete', 'fetchRelated.agencies'],
+)]
+```
+
+A response from a listed operation carries `Deprecation: true`, or the date the type or a
+default declares, beside the type's `Sunset`. The type's other operations get only the
+`Sunset`. A custom action declared `#[AsJsonApiAction(deprecated: true)]` sends the header
+the same way. The resource's own `deprecation`, `sunset` and `deprecatedOperations`, and
+an action's `deprecated`, also mark the
+[OpenAPI document](openapi.md#deprecation).
+
 ### Per-server defaults
 
 A named server takes the same `defaults` block under `json_api.servers.<name>`. It
@@ -508,7 +525,8 @@ The implicit `default` server has no block of its own: the top-level `defaults` 
 its block, and the fallback for every named server. A server block takes the same
 keys and fails the build on the same bad values as the global one, such as a
 non-integer `max_age` or a `sunset` that isn't a string. The OpenAPI document
-describes none of these headers on any server, so a server block doesn't change it.
+describes none of these headers on any server, and the defaults mark nothing in it as
+deprecated, so a server block doesn't change it.
 
 ## Named servers (`json_api.servers`)
 
