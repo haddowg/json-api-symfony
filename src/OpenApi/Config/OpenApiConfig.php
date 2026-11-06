@@ -41,5 +41,7 @@ final readonly class OpenApiConfig
         public ?string $cacheControl = null,
         public ?string $documentUrl = null,
         public array $serveAllowedClasses = [],
+        public bool $yamlEnabled = false,
+        public string $yamlPath = '/docs.yaml',
     ) {}
 }

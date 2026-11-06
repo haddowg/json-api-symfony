@@ -189,13 +189,13 @@ final class DocumentWarmer implements CacheWarmerInterface
             throw new \RuntimeException(\sprintf('Could not create the OpenAPI public_path directory "%s".', $base));
         }
 
-        \file_put_contents($base . '/' . $this->safe($server) . '.json', $document->toJsonString(true));
+        $json = $document->toJsonString(true);
+        \file_put_contents($base . '/' . $this->safe($server) . '.json', $json);
 
         // YAML is emitted only when symfony/yaml is installed (it is a soft, suggested
         // dependency, gated like the export command's --format=yaml).
-        if (\class_exists(\Symfony\Component\Yaml\Yaml::class)) {
-            $yaml = \Symfony\Component\Yaml\Yaml::dump($document->toArray(), 16, 2, \Symfony\Component\Yaml\Yaml::DUMP_OBJECT_AS_MAP);
-            \file_put_contents($base . '/' . $this->safe($server) . '.yaml', $yaml);
+        if (DocumentFormat::yamlAvailable()) {
+            \file_put_contents($base . '/' . $this->safe($server) . '.yaml', DocumentFormat::Yaml->encode($json));
         }
     }
 

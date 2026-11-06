@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\Routing;
 use haddowg\JsonApiBundle\Controller\JsonSchemaController;
 use haddowg\JsonApiBundle\Controller\OpenApiController;
 use haddowg\JsonApiBundle\Controller\OpenApiUiController;
+use haddowg\JsonApiBundle\OpenApi\DocumentFormat;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use Symfony\Component\Config\Loader\Loader;
 use Symfony\Component\Routing\Route;
@@ -30,6 +31,10 @@ use Symfony\Component\Routing\RouteCollection;
  * In **combined** multi-server mode (`json_api.openapi.multi_server: combined`) only
  * the single `{json.path}` route is emitted — it serves one document spanning every
  * server; the per-server `{server}/docs.json` route is not registered.
+ *
+ * When `json_api.openapi.yaml.enabled` is on it emits the same document as YAML beside
+ * each JSON route: `GET {yaml.path}` (default `/docs.yaml`) and `GET /{server}/docs.yaml`,
+ * the same controller with a `format` default of `yaml`.
  *
  * Alongside the document it emits, gated additionally on
  * `json_api.openapi.json_schema.enabled`, the **aggregate JSON Schema** routes —
@@ -66,6 +71,8 @@ final class OpenApiRouteLoader extends Loader
      * @param string       $uiPath       `json_api.openapi.ui.path` (default `/docs`)
      * @param bool         $jsonSchemaEnabled `json_api.openapi.json_schema.enabled` — register the schema routes
      * @param string       $jsonSchemaPath    `json_api.openapi.json_schema.path` (default `/schemas.json`)
+     * @param bool         $yamlEnabled       `json_api.openapi.yaml.enabled`, whether to register the YAML document routes
+     * @param string       $yamlPath          `json_api.openapi.yaml.path` (default `/docs.yaml`)
      */
     public function __construct(
         private readonly array $servers,
@@ -78,6 +85,8 @@ final class OpenApiRouteLoader extends Loader
         private readonly string $uiPath = '/docs',
         private readonly bool $jsonSchemaEnabled = true,
         private readonly string $jsonSchemaPath = '/schemas.json',
+        private readonly bool $yamlEnabled = false,
+        private readonly string $yamlPath = '/docs.yaml',
     ) {
         parent::__construct();
     }
@@ -99,6 +108,14 @@ final class OpenApiRouteLoader extends Loader
             ['_controller' => OpenApiController::class, 'server' => ServerProvider::DEFAULT_SERVER],
             methods: ['GET'],
         ));
+
+        if ($this->yamlEnabled) {
+            $routes->add('jsonapi.openapi.yaml.default', new Route(
+                $this->normalise($this->yamlPath, '/docs.yaml'),
+                ['_controller' => OpenApiController::class, 'server' => ServerProvider::DEFAULT_SERVER, DocumentFormat::ROUTE_DEFAULT => DocumentFormat::Yaml->value],
+                methods: ['GET'],
+            ));
+        }
 
         // The documentation viewer — gated on ui.enabled in addition to the
         // shared expose gate. One route regardless of multi-server mode; it points at the
@@ -151,6 +168,15 @@ final class OpenApiRouteLoader extends Loader
         );
         $routes->add('jsonapi.openapi.server', $route);
 
+        if ($this->yamlEnabled) {
+            $routes->add('jsonapi.openapi.yaml.server', new Route(
+                '/{server}/docs.yaml',
+                ['_controller' => OpenApiController::class, DocumentFormat::ROUTE_DEFAULT => DocumentFormat::Yaml->value],
+                ['server' => $serverConstraint],
+                methods: ['GET'],
+            ));
+        }
+
         // The per-server aggregate schema route, mirroring the per-server document route
         // (same {server} constraint), when json_schema serving is enabled.
         if ($this->jsonSchemaEnabled) {
@@ -175,6 +201,13 @@ final class OpenApiRouteLoader extends Loader
         $path = '/' . \ltrim(\trim($path), '/');
 
         return $path === '/' ? '/docs.json' : $path;
+    }
+
+    private function normalise(string $path, string $default): string
+    {
+        $path = '/' . \ltrim(\trim($path), '/');
+
+        return $path === '/' ? $default : $path;
     }
 
     private function normaliseUiPath(string $path): string

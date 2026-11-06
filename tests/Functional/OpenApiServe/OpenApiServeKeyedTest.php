@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\OpenApiServe;
 
 use haddowg\JsonApiBundle\OpenApi\ArtifactStore;
 use haddowg\JsonApiBundle\OpenApi\DocumentFactory;
+use haddowg\JsonApiBundle\OpenApi\DocumentFormat;
 use haddowg\JsonApiBundle\Tests\Functional\App\OpenApi\Serve\FeatureGateDecorator;
 use haddowg\JsonApiBundle\Tests\Functional\App\OpenApi\Serve\FeatureGateSchemaDecorator;
 use haddowg\JsonApiBundle\Tests\Functional\App\OpenApi\Serve\HostServersDecorator;
@@ -195,5 +196,50 @@ final class OpenApiServeKeyedTest extends OpenApiServeTestCase
         self::assertNotNull($kernel);
 
         return new CommandTester((new Application($kernel))->find($name));
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    public function theYamlDocumentIsTheDecoratedDocumentWithItsOwnKeyedEtag(): void
+    {
+        $this->warm();
+        $artifactHash = $this->store()->readHash('default');
+        self::assertIsString($artifactHash);
+
+        $json = $this->get('/docs.json', 'tenant.test');
+        $yaml = $this->get('/docs.yaml', 'tenant.test');
+        self::assertYamlMatchesJson($json, $yaml);
+
+        // The decorators ran: the host's servers, and the tenant's missing feature pruned.
+        $document = $this->json($json);
+        self::assertSame([['url' => 'https://tenant.test/api']], $document['servers'] ?? null);
+        self::assertArrayNotHasKey('/categories', self::arr($document['paths'] ?? null));
+
+        $keys = \json_encode([
+            [FeatureGateDecorator::class, ['v' => 1, 'features' => ['catalog']]],
+            [HostServersDecorator::class, 'tenant.test'],
+        ], \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
+        $keyed = ArtifactStore::hash($artifactHash . "\n" . $keys);
+        self::assertSame(self::quoted($keyed), $json->getEtag());
+        self::assertSame(self::quoted(DocumentFormat::Yaml->etag($keyed)), $yaml->getEtag());
+        self::assertNotSame($json->getEtag(), $yaml->getEtag());
+        self::assertNotSame($yaml->getEtag(), $this->get('/docs.yaml', 'one.test')->getEtag());
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    public function aMatchingIfNoneMatchOnTheYamlIsAnsweredWithoutDecorating(): void
+    {
+        $this->warm();
+        $etag = $this->etagOf($this->get('/docs.yaml', 'one.test'));
+        self::assertSame(1, FeatureGateDecorator::$decorated);
+
+        $response = $this->get('/docs.yaml', 'one.test', ['If-None-Match' => 'W/' . $etag]);
+        self::assertSame(304, $response->getStatusCode());
+        self::assertSame(1, FeatureGateDecorator::$decorated);
+
+        // The JSON document's tag doesn't match the YAML one.
+        $jsonEtag = $this->etagOf($this->get('/docs.json', 'one.test'));
+        self::assertSame(200, $this->get('/docs.yaml', 'one.test', ['If-None-Match' => $jsonEtag])->getStatusCode());
     }
 }

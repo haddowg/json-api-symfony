@@ -48,8 +48,10 @@ final class DocumentRouteWarmer implements CacheWarmerInterface
         }
 
         try {
+            $store = $this->store->withCacheDir($cacheDir);
             $routes = $this->locator->rescan();
-            $this->store->withCacheDir($cacheDir)->writeDocumentRoutes($routes);
+            $store->writeDocumentRoutes($routes);
+            $store->writeDocumentRoutes($this->locator->rescan(DocumentFormat::Yaml), DocumentFormat::Yaml);
         } catch (\Throwable $e) {
             $this->logger?->error('Failed to find the OpenAPI document routes: {message}', [
                 'message' => $e->getMessage(),

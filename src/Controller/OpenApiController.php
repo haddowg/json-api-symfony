@@ -8,17 +8,26 @@ use haddowg\JsonApi\OpenApi\Serve\ServeArtifact;
 use haddowg\JsonApi\OpenApi\Serve\UnserializableValue;
 use haddowg\JsonApiBundle\OpenApi\ArtifactStore;
 use haddowg\JsonApiBundle\OpenApi\DocumentFactory;
+use haddowg\JsonApiBundle\OpenApi\DocumentFormat;
 use haddowg\JsonApiBundle\OpenApi\OpenApiServeCacheKeyInterface;
 use haddowg\JsonApiBundle\OpenApi\OpenApiServeDecoratorInterface;
 use haddowg\JsonApiBundle\OpenApi\Serve\ConditionalResponder;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**
  * Serves the OpenAPI 3.1 document for a server:
  * `GET {json.path}` (default `/docs.json`) for the implicit `default` server and
- * `GET /{server}/docs.json` for a named one.
+ * `GET /{server}/docs.json` for a named one, and the same document as YAML at
+ * `GET {yaml.path}` (default `/docs.yaml`) and `GET /{server}/docs.yaml`.
+ *
+ * The `format` route default picks the encoding ({@see DocumentFormat}): `json` when a
+ * route sets none, or `yaml`. Both are encoded from one JSON body, built the same way, so
+ * the YAML document has the same decorators, pruning and cache keys as the JSON one. Its
+ * ETag folds the format in, and it is served as `application/yaml`. YAML answers `404`
+ * while `json_api.openapi.yaml.enabled` is off, on any route.
  *
  * It serves the **pre-built artifact** the {@see \haddowg\JsonApiBundle\OpenApi\DocumentWarmer}
  * wrote at `cache:warmup` (an `O(file read)`, never a per-request build). When the
@@ -35,10 +44,11 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * The route is registered only when `kernel.debug` is true **or**
  * `json_api.openapi.expose_in_prod` is true (the loader's expose gate), so the
- * controller need not re-check exposure.
+ * controller doesn't re-check exposure, for either format. A route an app declares itself
+ * is exposed as the app routes it.
  *
  * In **combined** multi-server mode (`json_api.openapi.multi_server: combined`) the
- * loader emits only the json-path route, and this controller serves the single
+ * loader emits only the json-path and yaml-path routes, and this controller serves the single
  * combined document spanning every server — the {@see DocumentFactory::combined()}
  * build, stored under {@see ArtifactStore} the combined key — regardless of the route's
  * `server` default.
@@ -67,6 +77,7 @@ final class OpenApiController
     /**
      * @param iterable<OpenApiServeDecoratorInterface> $serveDecorators the tagged serve decorators, highest priority first
      * @param ?string                                  $cacheControl    `json_api.openapi.cache_control`
+     * @param bool                                     $yaml            `json_api.openapi.enabled` and `json_api.openapi.yaml.enabled` both on
      */
     public function __construct(
         private readonly DocumentFactory $documents,
@@ -75,6 +86,7 @@ final class OpenApiController
         private readonly bool $combined = false,
         iterable $serveDecorators = [],
         ?string $cacheControl = null,
+        private readonly bool $yaml = false,
     ) {
         $this->decorators = ConditionalResponder::order($serveDecorators);
         $this->keyed = ConditionalResponder::allKeyed($this->decorators);
@@ -83,10 +95,12 @@ final class OpenApiController
 
     /**
      * Serves the document for `$server` (the implicit `default` server when the route
-     * carries no `{server}` segment), or the single combined document in combined mode.
+     * carries no `{server}` segment), or the single combined document in combined mode,
+     * in the route's `$format`.
      */
-    public function __invoke(Request $request, ?string $server = null): Response
+    public function __invoke(Request $request, ?string $server = null, string $format = 'json'): Response
     {
+        $encoding = $this->encoding($format);
         $key = $this->combined ? self::COMBINED_KEY : ($server ?? ServerProvider::DEFAULT_SERVER);
 
         // A missing artifact is built at most once per request.
@@ -97,12 +111,12 @@ final class OpenApiController
 
         if ($this->decorators === []) {
             $json = null;
-            $response = $this->responder->prepare($this->artifactHash($key, $json, $build));
+            $response = $this->prepare($encoding, $this->artifactHash($key, $json, $build));
             if ($this->responder->notModified($response, $request)) {
                 return $response;
             }
 
-            return $response->setContent($json ?? $this->store->read($key) ?? $build()[0]);
+            return $response->setContent($encoding->encode($json ?? $this->store->read($key) ?? $build()[0]));
         }
 
         $response = null;
@@ -110,7 +124,7 @@ final class OpenApiController
             /** @var list<OpenApiServeCacheKeyInterface> $decorators */
             $decorators = $this->decorators;
             $json = null;
-            $response = $this->responder->prepare(ConditionalResponder::keyedHash($this->artifactHash($key, $json, $build), $decorators, $request, $key));
+            $response = $this->prepare($encoding, ConditionalResponder::keyedHash($this->artifactHash($key, $json, $build), $decorators, $request, $key));
             if ($this->responder->notModified($response, $request)) {
                 return $response;
             }
@@ -124,13 +138,37 @@ final class OpenApiController
         $body = (string) \json_encode($artifact->prune($document), ConditionalResponder::JSON_FLAGS);
 
         if ($response === null) {
-            $response = $this->responder->prepare(ArtifactStore::hash($body));
+            $response = $this->prepare($encoding, ArtifactStore::hash($body));
             if ($this->responder->notModified($response, $request)) {
                 return $response;
             }
         }
 
-        return $response->setContent($body);
+        return $response->setContent($encoding->encode($body));
+    }
+
+    /**
+     * The format a route asks for, or a 404 for one this controller doesn't serve.
+     */
+    private function encoding(string $format): DocumentFormat
+    {
+        $encoding = DocumentFormat::tryFrom($format);
+        if ($encoding === null || ($encoding === DocumentFormat::Yaml && !$this->yaml)) {
+            throw new NotFoundHttpException(\sprintf('The OpenAPI document is not served as "%s".', $format));
+        }
+
+        return $encoding;
+    }
+
+    /**
+     * A response tagged for `$encoding` from the hash of the JSON body it encodes.
+     */
+    private function prepare(DocumentFormat $encoding, string $hash): Response
+    {
+        $response = $this->responder->prepare($encoding->etag($hash));
+        $response->headers->set('Content-Type', $encoding->contentType());
+
+        return $response;
     }
 
     /**

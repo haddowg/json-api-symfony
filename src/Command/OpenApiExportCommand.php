@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Command;
 
 use haddowg\JsonApiBundle\OpenApi\DocumentFactory;
+use haddowg\JsonApiBundle\OpenApi\DocumentFormat;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -134,7 +135,7 @@ final class OpenApiExportCommand extends Command
         }
 
         $rendered = $isYaml
-            ? Yaml::dump($document->toArray(), 16, 2, Yaml::DUMP_OBJECT_AS_MAP)
+            ? DocumentFormat::Yaml->encode($document->toJsonString())
             : $document->toJsonString(!$compact) . "\n";
 
         if ($outputFile === null) {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Functional\App\OpenApi;
 
 use haddowg\JsonApiBundle\Controller\OpenApiController;
+use haddowg\JsonApiBundle\Controller\OpenApiUiController;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Routing\OpenApiRouteLoader;
@@ -35,7 +36,9 @@ use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
  *
  * `$docsRoutes` picks who serves the documents: `bundle` imports the bundle's routes,
  * `custom` routes {@see OpenApiController} under the app's own names and paths
- * (`/api/docs.json`, and `/api/v5/docs.json` for `admin`), and `none` serves them nowhere.
+ * (`/api/docs.json`, and `/api/v5/docs.json` for `admin`), `custom_yaml` adds their YAML
+ * twins (`/api/docs.yaml`, `/api/v5/docs.yaml`) and a ReDoc viewer for `admin` at
+ * `/api/v5/docs`, and `none` serves them nowhere. `$yaml` is the `openapi.yaml` config.
  * `$exposed` sets `expose_in_prod` and `$documentUrl` sets `document_url`. With
  * `$mountDefault` off only the `admin` server's routes are imported. The logger
  * keeps warnings in {@see Serve\WarningLogger}.
@@ -44,6 +47,9 @@ final class OpenApiMultiServerTestKernel extends Kernel
 {
     use MicroKernelTrait;
 
+    /**
+     * @param array<string, mixed>|null $yaml
+     */
     public function __construct(
         string $environment,
         bool $debug,
@@ -53,6 +59,7 @@ final class OpenApiMultiServerTestKernel extends Kernel
         private readonly bool $exposed = true,
         private readonly ?string $documentUrl = null,
         private readonly bool $mountDefault = true,
+        private readonly ?array $yaml = null,
     ) {
         parent::__construct($environment, $debug);
     }
@@ -80,7 +87,8 @@ final class OpenApiMultiServerTestKernel extends Kernel
     {
         return \sys_get_temp_dir() . '/json-api-symfony-tests/openapi-multi-cache/' . ($this->combined ? 'combined-' : '') . ($this->atomic ? 'atomic-' : '')
             . ($this->docsRoutes !== 'bundle' ? $this->docsRoutes . '-' : '') . ($this->exposed ? '' : 'hidden-')
-            . ($this->documentUrl !== null ? 'url-' : '') . ($this->mountDefault ? '' : 'unmounted-') . $this->environment;
+            . ($this->documentUrl !== null ? 'url-' : '') . ($this->mountDefault ? '' : 'unmounted-')
+            . ($this->yaml !== null ? 'yaml-' . \md5(\serialize($this->yaml)) . '-' : '') . ($this->debug ? 'debug-' : '') . $this->environment;
     }
 
     public function getLogDir(): string
@@ -112,6 +120,12 @@ final class OpenApiMultiServerTestKernel extends Kernel
                 'document_url' => $this->documentUrl,
             ],
         ];
+        if ($this->yaml !== null) {
+            $jsonApi['openapi']['yaml'] = $this->yaml;
+        }
+        if ($this->docsRoutes === 'custom_yaml') {
+            $jsonApi['openapi']['ui'] = ['renderer' => 'redoc'];
+        }
 
         // The Atomic Operations extension is a single GLOBAL flag, but the endpoint
         // (and therefore the OpenAPI path/components) exists per server.
@@ -160,7 +174,7 @@ final class OpenApiMultiServerTestKernel extends Kernel
             $routes->import('.', OpenApiRouteLoader::ROUTE_TYPE);
         }
 
-        if ($this->docsRoutes === 'custom') {
+        if ($this->docsRoutes === 'custom' || $this->docsRoutes === 'custom_yaml') {
             $routes->add('app_docs', '/api/docs.json')
                 ->controller(OpenApiController::class . '::__invoke')
                 ->methods(['GET']);
@@ -168,6 +182,25 @@ final class OpenApiMultiServerTestKernel extends Kernel
             if (!$this->combined) {
                 $routes->add('app_admin_docs', '/api/v5/docs.json')
                     ->controller(OpenApiController::class)
+                    ->defaults(['server' => 'admin'])
+                    ->methods(['GET']);
+            }
+        }
+
+        if ($this->docsRoutes === 'custom_yaml') {
+            $routes->add('app_docs_yaml', '/api/docs.yaml')
+                ->controller(OpenApiController::class)
+                ->defaults(['format' => 'yaml'])
+                ->methods(['GET']);
+
+            if (!$this->combined) {
+                $routes->add('app_admin_docs_yaml', '/api/v5/docs.yaml')
+                    ->controller(OpenApiController::class)
+                    ->defaults(['server' => 'admin', 'format' => 'yaml'])
+                    ->methods(['GET']);
+
+                $routes->add('app_admin_viewer', '/api/v5/docs')
+                    ->controller(OpenApiUiController::class)
                     ->defaults(['server' => 'admin'])
                     ->methods(['GET']);
             }
