@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.29.0](https://github.com/haddowg/json-api-symfony/compare/v1.28.4...v1.29.0) (2026-11-06)
+
+
+### Features
+
+* accept core operation names in operationExtensions ([#294](https://github.com/haddowg/json-api-symfony/issues/294)) ([e0fd2d4](https://github.com/haddowg/json-api-symfony/commit/e0fd2d4ab82b6ca79969e7e495a0fcda14dcac46))
+
 ## [1.28.4](https://github.com/haddowg/json-api-symfony/compare/v1.28.3...v1.28.4) (2026-11-05)
 
 
