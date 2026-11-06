@@ -86,4 +86,34 @@ final class AsJsonApiSerializerTest extends TestCase
 
         new AsJsonApiSerializer(type: 'shelves', operations: [Operation::FetchOne], operationExamples: ['fetchCollection' => false]);
     }
+
+    #[Test]
+    public function deprecatedOperationsMayOnlyNameAnExposedOperation(): void
+    {
+        $attribute = new AsJsonApiSerializer(type: 'shelves', operations: [Operation::FetchOne], deprecatedOperations: ['fetchOne', 'fetchRelated.books']);
+        self::assertSame(['fetchOne', 'fetchRelated.books'], $attribute->deprecatedOperations);
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('AsJsonApiSerializer deprecatedOperations["fetchCollection"] targets an operation this type does not expose');
+
+        new AsJsonApiSerializer(type: 'shelves', operations: [Operation::FetchOne], deprecatedOperations: ['fetchCollection']);
+    }
+
+    #[Test]
+    public function aDeprecatedOperationWithAnUnknownNameIsRejected(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('AsJsonApiSerializer deprecatedOperations has an unknown operation key "restock"');
+
+        new AsJsonApiSerializer(type: 'shelves', operations: [Operation::FetchOne], deprecatedOperations: ['restock']);
+    }
+
+    #[Test]
+    public function aDeprecatedRelationshipMutationNeedsUpdate(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('AsJsonApiSerializer deprecatedOperations["updateRelationship.books"] targets a relationship mutation');
+
+        new AsJsonApiSerializer(type: 'shelves', operations: [Operation::FetchOne], deprecatedOperations: ['updateRelationship.books']);
+    }
 }

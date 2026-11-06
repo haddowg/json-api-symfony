@@ -153,4 +153,66 @@ final class ResponseHeadersRegistryTest extends TestCase
         self::assertSame(['widgets' => ['cache' => ['max_age' => 60]]], $definition->getArgument('$byType'));
         self::assertSame(['v5' => ['widgets' => ['cache' => ['max_age' => 60]]]], $definition->getArgument('$servers'));
     }
+
+    #[Test]
+    public function aDeprecatedOperationAnnouncesABareDeprecationWithTheTypesSunset(): void
+    {
+        $registry = new ResponseHeadersRegistry(
+            byType: ['widgets' => ['deprecation' => ['sunset' => '2051-06-30'], 'deprecated_operations' => ['delete']]],
+        );
+
+        self::assertSame(['delete'], $registry->deprecatedOperationsFor('widgets'));
+        self::assertNull($registry->deprecationFor('widgets')?->deprecation);
+
+        $operation = $registry->deprecationFor('widgets', operationDeprecated: true);
+        self::assertTrue($operation?->deprecation);
+        self::assertSame('2051-06-30', $operation->sunset);
+    }
+
+    #[Test]
+    public function aDeprecatedOperationKeepsTheDateADefaultDeclares(): void
+    {
+        $registry = new ResponseHeadersRegistry(
+            byType: ['widgets' => ['deprecated_operations' => ['delete']]],
+            defaultDeprecation: ['deprecation' => '@1924991999'],
+        );
+
+        self::assertSame('@1924991999', $registry->deprecationFor('widgets', operationDeprecated: true)?->deprecation);
+    }
+
+    #[Test]
+    public function theDeclaredDeprecationLeavesTheDefaultsOut(): void
+    {
+        $registry = new ResponseHeadersRegistry(
+            byType: ['widgets' => ['deprecation' => ['sunset' => '2051-06-30']]],
+            defaultDeprecation: ['deprecation' => true],
+        );
+
+        $declared = $registry->declaredDeprecationFor('widgets');
+        self::assertNull($declared?->deprecation);
+        self::assertSame('2051-06-30', $declared?->sunset);
+        self::assertNull($registry->declaredDeprecationFor('gadgets'));
+    }
+
+    #[Test]
+    public function thePassRecordsTheDeprecatedOperationsOfAResourceAndASerializer(): void
+    {
+        $builder = new ContainerBuilder();
+        $builder->register(ResponseHeadersRegistry::class, ResponseHeadersRegistry::class);
+        $builder->setDefinition('widgets', (new Definition(\stdClass::class))->addTag(JsonApiBundle::RESOURCE_TAG, [
+            'type' => 'widgets',
+            'deprecated_operations' => 'delete,fetchRelated.owner',
+        ]));
+        $builder->setDefinition('gadgets', (new Definition(\stdClass::class))->addTag(JsonApiBundle::SERIALIZER_TAG, [
+            'type' => 'gadgets',
+            'server' => 'v2',
+            'deprecated_operations' => 'fetchOne',
+        ]));
+
+        (new ResponseHeadersPass())->process($builder);
+
+        $definition = $builder->getDefinition(ResponseHeadersRegistry::class);
+        self::assertSame(['widgets' => ['deprecated_operations' => ['delete', 'fetchRelated.owner']]], $definition->getArgument('$byType'));
+        self::assertSame(['v2' => ['gadgets' => ['deprecated_operations' => ['fetchOne']]]], $definition->getArgument('$servers'));
+    }
 }

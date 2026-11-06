@@ -7,16 +7,18 @@ namespace haddowg\JsonApiBundle\DependencyInjection\Compiler;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApiBundle\Http\ResponseHeadersRegistry;
 use haddowg\JsonApiBundle\JsonApiBundle;
+use haddowg\JsonApiBundle\OpenApi\Metadata\DeprecatedOperations;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 
 /**
  * Collects the declarative response-header config a resource declares via
- * `#[AsJsonApiResource(cacheHeaders: …, deprecation: …, sunset: …)]` — the extension
+ * `#[AsJsonApiResource(cacheHeaders: …, deprecation: …, sunset: …, deprecatedOperations: …)]`
+ * and a standalone serializer's `deprecatedOperations` — the extension
  * JSON-encodes it into the `response_headers` tag attribute
  * on the {@see JsonApiBundle::RESOURCE_TAG} — and assembles a scalar
- * `type → {cache, cache_operations, deprecation}` map per server, injected into the
+ * `type → {cache, cache_operations, deprecation, deprecated_operations}` map per server, injected into the
  * {@see ResponseHeadersRegistry} the {@see \haddowg\JsonApiBundle\EventListener\ResponseHeadersListener}
  * queries. The default server's map is `$byType` and every other server's goes under
  * `$servers`; a resource on several servers is recorded under each.
@@ -57,7 +59,7 @@ final class ResponseHeadersPass implements CompilerPassInterface
             return;
         }
 
-        /** @var array<string, array<string, array{cache?: array<string, mixed>, cache_operations?: array<string, array<string, mixed>>, deprecation?: array<string, mixed>}>> $byServer */
+        /** @var array<string, array<string, array{cache?: array<string, mixed>, cache_operations?: array<string, array<string, mixed>>, deprecation?: array<string, mixed>, deprecated_operations?: list<string>}>> $byServer */
         $byServer = [];
 
         foreach ($container->findTaggedServiceIds(JsonApiBundle::RESOURCE_TAG) as $id => $tags) {
@@ -73,10 +75,35 @@ final class ResponseHeadersPass implements CompilerPassInterface
             }
 
             $config = $this->configFromTags($tags);
+            $deprecated = $this->deprecatedOperationsFromTags($tags);
+            if ($deprecated !== []) {
+                $config['deprecated_operations'] = $deprecated;
+            }
             if ($config !== []) {
                 foreach ($this->serversFromTags($tags) as $server) {
                     $byServer[$server][$type] = $config;
                 }
+            }
+        }
+
+        // A standalone serializer declares only deprecated operations; the resource
+        // registered for the same type on a server wins, as for the other declarations.
+        foreach ($container->findTaggedServiceIds(JsonApiBundle::SERIALIZER_TAG) as $tags) {
+            $type = null;
+            foreach ($tags as $tag) {
+                if (\is_string($tag['type'] ?? null) && $tag['type'] !== '') {
+                    $type = $tag['type'];
+                    break;
+                }
+            }
+
+            $deprecated = $this->deprecatedOperationsFromTags($tags);
+            if ($type === null || $deprecated === []) {
+                continue;
+            }
+
+            foreach ($this->serversFromTags($tags) as $server) {
+                $byServer[$server][$type] ??= ['deprecated_operations' => $deprecated];
             }
         }
 
@@ -112,6 +139,25 @@ final class ResponseHeadersPass implements CompilerPassInterface
         }
 
         return [ServerProvider::DEFAULT_SERVER];
+    }
+
+    /**
+     * The operations a resource or serializer deprecates on their own, read across its tags.
+     *
+     * @param array<array<string, mixed>> $tags
+     *
+     * @return list<string>
+     */
+    private function deprecatedOperationsFromTags(array $tags): array
+    {
+        foreach ($tags as $tag) {
+            $names = DeprecatedOperations::decode($tag['deprecated_operations'] ?? null);
+            if ($names !== []) {
+                return $names;
+            }
+        }
+
+        return [];
     }
 
     /**

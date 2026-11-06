@@ -13,6 +13,7 @@ use haddowg\JsonApi\OpenApi\Metadata\OperationResponseInterface;
 use haddowg\JsonApi\OpenApi\Metadata\OperationResponses;
 use haddowg\JsonApi\OpenApi\Metadata\OperationType;
 use haddowg\JsonApi\OpenApi\Metadata\UpdateResponse;
+use haddowg\JsonApiBundle\OpenApi\Metadata\DeprecatedOperations;
 use haddowg\JsonApiBundle\OpenApi\Metadata\OperationExampleCodec;
 use haddowg\JsonApiBundle\OpenApi\Metadata\OperationScopeOverrides;
 use haddowg\JsonApiBundle\Operation\Operation;
@@ -120,6 +121,19 @@ use haddowg\JsonApiBundle\Operation\Operation;
  * per the RFC). `sunset: '<HTTP-date>'` emits `Sunset: <HTTP-date>`, plus — when
  * `sunsetLink` is set — a companion `Link: <uri>; rel="sunset"`.
  *
+ * The same declaration marks the type in the OpenAPI document: with `deprecation` set,
+ * every operation of the type is `deprecated: true`, and a `sunset` that parses as a date
+ * appends a sentence naming it to each operation's description, with or without
+ * `deprecation`.
+ *
+ * `deprecatedOperations` deprecates single operations rather than the whole type. It
+ * lists core operation names, the same names `operationExamples` is keyed by
+ * (`delete`, `fetchRelated.<relation>`, ...). Each named operation is `deprecated: true`
+ * in the OpenAPI document, and a request it serves gets a `Deprecation` header, plus
+ * `Sunset` when the type declares one. An unknown name, a CRUD operation the type does
+ * not expose, or a relationship mutation without `Update` is a constructor
+ * `\LogicException`; core fails the projection for a relation the type does not have.
+ *
  * `operationExamples` replaces or switches off the worked examples the OpenAPI document
  * generates for the type's operations from its fields' declared examples. It is keyed by core's
  * operation name: `fetchCollection`, `fetchOne`, `create`,
@@ -221,6 +235,7 @@ final readonly class AsJsonApiResource
      * @param string|null                                                          $singular       the noun the generated OpenAPI prose uses for one resource, as words without an article (null = inflected from the type name)
      * @param array<string, OperationExample|false|null>                           $operationExamples per-operation OpenAPI example overrides, keyed by core's operation name (`create`, `fetchRelated.<relation>`, ...); `false` or `null` emits none
      * @param array<string, list<string>>                                          $operationScopes   per-operation OAuth scope overrides, keyed like `operationExamples`; `[]` needs none
+     * @param list<string>                                                         $deprecatedOperations the operations deprecated on their own, by core's operation name (`delete`, `fetchRelated.<relation>`, ...)
      */
     public function __construct(
         public ?string $type = null,
@@ -253,6 +268,7 @@ final readonly class AsJsonApiResource
         public ?string $singular = null,
         public array $operationExamples = [],
         public array $operationScopes = [],
+        public array $deprecatedOperations = [],
     ) {
         if ($singular !== null && \trim($singular) === '') {
             throw new \LogicException(
@@ -291,6 +307,7 @@ final readonly class AsJsonApiResource
         VendorExtensions::assertValid('AsJsonApiResource', $extensions, $operationExtensions, $exposed);
         OperationExampleCodec::assertValid('AsJsonApiResource', $operationExamples, $exposed);
         OperationScopeOverrides::assertValid('AsJsonApiResource', $operationScopes, $exposed);
+        DeprecatedOperations::assertValid('AsJsonApiResource', $deprecatedOperations, $exposed);
 
         $this->create = self::normalizeResponses($create, OperationType::Create, $allowed);
         $this->update = self::normalizeResponses($update, OperationType::Update, $allowed);

@@ -121,7 +121,7 @@ final readonly class AsJsonApiResource
 > The constructor also carries the declarative-authorization arguments (`security`,
 > `securityCreate`, …) documented in [authorization](authorization.md), the
 > declarative response-header arguments (`cacheHeaders`, `deprecation`, `sunset`,
-> `sunsetLink`) documented in [configuration](configuration.md#response-headers-caching-and-deprecation),
+> `sunsetLink`, `deprecatedOperations`) documented in [configuration](configuration.md#response-headers-caching-and-deprecation),
 > and the per-operation **response-declaration** arguments (`create`, `update`,
 > `delete`, `fetchOne`, `fetchCollection`) documented in
 > [Per-operation response declarations](#per-operation-response-declarations) below,

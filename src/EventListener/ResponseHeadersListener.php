@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\EventListener;
 
+use haddowg\JsonApi\OpenApi\Metadata\OperationKey;
+use haddowg\JsonApi\OpenApi\Metadata\OperationKind;
+use haddowg\JsonApiBundle\Action\ActionRegistry;
 use haddowg\JsonApiBundle\Http\ResponseHeaderOperation;
 use haddowg\JsonApiBundle\Http\ResponseHeadersRegistry;
 use haddowg\JsonApiBundle\Operation\TargetResolver;
@@ -25,7 +28,8 @@ use Symfony\Component\HttpKernel\Event\ResponseEvent;
  *  - **deprecation + sunset** — `Deprecation` (IETF Deprecation-header draft) + `Sunset` (RFC 8594) — the resolved
  *    {@see \haddowg\JsonApiBundle\Http\DeprecationHeaders} on **every** response for
  *    the type (reads and writes alike — a deprecated endpoint is deprecated
- *    regardless of method).
+ *    regardless of method), and on every response of an operation the type deprecates
+ *    on its own or a custom action declared deprecated.
  *
  * It acts only on the bundle's JSON:API routes (the {@see JsonApiRoute::MARKER}
  * default), resolves the type + read shape the same way the request/view/exception
@@ -43,6 +47,7 @@ final class ResponseHeadersListener
     public function __construct(
         private readonly ResponseHeadersRegistry $registry,
         private readonly TargetResolver $targetResolver,
+        private readonly ?ActionRegistry $actions = null,
     ) {}
 
     public function onKernelResponse(ResponseEvent $event): void
@@ -69,7 +74,7 @@ final class ResponseHeadersListener
 
         // Deprecation/Sunset are emitted on every response for the type, reads and
         // writes alike (each header is only written when the app has not set it).
-        $this->registry->deprecationFor($type, $server)?->applyTo($response);
+        $this->registry->deprecationFor($type, $server, $this->isDeprecatedOperation($request, $type, $server))?->applyTo($response);
 
         // Cache headers apply only to a safe (GET) successful read — never a write
         // verb and never an error document (2xx only).
@@ -89,6 +94,69 @@ final class ResponseHeadersListener
 
         $cache = $this->registry->cacheFor($type, $this->operationFor($request), $server);
         $cache?->applyTo($response);
+    }
+
+    /**
+     * Whether the request is served by an operation deprecated on its own: a CRUD,
+     * related or relationship operation the type names in `deprecatedOperations`, or a
+     * custom action declared `deprecated`.
+     */
+    private function isDeprecatedOperation(Request $request, string $type, string $server): bool
+    {
+        $route = JsonApiRoute::of($request);
+        if ($route === null) {
+            return false;
+        }
+
+        if ($route->action !== null) {
+            return $route->actionScope !== null
+                && ($this->actions?->descriptorFor($server, $type, $route->actionScope, $route->action)->deprecated ?? false);
+        }
+
+        $deprecated = $this->registry->deprecatedOperationsFor($type, $server);
+        if ($deprecated === []) {
+            return false;
+        }
+
+        $name = self::operationName($route, $request->getMethod());
+
+        return $name !== null && \in_array($name, $deprecated, true);
+    }
+
+    /**
+     * Core's operation name for the endpoint and method a request hit, the grammar
+     * `deprecatedOperations` lists names in.
+     */
+    private static function operationName(JsonApiRoute $route, string $method): ?string
+    {
+        if ($route->relationship !== null) {
+            $kind = $route->isRelationshipEndpoint
+                ? match ($method) {
+                    'GET', 'HEAD' => OperationKind::FetchRelationship,
+                    'PATCH' => OperationKind::UpdateRelationship,
+                    'POST' => OperationKind::AddRelationship,
+                    'DELETE' => OperationKind::RemoveRelationship,
+                    default => null,
+                }
+            : (\in_array($method, ['GET', 'HEAD'], true) ? OperationKind::FetchRelated : null);
+
+            return $kind === null ? null : OperationKey::relation($kind, $route->relationship)->name();
+        }
+
+        $kind = $route->id !== null
+            ? match ($method) {
+                'GET', 'HEAD' => OperationKind::FetchOne,
+                'PATCH' => OperationKind::Update,
+                'DELETE' => OperationKind::Delete,
+                default => null,
+            }
+        : match ($method) {
+            'GET', 'HEAD' => OperationKind::FetchCollection,
+            'POST' => OperationKind::Create,
+            default => null,
+        };
+
+        return $kind === null ? null : OperationKey::crud($kind)->name();
     }
 
     /**

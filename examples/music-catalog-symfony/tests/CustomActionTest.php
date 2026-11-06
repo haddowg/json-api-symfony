@@ -319,8 +319,9 @@ final class CustomActionTest extends MusicCatalogKernelTestCase
             self::assertIsArray(self::at($document, 'paths', $path, 'post'), $path);
             self::assertNull(self::at($document, 'paths', $path, 'post', 'x-safety'), $path);
         }
-        // The safety tier sits below the baseline, so the document carries the baseline.
-        self::assertSame(GeneratorContract::BASELINE, self::at($document, 'info', 'x-generator', 'contract'));
+        // The safety tier sits below the baseline, but the deprecated devices type marks
+        // its operations, so the document carries the deprecation tier.
+        self::assertSame(GeneratorContract::DEPRECATION, self::at($document, 'info', 'x-generator', 'contract'));
     }
 
     private static function at(mixed $value, string ...$keys): mixed

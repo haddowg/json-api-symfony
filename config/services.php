@@ -386,6 +386,7 @@ return static function (ContainerConfigurator $container): void {
         ->args([
             '$registry' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Http\ResponseHeadersRegistry::class),
             '$targetResolver' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(TargetResolver::class),
+            '$actions' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Action\ActionRegistry::class),
         ])
         ->tag('kernel.event_listener', ['event' => 'kernel.response', 'method' => 'onKernelResponse']);
 

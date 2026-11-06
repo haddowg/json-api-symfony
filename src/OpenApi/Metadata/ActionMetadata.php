@@ -11,6 +11,7 @@ use haddowg\JsonApi\OpenApi\Metadata\ActionResource;
 use haddowg\JsonApi\OpenApi\Metadata\ActionResponse;
 use haddowg\JsonApi\OpenApi\Metadata\ActionScope;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresAcceptedBodies;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresActionDeprecation;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresActionExample;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresActionExtensions;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresActionLink;
@@ -41,7 +42,7 @@ use haddowg\JsonApiBundle\Action\RawResults;
  * projector switches on to advertise a `200` resource document, a `200` meta document,
  * a `204`, a `202` async accept, or a `303` redirect.
  */
-final readonly class ActionMetadata implements DeclaresActionLink, DeclaresAcceptedBodies, DeclaresActionExample, DeclaresActionSafety, DeclaresActionExtensions, DeclaresActionScopes
+final readonly class ActionMetadata implements DeclaresActionLink, DeclaresAcceptedBodies, DeclaresActionExample, DeclaresActionSafety, DeclaresActionExtensions, DeclaresActionScopes, DeclaresActionDeprecation
 {
     public function __construct(private ActionDescriptor $descriptor) {}
 
@@ -166,5 +167,10 @@ final readonly class ActionMetadata implements DeclaresActionLink, DeclaresAccep
     public function scopes(): ?array
     {
         return $this->descriptor->scopes;
+    }
+
+    public function isDeprecated(): bool
+    {
+        return $this->descriptor->deprecated;
     }
 }
