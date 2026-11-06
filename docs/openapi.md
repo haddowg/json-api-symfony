@@ -601,11 +601,41 @@ for that CRUD operation, so `DELETE /agencies/{id}` above carries
 `x-feature: agency-admin` and `x-rate-limit: 10`, and every other operation carries
 `x-feature: agency`. A type that declares neither renders exactly as before.
 
+`operationExtensions` also takes the operation names that
+[`operationExamples`](#operation-examples) and `operationScopes` use, which reach a single
+related or relationship endpoint as well as a CRUD operation: `fetchCollection`,
+`fetchOne`, `create`, `update`, `delete`, and for a relation `fetchRelated.<relation>`,
+`fetchRelationship.<relation>`, `updateRelationship.<relation>`,
+`addRelationship.<relation>` and `removeRelationship.<relation>`. The usual reason is to
+keep one endpoint out of the tools an MCP server builds from the document:
+
+```php
+#[AsJsonApiResource(
+    operationExtensions: [
+        'fetchRelated.agencies' => ['x-mcp' => false],
+    ],
+)]
+final class UserResource extends AbstractResource { /* … */ }
+```
+
+[json-api-mcp](https://haddowg.github.io/json-api-ts/mcp/#leave-out-or-rename-a-tool)
+leaves out the tool for an operation carrying `x-mcp: false`. An `x-mcp` object with
+`name`, `title` or `description` keeps the tool and overrides those fields instead.
+Relationship endpoints never become tools, so `x-mcp` matters on the related reads, the
+CRUD operations and custom actions.
+
+Each operation takes `extensions` first, then the set under its `Operation` case name,
+then the set under its operation name, and a later set wins on a shared key. A CRUD operation takes one key or the other, so declaring both
+`Delete` and `delete` on one type fails the container build.
+
 Every key must be a full extension name starting with `x-`. A bare name such as
 `feature`, `x-` on its own, a name under the OAS-reserved `x-oai-`/`x-oas-` prefixes, or
 an unknown operation key fails the container build, and so does an `operationExtensions`
-entry for an operation the type doesn't expose (outside `operations`, or a write on a
-`readOnly: true` resource). Values can be any JSON-encodable
+entry for an operation the type doesn't expose (outside `operations`, a write on a
+`readOnly: true` resource, or a relationship mutation on a type without `Update`). The
+bundle can't see a type's relations while it builds the container, so a relation the type
+doesn't have, such as `fetchRelated.agnecies`, fails when the document is generated
+instead, naming the operations the type does expose. Values can be any JSON-encodable
 scalar or array. There is no method hook for extensions, so when the value has to be
 computed, add it with a [decorator](#wholesale-customisation-the-decorator).
 

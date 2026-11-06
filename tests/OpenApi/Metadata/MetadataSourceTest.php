@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\Tests\OpenApi\Metadata;
 use haddowg\JsonApi\OpenApi\Metadata\ActionInputMode;
 use haddowg\JsonApi\OpenApi\Metadata\ActionScope;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresExampleGeneration;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresNamedOperationExtensions;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationExamples;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationExtensions;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresResourceLinks;
@@ -413,6 +414,69 @@ final class MetadataSourceTest extends TestCase
         self::assertSame(['x-feature' => 'blog'], $articles->extensions());
         self::assertSame(['x-rate-limit' => 5], $articles->operationExtensions(OperationType::Delete));
         self::assertSame([], $articles->operationExtensions(OperationType::Create));
+    }
+
+    #[Test]
+    public function theRegistryCarriesExtensionsKeyedByOperationNameOntoTheTypeMetadata(): void
+    {
+        $registry = new ResourceDescriptionRegistry([], [
+            'articles' => [
+                'type' => [],
+                'operations' => [],
+                'named' => ['fetchRelated.author' => ['x-mcp' => false]],
+            ],
+        ]);
+
+        $server = $this->source(descriptions: $registry)->forServer();
+        $articles = $this->typeNamed($server, 'articles');
+        $people = $this->typeNamed($server, 'people');
+
+        self::assertInstanceOf(DeclaresNamedOperationExtensions::class, $articles);
+        self::assertSame(['fetchRelated.author' => ['x-mcp' => false]], $articles->namedOperationExtensions());
+        self::assertInstanceOf(DeclaresNamedOperationExtensions::class, $people);
+        self::assertSame([], $people->namedOperationExtensions());
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    public function aNamedSetMergesOverTheCrudAndTypeWideSets(): void
+    {
+        $registry = new ResourceDescriptionRegistry([], [
+            'articles' => [
+                'type' => ['x-feature' => 'blog'],
+                'operations' => [OperationType::Delete->value => ['x-feature' => 'crud', 'x-rate-limit' => 5]],
+                'named' => [
+                    'delete' => ['x-feature' => 'named'],
+                    'fetchRelated.author' => ['x-mcp' => false],
+                ],
+            ],
+        ]);
+
+        $document = (new OpenApiProjector())->project($this->source(descriptions: $registry)->forServer())->toArray();
+
+        $delete = $this->at($document, 'paths', '/articles/{id}', 'delete');
+        self::assertSame('named', $delete['x-feature'] ?? null);
+        self::assertSame(5, $delete['x-rate-limit'] ?? null);
+
+        $related = $this->at($document, 'paths', '/articles/{id}/author', 'get');
+        self::assertFalse($related['x-mcp'] ?? null);
+        self::assertSame('blog', $related['x-feature'] ?? null);
+
+        self::assertArrayNotHasKey('x-mcp', $this->at($document, 'paths', '/articles/{id}/relationships/author', 'get'));
+        self::assertArrayNotHasKey('x-mcp', $this->at($document, 'paths', '/articles/{id}', 'get'));
+    }
+
+    #[Test]
+    public function aNamedSetForARelationTheTypeLacksFailsTheProjection(): void
+    {
+        $registry = new ResourceDescriptionRegistry([], [
+            'articles' => ['named' => ['fetchRelated.editor' => ['x-mcp' => false]]],
+        ]);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('"fetchRelated.editor"');
+
+        (new OpenApiProjector())->project($this->source(descriptions: $registry)->forServer());
     }
 
     #[Test]

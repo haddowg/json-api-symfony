@@ -31,7 +31,9 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
  * runs when the registry is defined.
  *
  * The declared OpenAPI vendor extensions (docs/openapi.md) ride the same way, as one
- * JSON `openapi_extensions` tag attribute, into the registry's `$extensions` argument.
+ * JSON `openapi_extensions` tag attribute, into the registry's `$extensions` argument:
+ * the type-wide set, the sets keyed by Operation case name and the sets keyed by core
+ * operation name.
  * A standalone serializer ({@see JsonApiBundle::SERIALIZER_TAG}) can declare them too.
  *
  * The operation example overrides ride as one JSON `operation_examples`
@@ -47,7 +49,7 @@ final class ResourceDescriptionPass implements CompilerPassInterface
             return;
         }
 
-        /** @var array<string, array{descriptions: array<string, array{description?: string, operations?: array<string, string>, singular?: string}>, extensions: array<string, array{type: array<string, mixed>, operations: array<string, array<string, mixed>>}>, examples: array<string, array<string, array{request: mixed, responses: array<int|string, mixed>}|false>>, scopes: array<string, array<string, list<string>>>}> $byServer */
+        /** @var array<string, array{descriptions: array<string, array{description?: string, operations?: array<string, string>, singular?: string}>, extensions: array<string, array{type: array<string, mixed>, operations: array<string, array<string, mixed>>, named: array<string, array<string, mixed>>}>, examples: array<string, array<string, array{request: mixed, responses: array<int|string, mixed>}|false>>, scopes: array<string, array<string, list<string>>>}> $byServer */
         $byServer = [];
 
         foreach ($container->findTaggedServiceIds(JsonApiBundle::RESOURCE_TAG) as $id => $tags) {
@@ -236,7 +238,7 @@ final class ResourceDescriptionPass implements CompilerPassInterface
      *
      * @param array<array<string, mixed>> $tags
      *
-     * @return array{type: array<string, mixed>, operations: array<string, array<string, mixed>>}|null
+     * @return array{type: array<string, mixed>, operations: array<string, array<string, mixed>>, named: array<string, array<string, mixed>>}|null
      */
     private function extensionsFromTags(array $tags): ?array
     {
@@ -265,6 +267,17 @@ final class ResourceDescriptionPass implements CompilerPassInterface
             }
         }
 
-        return ['type' => $type, 'operations' => $operations];
+        $named = [];
+        foreach (\is_array($decoded['named'] ?? null) ? $decoded['named'] : [] as $operation => $set) {
+            if (!\is_array($set)) {
+                continue;
+            }
+            $named[(string) $operation] = [];
+            foreach ($set as $name => $value) {
+                $named[(string) $operation][(string) $name] = $value;
+            }
+        }
+
+        return ['type' => $type, 'operations' => $operations, 'named' => $named];
     }
 }

@@ -17,6 +17,7 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiHydrator;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiRelations;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiSerializer;
+use haddowg\JsonApiBundle\Attribute\VendorExtensions;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineExtensionInterface;
@@ -1674,20 +1675,24 @@ final class JsonApiBundle extends AbstractBundle
     /**
      * The declared OpenAPI vendor extensions (`extensions:` / `operationExtensions:` on
      * #[AsJsonApiResource] or #[AsJsonApiSerializer], docs/openapi.md) as one JSON scalar
-     * of `{type: map, operations: map}`; `null` when none are declared. The attribute
-     * constructor has already validated every name and operation key.
+     * of `{type: map, operations: map, named: map}`; `null` when none are declared.
+     * `operations` holds the sets keyed by Operation case name and `named` the sets keyed
+     * by core operation name. The attribute constructor has already validated every name
+     * and operation key. An empty named set is kept, so core still checks its name.
      *
      * @param array<string, mixed>                $extensions
      * @param array<string, array<string, mixed>> $operationExtensions
      */
     private static function extensionsTag(array $extensions, array $operationExtensions): ?string
     {
-        $operations = \array_filter($operationExtensions, static fn(array $set): bool => $set !== []);
-        if ($extensions === [] && $operations === []) {
+        $split = VendorExtensions::split($operationExtensions);
+        $operations = \array_filter($split['crud'], static fn(array $set): bool => $set !== []);
+        $named = $split['named'];
+        if ($extensions === [] && $operations === [] && $named === []) {
             return null;
         }
 
-        return \json_encode(['type' => $extensions, 'operations' => $operations], \JSON_THROW_ON_ERROR);
+        return \json_encode(['type' => $extensions, 'operations' => $operations, 'named' => $named], \JSON_THROW_ON_ERROR);
     }
 
     /**

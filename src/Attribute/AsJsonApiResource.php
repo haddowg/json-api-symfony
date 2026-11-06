@@ -101,11 +101,15 @@ use haddowg\JsonApiBundle\Operation\Operation;
  * docs/openapi.md). `extensions` lands on every operation the document emits for the type:
  * its CRUD operations, its related and relationship endpoints, and its custom actions.
  * `operationExtensions` is keyed by the {@see \haddowg\JsonApiBundle\Operation\Operation}
- * case name, like `operationDescriptions`, and is merged over `extensions` for that one
- * CRUD operation (the operation's value wins on a shared key). Every key must start
+ * case name, like `operationDescriptions`, or by core's operation name, like
+ * `operationExamples`, which also reaches a related or relationship endpoint
+ * (`fetchRelated.agencies`). Each set is merged over `extensions` for that one operation
+ * (the operation's value wins on a shared key). Every key must start
  * with `x-`; a bare `x-`, an OAS-reserved `x-oai-`/`x-oas-` name, an unknown
- * operation key or an operation the type does not expose is a constructor
- * `\LogicException`. Values must be JSON-encodable.
+ * operation key, an operation the type does not expose, a relationship mutation without
+ * `Update`, or one CRUD operation named both ways (`Delete` and `delete`) is a constructor
+ * `\LogicException`; core fails the projection for a relation the type does not have.
+ * Values must be JSON-encodable.
  *
  * `deprecation` and `sunset` declare **deprecation signalling** — the IETF
  * Deprecation header field (`draft-ietf-httpapi-deprecation-header`) plus the
@@ -208,7 +212,7 @@ final readonly class AsJsonApiResource
      * @param string|null                                                          $description    the OpenAPI description override for this type's resource-object schema (null = the generated default)
      * @param array<string, string>                                                $operationDescriptions per-CRUD-operation OpenAPI description overrides, keyed by the {@see \haddowg\JsonApiBundle\Operation\Operation} case name (e.g. `Operation::Create->name`); an unknown key is a constructor error
      * @param array<string, mixed>                                                 $extensions     OpenAPI vendor extensions (`x-…` keys) stamped on every operation of this type
-     * @param array<string, array<string, mixed>>                                  $operationExtensions per-CRUD-operation OpenAPI vendor extensions, keyed by the {@see \haddowg\JsonApiBundle\Operation\Operation} case name and merged over `extensions`
+     * @param array<string, array<string, mixed>>                                  $operationExtensions per-operation OpenAPI vendor extensions, keyed by the {@see \haddowg\JsonApiBundle\Operation\Operation} case name or core's operation name (`fetchRelated.<relation>`, ...) and merged over `extensions`
      * @param CreateResponse|list<CreateResponse>|null                             $create         the declared success responses for `POST` create (single or list; null = the default `201`). `new Accepted($jobType)` documents an async `202`; `new NoContent()` a client-id `204`
      * @param UpdateResponse|list<UpdateResponse>|null                             $update         the declared success responses for `PATCH` update (null = the default `200`)
      * @param DeleteResponse|list<DeleteResponse>|null                             $delete         the declared success responses for `DELETE` (null = the default `204`)

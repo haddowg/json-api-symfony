@@ -364,6 +364,35 @@ final class OpenApiServingTest extends JsonApiFunctionalTestCase
 
     #[Test]
     #[Group('spec:openapi')]
+    public function extensionsKeyedByOperationNameLandOnThatOneEndpoint(): void
+    {
+        $document = $this->fetchDocument();
+
+        // x-mcp false on fetchRelated.tags leaves GET /products/{id}/tags out of the MCP
+        // tools, and the type-wide set still reaches it.
+        $related = $this->nested($document, 'paths', '/products/{id}/tags', 'get');
+        self::assertFalse($related['x-mcp'] ?? null);
+        self::assertSame('catalog', $related['x-feature'] ?? null);
+        foreach ([
+            ['/products/{id}/category', 'get'],
+            ['/products/{id}/relationships/tags', 'get'],
+            ['/products/{id}', 'get'],
+        ] as [$path, $method]) {
+            self::assertArrayNotHasKey('x-mcp', $this->nested($document, 'paths', $path, $method), \sprintf('%s %s', \strtoupper($method), $path));
+        }
+
+        // A named set wins over the type-wide set on a shared key.
+        self::assertSame('catalog-tags', $this->nested($document, 'paths', '/products/{id}/relationships/tags', 'get')['x-feature'] ?? null);
+
+        // A lower-case CRUD name works beside the case-name keys.
+        $update = $this->nested($document, 'paths', '/products/{id}', 'patch');
+        self::assertTrue($update['x-audit'] ?? null);
+        self::assertSame('catalog', $update['x-feature'] ?? null);
+        self::assertArrayNotHasKey('x-audit', $this->nested($document, 'paths', '/products/{id}', 'delete'));
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
     public function vendorExtensionsDeclaredOnAStandaloneSerializerLandOnItsOperations(): void
     {
         $document = $this->fetchDocument();

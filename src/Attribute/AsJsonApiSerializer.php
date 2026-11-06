@@ -39,9 +39,9 @@ use haddowg\JsonApiBundle\OpenApi\Metadata\OperationScopeOverrides;
  * {@see AsJsonApiResource} (docs/openapi.md). `extensions` lands on every operation the
  * document emits for the type, including custom actions mounted on it, so a
  * serialize-only type can still mark its actions. `operationExtensions` is keyed by
- * {@see \haddowg\JsonApiBundle\Operation\Operation} case name and may only name an
- * operation in `operations`. The names are validated the same way as on the resource
- * attribute.
+ * {@see \haddowg\JsonApiBundle\Operation\Operation} case name or core's operation name,
+ * and a CRUD key may only name an operation in `operations`. The keys and names are
+ * validated the same way as on the resource attribute.
  *
  * `operationExamples` replaces or switches off the type's generated OpenAPI operation
  * examples, as on {@see AsJsonApiResource}.
@@ -54,7 +54,7 @@ final readonly class AsJsonApiSerializer
      * @param string|list<string>|null                         $server     the server name(s) exposing this type (null = the implicit `default`)
      * @param list<string>                                     $tags       the OpenAPI tag names this type is grouped under (empty = the humanized-type default)
      * @param array<string, mixed>                             $extensions OpenAPI vendor extensions (`x-…` keys) stamped on every operation of this type
-     * @param array<string, array<string, mixed>>              $operationExtensions per-operation OpenAPI vendor extensions, keyed by an exposed {@see \haddowg\JsonApiBundle\Operation\Operation} case name and merged over `extensions`
+     * @param array<string, array<string, mixed>>              $operationExtensions per-operation OpenAPI vendor extensions, keyed by an exposed {@see \haddowg\JsonApiBundle\Operation\Operation} case name or core's operation name and merged over `extensions`
      * @param array<string, OperationExample|false|null>       $operationExamples per-operation OpenAPI example overrides, as on {@see AsJsonApiResource}
      * @param array<string, list<string>>                      $operationScopes   per-operation OAuth scope overrides, as on {@see AsJsonApiResource}
      */

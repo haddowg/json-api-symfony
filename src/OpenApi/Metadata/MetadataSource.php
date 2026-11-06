@@ -384,11 +384,12 @@ final class MetadataSource
             // override falls back to the core default in TypeMetadata::responsesFor().
             responseOverrides: $this->responseOverrides($descriptor['responses']),
             includablePaths: $resource !== null ? $this->includePaths->pathsFor($server, $type) : [],
-            // The declared vendor extensions (docs/openapi.md). Core merges each CRUD
-            // operation's set over the type-wide one and stamps the type-wide set on
-            // every other operation the type emits.
+            // The declared vendor extensions (docs/openapi.md). Core stamps the
+            // type-wide set on every operation, then merges a CRUD operation's set,
+            // then the set named for the operation.
             extensions: $this->descriptions?->extensionsFor($type, $serverName) ?? [],
             operationExtensions: $this->operationExtensions($type, $serverName),
+            namedOperationExtensions: $this->descriptions?->namedOperationExtensionsFor($type, $serverName) ?? [],
             // Same precedence as the descriptions: the resource's getSingularName()
             // hook, then the #[AsJsonApiResource(singular:)] attribute.
             singularName: $this->nonBlank($resource?->getSingularName()) ?? $this->descriptions?->singularFor($type, $serverName),
