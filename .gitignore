@@ -34,6 +34,7 @@ Thumbs.db
 /build/
 /packages/json-api-symfony-specs/*.json
 !/packages/json-api-symfony-specs/package.json
+/packages/json-api-symfony-specs/conformance/
 /packages/json-api-symfony-specs/node_modules/
 
 # Local overrides

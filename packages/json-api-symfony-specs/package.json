@@ -16,6 +16,7 @@
     "music-catalog-admin.openapi.json",
     "music-catalog.schemas.json",
     "music-catalog-admin.schemas.json",
-    "versions.json"
+    "versions.json",
+    "conformance/"
   ]
 }
