@@ -18,7 +18,6 @@ use haddowg\JsonApiBundle\Action\ActionRegistry;
 use haddowg\JsonApiBundle\Action\ActionScope;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\OpenApi\Metadata\ActionMetadata;
-use haddowg\JsonApiBundle\OpenApi\Metadata\OperationErrorDeclarations;
 use haddowg\JsonApiBundle\OpenApi\Metadata\OperationExampleCodec;
 use haddowg\JsonApiBundle\OpenApi\Metadata\OperationScopeOverrides;
 use haddowg\JsonApiBundle\Operation\Operation;
@@ -578,7 +577,6 @@ final class ResourceLocatorPass implements CompilerPassInterface
                         'extensions' => $extensions,
                         'scopes' => OperationScopeOverrides::decodeList($tag['scopes'] ?? null),
                         'deprecated' => ($tag['deprecated'] ?? false) === true,
-                        'errors' => OperationErrorDeclarations::decodeList($tag['errors'] ?? null),
                     ];
                     $actionClasses[$key] = $class;
 

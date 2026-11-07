@@ -458,41 +458,6 @@ Contributed codes are documented on every server this bundle declares. An except
 class is not server-scoped the way a resource is, so there is no per-server
 registration to get wrong.
 
-### Scoping a code to the operations that raise it
-
-A contributed code is offered by every operation's error response for its status. When
-only some operations raise it, declare it on the type instead, with `operationErrors` on
-`#[AsJsonApiResource]` (or `#[AsJsonApiSerializer]`), and on the action itself with
-`errors` on `#[AsJsonApiAction]`:
-
-```php
-#[AsJsonApiResource(operationErrors: [
-    'update' => [AlbumLocked::class],
-    'delete' => [AlbumLocked::class],
-])]
-final class AlbumResource extends AbstractResource { /* ... */ }
-
-#[AsJsonApiAction(type: 'albums', path: 'purchase', errors: [PaymentRequired::class])]
-final class PurchaseAlbum implements ActionHandlerInterface { /* ... */ }
-```
-
-`operationErrors` is keyed like [`operationExamples`](openapi.md#operation-examples), plus
-`*` for every operation of the type and `action.<path>.<method>` (lower-case method) for
-one method of an action. An action's `errors` join its mount type's map under that name,
-for each of its methods. Each value lists `DescribedErrorInterface` classes. A CRUD
-operation the type doesn't expose, a relationship mutation on a type without `Update`, an
-empty list or a class that isn't a described error fails the container build, and a
-relation or action the type doesn't have fails the document.
-
-Only the named operations then offer the code: each points its response for the code's
-status at a narrowed one such as `ConflictWithAlbumLocked`, gaining that status if it
-didn't advertise it, and every other operation keeps the shared response. See core's
-[scoping a code to the operations that raise it](https://github.com/haddowg/json-api/blob/main/docs/openapi.md#scoping-a-code-to-the-operations-that-raise-it).
-
-Declare a code one way or the other. A code the catalogue already holds for every
-operation, because it sits under `error_codes.paths` or a registered source names it,
-ignores the scope, so keep scoped exceptions out of the scanned directories.
-
 ## Localizing and overriding error copy
 
 Every error's `title` and `detail` are message templates core resolves per stable

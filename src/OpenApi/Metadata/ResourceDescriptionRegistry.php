@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\OpenApi\Metadata;
 
-use haddowg\JsonApi\Exception\DescribedErrorInterface;
 use haddowg\JsonApi\OpenApi\Metadata\OperationExample;
 use haddowg\JsonApi\OpenApi\Metadata\OperationType;
 use haddowg\JsonApiBundle\Server\ServerProvider;
@@ -41,9 +40,8 @@ use haddowg\JsonApiBundle\Server\ServerProvider;
  * (`#[AsJsonApiResource(operationExamples: …)]`), held as scalars and
  * rebuilt into core's {@see OperationExample} on read.
  *
- * It carries the declared OAuth scope overrides
- * (`#[AsJsonApiResource(operationScopes: …)]`), and last the error codes scoped to the
- * operations that raise them (`#[AsJsonApiResource(operationErrors: …)]`).
+ * Last, it carries the declared OAuth scope overrides
+ * (`#[AsJsonApiResource(operationScopes: …)]`).
  */
 final class ResourceDescriptionRegistry
 {
@@ -65,9 +63,6 @@ final class ResourceDescriptionRegistry
     /** @var array<string, array<string, array<string, list<string>>>> */
     private array $scopesByType = [];
 
-    /** @var array<string, array<string, array<string, list<class-string<DescribedErrorInterface>>>>> */
-    private array $errorsByType = [];
-
     /**
      * @param array<string, array{description?: string|null, operations?: array<string, string>, singular?: string|null}> $descriptions the default server's
      * @param array<string, array{type?: array<string, mixed>, operations?: array<string, array<string, mixed>>, named?: array<string, array<string, mixed>>}>       $extensions   the default server's
@@ -76,13 +71,11 @@ final class ResourceDescriptionRegistry
      *     extensions?: array<string, array{type?: array<string, mixed>, operations?: array<string, array<string, mixed>>, named?: array<string, array<string, mixed>>}>,
      *     examples?: array<string, array<string, array{request: mixed, responses: array<int|string, mixed>}|false>>,
      *     scopes?: array<string, array<string, list<string>>>,
-     *     errors?: array<string, array<string, list<class-string<DescribedErrorInterface>>>>,
      * }> $servers every other server's, keyed by server name
      * @param array<string, array<string, array{request: mixed, responses: array<int|string, mixed>}|false>> $examples the default server's operation example overrides, by type then operation name
      * @param array<string, array<string, list<string>>> $scopes the default server's OAuth scope overrides, by type then operation name
-     * @param array<string, array<string, list<class-string<DescribedErrorInterface>>>> $errors the default server's scoped error codes, by type then operation name
      */
-    public function __construct(array $descriptions = [], array $extensions = [], array $servers = [], array $examples = [], array $scopes = [], array $errors = [])
+    public function __construct(array $descriptions = [], array $extensions = [], array $servers = [], array $examples = [], array $scopes = [])
     {
         $default = $servers[ServerProvider::DEFAULT_SERVER] ?? [];
         $servers[ServerProvider::DEFAULT_SERVER] = [
@@ -90,14 +83,9 @@ final class ResourceDescriptionRegistry
             'extensions' => ($default['extensions'] ?? []) + $extensions,
             'examples' => ($default['examples'] ?? []) + $examples,
             'scopes' => ($default['scopes'] ?? []) + $scopes,
-            'errors' => ($default['errors'] ?? []) + $errors,
         ];
 
         foreach ($servers as $server => $declared) {
-            foreach ($declared['errors'] ?? [] as $type => $set) {
-                $this->errorsByType[$server][$type] = $set;
-            }
-
             foreach ($declared['scopes'] ?? [] as $type => $set) {
                 $this->scopesByType[$server][$type] = $set;
             }
@@ -220,16 +208,5 @@ final class ResourceDescriptionRegistry
     public function operationScopesFor(string $type, string $server = ServerProvider::DEFAULT_SERVER): array
     {
         return $this->scopesByType[$server][$type] ?? [];
-    }
-
-    /**
-     * The described errors declared for some of `$type`'s operations on `$server`, keyed by
-     * core's operation name or `*`; empty when none.
-     *
-     * @return array<string, list<class-string<DescribedErrorInterface>>>
-     */
-    public function operationErrorsFor(string $type, string $server = ServerProvider::DEFAULT_SERVER): array
-    {
-        return $this->errorsByType[$server][$type] ?? [];
     }
 }

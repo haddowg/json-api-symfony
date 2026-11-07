@@ -6,7 +6,6 @@ namespace haddowg\JsonApiBundle\Tests\OpenApi\Metadata;
 
 use haddowg\JsonApi\OpenApi\Metadata\OperationType;
 use haddowg\JsonApiBundle\OpenApi\Metadata\ResourceDescriptionRegistry;
-use haddowg\JsonApiBundle\Tests\Functional\App\OperationErrors\AccountLocked;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -48,18 +47,5 @@ final class ResourceDescriptionRegistryTest extends TestCase
         self::assertSame(['fetchRelated.parts' => ['x-mcp' => false]], $registry->namedOperationExtensionsFor('widgets'));
         self::assertSame([], $registry->namedOperationExtensionsFor('widgets', 'v5'));
         self::assertSame([], $registry->namedOperationExtensionsFor('gadgets'));
-    }
-
-    #[Test]
-    public function itHoldsTheScopedErrorCodesPerServer(): void
-    {
-        $registry = new ResourceDescriptionRegistry(
-            servers: ['v5' => ['errors' => ['widgets' => ['*' => [AccountLocked::class]]]]],
-            errors: ['widgets' => ['update' => [AccountLocked::class]]],
-        );
-
-        self::assertSame(['update' => [AccountLocked::class]], $registry->operationErrorsFor('widgets'));
-        self::assertSame(['*' => [AccountLocked::class]], $registry->operationErrorsFor('widgets', 'v5'));
-        self::assertSame([], $registry->operationErrorsFor('gadgets'));
     }
 }

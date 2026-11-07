@@ -336,8 +336,7 @@ final class MetadataSource
         $operations = $this->operations($descriptor['operations']);
 
         $actions = [];
-        $actionDescriptors = $this->actions->forServerType($serverName, $type);
-        foreach ($actionDescriptors as $action) {
+        foreach ($this->actions->forServerType($serverName, $type) as $action) {
             $actions[] = new ActionMetadata($this->withResolvedTags($action, $descriptor['tags'], $type));
         }
 
@@ -402,9 +401,6 @@ final class MetadataSource
             operationExamples: $this->descriptions?->operationExamplesFor($type, $serverName) ?? [],
             declaredLinks: $resource?->allLinks() ?? [],
             operationScopes: $this->descriptions?->operationScopesFor($type, $serverName) ?? [],
-            // The type's own declaration, with each action's `errors:` joined under its
-            // operation name.
-            operationErrors: OperationErrorDeclarations::withActions($this->descriptions?->operationErrorsFor($type, $serverName) ?? [], $actionDescriptors),
             resourceClass: $resource !== null ? $resource::class : ($server->hasSerializerFor($type) ? $server->serializerFor($type)::class : null),
             actionLinks: $resource?->allActionLinks() ?? [],
             // The same declaration that drives the Deprecation and Sunset headers, minus
@@ -673,7 +669,6 @@ final class MetadataSource
             $action->extensions,
             $action->scopes,
             $action->deprecated,
-            $action->errors,
         );
     }
 

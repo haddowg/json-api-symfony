@@ -11,7 +11,6 @@ use haddowg\JsonApi\OpenApi\Metadata\OperationExample;
 use haddowg\JsonApi\OpenApi\Metadata\SeeOther;
 use haddowg\JsonApiBundle\Action\ActionScope;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiAction;
-use haddowg\JsonApiBundle\Tests\Functional\App\OperationErrors\AccountLocked;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -135,23 +134,6 @@ final class AsJsonApiActionTest extends TestCase
     {
         self::assertNull((new AsJsonApiAction(type: 'albums', path: 'reissue'))->scopes);
         self::assertSame([], (new AsJsonApiAction(type: 'albums', path: 'reissue', scopes: []))->scopes);
-    }
-
-    #[Test]
-    public function errorsDefaultToNone(): void
-    {
-        self::assertSame([], (new AsJsonApiAction(type: 'albums', path: 'reissue'))->errors);
-        self::assertSame([AccountLocked::class], (new AsJsonApiAction(type: 'albums', path: 'reissue', errors: [AccountLocked::class]))->errors);
-    }
-
-    #[Test]
-    public function errorsMustBeDescribedErrors(): void
-    {
-        $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('AsJsonApiAction "reissue" errors must list classes implementing haddowg\\JsonApi\\Exception\\DescribedErrorInterface, got "LogicException".');
-
-        // @phpstan-ignore argument.type
-        new AsJsonApiAction(type: 'albums', path: 'reissue', errors: [\LogicException::class]);
     }
 
     #[Test]

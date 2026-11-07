@@ -14,7 +14,6 @@ use haddowg\JsonApi\OpenApi\Metadata\OperationResponses;
 use haddowg\JsonApi\OpenApi\Metadata\OperationType;
 use haddowg\JsonApi\OpenApi\Metadata\UpdateResponse;
 use haddowg\JsonApiBundle\OpenApi\Metadata\DeprecatedOperations;
-use haddowg\JsonApiBundle\OpenApi\Metadata\OperationErrorDeclarations;
 use haddowg\JsonApiBundle\OpenApi\Metadata\OperationExampleCodec;
 use haddowg\JsonApiBundle\OpenApi\Metadata\OperationScopeOverrides;
 use haddowg\JsonApiBundle\Operation\Operation;
@@ -153,15 +152,6 @@ use haddowg\JsonApiBundle\Operation\Operation;
  * checked against them. Any other key the type does not expose is a constructor
  * `\LogicException`.
  *
- * `operationErrors` names the described error classes
- * ({@see \haddowg\JsonApi\Exception\DescribedErrorInterface}) only some operations
- * raise, so the OpenAPI document offers each code only on those operations. It is keyed
- * like `operationExamples`, plus `*` for every operation of the type and
- * `action.<path>.<method>` for one method of an action mounted on it. A CRUD operation the
- * type does not expose, a relationship mutation without `Update`, an empty list or a class
- * that is not a described error is a constructor `\LogicException`; core fails the
- * projection for a relation or action the type does not have.
- *
  * `security` (and the per-operation overrides) declare **declarative authorization**
  * for the type. Each accepts an **expression**, a **bool**, or null:
  *  - a Symfony Security
@@ -246,7 +236,6 @@ final readonly class AsJsonApiResource
      * @param array<string, OperationExample|false|null>                           $operationExamples per-operation OpenAPI example overrides, keyed by core's operation name (`create`, `fetchRelated.<relation>`, ...); `false` or `null` emits none
      * @param array<string, list<string>>                                          $operationScopes   per-operation OAuth scope overrides, keyed like `operationExamples`; `[]` needs none
      * @param list<string>                                                         $deprecatedOperations the operations deprecated on their own, by core's operation name (`delete`, `fetchRelated.<relation>`, ...)
-     * @param array<string, list<class-string<\haddowg\JsonApi\Exception\DescribedErrorInterface>>> $operationErrors the described errors only some operations raise, keyed like `operationExamples`, plus `*` (every operation) and `action.<path>.<method>`
      */
     public function __construct(
         public ?string $type = null,
@@ -280,7 +269,6 @@ final readonly class AsJsonApiResource
         public array $operationExamples = [],
         public array $operationScopes = [],
         public array $deprecatedOperations = [],
-        public array $operationErrors = [],
     ) {
         if ($singular !== null && \trim($singular) === '') {
             throw new \LogicException(
@@ -320,7 +308,6 @@ final readonly class AsJsonApiResource
         OperationExampleCodec::assertValid('AsJsonApiResource', $operationExamples, $exposed);
         OperationScopeOverrides::assertValid('AsJsonApiResource', $operationScopes, $exposed);
         DeprecatedOperations::assertValid('AsJsonApiResource', $deprecatedOperations, $exposed);
-        OperationErrorDeclarations::assertValid('AsJsonApiResource', $operationErrors, $exposed);
 
         $this->create = self::normalizeResponses($create, OperationType::Create, $allowed);
         $this->update = self::normalizeResponses($update, OperationType::Update, $allowed);

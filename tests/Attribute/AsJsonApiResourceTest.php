@@ -11,7 +11,6 @@ use haddowg\JsonApi\OpenApi\Metadata\OperationExample;
 use haddowg\JsonApi\OpenApi\Metadata\SeeOther;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 use haddowg\JsonApiBundle\Operation\Operation;
-use haddowg\JsonApiBundle\Tests\Functional\App\OperationErrors\AccountLocked;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -317,75 +316,6 @@ final class AsJsonApiResourceTest extends TestCase
 
         // @phpstan-ignore argument.type
         new AsJsonApiResource(operationScopes: ['delete' => 'articles:admin']);
-    }
-
-    #[Test]
-    public function operationErrorsAreKeyedLikeOperationExamplesWithTheWildcardAndActions(): void
-    {
-        $declared = [
-            '*' => [AccountLocked::class],
-            'update' => [AccountLocked::class],
-            'fetchRelated.author' => [AccountLocked::class],
-            'action.freeze.post' => [AccountLocked::class],
-        ];
-
-        self::assertSame($declared, (new AsJsonApiResource(operationErrors: $declared))->operationErrors);
-    }
-
-    #[Test]
-    public function anErrorDeclaredForAnOperationTheTypeDoesNotExposeIsRejected(): void
-    {
-        $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('AsJsonApiResource operationErrors["update"] targets an operation this type does not expose');
-
-        new AsJsonApiResource(readOnly: true, operationErrors: ['update' => [AccountLocked::class]]);
-    }
-
-    #[Test]
-    public function anErrorDeclaredForARelationshipMutationNeedsUpdate(): void
-    {
-        $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('AsJsonApiResource operationErrors["addRelationship.tags"] targets a relationship mutation');
-
-        new AsJsonApiResource(readOnly: true, operationErrors: ['addRelationship.tags' => [AccountLocked::class]]);
-    }
-
-    #[Test]
-    public function anOperationErrorKeyThatIsNotAnOperationNameIsRejected(): void
-    {
-        $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('AsJsonApiResource operationErrors has an unknown operation key "Update"');
-
-        new AsJsonApiResource(operationErrors: ['Update' => [AccountLocked::class]]);
-    }
-
-    #[Test]
-    public function operationErrorsMustNameDescribedErrors(): void
-    {
-        $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('AsJsonApiResource operationErrors["update"] must list classes implementing haddowg\\JsonApi\\Exception\\DescribedErrorInterface, got "RuntimeException".');
-
-        // @phpstan-ignore argument.type
-        new AsJsonApiResource(operationErrors: ['update' => [\RuntimeException::class]]);
-    }
-
-    #[Test]
-    public function operationErrorsMustBeAList(): void
-    {
-        $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('AsJsonApiResource operationErrors["update"] must be a list of error classes, got string.');
-
-        // @phpstan-ignore argument.type
-        new AsJsonApiResource(operationErrors: ['update' => AccountLocked::class]);
-    }
-
-    #[Test]
-    public function anEmptyOperationErrorsEntryIsRejected(): void
-    {
-        $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('AsJsonApiResource operationErrors["update"] must name at least one error class');
-
-        new AsJsonApiResource(operationErrors: ['update' => []]);
     }
 
     #[Test]

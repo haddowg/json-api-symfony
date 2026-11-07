@@ -7,7 +7,6 @@ namespace haddowg\JsonApiBundle\Tests\Attribute;
 use haddowg\JsonApi\OpenApi\Metadata\OperationExample;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiSerializer;
 use haddowg\JsonApiBundle\Operation\Operation;
-use haddowg\JsonApiBundle\Tests\Functional\App\OperationErrors\AccountLocked;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -107,18 +106,6 @@ final class AsJsonApiSerializerTest extends TestCase
         $this->expectExceptionMessage('AsJsonApiSerializer deprecatedOperations has an unknown operation key "restock"');
 
         new AsJsonApiSerializer(type: 'shelves', operations: [Operation::FetchOne], deprecatedOperations: ['restock']);
-    }
-
-    #[Test]
-    public function operationErrorsMayOnlyNameAnExposedOperation(): void
-    {
-        $attribute = new AsJsonApiSerializer(type: 'shelves', operations: [Operation::FetchOne], operationErrors: ['fetchOne' => [AccountLocked::class], '*' => [AccountLocked::class]]);
-        self::assertSame(['fetchOne' => [AccountLocked::class], '*' => [AccountLocked::class]], $attribute->operationErrors);
-
-        $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('AsJsonApiSerializer operationErrors["fetchCollection"] targets an operation this type does not expose');
-
-        new AsJsonApiSerializer(type: 'shelves', operations: [Operation::FetchOne], operationErrors: ['fetchCollection' => [AccountLocked::class]]);
     }
 
     #[Test]

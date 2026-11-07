@@ -6,7 +6,6 @@ namespace haddowg\JsonApiBundle\DependencyInjection\Compiler;
 
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApiBundle\JsonApiBundle;
-use haddowg\JsonApiBundle\OpenApi\Metadata\OperationErrorDeclarations;
 use haddowg\JsonApiBundle\OpenApi\Metadata\OperationExampleCodec;
 use haddowg\JsonApiBundle\OpenApi\Metadata\OperationScopeOverrides;
 use haddowg\JsonApiBundle\OpenApi\Metadata\ResourceDescriptionRegistry;
@@ -40,8 +39,7 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
  * The operation example overrides ride as one JSON `operation_examples`
  * tag attribute, from a resource or a standalone serializer, into the registry's
  * `$examples` argument. The OAuth scope overrides ride the same way as
- * `operation_scopes`, under each server's `scopes`, and the scoped error codes as
- * `operation_errors`, under each server's `errors`.
+ * `operation_scopes`, under each server's `scopes`.
  */
 final class ResourceDescriptionPass implements CompilerPassInterface
 {
@@ -51,7 +49,7 @@ final class ResourceDescriptionPass implements CompilerPassInterface
             return;
         }
 
-        /** @var array<string, array{descriptions: array<string, array{description?: string, operations?: array<string, string>, singular?: string}>, extensions: array<string, array{type: array<string, mixed>, operations: array<string, array<string, mixed>>, named: array<string, array<string, mixed>>}>, examples: array<string, array<string, array{request: mixed, responses: array<int|string, mixed>}|false>>, scopes: array<string, array<string, list<string>>>, errors: array<string, array<string, list<class-string<\haddowg\JsonApi\Exception\DescribedErrorInterface>>>>}> $byServer */
+        /** @var array<string, array{descriptions: array<string, array{description?: string, operations?: array<string, string>, singular?: string}>, extensions: array<string, array{type: array<string, mixed>, operations: array<string, array<string, mixed>>, named: array<string, array<string, mixed>>}>, examples: array<string, array<string, array{request: mixed, responses: array<int|string, mixed>}|false>>, scopes: array<string, array<string, list<string>>>}> $byServer */
         $byServer = [];
 
         foreach ($container->findTaggedServiceIds(JsonApiBundle::RESOURCE_TAG) as $id => $tags) {
@@ -89,11 +87,10 @@ final class ResourceDescriptionPass implements CompilerPassInterface
             $declared = $this->extensionsFromTags($tags);
             $examples = OperationExampleCodec::decodeMap($this->scalarFromTags($tags, 'operation_examples'));
             $scopes = OperationScopeOverrides::decodeMap($this->scalarFromTags($tags, 'operation_scopes'));
-            $errors = OperationErrorDeclarations::decodeMap($this->scalarFromTags($tags, 'operation_errors'));
 
             // Each class is recorded only under its own servers.
             foreach ($this->serversFromTags($tags) as $server) {
-                $byServer[$server] ??= ['descriptions' => [], 'extensions' => [], 'examples' => [], 'scopes' => [], 'errors' => []];
+                $byServer[$server] ??= ['descriptions' => [], 'extensions' => [], 'examples' => [], 'scopes' => []];
                 if ($set !== []) {
                     $byServer[$server]['descriptions'][$type] = $set;
                 }
@@ -106,9 +103,6 @@ final class ResourceDescriptionPass implements CompilerPassInterface
                 if ($scopes !== []) {
                     $byServer[$server]['scopes'][$type] = $scopes;
                 }
-                if ($errors !== []) {
-                    $byServer[$server]['errors'][$type] = $errors;
-                }
             }
         }
 
@@ -117,13 +111,12 @@ final class ResourceDescriptionPass implements CompilerPassInterface
             $declared = $this->extensionsFromTags($tags);
             $examples = OperationExampleCodec::decodeMap($this->scalarFromTags($tags, 'operation_examples'));
             $scopes = OperationScopeOverrides::decodeMap($this->scalarFromTags($tags, 'operation_scopes'));
-            $errors = OperationErrorDeclarations::decodeMap($this->scalarFromTags($tags, 'operation_errors'));
-            if ($type === null || ($declared === null && $examples === [] && $scopes === [] && $errors === [])) {
+            if ($type === null || ($declared === null && $examples === [] && $scopes === [])) {
                 continue;
             }
 
             foreach ($this->serversFromTags($tags) as $server) {
-                $byServer[$server] ??= ['descriptions' => [], 'extensions' => [], 'examples' => [], 'scopes' => [], 'errors' => []];
+                $byServer[$server] ??= ['descriptions' => [], 'extensions' => [], 'examples' => [], 'scopes' => []];
                 if ($declared !== null) {
                     $byServer[$server]['extensions'][$type] ??= $declared;
                 }
@@ -133,13 +126,10 @@ final class ResourceDescriptionPass implements CompilerPassInterface
                 if ($scopes !== []) {
                     $byServer[$server]['scopes'][$type] ??= $scopes;
                 }
-                if ($errors !== []) {
-                    $byServer[$server]['errors'][$type] ??= $errors;
-                }
             }
         }
 
-        $default = $byServer[ServerProvider::DEFAULT_SERVER] ?? ['descriptions' => [], 'extensions' => [], 'examples' => [], 'scopes' => [], 'errors' => []];
+        $default = $byServer[ServerProvider::DEFAULT_SERVER] ?? ['descriptions' => [], 'extensions' => [], 'examples' => [], 'scopes' => []];
         unset($byServer[ServerProvider::DEFAULT_SERVER]);
 
         $container->getDefinition(ResourceDescriptionRegistry::class)
@@ -147,8 +137,7 @@ final class ResourceDescriptionPass implements CompilerPassInterface
             ->setArgument('$extensions', $default['extensions'])
             ->setArgument('$servers', $byServer)
             ->setArgument('$examples', $default['examples'])
-            ->setArgument('$scopes', $default['scopes'])
-            ->setArgument('$errors', $default['errors']);
+            ->setArgument('$scopes', $default['scopes']);
     }
 
     /**

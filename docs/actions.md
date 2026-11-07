@@ -73,7 +73,6 @@ use haddowg\JsonApi\Response\NoContentResponse;
     idempotent: null,
     extensions: [],                 // OpenAPI x- extensions for this action's operation only
     scopes: null,                   // OAuth scopes this action needs; null asks the scope resolver (see Scopes)
-    errors: [],                     // described error classes only this action raises (see Errors)
 )]
 final class PublishArticle implements ActionHandlerInterface
 {
