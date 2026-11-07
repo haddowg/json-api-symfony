@@ -1,0 +1,187 @@
+name: Example specs
+
+# The music-catalog example's OpenAPI and JSON-Schema documents are published as
+# @haddowg/json-api-symfony-specs on GitHub Packages rather than committed. Each pull request
+# from this repository publishes a prerelease the code generators and adapters can pin while
+# they test against it, deleted when the pull request closes, and every pull request reports
+# how it changes the documents against its base. A release pull request only bumps the
+# version and changelog, so it does neither.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled, closed]
+  schedule:
+    - cron: '47 3 * * 1'
+  workflow_dispatch:
+
+# No workflow-level permissions; each job requests only what it needs.
+permissions: {}
+
+concurrency:
+  group: specs-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+env:
+  PACKAGE: json-api-symfony-specs
+
+jobs:
+  prerelease:
+    name: Publish the pull request's specs
+    if: >-
+      github.event_name == 'pull_request'
+      && contains(fromJSON('["opened", "synchronize", "reopened"]'), github.event.action)
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && !startsWith(github.head_ref, 'release-please--')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+      pull-requests: write
+    env:
+      # versions.json names the bundle by the pull request's branch.
+      COMPOSER_ROOT_VERSION: dev-${{ github.head_ref }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@7c071dfe9dc99bdf297fa79cb49ea005b9fcadbc # 2.37.1
+        with:
+          php-version: '8.4'
+          coverage: none
+          tools: composer:v2
+
+      - name: Install dependencies
+        uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
+
+      - name: Export the specs
+        run: php bin/export-specs.php packages/json-api-symfony-specs
+
+      - name: Publish the prerelease
+        id: publish
+        working-directory: packages/json-api-symfony-specs
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          export NPM_CONFIG_USERCONFIG="$("$GITHUB_WORKSPACE/.github/scripts/npm-auth")"
+          version="0.0.0-pr.${PR}.${SHA:0:7}"
+          npm version --no-git-tag-version "$version"
+          npm publish --tag "pr-${PR}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Say which version to pin
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          VERSION: ${{ steps.publish.outputs.version }}
+        run: |
+          body="$RUNNER_TEMP/prerelease.md"
+          {
+            echo '<!-- specs-prerelease -->'
+            echo "This pull request's example documents are published as \`@haddowg/json-api-symfony-specs@${VERSION}\` (dist-tag \`pr-${PR}\`)."
+            echo 'Pin that exact version in a code generator or adapter to test against it; it is deleted when this pull request closes.'
+          } > "$body"
+          .github/scripts/upsert-comment "$PR" '<!-- specs-prerelease -->' "$body"
+
+  cleanup:
+    name: Delete the pull request's prereleases
+    if: >-
+      github.event_name == 'pull_request' && github.event.action == 'closed'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && !startsWith(github.head_ref, 'release-please--')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Delete the prereleases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: .github/scripts/delete-prereleases "$PACKAGE" "${{ github.event.pull_request.number }}"
+
+  sweep:
+    name: Delete prereleases of closed pull requests
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+      pull-requests: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Delete the leftovers
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: .github/scripts/delete-prereleases "$PACKAGE" --closed
+
+  generated-output:
+    name: Generated output
+    if: >-
+      github.event_name == 'pull_request' && github.event.action != 'closed'
+      && !startsWith(github.head_ref, 'release-please--')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      # Both sides name the bundle the same way, so versions.json differs only when the
+      # resolved haddowg/json-api does.
+      COMPOSER_ROOT_VERSION: dev-main
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@7c071dfe9dc99bdf297fa79cb49ea005b9fcadbc # 2.37.1
+        with:
+          php-version: '8.4'
+          coverage: none
+          tools: composer:v2
+
+      - name: Install dependencies
+        uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
+
+      - name: Export the head's specs
+        run: php bin/export-specs.php "$RUNNER_TEMP/generated/head"
+
+      # A base from before the export script is exported by the head's script, which runs
+      # the same console commands against the base's example kernel. The example kernel
+      # caches its container under the system temp directory, so the base gets its own,
+      # or it would reuse the head's.
+      - name: Export the base's specs
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git worktree add -q "$RUNNER_TEMP/base-src" "$BASE"
+          cd "$RUNNER_TEMP/base-src"
+          if [ ! -f bin/export-specs.php ]; then
+            mkdir -p bin
+            cp "$GITHUB_WORKSPACE/bin/export-specs.php" bin/
+          fi
+          composer install --no-interaction --no-progress --quiet
+          mkdir -p "$RUNNER_TEMP/base-tmp"
+          TMPDIR="$RUNNER_TEMP/base-tmp" php bin/export-specs.php "$RUNNER_TEMP/generated/base"
+
+      - name: Report the difference
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: .github/scripts/generated-output-report "$RUNNER_TEMP/generated/base" "$RUNNER_TEMP/generated/head"

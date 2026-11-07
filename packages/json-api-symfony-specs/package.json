@@ -1,0 +1,21 @@
+{
+  "name": "@haddowg/json-api-symfony-specs",
+  "version": "0.0.0",
+  "description": "The OpenAPI and JSON-Schema documents haddowg/json-api-symfony projects for its music-catalog example, for the code generators' tests and the adapters' byte-compat checks.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/haddowg/json-api-symfony.git",
+    "directory": "packages/json-api-symfony-specs"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "files": [
+    "music-catalog.openapi.json",
+    "music-catalog-admin.openapi.json",
+    "music-catalog.schemas.json",
+    "music-catalog-admin.schemas.json",
+    "versions.json"
+  ]
+}
