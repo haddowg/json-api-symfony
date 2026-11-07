@@ -50,6 +50,7 @@ final readonly class ActionDescriptor
      * @param array<string, mixed>                                      $extensions the action's own OpenAPI vendor extensions
      * @param list<string>|null                                         $scopes   the OAuth scopes the action needs, overriding the scope resolver; null asks it
      * @param bool                                                      $deprecated whether the action is declared deprecated
+     * @param list<class-string<\haddowg\JsonApi\Exception\DescribedErrorInterface>> $errors the described errors only this action raises
      */
     public function __construct(
         public string $type,
@@ -75,5 +76,6 @@ final readonly class ActionDescriptor
         public array $extensions = [],
         public ?array $scopes = null,
         public bool $deprecated = false,
+        public array $errors = [],
     ) {}
 }

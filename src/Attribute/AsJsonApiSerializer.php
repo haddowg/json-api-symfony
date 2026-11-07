@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Attribute;
 
 use haddowg\JsonApi\OpenApi\Metadata\OperationExample;
 use haddowg\JsonApiBundle\OpenApi\Metadata\DeprecatedOperations;
+use haddowg\JsonApiBundle\OpenApi\Metadata\OperationErrorDeclarations;
 use haddowg\JsonApiBundle\OpenApi\Metadata\OperationExampleCodec;
 use haddowg\JsonApiBundle\OpenApi\Metadata\OperationScopeOverrides;
 
@@ -49,6 +50,9 @@ use haddowg\JsonApiBundle\OpenApi\Metadata\OperationScopeOverrides;
  *
  * `deprecatedOperations` deprecates single operations by core operation name, as on
  * {@see AsJsonApiResource}, and is validated the same way against `operations`.
+ *
+ * `operationErrors` scopes described error codes to the operations that raise them, as on
+ * {@see AsJsonApiResource}, and is validated the same way against `operations`.
  */
 #[\Attribute(\Attribute::TARGET_CLASS)]
 final readonly class AsJsonApiSerializer
@@ -62,6 +66,7 @@ final readonly class AsJsonApiSerializer
      * @param array<string, OperationExample|false|null>       $operationExamples per-operation OpenAPI example overrides, as on {@see AsJsonApiResource}
      * @param array<string, list<string>>                      $operationScopes   per-operation OAuth scope overrides, as on {@see AsJsonApiResource}
      * @param list<string>                                     $deprecatedOperations the operations deprecated on their own, as on {@see AsJsonApiResource}
+     * @param array<string, list<class-string<\haddowg\JsonApi\Exception\DescribedErrorInterface>>> $operationErrors the described errors only some operations raise, as on {@see AsJsonApiResource}
      */
     public function __construct(
         public string $type,
@@ -73,10 +78,12 @@ final readonly class AsJsonApiSerializer
         public array $operationExamples = [],
         public array $operationScopes = [],
         public array $deprecatedOperations = [],
+        public array $operationErrors = [],
     ) {
         VendorExtensions::assertValid('AsJsonApiSerializer', $extensions, $operationExtensions, \array_values($operations));
         OperationExampleCodec::assertValid('AsJsonApiSerializer', $operationExamples, \array_values($operations));
         OperationScopeOverrides::assertValid('AsJsonApiSerializer', $operationScopes, \array_values($operations));
         DeprecatedOperations::assertValid('AsJsonApiSerializer', $deprecatedOperations, \array_values($operations));
+        OperationErrorDeclarations::assertValid('AsJsonApiSerializer', $operationErrors, \array_values($operations));
     }
 }

@@ -8,6 +8,7 @@ use haddowg\JsonApi\OpenApi\Metadata\ActionInputMode;
 use haddowg\JsonApi\OpenApi\Metadata\ActionScope;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresExampleGeneration;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresNamedOperationExtensions;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationErrors;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationExamples;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationExtensions;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresResourceLinks;
@@ -43,6 +44,8 @@ use haddowg\JsonApiBundle\Server\RouteDescriptorRegistry;
 use haddowg\JsonApiBundle\Server\ServerFactory;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
+use haddowg\JsonApiBundle\Tests\Functional\App\OperationErrors\AccountLocked;
+use haddowg\JsonApiBundle\Tests\Functional\App\OperationErrors\OverdraftRefused;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
@@ -417,6 +420,27 @@ final class MetadataSourceTest extends TestCase
     }
 
     #[Test]
+    public function theDeclaredErrorsAndTheActionsOwnReachTheTypeMetadata(): void
+    {
+        $registry = new ResourceDescriptionRegistry(errors: ['articles' => [
+            'update' => [AccountLocked::class],
+            'action.publish.post' => [AccountLocked::class],
+        ]]);
+
+        $server = $this->source(descriptions: $registry, actionErrors: [OverdraftRefused::class, AccountLocked::class])->forServer();
+        $articles = $this->typeNamed($server, 'articles');
+        $people = $this->typeNamed($server, 'people');
+
+        self::assertInstanceOf(DeclaresOperationErrors::class, $articles);
+        self::assertSame([
+            'update' => [AccountLocked::class],
+            'action.publish.post' => [AccountLocked::class, OverdraftRefused::class],
+        ], $articles->operationErrors());
+        self::assertInstanceOf(DeclaresOperationErrors::class, $people);
+        self::assertSame([], $people->operationErrors());
+    }
+
+    #[Test]
     public function theRegistryCarriesExtensionsKeyedByOperationNameOntoTheTypeMetadata(): void
     {
         $registry = new ResourceDescriptionRegistry([], [
@@ -627,8 +651,9 @@ final class MetadataSourceTest extends TestCase
      * @param array<string, list<array{status: int, jobType?: string}>>               $articleResponses per-operation response overrides for the articles descriptor
      * @param list<class-string<\haddowg\JsonApi\Schema\Profile\ProfileInterface>>|null $profiles         the profiles the server registers; null uses the ServerFactory default
      * @param array<string, bool>                                                       $exampleGeneration whether each server generates operation examples, by server name
+     * @param list<class-string<\haddowg\JsonApi\Exception\DescribedErrorInterface>>   $actionErrors      the errors the `publish` action declares
      */
-    private function source(?ResourceSecurityRegistry $security = null, ?ServerDocumentConfig $config = null, bool $atomicEnabled = false, string $atomicPath = '/operations', ?ResourceDescriptionRegistry $descriptions = null, bool $describedArticle = false, array $articleResponses = [], ?array $profiles = null, array $exampleGeneration = []): MetadataSource
+    private function source(?ResourceSecurityRegistry $security = null, ?ServerDocumentConfig $config = null, bool $atomicEnabled = false, string $atomicPath = '/operations', ?ResourceDescriptionRegistry $descriptions = null, bool $describedArticle = false, array $articleResponses = [], ?array $profiles = null, array $exampleGeneration = [], array $actionErrors = []): MetadataSource
     {
         $article = $describedArticle ? new DescribedArticleResource() : new ArticleResource();
         $person = new PersonResource();
@@ -664,6 +689,7 @@ final class MetadataSourceTest extends TestCase
                 'server' => ServerProvider::DEFAULT_SERVER,
                 // No explicit action tags: inherit the mount resource's tags.
                 'tags' => '',
+                'errors' => $actionErrors,
             ],
         ]);
 

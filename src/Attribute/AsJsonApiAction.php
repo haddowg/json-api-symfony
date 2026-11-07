@@ -11,6 +11,7 @@ use haddowg\JsonApi\OpenApi\Metadata\OperationExample;
 use haddowg\JsonApiBundle\Action\AcceptedMediaTypes;
 use haddowg\JsonApiBundle\Action\ActionInput;
 use haddowg\JsonApiBundle\Action\ActionScope;
+use haddowg\JsonApiBundle\OpenApi\Metadata\OperationErrorDeclarations;
 use haddowg\JsonApiBundle\OpenApi\Metadata\OperationScopeOverrides;
 
 /**
@@ -110,6 +111,12 @@ use haddowg\JsonApiBundle\OpenApi\Metadata\OperationScopeOverrides;
  * `deprecated` marks every method of the action `deprecated: true` in the OpenAPI
  * document, and a request to it gets a `Deprecation` header, plus `Sunset` when the mount
  * type declares one. An action on a deprecated type is already marked either way.
+ *
+ * `errors` names the described error classes
+ * ({@see \haddowg\JsonApi\Exception\DescribedErrorInterface}) the action raises and the
+ * mount type's other operations do not, so the OpenAPI document offers those codes only on
+ * the action's methods. They join the mount type's `operationErrors` under the action's
+ * operation name, `action.<path>.<method>`.
  */
 #[\Attribute(\Attribute::TARGET_CLASS)]
 final readonly class AsJsonApiAction
@@ -146,6 +153,7 @@ final readonly class AsJsonApiAction
      * @param array<string, mixed>               $extensions  OpenAPI vendor extensions (`x-…` keys) for the action's own operation
      * @param list<string>|null                  $scopes      the OAuth scopes every method of the action needs, overriding the app's scope resolver; `[]` needs none, null asks the resolver
      * @param bool                               $deprecated  whether the action is deprecated
+     * @param list<class-string<\haddowg\JsonApi\Exception\DescribedErrorInterface>> $errors the described errors the action raises that the mount type's other operations do not
      */
     public function __construct(
         public string $type,
@@ -170,11 +178,14 @@ final readonly class AsJsonApiAction
         public array $extensions = [],
         public ?array $scopes = null,
         public bool $deprecated = false,
+        public array $errors = [],
     ) {
         VendorExtensions::assertValid('AsJsonApiAction', $extensions, [], []);
         if ($scopes !== null) {
             OperationScopeOverrides::assertList(\sprintf('AsJsonApiAction "%s" scopes', $path), $scopes);
         }
+
+        OperationErrorDeclarations::assertList(\sprintf('AsJsonApiAction "%s" errors', $path), $errors);
 
         $this->accepts = AcceptedMediaTypes::normalise($accepts, $input, $path);
 

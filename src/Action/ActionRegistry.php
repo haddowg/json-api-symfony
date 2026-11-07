@@ -47,6 +47,7 @@ use Psr\Container\ContainerInterface;
  *     extensions?: array<string, mixed>,
  *     scopes?: list<string>|null,
  *     deprecated?: bool,
+ *     errors?: list<class-string<\haddowg\JsonApi\Exception\DescribedErrorInterface>>,
  * }
  */
 final class ActionRegistry
@@ -131,6 +132,7 @@ final class ActionRegistry
             $descriptor['extensions'] ?? [],
             $descriptor['scopes'] ?? null,
             $descriptor['deprecated'] ?? false,
+            $descriptor['errors'] ?? [],
         );
     }
 

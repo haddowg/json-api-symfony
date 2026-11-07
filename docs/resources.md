@@ -128,7 +128,9 @@ final readonly class AsJsonApiResource
 > the OpenAPI description arguments (`tags`, `description`, `operationDescriptions`,
 > `singular`, `extensions`, `operationExtensions`, `operationExamples`) documented in
 > [OpenAPI customisation](openapi.md#customisation), and the per-operation OAuth
-> `operationScopes` documented in [scopes](scopes.md#overriding-one-operation) — all
+> `operationScopes` documented in [scopes](scopes.md#overriding-one-operation), and the
+> per-operation `operationErrors` documented in
+> [errors](errors.md#scoping-a-code-to-the-operations-that-raise-it) — all
 > omitted from the snippet above for brevity.
 
 A second job: the attribute **also tags a class that is *not* an `AbstractResource`

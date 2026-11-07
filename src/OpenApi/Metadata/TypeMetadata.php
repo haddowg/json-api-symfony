@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\OpenApi\Metadata;
 
+use haddowg\JsonApi\Exception\DescribedErrorInterface;
 use haddowg\JsonApi\OpenApi\Metadata\ActionMetadataInterface;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresActionLinks;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresAlwaysCounted;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresDeprecation;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresNamedOperationExtensions;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationErrors;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationExamples;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationExtensions;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationScopes;
@@ -64,8 +66,12 @@ use haddowg\JsonApi\Resource\Sort\SortInterface;
  * And core's opt-in {@see DeclaresDeprecation}: whether `#[AsJsonApiResource(deprecation:)]`
  * deprecates the whole type, the date its `sunset:` names, and the operations its
  * `deprecatedOperations:` lists.
+ *
+ * And core's opt-in {@see DeclaresOperationErrors}: the described errors declared on
+ * `#[AsJsonApiResource(operationErrors:)]` and the type's actions' `errors:`, so the
+ * projection offers each code only on the operations that raise it.
  */
-final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOperationExtensions, DeclaresNamedOperationExtensions, DeclaresSingularName, DeclaresOperationExamples, DeclaresAlwaysCounted, DeclaresResourceLinks, DeclaresActionLinks, DeclaresOperationScopes, DeclaresResourceClass, DeclaresDeprecation
+final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOperationExtensions, DeclaresNamedOperationExtensions, DeclaresSingularName, DeclaresOperationExamples, DeclaresAlwaysCounted, DeclaresResourceLinks, DeclaresActionLinks, DeclaresOperationScopes, DeclaresResourceClass, DeclaresDeprecation, DeclaresOperationErrors
 {
     /**
      * @param list<FieldInterface>            $fields
@@ -93,6 +99,7 @@ final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOper
      * @param bool                            $deprecated          whether the whole type is declared deprecated
      * @param ?\DateTimeInterface             $sunset              the declared sunset date, or null
      * @param list<string>                    $deprecatedOperations the operations deprecated on their own, by core's operation name
+     * @param array<string, list<class-string<DescribedErrorInterface>>> $operationErrors the described errors only some operations raise, keyed by core's operation name or `*`
      */
     public function __construct(
         private string $type,
@@ -129,6 +136,7 @@ final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOper
         private bool $deprecated = false,
         private ?\DateTimeInterface $sunset = null,
         private array $deprecatedOperations = [],
+        private array $operationErrors = [],
     ) {}
 
     public function type(): string
@@ -274,6 +282,11 @@ final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOper
     public function operationScopes(): array
     {
         return $this->operationScopes;
+    }
+
+    public function operationErrors(): array
+    {
+        return $this->operationErrors;
     }
 
     public function resourceClass(): ?string
