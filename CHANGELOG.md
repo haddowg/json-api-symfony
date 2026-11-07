@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.0.0](https://github.com/haddowg/json-api-symfony/compare/v1.31.0...v2.0.0) (2026-11-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* the bundle now requires haddowg/json-api ^2.0. An undeclared attribute in a write body is rejected rather than ignored, and a OneOf that relied on the implicit `type` discriminator must name it.
+
+### Features
+
+* require haddowg/json-api 2.0 ([#302](https://github.com/haddowg/json-api-symfony/issues/302)) ([0ded816](https://github.com/haddowg/json-api-symfony/commit/0ded8169b646c716678de08e5b3ffe3c4e98c817))
+
 ## [1.31.0](https://github.com/haddowg/json-api-symfony/compare/v1.30.0...v1.31.0) (2026-11-06)
 
 
