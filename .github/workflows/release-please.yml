@@ -11,8 +11,56 @@ permissions:
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      version: ${{ steps.release.outputs.version }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
-      - uses: googleapis/release-please-action@v4
+      - id: release
+        uses: googleapis/release-please-action@v4
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+  # A release made with the workflow's own token starts no other workflow, so the example's
+  # documents are published here, from the tag release-please just created.
+  publish-specs:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    env:
+      # versions.json names the bundle by the release it was exported from.
+      COMPOSER_ROOT_VERSION: ${{ needs.release-please.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
+          persist-credentials: false
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@7c071dfe9dc99bdf297fa79cb49ea005b9fcadbc # 2.37.1
+        with:
+          php-version: '8.4'
+          coverage: none
+          tools: composer:v2
+
+      - name: Install dependencies
+        uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
+
+      - name: Export the specs
+        run: php bin/export-specs.php packages/json-api-symfony-specs
+
+      - name: Publish @haddowg/json-api-symfony-specs
+        working-directory: packages/json-api-symfony-specs
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.release-please.outputs.version }}
+        run: |
+          export NPM_CONFIG_USERCONFIG="$("$GITHUB_WORKSPACE/.github/scripts/npm-auth")"
+          npm version --no-git-tag-version "$VERSION"
+          npm publish
