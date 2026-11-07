@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.0](https://github.com/haddowg/json-api-symfony/compare/v2.0.0...v2.1.0) (2026-11-07)
+
+
+### Features
+
+* document and test error codes scoped to the operations that raise them ([#304](https://github.com/haddowg/json-api-symfony/issues/304)) ([3127fb9](https://github.com/haddowg/json-api-symfony/commit/3127fb93851d77ab724b02851ec9db23155a5b69))
+
 ## [2.0.0](https://github.com/haddowg/json-api-symfony/compare/v1.31.0...v2.0.0) (2026-11-07)
 
 
