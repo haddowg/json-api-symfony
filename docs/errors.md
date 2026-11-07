@@ -381,10 +381,13 @@ Two render paths exist, and the `code` member tells you which:
 
 ## Documenting your own error codes
 
-Core catalogues its own error codes in the generated OpenAPI document: one named
-schema variant per code, offered from `ErrorDocument.errors.items` by an `anyOf` a
-generated client can dispatch on. Your application's codes join them when you say
-where they are.
+Core catalogues its own error codes in the generated OpenAPI document. Codes that share
+a status, a `source` member and a declared `meta` are grouped into one shape
+(`Error404`, `Error400Parameter`, …), each code a `const` branch of that shape's
+`code`, and `ErrorDocument.errors.items` offers the shapes through an `anyOf` a
+generated client can dispatch on (see core's
+[error-code catalogue](https://github.com/haddowg/json-api/blob/main/docs/openapi.md#the-error-code-catalogue)).
+Your application's codes join them when you say where they are.
 
 An error that wants a place in the catalogue implements core's
 `DescribedErrorInterface`, which reads the code, status and title off the class —
@@ -457,6 +460,85 @@ carrying a code you never declared is still a valid error object.
 Contributed codes are documented on every server this bundle declares. An exception
 class is not server-scoped the way a resource is, so there is no per-server
 registration to get wrong.
+
+### Scoping a code to the operations that raise it
+
+A contributed code is offered by every operation's error response for its status. When
+only some operations raise it, say so on the error itself: give its descriptor a
+`scope`.
+
+```php
+use haddowg\JsonApi\Exception\ErrorDescriptor;
+use haddowg\JsonApi\Exception\ErrorScope;
+
+public static function describe(): ErrorDescriptor
+{
+    return new ErrorDescriptor(
+        code: 'ALBUM_LOCKED',
+        status: 409,
+        title: 'Album locked',
+        scope: ErrorScope::on('albums', 'update', 'delete'),
+    );
+}
+```
+
+`ErrorScope::on()` names operations of one type the way
+[`operationExamples`](openapi.md#operation-examples) keys them (`update`,
+`fetchRelated.artist`, `action.purchase.post`), or every operation of the type when it
+names none; `ErrorScope::kinds()` covers operations of a kind on every type, and `and()`
+combines scopes. A class found under `error_codes.paths` keeps its descriptor's scope, so
+a scoped error can live in the scanned directory beside the rest.
+
+Only the covered operations then offer the code: each points its response for the code's
+status at a narrowed one such as `ConflictWithAlbumLocked`, gaining that status if it
+didn't advertise it, and every other operation keeps the shared response. See core's
+[scoping a code to the operations that raise it](https://github.com/haddowg/json-api/blob/main/docs/openapi.md#scoping-a-code-to-the-operations-that-raise-it).
+
+For an error you don't own, such as one a package ships with no scope, register core's
+`ScopedErrorSource` instead. It catalogues the classes it names under its own scope, in
+place of whatever their descriptors declare, and autoconfiguration tags it like any other
+source. Its scope is a value object built by a named constructor, so in
+`config/services.php` it is an inline service with a factory:
+
+```php
+// config/services.php
+use Acme\Billing\Exception\PaymentRequired;
+use haddowg\JsonApi\Exception\ErrorScope;
+use haddowg\JsonApi\Exception\ScopedErrorSource;
+use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
+
+use function Symfony\Component\DependencyInjection\Loader\Configurator\inline_service;
+
+return static function (ContainerConfigurator $container): void {
+    $services = $container->services()->defaults()->autowire()->autoconfigure();
+
+    $services->set('app.jsonapi.payment_errors', ScopedErrorSource::class)
+        ->args([
+            inline_service(ErrorScope::class)
+                ->factory([ErrorScope::class, 'on'])
+                ->args(['albums', 'action.purchase.post']),
+            PaymentRequired::class,
+        ]);
+};
+```
+
+The same in YAML:
+
+```yaml
+services:
+    app.jsonapi.payment_errors:
+        class: haddowg\JsonApi\Exception\ScopedErrorSource
+        arguments:
+            - !service
+                class: haddowg\JsonApi\Exception\ErrorScope
+                factory: ['haddowg\JsonApi\Exception\ErrorScope', 'on']
+                arguments: ['albums', 'action.purchase.post']
+            - 'Acme\Billing\Exception\PaymentRequired'
+```
+
+A name that isn't an operation name throws when the scope is built (for a
+`ScopedErrorSource` service, when the document is first projected), and a scope naming a
+type the server doesn't register covers nothing on it.
 
 ## Localizing and overriding error copy
 

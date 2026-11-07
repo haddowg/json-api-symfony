@@ -178,4 +178,34 @@ abstract class JsonApiFunctionalTestCase extends KernelTestCase
             \restore_exception_handler();
         }
     }
+
+    /**
+     * The error shape in `$schemas` (a document's `components.schemas`) that catalogues
+     * `$code`: the `Error<status>…` component whose `code` `anyOf` has a `const` branch for
+     * it, or `null` when no shape does.
+     *
+     * @param array<array-key, mixed> $schemas
+     */
+    protected static function errorShapeOf(array $schemas, string $code): ?string
+    {
+        foreach ($schemas as $name => $schema) {
+            if (!\is_string($name) || !\str_starts_with($name, 'Error') || !\is_array($schema)) {
+                continue;
+            }
+            $narrowing = \is_array($schema['allOf'] ?? null) ? ($schema['allOf'][1] ?? null) : null;
+            $branches = \is_array($narrowing) && \is_array($narrowing['properties'] ?? null) && \is_array($narrowing['properties']['code'] ?? null)
+                ? ($narrowing['properties']['code']['anyOf'] ?? null)
+                : null;
+            if (!\is_array($branches)) {
+                continue;
+            }
+            foreach ($branches as $branch) {
+                if (\is_array($branch) && ($branch['const'] ?? null) === $code) {
+                    return $name;
+                }
+            }
+        }
+
+        return null;
+    }
 }

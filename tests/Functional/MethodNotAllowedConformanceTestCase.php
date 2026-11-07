@@ -166,7 +166,7 @@ abstract class MethodNotAllowedConformanceTestCase extends JsonApiFunctionalTest
         self::assertIsArray($components);
         $schemas = $components['schemas'] ?? null;
         self::assertIsArray($schemas);
-        self::assertArrayHasKey('MethodNotAllowedError', $schemas);
+        self::assertSame('Error405', self::errorShapeOf($schemas, 'METHOD_NOT_ALLOWED'));
 
         $paths = $document['paths'] ?? null;
         self::assertIsArray($paths);

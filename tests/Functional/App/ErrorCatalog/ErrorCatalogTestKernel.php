@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Functional\App\ErrorCatalog;
 
 use haddowg\JsonApi\Exception\ClassListErrorSource;
+use haddowg\JsonApi\Exception\ErrorScope;
+use haddowg\JsonApi\Exception\ScopedErrorSource;
 use haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Routing\OpenApiRouteLoader;
+use haddowg\JsonApiBundle\Tests\Functional\App\ErrorCatalog\Unscanned\OverdraftRefused;
 use haddowg\JsonApiBundle\Tests\Functional\App\ErrorCatalog\Unscanned\TenantSuspended;
 use haddowg\JsonApiBundle\Tests\Functional\App\PinnedConfigDefaults;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
@@ -20,6 +23,7 @@ use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigura
 use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
+use function Symfony\Component\DependencyInjection\Loader\Configurator\inline_service;
 use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 /**
@@ -33,6 +37,10 @@ use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
  *    {@see ClassListErrorSource}, so it is catalogued by registration;
  *  - {@see Unscanned\SubscriptionRequired} lives beside it, registered nowhere, so it
  *    is catalogued not at all.
+ *
+ * Two more cover scoping: {@see Scanned\AccountFrozen} is found by the scan and keeps the
+ * scope its descriptor declares, and {@see OverdraftRefused}, whose descriptor declares
+ * none, is scoped by a {@see ScopedErrorSource} service built as the bundle's docs show it.
  *
  * `expose_in_prod: true` so `GET /docs.json` is routed under the functional suite's
  * `debug=false` boot.
@@ -120,6 +128,17 @@ final class ErrorCatalogTestKernel extends Kernel
         $services->set('test.error_catalog.explicit_source', ClassListErrorSource::class)
             ->autowire(false)
             ->args([TenantSuspended::class]);
+
+        // A ScopedErrorSource scoping a class whose own descriptor declares no scope, wired
+        // as docs/errors.md shows it: the scope is an inline service from ErrorScope's
+        // named constructor, and autoconfigure() tags the source.
+        $services->set('test.error_catalog.scoped_source', ScopedErrorSource::class)
+            ->args([
+                inline_service(ErrorScope::class)
+                    ->factory([ErrorScope::class, 'on'])
+                    ->args(['ledgerAccounts', 'delete']),
+                OverdraftRefused::class,
+            ]);
     }
 
     public static function createAccountsProvider(): InMemoryDataProvider

@@ -261,7 +261,7 @@ final class JsonApiBundle extends AbstractBundle
                     ->integerPrototype()->end()
                 ->end()
                 ->arrayNode('error_codes')
-                    ->info('The error codes your application documents alongside core\'s in the OpenAPI catalogue. Each listed directory is scanned (recursively, at container build time) for classes implementing core\'s DescribedErrorInterface, and each one found becomes a named error component a generated client can dispatch on. Nothing outside these paths is scanned — the default is none — so an exception reaches your published contract only when you point at the directory it lives in. For a class no scan reaches, register an ErrorCatalogSourceInterface service (core ships ClassListErrorSource); autoconfiguration tags it.')
+                    ->info('The error codes your application documents alongside core\'s in the OpenAPI catalogue. Each listed directory is scanned (recursively, at container build time) for classes implementing core\'s DescribedErrorInterface, and each one found is catalogued as a code a generated client can dispatch on, keeping any scope its descriptor declares. Nothing outside these paths is scanned — the default is none — so an exception reaches your published contract only when you point at the directory it lives in. For a class no scan reaches, register an ErrorCatalogSourceInterface service (core ships ClassListErrorSource); autoconfiguration tags it.')
                     ->addDefaultsIfNotSet()
                     ->children()
                         ->arrayNode('paths')
