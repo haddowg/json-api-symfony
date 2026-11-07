@@ -917,11 +917,14 @@ final class PlaylistResource extends AbstractResource { /* … */ }
 
 ### Your own error codes
 
-The document catalogues one named schema variant per error code the server can raise,
-so a generated client gets a typed exception per code rather than one opaque error
-type. Core's codes are always there; point `json_api.error_codes.paths` at the
-directory your own described errors live in and they join them. See
-[errors](errors.md#documenting-your-own-error-codes).
+The document catalogues every error code the server can raise, each a `const` branch of
+a shape grouping the codes at one status, so a generated client gets a typed exception
+per code rather than one opaque error type. Core's codes are always there; point
+`json_api.error_codes.paths` at the directory your own described errors live in and they
+join them. See [errors](errors.md#documenting-your-own-error-codes). A code only some
+operations raise declares a `scope` on its descriptor, or is registered through a
+`ScopedErrorSource`, and only those operations offer it; see
+[scoping a code to the operations that raise it](errors.md#scoping-a-code-to-the-operations-that-raise-it).
 
 ### Wholesale customisation (the decorator)
 
