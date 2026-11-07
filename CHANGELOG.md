@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.1](https://github.com/haddowg/json-api-symfony/compare/v2.1.0...v2.1.1) (2026-11-07)
+
+
+### Miscellaneous Chores
+
+* release 2.1.1 ([#307](https://github.com/haddowg/json-api-symfony/issues/307)) ([d7b9983](https://github.com/haddowg/json-api-symfony/commit/d7b99832ab178b1fc54d0d569846d2e3576bfb47))
+
 ## [2.1.0](https://github.com/haddowg/json-api-symfony/compare/v2.0.0...v2.1.0) (2026-11-07)
 
 
