@@ -57,6 +57,7 @@ abstract class CompositeConformanceTestCase extends JsonApiFunctionalTestCase
             'schedule' => ['startsAt' => '2024-07-01T09:00:00+00:00', 'endsOn' => '2024-07-05'],
             'contact' => ['kind' => 'phone', 'number' => '+44 20 7946 0000'],
             'prefs' => ['theme' => 'dark'],
+            'shape' => ['width' => 2, 'height' => 3],
         ];
 
         $created = $this->handle('/composites', 'POST', [
@@ -156,6 +157,57 @@ abstract class CompositeConformanceTestCase extends JsonApiFunctionalTestCase
         ]));
 
         self::assertContains('/data/attributes/block/kind', $pointers);
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function aPatchToAnUndiscriminatedUnionReplacesTheWholeValue(): void
+    {
+        foreach ([['width' => 2, 'height' => 3], ['radius' => 4]] as $shape) {
+            $response = $this->handle('/composites/1', 'PATCH', [
+                'data' => ['type' => 'composites', 'id' => '1', 'attributes' => ['shape' => $shape]],
+            ]);
+            self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        }
+
+        $this->detachPersistedState();
+        $fetched = $this->decode($this->handle('/composites/1'));
+        self::assertIsArray($fetched['data'] ?? null);
+        self::assertIsArray($fetched['data']['attributes'] ?? null);
+        self::assertSame(['radius' => 4], $fetched['data']['attributes']['shape'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function anUndiscriminatedUpdateMustCarryTheWholeVariant(): void
+    {
+        $pointers = $this->violationPointers($this->handle('/composites/1', 'PATCH', [
+            'data' => ['type' => 'composites', 'id' => '1', 'attributes' => ['shape' => ['width' => 2]]],
+        ]));
+
+        self::assertContains('/data/attributes/shape/height', $pointers);
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function anUndiscriminatedVariantChildPointsAtTheChild(): void
+    {
+        $pointers = $this->violationPointers($this->handle('/composites/1', 'PATCH', [
+            'data' => ['type' => 'composites', 'id' => '1', 'attributes' => ['shape' => ['radius' => 0]]],
+        ]));
+
+        self::assertContains('/data/attributes/shape/radius', $pointers);
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function aValueCarryingTwoVariantsSignaturesIsRejectedAtTheField(): void
+    {
+        $pointers = $this->violationPointers($this->handle('/composites/1', 'PATCH', [
+            'data' => ['type' => 'composites', 'id' => '1', 'attributes' => ['shape' => ['radius' => 1, 'width' => 2, 'height' => 3]]],
+        ]));
+
+        self::assertContains('/data/attributes/shape', $pointers);
     }
 
     #[Test]

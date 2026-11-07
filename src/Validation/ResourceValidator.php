@@ -231,13 +231,13 @@ final class ResourceValidator
             }
         }
 
-        // A discriminated union (OneOf) validates value-dependently — the incoming
-        // discriminator selects the variant whose children are then validated — so it
+        // A union (OneOf) validates value-dependently — the incoming value selects the
+        // variant whose children are then validated — so it
         // runs as a document-level pass (like the cross-field compares) where the value
         // is in scope, not through the static per-field Collection which cannot know
         // which variant's rules apply. A variant child violation maps to
-        // /data/attributes/<field>/<child>; an unknown discriminator to
-        // /data/attributes/<field>/<discriminator>.
+        // /data/attributes/<field>/<child>; a value selecting no variant to
+        // /data/attributes/<field>/<discriminator>, or to the field when undiscriminated.
         foreach ($this->oneOfErrors($resource, $attributes, $incoming, $creating, $request) as $error) {
             $errors[] = $error;
         }
@@ -1371,7 +1371,7 @@ final class ResourceValidator
     /**
      * Validates each element of a structured {@see ArrayList} at `[<index>]` under the
      * list: an {@see Obj} element through the same nested Collection an `Obj` attribute
-     * gets, a {@see OneOf} element through the variant its discriminator names, as the
+     * gets, a {@see OneOf} element through the variant it selects, as the
      * {@see oneOfErrors()} pass does for an attribute. A scalar or `null` element is a
      * violation at the element. A value that is not a list, and an element sent as a
      * list, are left to core's hydration, which rejects both with their own pointers.
@@ -1398,10 +1398,9 @@ final class ResourceValidator
 
                 $collection = $objCollection;
                 if ($element instanceof OneOf) {
-                    $discriminator = $element->discriminatorName();
-                    $variant = $element->variantFor($item[$discriminator] ?? null);
+                    $variant = $element->variantOf($item);
                     if ($variant === null) {
-                        $context->buildViolation(self::UNKNOWN_VARIANT)->atPath($path . '[' . $discriminator . ']')->addViolation();
+                        $context->buildViolation(self::UNKNOWN_VARIANT)->atPath($path . self::discriminatorPath($element))->addViolation();
 
                         continue;
                     }
@@ -1413,6 +1412,17 @@ final class ResourceValidator
                 }
             }
         });
+    }
+
+    /**
+     * Where a value selecting no variant is reported, below the union's own path: at its
+     * discriminator when it has one, otherwise at the value itself.
+     */
+    private static function discriminatorPath(OneOf $union): string
+    {
+        $discriminator = $union->discriminatorName();
+
+        return $discriminator === null ? '' : '[' . $discriminator . ']';
     }
 
     /**
@@ -1436,12 +1446,14 @@ final class ResourceValidator
 
     /**
      * Validates each present {@see OneOf} attribute value-dependently: the incoming
-     * discriminator selects the variant, whose children are then validated through a
-     * nested Collection mirroring the {@see Map}/{@see Obj} cascade (one level, same
-     * create/update presence resolution). An array value whose discriminator names no
-     * variant yields one error at `/data/attributes/<field>/<discriminator>`; a
-     * non-array value one at `/data/attributes/<field>`. Absent or explicit-null values
-     * are the main pass's concern (presence / nullability), so they are skipped here.
+     * value selects the variant, whose children are then validated through a nested
+     * Collection mirroring the {@see Map}/{@see Obj} cascade (one level, same
+     * create/update presence resolution; an undiscriminated union is written whole, so a
+     * member its update requires must be present). An array value selecting no variant
+     * yields one error at `/data/attributes/<field>/<discriminator>`, or at
+     * `/data/attributes/<field>` for an undiscriminated union; a non-array value one at
+     * `/data/attributes/<field>`. Absent or explicit-null values are the main pass's
+     * concern (presence / nullability), so they are skipped here.
      *
      * @param array<string, mixed>    $attributes the merged incoming attribute map
      * @param array<array-key, mixed> $incoming   the attributes the request sent
@@ -1469,16 +1481,17 @@ final class ResourceValidator
                 continue;
             }
 
-            $discriminator = $field->discriminatorName();
-            $variant = $field->variantFor($value[$discriminator] ?? null);
+            $variant = $field->variantOf($value);
             if ($variant === null) {
-                $errors[] = $this->error(self::UNKNOWN_VARIANT, '[' . $field->name() . '][' . $discriminator . ']');
+                $errors[] = $this->error(self::UNKNOWN_VARIANT, '[' . $field->name() . ']' . self::discriminatorPath($field));
 
                 continue;
             }
 
+            // An undiscriminated union is written whole, so an update must carry
+            // everything the variant requires.
             $elements = $creating || \array_key_exists($field->name(), $incoming);
-            $violations = $this->validator->validate($value, $this->variantCollection($variant, $value, $creating, $request, elements: $elements));
+            $violations = $this->validator->validate($value, $this->variantCollection($variant, $value, $creating, $request, whole: $field->writesWhole(), elements: $elements));
             foreach ($violations as $violation) {
                 $errors[] = $this->error((string) $violation->getMessage(), '[' . $field->name() . ']' . (string) $violation->getPropertyPath());
             }

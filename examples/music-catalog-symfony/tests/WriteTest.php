@@ -133,10 +133,10 @@ final class WriteTest extends MusicCatalogKernelTestCase
 
     #[Test]
     #[Group('spec:updating-resources')]
-    public function anUndeclaredAttributeInAWriteBodyIsSilentlyIgnored(): void
+    public function anUndeclaredAttributeInAWriteBodyIsRefused(): void
     {
-        // Allow-list hydration: an attribute the resource never declared is dropped,
-        // never written, and never surfaces on the rendered resource.
+        // The attributes object is closed: an attribute the resource never declared is
+        // a 400 naming each member, and the track is left as it was.
         $browser = $this->browser();
         $browser->patch('/tracks/1', [
             'data' => [
@@ -149,14 +149,14 @@ final class WriteTest extends MusicCatalogKernelTestCase
                 ],
             ],
         ])
-            ->assertFetchedOne()
-            ->assertHasAttribute('title', 'Edited via allow-list');
+            ->assertStatus(400)
+            ->assertHasError('400', '/data/attributes/isAdmin', 'ATTRIBUTE_MEMBER_UNRECOGNIZED')
+            ->assertHasError('400', '/data/attributes/undeclared', 'ATTRIBUTE_MEMBER_UNRECOGNIZED');
 
+        $browser->get('/tracks/1')->assertFetchedOne();
         $data = $this->decode($browser->getResponse())['data'] ?? null;
         self::assertIsArray($data);
-        $attributes = $this->attributesOf($data);
-        self::assertArrayNotHasKey('isAdmin', $attributes);
-        self::assertArrayNotHasKey('undeclared', $attributes);
+        self::assertNotSame('Edited via allow-list', $this->attributesOf($data)['title'] ?? null);
     }
 
     #[Test]

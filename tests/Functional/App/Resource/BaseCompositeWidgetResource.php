@@ -72,6 +72,11 @@ abstract class BaseCompositeWidgetResource extends AbstractResource
             // A free-form map that must be a JSON object, so `{}` is valid and `[]` is
             // not, and that holds at most five keys (a Symfony Count rule).
             ArrayHash::make('prefs')->nullable()->maxProperties(5)->constrain(Shape::allOf(Schema::ofType('object'))),
+            // An undiscriminated union: the required member only one variant declares
+            // selects it, and every write replaces the whole value.
+            OneOf::make('shape')->nullable()
+                ->variant('circle', Integer::make('radius')->required()->min(1))
+                ->variant('rectangle', Integer::make('width')->required(), Integer::make('height')->required()),
         ];
     }
 }

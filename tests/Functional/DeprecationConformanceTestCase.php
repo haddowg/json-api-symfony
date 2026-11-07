@@ -29,7 +29,7 @@ abstract class DeprecationConformanceTestCase extends JsonApiFunctionalTestCase
     #[Group('spec:openapi')]
     public function aDocumentWithMarkersDeclaresTheDeprecationContract(): void
     {
-        self::assertSame(GeneratorContract::DEPRECATION, $this->at($this->document(), 'info', 'x-generator', 'contract'));
+        self::assertSame(\max(GeneratorContract::BASELINE, GeneratorContract::DEPRECATION), $this->at($this->document(), 'info', 'x-generator', 'contract'));
     }
 
     #[Test]
