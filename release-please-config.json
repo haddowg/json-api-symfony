@@ -10,7 +10,8 @@
       "prerelease": false,
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": true,
-      "initial-version": "0.1.0"
+      "initial-version": "0.1.0",
+      "release-as": "2.1.1"
     }
   }
 }

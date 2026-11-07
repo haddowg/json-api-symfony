@@ -6,7 +6,8 @@ declare(strict_types=1);
  * Writes the music-catalog example's documents into a directory, by default build/specs:
  * the OpenAPI document and the standalone JSON-Schema document of each of its two servers,
  * plus versions.json naming the haddowg/json-api and haddowg/json-api-symfony versions that
- * projected them. CI exports them to diff a pull request's output against its base, and to
+ * projected them, and under conformance/ the response documents the Laravel adapter's
+ * conformance suite must render byte for byte as the bundle's does. CI exports them to diff a pull request's output against its base, and to
  * publish `@haddowg/json-api-symfony-specs`.
  *
  * Each document is what the bundle's own console commands write for the example kernel:
@@ -91,5 +92,22 @@ foreach (['haddowg/json-api', 'haddowg/json-api-symfony'] as $package) {
 );
 
 $kernel->shutdown();
+
+// The response documents both adapters' conformance suites assert against, copied as they
+// are committed here: hand-written expectations, not output, so they are copied, never
+// generated.
+$conformance = ['identified-morph-many' => \dirname(__DIR__) . '/tests/Functional/App/IdentifiedMorphMany/documents'];
+foreach ($conformance as $name => $source) {
+    $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($source, \FilesystemIterator::SKIP_DOTS));
+    foreach ($iterator as $file) {
+        \assert($file instanceof \SplFileInfo);
+        $target = "{$directory}/conformance/{$name}/" . \substr($file->getPathname(), \strlen($source) + 1);
+        if (!\is_dir(\dirname($target)) && !\mkdir(\dirname($target), 0o755, true) && !\is_dir(\dirname($target))) {
+            \fwrite(\STDERR, "Could not create " . \dirname($target) . ".\n");
+            exit(1);
+        }
+        \copy($file->getPathname(), $target);
+    }
+}
 
 \fwrite(\STDOUT, "Wrote the music-catalog documents to {$directory}.\n");

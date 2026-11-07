@@ -12,6 +12,9 @@ commit a copy:
 - `versions.json`: the `haddowg/json-api` and `haddowg/json-api-symfony` versions that
   projected them, so a consumer can check it compares against documents from the same core
   release.
+- `conformance/identified-morph-many/{plain,hidden}/*.json`: the response documents the
+  bundle's identified `MorphToMany` conformance suite asserts against, which an adapter's
+  own suite must match byte for byte.
 
 The package version is the json-api-symfony release that projected them. A pull request
 publishes `0.0.0-pr.<number>.<sha>` under the dist-tag `pr-<number>`, deleted when the pull

@@ -102,7 +102,8 @@ composer cs-check   # PHP-CS-Fixer, PER-CS 2.0
   changelogs record when it arrived.
 - **The example's documents are published, not committed.** `php bin/export-specs.php
   [<dir>]` (default `build/specs`) exports the music catalog's OpenAPI and JSON-Schema
-  documents for both servers plus `versions.json`; CI publishes them as
+  documents for both servers, `versions.json`, and the shared conformance response
+  documents under `conformance/`; CI publishes them as
   `@haddowg/json-api-symfony-specs` on GitHub Packages (`.github/workflows/specs.yml`, and
   `publish-specs` in `release-please.yml`). Never commit a copy. The `Generated output`
   job diffs a pull request's documents against its base's and fails until the

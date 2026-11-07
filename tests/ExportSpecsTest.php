@@ -28,12 +28,18 @@ final class ExportSpecsTest extends TestCase
 
     protected function tearDown(): void
     {
-        foreach (\glob($this->directory . '/*') ?: [] as $file) {
-            \unlink($file);
+        if (!\is_dir($this->directory)) {
+            return;
         }
-        if (\is_dir($this->directory)) {
-            \rmdir($this->directory);
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($this->directory, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::CHILD_FIRST,
+        );
+        foreach ($iterator as $file) {
+            \assert($file instanceof \SplFileInfo);
+            $file->isDir() ? \rmdir($file->getPathname()) : \unlink($file->getPathname());
         }
+        \rmdir($this->directory);
     }
 
     #[Test]
@@ -43,7 +49,7 @@ final class ExportSpecsTest extends TestCase
 
         $files = \array_map('basename', \glob($this->directory . '/*') ?: []);
         \sort($files);
-        $expected = [...self::DOCUMENTS, 'versions.json'];
+        $expected = [...self::DOCUMENTS, 'conformance', 'versions.json'];
         \sort($expected);
         self::assertSame($expected, $files);
 
@@ -66,6 +72,23 @@ final class ExportSpecsTest extends TestCase
         $versions = $this->decode('versions.json');
         self::assertSame(['haddowg/json-api', 'haddowg/json-api-symfony'], \array_keys($versions));
         self::assertContainsOnlyString($versions);
+    }
+
+    #[Test]
+    public function itCopiesTheSharedConformanceDocumentsVerbatim(): void
+    {
+        $this->export();
+
+        $source = \dirname(__DIR__) . '/tests/Functional/App/IdentifiedMorphMany/documents';
+        $sources = \glob($source . '/*/*.json') ?: [];
+        self::assertNotSame([], $sources);
+
+        $copied = \glob($this->directory . '/conformance/identified-morph-many/*/*.json') ?: [];
+        self::assertCount(\count($sources), $copied);
+        foreach ($sources as $file) {
+            $relative = \substr($file, \strlen($source) + 1);
+            self::assertFileEquals($file, $this->directory . '/conformance/identified-morph-many/' . $relative, $relative);
+        }
     }
 
     #[Test]
