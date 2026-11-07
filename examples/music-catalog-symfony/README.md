@@ -842,6 +842,27 @@ composer phpstan  # PHPStan level 9 over src + tests + examples
 composer cs-check # PHP-CS-Fixer, PER-CS 2.0
 ```
 
+## Its published documents
+
+The code generators and the Laravel adapter's byte-compat check test against this app's
+documents, which are published rather than committed: each release publishes them as
+`@haddowg/json-api-symfony-specs` on GitHub Packages, and each pull request from the
+bundle's repository as `0.0.0-pr.<number>.<sha>` under the dist-tag `pr-<number>`, deleted
+when the pull request closes. The package holds the OpenAPI and JSON-Schema documents of
+both servers (`music-catalog[-admin].openapi.json`, `music-catalog[-admin].schemas.json`)
+and a `versions.json` naming the `haddowg/json-api` and bundle versions that projected them.
+
+To export them locally, from the bundle root:
+
+```bash
+php bin/export-specs.php [<directory>]   # default: build/specs
+```
+
+It runs the bundle's own `json-api:openapi:export` and `json-api:json-schema:export`
+commands against this app's kernel. A pull request that changes any of them gets a
+`Generated output` comment with the diff against its base, and the check fails until the
+`generated-output` label says someone read it.
+
 ## Serving it live
 
 The app ships a [FrankenPHP](https://frankenphp.dev/) container with a seeded SQLite
