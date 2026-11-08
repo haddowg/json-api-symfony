@@ -67,6 +67,7 @@ final class DoctrineKeyset
      * @param array<string, string>                 $aliasOfColumn   keyset column → non-root query alias; an absent column resolves to the root alias
      * @param array<string, ClassMetadata<object>>  $metadataOfAlias non-root alias → its entity's metadata (for typed boundary binds)
      * @param ?DoctrineSortHandler                  $sorts           supplies a custom sort level's expression through its keyset arm
+     * @param ?DoctrineIdentifiers                  $ids             binds an association id's boundary through the target id's type
      */
     public function __construct(
         private readonly ClassMetadata $metadata,
@@ -74,6 +75,7 @@ final class DoctrineKeyset
         private readonly array $aliasOfColumn = [],
         private readonly array $metadataOfAlias = [],
         private readonly ?DoctrineSortHandler $sorts = null,
+        private readonly ?DoctrineIdentifiers $ids = null,
     ) {
         $this->dates = new NaiveDateTimeStorage();
     }
@@ -227,6 +229,11 @@ final class DoctrineKeyset
             }
         } else {
             $metadata = $this->metadataFor($column->column);
+            if ($this->ids !== null && self::isAssociationId($metadata, $column->column)) {
+                $this->ids->bind($builder, $placeholder, $metadata, $value);
+
+                return $placeholder;
+            }
             $type = $metadata->hasField($column->column) ? $metadata->getTypeOfField($column->column) : null;
             if ($type !== null) {
                 $value = $this->toPhpValue($value, $type);
@@ -294,7 +301,25 @@ final class DoctrineKeyset
             throw new \LogicException(\sprintf('"%s" is not a valid Doctrine field path.', $column));
         }
 
-        return ($this->aliasOfColumn[$column] ?? $this->rootAlias) . '.' . $column;
+        $alias = $this->aliasOfColumn[$column] ?? $this->rootAlias;
+        if (self::isAssociationId($this->metadataFor($column), $column)) {
+            return DoctrineIdentifiers::path($this->metadataFor($column), $alias);
+        }
+
+        return $alias . '.' . $column;
+    }
+
+    /**
+     * Whether `$column` is the single id field of `$metadata` and an association, so the
+     * keyset reads it through `IDENTITY()`.
+     *
+     * @param ClassMetadata<object> $metadata
+     */
+    private static function isAssociationId(ClassMetadata $metadata, string $column): bool
+    {
+        return !$metadata->isIdentifierComposite
+            && $metadata->hasAssociation($column)
+            && $metadata->getSingleIdentifierFieldName() === $column;
     }
 
     /**

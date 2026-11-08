@@ -429,8 +429,6 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
                 ->findBy([$association->parentProperty => $parent]);
         }
 
-        $farIdField = $this->entityManager->getClassMetadata($relatedClass)->getSingleIdentifierFieldName();
-
         $byFar = [];
         foreach ($rows as $row) {
             if (!\is_object($row)) {
@@ -440,7 +438,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
             if (!\is_object($far)) {
                 continue;
             }
-            $storageKey = $this->entityManager->getClassMetadata($far::class)->getIdentifierValues($far)[$farIdField] ?? null;
+            $storageKey = $this->ids->valueOf($this->entityManager->getClassMetadata($far::class), $far);
             if ($storageKey !== null) {
                 $byFar[$this->mapKey($relatedClass, $storageKey)] = $row;
             }
