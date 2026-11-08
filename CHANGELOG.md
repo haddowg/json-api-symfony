@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.1](https://github.com/haddowg/json-api-symfony/compare/v2.2.0...v2.2.1) (2026-11-08)
+
+
+### Bug Fixes
+
+* **atomic:** refuse an href the operation cannot target ([#312](https://github.com/haddowg/json-api-symfony/issues/312)) ([33da5fa](https://github.com/haddowg/json-api-symfony/commit/33da5fad0073d7c3c2465331c15c204d6a50927d))
+
 ## [2.2.0](https://github.com/haddowg/json-api-symfony/compare/v2.1.1...v2.2.0) (2026-11-08)
 
 
