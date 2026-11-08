@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.0](https://github.com/haddowg/json-api-symfony/compare/v2.2.1...v2.3.0) (2026-11-08)
+
+
+### Features
+
+* let an action declare that it answers 201 Created ([#314](https://github.com/haddowg/json-api-symfony/issues/314)) ([36b9559](https://github.com/haddowg/json-api-symfony/commit/36b95593636d81a54427cc31edffdf39dbd55a01))
+
 ## [2.2.1](https://github.com/haddowg/json-api-symfony/compare/v2.2.0...v2.2.1) (2026-11-08)
 
 
