@@ -26,8 +26,10 @@ use haddowg\JsonApi\Resource\Field\IdEncoderInterface;
  * type, and {@see toPhp()} gives the form an entity holds, which
  * `EntityManager::getReference()` needs.
  *
- * An identifier with no mapped field type, such as an id that is itself an
- * association, is passed through unconverted, as before.
+ * An id that is itself an association, a OneToOne mapped with `#[ORM\Id]`, is the
+ * target entity's id: an entity or proxy value reduces to that id, recursively, and
+ * converts and binds through the target id's type. DQL addresses such an id as
+ * `IDENTITY(alias.field)`, which {@see path()} gives.
  *
  * @internal
  */
@@ -42,6 +44,7 @@ final class DoctrineIdentifiers
      */
     public function toDatabase(ClassMetadata $metadata, mixed $value): mixed
     {
+        $value = $this->reduce($metadata, $value);
         if ($value === null) {
             return null;
         }
@@ -67,6 +70,7 @@ final class DoctrineIdentifiers
      */
     public function toPhp(ClassMetadata $metadata, mixed $value): mixed
     {
+        $value = $this->reduce($metadata, $value);
         $type = $this->type($metadata);
         if ($type === null) {
             return \is_scalar($value) ? $value : null;
@@ -124,7 +128,7 @@ final class DoctrineIdentifiers
 
     /**
      * The identifier value of a managed `$entity`, or null when it has none or its
-     * identifier is composite.
+     * identifier is composite. An association id gives the target's id.
      *
      * @param ClassMetadata<object> $metadata
      */
@@ -134,7 +138,83 @@ final class DoctrineIdentifiers
             return null;
         }
 
-        return $metadata->getIdentifierValues($entity)[$metadata->getSingleIdentifierFieldName()] ?? null;
+        return $this->reduce($metadata, $metadata->getIdentifierValues($entity)[$metadata->getSingleIdentifierFieldName()] ?? null);
+    }
+
+    /**
+     * The value of `$field` on `$entity`, with an association id reduced to the target's
+     * id, as a cursor keyset reads it.
+     *
+     * @param ClassMetadata<object> $metadata
+     */
+    public function fieldValue(ClassMetadata $metadata, object $entity, string $field): mixed
+    {
+        if (!$metadata->isIdentifierComposite && $metadata->hasAssociation($field) && $metadata->getSingleIdentifierFieldName() === $field) {
+            return $this->valueOf($metadata, $entity);
+        }
+
+        return $metadata->getFieldValue($entity, $field);
+    }
+
+    /**
+     * The DQL for `$alias`'s single id: `IDENTITY(alias.field)` when the id is an
+     * association, since DQL rejects the bare association path in a SELECT, and
+     * `alias.field` otherwise. GROUP BY takes the bare path either way.
+     *
+     * @param ClassMetadata<object> $metadata
+     */
+    public static function path(ClassMetadata $metadata, string $alias): string
+    {
+        $field = $metadata->getSingleIdentifierFieldName();
+        $path = $alias . '.' . $field;
+
+        return $metadata->hasAssociation($field) ? 'IDENTITY(' . $path . ')' : $path;
+    }
+
+    /**
+     * The DQL that stands for `$alias`'s entity where DQL reads its id, as a COUNT or an
+     * entity comparison does: the alias itself, or the id's `IDENTITY()` when the id is
+     * an association, which DQL cannot read through the bare alias.
+     *
+     * @param ClassMetadata<object> $metadata
+     */
+    public static function entity(ClassMetadata $metadata, string $alias): string
+    {
+        if ($metadata->isIdentifierComposite || !$metadata->hasAssociation($metadata->getSingleIdentifierFieldName())) {
+            return $alias;
+        }
+
+        return self::path($metadata, $alias);
+    }
+
+    /**
+     * Reduces an entity or proxy held by an association id to the target's own id,
+     * through as many association ids as the chain has. The UnitOfWork's copy is read
+     * first, so a proxy is never initialised.
+     *
+     * @param ClassMetadata<object> $metadata
+     */
+    private function reduce(ClassMetadata $metadata, mixed $value): mixed
+    {
+        while (\is_object($value) && !$metadata->isIdentifierComposite) {
+            $field = $metadata->getSingleIdentifierFieldName();
+            if (!$metadata->hasAssociation($field)) {
+                break;
+            }
+
+            $metadata = $this->entityManager->getClassMetadata($metadata->getAssociationTargetClass($field));
+            if ($metadata->isIdentifierComposite) {
+                return null;
+            }
+
+            $unitOfWork = $this->entityManager->getUnitOfWork();
+            $identifier = $unitOfWork->isInIdentityMap($value)
+                ? $unitOfWork->getEntityIdentifier($value)
+                : $metadata->getIdentifierValues($value);
+            $value = $identifier[$metadata->getSingleIdentifierFieldName()] ?? null;
+        }
+
+        return $value;
     }
 
     /**
@@ -179,8 +259,8 @@ final class DoctrineIdentifiers
     }
 
     /**
-     * The Doctrine type of the single identifier field, or null when there is none
-     * (a composite id, or an id that is an association).
+     * The Doctrine type of the single identifier field, or of the target's id when
+     * that field is an association. Null for a composite id.
      *
      * @param ClassMetadata<object> $metadata
      */
@@ -191,6 +271,10 @@ final class DoctrineIdentifiers
         }
 
         $field = $metadata->getSingleIdentifierFieldName();
+        if ($metadata->hasAssociation($field)) {
+            return $this->type($this->entityManager->getClassMetadata($metadata->getAssociationTargetClass($field)));
+        }
+
         if (!$metadata->hasField($field)) {
             return null;
         }

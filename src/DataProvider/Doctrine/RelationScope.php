@@ -80,16 +80,15 @@ final class RelationScope
         // the outer query root. getClassMetadata resolves a proxy class to
         // its real entity name.
         $parentClass = $parentMetadata->getName();
-        $relatedIdField = $relatedMetadata->getSingleIdentifierFieldName();
 
         $sub = $this->entityManager->createQueryBuilder()
-            ->select(\sprintf('related_scope.%s', $relatedIdField))
+            ->select(DoctrineIdentifiers::path($relatedMetadata, 'related_scope'))
             ->from($parentClass, 'parent_scope')
             ->innerJoin(\sprintf('parent_scope.%s', $property), 'related_scope')
-            ->where('parent_scope = :jsonapi_parent');
+            ->where(DoctrineIdentifiers::entity($parentMetadata, 'parent_scope') . ' = :jsonapi_parent');
 
         $builder->andWhere($builder->expr()->in(
-            \sprintf('%s.%s', $rootAlias, $relatedIdField),
+            DoctrineIdentifiers::path($relatedMetadata, $rootAlias),
             $sub->getDQL(),
         ));
         $this->bindParent($builder, $parentMetadata, $parent); // bind on the OUTER builder, which executes
@@ -161,16 +160,16 @@ final class RelationScope
         // scalar+load queries, still O(N) per relation. The criteria (including the related
         // resource's default sort) apply on the `related` join alias the caller passes as
         // the default alias.
-        $parentClass = $this->entityManager->getClassMetadata($parents[0]::class)->getName();
-        $parentIdField = $this->entityManager->getClassMetadata($parentClass)->getSingleIdentifierFieldName();
+        $parentMetadata = $this->entityManager->getClassMetadata($parents[0]::class);
+        $parentClass = $parentMetadata->getName();
         $relatedIdField = $relatedMetadata->getSingleIdentifierFieldName();
 
         $builder = $this->entityManager->createQueryBuilder()
-            ->select(\sprintf('parent.%s AS %s', $parentIdField, BatchScope::PARENT_DISCRIMINATOR_ALIAS))
-            ->addSelect(\sprintf('related.%s AS %s', $relatedIdField, BatchScope::RELATED_DISCRIMINATOR_ALIAS))
+            ->select(\sprintf('%s AS %s', DoctrineIdentifiers::path($parentMetadata, 'parent'), BatchScope::PARENT_DISCRIMINATOR_ALIAS))
+            ->addSelect(\sprintf('%s AS %s', DoctrineIdentifiers::path($relatedMetadata, 'related'), BatchScope::RELATED_DISCRIMINATOR_ALIAS))
             ->from($parentClass, 'parent')
             ->innerJoin(\sprintf('parent.%s', $property), 'related')
-            ->where('parent IN (:jsonapi_parents)');
+            ->where(DoctrineIdentifiers::entity($parentMetadata, 'parent') . ' IN (:jsonapi_parents)');
         $this->bindParents($builder, $parents);
 
         return new BatchScope($builder, 'related', relatedClass: $relatedClass, relatedIdField: $relatedIdField);

@@ -355,16 +355,16 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         // IN-subquery on the owning association (mirrors RelationScope's subquery
         // branch): the inner-inner subquery roots on the owner, joins the first hop,
         // selects the related ids, and is correlated to the outer root by alias.
-        $relatedIdField = $entityManager->getClassMetadata($relatedClass)->getSingleIdentifierFieldName();
+        $relatedMetadata = $entityManager->getClassMetadata($relatedClass);
         $ownerAlias = $stem . '_owner';
         $membershipAlias = $stem . '_member';
         $membership = $entityManager->createQueryBuilder()
-            ->select(\sprintf('%s.%s', $membershipAlias, $relatedIdField))
+            ->select(DoctrineIdentifiers::path($relatedMetadata, $membershipAlias))
             ->from($rootEntity, $ownerAlias)
             ->innerJoin(\sprintf('%s.%s', $ownerAlias, $firstSegment), $membershipAlias)
-            ->where(\sprintf('%s = %s', $ownerAlias, $rootAlias));
+            ->where(\sprintf('%s = %s', DoctrineIdentifiers::entity($ownerMetadata, $ownerAlias), DoctrineIdentifiers::entity($ownerMetadata, $rootAlias)));
         $subQuery->andWhere($subQuery->expr()->in(
-            \sprintf('%s.%s', $relatedAlias, $relatedIdField),
+            DoctrineIdentifiers::path($relatedMetadata, $relatedAlias),
             $membership->getDQL(),
         ));
 

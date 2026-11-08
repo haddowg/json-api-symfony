@@ -275,7 +275,7 @@ final class WindowedRelationBatch
         $parameterMappings = $this->reflectParameterMappings($query);
 
         $parentAlias = $this->scalarAlias($innerRsm, BatchScope::PARENT_DISCRIMINATOR_ALIAS);
-        $orderBy = $this->orderByKeyset($innerRsm, $columns, $shape);
+        $orderBy = $this->orderByKeyset($innerRsm, $relatedMetadata, $columns, $shape);
 
         // A cursor page is count-free by definition (a CursorPaginator never counts), so the
         // window probes limit + 1 per partition for the hasMore signal — no COUNT(*) OVER.
@@ -339,17 +339,20 @@ final class WindowedRelationBatch
      * the offset ORDER BY there is NO trailing hardcoded PK tiebreak — the PK is the final
      * keyset column already, carrying the direction the last active directive resolved.
      *
-     * @param list<KeysetColumn> $columns
+     * @param ClassMetadata<object> $relatedMetadata
+     * @param list<KeysetColumn>    $columns
      */
-    private function orderByKeyset(ResultSetMapping $innerRsm, array $columns, WindowShape $shape): string
+    private function orderByKeyset(ResultSetMapping $innerRsm, ClassMetadata $relatedMetadata, array $columns, WindowShape $shape): string
     {
         $terms = [];
         foreach ($columns as $i => $column) {
             // Read the generated SQL alias: the projected scalar for the join-table shape, the
             // entity field on the `related` alias for the inverse-FK shape.
-            $alias = $shape->isJoinTable()
-                ? 'w.' . $this->scalarAlias($innerRsm, \sprintf('jsonapi_sort_%d', $i))
-                : 'w.' . $this->fieldAlias($innerRsm, 'related', $column->column);
+            $alias = match (true) {
+                $shape->isJoinTable() => 'w.' . $this->scalarAlias($innerRsm, \sprintf('jsonapi_sort_%d', $i)),
+                $column->column === $relatedMetadata->getSingleIdentifierFieldName() => 'w.' . $this->idAlias($innerRsm, $relatedMetadata),
+                default => 'w.' . $this->fieldAlias($innerRsm, 'related', $column->column),
+            };
             $direction = $column->descending ? 'DESC' : 'ASC';
 
             $terms[] = \sprintf('CASE WHEN %s IS NULL THEN 1 ELSE 0 END %s', $alias, $direction);
@@ -410,8 +413,8 @@ final class WindowedRelationBatch
 
         // The SAME row -> keyset-value reader the per-parent path (runCursor) mints with: read
         // each keyset column off the hydrated entity via the ORM accessor, JSON-coerced.
-        $readValue = static fn(object $entity, string $column): string|int|float|bool|null => CursorTokenMinter::coerce(
-            $relatedMetadata->getFieldValue($entity, $column),
+        $readValue = fn(object $entity, string $column): string|int|float|bool|null => CursorTokenMinter::coerce(
+            $this->ids->fieldValue($relatedMetadata, $entity, $column),
         );
 
         $results = [];
@@ -517,12 +520,13 @@ final class WindowedRelationBatch
         $parentIdField = $shape->parentIdField;
         \assert($property !== null && $relatedIdField !== null && $parentClass !== null && $parentIdField !== null);
 
+        $relatedMetadata = $this->entityManager->getClassMetadata($relatedClass);
         $builder = $this->entityManager->createQueryBuilder()
-            ->select(\sprintf('parent.%s AS %s', $parentIdField, BatchScope::PARENT_DISCRIMINATOR_ALIAS))
-            ->addSelect(\sprintf('related.%s AS %s', $relatedIdField, BatchScope::RELATED_DISCRIMINATOR_ALIAS))
+            ->select(\sprintf('%s AS %s', DoctrineIdentifiers::path($parentMetadata, 'parent'), BatchScope::PARENT_DISCRIMINATOR_ALIAS))
+            ->addSelect(\sprintf('%s AS %s', DoctrineIdentifiers::path($relatedMetadata, 'related'), BatchScope::RELATED_DISCRIMINATOR_ALIAS))
             ->from($parentClass, 'parent')
             ->innerJoin(\sprintf('parent.%s', $property), 'related')
-            ->where('parent.' . $parentIdField . ' IN (:jsonapi_parent_ids)');
+            ->where(DoctrineIdentifiers::path($parentMetadata, 'parent') . ' IN (:jsonapi_parent_ids)');
         $this->ids->bindList($builder, 'jsonapi_parent_ids', $parentMetadata, $parentIds);
 
         // The pair shape selects scalars, so the outer window cannot ORDER BY a related
@@ -531,7 +535,10 @@ final class WindowedRelationBatch
         foreach ($sortDirectives as $i => $directive) {
             $sort = $directive->sort;
             \assert($sort instanceof SortByField);
-            $builder->addSelect(\sprintf('related.%s AS jsonapi_sort_%d', $sort->column, $i));
+            $column = $sort->column === $relatedMetadata->getSingleIdentifierFieldName()
+                ? DoctrineIdentifiers::path($relatedMetadata, 'related')
+                : 'related.' . $sort->column;
+            $builder->addSelect(\sprintf('%s AS jsonapi_sort_%d', $column, $i));
         }
 
         return $this->applier->apply($this->filtersOnly($criteria), $builder, $this->filterHandler, $this->sortHandler, 'related');
@@ -574,7 +581,7 @@ final class WindowedRelationBatch
         // column (read off the RSM); for the pair shape the projected related-id scalar.
         $pk = $shape->isJoinTable()
             ? 'w.' . $this->scalarAlias($innerRsm, BatchScope::RELATED_DISCRIMINATOR_ALIAS)
-            : 'w.' . $this->fieldAlias($innerRsm, 'related', $relatedMetadata->getSingleIdentifierFieldName());
+            : 'w.' . $this->idAlias($innerRsm, $relatedMetadata);
         $terms[] = $pk . ' ASC';
 
         return \implode(', ', $terms);
@@ -601,6 +608,34 @@ final class WindowedRelationBatch
             self::class,
             $dqlAlias,
             $field,
+        ));
+    }
+
+    /**
+     * The generated SQL column alias of the `related` entity's id off the inner query's
+     * RSM. An association id is a join column, which the RSM maps as a meta column
+     * (`metaMappings`: sqlColumnAlias => column) rather than a field.
+     *
+     * @param ClassMetadata<object> $relatedMetadata
+     */
+    private function idAlias(ResultSetMapping $rsm, ClassMetadata $relatedMetadata): string
+    {
+        $field = $relatedMetadata->getSingleIdentifierFieldName();
+        if (!$relatedMetadata->hasAssociation($field)) {
+            return $this->fieldAlias($rsm, 'related', $field);
+        }
+
+        $column = $relatedMetadata->getSingleAssociationJoinColumnName($field);
+        foreach ($rsm->metaMappings as $columnAlias => $mappedColumn) {
+            if ($mappedColumn === $column && ($rsm->columnOwnerMap[$columnAlias] ?? null) === 'related') {
+                return $columnAlias;
+            }
+        }
+
+        throw new \LogicException(\sprintf(
+            'The %s cannot resolve the generated SQL alias for the id column "%s" of "related" off the inner query.',
+            self::class,
+            $column,
         ));
     }
 
@@ -763,8 +798,6 @@ final class WindowedRelationBatch
      */
     private function loadRelatedById(string $relatedClass, ClassMetadata $relatedMetadata, array $rows): array
     {
-        $idField = $relatedMetadata->getSingleIdentifierFieldName();
-
         $ids = [];
         foreach ($rows as $row) {
             $key = $this->ids->key($relatedMetadata, $row[BatchScope::RELATED_DISCRIMINATOR_ALIAS] ?? null);
@@ -779,7 +812,7 @@ final class WindowedRelationBatch
 
         $builder = $this->entityManager->getRepository($relatedClass)
             ->createQueryBuilder('related')
-            ->where(\sprintf('related.%s IN (:ids)', $idField));
+            ->where(DoctrineIdentifiers::path($relatedMetadata, 'related') . ' IN (:ids)');
         $loaded = $this->ids->bindList($builder, 'ids', $relatedMetadata, $ids)
             ->getQuery()
             ->getResult();
@@ -790,7 +823,7 @@ final class WindowedRelationBatch
             if (!\is_object($entity)) {
                 continue;
             }
-            $key = $this->ids->key($relatedMetadata, $relatedMetadata->getIdentifierValues($entity)[$idField] ?? null);
+            $key = $this->ids->key($relatedMetadata, $this->ids->valueOf($relatedMetadata, $entity));
             if ($key !== null) {
                 $byId[$key] = $entity;
             }
