@@ -19,11 +19,12 @@ namespace haddowg\JsonApiBundle\Action;
  *
  * `outputType` is the **runtime** response serializer the {@see ActionContext} renders
  * a {@see \haddowg\JsonApi\Response\DataResponse} through — the type named by the
- * `responds` set's `ActionResource` entry when present, else the mount `type`.
+ * `responds` set's `ActionResource` entry when present, else by its `ActionCreated` entry,
+ * else the mount `type`.
  *
  * `responds` is the declared success-response set the OpenAPI projection advertises: each entry
- * a `kind` discriminator (`resource`/`meta`/`nocontent`/
- * `accepted`/`seeother`) plus the `type` an `ActionResource` names or the `jobType` an
+ * a `kind` discriminator (`resource`/`created`/`meta`/`nocontent`/
+ * `accepted`/`seeother`/`raw`) plus the `type` an `ActionResource` or `ActionCreated` names or the `jobType` an
  * `Accepted` names. The {@see \haddowg\JsonApiBundle\OpenApi\Metadata\ActionMetadata}
  * rehydrates each into a core response object. It stays a plain scalar list so the
  * descriptor survives the compiled container.

@@ -50,6 +50,11 @@ use haddowg\JsonApiBundle\OpenApi\Metadata\OperationScopeOverrides;
  *    body; the handler returns a {@see \haddowg\JsonApi\Response\DataResponse} through
  *    that type's serializer — decoupled from the mount type, so it may name any
  *    registered type);
+ *  - `new ActionCreated('type')` → `201 Created` with that type's document schema and
+ *    an optional `Location` header, for an action that creates the resource it returns.
+ *    The handler returns a {@see \haddowg\JsonApi\Response\DataResponse} as for an
+ *    `ActionResource`; core's dispatch sends it as `201` unless the action also
+ *    declares an `ActionResource` (then the handler picks with `withStatus(201)`);
  *  - `new MetaResult()` → `200` with the shared meta-document schema (a handler
  *    returning `$context->meta([...])`);
  *  - `new NoContent()` → `204 No Content` (a handler returning `$context->noContent()`);
@@ -61,9 +66,10 @@ use haddowg\JsonApiBundle\OpenApi\Metadata\OperationScopeOverrides;
  * declaration time via {@see ActionResponses::validate()}. When omitted, the action
  * defaults to a `200` resource document of its **mount type** (the resolved
  * `ActionResource(type)`). It affects only the generated document — the runtime
- * response is whatever the handler returns. The mount type's serializer renders a
- * {@see \haddowg\JsonApi\Response\DataResponse} unless an `ActionResource` names
- * another type.
+ * response is whatever the handler returns, apart from the `201` an `ActionCreated`
+ * implies. The mount type's serializer renders a
+ * {@see \haddowg\JsonApi\Response\DataResponse} unless an `ActionResource` (or, failing
+ * one, an `ActionCreated`) names another type.
  *
  * `server` names the server this action is exposed on (a single server name, or
  * `null` for the implicit `default` server).

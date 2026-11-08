@@ -323,6 +323,7 @@ matches. `responds` takes one response object or a **list** of them, from
 |-------------|-----------------------------|
 | (omitted) | a `200` with the mount `type`'s document schema |
 | `responds: [new ActionResource('receipts')]` | a `200` with the named type's document schema (any registered type) |
+| `responds: [new ActionCreated('orders')]` | a `201 Created` with the named type's document schema and an optional `Location` header; the handler's `$context->data(...)` is sent as `201` |
 | `responds: [new MetaResult()]` | a `200` referencing the shared `MetaDocument` component (a meta-only document, no `data`) |
 | `responds: [new NoContent()]` | a `204 No Content` |
 | `responds: [new Accepted('jobs')]` | a `202 Accepted` — the `jobs` type's document + `Content-Location` + `Retry-After` (an async accept) |
@@ -335,6 +336,14 @@ An action that can answer more than one way lists them — a poll endpoint that 
 declaration time (`ActionResponses::validate()`), so an impossible set (duplicate
 statuses, two job types) fails the build. Omitted, `responds` defaults to a `200`
 document of the mount type.
+
+An action that creates the resource it returns, such as duplicating an order, declares
+`new ActionCreated('orders')`. The handler returns `$context->data($order)` as usual and the
+response is sent as `201`, so the status cannot drift from the declaration. Add the URL of
+the new resource with `->withHeader('Location', ...)` if you want it. An action that can
+also answer with an existing resource declares both `new ActionResource('orders')` and
+`new ActionCreated('orders')`; its response then stays `200` unless the handler calls
+`->withStatus(201)`.
 
 `responds` exists because the projector cannot read the handler's body. To stop the
 declaration drifting from the handler, the bundle **guards at compile time**: a

@@ -460,7 +460,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
                 // The declared success-response set, decoded from the
                 // action's `responds` JSON scalar; empty = the action defaults to a `200`
                 // resource document of its mount type. Each entry is a kind discriminator
-                // (+ the type an ActionResource names / the jobType an Accepted names). The
+                // (+ the type an ActionResource / ActionCreated names / the jobType an Accepted names). The
                 // attribute already validated the real declaration; this is the compiled
                 // source of truth, so it re-applies the mount-type default here.
                 $responds = $this->parseActionResponds($tag['responds'] ?? null);
@@ -469,14 +469,16 @@ final class ResourceLocatorPass implements CompilerPassInterface
                 }
 
                 // The runtime response serializer the ActionContext renders a DataResponse
-                // through: the type an ActionResource names, else the mount type (a meta /
-                // 204 / async action renders no resource body, so the mount-type fallback
-                // is never exercised by the handler).
+                // through: the type an ActionResource names, else the type an ActionCreated
+                // names, else the mount type (a meta / 204 / async action renders no
+                // resource body, so the mount-type fallback is never exercised by the handler).
                 $outputType = $type;
-                foreach ($responds as $respondsEntry) {
-                    if ($respondsEntry['kind'] === 'resource') {
-                        $outputType = $respondsEntry['type'] ?? $type;
-                        break;
+                foreach (['resource', 'created'] as $documentKind) {
+                    foreach ($responds as $respondsEntry) {
+                        if ($respondsEntry['kind'] === $documentKind) {
+                            $outputType = $respondsEntry['type'] ?? $type;
+                            break 2;
+                        }
                     }
                 }
 

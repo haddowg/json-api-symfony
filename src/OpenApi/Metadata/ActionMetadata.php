@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\OpenApi\Metadata;
 
 use haddowg\JsonApi\OpenApi\Metadata\Accepted;
+use haddowg\JsonApi\OpenApi\Metadata\ActionCreated;
 use haddowg\JsonApi\OpenApi\Metadata\ActionInputMode;
 use haddowg\JsonApi\OpenApi\Metadata\ActionMetadataInterface;
 use haddowg\JsonApi\OpenApi\Metadata\ActionResource;
@@ -81,6 +82,7 @@ final readonly class ActionMetadata implements DeclaresActionLink, DeclaresAccep
         foreach ($this->descriptor->responds as $entry) {
             $responses[] = match ($entry['kind']) {
                 'resource' => new ActionResource($entry['type'] ?? $this->descriptor->type),
+                'created' => new ActionCreated($entry['type'] ?? $this->descriptor->type),
                 'meta' => new MetaResult(),
                 'nocontent' => new NoContent(),
                 'accepted' => new Accepted($entry['jobType'] ?? ''),
