@@ -347,6 +347,94 @@ abstract class AtomicOperationsConformanceTestCase extends JsonApiFunctionalTest
 
     #[Test]
     #[Group('spec:atomic')]
+    public function aRemoveAtAFilteredCollectionHrefIs400(): void
+    {
+        $this->assertBadHref(['op' => 'remove', 'href' => '/articles?filter[title]=JSON'], 'ATOMIC_HREF_INVALID');
+    }
+
+    #[Test]
+    #[Group('spec:atomic')]
+    public function aRemoveAtACollectionHrefIs400(): void
+    {
+        $this->assertBadHref(['op' => 'remove', 'href' => '/articles'], 'ATOMIC_HREF_INVALID');
+    }
+
+    #[Test]
+    #[Group('spec:atomic')]
+    public function anUpdateAtACollectionHrefIs400(): void
+    {
+        $this->assertBadHref(['op' => 'update', 'href' => '/articles', 'data' => ['type' => 'articles', 'id' => '2', 'attributes' => ['title' => 'Nope']]], 'ATOMIC_HREF_INVALID');
+    }
+
+    #[Test]
+    #[Group('spec:atomic')]
+    public function anHrefWithAQueryStringIs400(): void
+    {
+        $this->assertBadHref(['op' => 'remove', 'href' => '/articles/2?include=author'], 'ATOMIC_HREF_INVALID');
+    }
+
+    #[Test]
+    #[Group('spec:atomic')]
+    public function anAddAtASingleResourceHrefIs400(): void
+    {
+        $this->assertBadHref(['op' => 'add', 'href' => '/articles/2', 'data' => ['type' => 'articles', 'attributes' => ['title' => 'Nope']]], 'ATOMIC_HREF_INVALID');
+    }
+
+    #[Test]
+    #[Group('spec:atomic')]
+    public function anUpdateAtARelatedEndpointHrefIs400(): void
+    {
+        $this->assertBadHref(['op' => 'update', 'href' => '/articles/2/author', 'data' => ['type' => 'authors', 'id' => '1']], 'ATOMIC_HREF_INVALID');
+    }
+
+    #[Test]
+    #[Group('spec:atomic')]
+    public function anHrefMatchingNoRouteIs400(): void
+    {
+        $this->assertBadHref(['op' => 'remove', 'href' => '/nowhere/2'], 'ATOMIC_HREF_UNRESOLVABLE');
+    }
+
+    /**
+     * A bad href in the second operation refuses the batch at that href, and the valid
+     * first operation is never written.
+     *
+     * @param array<string, mixed> $operation
+     */
+    private function assertBadHref(array $operation, string $code): void
+    {
+        $response = $this->atomic([
+            [
+                'op' => 'update',
+                'ref' => ['type' => 'articles', 'id' => '1'],
+                'data' => ['type' => 'articles', 'id' => '1', 'attributes' => ['title' => 'Never written']],
+            ],
+            $operation,
+        ]);
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+        $errors = $this->errors($response);
+        self::assertCount(1, $errors);
+        self::assertSame($code, $errors[0]['code'] ?? null);
+        self::assertSame('/atomic:operations/1/href', $this->member($errors[0], 'source', 'pointer'));
+
+        self::assertSame('JSON:API in PHP', $this->attributesOf($this->handle('/articles/1'))['title'] ?? null);
+        self::assertSame(200, $this->handle('/articles/2')->getStatusCode());
+    }
+
+    #[Test]
+    #[Group('spec:atomic')]
+    public function anAddAtACollectionHrefCreates(): void
+    {
+        $response = $this->atomic([
+            ['op' => 'add', 'href' => '/authors', 'data' => ['type' => 'authors', 'attributes' => ['name' => 'Via href']]],
+        ]);
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame('Via href', $this->member($this->results($response)[0], 'data', 'attributes', 'name'));
+    }
+
+    #[Test]
+    #[Group('spec:atomic')]
     public function anEmptyBatchIs400(): void
     {
         $response = $this->atomic([]);

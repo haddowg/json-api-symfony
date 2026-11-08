@@ -78,6 +78,15 @@ Each operation's `op` is `add`, `update`, or `remove`, and it targets its endpoi
 `op` maps to the CRUD verb: a resource `add`/`update`/`remove` is a create / `PATCH` /
 delete; a relationship `add`/`update`/`remove` is an add-to / replace / remove-from.
 
+An `href` names one target, so the executor checks every `href` before it writes
+anything. An `add` takes a collection URL, an `update` or `remove` takes a single
+resource URL, and any op can take a `/relationships/` URL. Any other `href` refuses the
+whole batch with a `400` pointed at that operation's `href` member. This covers an
+`href` with a query string or fragment, a related-resource URL, a custom action URL, and
+a collection URL on an `update` or `remove`, so `remove` at `/articles?filter[...]` can't
+delete a filtered set. These answer `ATOMIC_HREF_INVALID`. An `href` that matches no
+JSON:API route answers `ATOMIC_HREF_UNRESOLVABLE`.
+
 ### Local ids (`lid`)
 
 A create may carry a `lid` — a client-assigned handle for the not-yet-created
