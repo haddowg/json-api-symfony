@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.0](https://github.com/haddowg/json-api-symfony/compare/v2.1.1...v2.2.0) (2026-11-08)
+
+
+### Features
+
+* let collection actions take their type's filters ([#310](https://github.com/haddowg/json-api-symfony/issues/310)) ([967dd19](https://github.com/haddowg/json-api-symfony/commit/967dd1984f54be9b1ba247913309b85595b75df5))
+
 ## [2.1.1](https://github.com/haddowg/json-api-symfony/compare/v2.1.0...v2.1.1) (2026-11-07)
 
 
