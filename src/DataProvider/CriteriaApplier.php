@@ -84,9 +84,28 @@ final class CriteriaApplier
         SortHandlerInterface $sortHandler,
         ?string $defaultAlias = null,
     ): mixed {
-        $query = $this->applyFilters($criteria, $query, $filterHandler, $defaultAlias);
+        $query = $this->filter($criteria, $query, $filterHandler, $defaultAlias);
 
         return $this->applySorts($criteria, $query, $sortHandler, $defaultAlias);
+    }
+
+    /**
+     * Applies only the criteria's requested filters, with the declared defaults folded
+     * in, and leaves sorting and windowing alone. A collection-scope custom action reads
+     * its rows through this.
+     *
+     * @template TQuery
+     *
+     * @param TQuery                                       $query
+     * @param FilterHandlerInterface<contravariant TQuery> $filterHandler
+     *
+     * @return TQuery
+     *
+     * @throws FilterParamUnrecognized when a requested filter key is not declared
+     */
+    public function applyFilters(CollectionCriteria $criteria, mixed $query, FilterHandlerInterface $filterHandler): mixed
+    {
+        return $this->filter($criteria, $query, $filterHandler, null);
     }
 
     /**
@@ -97,7 +116,7 @@ final class CriteriaApplier
      *
      * @return TQuery
      */
-    private function applyFilters(CollectionCriteria $criteria, mixed $query, FilterHandlerInterface $handler, ?string $defaultAlias): mixed
+    private function filter(CollectionCriteria $criteria, mixed $query, FilterHandlerInterface $handler, ?string $defaultAlias): mixed
     {
         // Fold each declared filter's default into the requested map first: an
         // absent key takes its filter's declared default, a requested key wins.

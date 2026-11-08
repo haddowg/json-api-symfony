@@ -669,6 +669,7 @@ final class MetadataSource
             $action->extensions,
             $action->scopes,
             $action->deprecated,
+            $action->filters,
         );
     }
 

@@ -577,6 +577,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
                         'extensions' => $extensions,
                         'scopes' => OperationScopeOverrides::decodeList($tag['scopes'] ?? null),
                         'deprecated' => ($tag['deprecated'] ?? false) === true,
+                        'filters' => $this->parseActionFilters($tag['filters'] ?? null, $id),
                     ];
                     $actionClasses[$key] = $class;
 
@@ -632,7 +633,10 @@ final class ResourceLocatorPass implements CompilerPassInterface
      * Runs core's {@see ActionDeclarations} check on every type's actions, per server, so
      * a colliding operation id, a reserved action name, a read-only destructive action or
      * a bad extension name fails the container build rather than the first document
-     * generation. The actions are checked one at a time in registration order, so the
+     * generation. Filters on a resource-scope action fail here too. A type's filters are
+     * built by its resource instance, which the build cannot construct, so the filter
+     * keys an action lists are checked against the type at `cache:warmup` by the
+     * {@see \haddowg\JsonApiBundle\Server\ServableResourceWarmer}. The actions are checked one at a time in registration order, so the
      * error names the class whose declaration broke the set.
      *
      * @param array<string, ActionDescriptorArray> $descriptors keyed by {@see ActionRegistry::key()}
@@ -657,6 +661,37 @@ final class ResourceLocatorPass implements CompilerPassInterface
                 ), 0, $e);
             }
         }
+    }
+
+    /**
+     * The tag's `filters`: `true` for every filter of the mount type, a JSON list of keys,
+     * or absent for none.
+     *
+     * @return bool|list<string>
+     */
+    private function parseActionFilters(mixed $value, string $id): bool|array
+    {
+        if ($value === true) {
+            return true;
+        }
+        if (!\is_string($value) || $value === '') {
+            return false;
+        }
+
+        $keys = \json_decode($value, true);
+        if (!\is_array($keys) || !\array_is_list($keys)) {
+            throw new \LogicException(\sprintf('The action filters on service "%s" must be a list of filter keys.', $id));
+        }
+
+        $list = [];
+        foreach ($keys as $key) {
+            if (!\is_string($key)) {
+                throw new \LogicException(\sprintf('The action filters on service "%s" must be a list of filter keys.', $id));
+            }
+            $list[] = $key;
+        }
+
+        return $list;
     }
 
     /**

@@ -140,17 +140,20 @@ is `DataProviderInterface<object>`. The covariance lets the registry hold a
 heterogeneous set as `DataProviderInterface<object>` while a single-model provider
 stays precisely typed.
 
-A provider can also implement three optional interfaces the bundle checks for. Each
-is covered on [custom data providers](custom-data-providers.md#saying-whether-related-reads-are-scoped):
+A provider can also implement four optional interfaces the bundle checks for. The
+first three are covered on [custom data providers](custom-data-providers.md#saying-whether-related-reads-are-scoped),
+the last on [actions](actions.md#taking-the-types-filters):
 
 | Interface | Method | Answers |
 | --- | --- | --- |
 | [`ScopesRelatedReadsInterface`](../src/DataProvider/ScopesRelatedReadsInterface.php) | `scopesRelatedReads(RelationInterface $relation): bool` | whether the provider's related reads filter rows, so included and linkage data must be loaded through it rather than read off the parent. `AbstractDataProvider` answers `false`; a provider without the interface counts as scoping every relation. |
 | [`AdmitsRowsInterface`](../src/DataProvider/AdmitsRowsInterface.php) | `admitRows(string $type, array $rows, JsonApiRequestInterface $request): array` | which of a set of rows the provider's scope admits, in one probe: used for computed (`extractUsing()`) relations and polymorphic members. Without it each row goes through `fetchOne()`. |
 | [`FetchesByIdsInterface`](../src/DataProvider/FetchesByIdsInterface.php) | `fetchByIds(string $type, array $ids, JsonApiRequestInterface $request): array` and `scopesFetchByIds(string $type): bool` | the rows for a list of wire ids, in one query: used to load a `MorphTo` declared with `identifiedBy()`. Without it each id goes through `fetchOne()`. |
+| [`QueriesFilteredCollectionInterface`](../src/DataProvider/QueriesFilteredCollectionInterface.php) | `queryFiltered(string $type, CollectionCriteria $criteria, ActionDescriptor $action): ?object` and `eachFiltered(string $type, CollectionCriteria $criteria, ActionDescriptor $action, int $batch): iterable` | the rows a collection action's filters select, as a native query and in id-ordered batches. Without it `ActionContext::filtered()` throws. |
 
-The Doctrine provider implements all three; the in-memory one implements
-`ScopesRelatedReadsInterface` and `FetchesByIdsInterface`.
+The Doctrine provider implements all four; the in-memory one implements
+`ScopesRelatedReadsInterface`, `FetchesByIdsInterface` and
+`QueriesFilteredCollectionInterface`.
 
 Tagged `haddowg.json_api.data_provider`
 ([`JsonApiBundle::DATA_PROVIDER_TAG`](../src/JsonApiBundle.php)). Implement the

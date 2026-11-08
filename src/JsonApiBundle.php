@@ -1121,6 +1121,12 @@ final class JsonApiBundle extends AbstractBundle
                     // The OAuth scope override, JSON-encoded; absent asks the scope resolver.
                     'scopes' => OperationScopeOverrides::encodeList($attribute->scopes),
                     'deprecated' => $attribute->deprecated ? true : null,
+                    // The filters the action takes: true for all, a JSON list of keys, absent for none.
+                    'filters' => match (true) {
+                        $attribute->filters === true => true,
+                        \is_array($attribute->filters) && $attribute->filters !== [] => \json_encode($attribute->filters, \JSON_THROW_ON_ERROR),
+                        default => null,
+                    },
                 ], static fn(mixed $value): bool => $value !== null));
             },
         );
