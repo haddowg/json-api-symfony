@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle;
 
 use haddowg\JsonApi\OpenApi\Metadata\Accepted;
+use haddowg\JsonApi\OpenApi\Metadata\ActionCreated;
 use haddowg\JsonApi\OpenApi\Metadata\ActionResource;
 use haddowg\JsonApi\OpenApi\Metadata\MetaResult;
 use haddowg\JsonApi\OpenApi\Metadata\NoContent;
@@ -1789,6 +1790,7 @@ final class JsonApiBundle extends AbstractBundle
         foreach ($attribute->responds as $response) {
             $out[] = match (true) {
                 $response instanceof ActionResource => ['kind' => 'resource', 'type' => $response->bodyType()],
+                $response instanceof ActionCreated => ['kind' => 'created', 'type' => $response->bodyType()],
                 $response instanceof Accepted => ['kind' => 'accepted', 'jobType' => $response->jobType()],
                 $response instanceof MetaResult => ['kind' => 'meta'],
                 $response instanceof NoContent => ['kind' => 'nocontent'],
@@ -1798,7 +1800,7 @@ final class JsonApiBundle extends AbstractBundle
                 ),
                 $response instanceof \haddowg\JsonApi\OpenApi\Metadata\RawResult => ['kind' => 'raw', 'raw' => \haddowg\JsonApiBundle\Action\RawResults::toArray($response)],
                 default => throw new \LogicException(\sprintf(
-                    'Unsupported action response %s on action "%s"; declare responds with ActionResource / MetaResult / NoContent / Accepted / SeeOther / RawResult.',
+                    'Unsupported action response %s on action "%s"; declare responds with ActionResource / ActionCreated / MetaResult / NoContent / Accepted / SeeOther / RawResult.',
                     $response::class,
                     $attribute->path,
                 )),
