@@ -1,0 +1,3 @@
+# A filtered collection action passes the collection read gate and reads through an optional provider capability
+
+A collection action that takes its type's filters reaches the rows `GET /{type}` lists, so it runs the type's collection read gate before its own security. Otherwise a caller refused the listing could still act on every row a filter matches. The rows come from a separate, optional `QueriesFilteredCollectionInterface` rather than a new `DataProviderInterface` method, so existing custom providers keep working and only the actions that ask for filtered rows need it. Doctrine batches by id keyset and clears the EntityManager between batches, because an action over a whole collection is the case where offsets skip rows and memory grows.

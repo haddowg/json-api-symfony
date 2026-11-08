@@ -154,7 +154,8 @@ return static function (ContainerConfigurator $container): void {
 
     $services->set(\haddowg\JsonApiBundle\Action\ActionInvoker::class)
         ->arg('$validator', \Symfony\Component\DependencyInjection\Loader\Configurator\service(ResourceValidator::class)->nullOnInvalid())
-        ->arg('$dispatcher', \Symfony\Component\DependencyInjection\Loader\Configurator\service('event_dispatcher')->nullOnInvalid());
+        ->arg('$dispatcher', \Symfony\Component\DependencyInjection\Loader\Configurator\service('event_dispatcher')->nullOnInvalid())
+        ->arg('$filterValues', \Symfony\Component\DependencyInjection\Loader\Configurator\service(FilterValueValidator::class)->nullOnInvalid());
 
     // Exposes an #[AsJsonApiAction(asLink: true)] action, or one a resource links through
     // a declared ActionLink, as a security-aware `links` member on its mount type's

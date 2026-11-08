@@ -552,6 +552,7 @@ exposes both the resolved request state and pre-wired response factories:
 | `requestMediaType()` | the request body's media type as matched against `accepts`, without parameters, or `null` with no body |
 | `responseMediaType()` | the media type the `Accept` header picked from `responds`: `application/vnd.api+json` or a raw result's type |
 | `queryParameters()` | the parsed, strict-validated query parameters |
+| `filtered()` | the rows the request's `filter[…]` parameters select, for a collection action declared with `filters` (see [taking the type's filters](#taking-the-types-filters)) |
 | `serializer()` | the `outputType` serializer |
 | `server()` | the resolving server |
 | `data($data)` | a `DataResponse` pre-wired to the response serializer |
@@ -564,6 +565,85 @@ exposes both the resolved request state and pre-wired response factories:
 The `data()` / `meta()` / `noContent()` factories are the ergonomic path; reach for
 the raw response value objects directly only when you need to set a status or
 header the factories don't.
+
+## Taking the type's filters
+
+A collection action often works on the rows the collection lists: archive everything
+matching a search, export a filtered set. Declare `filters` and the action takes the
+`filter[…]` parameters its mount type declares for `GET /{type}`, so the client sends
+the same query it would send to list the rows.
+
+```php
+#[AsJsonApiAction(
+    type: 'orders',
+    path: 'archive',
+    scope: ActionScope::Collection,
+    responds: [new MetaResult()],
+    filters: true,
+)]
+final class ArchiveOrders implements ActionHandlerInterface
+{
+    public function __construct(private EntityManagerInterface $entityManager) {}
+
+    public function handle(ActionContext $context): MetaResponse
+    {
+        $archived = 0;
+        foreach ($context->filtered()->each(200) as $order) {
+            $order->archive();
+            if (++$archived % 200 === 0) {
+                $this->entityManager->flush();
+            }
+        }
+        $this->entityManager->flush();
+
+        return $context->meta(['archived' => $archived]);
+    }
+}
+```
+
+`filters: true` takes every filter the type declares. A list such as
+`filters: ['status', 'placedAt']` takes only those, and a request naming any other key
+gets a `400`, even one the type declares. Only a collection-scope action can take
+filters. One declared at the resource scope fails the container build, and a listed key
+the type does not declare fails `cache:warmup`, naming the handler class.
+
+Before the handler runs, the bundle does what `GET /{type}` does:
+
+- It runs the type's collection read gate. That is the `BeforeFetchCollectionEvent`, so
+  a `securityList` expression or your own subscriber on that event refuses the caller
+  with a `403` here too. A caller who can't list the rows can't act on them through a
+  filter. The action's own `security` expression runs after it.
+- It rejects a filter key the action does not take with the `400` the collection
+  fetch gives, and checks each value against its filter's constraints the same way.
+- It folds in each filter's declared default, so an action reads the rows the
+  collection would list with the same parameters.
+
+The OpenAPI document lists the filter parameters on the action's operation, built as
+they are for the collection fetch.
+
+`$context->filtered()` returns a `FilteredCollection`. It throws a `\LogicException`
+when the action takes no filters, or when the type's data provider does not implement
+[`QueriesFilteredCollectionInterface`](../src/DataProvider/QueriesFilteredCollectionInterface.php).
+Nothing is read until you call one of its two methods:
+
+- `query()` returns the provider's native query builder: a Doctrine `QueryBuilder` for
+  the Doctrine provider, with the type's [query extensions](custom-data-providers.md#the-querypurpose-fail-closed-contract)
+  and the filters applied and no sort, window or count. Each call returns a new builder,
+  so you can add your own select, update or order. It is `null` for a provider with no
+  native builder, such as the in-memory one.
+- `each(int $batch = 500)` yields every row in ascending id order, `$batch` at a time.
+  Each batch reads the rows after the last id of the one before rather than using an
+  offset, so changing or removing rows as you go never skips one.
+
+The Doctrine provider clears the `EntityManager` between batches so a large set stays
+within memory. Every managed entity is detached at that point, including rows from the
+earlier batch and anything else the request loaded before. Flush a batch's changes
+before the loop asks for the next one, as the example does, and don't keep entities
+from one batch to use in a later one.
+
+The Doctrine extensions see these queries as `QueryPurpose::ActionCollection`, with the
+request and the action's `ActionDescriptor` on the context. A scope that hides rows from
+`GET /{type}` hides them from the action too.
 
 ## Authorization
 

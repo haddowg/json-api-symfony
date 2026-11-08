@@ -4,15 +4,19 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Server;
 
+use haddowg\JsonApi\OpenApi\Metadata\ActionDeclarations;
 use haddowg\JsonApi\OpenApi\ProjectedTypes;
 use haddowg\JsonApi\OpenApi\RelatedTypeNotRegistered;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\Filter\FilterInterface;
+use haddowg\JsonApiBundle\Action\ActionDescriptor;
 use haddowg\JsonApiBundle\Action\ActionRegistry;
 use haddowg\JsonApiBundle\Action\ActionScope;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
+use haddowg\JsonApiBundle\OpenApi\Metadata\ActionMetadata;
 use haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource;
 use haddowg\JsonApiBundle\Operation\Operation;
 use haddowg\JsonApiBundle\Security\UnenforceableSecurityException;
@@ -71,6 +75,10 @@ use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
  *    here, naming the resource class. Building the links also surfaces
  *    core's own declaration errors: two action links for one path, or a declared link
  *    named like an action link.
+ *  - **An action's filters must be ones its type declares.** A collection-scope action
+ *    declared with a list of `filters` takes those keys from its mount type. The type's
+ *    filters are built by the resource, which the container build cannot construct, so
+ *    the keys are checked here, naming the action's handler class.
  *
  * Gating is on the per-type operation allow-list, so an embedded-only standalone
  * serializer (no operations) and a relationship-only target (served through its
@@ -127,6 +135,7 @@ final class ServableResourceWarmer implements CacheWarmerInterface
                 $this->guardPolymorphicDiscrimination($serverName, $type);
                 $this->guardRelationSecurity($serverName, $type);
                 $this->guardActionLinks($serverName, $type);
+                $this->guardActionFilters($serverName, $type);
             }
 
             $this->guardRelatedEndpointTargets($serverName);
@@ -228,6 +237,39 @@ final class ServableResourceWarmer implements CacheWarmerInterface
                 $type,
                 $link->path,
             ));
+        }
+    }
+
+    /**
+     * Runs core's action declaration check over the type's actions on `$serverName` with
+     * the type's filter keys, so an action listing a filter the type does not declare
+     * fails the build.
+     */
+    private function guardActionFilters(string $serverName, string $type): void
+    {
+        $actions = $this->actions?->forServerType($serverName, $type) ?? [];
+        $listed = \array_filter($actions, static fn(ActionDescriptor $action): bool => \is_array($action->filters) && $action->filters !== []);
+        if ($listed === []) {
+            return;
+        }
+
+        $resource = $this->typeMetadata->resourceFor($this->servers->get($serverName), $type);
+        $keys = \array_map(
+            static fn(FilterInterface $filter): string => $filter->key(),
+            $resource?->allFilters() ?? [],
+        );
+
+        foreach ($listed as $action) {
+            try {
+                ActionDeclarations::validate($type, [new ActionMetadata($action)], $keys);
+            } catch (\LogicException $e) {
+                throw new \LogicException(\sprintf(
+                    'The #[AsJsonApiAction] on %s is invalid on server "%s": %s',
+                    $action->handlerServiceId,
+                    $serverName,
+                    $e->getMessage(),
+                ), 0, $e);
+            }
         }
     }
 

@@ -133,6 +133,14 @@ The provider executes two windows, both pushed down to SQL. An `OffsetWindow` be
 Any other `WindowInterface` throws a `\LogicException`. The page-based paginators core
 ships all resolve to an `OffsetWindow`, and cursor pagination to a `CursorWindow`.
 
+A collection action declared with `filters` reads its rows through the same provider
+([taking the type's filters](actions.md#taking-the-types-filters)). The builder runs the
+extensions as `QueryPurpose::ActionCollection`, then the action's filters, with no sort,
+window or count. `FilteredCollection::query()` hands that builder to the handler.
+`each()` reads it in batches keyed on the single id field, `WHERE id > :last ORDER BY id
+LIMIT n`, and calls `EntityManager::clear()` before each batch after the first, so the
+earlier batch's entities are detached by then.
+
 Source: [`DoctrineDataProvider`](../src/DataProvider/Doctrine/DoctrineDataProvider.php).
 
 ## Encoded resource ids (storage key != wire id)
@@ -1233,7 +1241,8 @@ link [relations](https://github.com/haddowg/json-api/blob/main/docs/relations.md
 - [Custom providers, query extensions & the in-memory provider](custom-data-providers.md)
   — `DoctrineExtensionInterface` (the base-scope seam `PublishedAlbumsExtension`
   uses, whose `apply()` receives an `ExtensionContext` carrying the type, the
-  `QueryPurpose` and the request-aware nullable `JsonApiRequestInterface`),
+  `QueryPurpose`, the request-aware nullable `JsonApiRequestInterface` and, for a
+  collection action's rows, the action's `ActionDescriptor`),
   overriding Doctrine per type, and the polymorphic escape hatch.
 - [Relationship endpoints](relationships.md) — how the related/relationship
   endpoints and polymorphic rendering build on this layer.

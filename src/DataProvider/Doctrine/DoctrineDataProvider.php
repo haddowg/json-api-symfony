@@ -24,6 +24,7 @@ use haddowg\JsonApi\Resource\Filter\FilterDefaults;
 use haddowg\JsonApi\Resource\Filter\WhereDoesntHave;
 use haddowg\JsonApi\Resource\Filter\WhereHas;
 use haddowg\JsonApi\Resource\Sort\SortByField;
+use haddowg\JsonApiBundle\Action\ActionDescriptor;
 use haddowg\JsonApiBundle\DataProvider\AdmitsIdsInterface;
 use haddowg\JsonApiBundle\DataProvider\AdmitsRowsInterface;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
@@ -34,6 +35,7 @@ use haddowg\JsonApiBundle\DataProvider\PivotAwareProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\PivotCollectionResult;
 use haddowg\JsonApiBundle\DataProvider\PivotCursorCollectionResult;
 use haddowg\JsonApiBundle\DataProvider\PivotFields;
+use haddowg\JsonApiBundle\DataProvider\QueriesFilteredCollectionInterface;
 use haddowg\JsonApiBundle\DataProvider\RelatedBatch;
 use haddowg\JsonApiBundle\DataProvider\ScopesRelatedReadsInterface;
 use haddowg\JsonApiBundle\Serializer\RequestScopedOutputTimezone;
@@ -85,7 +87,7 @@ use haddowg\JsonApiBundle\Server\IdEncoderResolver;
  * @implements DataProviderInterface<object>
  * @implements PivotAwareProviderInterface<object>
  */
-final class DoctrineDataProvider implements DataProviderInterface, PivotAwareProviderInterface, ScopesRelatedReadsInterface, AdmitsRowsInterface, FetchesByIdsInterface, AdmitsIdsInterface
+final class DoctrineDataProvider implements DataProviderInterface, PivotAwareProviderInterface, ScopesRelatedReadsInterface, AdmitsRowsInterface, FetchesByIdsInterface, AdmitsIdsInterface, QueriesFilteredCollectionInterface
 {
     /**
      * The root alias every generated QueryBuilder uses; handlers re-read it
@@ -329,6 +331,63 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
                 (clone $builder)->setFirstResult($offset)->setMaxResults($limit),
             ),
         );
+    }
+
+    /**
+     * The type's extensions under {@see QueryPurpose::ActionCollection}, then the action's
+     * filters, on a fresh builder rooted on the entity.
+     */
+    public function queryFiltered(string $type, CollectionCriteria $criteria, ActionDescriptor $action): QueryBuilder
+    {
+        $builder = $this->entityManager
+            ->getRepository($this->entityClassFor($type))
+            ->createQueryBuilder(self::ROOT_ALIAS);
+
+        $context = new ExtensionContext($type, QueryPurpose::ActionCollection, $criteria->request, $action);
+        foreach ($this->extensionsFor($type) as $extension) {
+            $builder = $extension->apply($builder, $context);
+        }
+
+        return $this->applier->applyFilters($criteria, $builder, $this->filterHandler);
+    }
+
+    /**
+     * Keyset batches on the single id field: each batch reads the rows after the last id
+     * of the one before, so a handler that changes or removes rows never shifts a later
+     * batch. The EntityManager is cleared before each batch after the first.
+     */
+    public function eachFiltered(string $type, CollectionCriteria $criteria, ActionDescriptor $action, int $batch): iterable
+    {
+        $metadata = $this->entityManager->getClassMetadata($this->entityClassFor($type));
+        $idField = $metadata->getSingleIdentifierFieldName();
+        $idType = $metadata->getTypeOfField($idField);
+        $column = self::ROOT_ALIAS . '.' . $idField;
+
+        $base = $this->queryFiltered($type, $criteria, $action);
+        $base->resetDQLPart('orderBy');
+        $base->orderBy($column, 'ASC');
+        $base->setMaxResults($batch);
+
+        $after = null;
+        do {
+            $builder = clone $base;
+            if ($after !== null) {
+                $builder
+                    ->andWhere($column . ' > :jsonapi_each_after')
+                    ->setParameter('jsonapi_each_after', $after, $idType);
+            }
+
+            $rows = $this->items($builder);
+            foreach ($rows as $row) {
+                yield $row;
+            }
+
+            $more = \count($rows) === $batch;
+            if ($more) {
+                $after = $metadata->getFieldValue($rows[\count($rows) - 1], $idField);
+                $this->entityManager->clear();
+            }
+        } while ($more);
     }
 
     /**

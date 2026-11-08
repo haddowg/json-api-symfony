@@ -35,6 +35,9 @@ namespace haddowg\JsonApiBundle\Action;
  * `readOnly`, `destructive` and `idempotent` are the declared safety flags, `null` when
  * undeclared, and `extensions` the action's own OpenAPI vendor
  * extensions.
+ *
+ * `filters` is the declared filter opt-in of a collection-scope action: `false` for
+ * none, `true` for every filter the mount type declares, or a list of filter keys.
  */
 final readonly class ActionDescriptor
 {
@@ -50,6 +53,7 @@ final readonly class ActionDescriptor
      * @param array<string, mixed>                                      $extensions the action's own OpenAPI vendor extensions
      * @param list<string>|null                                         $scopes   the OAuth scopes the action needs, overriding the scope resolver; null asks it
      * @param bool                                                      $deprecated whether the action is declared deprecated
+     * @param bool|list<string>                                         $filters  the mount type's filters the action takes
      */
     public function __construct(
         public string $type,
@@ -75,5 +79,14 @@ final readonly class ActionDescriptor
         public array $extensions = [],
         public ?array $scopes = null,
         public bool $deprecated = false,
+        public bool|array $filters = false,
     ) {}
+
+    /**
+     * Whether the action takes any of its mount type's filters.
+     */
+    public function takesFilters(): bool
+    {
+        return $this->scope === ActionScope::Collection && $this->filters !== false && $this->filters !== [];
+    }
 }

@@ -25,6 +25,7 @@ use haddowg\JsonApi\Resource\Sort\InMemory\ArraySortArmInterface;
 use haddowg\JsonApi\Resource\Sort\InMemory\ArraySortHandler;
 use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApi\Resource\Sort\SortDirective;
+use haddowg\JsonApiBundle\Action\ActionDescriptor;
 
 /**
  * An in-memory read provider: a test double and conformance witness. It reads
@@ -47,7 +48,7 @@ use haddowg\JsonApi\Resource\Sort\SortDirective;
  *
  * @implements DataProviderInterface<object>
  */
-final class InMemoryDataProvider implements DataProviderInterface, ScopesRelatedReadsInterface, FetchesByIdsInterface, AdmitsIdsInterface
+final class InMemoryDataProvider implements DataProviderInterface, ScopesRelatedReadsInterface, FetchesByIdsInterface, AdmitsIdsInterface, QueriesFilteredCollectionInterface
 {
     private readonly InMemoryStore $store;
 
@@ -172,6 +173,34 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
         // opt-in, or ?withCount=_self_ under a countable() resource); otherwise the
         // executor fetches count-free via the window+1 probe and reports `hasMore`.
         return $this->applyAndWindow($criteria, $this->store->all(), countable: $criteria->wantsCount);
+    }
+
+    /**
+     * The store has no native query to hand out.
+     */
+    public function queryFiltered(string $type, CollectionCriteria $criteria, ActionDescriptor $action): ?object
+    {
+        return null;
+    }
+
+    /**
+     * The filtered store, in ascending id order (numeric ids compare as numbers). The
+     * rows are already in memory, so `$batch` changes nothing here.
+     */
+    public function eachFiltered(string $type, CollectionCriteria $criteria, ActionDescriptor $action, int $batch): iterable
+    {
+        /** @var list<object> $rows */
+        $rows = $this->applier->applyFilters($criteria, $this->store->all(), $this->filterHandler);
+
+        $keyed = [];
+        foreach ($rows as $row) {
+            $keyed[] = [(string) $this->store->idOf($row), $row];
+        }
+        \usort($keyed, static fn(array $a, array $b): int => \strnatcmp($a[0], $b[0]));
+
+        foreach ($keyed as [, $row]) {
+            yield $row;
+        }
     }
 
     public function fetchRelatedCollection(

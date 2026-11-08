@@ -62,7 +62,7 @@ A tagged `DoctrineExtensionInterface` service that adds a base constraint to eve
 _Avoid_: query scope (for the service itself), Doctrine filter
 
 **Query purpose**:
-The reason a Doctrine query is being run (a primary fetch, a related load, a write's target load, an include hydration), passed to an extension so it can exempt one.
+The reason a Doctrine query is being run (a primary fetch, a related load, a write's target load, an include hydration, a collection action's filtered rows), passed to an extension so it can exempt one.
 
 **Scope**:
 What decides which rows of a type exist for a request: its Doctrine extensions or a scoped provider. A **scoped type** is one whose rows a scope can hide.
@@ -101,6 +101,9 @@ A tagged service that turns a non-JSON:API throwable into an error response on a
 **Custom action**:
 A non-CRUD endpoint declared with `#[AsJsonApiAction]`, mounted under the reserved `-actions` segment at resource or collection scope.
 _Avoid_: RPC endpoint, command
+
+**Filtered collection**:
+The rows of its mount type a collection-scope custom action declared with `filters` reads, selected by the request's `filter[…]` parameters after the type's collection read gate. Its handler gets it from `ActionContext::filtered()`.
 
 **Input mode**:
 How a custom action reads its request: `None`, `Document` (a JSON:API document) or `Raw` (any declared media type).

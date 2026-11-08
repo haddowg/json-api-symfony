@@ -27,6 +27,9 @@ use haddowg\JsonApi\Server\ResolvingServerInterface;
  * {@see serializer()} resolves the `outputType` serializer once, and the
  * convenience factories {@see data()}/{@see meta()}/{@see noContent()} pre-wire it,
  * so the handler returns a response in one call.
+ *
+ * {@see filtered()} hands a collection-scope action that takes its type's filters the
+ * rows those filters select.
  */
 final readonly class ActionContext
 {
@@ -58,7 +61,33 @@ final readonly class ActionContext
         private ?object $input,
         private JsonApiRequestInterface $request,
         private QueryParameters $queryParameters,
+        private ?\Closure $filtered = null,
     ) {}
+
+    /**
+     * The rows of the mount type the request's `filter[…]` parameters select, for a
+     * collection-scope action declared with `filters`. The parameters were validated and
+     * the type's collection read gate passed before the handler ran. Nothing is read
+     * until the handler asks the returned {@see FilteredCollection}.
+     *
+     * @throws \LogicException when the action takes no filters, or the mount type's data
+     *                         provider cannot query a filtered collection
+     */
+    public function filtered(): FilteredCollection
+    {
+        if ($this->filtered === null) {
+            throw new \LogicException(\sprintf(
+                'The "%s" action on type "%s" takes no filters, so it has no filtered collection. Declare #[AsJsonApiAction(filters: true)] on a collection-scope action to take the type\'s filters.',
+                $this->descriptor->path,
+                $this->descriptor->type,
+            ));
+        }
+
+        $filtered = ($this->filtered)();
+        \assert($filtered instanceof FilteredCollection);
+
+        return $filtered;
+    }
 
     /**
      * The resolved entity for a resource-scope action (fetched via the type's

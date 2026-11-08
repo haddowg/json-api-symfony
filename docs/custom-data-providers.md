@@ -241,6 +241,7 @@ final readonly class ExtensionContext
         public string $type,                     // the resource type being scoped
         public QueryPurpose $purpose,            // why the query is built
         public ?JsonApiRequestInterface $request = null, // the parsed request, or null
+        public ?ActionDescriptor $action = null,  // the custom action, for ActionCollection only
     ) {}
 }
 ```
@@ -252,6 +253,10 @@ signature) and is `null` on the primary `FetchOne`/`FetchCollection` loads (whos
 SPI carries no request). Branch on it only to *add* a constraint, falling through to
 your unconditional base scope when it is absent, so the primary fetch stays scoped.
 
+`$action` is set only for `QueryPurpose::ActionCollection`: the
+[`ActionDescriptor`](../src/Action/ActionDescriptor.php) of the collection action whose
+filtered rows are being read. That query carries the request too.
+
 ### The `QueryPurpose` fail-closed contract
 
 `$context->purpose` ([`QueryPurpose`](../src/DataProvider/Doctrine/QueryPurpose.php))
@@ -261,7 +266,9 @@ tells you *why* the query is being built — `FetchCollection` (the primary
 another type's request, so a request-aware scope can tell a primary collection from a
 related load of the same type), or `IncludeHydration` (the id load of a to-many include
 whose ids were already scoped, see
-[shaping the include hydration query](#shaping-the-include-hydration-query)). It is
+[shaping the include hydration query](#shaping-the-include-hydration-query)), or
+`ActionCollection` (the rows a collection action reads through its type's filters, see
+[taking the type's filters](actions.md#taking-the-types-filters)). It is
 **non-exhaustive by design**: the write phase
 fetches an update's or delete's target through the same extension pipeline, so a
 scoping rule holds for writes without re-declaration — but that means new purposes can

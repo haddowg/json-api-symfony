@@ -110,6 +110,14 @@ use haddowg\JsonApiBundle\OpenApi\Metadata\OperationScopeOverrides;
  * `deprecated` marks every method of the action `deprecated: true` in the OpenAPI
  * document, and a request to it gets a `Deprecation` header, plus `Sunset` when the mount
  * type declares one. An action on a deprecated type is already marked either way.
+ *
+ * `filters` lets a collection-scope action take the `filter[<key>]` parameters its mount
+ * type declares for `GET /{type}`: `true` takes every one, a list of keys takes those,
+ * and `false` takes none. The bundle validates the values as the collection fetch does,
+ * runs the type's collection read gate, and hands the handler the matching rows through
+ * {@see \haddowg\JsonApiBundle\Action\ActionContext::filtered()}. A resource-scope action
+ * declaring filters fails the container build, and a listed key the type does not declare
+ * fails `cache:warmup`.
  */
 #[\Attribute(\Attribute::TARGET_CLASS)]
 final readonly class AsJsonApiAction
@@ -146,6 +154,7 @@ final readonly class AsJsonApiAction
      * @param array<string, mixed>               $extensions  OpenAPI vendor extensions (`x-…` keys) for the action's own operation
      * @param list<string>|null                  $scopes      the OAuth scopes every method of the action needs, overriding the app's scope resolver; `[]` needs none, null asks the resolver
      * @param bool                               $deprecated  whether the action is deprecated
+     * @param bool|list<string>                  $filters     the mount type's filters the action takes: true for all, a list of keys, false for none
      */
     public function __construct(
         public string $type,
@@ -170,7 +179,19 @@ final readonly class AsJsonApiAction
         public array $extensions = [],
         public ?array $scopes = null,
         public bool $deprecated = false,
+        public bool|array $filters = false,
     ) {
+        if (\is_array($filters) && !\array_is_list($filters)) {
+            throw new \InvalidArgumentException(\sprintf('AsJsonApiAction "%s" filters must be true, false or a list of filter keys.', $path));
+        }
+        if (\is_array($filters)) {
+            foreach ($filters as $key) {
+                if (!\is_string($key) || $key === '') {
+                    throw new \InvalidArgumentException(\sprintf('AsJsonApiAction "%s" filters must be true, false or a list of filter keys.', $path));
+                }
+            }
+        }
+
         VendorExtensions::assertValid('AsJsonApiAction', $extensions, [], []);
         if ($scopes !== null) {
             OperationScopeOverrides::assertList(\sprintf('AsJsonApiAction "%s" scopes', $path), $scopes);

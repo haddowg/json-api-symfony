@@ -64,4 +64,18 @@ enum QueryPurpose
      * unscoped, so the id load is the scope and reports {@see FetchRelatedCollection}.
      */
     case IncludeHydration;
+
+    /**
+     * The rows a collection-scope custom action works on, built when its handler calls
+     * {@see \haddowg\JsonApiBundle\Action\FilteredCollection::query()} or
+     * {@see \haddowg\JsonApiBundle\Action\FilteredCollection::each()}. The action's
+     * validated `filter[…]` parameters are applied on top of the extensions, as on a
+     * collection fetch, with no sort, window or count.
+     *
+     * The context carries the request and the action's
+     * {@see \haddowg\JsonApiBundle\Action\ActionDescriptor}, so an extension can tell
+     * which action is asking. A scope that hides rows from `GET /{type}` should hide them
+     * here too, or the action would touch rows the client cannot list.
+     */
+    case ActionCollection;
 }

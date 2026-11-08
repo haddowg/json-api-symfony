@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\DataProvider\Doctrine;
 
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApiBundle\Action\ActionDescriptor;
 
 /**
  * The context a {@see DoctrineExtensionInterface} receives on every
@@ -22,6 +23,9 @@ use haddowg\JsonApi\Request\JsonApiRequestInterface;
  * by {@see QueryPurpose::FetchRelatedCollection}). An extension that branches on
  * `$request` must therefore tolerate `null` (fall through to its unconditional
  * base scope) so a primary fetch is still scoped.
+ *
+ * `$action` is the custom action a {@see QueryPurpose::ActionCollection} query is built
+ * for, which also carries the request. It is `null` for every other purpose.
  */
 final readonly class ExtensionContext
 {
@@ -29,5 +33,6 @@ final readonly class ExtensionContext
         public string $type,
         public QueryPurpose $purpose,
         public ?JsonApiRequestInterface $request = null,
+        public ?ActionDescriptor $action = null,
     ) {}
 }

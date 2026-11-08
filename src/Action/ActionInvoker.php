@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Action;
 
+use haddowg\JsonApi\Exception\FilterParamUnrecognized;
 use haddowg\JsonApi\Exception\ResourceNotFound;
 use haddowg\JsonApi\Operation\CustomActionOperation;
+use haddowg\JsonApi\Operation\QueryParameters;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Request\MediaType;
+use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Response\AcceptedResponse;
 use haddowg\JsonApi\Response\DataResponse;
 use haddowg\JsonApi\Response\ErrorResponse;
@@ -18,11 +21,15 @@ use haddowg\JsonApi\Response\SeeOtherResponse;
 use haddowg\JsonApi\Server\ResolvingServerInterface;
 use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
+use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
+use haddowg\JsonApiBundle\DataProvider\QueriesFilteredCollectionInterface;
 use haddowg\JsonApiBundle\Event\AfterActionEvent;
 use haddowg\JsonApiBundle\Event\BeforeActionEvent;
+use haddowg\JsonApiBundle\Event\BeforeFetchCollectionEvent;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
+use haddowg\JsonApiBundle\Validation\FilterValueValidator;
 use haddowg\JsonApiBundle\Validation\ReadOnlyAttributeGuard;
 use haddowg\JsonApiBundle\Validation\ResourceValidator;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
@@ -47,6 +54,12 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  * free from `Server::dispatch()` (the operation is a first-class
  * {@see \haddowg\JsonApi\Operation\JsonApiOperationInterface}), so this invoker
  * owns only the per-action concerns.
+ *
+ * A collection-scope action that takes its type's filters first passes the type's
+ * collection read gate, the {@see BeforeFetchCollectionEvent} a `GET /{type}` passes, and
+ * has its `filter[…]` parameters checked as the collection fetch checks them: a key it
+ * does not take is a `400`, and so is a value its filter's constraints reject. Both run
+ * before the action's own gate and its handler.
  */
 final readonly class ActionInvoker
 {
@@ -57,6 +70,7 @@ final readonly class ActionInvoker
         private TypeMetadataResolver $types,
         private ?ResourceValidator $validator = null,
         private ?EventDispatcherInterface $dispatcher = null,
+        private ?FilterValueValidator $filterValues = null,
     ) {}
 
     public function invoke(CustomActionOperation $operation): DataResponse|MetaResponse|NoContentResponse|AcceptedResponse|SeeOtherResponse|ErrorResponse|RawResponse
@@ -98,6 +112,10 @@ final readonly class ActionInvoker
             $input = $this->resolveAndHydrateInput($server, $descriptor, $handler, $body);
         }
 
+        $filtered = $descriptor->takesFilters()
+            ? $this->filteredCollection($operation, $server, $descriptor, $serverName)
+            : null;
+
         // Per-action before-gate: the security expression is evaluated against the
         // subject (the entity for resource scope, null for collection scope) by the
         // security subscriber, which throws to deny with a 403; a lifecycle consumer
@@ -111,6 +129,7 @@ final readonly class ActionInvoker
             $input,
             $this->request($operation),
             $operation->queryParameters(),
+            $filtered,
         );
 
         $response = $handler->handle($context);
@@ -129,6 +148,84 @@ final readonly class ActionInvoker
         $this->dispatch(new AfterActionEvent($type, $descriptor->path, $entity));
 
         return $response;
+    }
+
+    /**
+     * Runs the type's collection read gate, checks the requested filters against the ones
+     * the action takes, and returns the factory {@see ActionContext::filtered()} calls.
+     *
+     * @return \Closure(): FilteredCollection
+     */
+    private function filteredCollection(
+        CustomActionOperation $operation,
+        ResolvingServerInterface $server,
+        ActionDescriptor $descriptor,
+        string $serverName,
+    ): \Closure {
+        $type = $descriptor->type;
+        $request = $this->request($operation);
+
+        // The gate a GET /{type} passes: securityList, or an app's own subscriber.
+        $this->dispatch(new BeforeFetchCollectionEvent($type, $request, $serverName));
+
+        $resource = $server instanceof Server ? $this->types->resourceFor($server, $type) : null;
+        $filters = self::filtersTaken($resource?->allFilters() ?? [], $descriptor->filters);
+
+        $requested = $operation->queryParameters()->filter;
+        $keys = \array_map(static fn(FilterInterface $filter): string => $filter->key(), $filters);
+        foreach (\array_keys($requested) as $key) {
+            if (!\in_array((string) $key, $keys, true)) {
+                throw new FilterParamUnrecognized((string) $key);
+            }
+        }
+
+        $this->filterValues?->validate($requested, $filters);
+
+        $criteria = new CollectionCriteria(
+            new QueryParameters(fields: [], includes: [], sort: [], filter: $requested, pagination: []),
+            $filters,
+            request: $request,
+        );
+
+        return function () use ($type, $criteria, $descriptor): FilteredCollection {
+            $provider = $this->providers->forType($type);
+            if (!$provider instanceof QueriesFilteredCollectionInterface) {
+                throw new \LogicException(\sprintf(
+                    'The "%s" action on type "%s" asked for its filtered collection, but the type\'s data provider %s cannot query one. Implement %s on it.',
+                    $descriptor->path,
+                    $type,
+                    $provider::class,
+                    QueriesFilteredCollectionInterface::class,
+                ));
+            }
+
+            return new FilteredCollection($provider, $type, $criteria, $descriptor);
+        };
+    }
+
+    /**
+     * The type's filters the action takes, in the type's order: every one for `true`, the
+     * named ones for a list. The same rule as core's `ActionDeclarations::filters()`, which
+     * the OpenAPI document is projected with.
+     *
+     * @param list<FilterInterface> $filters
+     * @param bool|list<string>     $taken
+     *
+     * @return list<FilterInterface>
+     */
+    private static function filtersTaken(array $filters, bool|array $taken): array
+    {
+        if ($taken === true) {
+            return $filters;
+        }
+        if ($taken === false) {
+            return [];
+        }
+
+        return \array_values(\array_filter(
+            $filters,
+            static fn(FilterInterface $filter): bool => \in_array($filter->key(), $taken, true),
+        ));
     }
 
     /**
