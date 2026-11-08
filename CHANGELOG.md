@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.1](https://github.com/haddowg/json-api-symfony/compare/v2.3.0...v2.3.1) (2026-11-08)
+
+
+### Bug Fixes
+
+* **doctrine:** read relations whose related id is an association ([#316](https://github.com/haddowg/json-api-symfony/issues/316)) ([d34d938](https://github.com/haddowg/json-api-symfony/commit/d34d938bfce570a1e365ac9da204c94798b53027))
+
 ## [2.3.0](https://github.com/haddowg/json-api-symfony/compare/v2.2.1...v2.3.0) (2026-11-08)
 
 
