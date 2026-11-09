@@ -49,7 +49,8 @@ use haddowg\JsonApiBundle\Operation\Operation;
  *
  * `operations` is the exposed operation allow-list: the {@see \haddowg\JsonApiBundle\Operation\Operation}
  * cases this type serves, one route emitted per case. An empty
- * array means the default — for a resource, all five operations.
+ * array means the default — for a resource, all five operations. A type that serves
+ * none declares `relatedOnly` instead.
  *
  * `readOnly` is an intent-named shorthand for the common "suppress every write"
  * case: `readOnly: true` restricts the type to the two fetch operations
@@ -58,6 +59,14 @@ use haddowg\JsonApiBundle\Operation\Operation;
  * enum or spelling them out. It is mutually exclusive with a non-empty `operations`
  * list (the precise escape hatch): declaring both is a constructor `\LogicException`,
  * so an ambiguous declaration never compiles.
+ *
+ * `relatedOnly` declares a type that serves **no endpoint of its own**: it is reached only
+ * as another type's related or included resources, or as a custom action's `inputType`.
+ * No CRUD, relationship or related route is emitted for it, its resources render no
+ * `self` link and its relationship objects no links, and the OpenAPI document gives it
+ * no paths. It still gets its write components when an action takes it as input.
+ * Combining it with a non-empty `operations` list or `readOnly` is a constructor
+ * `\LogicException`, and mounting a custom action on it fails the container build.
  *
  * `cacheHeaders` declares **declarative HTTP cache headers** for the type's safe
  * (`GET`) reads: a map of `max_age`,
@@ -236,6 +245,7 @@ final readonly class AsJsonApiResource
      * @param array<string, OperationExample|false|null>                           $operationExamples per-operation OpenAPI example overrides, keyed by core's operation name (`create`, `fetchRelated.<relation>`, ...); `false` or `null` emits none
      * @param array<string, list<string>>                                          $operationScopes   per-operation OAuth scope overrides, keyed like `operationExamples`; `[]` needs none
      * @param list<string>                                                         $deprecatedOperations the operations deprecated on their own, by core's operation name (`delete`, `fetchRelated.<relation>`, ...)
+     * @param bool                                                                 $relatedOnly    the type serves no endpoint of its own, only as a related, included or action input type; mutually exclusive with a non-empty `operations` and with `readOnly`
      */
     public function __construct(
         public ?string $type = null,
@@ -269,6 +279,7 @@ final readonly class AsJsonApiResource
         public array $operationExamples = [],
         public array $operationScopes = [],
         public array $deprecatedOperations = [],
+        public bool $relatedOnly = false,
     ) {
         if ($singular !== null && \trim($singular) === '') {
             throw new \LogicException(
@@ -285,6 +296,14 @@ final readonly class AsJsonApiResource
             );
         }
 
+        if ($relatedOnly && ($operations !== [] || $readOnly)) {
+            throw new \LogicException(\sprintf(
+                'AsJsonApiResource declares relatedOnly: true together with %s; a related-only type serves no '
+                . 'endpoint of its own, so drop one.',
+                $readOnly ? 'readOnly: true' : 'a non-empty operations list',
+            ));
+        }
+
         foreach (\array_keys($operationDescriptions) as $key) {
             if (!\is_string($key) || Operation::tryFrom($key) === null) {
                 throw new \LogicException(\sprintf(
@@ -297,11 +316,15 @@ final readonly class AsJsonApiResource
             }
         }
 
-        // The operations this type exposes (the response-override target set): the
-        // readOnly shorthand, an explicit allow-list, or the all-five default.
-        $exposed = $readOnly
-            ? [Operation::FetchCollection, Operation::FetchOne]
-            : ($operations !== [] ? \array_values($operations) : Operation::cases());
+        // The operations this type exposes (the response-override target set): none
+        // for a related-only type, the readOnly shorthand, an explicit allow-list, or
+        // the all-five default.
+        $exposed = match (true) {
+            $relatedOnly => [],
+            $readOnly => [Operation::FetchCollection, Operation::FetchOne],
+            $operations !== [] => \array_values($operations),
+            default => Operation::cases(),
+        };
         $allowed = \array_map(static fn(Operation $op): string => $op->value, $exposed);
 
         VendorExtensions::assertValid('AsJsonApiResource', $extensions, $operationExtensions, $exposed);

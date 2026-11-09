@@ -117,6 +117,7 @@ final class ServerFactory
      * @param array<string, class-string<\haddowg\JsonApi\Serializer\SerializerInterface>>        $standaloneSerializers standalone serializer per type, no resource, this server only
      * @param array<string, class-string<\haddowg\JsonApi\Hydrator\HydratorInterface>>            $standaloneHydrators   standalone hydrator per type, no resource, this server only
      * @param list<class-string<ProfileInterface>>                                                $profiles              the JSON:API profiles this server registers, in registration order (docs/configuration.md); default {@see self::DEFAULT_PROFILES}
+     * @param list<string>                                                                        $relatedOnlyTypes      the types this server serves only as related, included or action input types
      */
     public function __construct(
         private readonly ResourceLocator $resources,
@@ -157,6 +158,7 @@ final class ServerFactory
         private readonly ?ScopeTableProvider $scopeTables = null,
         private readonly ?ScopeMatcherInterface $scopeMatcher = null,
         private readonly ?LoggerInterface $logger = null,
+        private readonly array $relatedOnlyTypes = [],
     ) {}
 
     /**
@@ -201,6 +203,9 @@ final class ServerFactory
             // asLink actions); null when no asLink action is declared on this server, so
             // core renders links exactly as before this seam existed.
             ->withResourceLinkContributor($this->resourceLinkContributor)
+            // Related-only types serve no endpoint of their own, so core renders no
+            // link to one on their resources or relationship objects.
+            ->withRelatedOnlyTypes(...$this->relatedOnlyTypes)
             // The server-wide default paginator (the tail of core's `relation →
             // related resource → server default` fallback), resolved per server.
             ->withDefaultPaginator($this->resolveDefaultPaginator())

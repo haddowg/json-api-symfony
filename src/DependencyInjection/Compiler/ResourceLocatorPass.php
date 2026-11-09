@@ -123,7 +123,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
         $standaloneSerializersByServer = [];
         /** @var array<string, array<string, string>> $standaloneHydratorsByServer */
         $standaloneHydratorsByServer = [];
-        /** @var array<string, array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string, raw?: array<string, mixed>, description?: string, mediaType?: string}>>}>> $descriptorsByServer */
+        /** @var array<string, array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, relatedOnly?: bool, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string, raw?: array<string, mixed>, description?: string, mediaType?: string}>>}>> $descriptorsByServer */
         $descriptorsByServer = [];
 
         // Standalone relations providers, keyed by server and type: the registry
@@ -230,12 +230,16 @@ final class ResourceLocatorPass implements CompilerPassInterface
                 ? $class::$uriType
                 : $type;
 
+            // A related-only type serves no endpoint of its own, so it has no operations.
+            $relatedOnly = $this->relatedOnlyFromTags($tags);
+
             $descriptor = [
                 'uriType' => $uriType,
                 'isResource' => true,
                 'hasHydrator' => true,
                 'hasRelations' => true,
-                'operations' => $this->operationsFromTags($tags) ?? self::allOperations(),
+                'operations' => $relatedOnly ? [] : ($this->operationsFromTags($tags) ?? self::allOperations()),
+                'relatedOnly' => $relatedOnly,
                 // The OpenAPI tag refs; empty = the humanized-type
                 // default the MetadataSource resolves. Read across all tags so the
                 // empty autoconfig tag does not erase the attribute's value.
@@ -352,6 +356,10 @@ final class ResourceLocatorPass implements CompilerPassInterface
             $factory->setArgument('$hydratorsByClass', $hydratorsByServer[$server] ?? []);
             $factory->setArgument('$standaloneSerializers', $standaloneSerializersByServer[$server] ?? []);
             $factory->setArgument('$standaloneHydrators', $standaloneHydratorsByServer[$server] ?? []);
+            $factory->setArgument('$relatedOnlyTypes', \array_keys(\array_filter(
+                $descriptorsByServer[$server] ?? [],
+                static fn(array $descriptor): bool => $descriptor['relatedOnly'] ?? false,
+            )));
         }
 
         // Custom actions: collect the ACTION_TAG handler services
@@ -391,7 +399,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
      * them `null`.
      *
      * @param list<string>                                                                                                                             $declaredServers
-     * @param array<string, array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string, raw?: array<string, mixed>, description?: string, mediaType?: string}>>}>> $descriptorsByServer the resource/standalone descriptors per server, read for each mount type's uriType and tags
+     * @param array<string, array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, relatedOnly?: bool, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string, raw?: array<string, mixed>, description?: string, mediaType?: string}>>}>> $descriptorsByServer the resource/standalone descriptors per server, read for each mount type's uriType and tags
      */
     private function collectActions(ContainerBuilder $container, array $declaredServers, array $descriptorsByServer): void
     {
@@ -527,6 +535,17 @@ final class ResourceLocatorPass implements CompilerPassInterface
                 $explicitTags = $this->parseTags($tag['tags'] ?? null);
 
                 foreach ($servers as $server) {
+                    if ($descriptorsByServer[$server][$type]['relatedOnly'] ?? false) {
+                        throw new \LogicException(\sprintf(
+                            'The JSON:API action "%s" on service "%s" is mounted on type "%s", which is related-only and '
+                            . 'serves no endpoint of its own. Mount the action on another type, or drop relatedOnly from "%s".',
+                            $path,
+                            $id,
+                            $type,
+                            $type,
+                        ));
+                    }
+
                     $actionTags = $explicitTags !== [] ? $explicitTags : ($descriptorsByServer[$server][$type]['tags'] ?? []);
                     // The mount type's URI segment on this server: its descriptor's
                     // uriType when registered there (docs/routing.md), else the type itself.
@@ -1021,6 +1040,22 @@ final class ResourceLocatorPass implements CompilerPassInterface
     }
 
     /**
+     * Whether any of a resource's tags declares it related-only.
+     *
+     * @param array<array<string, mixed>> $tags
+     */
+    private function relatedOnlyFromTags(array $tags): bool
+    {
+        foreach ($tags as $tag) {
+            if (($tag['related_only'] ?? false) === true) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * The OpenAPI tag refs declared across a resource's tags, resolved
      * like {@see operationsFromTags}: the first tag carrying a `tags` string wins (so
      * the empty autoconfig tag does not erase the attribute's value), parsed via
@@ -1273,7 +1308,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
      * Compile-time guard: a type cannot expose a write operation (`Create` /
      * `Update`) without a hydrator to populate the entity.
      *
-     * @param array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string, raw?: array<string, mixed>, description?: string, mediaType?: string}>>}> $descriptors
+     * @param array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, relatedOnly?: bool, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string, raw?: array<string, mixed>, description?: string, mediaType?: string}>>}> $descriptors
      */
     private function validateWriteCapability(array $descriptors): void
     {

@@ -223,6 +223,36 @@ ambiguous declaration never compiles — pick the shorthand or the explicit list
 both. A read-only type exposes no writes, so it needs only a
 [`DataProvider`](data-layer.md) (no persister, no hydrator) to be servable.
 
+#### `relatedOnly`: a type with no endpoints of its own
+
+An empty `operations` list means all five, so it can't say "none". Some types need no
+endpoints of their own: they're reached only through another type's relationships and
+`?include`, or used as a [custom action's `inputType`](actions.md). Declare them
+`relatedOnly`:
+
+```php
+#[AsJsonApiResource(relatedOnly: true)]
+final class ImprintResource extends AbstractResource
+{
+    public static string $type = 'imprints';
+    // ...
+}
+```
+
+The route loader emits no CRUD route for the type and none of its own relationship or
+related routes, so `/imprints/...` is unrouted. Everything that reaches it through
+another type works as before: `GET /records/1/imprint`, `?include=imprint`, and an
+action taking it as its request document. Its resources render no `self` link and its
+relationship objects no links, since those would point at routes that don't exist; a
+relationship object with no links carries its linkage `data` instead. In the
+[OpenAPI document](openapi.md) the type has no paths, its resource object's links
+component lists no `self`, and it still gets its create components when an action takes
+it as input.
+
+Declaring `relatedOnly: true` with a non-empty `operations` list or with `readOnly: true`
+is a constructor `\LogicException`, and mounting a custom action on a related-only type
+fails the container build. A related-only type needs no provider or persister.
+
 ## Per-operation response declarations
 
 By default each operation advertises the one success status JSON:API mandates —

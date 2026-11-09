@@ -84,7 +84,9 @@ resource-less type declaring `#[AsJsonApiRelations]`) the loader additionally em
 
 The three linkage mutation routes (`PATCH`/`POST`/`DELETE`) follow `Update`: a type
 whose operations leave out `Update`, such as a `readOnly: true` resource, gets only the
-two read routes, and a relationship write to it is a router-native `405`.
+two read routes, and a relationship write to it is a router-native `405`. A
+[`relatedOnly`](resources.md#relatedonly-a-type-with-no-endpoints-of-its-own) type gets
+none of these routes, and no CRUD route either.
 
 The four-segment linkage path (`…/relationships/{relationship}`) and the
 three-segment related path (`…/{relationship}`) differ in segment count, so they

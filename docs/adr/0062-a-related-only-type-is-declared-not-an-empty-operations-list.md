@@ -1,0 +1,3 @@
+# A related-only type is declared, not an empty operations list
+
+A type reached only through other types' relationships, includes or an action's input needs no endpoints of its own, but `operations: []` already means all five operations and is documented that way, so `#[AsJsonApiResource(relatedOnly: true)]` declares it instead. The bundle then routes nothing under the type, tells core's server which types are related-only so their resources and relationship objects link to no missing route, and fails the build when the declaration is combined with operations, `readOnly` or an action mounted on the type, since each of those asks for an endpoint the type doesn't have.

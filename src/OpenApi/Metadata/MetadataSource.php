@@ -321,16 +321,17 @@ final class MetadataSource
     /**
      * Assembles one type's metadata from its route descriptor + the live registry.
      *
-     * @param array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string, raw?: array<string, mixed>, description?: string, mediaType?: string}>>} $descriptor
+     * @param array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, relatedOnly?: bool, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string, raw?: array<string, mixed>, description?: string, mediaType?: string}>>} $descriptor
      */
     private function buildType(Server $server, string $serverName, string $type, array $descriptor): TypeMetadata
     {
         $resource = $this->types->resourceFor($server, $type);
         $serverDefaultPaginator = $server->defaultPaginator();
 
+        $relatedOnly = $descriptor['relatedOnly'] ?? false;
         $relations = [];
         foreach ($this->types->relationsFor($server, $type) as $relation) {
-            $relations[] = $this->buildRelation($server, $relation, $serverDefaultPaginator);
+            $relations[] = $this->buildRelation($server, $relation, $serverDefaultPaginator, !$relatedOnly);
         }
 
         $operations = $this->operations($descriptor['operations']);
@@ -408,6 +409,7 @@ final class MetadataSource
             deprecated: $declaredDeprecation !== null && ($declaredDeprecation->deprecation === true || \is_string($declaredDeprecation->deprecation)),
             sunset: SunsetDate::parse($declaredDeprecation?->sunset),
             deprecatedOperations: $this->responseHeaders?->deprecatedOperationsFor($type, $serverName) ?? [],
+            relatedOnly: $relatedOnly,
         );
     }
 
@@ -455,7 +457,7 @@ final class MetadataSource
         return $extensions;
     }
 
-    private function buildRelation(Server $server, RelationInterface $relation, ?PaginatorInterface $serverDefault): RelationMetadata
+    private function buildRelation(Server $server, RelationInterface $relation, ?PaginatorInterface $serverDefault, bool $ownerServesEndpoints): RelationMetadata
     {
         // Only a to-many relation has a related collection to paginate. Its page
         // schema comes from the paginator the related and relationship endpoints
@@ -473,6 +475,7 @@ final class MetadataSource
             $paginator?->describePageSchema(),
             $this->includePaths->relatedPathsFor($server, $relation),
             self::alwaysCounts($paginator),
+            $ownerServesEndpoints,
         );
     }
 
