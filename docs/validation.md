@@ -513,6 +513,11 @@ as its shape would as an attribute, at `/data/attributes/<list>/<index>/<child>`
 and a list nested inside an element validates too, one index per level. See
 [Lists of structured elements](composite-attributes.md#lists-of-structured-elements).
 
+An `Obj` open to undeclared members, or bounding how many it carries, is checked at
+any depth too: each undeclared member at `<object>/<key>`, its key escaped, and its
+member count at the object. See
+[Open objects](composite-attributes.md#open-objects).
+
 ## Custom constraints: the extension point
 
 For a constraint VO outside core's built-in vocabulary, register a translator.

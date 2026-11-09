@@ -1,0 +1,3 @@
+# Open object members validate at pointers built from their keys
+
+Each undeclared member of an open `Obj`, and each object's member count, is validated in a document-level pass over core's `ObjectValues` rather than inside the nested `Collection`, because a Symfony property path cannot carry a key holding `[` or `]`, and spreadsheet headers often do. The pass builds every pointer from the key itself, escaped as a JSON Pointer token, and reaches objects at any depth, which the one-level `Collection` cascade does not. It reads only what the request sends, so a merging `PATCH` counts the members it sends rather than the merged result.
