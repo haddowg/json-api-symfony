@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\DataProvider;
 
 use haddowg\JsonApi\Exception\FilterParamUnrecognized;
+use haddowg\JsonApi\Exception\FilterValueInvalid;
 use haddowg\JsonApi\Exception\SortingUnsupported;
 use haddowg\JsonApi\Exception\SortParamUnrecognized;
 use haddowg\JsonApi\Resource\Filter\FilterDefaults;
 use haddowg\JsonApi\Resource\Filter\FilterHandlerInterface;
-use haddowg\JsonApi\Resource\Filter\FilterInterface;
+use haddowg\JsonApi\Resource\Filter\FilterMatcher;
 use haddowg\JsonApi\Resource\Sort\SortDirective;
 use haddowg\JsonApi\Resource\Sort\SortHandlerInterface;
 use haddowg\JsonApi\Resource\Sort\SortMatcher;
@@ -26,8 +27,9 @@ use haddowg\JsonApiBundle\DataProvider\Doctrine\AliasAwareSortHandler;
  * Every provider runs this same matching, so the spec semantics — declared
  * filter defaults folded into the requested map (absent key → the filter's
  * declared default, a requested key always wins) via core's
- * {@see FilterDefaults}, unknown filter key → 400 {@see FilterParamUnrecognized},
- * sorting against an empty sort vocabulary → 400 {@see SortingUnsupported},
+ * {@see FilterDefaults}, filter keys and filter families matched through core's
+ * {@see FilterMatcher} with a list filter's value read as its members, unknown
+ * filter key → 400 {@see FilterParamUnrecognized}, sorting against an empty sort vocabulary → 400 {@see SortingUnsupported},
  * unknown sort field → 400 {@see SortParamUnrecognized}, `-` prefix →
  * descending, sort families through core's {@see SortMatcher} — are decided
  * once, and a provider only ever differs in *execution*. That is what keeps the
@@ -74,6 +76,7 @@ final class CriteriaApplier
      * @return TQuery
      *
      * @throws FilterParamUnrecognized when a requested filter key is not declared
+     * @throws FilterValueInvalid      when a list filter's value is not a list it accepts
      * @throws SortingUnsupported      when sorting is requested but no sorts are declared
      * @throws SortParamUnrecognized   when a requested sort field is not declared
      */
@@ -102,6 +105,7 @@ final class CriteriaApplier
      * @return TQuery
      *
      * @throws FilterParamUnrecognized when a requested filter key is not declared
+     * @throws FilterValueInvalid      when a list filter's value is not a list it accepts
      */
     public function applyFilters(CollectionCriteria $criteria, mixed $query, FilterHandlerInterface $filterHandler): mixed
     {
@@ -125,10 +129,12 @@ final class CriteriaApplier
         // genuinely undeclared requested key.
         $requested = FilterDefaults::apply($criteria->queryParameters->filter, $criteria->filters);
 
-        foreach ($requested as $key => $value) {
-            $key = (string) $key;
-            $filter = $this->filterFor($criteria->filters, $key)
-                ?? throw new FilterParamUnrecognized($key);
+        // A filter family resolves to the concrete filter keyed by the full requested
+        // key, so the key routes through `aliasOf` as is.
+        foreach (FilterMatcher::directives($requested, $criteria->filters, $criteria->request) as $directive) {
+            $key = $directive->key();
+            $filter = $directive->filter;
+            $value = $directive->value;
 
             // A key routes to its target alias when the criteria declares one
             // (only the Doctrine pivot path does), else to the caller's
@@ -270,19 +276,5 @@ final class CriteriaApplier
         }
 
         return $criteria->defaultSort;
-    }
-
-    /**
-     * @param list<FilterInterface> $filters
-     */
-    private function filterFor(array $filters, string $key): ?FilterInterface
-    {
-        foreach ($filters as $filter) {
-            if ($filter->key() === $key) {
-                return $filter;
-            }
-        }
-
-        return null;
     }
 }

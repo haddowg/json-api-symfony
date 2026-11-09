@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Validation;
 
 use haddowg\JsonApi\Exception\FilterValueInvalid;
+use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Resource\Filter\AcceptsList;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
+use haddowg\JsonApi\Resource\Filter\FilterMatcher;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
@@ -42,6 +45,12 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
  * per-id rule like `integer()` applies to every member of `filter[id]=1,banana,3`,
  * and a `Range`'s per-bound rule applies to each present bound — an open
  * (blank/absent) bound is left unvalidated so `filter[price][max]=` does not `400`.
+ *
+ * Requested keys resolve through core's {@see FilterMatcher}, so a filter family's
+ * key is validated against the constraints of the filter it resolves to. A filter
+ * that {@see AcceptsList accepts a list} reads its members through
+ * {@see \haddowg\JsonApi\Resource\Filter\ListValue::values()}, so a value of the
+ * wrong shape is a `400` here whether or not the filter declares constraints.
  */
 final class FilterValueValidator
 {
@@ -63,21 +72,23 @@ final class FilterValueValidator
      * {@see \haddowg\JsonApiBundle\DataProvider\CriteriaApplier}); a filter that
      * declares no constraints is skipped, so it costs nothing.
      *
-     * @param array<string, mixed>  $requested the request's raw `filter[<key>]` map
-     * @param list<FilterInterface> $filters   the declared filter vocabulary to match against
+     * @param array<array-key, mixed> $requested the request's raw `filter[<key>]` map
+     * @param list<FilterInterface>   $filters   the declared filter vocabulary to match against
+     * @param ?JsonApiRequestInterface $request  the request, which a filter family needs to resolve a key
      *
-     * @throws FilterValueInvalid when a client-supplied value violates its filter's constraints
+     * @throws FilterValueInvalid when a client-supplied value violates its filter's constraints, or a list filter's value is not a list it accepts
      */
-    public function validate(array $requested, array $filters): void
+    public function validate(array $requested, array $filters, ?JsonApiRequestInterface $request = null): void
     {
-        foreach ($filters as $filter) {
-            $key = $filter->key();
-
-            // Only a value the client actually sent is validated — a defaulted key
-            // (absent from the request) is trusted; the default is folded in later.
-            if (!\array_key_exists($key, $requested)) {
+        foreach ($requested as $key => $value) {
+            $key = (string) $key;
+            $filter = FilterMatcher::match($filters, $key, $request);
+            if ($filter === null) {
                 continue;
             }
+
+            $list = $filter instanceof AcceptsList ? $filter->listValue() : null;
+            $members = $list?->values($key, $value);
 
             $constraints = $this->symfonyConstraints($filter);
             if ($constraints === []) {
@@ -87,7 +98,7 @@ final class FilterValueValidator
             }
 
             $messages = [];
-            foreach ($this->members($filter, $requested[$key]) as $member) {
+            foreach ($members ?? $this->members($filter, $value) as $member) {
                 foreach ($this->validator->validate($member, $constraints) as $violation) {
                     $messages[] = (string) $violation->getMessage();
                 }
@@ -97,7 +108,7 @@ final class FilterValueValidator
             // (it admits `1997-13-99`), so a present bound is additionally checked for
             // temporal validity — an unparseable date is a clean 400 here rather than
             // a silent, provider-divergent non-match in the data layer.
-            $messages = [...$messages, ...$this->dateRangeMessages($filter, $requested[$key])];
+            $messages = [...$messages, ...$this->dateRangeMessages($filter, $value)];
 
             if ($messages !== []) {
                 throw new FilterValueInvalid($key, $messages);

@@ -21,6 +21,14 @@ lists the fixed keys alongside one pattern per family, and names the families un
 That holds on related and relationship endpoints too, whose vocabulary merges the
 related type's sorts with the relation's own.
 
+Filters work the same way. A
+[list filter](https://github.com/haddowg/json-api/blob/main/docs/openapi.md#list-filters-x-filter-list)
+gains a `filter[<key>][]` parameter for its array form, and the
+[filter families](https://github.com/haddowg/json-api/blob/main/docs/openapi.md#filter-families-x-filter-families)
+an endpoint accepts share one `filter` parameter listed under `x-filter-families`. The
+bundle passes the declared filters through unchanged, so the document describes
+exactly the keys the data layer accepts.
+
 ## Per-operation response declarations
 
 By default each operation advertises one success response — `POST` → `201`,

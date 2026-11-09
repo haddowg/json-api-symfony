@@ -358,8 +358,9 @@ Doctrine pivot related-collection path (pivot keys → the `pivot` join alias) a
 empty (so provably inert) on every other Doctrine path and **every** in-memory path,
 where each key resolves to the query root. `$request` is the request the fetch
 answers. A [sort family](https://github.com/haddowg/json-api/blob/main/docs/sorts.md#sort-families-keys-matched-by-prefix)
+or [filter family](https://github.com/haddowg/json-api/blob/main/docs/filters.md#filter-families-keys-matched-by-prefix)
 needs it to resolve a key, so a provider that builds its own criteria should pass it
-along. A programmatic fetch with no request can still sort by exact keys.
+along. A programmatic fetch with no request can still filter and sort by exact keys.
 
 ### `CriteriaApplier` — spec semantics, decided once
 
@@ -385,7 +386,15 @@ one place and a provider only ever differs in *execution*:
 - declared filter defaults folded into the requested map (an absent key takes its
   filter's declared default; a requested key always wins) via core's
   `FilterDefaults`;
-- an unknown filter key → `400` (`FilterParamUnrecognized`);
+- filter keys match through core's
+  [`FilterMatcher`](https://github.com/haddowg/json-api/blob/main/docs/filters.md#matching-requested-filters-filtermatcher),
+  so an exact key wins and a filter family answers `<prefix>.<suffix>`, handing the
+  handler the concrete filter it resolves to;
+- an unknown filter key → `400` (`FilterParamUnrecognized`), and so is a family's bare
+  prefix or a suffix its resolver returns `null` for;
+- a [list filter's](https://github.com/haddowg/json-api/blob/main/docs/filters.md#declaring-a-list-acceptslist)
+  value is read as its list of members: the array form always, the comma form only
+  while the list is delimited, and anything else is a `400` (`FilterValueInvalid`);
 - sorting against an empty sort vocabulary → `400` (`SortingUnsupported`);
 - an unknown sort field → `400` (`SortParamUnrecognized`);
 - sort keys match through core's
@@ -569,7 +578,13 @@ Mechanics, all decided in the handler before the `CollectionCriteria` is built:
   `default()` (a server-trusted value the `FilterDefaults` fold-in supplies);
 - a **set** value (`WhereIn`/`WhereIdIn`/…) is split — array members, or the
   delimited string per `delimiter()` — and **each scalar member** is validated, so
-  `integer()` applies to every id in `filter[id]=1,banana,3`;
+  `integer()` applies to every id in `filter[id]=1,banana,3`. A filter declared with
+  `acceptsList()` is read through core's `ListValue::values()` instead, so with
+  `acceptsList(delimited: false)` each array member is validated whole, commas
+  included, and a single string is a `400`;
+- a requested key resolves through core's `FilterMatcher`, so a
+  [filter family's](https://github.com/haddowg/json-api/blob/main/docs/filters.md#filter-families-keys-matched-by-prefix)
+  key is validated against the constraints of the filter its resolver returns;
 - it covers the **related-collection** endpoint too: a relation-scoped or
   related-resource constrained filter (see [relationships](relationships.md))
   validates its value the same way on `GET /{type}/{id}/{rel}`;

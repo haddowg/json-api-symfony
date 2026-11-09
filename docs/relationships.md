@@ -299,7 +299,9 @@ parses the request's `?filter`/`?sort` on the related endpoint:
 
 so both apply together. On a **key clash** (the same `filter[…]`/`sort` key declared
 on both the related resource and the relation) the **relation's declaration wins**
-— it is the more specific scope. A key in **neither** set still `400`s
+— it is the more specific scope. A filter or sort family and an exact key equal to
+its prefix don't clash, since a family never answers its bare prefix, so both stay.
+A key in **neither** set still `400`s
 (`filter[unknown]` → an unrecognized-parameter error; `sort=unknown` →
 `SORTING_UNRECOGNIZED`), unchanged.
 
@@ -593,6 +595,23 @@ backing the stripped column — `Integer` coerces to `int`, `DateTime` to an ISO
 comparison — so a typed pivot column filters correctly with no extra wiring; an
 explicit `->deserializeUsing()` on the filter still wins. A filter with **no** `pivot.`
 prefix targets the related entity, exactly like any relation-scoped filter.
+
+A [filter family](https://github.com/haddowg/json-api/blob/main/docs/filters.md#filter-families-keys-matched-by-prefix)
+on the relation can resolve to a pivot filter too. The bundle resolves the family first
+and then treats what it returns as it treats an exact pivot filter: a `pivot.` column
+routes to the pivot alias and gets the field's cast on the related and relationship
+endpoints, and on the paths that carry no pivot values, such as an include, its key is
+unrecognised just as the exact one is.
+
+```php
+->withFilters(
+    FilterFamily::make('pin', fn(string $suffix, JsonApiRequestInterface $request): ?FilterInterface => match ($suffix) {
+        'rank' => Where::make('pin.rank', 'pivot.rank')->build(),            // filter[pin.rank]=2
+        'after' => Where::make('pin.after', 'pivot.pinnedAt', '>')->build(), // cast as a date
+        default => null,
+    }),
+);
+```
 
 The **documented** value type does not come along for free. Core types an
 unconstrained filter's OpenAPI value from the single column it targets, and `pivot.`

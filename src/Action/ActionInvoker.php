@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Action;
 
-use haddowg\JsonApi\Exception\FilterParamUnrecognized;
 use haddowg\JsonApi\Exception\ResourceNotFound;
 use haddowg\JsonApi\Operation\CustomActionOperation;
 use haddowg\JsonApi\Operation\QueryParameters;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Request\MediaType;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
+use haddowg\JsonApi\Resource\Filter\FilterMatcher;
 use haddowg\JsonApi\Response\AcceptedResponse;
 use haddowg\JsonApi\Response\DataResponse;
 use haddowg\JsonApi\Response\ErrorResponse;
@@ -171,15 +171,12 @@ final readonly class ActionInvoker
         $resource = $server instanceof Server ? $this->types->resourceFor($server, $type) : null;
         $filters = self::filtersTaken($resource?->allFilters() ?? [], $descriptor->filters);
 
+        // Resolving the directives rejects a key the action does not take, a family
+        // included, and a list filter's value of the wrong shape.
         $requested = $operation->queryParameters()->filter;
-        $keys = \array_map(static fn(FilterInterface $filter): string => $filter->key(), $filters);
-        foreach (\array_keys($requested) as $key) {
-            if (!\in_array((string) $key, $keys, true)) {
-                throw new FilterParamUnrecognized((string) $key);
-            }
-        }
+        FilterMatcher::directives($requested, $filters, $request);
 
-        $this->filterValues?->validate($requested, $filters);
+        $this->filterValues?->validate($requested, $filters, $request);
 
         $criteria = new CollectionCriteria(
             new QueryParameters(fields: [], includes: [], sort: [], filter: $requested, pagination: []),

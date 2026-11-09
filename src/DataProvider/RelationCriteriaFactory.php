@@ -10,7 +10,9 @@ use haddowg\JsonApi\Pagination\WindowInterface;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\Filter\FilterFamilyInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
+use haddowg\JsonApi\Resource\Filter\FilterMatcher;
 use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Filter\WhereIn;
 use haddowg\JsonApi\Resource\Filter\WhereNotIn;
@@ -105,9 +107,9 @@ final class RelationCriteriaFactory
      * by the stripped column and the key routed to the `pivot` alias via `aliasOf`.
      *
      * On a key clash the relation wins over the related resource, preserving the merge
-     * order `[...resourceFilters, ...relationFilters]` then keyed by `->key()`. Sorts
-     * merge through core's {@see SortMatcher::merge()}, which keeps a sort family
-     * beside an exact sort sharing its key.
+     * order `[...resourceFilters, ...relationFilters]`. Filters and sorts merge through
+     * core's {@see FilterMatcher::merge()} and {@see SortMatcher::merge()}, which keep a
+     * family beside an exact filter or sort sharing its key.
      * `defaultSort` is the related resource's default order (empty for a polymorphic
      * to-many); the merged vocabulary rides the criteria so both providers' existing
      * handlers apply it unchanged.
@@ -123,8 +125,8 @@ final class RelationCriteriaFactory
      * count batchers leave the default `false`, so those paths stay count-free (their
      * relationship-object totals come from the separate RelationCountInterface seam).
      *
-     * `$request` rides onto the criteria too, so a sort family in the merged
-     * vocabulary can resolve a requested key.
+     * `$request` rides onto the criteria too, so a sort or filter family in the
+     * merged vocabulary can resolve a requested key.
      */
     public function criteriaFor(
         QueryParameters $queryParameters,
@@ -138,10 +140,11 @@ final class RelationCriteriaFactory
         $relationFilters = $includePivotFields
             ? $this->withPivotCasts($relation)
             : $this->withoutPivotFilters($relation->allFilters());
+        $filters = $this->mergeFilters($relatedResource?->allFilters() ?? [], $relationFilters);
 
         return new CollectionCriteria(
             $queryParameters,
-            $this->mergeFilters($relatedResource?->allFilters() ?? [], $relationFilters),
+            $filters,
             SortMatcher::merge(
                 $relatedResource?->allSorts() ?? [],
                 $relation->sorts(),
@@ -155,7 +158,7 @@ final class RelationCriteriaFactory
             // — the literal alias 'pivot'); every related key resolves to the root.
             // Empty off the pivot path, so the alias-aware applier is inert there and
             // for the in-memory provider.
-            $includePivotFields ? $this->pivotAliases($relation) : [],
+            $includePivotFields ? $this->pivotAliases($relation, $filters, $queryParameters, $request) : [],
             // Whether the provider should run the COUNT for this related fetch:
             // the related endpoint passes `true` only when the relation's own paginator
             // opted in via withCount() OR the client asked `?withCount=_self_` under a
@@ -178,7 +181,8 @@ final class RelationCriteriaFactory
      * `->deserializeUsing()` on the authored filter still wins (only a {@see Where}
      * exposes a deserializer to thread — `WhereIn`/`WhereNotIn` bind their split list
      * raw, and `WhereNull`/`WhereNotNull` carry no value — so the cast only attaches to
-     * a {@see Where} pivot filter). A non-`pivot.` filter is returned unchanged.
+     * a {@see Where} pivot filter). A non-`pivot.` filter is returned unchanged, and a
+     * filter family gets the same cast on each filter it resolves.
      *
      * @return list<FilterInterface>
      */
@@ -186,7 +190,9 @@ final class RelationCriteriaFactory
     {
         $filters = [];
         foreach ($relation->allFilters() as $filter) {
-            $filters[] = $this->withPivotCast($relation, $filter);
+            $filters[] = $filter instanceof FilterFamilyInterface
+                ? new PivotTreatedFilterFamily($filter, fn(FilterInterface $resolved): FilterInterface => $this->withPivotCast($relation, $resolved))
+                : $this->withPivotCast($relation, $filter);
         }
 
         return $filters;
@@ -238,7 +244,8 @@ final class RelationCriteriaFactory
      * an empty `aliasOf`) never see a pivot-column filter: in-memory the requested
      * pivot key stays unrecognised (`400`), and the include/count paths never route a
      * `pivot.`-column to the root alias (a `root.pivot.position` path is not a valid
-     * Doctrine field path).
+     * Doctrine field path). A filter family stays, but a filter it resolves to a
+     * `pivot.` column is dropped the same way, so its key is unrecognised too.
      *
      * @param list<FilterInterface> $filters
      *
@@ -246,10 +253,16 @@ final class RelationCriteriaFactory
      */
     private function withoutPivotFilters(array $filters): array
     {
-        return \array_values(\array_filter(
-            $filters,
-            fn(FilterInterface $filter): bool => $this->pivotColumn($this->columnOf($filter)) === null,
-        ));
+        $kept = [];
+        foreach ($filters as $filter) {
+            if ($filter instanceof FilterFamilyInterface) {
+                $kept[] = new PivotTreatedFilterFamily($filter, fn(FilterInterface $resolved): ?FilterInterface => $this->pivotColumn($this->columnOf($resolved)) === null ? $resolved : null);
+            } elseif ($this->pivotColumn($this->columnOf($filter)) === null) {
+                $kept[] = $filter;
+            }
+        }
+
+        return $kept;
     }
 
     /**
@@ -300,14 +313,29 @@ final class RelationCriteriaFactory
      * derive from the auto-derived pivot sort vocabulary ({@see PivotFields::sortsFor()},
      * keyed by the pivot field name): pivot sorts remain zero-config.
      *
+     * A filter family's keys are only known once requested, so each requested key a
+     * relation family resolves to a `pivot.`-columned filter routes to the pivot alias
+     * as well. An exact filter of the merged vocabulary always wins the key, as it does
+     * in the applier.
+     *
+     * @param list<FilterInterface> $filters the merged filter vocabulary of the criteria
+     *
      * @return array<string, string>
      */
-    private function pivotAliases(RelationInterface $relation): array
+    private function pivotAliases(RelationInterface $relation, array $filters, QueryParameters $queryParameters, ?JsonApiRequestInterface $request): array
     {
         $aliasOf = [];
         foreach ($relation->allFilters() as $filter) {
-            if ($this->pivotColumn($this->columnOf($filter)) !== null) {
+            if (!$filter instanceof FilterFamilyInterface && $this->pivotColumn($this->columnOf($filter)) !== null) {
                 $aliasOf[$filter->key()] = 'pivot';
+            }
+        }
+        if ($request !== null) {
+            foreach (\array_keys($queryParameters->filter) as $key) {
+                $resolved = FilterMatcher::match($filters, (string) $key, $request);
+                if ($resolved !== null && !\in_array($resolved, $filters, true) && $this->pivotColumn($this->columnOf($resolved)) !== null) {
+                    $aliasOf[(string) $key] = 'pivot';
+                }
             }
         }
         foreach (PivotFields::sortsFor($relation) as $sort) {
@@ -318,10 +346,11 @@ final class RelationCriteriaFactory
     }
 
     /**
-     * Merges two filter vocabularies, keyed by {@see FilterInterface::key()} so a
+     * Merges two filter vocabularies through core's {@see FilterMatcher::merge()}, so a
      * clash resolves to the later list's declaration (the more specific scope wins,
-     * core docs/relations.md). The order `[...$resourceFilters, ...$relationFilters]` is
-     * preserved before the dedup; returned as a list for the {@see CollectionCriteria}.
+     * core docs/relations.md) while a filter family stays beside an exact filter
+     * sharing its key. The order `[...$resourceFilters, ...$relationFilters]` is
+     * preserved before the dedup.
      *
      * @param list<FilterInterface> $resourceFilters
      * @param list<FilterInterface> $relationFilters
@@ -330,11 +359,6 @@ final class RelationCriteriaFactory
      */
     private function mergeFilters(array $resourceFilters, array $relationFilters): array
     {
-        $merged = [];
-        foreach ([...$resourceFilters, ...$relationFilters] as $filter) {
-            $merged[$filter->key()] = $filter;
-        }
-
-        return \array_values($merged);
+        return FilterMatcher::merge($resourceFilters, $relationFilters);
     }
 }

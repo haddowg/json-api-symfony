@@ -679,6 +679,7 @@ final class WindowedRelationBatch
             window: null,
             defaultSort: [],
             aliasOf: $criteria->aliasOf,
+            request: $criteria->request,
         );
     }
 

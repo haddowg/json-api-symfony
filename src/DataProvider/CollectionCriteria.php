@@ -20,7 +20,8 @@ use haddowg\JsonApi\Resource\Sort\SortInterface;
  * - {@see $queryParameters} — the request's parsed query-parameter groups;
  * - {@see $filters} / {@see $sorts} — the **declared** vocabularies the
  *   requested `filter[…]`/`sort` keys are matched against (the resource's
- *   `filters()` / `allSorts()`); execution stays in the provider's handlers;
+ *   `allFilters()` / `allSorts()`, filter and sort families included); execution
+ *   stays in the provider's handlers;
  * - {@see $defaultSort} — the resource's `defaultSort()` directives, applied by
  *   the {@see CriteriaApplier} **only when the request carries no `sort`**; an
  *   explicit `?sort=` overrides it entirely. Each directive's sort must be one of
@@ -51,9 +52,10 @@ use haddowg\JsonApi\Resource\Sort\SortInterface;
  *   window+1 probe → `hasMore`, no total). Defaulted `false` so every existing
  *   construction site stays count-free unless the handler explicitly asks for a
  *   count.
- * - {@see $request} — the request the fetch answers, which a sort family needs to
- *   resolve a requested key (core's `SortMatcher`). `null` for a programmatic fetch
- *   with no request, where matching a family key is a server error.
+ * - {@see $request} — the request the fetch answers, which a sort or filter family
+ *   needs to resolve a requested key (core's `SortMatcher` and `FilterMatcher`). `null`
+ *   for a programmatic fetch with no request, where matching a family key is a server
+ *   error.
  */
 final readonly class CollectionCriteria
 {
@@ -63,7 +65,7 @@ final readonly class CollectionCriteria
      * @param list<SortDirective>       $defaultSort the resource's default sort order, applied when no `sort` is requested
      * @param array<string, string>     $aliasOf     directive KEY → target query alias; an absent key resolves to the root alias (bundle-only, empty off the Doctrine pivot path)
      * @param bool                      $wantsCount  whether the provider should run the `COUNT` for this windowed fetch (author/client opt-in; default false = count-free)
-     * @param ?JsonApiRequestInterface  $request     the request the fetch answers, passed to the sort matcher so a sort family can resolve a key
+     * @param ?JsonApiRequestInterface  $request     the request the fetch answers, passed to the sort and filter matchers so a family can resolve a key
      */
     public function __construct(
         public QueryParameters $queryParameters,
