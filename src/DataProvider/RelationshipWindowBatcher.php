@@ -14,6 +14,7 @@ use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Request\RelatedQuery;
 use haddowg\JsonApi\Resource\Field\Accessor;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\Filter\FilterMatcher;
 use haddowg\JsonApi\Resource\Sort\SortMatcher;
 use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
 use haddowg\JsonApi\Schema\Relationship\RelationshipLinkage;
@@ -285,7 +286,7 @@ final class RelationshipWindowBatcher
         // vocabulary before the batched window fetch, so a mistyped value on the
         // include/linkage path is the endpoint's same 400.
         // RAW client input only (RelatedQuery::filter); a no-op without the validator.
-        $this->filterValues?->validate($relatedQuery->filter, $criteria->filters);
+        $this->filterValues?->validate($relatedQuery->filter, $criteria->filters, $criteria->request);
 
         // ONE batched fetch for the whole page, driven through the PRIMARY type's
         // provider — like RelationCountBatcher, and so the provider keys each parent's
@@ -494,7 +495,7 @@ final class RelationshipWindowBatcher
             // The mistyped-VALUE check rides the same path as the windowed fetch: a links-only
             // relation validates its raw filter
             // values too, so a bad value is the endpoint's same `400` here as well.
-            $this->filterValues?->validate($relatedQuery->filter, $criteria->filters);
+            $this->filterValues?->validate($relatedQuery->filter, $criteria->filters, $criteria->request);
         }
     }
 
@@ -502,42 +503,22 @@ final class RelationshipWindowBatcher
      * Throws the related-collection endpoint's same `400` for an unrecognised relatedQuery
      * filter/sort key, mirroring {@see CriteriaApplier}'s key recognition exactly (so the
      * gated links-only path and the fetched windowed path agree): each requested filter key
-     * must name a declared {@see \haddowg\JsonApi\Resource\Filter\FilterInterface}; each
-     * requested sort field (with any leading `-` stripped) must match a declared
-     * {@see \haddowg\JsonApi\Resource\Sort\SortInterface} through core's {@see SortMatcher}
-     * (sort families included), and a sort requested against a relation that declares
-     * none is {@see \haddowg\JsonApi\Exception\SortingUnsupported}.
+     * must match a declared {@see \haddowg\JsonApi\Resource\Filter\FilterInterface}
+     * through core's {@see FilterMatcher} (filter families included), which also rejects a
+     * list filter's value of the wrong shape; each requested sort field (with any leading
+     * `-` stripped) must match a declared {@see \haddowg\JsonApi\Resource\Sort\SortInterface}
+     * through core's {@see SortMatcher} (sort families included), and a sort requested
+     * against a relation that declares none is {@see \haddowg\JsonApi\Exception\SortingUnsupported}.
      *
      * @throws \haddowg\JsonApi\Exception\FilterParamUnrecognized on an unrecognised filter key
+     * @throws \haddowg\JsonApi\Exception\FilterValueInvalid      when a list filter's value is not a list it accepts
      * @throws \haddowg\JsonApi\Exception\SortParamUnrecognized   on an unrecognised sort field
      * @throws \haddowg\JsonApi\Exception\SortingUnsupported      when a sort is requested but none are declared
      */
     private function assertRelatedQueryKeysRecognised(RelatedQuery $relatedQuery, CollectionCriteria $criteria): void
     {
-        foreach (\array_keys($relatedQuery->filter) as $key) {
-            $key = (string) $key;
-            if (!$this->declaresFilter($criteria->filters, $key)) {
-                throw new \haddowg\JsonApi\Exception\FilterParamUnrecognized($key);
-            }
-        }
-
+        FilterMatcher::directives($relatedQuery->filter, $criteria->filters, $criteria->request);
         SortMatcher::directives($relatedQuery->sortFields(), $criteria->sorts, $criteria->request);
-    }
-
-    /**
-     * Whether the criteria's declared filters carry one keyed `$key`.
-     *
-     * @param list<\haddowg\JsonApi\Resource\Filter\FilterInterface> $filters
-     */
-    private function declaresFilter(array $filters, string $key): bool
-    {
-        foreach ($filters as $filter) {
-            if ($filter->key() === $key) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     /**
@@ -618,7 +599,7 @@ final class RelationshipWindowBatcher
             // include/linkage path is the endpoint's same 400. RAW client input only
             // (RelatedQuery::filter), so an author default is
             // never validated (docs/data-layer.md); a no-op without the validator.
-            $this->filterValues?->validate($request->getRelatedQuery($relation->name())->filter, $criteria->filters);
+            $this->filterValues?->validate($request->getRelatedQuery($relation->name())->filter, $criteria->filters, $criteria->request);
 
             $matches = $this->router->toOneMatches($server, $type, $parents, $relation, $criteria, $request);
 

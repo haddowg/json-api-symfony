@@ -299,7 +299,9 @@ parses the request's `?filter`/`?sort` on the related endpoint:
 
 so both apply together. On a **key clash** (the same `filter[…]`/`sort` key declared
 on both the related resource and the relation) the **relation's declaration wins**
-— it is the more specific scope. A key in **neither** set still `400`s
+— it is the more specific scope. A filter or sort family and an exact key equal to
+its prefix don't clash, since a family never answers its bare prefix, so both stay.
+A key in **neither** set still `400`s
 (`filter[unknown]` → an unrecognized-parameter error; `sort=unknown` →
 `SORTING_UNRECOGNIZED`), unchanged.
 

@@ -21,6 +21,7 @@ use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\IdEncoderInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\FilterDefaults;
+use haddowg\JsonApi\Resource\Filter\FilterMatcher;
 use haddowg\JsonApi\Resource\Filter\WhereDoesntHave;
 use haddowg\JsonApi\Resource\Filter\WhereHas;
 use haddowg\JsonApi\Resource\Sort\SortByField;
@@ -509,6 +510,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             window: null,
             defaultSort: [],
             aliasOf: $criteria->aliasOf,
+            request: $criteria->request,
         );
     }
 
@@ -1561,14 +1563,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $requested = FilterDefaults::apply($criteria->queryParameters->filter, $criteria->filters);
 
         foreach (\array_keys($requested) as $key) {
-            $filter = null;
-            foreach ($criteria->filters as $declared) {
-                if ($declared->key() === (string) $key) {
-                    $filter = $declared;
-
-                    break;
-                }
-            }
+            $filter = FilterMatcher::match($criteria->filters, (string) $key, $criteria->request);
 
             if ($filter instanceof WhereHas || $filter instanceof WhereDoesntHave) {
                 throw new \LogicException(\sprintf(

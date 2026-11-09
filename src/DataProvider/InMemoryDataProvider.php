@@ -646,6 +646,7 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
             sorts: [],
             window: null,
             defaultSort: [],
+            request: $criteria->request,
         );
 
         /** @var list<object> $applied */

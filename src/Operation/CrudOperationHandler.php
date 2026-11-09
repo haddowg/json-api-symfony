@@ -44,6 +44,7 @@ use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Field\Time;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
+use haddowg\JsonApi\Resource\Filter\FilterMatcher;
 use haddowg\JsonApi\Resource\Filter\SupportsSingular;
 use haddowg\JsonApi\Resource\ResolvesCompletionRedirect;
 use haddowg\JsonApi\Response\AcceptedResponse;
@@ -419,12 +420,12 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // without the optional validator, or for a filter with no declared
         // constraints; only the raw requested values are checked, never an
         // author-set default (docs/data-layer.md).
-        $this->validateFilterValues($operation->queryParameters()->filter, $filters);
+        $this->validateFilterValues($operation->queryParameters()->filter, $filters, $request);
 
         // A singular filter the client applied collapses the collection to a
         // zero-to-one response — a single resource (the first match) or null,
         // never an array, and never paginated (core docs/filters.md).
-        $singular = $this->appliesSingularFilter($filters, $operation->queryParameters());
+        $singular = $this->appliesSingularFilter($filters, $operation->queryParameters(), $request);
 
         // The resource's pagination() return is the single source of truth:
         // used verbatim, with `null` meaning *no pagination* (fetch-all). The base
@@ -592,16 +593,16 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
     /**
      * Whether the client applied a filter the resource declares
      * {@see SupportsSingular singular} — the trigger to collapse the collection to
-     * a zero-to-one ({@see DataResponse::fromResource()}) response.
+     * a zero-to-one ({@see DataResponse::fromResource()}) response. A filter family's
+     * key counts when the filter it resolves to is singular.
      *
      * @param list<FilterInterface> $filters
      */
-    private function appliesSingularFilter(array $filters, QueryParameters $queryParameters): bool
+    private function appliesSingularFilter(array $filters, QueryParameters $queryParameters, ?JsonApiRequestInterface $request): bool
     {
-        foreach ($filters as $filter) {
-            if ($filter instanceof SupportsSingular
-                && $filter->isSingular()
-                && \array_key_exists($filter->key(), $queryParameters->filter)) {
+        foreach (\array_keys($queryParameters->filter) as $key) {
+            $filter = FilterMatcher::match($filters, (string) $key, $request);
+            if ($filter instanceof SupportsSingular && $filter->isSingular()) {
                 return true;
             }
         }
@@ -785,7 +786,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // scoped filters, and any pivot filters), so a relation-scoped or
             // related-resource constrained filter rejects a mistyped value with the
             // same 400 (docs/data-layer.md).
-            $this->validateFilterValues($operation->queryParameters()->filter, $criteria->filters);
+            $this->validateFilterValues($operation->queryParameters()->filter, $criteria->filters, $criteria->request);
 
             if ($pivot) {
                 \assert($relatedProvider instanceof PivotAwareProviderInterface);
@@ -1007,7 +1008,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 // ⊕ the relatedQuery `[filter]` already driven into the criteria), so a
                 // mistyped relatedQuery filter value is the endpoint's same 400, not just
                 // a mistyped `?filter` value.
-                $this->validateFilterValues($filter, $criteria->filters);
+                $this->validateFilterValues($filter, $criteria->filters, $criteria->request);
 
                 if (!$this->providers->forType($relatedType)->relatedToOneMatches($relatedType, $related, $relation, $criteria, $request)) {
                     $related = null;
@@ -1073,9 +1074,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * @param array<string, mixed>  $requested the raw requested `filter[<key>]` map
      * @param list<FilterInterface> $filters
      */
-    private function validateFilterValues(array $requested, array $filters): void
+    private function validateFilterValues(array $requested, array $filters, ?JsonApiRequestInterface $request): void
     {
-        $this->filterValues?->validate($requested, $filters);
+        $this->filterValues?->validate($requested, $filters, $request);
     }
 
     /**
@@ -1210,7 +1211,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                     // Validate the MERGED requested filter map (the operation's own
                     // `?filter` ⊕ the relatedQuery `[filter]`), so a mistyped relatedQuery
                     // filter value is the endpoint's same 400.
-                    $this->validateFilterValues($filter, $criteria->filters);
+                    $this->validateFilterValues($filter, $criteria->filters, $criteria->request);
 
                     if (!$this->providers->forType($relatedType)->relatedToOneMatches($relatedType, $related, $relation, $criteria, $request)) {
                         $this->relationshipLinkage?->set(new WindowedRelationshipLinkage([], [
@@ -1273,7 +1274,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 wantsCount: $relWantsCount,
                 request: $request,
             );
-            $this->validateFilterValues($operation->queryParameters()->filter, $criteria->filters);
+            $this->validateFilterValues($operation->queryParameters()->filter, $criteria->filters, $criteria->request);
 
             $pivotResult = $relatedProvider
                 ->fetchRelatedPivotCollection($relatedType, $parent, $relation, $criteria, $request);
@@ -1404,7 +1405,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 wantsCount: $relWantsCount,
                 request: $request,
             );
-            $this->validateFilterValues($operation->queryParameters()->filter, $criteria->filters);
+            $this->validateFilterValues($operation->queryParameters()->filter, $criteria->filters, $criteria->request);
 
             $result = $this->readRouter?->isComputed($relation) === true
                 ? $this->readRouter->fetchComputed($server, $parent, $relation, $criteria, $request)

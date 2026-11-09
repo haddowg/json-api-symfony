@@ -643,7 +643,11 @@ final class ArchiveOrders implements ActionHandlerInterface
 
 `filters: true` takes every filter the type declares. A list such as
 `filters: ['status', 'placedAt']` takes only those, and a request naming any other key
-gets a `400`, even one the type declares. Only a collection-scope action can take
+gets a `400`, even one the type declares. Listing a
+[filter family's](https://github.com/haddowg/json-api/blob/main/docs/filters.md#filter-families-keys-matched-by-prefix)
+prefix takes every key the family resolves, and a
+[list filter](https://github.com/haddowg/json-api/blob/main/docs/filters.md#declaring-a-list-acceptslist)
+takes its array and comma forms as the collection does. Only a collection-scope action can take
 filters. One declared at the resource scope fails the container build, and a listed key
 the type does not declare fails `cache:warmup`, naming the handler class.
 

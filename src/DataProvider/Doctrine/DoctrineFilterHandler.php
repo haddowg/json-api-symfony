@@ -155,10 +155,10 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
             $filter instanceof WhereAll => $this->whereAll($query, $filter, $value, $alias),
             $filter instanceof WhereAny => $this->whereAny($query, $filter, $value, $alias),
             $filter instanceof Where => $this->where($filter, $query, $value, $alias),
-            $filter instanceof WhereIn => $this->whereIn($query, $this->pivotColumn($filter->column, $alias), $this->toList($value, $filter->delimiter), false, $alias),
-            $filter instanceof WhereNotIn => $this->whereIn($query, $this->pivotColumn($filter->column, $alias), $this->toList($value, $filter->delimiter), true, $alias),
-            $filter instanceof WhereIdIn => $this->whereIn($query, $filter->column, $this->toList($value, $filter->delimiter), false, $alias),
-            $filter instanceof WhereIdNotIn => $this->whereIn($query, $filter->column, $this->toList($value, $filter->delimiter), true, $alias),
+            $filter instanceof WhereIn => $this->whereIn($query, $this->pivotColumn($filter->column, $alias), $this->members($filter, $value), false, $alias),
+            $filter instanceof WhereNotIn => $this->whereIn($query, $this->pivotColumn($filter->column, $alias), $this->members($filter, $value), true, $alias),
+            $filter instanceof WhereIdIn => $this->whereIn($query, $filter->column, $this->members($filter, $value), false, $alias),
+            $filter instanceof WhereIdNotIn => $this->whereIn($query, $filter->column, $this->members($filter, $value), true, $alias),
             $filter instanceof WhereNull => $query->andWhere(\sprintf('%s IS NULL', $this->path($this->pivotColumn($filter->column, $alias), $alias))),
             $filter instanceof WhereNotNull => $query->andWhere(\sprintf('%s IS NOT NULL', $this->path($this->pivotColumn($filter->column, $alias), $alias))),
             $filter instanceof WhereThrough => $this->whereThrough($query, $filter, $value),
@@ -727,6 +727,18 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         return $query
             ->andWhere(\sprintf('%s %s (:%s)', $path, $negate ? 'NOT IN' : 'IN', $placeholder))
             ->setParameter($placeholder, $values);
+    }
+
+    /**
+     * The members a set filter queries for: a declared list reads its value through
+     * core's `ListValue::members()`, so an array-only list keeps a delimiter inside a
+     * member; any other set filter splits leniently through {@see toList()}.
+     *
+     * @return list<mixed>
+     */
+    private function members(WhereIn|WhereNotIn|WhereIdIn|WhereIdNotIn $filter, mixed $value): array
+    {
+        return $filter->list?->members($value) ?? $this->toList($value, $filter->delimiter);
     }
 
     /**

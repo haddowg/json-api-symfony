@@ -595,6 +595,10 @@ A few translations carry nuance:
   open `filter[<key>][max]=` is a no-op rather than a `400`; `DateRange` binds each
   bound as a coerced `\DateTimeImmutable`, converted for the column as described in
   [Date-times in naive columns](#date-times-in-naive-columns).
+- **Lists.** A set filter declared with `acceptsList()` reads its value through
+  core's `ListValue::members()`, as the in-memory handler does: an array as is, a
+  string split on the delimiter while the list is delimited and kept whole when it is
+  array-only. Without `acceptsList()` an array passes through and a string is split.
 - **Empty-list semantics.** `WhereIn`/`WhereIdIn` with an empty list match nothing
   (`IN ()` is not valid SQL, so the handler emits `1 = 0`); the negated variants
   then match everything (a no-op).
@@ -650,6 +654,15 @@ it ANDs *on top of* the published base scope — an app-supplied query extension
 the example's [`PublishedAlbumsExtension`](custom-data-providers.md#doctrineextensioninterface--scoping-the-doctrine-queries);
 the [`DoctrineExtensionTest`](../examples/music-catalog-symfony/tests/DoctrineExtensionTest.php)
 asserts exactly that composition.
+
+A [filter family](https://github.com/haddowg/json-api/blob/main/docs/filters.md#filter-families-keys-matched-by-prefix)
+never reaches the handler. `?filter[value.cap]=5` is matched by core's
+`FilterMatcher`, the family resolves `cap` with the request, and the handler sees the
+filter it returned: a `Where` or `WhereIn` translates as above, anything else goes to
+its arm like any custom filter. The same matching runs for the primary collection,
+related and relationship endpoints, `relatedQuery[<path>][filter]`, `?withCount`
+counts and a collection action's filters. The cache warmer cannot check a family's
+columns, since it resolves them only against a request.
 
 Source: [`DoctrineFilterHandler`](../src/DataProvider/Doctrine/DoctrineFilterHandler.php).
 

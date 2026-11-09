@@ -1,0 +1,3 @@
+# Every filter path resolves through core's FilterMatcher and validates list members one by one
+
+The bundle matched filter keys in five places, each with its own exact-key loop, so a filter family or a list filter would have worked on some paths and been a `400` or a silent mismatch on others. The criteria applier, the filter value validator, relationship queries, the `?withCount` guard and collection actions now all resolve a requested key through core's `FilterMatcher`, and the validator reads a list filter's members with `ListValue::values()` and checks each against the resolved filter's constraints, so a key and its value mean the same thing on every endpoint and on both data layers.

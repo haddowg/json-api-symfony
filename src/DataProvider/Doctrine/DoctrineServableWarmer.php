@@ -159,7 +159,8 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
      * {@see \haddowg\JsonApi\Resource\Filter\WhereThrough},
      * {@see \haddowg\JsonApi\Resource\Filter\WhereHasMatching}) or a custom filter
      * targets a relationship / path, not a column, and a dotted column (pivot /
-     * embedded) is left to its own path.
+     * embedded) is left to its own path. A filter family resolves its filters only
+     * against a request, so neither it nor the filters it returns can be checked here.
      *
      * @param list<FilterInterface> $filters
      * @param ClassMetadata<object> $metadata
