@@ -253,6 +253,7 @@ its own mode:
     path: 'import',
     scope: ActionScope::Collection,
     input: ActionInput::Raw,
+    inputType: 'track-imports',                                 // the type a JSON:API body holds
     accepts: [
         'text/csv',                                             // read in the action's mode, Raw
         'image/*',                                              // any image type
@@ -264,7 +265,9 @@ its own mode:
 
 An entry is a media type read in the action's own `input` mode, a media type key
 mapped to the `ActionInput` it is read in, or core's `AcceptedBody`, which also gives
-the OpenAPI document the body's schema. Wildcards such as `image/*` match any subtype,
+the OpenAPI document the body's schema. An action that reads any media type as a
+`Document` must name its `inputType`, as a `Document` action does; leaving it out fails
+the container build, naming the action and the media type. Wildcards such as `image/*` match any subtype,
 and parameters such as `charset` or a multipart `boundary` never stop a match. The three
 cross-origin form types match only when listed by name, never through a wildcard.
 

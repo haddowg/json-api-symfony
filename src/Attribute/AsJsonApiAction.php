@@ -41,8 +41,9 @@ use haddowg\JsonApiBundle\OpenApi\Metadata\OperationScopeOverrides;
  * type its body holds in `inputType`, which may be any registered type — a
  * `relatedOnly` resource or a standalone serializer/hydrator pair, both types with no
  * endpoints of their own, or the mount type itself — so an action can accept a bespoke
- * command document while staying valid JSON:API. A Document action that leaves
- * `inputType` `null` fails the container build.
+ * command document while staying valid JSON:API. An action that reads any body as a
+ * Document, through `input` or an `accepts` entry, and leaves `inputType` `null` fails
+ * the container build.
  *
  * `responds` declares the action's success response set for the generated OpenAPI
  * document (core's per-operation response declarations) — the same atomic

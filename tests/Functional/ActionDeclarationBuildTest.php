@@ -10,6 +10,8 @@ use haddowg\JsonApiBundle\Tests\Functional\App\ActionDeclarations\ExportAllCamel
 use haddowg\JsonApiBundle\Tests\Functional\App\ActionDeclarations\ExportAllGadget;
 use haddowg\JsonApiBundle\Tests\Functional\App\ActionDeclarations\ExportGadget;
 use haddowg\JsonApiBundle\Tests\Functional\App\ActionDeclarations\ExportGadgets;
+use haddowg\JsonApiBundle\Tests\Functional\App\ActionDeclarations\IngestGadgetBodies;
+use haddowg\JsonApiBundle\Tests\Functional\App\ActionDeclarations\IngestGadgets;
 use haddowg\JsonApiBundle\Tests\Functional\App\ActionDeclarations\PurgeGadget;
 use haddowg\JsonApiBundle\Tests\Functional\App\ActionDeclarations\ReservedExtensionGadget;
 use haddowg\JsonApiBundle\Tests\Functional\App\ActionDeclarations\RetitleGadget;
@@ -89,6 +91,28 @@ final class ActionDeclarationBuildTest extends KernelTestCase
             RetitleGadget::class,
         ));
         $this->boot(RetitleGadget::class);
+    }
+
+    #[Test]
+    public function aMediaTypeReadAsADocumentWithoutAnInputTypeFailsTheBuild(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage(\sprintf(
+            'The JSON:API action "ingest" on type "guard-gadgets", handled by "%s", reads "application/vnd.api+json" bodies as ActionInput::Document but declares no inputType.',
+            IngestGadgets::class,
+        ));
+        $this->boot(IngestGadgets::class);
+    }
+
+    #[Test]
+    public function anAcceptedBodyReadAsADocumentWithoutAnInputTypeFailsTheBuild(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage(\sprintf(
+            'The JSON:API action "ingest-bodies" on type "guard-gadgets", handled by "%s", reads "application/vnd.api+json" bodies as ActionInput::Document',
+            IngestGadgetBodies::class,
+        ));
+        $this->boot(IngestGadgetBodies::class);
     }
 
     #[Test]
