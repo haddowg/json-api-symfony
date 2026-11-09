@@ -36,14 +36,12 @@ final class CustomActionTest extends MusicCatalogKernelTestCase
     #[Test]
     public function aResourceScopeDocumentActionReissuesAnAlbumForAnAdmin(): void
     {
-        // The reissue document is validated against the mount `albums` type before the
-        // security gate runs, so it carries the required `title` alongside
-        // the new `releasedAt`.
+        // The reissue document is validated against the related-only `reissues` type
+        // before the security gate runs.
         $body = [
             'data' => [
-                'type' => 'albums',
+                'type' => 'reissues',
                 'attributes' => [
-                    'title' => 'OK Computer',
                     'releasedAt' => '2001-10-01T00:00:00+00:00',
                 ],
             ],
@@ -319,9 +317,9 @@ final class CustomActionTest extends MusicCatalogKernelTestCase
             self::assertIsArray(self::at($document, 'paths', $path, 'post'), $path);
             self::assertNull(self::at($document, 'paths', $path, 'post', 'x-safety'), $path);
         }
-        // The safety tier sits below the baseline, but the deprecated devices type marks
-        // its operations, so the document carries at least the deprecation tier.
-        self::assertSame(\max(GeneratorContract::BASELINE, GeneratorContract::DEPRECATION), self::at($document, 'info', 'x-generator', 'contract'));
+        // The safety tier sits below the baseline, but the related-only reissues type and
+        // the deprecated devices type each carry a higher tier.
+        self::assertSame(\max(GeneratorContract::BASELINE, GeneratorContract::DEPRECATION, GeneratorContract::RELATED_ONLY), self::at($document, 'info', 'x-generator', 'contract'));
     }
 
     private static function at(mixed $value, string ...$keys): mixed

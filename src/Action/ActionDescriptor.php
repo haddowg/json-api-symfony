@@ -9,7 +9,8 @@ namespace haddowg\JsonApiBundle\Action;
  * the {@see \haddowg\JsonApiBundle\Attribute\AsJsonApiAction} metadata flattened
  * into the values the {@see ActionInvoker} and the route loader consume, with the
  * decoupled-document defaults already applied: `inputType`/`outputType` resolve to
- * the mount `type` when the attribute left them `null`.
+ * the mount `type` when the attribute left them `null`, which a `Document` action's
+ * `inputType` never is.
  *
  * `handlerServiceId` is the service id of the
  * {@see ActionHandlerInterface} that handles the action, resolved through the

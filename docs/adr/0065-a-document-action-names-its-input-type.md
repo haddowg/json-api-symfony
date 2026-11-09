@@ -1,0 +1,3 @@
+# A document action names its input type
+
+A `Document` action that left `inputType` out used to read its body as the mount type, which validates the request as a full create of that type, so an action wanting one date had to send every required attribute too. That default surprised authors more often than it helped, so an action that reads any body as a `Document`, through `input` or an `accepts` entry, now fails the container build without an `inputType` and names the action, even though the change lands in a minor release; an action that really wants the mount type says so explicitly, and the usual answer is a `relatedOnly` type that exists only to be the input.

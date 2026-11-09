@@ -10,8 +10,11 @@ use haddowg\JsonApiBundle\Tests\Functional\App\ActionDeclarations\ExportAllCamel
 use haddowg\JsonApiBundle\Tests\Functional\App\ActionDeclarations\ExportAllGadget;
 use haddowg\JsonApiBundle\Tests\Functional\App\ActionDeclarations\ExportGadget;
 use haddowg\JsonApiBundle\Tests\Functional\App\ActionDeclarations\ExportGadgets;
+use haddowg\JsonApiBundle\Tests\Functional\App\ActionDeclarations\IngestGadgetBodies;
+use haddowg\JsonApiBundle\Tests\Functional\App\ActionDeclarations\IngestGadgets;
 use haddowg\JsonApiBundle\Tests\Functional\App\ActionDeclarations\PurgeGadget;
 use haddowg\JsonApiBundle\Tests\Functional\App\ActionDeclarations\ReservedExtensionGadget;
+use haddowg\JsonApiBundle\Tests\Functional\App\ActionDeclarations\RetitleGadget;
 use haddowg\JsonApiBundle\Tests\Functional\App\ActionDeclarations\SyncGadget;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
@@ -19,8 +22,9 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Routing\RouterInterface;
 
 /**
- * Action declarations whose operation ids would collide, or whose safety or extensions
- * are invalid, fail the container build, naming the handler class.
+ * Action declarations whose operation ids would collide, whose safety or extensions are
+ * invalid, or whose document input names no type, fail the container build, naming the
+ * handler class.
  */
 #[Group('spec:actions')]
 final class ActionDeclarationBuildTest extends KernelTestCase
@@ -76,6 +80,39 @@ final class ActionDeclarationBuildTest extends KernelTestCase
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('AsJsonApiAction extensions declares "x-oai-tag"');
         $this->boot(ReservedExtensionGadget::class);
+    }
+
+    #[Test]
+    public function aDocumentActionWithoutAnInputTypeFailsTheBuild(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage(\sprintf(
+            'The JSON:API action "retitle" on type "guard-gadgets", handled by "%s", takes input: ActionInput::Document but declares no inputType.',
+            RetitleGadget::class,
+        ));
+        $this->boot(RetitleGadget::class);
+    }
+
+    #[Test]
+    public function aMediaTypeReadAsADocumentWithoutAnInputTypeFailsTheBuild(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage(\sprintf(
+            'The JSON:API action "ingest" on type "guard-gadgets", handled by "%s", reads "application/vnd.api+json" bodies as ActionInput::Document but declares no inputType.',
+            IngestGadgets::class,
+        ));
+        $this->boot(IngestGadgets::class);
+    }
+
+    #[Test]
+    public function anAcceptedBodyReadAsADocumentWithoutAnInputTypeFailsTheBuild(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage(\sprintf(
+            'The JSON:API action "ingest-bodies" on type "guard-gadgets", handled by "%s", reads "application/vnd.api+json" bodies as ActionInput::Document',
+            IngestGadgetBodies::class,
+        ));
+        $this->boot(IngestGadgetBodies::class);
     }
 
     #[Test]

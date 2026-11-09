@@ -15,13 +15,15 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiAction;
 
 /**
  * `POST /actionWidgets/-actions/ingest` takes a body in any of several media types,
- * and reports which one matched and whether it was read as a JSON:API document.
+ * and reports which one matched and whether it was read as a JSON:API document, an
+ * `actionWidgets` document.
  */
 #[AsJsonApiAction(
     type: 'actionWidgets',
     path: 'ingest',
     scope: ActionScope::Collection,
     input: ActionInput::Raw,
+    inputType: 'actionWidgets',
     responds: [new MetaResult()],
     accepts: [
         'text/csv',

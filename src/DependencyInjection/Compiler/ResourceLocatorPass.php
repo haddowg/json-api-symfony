@@ -463,7 +463,23 @@ final class ResourceLocatorPass implements CompilerPassInterface
                 $scope = $this->actionScope($tag, $id);
                 $input = $this->actionInput($tag, $id);
                 $methods = $this->actionMethods($tag);
-                $inputType = \is_string($tag['inputType'] ?? null) && $tag['inputType'] !== '' ? $tag['inputType'] : $type;
+                $declaredInputType = \is_string($tag['inputType'] ?? null) && $tag['inputType'] !== '' ? $tag['inputType'] : null;
+
+                // A Document action names the type its request document holds; the mount
+                // type would validate the body as a full create of it. An accepts entry
+                // read as a Document is checked below, once the entries are parsed.
+                if ($input === ActionInput::Document && $declaredInputType === null) {
+                    throw new \LogicException(\sprintf(
+                        'The JSON:API action "%s" on type "%s", handled by "%s", takes input: ActionInput::Document but '
+                        . 'declares no inputType. Set inputType to the type its request document holds, for example a '
+                        . 'type declared #[AsJsonApiResource(relatedOnly: true)].',
+                        $path,
+                        $type,
+                        $class,
+                    ));
+                }
+
+                $inputType = $declaredInputType ?? $type;
 
                 // The declared success-response set, decoded from the
                 // action's `responds` JSON scalar; empty = the action defaults to a `200`
@@ -522,6 +538,23 @@ final class ResourceLocatorPass implements CompilerPassInterface
                 $summary = \is_string($tag['summary'] ?? null) && $tag['summary'] !== '' ? $tag['summary'] : null;
                 $description = \is_string($tag['description'] ?? null) && $tag['description'] !== '' ? $tag['description'] : null;
                 $accepts = $this->parseActionAccepts($tag['accepts'] ?? null);
+
+                // A media type read as a Document names its type the same way.
+                if ($declaredInputType === null) {
+                    foreach ($accepts as $accepted) {
+                        if ($accepted['input'] === ActionInput::Document->name) {
+                            throw new \LogicException(\sprintf(
+                                'The JSON:API action "%s" on type "%s", handled by "%s", reads "%s" bodies as '
+                                . 'ActionInput::Document but declares no inputType. Set inputType to the type its request '
+                                . 'document holds, for example a type declared #[AsJsonApiResource(relatedOnly: true)].',
+                                $path,
+                                $type,
+                                $class,
+                                $accepted['mediaType'],
+                            ));
+                        }
+                    }
+                }
                 $example = OperationExampleCodec::decodeOne($tag['example'] ?? null);
                 $extensions = $this->parseActionExtensions($tag['extensions'] ?? null);
 
