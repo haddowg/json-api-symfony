@@ -34,6 +34,8 @@ use haddowg\JsonApi\Resource\Field\Obj;
 use haddowg\JsonApi\Resource\Field\OneOf;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\ObjectValues;
+use haddowg\JsonApi\Resource\ValueTypeMismatch;
+use haddowg\JsonApi\Resource\ValueTypes;
 use haddowg\JsonApi\Schema\Error\Error;
 use haddowg\JsonApi\Schema\Error\ErrorSource;
 use haddowg\JsonApi\Validation\SchemaValueValidator;
@@ -46,6 +48,7 @@ use Symfony\Component\Validator\Constraints\NotBlank;
 use Symfony\Component\Validator\Constraints\NotNull;
 use Symfony\Component\Validator\Constraints\Optional;
 use Symfony\Component\Validator\Constraints\Required as RequiredField;
+use Symfony\Component\Validator\Constraints\Type;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
@@ -308,11 +311,72 @@ final class ResourceValidator
             $errors[] = $error;
         }
 
+        $errors = $this->withTypeMismatches($errors, ValueTypes::mismatchesIn($resource->allFields(), $incoming, $creating, $request));
+
         if ($errors === []) {
             return;
         }
 
         throw new ValidationFailed($errors);
+    }
+
+    /**
+     * Folds core's JSON type check into the violations, so a value of the wrong type has
+     * one error at its pointer, in place of whatever the field's other rules made of it or
+     * of anything inside it. A `null` the nullability rule already reported keeps the first of
+     * those errors.
+     *
+     * @param list<Error>             $errors
+     * @param list<ValueTypeMismatch> $mismatches
+     *
+     * @return list<Error>
+     */
+    private function withTypeMismatches(array $errors, array $mismatches): array
+    {
+        if ($mismatches === []) {
+            return $errors;
+        }
+
+        $reported = [];
+        foreach ($errors as $error) {
+            $reported[$error->source->pointer ?? ''] = true;
+        }
+
+        // Each error a mismatch covers gives way to one error for it, placed where the
+        // first of them was, so the order stays the document's.
+        $merged = [];
+        $placed = [];
+        foreach ($errors as $error) {
+            $pointer = $error->source->pointer ?? '';
+            foreach ($mismatches as $index => $mismatch) {
+                if (!$mismatch->covers($pointer)) {
+                    continue;
+                }
+                if (!isset($placed[$index])) {
+                    $placed[$index] = true;
+                    $merged = [...$merged, ...($mismatch->isNull() ? [$error] : [$this->errorAt($this->typeMessage($mismatch), $mismatch->pointer)])];
+                }
+
+                continue 2;
+            }
+            $merged[] = $error;
+        }
+        foreach ($mismatches as $index => $mismatch) {
+            if (!isset($placed[$index]) && !($mismatch->isNull() && isset($reported[$mismatch->pointer]))) {
+                $merged = [...$merged, ...[$this->errorAt($this->typeMessage($mismatch), $mismatch->pointer)]];
+            }
+        }
+
+        return $merged;
+    }
+
+    private function typeMessage(ValueTypeMismatch $mismatch): string
+    {
+        return match (true) {
+            $mismatch->isNull() => (new NotNull())->message,
+            $mismatch->expected === ValueTypes::OBJECT => self::NOT_AN_OBJECT,
+            default => \str_replace('{{ type }}', $mismatch->expected, (new Type('string'))->message),
+        };
     }
 
     /**
@@ -469,6 +533,12 @@ final class ResourceValidator
         foreach ($this->endpointPivotMetaErrors($this->pivotMetaCollection($relation, $creating), $meta, $index) as $metaError) {
             $errors[] = $metaError;
         }
+        $errors = $this->withTypeMismatches($errors, $this->pivotTypeMismatches(
+            $relation,
+            $incoming,
+            $creating,
+            fn(string $field): string => $this->pointers->forRelationshipEndpointLinkageMeta('[' . $field . ']', $index),
+        ));
         foreach ($this->pivotCompareErrors(
             $relation,
             $meta,
@@ -958,6 +1028,7 @@ final class ResourceValidator
 
         $memberMeta = $member['meta'] ?? [];
         $meta = \is_array($memberMeta) ? $this->pivotMetaIn($memberMeta) : [];
+        $incomingMeta = $meta;
 
         // A member already in the relationship merges its stored pivot row under the
         // incoming meta and validates in the update context; a new member validates
@@ -984,6 +1055,12 @@ final class ResourceValidator
                 ),
             );
         }
+        $errors = $this->withTypeMismatches($errors, $this->pivotTypeMismatches(
+            $relation,
+            $incomingMeta,
+            $creating,
+            fn(string $field): string => $this->pointers->forLinkageMeta($name, '[' . $field . ']', $index),
+        ));
 
         // Cross-pivot-field comparisons over the merged meta (the pivot analogue of the
         // attribute compare loop), pointed at the linkage meta.
@@ -997,6 +1074,27 @@ final class ResourceValidator
         }
 
         return $errors;
+    }
+
+    /**
+     * The pivot values a linkage member sent whose JSON type their pivot field does not
+     * take. Only the sent values are checked; a stored row folded in was valid when written.
+     *
+     * @param array<array-key, mixed>  $meta    the member's incoming pivot meta
+     * @param \Closure(string): string $pointer maps a pivot field name to its meta pointer
+     *
+     * @return list<ValueTypeMismatch>
+     */
+    private function pivotTypeMismatches(BelongsToMany $relation, array $meta, bool $creating, \Closure $pointer): array
+    {
+        $mismatches = [];
+        foreach ($relation->writablePivotFields($creating) as $field) {
+            if (\array_key_exists($field->name(), $meta)) {
+                $mismatches = [...$mismatches, ...ValueTypes::mismatchesOf($field, $meta[$field->name()], $pointer($field->name()), $creating)];
+            }
+        }
+
+        return $mismatches;
     }
 
     /**

@@ -192,6 +192,20 @@ Content-Type: application/vnd.api+json
 ] }
 ```
 
+### A value of the wrong JSON type
+
+Before the constraints get a say, each written value must have the JSON type the write
+schema documents for its field: a string for `Str` and the date fields, a boolean for
+`Boolean`, an integer for `Integer`, a number for `Decimal`, a list for `ArrayList` and an
+object for `Obj`, `OneOf`, `Map` and `ArrayHash`. Core's `ValueTypes::mismatchesIn()` finds
+every value without it, at any depth, and the bridge reports each one as the only error at
+its pointer, so `"yes"` sent for a `Boolean` is a `422` rather than a stored `true`, and
+`42` sent for a `Str` with a `maxLength()` gets one error about its type, not a length
+error as well. The detail reads `This value should be of type boolean.`, or
+`This value should be an object.` for an object. An explicit `null` keeps the
+nullability rule's error when the field is not nullable. A pivot field's value in a
+linkage member's `meta` is checked the same way.
+
 ## Id format (both directions)
 
 The `Id` field's format shortcuts (`uuid()`/`ulid()`/`numeric()`/`pattern()`)
