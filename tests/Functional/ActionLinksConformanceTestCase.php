@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
 use haddowg\JsonApiBundle\Tests\Functional\App\ActionLinks\ActionLinksInMemoryTestKernel;
+use haddowg\JsonApiBundle\Tests\Functional\App\Scopes\HeaderGrantedScopes;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
@@ -13,7 +14,8 @@ use PHPUnit\Framework\Attributes\Test;
  * ({@see InMemoryActionLinksTest}) and Doctrine ({@see DoctrineActionLinksTest}) kernels.
  *
  * Articles 1, 2 and 4 are guides and 3 and 5 are news. `review` links guides, `feature`
- * links guides for admins, and `archive`, an `asLink` action, links news.
+ * links guides for admins, and `archive`, an `asLink` action, links news. In the `scoped`
+ * environment `review` needs `articles:review` and `archive` needs `articles:archive`.
  */
 #[Group('spec:actions')]
 abstract class ActionLinksConformanceTestCase extends JsonApiFunctionalTestCase
@@ -78,6 +80,55 @@ abstract class ActionLinksConformanceTestCase extends JsonApiFunctionalTestCase
     {
         self::assertArrayNotHasKey('archive', $this->linksOf('/api/articles/1'));
         self::assertSame('http://localhost/api/articles/3/-actions/archive', self::at($this->linksOf('/api/articles/3'), 'archive', 'href'));
+    }
+
+    #[Test]
+    public function aTokenGrantingTheActionsScopesSeesTheirLinks(): void
+    {
+        $this->bootEnvironment('scoped');
+        $granted = self::scopes('articles:review articles:archive');
+
+        self::assertArrayHasKey('review', $this->linksOf('/api/articles/1', $granted));
+        self::assertArrayHasKey('archive', $this->linksOf('/api/articles/3', $granted));
+    }
+
+    #[Test]
+    public function aTokenMissingAnActionsScopeDoesNotSeeItsLink(): void
+    {
+        $this->bootEnvironment('scoped');
+        $granted = self::scopes('articles:archive');
+
+        self::assertArrayNotHasKey('review', $this->linksOf('/api/articles/1', $granted));
+        self::assertSame(403, $this->handle('/api/articles/1/-actions/review', 'POST', null, $granted)->getStatusCode());
+        self::assertArrayHasKey('archive', $this->linksOf('/api/articles/3', $granted));
+    }
+
+    #[Test]
+    public function aTokenWithNoScopesSeesNoScopedLink(): void
+    {
+        $this->bootEnvironment('scoped');
+        $granted = self::scopes('');
+
+        self::assertArrayNotHasKey('review', $this->linksOf('/api/articles/1', $granted));
+        self::assertArrayNotHasKey('archive', $this->linksOf('/api/articles/3', $granted));
+    }
+
+    #[Test]
+    public function aRequestWithoutAGrantKeepsEveryLink(): void
+    {
+        $this->bootEnvironment('scoped');
+
+        self::assertArrayHasKey('review', $this->linksOf('/api/articles/1'));
+        self::assertArrayHasKey('archive', $this->linksOf('/api/articles/3'));
+    }
+
+    #[Test]
+    public function scopesAndSecurityBothGateTheLink(): void
+    {
+        $this->bootEnvironment('scoped');
+
+        self::assertArrayHasKey('feature', $this->linksOf('/api/articles/1', self::ADMIN + self::scopes('')));
+        self::assertArrayNotHasKey('feature', $this->linksOf('/api/articles/1', self::USER + self::scopes('articles:review')));
     }
 
     #[Test]
@@ -147,6 +198,14 @@ abstract class ActionLinksConformanceTestCase extends JsonApiFunctionalTestCase
         $this->expectExceptionMessageMatches('/Resource ".*ActionLinkArticleResource" declares the action link "review" twice/');
 
         $this->bootEnvironment('duplicate', cold: true);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private static function scopes(string $scopes): array
+    {
+        return ['HTTP_' . \strtoupper(\str_replace('-', '_', HeaderGrantedScopes::HEADER)) => $scopes];
     }
 
     /**

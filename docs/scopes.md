@@ -110,6 +110,10 @@ plus the read scopes of what it returns. Each hop of an `?include` needs the rea
 the type it reaches: a refused hop is a `403` naming the path. A resource included only by
 default that the caller can't read is left out of `included`, and the request succeeds.
 
+An [action link](actions.md#exposing-an-action-as-a-resource-link-aslink) is left out the
+same way when the grant misses a scope its action needs, so a client isn't shown a link
+that would `403`.
+
 ## The error
 
 A token missing a scope gets a `403`:

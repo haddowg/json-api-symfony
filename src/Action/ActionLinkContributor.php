@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Action;
 
 use haddowg\JsonApi\OpenApi\Metadata\ActionScope;
+use haddowg\JsonApi\OpenApi\Metadata\OperationKey;
 use haddowg\JsonApi\OpenApi\OperationReference;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Link\ActionLink;
 use haddowg\JsonApi\Schema\Link\OperationLink;
+use haddowg\JsonApi\Scope\ScopeEnforcer;
 use haddowg\JsonApi\Serializer\ResourceLinkContributorInterface;
 use haddowg\JsonApi\Serializer\UriTypeAwareInterface;
 use haddowg\JsonApiBundle\Server\ServerProvider;
@@ -39,7 +41,12 @@ use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
  * document never advertises an action behind a gate it cannot evaluate. The build
  * fails in that case anyway, so this is a fallback.
  *
- * When security passes, a declared {@see ActionLink}'s `when()` condition decides,
+ * It is **scope-aware** too: when the server enforces OAuth scopes, the link is
+ * rendered only when the request's grant covers every scope the action's method
+ * requires, the same check core's {@see ScopeEnforcer} makes before invoking it. A
+ * request with no grant is not checked, as it is not when invoking.
+ *
+ * When security and scopes pass, a declared {@see ActionLink}'s `when()` condition decides,
  * with the rendered object and the request. A declared action link wins over
  * `asLink`, so its condition applies even when the action also sets `asLink`.
  *
@@ -105,9 +112,17 @@ final readonly class ActionLinkContributor implements ResourceLinkContributorInt
             ? $serializer->uriType()
             : $type;
 
+        $scopes = ScopeEnforcer::forServer($jsonApiServer);
+        $granted = $scopes?->grantedFor($request);
+
         $links = [];
         foreach ($descriptors as $descriptor) {
+            $method = $descriptor['methods'][0] ?? 'POST';
             if (!$this->isVisible($descriptor['security'], $object)) {
+                continue;
+            }
+            if ($scopes !== null && $granted !== null
+                && $scopes->missing($granted, $scopes->required($type, OperationKey::action($descriptor['path'], ActionScope::Resource, $method))) !== []) {
                 continue;
             }
             if (isset($declared[$descriptor['path']]) && !$declared[$descriptor['path']]->appliesTo($object, $request)) {
@@ -116,7 +131,7 @@ final readonly class ActionLinkContributor implements ResourceLinkContributorInt
 
             $links[$descriptor['path']] = new OperationLink(
                 '/' . $uriType . '/' . $id . '/-actions/' . $descriptor['path'],
-                OperationReference::action($uriType, $descriptor['path'], ActionScope::Resource, $descriptor['methods'][0] ?? 'POST'),
+                OperationReference::action($uriType, $descriptor['path'], ActionScope::Resource, $method),
             );
         }
 
