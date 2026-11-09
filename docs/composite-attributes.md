@@ -96,6 +96,44 @@ object sent for the list, a list sent for an element, and a list sent for an
 object child. The bridge leaves those values alone so core's `422` is the one the
 client sees.
 
+## Open objects
+
+An `Obj` declaring `additionalProperties()` also takes members it does not declare,
+each one checked by that member field. Core's
+[field docs](https://github.com/haddowg/json-api/blob/main/docs/field-types.md#open-members)
+cover the semantics. An inline spreadsheet import keyed by the user's column headers
+looks like this:
+
+```php
+ArrayList::make('rows')
+    ->of(Obj::make('row')
+        ->fields(Str::make('Key')->required())
+        ->additionalProperties(Str::make('*')->maxLength(200))
+        ->maxProperties(50))
+    ->maxItems(1000),
+```
+
+The bridge validates each undeclared member against the member field's translated
+constraints, with its nullability, at the member's own pointer. The key is escaped as a
+JSON Pointer token, so a too-long value under the `Unit/Price` header of the fourth row
+points at `/data/attributes/rows/3/Unit~1Price` and one under `a~b` at `.../a~0b`. A key
+holding brackets, such as `Cost [GBP]`, keeps them, since the pointer is built from the
+key rather than from a Symfony property path. `minProperties()` and `maxProperties()`
+count every member the object carries and point at the object, `/data/attributes/rows/3`.
+Declared children validate as they always have, and a member field that is itself a
+structured value validates its own children under the member's pointer.
+
+This holds wherever the object sits: an attribute, a child of an `Obj`, `Map` or `OneOf`
+variant at any depth, a list element, or a member of another open object. Core's
+`ObjectValues` walk finds each one. Only what the request sends is checked, so a
+`PATCH` that merges members onto a stored object counts only the members it sends. A
+member field read-only for the caller leaves its members unchecked, since core's
+hydration ignores them, and a closed object still refuses an undeclared member with a
+`400` `ATTRIBUTE_MEMBER_UNRECOGNIZED`.
+
+Doctrine stores an open object in its `json` column like any other `Obj`, the undeclared
+members beside the declared children.
+
 ## Authoring your own composite constraint
 
 `Shape` is not privileged — it is just a core

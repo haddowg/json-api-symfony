@@ -13,7 +13,9 @@ use haddowg\JsonApi\Resource\Constraint\CompareField;
 use haddowg\JsonApi\Resource\Constraint\Comparison;
 use haddowg\JsonApi\Resource\Constraint\ConstraintInterface;
 use haddowg\JsonApi\Resource\Constraint\MaxItems;
+use haddowg\JsonApi\Resource\Constraint\MaxProperties;
 use haddowg\JsonApi\Resource\Constraint\MinItems;
+use haddowg\JsonApi\Resource\Constraint\MinProperties;
 use haddowg\JsonApi\Resource\Constraint\Nullable;
 use haddowg\JsonApi\Resource\Constraint\Required;
 use haddowg\JsonApi\Resource\Constraint\Shape;
@@ -31,6 +33,7 @@ use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\Obj;
 use haddowg\JsonApi\Resource\Field\OneOf;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\ObjectValues;
 use haddowg\JsonApi\Schema\Error\Error;
 use haddowg\JsonApi\Schema\Error\ErrorSource;
 use haddowg\JsonApi\Validation\SchemaValueValidator;
@@ -100,6 +103,12 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
  * as that shape would validate as an attribute, at `/data/attributes/<list>/<index>`.
  * A write builds every element whole, so a child required on update must be present
  * in each element of a `PATCH` as well as a create.
+ *
+ * An {@see Obj} open to undeclared members, or bounding how many it carries, is
+ * checked wherever it sits by a document-level pass over core's {@see ObjectValues}:
+ * its member count at the object, and each undeclared member against the member field
+ * at the member's own pointer, built from the key rather than a Symfony property path,
+ * which cannot carry a key holding `[` or `]`.
  */
 final class ResourceValidator
 {
@@ -231,6 +240,10 @@ final class ResourceValidator
                     $errors[] = $error;
                 }
             }
+        }
+
+        foreach ($this->objectValueErrors($resource, $incoming, $creating, $request) as $error) {
+            $errors[] = $error;
         }
 
         // A union (OneOf) validates value-dependently — the incoming value selects the
@@ -1180,6 +1193,17 @@ final class ResourceValidator
         );
     }
 
+    private function errorAt(string $detail, string $pointer): Error
+    {
+        return new Error(
+            status: '422',
+            code: 'VALIDATION_FAILED',
+            title: 'Unprocessable Entity',
+            detail: $detail,
+            source: ErrorSource::fromPointer($pointer),
+        );
+    }
+
     private function error(string $detail, string $bracketedPath): Error
     {
         return new Error(
@@ -1316,6 +1340,23 @@ final class ResourceValidator
      */
     private function fieldConstraint(FieldInterface $field, bool $creating, bool $descend = true, ?JsonApiRequestInterface $request = null, mixed $value = null, bool $whole = false, bool $elements = true): RequiredField|Optional
     {
+        $constraints = $this->presentValueConstraints($field, $creating, $descend, $request, $value, $elements);
+
+        // Presence is only mandatory on create; a partial update never requires a member,
+        // except inside a value it writes whole.
+        return ($creating || $whole) && $this->hasRequired($field, $creating, $request, $value)
+            ? new RequiredField($constraints)
+            : new Optional($constraints);
+    }
+
+    /**
+     * The rules a present value of the field must pass: its value rules, led by the
+     * non-empty or non-null rule its presence and nullability call for.
+     *
+     * @return list<\Symfony\Component\Validator\Constraint>
+     */
+    private function presentValueConstraints(FieldInterface $field, bool $creating, bool $descend, ?JsonApiRequestInterface $request, mixed $value, bool $elements): array
+    {
         $constraints = $this->valueConstraints($field, $creating, $descend, $request, $elements);
 
         $isRequired = $this->hasRequired($field, $creating, $request, $value);
@@ -1329,11 +1370,7 @@ final class ResourceValidator
             \array_unshift($constraints, new NotNull());
         }
 
-        // Presence is only mandatory on create; a partial update never requires a member,
-        // except inside a value it writes whole.
-        return ($creating || $whole) && $isRequired
-            ? new RequiredField($constraints)
-            : new Optional($constraints);
+        return $constraints;
     }
 
     /**
@@ -1414,6 +1451,9 @@ final class ResourceValidator
             }
             if ($constraint instanceof Required || $constraint instanceof Nullable) {
                 continue; // resolved by fieldConstraint(), not translated as a value rule
+            }
+            if ($field instanceof Obj && ($constraint instanceof MinProperties || $constraint instanceof MaxProperties)) {
+                continue; // counted wherever the object sits, by objectValueErrors()
             }
             if ($constraint instanceof CompareField) {
                 continue; // cross-field; validated at the document level, not per-field
@@ -1551,6 +1591,50 @@ final class ResourceValidator
         }
 
         return new Collection(fields: $fields, allowExtraFields: true);
+    }
+
+    /**
+     * Validates every {@see Obj} value core's {@see ObjectValues} finds in the attributes
+     * the request sent: its member count against its `minProperties()` /
+     * `maxProperties()` at the object, then each undeclared member of an open object
+     * against the member field at `<object>/<key>`, the key escaped as a JSON Pointer
+     * token. A member's own nested violations extend that pointer.
+     *
+     * @param array<array-key, mixed> $incoming the attributes the request sent
+     *
+     * @return list<Error>
+     */
+    private function objectValueErrors(AbstractResource $resource, array $incoming, bool $creating, JsonApiRequestInterface $request): array
+    {
+        $errors = [];
+        foreach (ObjectValues::in($resource->allFields(), $incoming, $creating, $request) as $object) {
+            $counts = [];
+            foreach ($object->memberCounts($creating) as $count) {
+                foreach ($this->translator->translate($count, $request) as $symfonyConstraint) {
+                    $counts[] = $symfonyConstraint;
+                }
+            }
+            if ($counts !== []) {
+                foreach ($this->validator->validate($object->value, $counts) as $violation) {
+                    $errors[] = $this->errorAt((string) $violation->getMessage(), $object->pointer);
+                }
+            }
+
+            if ($object->memberField === null) {
+                continue;
+            }
+            foreach ($object->additional as $key => $member) {
+                $constraints = $this->presentValueConstraints($object->memberField, $creating, true, $request, $member, true);
+                foreach ($this->validator->validate($member, $constraints) as $violation) {
+                    $errors[] = $this->errorAt(
+                        (string) $violation->getMessage(),
+                        $this->pointers->appendPropertyPath($object->memberPointer($key), (string) $violation->getPropertyPath()),
+                    );
+                }
+            }
+        }
+
+        return $errors;
     }
 
     /**

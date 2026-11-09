@@ -36,6 +36,16 @@ final class JsonPointerBuilder
     }
 
     /**
+     * Extends a pointer with a Symfony property path relative to the value it points at
+     * (`[legs][0]` → `/legs/0`), for a value validated on its own, such as one member of
+     * an open object, whose own pointer is built from its key.
+     */
+    public function appendPropertyPath(string $pointer, string $propertyPath): string
+    {
+        return $pointer . $this->metaSuffix($propertyPath);
+    }
+
+    /**
      * The pointer for a violation on a relationship **linkage** id: the to-one
      * linkage points at `/data/relationships/<rel>/data/id`, and a to-many member
      * at `/data/relationships/<rel>/data/<index>/id` (the index supplied for a
