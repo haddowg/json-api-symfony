@@ -134,6 +134,48 @@ final class DoctrinePivotWriteTest extends JsonApiFunctionalTestCase
 
     #[Test]
     #[Group('spec:updating-relationships')]
+    public function aPivotValueOfTheWrongJsonTypeIs422WithNoWrite(): void
+    {
+        // "5" is a string, not the integer `position` takes: one 422 at the linkage meta,
+        // never cast to 5.
+        $response = $this->handle(
+            self::BASE_URI . '/playlists/1/relationships/tracks',
+            'PATCH',
+            ['data' => [['type' => 'tracks', 'id' => '1', 'meta' => ['pivot' => ['position' => '5']]]]],
+        );
+
+        self::assertSame(422, $response->getStatusCode(), (string) $response->getContent());
+        $document = \json_decode((string) $response->getContent(), true);
+        self::assertIsArray($document);
+        self::assertCount(1, \is_array($document['errors'] ?? null) ? $document['errors'] : []);
+        self::assertSame('/data/0/meta/pivot/position', $this->firstErrorPointer($response));
+
+        $byId = $this->byId($this->fetchDocument('/playlists/1/tracks?sort=position'));
+        self::assertSame(1, $this->pivotField($byId['1'] ?? [], 'position'));
+    }
+
+    #[Test]
+    #[Group('spec:creating-resources')]
+    public function anEmbeddedPivotValueOfTheWrongJsonTypeIs422(): void
+    {
+        $response = $this->handle(
+            self::BASE_URI . '/playlists',
+            'POST',
+            ['data' => [
+                'type' => 'playlists',
+                'attributes' => ['name' => 'Fresh'],
+                'relationships' => [
+                    'tracks' => ['data' => [['type' => 'tracks', 'id' => '1', 'meta' => ['pivot' => ['position' => true]]]]],
+                ],
+            ]],
+        );
+
+        self::assertSame(422, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame('/data/relationships/tracks/data/0/meta/pivot/position', $this->firstErrorPointer($response));
+    }
+
+    #[Test]
+    #[Group('spec:updating-relationships')]
     public function aReadOnlyPivotFieldSuppliedInMetaIsIgnored(): void
     {
         // addedAt is a readOnly pivot field: supplying it in meta is ignored (never
