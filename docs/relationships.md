@@ -835,6 +835,23 @@ is untouched. The hook itself is core; see
 [core `relations.md`](https://github.com/haddowg/json-api/blob/main/docs/relations.md)
 for the full reference.
 
+Pass `fields:` to describe what the resolver returns, and the served
+[OpenAPI document](openapi.md) types each linkage identifier's `meta` with those members
+instead of leaving it open:
+
+```php
+HasMany::make('members', 'users')
+    ->identifierMeta(
+        fn(Team $team, User $member, $request): array => ['role' => $team->roleOf($member)],
+        fields: [Str::make('role')->guaranteed()],
+    ),
+```
+
+The relation gets a `<Type><Rel>IdentifierMeta` component, and on a `belongsToMany` it
+sits beside `pivot` in the same `meta`. The fields only describe the shape: the resolver
+still produces the values, so return them in their wire form. They are read-only, so a
+write never sends them, and a member named `pivot` is refused.
+
 ## Relationship mutation
 
 The bundle serves `PATCH`/`POST`/`DELETE …/relationships/{rel}` over the

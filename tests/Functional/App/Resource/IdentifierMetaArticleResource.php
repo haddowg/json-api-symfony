@@ -7,6 +7,8 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\Resource;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\AbstractRelationBuilder;
 use haddowg\JsonApi\Resource\Field\Accessor;
+use haddowg\JsonApi\Resource\Field\Integer;
+use haddowg\JsonApi\Resource\Field\Str;
 
 /**
  * The shared `articles` declaration for the identifier-meta conformance suite
@@ -18,7 +20,8 @@ use haddowg\JsonApi\Resource\Field\Accessor;
  * `getMeta()` could never produce — `fromArticle` is the *parent's* id carried on
  * the *related* identifier. The same closures run identically on both providers
  * (the public `id` / `name` members are read through core's {@see Accessor}), so a
- * failure localises to the provider, not the fixture.
+ * failure localises to the provider, not the fixture. Each declares the members its
+ * resolver returns, so the served OpenAPI document types them.
  *
  * Not `final` so the Doctrine variant
  * ({@see \haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\DoctrineIdentifierMetaArticleResource})
@@ -38,6 +41,9 @@ class IdentifierMetaArticleResource extends BaseArticleResource
                 $field->identifierMeta(static fn(mixed $article, mixed $author, JsonApiRequestInterface $request): array => [
                     'fromArticle' => Accessor::get($article, 'id'),
                     'authorName' => Accessor::get($author, 'name'),
+                ], fields: [
+                    Integer::make('fromArticle')->guaranteed(),
+                    Str::make('authorName'),
                 ]);
             }
 
@@ -45,6 +51,9 @@ class IdentifierMetaArticleResource extends BaseArticleResource
                 $field->identifierMeta(static fn(mixed $article, mixed $comment, JsonApiRequestInterface $request): array => [
                     'fromArticle' => Accessor::get($article, 'id'),
                     'commentId' => Accessor::get($comment, 'id'),
+                ], fields: [
+                    Integer::make('fromArticle')->guaranteed(),
+                    Integer::make('commentId')->guaranteed(),
                 ]);
             }
         }
