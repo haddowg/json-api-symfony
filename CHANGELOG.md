@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.3.2](https://github.com/haddowg/json-api-symfony/compare/v2.3.1...v2.3.2) (2026-11-09)
+
+
+### Bug Fixes
+
+* **actions:** hide action links the token lacks scopes for ([#319](https://github.com/haddowg/json-api-symfony/issues/319)) ([a201635](https://github.com/haddowg/json-api-symfony/commit/a20163583f9a6c948474e3787abe6c216c4b8d83))
+* **doctrine:** write relationships through reflection ([#320](https://github.com/haddowg/json-api-symfony/issues/320)) ([e869194](https://github.com/haddowg/json-api-symfony/commit/e869194f737e8bf097afc1cfc791d4eb7711a17d))
+* **validation:** enforce to-many minItems and maxItems ([#318](https://github.com/haddowg/json-api-symfony/issues/318)) ([7ebe080](https://github.com/haddowg/json-api-symfony/commit/7ebe080907536eaea22e9632f7340af3caf8b6b7))
+
 ## [2.3.1](https://github.com/haddowg/json-api-symfony/compare/v2.3.0...v2.3.1) (2026-11-08)
 
 
