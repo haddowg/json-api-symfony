@@ -57,7 +57,7 @@ use haddowg\JsonApi\Response\NoContentResponse;
     methods: ['POST'],              // default ['POST']
     scope: ActionScope::Resource,   // Resource (default) | Collection
     input: ActionInput::None,       // None (default) | Document | Raw
-    inputType: null,                // Document mode only: hydrator type for the request doc; defaults to `type`
+    inputType: null,                // the type a Document request holds; required for Document, unused otherwise
     responds: [new ActionResource('articles')],   // the OpenAPI success response set; omitted = a 200 mount-type document
     server: null,                   // multi-server assignment; defaults to the implicit `default`
     security: "is_granted('PUBLISH', subject)",   // optional authz expression (see Authorization)
@@ -143,27 +143,55 @@ POST /playlists/42/-actions/archive
 `Document` mode runs the full write pipeline on the body: it is parsed,
 structurally validated, semantically validated through the [Validator
 bridge](validation.md) against `inputType`'s constraints, and **hydrated to an
-object**. By default `inputType` is the mount `type`, so the action receives a
-hydrated instance of the mount type:
+object**. A `Document` action must name its `inputType`: the type the request
+document holds. Leaving it out fails the container build, naming the action. The
+usual choice is a type that exists only to be that input, declared
+[`relatedOnly`](resources.md#relatedonly-a-type-with-no-endpoints-of-its-own) so it gets
+no endpoints of its own:
 
 ```php
-#[AsJsonApiAction(type: 'articles', path: 'publish', input: ActionInput::Document)]
-final class PublishArticle implements ActionHandlerInterface
+#[AsJsonApiResource(relatedOnly: true)]
+final class PublicationResource extends AbstractResource
 {
+    public static string $type = 'publications';
+
+    public function fields(): array
+    {
+        return [Id::make(), DateTime::make('publishedAt')->required()];
+    }
+}
+
+#[AsJsonApiAction(type: 'articles', path: 'publish', input: ActionInput::Document, inputType: 'publications')]
+final class PublishArticle implements ActionHandlerInterface, ActionInputFactoryInterface
+{
+    public function newInput(JsonApiRequestInterface $body): object
+    {
+        return new Publication();           // the blank object the body is hydrated onto
+    }
+
     public function handle(ActionContext $context): DataResponse
     {
         $article = $context->entity();      // the existing entity (resource scope)
-        $input   = $context->input();       // a hydrated Article from the request body
+        $input   = $context->input();       // the hydrated Publication from the request body
 
         // input and entity are INDEPENDENT — apply input onto entity yourself:
-        $article->setStatus($input->getStatus());
-        $article->setPublishedAt($input->getPublishedAt());
+        $article->publishAt($input->publishedAt);
         // …persist…
 
         return $context->data($article);
     }
 }
 ```
+
+The body is then a `publications` document, validated against that type's fields
+alone:
+
+```json
+{"data": {"type": "publications", "attributes": {"publishedAt": "2026-11-09T09:00:00+00:00"}}}
+```
+
+`inputType` may also be the mount type itself, which validates the body as a full
+create of it, required fields and all.
 
 > **No implicit merge.** The hydrated `input` and the resolved `entity` are kept
 > **independent** — a resource-scope `Document` action reads both and applies one
@@ -176,8 +204,8 @@ fresh input object and hydrates the body into it:
    (`newInput(JsonApiRequestInterface $body): object`), that object is used — this
    is how a **bespoke command DTO** backed only by a serializer/hydrator pair (no
    persister) supplies its blank instance;
-2. otherwise the bundle instantiates via the `inputType`'s persister — the common
-   case where `inputType` defaults to the mount `type`.
+2. otherwise the bundle instantiates via the `inputType`'s persister, which exists
+   when `inputType` is a type with a create endpoint, such as the mount `type`.
 
 ### `Raw` — a non-JSON:API body (uploads, blobs)
 
@@ -258,11 +286,11 @@ whatever its `accepts`, and the handler sees no body: clients send that type on 
 
 ## Custom input and output types
 
-By default an action speaks the mount type on both sides. But the request and
-response documents are **decoupled from the mount type**: `inputType` and
-`outputType` may each point at any other registered type — including a
-**standalone serializer/hydrator pair** (a [capability-composed](capability-composition.md)
-type with no endpoints of its own). So an action can accept a bespoke *command*
+By default an action responds with the mount type, and a `Document` action names
+the type it reads in `inputType`. Both documents are **decoupled from the mount
+type**: `inputType` and the response type may each point at any other registered type,
+including a `relatedOnly` resource or a **standalone serializer/hydrator pair** (a
+[capability-composed](capability-composition.md) type with no endpoints of its own). So an action can accept a bespoke *command*
 document and return a bespoke *result* document while both stay valid JSON:API.
 
 ```php

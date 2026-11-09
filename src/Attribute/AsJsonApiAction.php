@@ -37,11 +37,12 @@ use haddowg\JsonApiBundle\OpenApi\Metadata\OperationScopeOverrides;
  * hydrates a JSON:API document into an `inputType` instance; {@see ActionInput::Raw}
  * relaxes request content-type negotiation for a non-JSON:API upload.
  *
- * The request document is **decoupled from the mount type**: it defaults to it, but
- * `inputType` (Document mode only) may point at any other registered type — including
- * a standalone serializer/hydrator pair (a type with no endpoints of its own) — so an
- * action can accept a bespoke command document while staying valid JSON:API. A `null`
- * `inputType` resolves to `type`.
+ * The request document is **decoupled from the mount type**: a Document action names the
+ * type its body holds in `inputType`, which may be any registered type — a
+ * `relatedOnly` resource or a standalone serializer/hydrator pair, both types with no
+ * endpoints of their own, or the mount type itself — so an action can accept a bespoke
+ * command document while staying valid JSON:API. A Document action that leaves
+ * `inputType` `null` fails the container build.
  *
  * `responds` declares the action's success response set for the generated OpenAPI
  * document (core's per-operation response declarations) — the same atomic

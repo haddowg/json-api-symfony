@@ -4,24 +4,27 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Action;
 
+use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Response\DataResponse;
 use haddowg\JsonApiBundle\Action\ActionContext;
 use haddowg\JsonApiBundle\Action\ActionHandlerInterface;
 use haddowg\JsonApiBundle\Action\ActionInput;
+use haddowg\JsonApiBundle\Action\ActionInputFactoryInterface;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiAction;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Album;
+use haddowg\JsonApiBundle\Examples\MusicCatalog\Model\Reissue;
 
 /**
  * `POST /albums/{id}/-actions/reissue` — a **resource-scope `Document`** custom action:
  * a non-CRUD verb (re-releasing an album under a
  * new date) hanging off the `albums` type under the reserved `-actions` segment.
  *
- * It is a `Document` action with the default `inputType` (the mount `albums` type), so
+ * It is a `Document` action whose `inputType` is the related-only `reissues` type, so
  * the request body is negotiated, structurally + semantically validated and hydrated
- * into a fresh {@see Album} — from which the handler reads the new `releasedAt` and
- * applies it onto the resolved album (the two are independent: "no implicit
- * merge"). It is gated by `security: is_granted('ROLE_ADMIN')`, evaluated at the
+ * into a fresh {@see Reissue} that {@see newInput()} supplies — from which the handler
+ * reads the new `releasedAt` and applies it onto the resolved album (the two are
+ * independent: "no implicit merge"). It is gated by `security: is_granted('ROLE_ADMIN')`, evaluated at the
  * before-action gate against the resolved album, so only an admin may reissue. The
  * change is persisted through the storage-agnostic {@see DataPersisterRegistry}
  * (handlers own their side-effects), then the updated album is rendered through the
@@ -32,22 +35,28 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Album;
     type: 'albums',
     path: 'reissue',
     input: ActionInput::Document,
+    inputType: 'reissues',
     security: "is_granted('ROLE_ADMIN')",
     asLink: true,
 )]
-final class ReissueAlbum implements ActionHandlerInterface
+final class ReissueAlbum implements ActionHandlerInterface, ActionInputFactoryInterface
 {
     public function __construct(private readonly DataPersisterRegistry $persisters) {}
+
+    public function newInput(JsonApiRequestInterface $body): object
+    {
+        return new Reissue();
+    }
 
     public function handle(ActionContext $context): DataResponse
     {
         $album = $context->entity();
         \assert($album instanceof Album);
 
-        // The hydrated input is an independent Album the request document populated;
-        // read its reissue date and apply it onto the resolved album.
+        // The hydrated input is the Reissue the request document populated; apply its
+        // date onto the resolved album.
         $input = $context->input();
-        \assert($input instanceof Album);
+        \assert($input instanceof Reissue);
 
         $album->releasedAt = $input->releasedAt;
 

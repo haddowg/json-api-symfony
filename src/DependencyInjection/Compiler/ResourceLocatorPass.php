@@ -463,7 +463,22 @@ final class ResourceLocatorPass implements CompilerPassInterface
                 $scope = $this->actionScope($tag, $id);
                 $input = $this->actionInput($tag, $id);
                 $methods = $this->actionMethods($tag);
-                $inputType = \is_string($tag['inputType'] ?? null) && $tag['inputType'] !== '' ? $tag['inputType'] : $type;
+                $declaredInputType = \is_string($tag['inputType'] ?? null) && $tag['inputType'] !== '' ? $tag['inputType'] : null;
+
+                // A Document action names the type its request document holds; the mount
+                // type would validate the body as a full create of it.
+                if ($input === ActionInput::Document && $declaredInputType === null) {
+                    throw new \LogicException(\sprintf(
+                        'The JSON:API action "%s" on type "%s", handled by "%s", takes input: ActionInput::Document but '
+                        . 'declares no inputType. Set inputType to the type its request document holds, for example a '
+                        . 'type declared #[AsJsonApiResource(relatedOnly: true)].',
+                        $path,
+                        $type,
+                        $class,
+                    ));
+                }
+
+                $inputType = $declaredInputType ?? $type;
 
                 // The declared success-response set, decoded from the
                 // action's `responds` JSON scalar; empty = the action defaults to a `200`
