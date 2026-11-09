@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\ActionLinks;
 
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Routing\OpenApiRouteLoader;
+use haddowg\JsonApiBundle\Tests\Functional\App\Scopes\HeaderGrantedScopes;
 use haddowg\JsonApiBundle\Tests\Functional\App\Security\AccessTokenHandler;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
@@ -17,6 +18,7 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
  *
  * - `test`: an empty `base_uri`, so links take the request origin plus the `/api` mount;
  * - `configured`: a configured `base_uri` that carries the mount;
+ * - `scoped`: OAuth scopes from the `X-Granted-Scopes` header ({@see ActionLinkScopes});
  * - `missing`, `clash`, `duplicate`: a misdeclared resource ({@see LinksArticleActions})
  *   whose boot fails.
  */
@@ -26,10 +28,21 @@ trait ActionLinksKernel
 
     private function configureShared(ContainerConfigurator $container): void
     {
+        $openapi = ['expose_in_prod' => true];
+        if ($this->environment === 'scoped') {
+            $openapi['security'] = [
+                'schemes' => ['oauth2' => [
+                    'type' => 'oauth2',
+                    'flows' => ['clientCredentials' => ['tokenUrl' => 'https://example.test/oauth/token']],
+                ]],
+                'scope_scheme' => 'oauth2',
+            ];
+        }
+
         $container->extension('json_api', [
             'base_uri' => $this->environment === 'configured' ? self::CONFIGURED_BASE_URI : '',
             'version' => '1.1',
-            'openapi' => ['expose_in_prod' => true],
+            'openapi' => $openapi,
         ]);
 
         $container->extension('security', [
@@ -66,6 +79,11 @@ trait ActionLinksKernel
         $services->set(ReviewArticle::class);
         $services->set(FeatureArticle::class);
         $services->set(ArchiveArticle::class);
+
+        if ($this->environment === 'scoped') {
+            $services->set(HeaderGrantedScopes::class);
+            $services->set(ActionLinkScopes::class);
+        }
     }
 
     private function importRoutes(RoutingConfigurator $routes): void

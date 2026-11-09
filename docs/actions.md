@@ -734,7 +734,13 @@ its link is rendered **only when the current requester would pass that same gate
 evaluated exactly as the `BeforeActionEvent` gate evaluates it at invocation — so a
 client never sees a link to an action it cannot invoke (the `publish` link above is
 absent for a user who lacks `PUBLISH` on article 42). An action with no `security`
-always renders its link. The link is added without the resource's own
+always renders its link.
+
+When the server enforces [OAuth scopes](scopes.md), the link also needs the request's
+grant to cover every scope the action requires, checked for the method the link names.
+A token missing one of them doesn't see the link, just as invoking the action would get
+a `403`. A request with no grant isn't checked for scopes, and without a configured
+grant provider nothing changes. The link is added without the resource's own
 `getLinks()` having to know about it, and an author-supplied link of the same name
 always wins.
 
@@ -753,13 +759,14 @@ included `articles` member too.
 > `asLink` is **resource scope only**: a collection-scope action has no resource to
 > hang a link on, so `asLink: true` on a `ActionScope::Collection` action is a
 > build-time error. The security-aware visibility uses the same authorization checker
-> as the `security` gate, so link visibility and invocation always agree. An action
+> as the `security` gate, and the scope check reads the same scope table as invocation,
+> so link visibility and invocation always agree. An action
 > with a `security` expression and no firewall [fails the
 > build](authorization.md#enabling-the-layer).
 
 ### Showing an action link only in some states
 
-`asLink` renders the link whenever the action's security passes. A link that belongs
+`asLink` renders the link whenever the action's security and scopes pass. A link that belongs
 only to some states, such as completing an upload only while the file is pending,
 shouldn't move that state into `security`. The invocation gate would then answer an
 out-of-state call with a plain `403` instead of the handler's own error. Declare the link
@@ -785,8 +792,9 @@ final class AlbumResource extends AbstractResource
 
 `ActionLink::for()` names a resource-scope action of the resource's own type. The bundle
 still builds the href, the method and the `describedby` from the action, on the server's
-link base. It checks the action's `security` first, then calls `when()` with the rendered
-object and the request, and renders the link only when both pass. `when()` is optional.
+link base. It checks the action's `security` and scopes first, then calls `when()` with
+the rendered object and the request, and renders the link only when all of them pass.
+`when()` is optional.
 
 Declaring an `ActionLink` implies the link, so the action needs no `asLink: true`. When it
 has one anyway, the `ActionLink`'s condition and description apply. `describedAs()`
