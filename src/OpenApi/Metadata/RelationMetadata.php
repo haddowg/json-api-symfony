@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\OpenApi\Metadata;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresAlwaysCounted;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresDeprecatedRelation;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresIdentifiedMembers;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresIdentifierMeta;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresPolymorphicRelation;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresRelationExampleId;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresRelationUriFieldName;
@@ -34,7 +35,7 @@ use haddowg\JsonApiBundle\DataProvider\RelatedReadRouter;
  * the {@see \haddowg\JsonApi\Server\Server} fallback chain + the relation graph) and
  * passed in, as is whether that paginator counts on every request.
  */
-final readonly class RelationMetadata implements RelationMetadataInterface, DeclaresWriteOnlyRelation, DeclaresDeprecatedRelation, DeclaresRelationUriFieldName, DeclaresAlwaysCounted, DeclaresRelationExampleId, DeclaresPolymorphicRelation, DeclaresIdentifiedMembers
+final readonly class RelationMetadata implements RelationMetadataInterface, DeclaresWriteOnlyRelation, DeclaresDeprecatedRelation, DeclaresRelationUriFieldName, DeclaresAlwaysCounted, DeclaresRelationExampleId, DeclaresPolymorphicRelation, DeclaresIdentifiedMembers, DeclaresIdentifierMeta
 {
     /**
      * @param list<string> $relatedIncludablePaths the related type's includable paths (resolved by the source)
@@ -190,5 +191,10 @@ final readonly class RelationMetadata implements RelationMetadataInterface, Decl
         // sort vocabulary from. Empty for any non-pivot relation, so the projector
         // types meta.pivot only where the runtime actually renders it.
         return PivotFields::declaredFor($this->relation);
+    }
+
+    public function identifierMetaFields(): array
+    {
+        return $this->relation instanceof AbstractRelationValue ? $this->relation->identifierMetaFields() : [];
     }
 }

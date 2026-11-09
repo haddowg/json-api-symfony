@@ -664,6 +664,15 @@ final class MediaResource extends AbstractResource
 }
 ```
 
+### Typed identifier meta
+
+A relation's `identifierMeta()` resolver is free-form, so its members are an open `meta`
+in the document until you declare them with `fields:`. The bundle reports them to core's
+projector, which adds a `<Type><Rel>IdentifierMeta` component and points each response
+linkage identifier's `meta` at it. On a `belongsToMany` the declared members and `pivot`
+sit together in that `meta`. See
+[parent-aware identifier meta](relationships.md#parent-aware-identifier-meta).
+
 ### Vendor extensions
 
 `#[AsJsonApiResource(extensions: […], operationExtensions: […])]` adds OpenAPI `x-`
