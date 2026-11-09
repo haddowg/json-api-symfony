@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use haddowg\JsonApiBundle\Tests\Functional\App\DoctrineServable\ComputedPivotWidgetResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\DoctrineServable\DoctrineServableKernel;
 use haddowg\JsonApiBundle\Tests\Functional\App\DoctrineServable\FilterFailWidgetResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\DoctrineServable\PivotFailWidgetResource;
@@ -76,6 +77,14 @@ final class DoctrineServableValidationTest extends KernelTestCase
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessageMatches('/pivot relation "gadgets".*through\(/s');
         $this->bootWithSubject(PivotFailWidgetResource::class);
+    }
+
+    #[Test]
+    #[Group('spec:fetching')]
+    public function aPivotWhoseFieldsAreAllComputedNeedsNoAssociationEntity(): void
+    {
+        $this->bootWithSubject(ComputedPivotWidgetResource::class);
+        self::assertNotNull(static::$kernel);
     }
 
     #[Test]

@@ -1826,7 +1826,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         // hidden one is not (it never renders), so when the keyset walks it, select
         // it here purely for the mint.
         $rowKeyOfColumn = [];
-        foreach (PivotFields::declaredFor($relation) as $field) {
+        foreach (PivotFields::storedFor($relation) as $field) {
             $column = $field->column() ?? $field->name();
             if (!isset($aliasOfColumn[$column])) {
                 continue;
@@ -2018,7 +2018,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             ->groupBy('jsonapi_parent_id')
             ->addGroupBy('jsonapi_far_id');
 
-        foreach (PivotFields::declaredFor($relation) as $field) {
+        foreach (PivotFields::storedFor($relation) as $field) {
             // A hidden pivot field is filterable/sortable but never rendered, so it is
             // not selected (mirrors {@see pivotQuery()}).
             if ($field->isHidden()) {
@@ -2152,7 +2152,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $parentMetadata = $this->entityManager->getClassMetadata($parent::class);
         $this->ids->bind($builder, 'jsonapi_parent', $parentMetadata, $this->ids->valueOf($parentMetadata, $parent));
 
-        foreach (PivotFields::declaredFor($relation) as $field) {
+        foreach (PivotFields::storedFor($relation) as $field) {
             // A hidden pivot field (core hidden()) is never rendered in the pivot
             // meta, so it is not selected here — it can still be filtered/sorted,
             // which reads its column on the `pivot` alias directly, not this scalar.

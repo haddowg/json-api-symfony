@@ -543,8 +543,11 @@ relationships block** — wherever that relation's linkage data renders, i.e. wh
 > relation is `?include`d, or renders data by default (`withData()`). A lazy,
 > not-included relation renders links-only and carries no pivot, so opt it in with
 > `withData()` (or request it with `?include`) to surface pivot without an `?include`.
-> Pivot is Doctrine-only (it needs an association entity): the in-memory provider never
-> renders it, on any endpoint or document.
+> Stored pivot data is Doctrine-only (it needs an association entity): the in-memory
+> provider never renders a stored field, on any endpoint or document, a stored field
+> with an `extractUsing()` hook included. A
+> [computed pivot field](#computed-pivot-fields) needs no storage, so both providers
+> render it, on an all-computed and a mixed relation alike.
 
 Each member's `meta.pivot` carries the pivot fields core's
 `BelongsToMany::readablePivotFieldsFor($request, $member)` returns: those neither
@@ -658,6 +661,64 @@ BelongsToMany::make('tracks', 'tracks')
     ->through(PlaylistTrack::class); // name the association entity explicitly
 ```
 
+### Computed pivot fields
+
+A pivot field declared with `computed()` or `computedUsing()` is computed: it has no
+column, its hook receives a core `PivotEdge` holding the `parent` and the `related`
+member of the link rather than a join row, and its value renders under `meta.pivot` like
+a stored one, through the field's own cast and the server's `output_timezone`.
+
+```php
+BelongsToMany::make('members', 'users')
+    ->fields(
+        Str::make('role')->computedUsing(
+            static fn(mixed $edge): string => $edge instanceof PivotEdge
+                ? $edge->parent->roleOf($edge->related)
+                : '',
+        ),
+    ),
+```
+
+A relation whose pivot fields are **all** computed needs no association entity. It is
+served over a plain `#[ORM\ManyToMany]` join table on Doctrine, and over the stored list
+on the in-memory provider, and both render its `meta.pivot` on the related endpoint, the
+relationship endpoint and a primary document's linkage. No `through()` is needed, and
+`cache:warmup` does not look for an association entity. A relation that mixes computed
+fields with stored ones still needs its association entity, as before, and reads the
+stored fields from it.
+
+The in-memory provider keeps no pivot storage, so it renders only the computed fields of
+`meta.pivot`, evaluated with no stored values (`$edge->pivot` is empty), on an
+all-computed and a mixed relation alike. It never renders a stored field, a stored field
+with an `extractUsing()` hook included, so a mixed relation's members carry just their
+computed fields there.
+
+A computed pivot field is **read-only**. A write that sends it in the linkage `meta` is
+ignored, exactly like a read-only field, so a relation with only computed fields is
+replaced, added to and removed from like a plain to-many. It has no column, so it is
+neither a `sort=` key nor a field a `pivot.` filter casts through.
+
+A stored pivot field with an `extractUsing()` hook is not computed. As on an attribute,
+the hook changes only how the field is read: it keeps its column on the association
+entity, stays writable from the linkage `meta`, and remains a `sort=` key and a `pivot.`
+filter column. Its hook receives the same `PivotEdge`, never the association entity, with
+the link's stored values under `pivot`, so it reads its own stored value from
+`$edge->pivot['<name>']`:
+
+```php
+BelongsToMany::make('crew', 'members')
+    ->fields(
+        Str::make('shift')->extractUsing(
+            static fn(mixed $edge): ?string => $edge instanceof PivotEdge && \is_string($edge->pivot['shift'] ?? null)
+                ? \strtoupper($edge->pivot['shift'])
+                : null,
+        ),
+    ),
+```
+
+A `serializeUsing()` hook on a pivot field is not consulted; the stored value renders
+through the field's cast.
+
 ### Writing pivot data
 
 A pivot field is **writable by default** — settable from the linkage's
@@ -704,11 +765,13 @@ relationship-endpoint `POST`/`PATCH` and the whole-resource `POST`/`PATCH` alike
 
 **Boundaries.**
 
-- **Doctrine-only.** Pivot data requires an association entity to query and write. The
+- **Doctrine-only.** Stored pivot data requires an association entity to query and write. The
   in-memory provider does not support it: a pivot `?filter`/`?sort` key is
-  unrecognised there (`400`), no `meta.pivot` renders, and a pivot-meta **write is
-  ignored** (the relation is a plain to-many in-memory — there is no join row to hold
-  it). A `belongsToMany` *without* `fields()` (and any `HasMany`) keeps the plain
+  unrecognised there (`400`), no stored pivot field renders in `meta.pivot`, and a
+  pivot-meta **write is ignored** (the relation is a plain to-many in-memory — there is
+  no join row to hold it). Its `meta.pivot` carries only the
+  [computed pivot fields](#computed-pivot-fields), which need no storage. A
+  `belongsToMany` *without* `fields()` (and any `HasMany`) keeps the plain
   related-collection behaviour on both providers.
 - **Scoped to the pivot relation's related endpoint.** A pivot key is unrecognised on
   the primary `/{relatedType}` collection (`400`), exactly like a relation-scoped key.

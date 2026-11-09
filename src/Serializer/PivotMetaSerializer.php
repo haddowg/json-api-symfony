@@ -11,6 +11,7 @@ use haddowg\JsonApi\Schema\Link\ResourceLinks;
 use haddowg\JsonApi\Serializer\IncludeControlsInterface;
 use haddowg\JsonApi\Serializer\RendersDeclaredLinksInterface;
 use haddowg\JsonApi\Serializer\SerializerInterface;
+use haddowg\JsonApiBundle\DataProvider\PivotFields;
 
 /**
  * A {@see SerializerInterface} decorator that renders a `belongsToMany` pivot
@@ -39,6 +40,17 @@ use haddowg\JsonApi\Serializer\SerializerInterface;
  * attribute follows). Each renders `null` when the row holds no value for it, which is
  * what the response pivot schema's `required` promises. The map itself keeps write-only
  * values, because the validator reads them when it merges a partial pivot update.
+ *
+ * Given the parent too, a pivot field read through a hook, a computed field or a stored
+ * one with an `extractUsing()` hook, renders from core's
+ * {@see BelongsToMany::hookedPivotValues()} for the parent, the member and the member's
+ * stored values from the map, so its hook gets a {@see \haddowg\JsonApi\Resource\Field\PivotEdge}
+ * and never the association entity.
+ *
+ * Where no pivot storage was read, as on the in-memory provider or for a relation whose
+ * fields are all computed, it is built computed-only: each member renders just the
+ * computed fields, evaluated with no stored values, and never a stored field, so a
+ * computed field renders the same on every provider.
  */
 final class PivotMetaSerializer implements SerializerInterface, IncludeControlsInterface, RendersDeclaredLinksInterface
 {
@@ -46,11 +58,17 @@ final class PivotMetaSerializer implements SerializerInterface, IncludeControlsI
      * @param SerializerInterface                  $inner    the related type's real serializer
      * @param array<string, array<string, mixed>>  $pivotMap `memberId => [pivotField => typed value]`
      * @param RelationInterface|null               $relation the pivot relation whose fields decide what renders; without it the map renders as given
+     * @param object|null                          $parent   the parent whose relation renders, which hooked pivot fields read
+     * @param string|null                          $outputTimezone the server's default output zone a hooked date field adopts
+     * @param bool                                 $computedOnly   whether no pivot storage was read, so only the computed fields render
      */
     public function __construct(
         private readonly SerializerInterface $inner,
         private readonly array $pivotMap,
         private readonly ?RelationInterface $relation = null,
+        private readonly ?object $parent = null,
+        private readonly ?string $outputTimezone = null,
+        private readonly bool $computedOnly = false,
     ) {}
 
     public function getType(mixed $object): string
@@ -67,11 +85,55 @@ final class PivotMetaSerializer implements SerializerInterface, IncludeControlsI
     {
         $meta = $this->inner->getMeta($object, $request);
 
+        if ($this->computedOnly) {
+            return $this->withComputedOnly($meta, $object, $request);
+        }
+
         $pivot = $this->pivotMap[$this->inner->getId($object)] ?? null;
+        $hooked = $this->parent !== null && $this->relation !== null && PivotFields::readsThroughHook($this->relation);
+        if ($hooked && $this->relation instanceof BelongsToMany && $pivot !== null) {
+            $pivot = [...$pivot, ...$this->relation->hookedPivotValues($this->parent, $object, $pivot, $request, $this->outputTimezone)];
+        }
         if ($pivot !== null && $this->relation !== null) {
             $pivot = $this->readable($pivot, $request, $object);
         }
         if ($pivot !== null && $pivot !== []) {
+            $meta['pivot'] = $pivot;
+        }
+
+        return $meta;
+    }
+
+    /**
+     * `$meta` with the member's readable computed pivot fields under `pivot`, evaluated
+     * with no stored values. A stored field never renders here, as no storage was read.
+     *
+     * @param array<string, mixed> $meta
+     *
+     * @return array<string, mixed>
+     */
+    private function withComputedOnly(array $meta, mixed $object, JsonApiRequestInterface $request): array
+    {
+        if (!$this->relation instanceof BelongsToMany || $this->parent === null) {
+            return $meta;
+        }
+
+        $computed = [];
+        foreach ($this->relation->computedPivotFields() as $field) {
+            $computed[$field->name()] = true;
+        }
+        if ($computed === []) {
+            return $meta;
+        }
+
+        $values = $this->relation->hookedPivotValues($this->parent, $object, [], $request, $this->outputTimezone);
+        $pivot = [];
+        foreach ($this->relation->readablePivotFieldsFor($request, $object) as $field) {
+            if (isset($computed[$field->name()])) {
+                $pivot[$field->name()] = $values[$field->name()] ?? null;
+            }
+        }
+        if ($pivot !== []) {
             $meta['pivot'] = $pivot;
         }
 

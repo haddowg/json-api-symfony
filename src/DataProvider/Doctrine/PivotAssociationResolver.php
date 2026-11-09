@@ -11,7 +11,7 @@ use haddowg\JsonApi\Resource\Field\RelationInterface;
 
 /**
  * Resolves the Doctrine association entity backing a `belongsToMany` pivot
- * relation (a {@see BelongsToMany} declaring {@see BelongsToMany::pivotFields()}).
+ * relation (a {@see BelongsToMany} declaring {@see BelongsToMany::storedPivotFields()}).
  *
  * A plain `#[ORM\ManyToMany]` join table holds only the two foreign keys — it
  * cannot carry a pivot column — so a pivot relation is modelled as an
@@ -44,13 +44,13 @@ final class PivotAssociationResolver
 
     /**
      * Whether `$relation` is a pivot-backed relation — a {@see BelongsToMany}
-     * declaring at least one pivot field. A `belongsToMany` without pivot fields
-     * (or any other to-many) is NOT pivot-backed and keeps the plain related-collection
-     * path.
+     * declaring at least one stored pivot field. A `belongsToMany` without pivot fields,
+     * or whose pivot fields are all computed, (or any other to-many) is NOT pivot-backed
+     * and keeps the plain related-collection path over its join table.
      */
     public function isPivotRelation(RelationInterface $relation): bool
     {
-        return $relation instanceof BelongsToMany && $relation->pivotFields() !== [];
+        return $relation instanceof BelongsToMany && $relation->storedPivotFields() !== [];
     }
 
     /**
