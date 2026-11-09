@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.2](https://github.com/haddowg/json-api-symfony/compare/v2.4.1...v2.4.2) (2026-11-09)
+
+
+### Bug Fixes
+
+* **validation:** reject write values whose JSON type does not match the field ([#331](https://github.com/haddowg/json-api-symfony/issues/331)) ([2c7ee94](https://github.com/haddowg/json-api-symfony/commit/2c7ee949fff906a5579d99255ee93019d612340a))
+
 ## [2.4.1](https://github.com/haddowg/json-api-symfony/compare/v2.4.0...v2.4.1) (2026-11-09)
 
 
