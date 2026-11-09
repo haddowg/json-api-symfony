@@ -662,10 +662,10 @@ BelongsToMany::make('tracks', 'tracks')
 
 ### Computed pivot fields
 
-A pivot field declared with `computed()`, `computedUsing()` or `extractUsing()` is
-computed: its hook receives a core `PivotEdge` holding the `parent` and the `related`
-member of the link, rather than a join row, and its value renders under `meta.pivot`
-like a stored one, through the field's own cast and the server's `output_timezone`.
+A pivot field declared with `computed()` or `computedUsing()` is computed: it has no
+column, its hook receives a core `PivotEdge` holding the `parent` and the `related`
+member of the link rather than a join row, and its value renders under `meta.pivot` like
+a stored one, through the field's own cast and the server's `output_timezone`.
 
 ```php
 BelongsToMany::make('members', 'users')
@@ -691,6 +691,27 @@ A computed pivot field is **read-only**. A write that sends it in the linkage `m
 ignored, exactly like a read-only field, so a relation with only computed fields is
 replaced, added to and removed from like a plain to-many. It has no column, so it is
 neither a `sort=` key nor a field a `pivot.` filter casts through.
+
+A stored pivot field with an `extractUsing()` hook is not computed. As on an attribute,
+the hook changes only how the field is read: it keeps its column on the association
+entity, stays writable from the linkage `meta`, and remains a `sort=` key and a `pivot.`
+filter column. Its hook receives the same `PivotEdge`, never the association entity, with
+the link's stored values under `pivot`, so it reads its own stored value from
+`$edge->pivot['<name>']`:
+
+```php
+BelongsToMany::make('crew', 'members')
+    ->fields(
+        Str::make('shift')->extractUsing(
+            static fn(mixed $edge): ?string => $edge instanceof PivotEdge && \is_string($edge->pivot['shift'] ?? null)
+                ? \strtoupper($edge->pivot['shift'])
+                : null,
+        ),
+    ),
+```
+
+A `serializeUsing()` hook on a pivot field is not consulted; the stored value renders
+through the field's cast.
 
 ### Writing pivot data
 

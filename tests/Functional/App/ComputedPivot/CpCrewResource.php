@@ -28,6 +28,7 @@ class CpCrewResource extends AbstractResource
             BelongsToMany::make('members', 'cp-members')->fields(
                 Str::make('role')->computedUsing(self::role(...)),
                 Str::make('badge')
+                    ->computed()
                     ->extractUsing(static fn(mixed $edge): string => $edge instanceof PivotEdge && $edge->related instanceof CpMember ? \strtoupper($edge->related->name) : '')
                     ->hidden(static fn(mixed $member, JsonApiRequestInterface $request): bool => $member instanceof CpMember && $member->name === 'Linus'),
             ),

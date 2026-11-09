@@ -7,12 +7,14 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\ComputedPivot;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\Integer;
+use haddowg\JsonApi\Resource\Field\PivotEdge;
 use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 
 /**
- * Adds `staff`, a pivot mixing the stored `shift` column of {@see CpShift} with a
- * computed `role`, which still needs its association entity.
+ * Adds `staff`, a pivot mixing the stored `shift` column of {@see CpShift}, the stored
+ * `note` column read through an extract hook that upper-cases it, and a computed `role`,
+ * which still needs its association entity.
  */
 #[AsJsonApiResource(entity: CpCrew::class)]
 final class DoctrineCpCrewResource extends CpCrewResource
@@ -28,6 +30,9 @@ final class DoctrineCpCrewResource extends CpCrewResource
                     : [])
                 ->fields(
                     Integer::make('shift'),
+                    Str::make('note')->extractUsing(static fn(mixed $edge): ?string => $edge instanceof PivotEdge && \is_string($edge->pivot['note'] ?? null)
+                        ? \strtoupper($edge->pivot['note'])
+                        : null),
                     Str::make('role')->computedUsing(self::role(...)),
                 ),
         ];

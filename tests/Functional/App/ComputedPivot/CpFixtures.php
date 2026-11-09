@@ -38,7 +38,7 @@ final class CpFixtures
         return [
             'members' => ['1' => $ada, '2' => $grace, '3' => $linus],
             'crews' => ['1' => $reds],
-            'shifts' => [new CpShift($reds, $ada, 2), new CpShift($reds, $grace, 5)],
+            'shifts' => [new CpShift($reds, $ada, 2, 'early'), new CpShift($reds, $grace, 5, 'late')],
         ];
     }
 

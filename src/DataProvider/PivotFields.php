@@ -47,7 +47,8 @@ final class PivotFields
 
     /**
      * The declared pivot fields a join row stores, every one but a computed field
-     * ({@see BelongsToMany::isComputedPivotField()}). A relation whose list is empty
+     * ({@see BelongsToMany::isComputedPivotField()}), a stored field with an
+     * `extractUsing()` hook included. A relation whose list is empty
      * needs no association entity. Empty for a non-pivot relation.
      *
      * @return list<FieldInterface>
@@ -58,12 +59,28 @@ final class PivotFields
     }
 
     /**
-     * Whether `$relation` declares a computed pivot field, one whose value a
+     * Whether `$relation` declares a computed pivot field, one with no column whose value a
      * {@see \haddowg\JsonApi\Resource\Field\PivotEdge} of parent and member produces.
      */
     public static function hasComputed(RelationInterface $relation): bool
     {
         return $relation instanceof BelongsToMany && $relation->computedPivotFields() !== [];
+    }
+
+    /**
+     * Whether `$relation` declares a pivot field read through a hook, a computed field or a
+     * stored one with an `extractUsing()` hook
+     * ({@see BelongsToMany::readsPivotFieldThroughHook()}).
+     */
+    public static function readsThroughHook(RelationInterface $relation): bool
+    {
+        foreach (self::declaredFor($relation) as $field) {
+            if (BelongsToMany::readsPivotFieldThroughHook($field)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

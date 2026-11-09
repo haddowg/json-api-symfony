@@ -7,7 +7,8 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\ComputedPivot;
 use Doctrine\ORM\Mapping as ORM;
 
 /**
- * The association entity behind a crew's `staff`, carrying the stored `shift` column.
+ * The association entity behind a crew's `staff`, carrying the stored `shift` and `note`
+ * columns.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'cp_shift')]
@@ -27,5 +28,7 @@ class CpShift
         public CpMember $member,
         #[ORM\Column(type: 'integer')]
         public int $shift = 0,
+        #[ORM\Column(type: 'string', nullable: true)]
+        public ?string $note = null,
     ) {}
 }
