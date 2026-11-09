@@ -39,6 +39,11 @@ use haddowg\JsonApi\Serializer\SerializerInterface;
  * attribute follows). Each renders `null` when the row holds no value for it, which is
  * what the response pivot schema's `required` promises. The map itself keeps write-only
  * values, because the validator reads them when it merges a partial pivot update.
+ *
+ * Given the parent too, a computed pivot field renders from core's
+ * {@see BelongsToMany::computedPivotValues()} for the parent and the member rather than
+ * from the map, so a relation whose fields are all computed renders its `meta.pivot`
+ * with an empty map, on any provider.
  */
 final class PivotMetaSerializer implements SerializerInterface, IncludeControlsInterface, RendersDeclaredLinksInterface
 {
@@ -46,11 +51,15 @@ final class PivotMetaSerializer implements SerializerInterface, IncludeControlsI
      * @param SerializerInterface                  $inner    the related type's real serializer
      * @param array<string, array<string, mixed>>  $pivotMap `memberId => [pivotField => typed value]`
      * @param RelationInterface|null               $relation the pivot relation whose fields decide what renders; without it the map renders as given
+     * @param object|null                          $parent   the parent whose relation renders, which computed pivot fields read
+     * @param string|null                          $outputTimezone the server's default output zone a computed date field adopts
      */
     public function __construct(
         private readonly SerializerInterface $inner,
         private readonly array $pivotMap,
         private readonly ?RelationInterface $relation = null,
+        private readonly ?object $parent = null,
+        private readonly ?string $outputTimezone = null,
     ) {}
 
     public function getType(mixed $object): string
@@ -68,6 +77,11 @@ final class PivotMetaSerializer implements SerializerInterface, IncludeControlsI
         $meta = $this->inner->getMeta($object, $request);
 
         $pivot = $this->pivotMap[$this->inner->getId($object)] ?? null;
+        $computes = $this->parent !== null && $this->relation instanceof BelongsToMany && $this->relation->computedPivotFields() !== [];
+        if ($computes && ($pivot !== null || $this->relation->storedPivotFields() === [])) {
+            \assert($this->relation instanceof BelongsToMany);
+            $pivot = [...($pivot ?? []), ...$this->relation->computedPivotValues($this->parent, $object, $request, $this->outputTimezone)];
+        }
         if ($pivot !== null && $this->relation !== null) {
             $pivot = $this->readable($pivot, $request, $object);
         }

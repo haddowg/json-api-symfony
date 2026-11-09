@@ -46,7 +46,28 @@ final class PivotFields
     }
 
     /**
-     * The declared pivot fields keyed by their wire name, so a `filter[<name>]` /
+     * The declared pivot fields a join row stores, every one but a computed field
+     * ({@see BelongsToMany::isComputedPivotField()}). A relation whose list is empty
+     * needs no association entity. Empty for a non-pivot relation.
+     *
+     * @return list<FieldInterface>
+     */
+    public static function storedFor(RelationInterface $relation): array
+    {
+        return $relation instanceof BelongsToMany ? $relation->storedPivotFields() : [];
+    }
+
+    /**
+     * Whether `$relation` declares a computed pivot field, one whose value a
+     * {@see \haddowg\JsonApi\Resource\Field\PivotEdge} of parent and member produces.
+     */
+    public static function hasComputed(RelationInterface $relation): bool
+    {
+        return $relation instanceof BelongsToMany && $relation->computedPivotFields() !== [];
+    }
+
+    /**
+     * The stored pivot fields keyed by their wire name, so a `filter[<name>]` /
      * `sort=<name>` key can be resolved back to the {@see FieldInterface} that backs
      * it (its column + value cast). Empty for a non-pivot relation.
      *
@@ -55,7 +76,7 @@ final class PivotFields
     public static function byName(RelationInterface $relation): array
     {
         $byName = [];
-        foreach (self::declaredFor($relation) as $field) {
+        foreach (self::storedFor($relation) as $field) {
             $byName[$field->name()] = $field;
         }
 
@@ -72,7 +93,7 @@ final class PivotFields
      */
     public static function fieldForColumn(RelationInterface $relation, string $column): ?FieldInterface
     {
-        foreach (self::declaredFor($relation) as $field) {
+        foreach (self::storedFor($relation) as $field) {
             if (($field->column() ?? $field->name()) === $column) {
                 return $field;
             }
@@ -85,14 +106,15 @@ final class PivotFields
      * The sort vocabulary derived from `$relation`'s pivot fields: one
      * {@see SortByField} per field, keyed by the field name and columned by its
      * declared column (defaulting to the name), so `?sort=position` orders by the
-     * pivot entity's backing column. Empty for a non-pivot relation.
+     * pivot entity's backing column. A computed field has no column, so it is no sort
+     * key. Empty for a non-pivot relation.
      *
      * @return list<SortByField>
      */
     public static function sortsFor(RelationInterface $relation): array
     {
         $sorts = [];
-        foreach (self::declaredFor($relation) as $field) {
+        foreach (self::storedFor($relation) as $field) {
             $sorts[] = SortByField::make($field->name(), $field->column() ?? $field->name());
         }
 

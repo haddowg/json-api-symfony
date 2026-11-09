@@ -77,6 +77,7 @@ use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 use haddowg\JsonApiBundle\DataProvider\PivotAwareProviderInterface;
+use haddowg\JsonApiBundle\DataProvider\PivotFields;
 use haddowg\JsonApiBundle\DataProvider\Polymorphism;
 use haddowg\JsonApiBundle\DataProvider\RelatedIncludeBatcher;
 use haddowg\JsonApiBundle\DataProvider\RelatedReadRouter;
@@ -791,7 +792,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $pivotResult = $relatedProvider
                     ->fetchRelatedPivotCollection($relatedType, $parent, $relation, $criteria, $request);
 
-                $serializer = new PivotMetaSerializer($server->serializerFor($relatedType), $pivotResult->pivotMap, $relation);
+                $serializer = new PivotMetaSerializer($server->serializerFor($relatedType), $pivotResult->pivotMap, $relation, $parent, $this->outputTimezone?->timezone());
                 $items = \is_array($pivotResult->items) ? \array_values($pivotResult->items) : \iterator_to_array($pivotResult->items, false);
                 $this->windowRelatedItems($server, $relatedType, $items, $request);
                 $this->preloadIncludes($relatedProvider, $items, $relatedType, $request, $server);
@@ -873,6 +874,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $serializer = match (true) {
                 $identifiedTypes !== null => $this->identifiedSerializer($relation, $server, $identifiedTypes),
                 $polymorphic => $this->polymorphicSerializer($relation, $server),
+                // Computed pivot fields need no stored row, so they render off the parent
+                // even where no pivot query ran.
+                PivotFields::hasComputed($relation) => new PivotMetaSerializer($server->serializerFor($relatedType), [], $relation, $parent, $this->outputTimezone?->timezone()),
                 default => $server->serializerFor($relatedType),
             };
 
@@ -1282,7 +1286,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
             // The pivot meta rides the WINDOWED page's map: a PivotMetaSerializer over the
             // page-1 pivot map, bound to this relationship by the PivotParentSerializer.
-            $pivotSerializer = new PivotMetaSerializer($server->serializerFor($relatedType), $pivotResult->pivotMap, $relation);
+            $pivotSerializer = new PivotMetaSerializer($server->serializerFor($relatedType), $pivotResult->pivotMap, $relation, $parent, $this->outputTimezone?->timezone());
             $parentSerializer = new PivotParentSerializer(
                 $server->serializerFor($type),
                 $relationshipName,
@@ -1413,7 +1417,17 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // rendered nothing — a wasted fetch).
             $page = $this->supplyWindowedRelationship($parent, $relationshipName, $items, $paginator, $result, $relWantsCount, $request, $operation->queryParameters());
 
-            $response = IdentifierResponse::forRelationship($parent, $server->serializerFor($type), $relationshipName);
+            // Computed pivot fields render off the parent with no pivot query behind them.
+            $parentSerializer = PivotFields::hasComputed($relation)
+                ? new PivotParentSerializer(
+                    $server->serializerFor($type),
+                    $relationshipName,
+                    $relation,
+                    $server,
+                    new PivotMetaSerializer($server->serializerFor($relatedType), [], $relation, $parent, $this->outputTimezone?->timezone()),
+                )
+                : $server->serializerFor($type);
+            $response = IdentifierResponse::forRelationship($parent, $parentSerializer, $relationshipName);
 
             // Attach the page that windowed the linkage so a page profile (the
             // cursor-pagination profile) is advertised on the response; the body
@@ -1919,7 +1933,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             }
 
             $relatedProvider = $this->providers->forType($relatedType);
-            if (!$relatedProvider instanceof PivotAwareProviderInterface || !$relatedProvider->supportsPivot($relatedType, $relation)) {
+            $stored = $relatedProvider instanceof PivotAwareProviderInterface && $relatedProvider->supportsPivot($relatedType, $relation);
+            if (!$stored && !PivotFields::hasComputed($relation)) {
                 continue;
             }
 
@@ -1937,14 +1952,17 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // outer key by the parent serializer's OWN encoder — never reverse-resolved
             // from the entity class, which would diverge for a multi-type-backed entity
             // whose served type carries a different id encoder (BLOCKER).
-            $maps[$relation->name()] = $relatedProvider->fetchRelatedPivotMapBatch($type, $relatedType, $items, $relation);
+            // Computed pivot fields alone need no map: they render off each parent.
+            $maps[$relation->name()] = $stored
+                ? $relatedProvider->fetchRelatedPivotMapBatch($type, $relatedType, $items, $relation)
+                : [];
         }
 
         if ($relations === []) {
             return $serializer;
         }
 
-        return new PivotLinkageParentSerializer($serializer, $server, $relations, $maps);
+        return new PivotLinkageParentSerializer($serializer, $server, $relations, $maps, $this->outputTimezone?->timezone());
     }
 
     /**

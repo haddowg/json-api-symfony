@@ -1,0 +1,3 @@
+# A pivot whose fields are all computed needs no association entity
+
+A `belongsToMany` is treated as pivot-backed, and so routed through its association entity, only when it declares a stored pivot field; one whose fields are all computed is served over its plain join table on Doctrine and over the stored list in memory, with `PivotMetaSerializer` computing the values from the parent and each member at render time. Computing in the serializer rather than in each provider keeps one rendering path for every endpoint and both providers, and a stored field still reads its association entity so a mixed relation keeps today's query and write behaviour.

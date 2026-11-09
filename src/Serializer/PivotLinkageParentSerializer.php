@@ -39,12 +39,14 @@ final class PivotLinkageParentSerializer extends AbstractPivotParentSerializer
      * @param SerializerResolverInterface      $resolver  the base resolver (the Server)
      * @param array<string, RelationInterface> $relations the pivot relations to rebind, keyed by relation name
      * @param array<string, array<string, array<string, array<string, mixed>>>> $maps the batched per-parent pivot maps, `relationName => parentWireId => memberId => [field => value]`
+     * @param string|null                      $outputTimezone the server's default output zone a computed pivot date field adopts
      */
     public function __construct(
         private readonly SerializerInterface $inner,
         private readonly SerializerResolverInterface $resolver,
         private readonly array $relations,
         private readonly array $maps,
+        private readonly ?string $outputTimezone = null,
     ) {}
 
     public function getRelationships(mixed $object, JsonApiRequestInterface $request): array
@@ -79,7 +81,7 @@ final class PivotLinkageParentSerializer extends AbstractPivotParentSerializer
             $relationships[$name] = $this->pivotLinkageBuilder(
                 $relation,
                 $this->resolver,
-                new PivotMetaSerializer($this->resolver->serializerFor($relatedType), $mapForThisParent, $relation),
+                new PivotMetaSerializer($this->resolver->serializerFor($relatedType), $mapForThisParent, $relation, \is_object($object) ? $object : null, $this->outputTimezone),
             );
         }
 

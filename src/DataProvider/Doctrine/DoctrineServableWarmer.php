@@ -49,8 +49,9 @@ use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
  *    PASSES — and only single-segment columns are checked, so a pivot-routed
  *    (`pivot.position`) or embedded (`meta.x`) column is left to its own path.
  *  - **A pivot `belongsToMany` resolves its association entity at build.** A
- *    `belongsToMany` declaring `pivotFields()` is backed by an association entity
- *    discovered from metadata (its `through()` override, or an auto-detect scan); the
+ *    `belongsToMany` declaring a stored pivot field is backed by an association entity
+ *    discovered from metadata (one whose pivot fields are all computed reads its plain
+ *    join table and is skipped) (its `through()` override, or an auto-detect scan); the
  *    {@see PivotAssociationResolver} already fails loudly, but lazily on the first
  *    write. Running the discovery here moves only the TIMING — the same
  *    `\LogicException` fires at `cache:warmup`.
@@ -220,7 +221,9 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
         $server = $this->servers->get($serverName);
 
         foreach ($this->typeMetadata->relationsFor($server, $type) as $relation) {
-            if (!$relation instanceof BelongsToMany || $relation->pivotFields() === []) {
+            // Only a stored pivot field needs an association entity; a relation whose
+            // pivot fields are all computed reads its plain join table.
+            if (!$relation instanceof BelongsToMany || $relation->storedPivotFields() === []) {
                 continue;
             }
 

@@ -89,7 +89,7 @@ declaration that would only break at request time fails the build instead:
 | Fault | Message gist |
 |---|---|
 | A `sortable()` / `filterable` column does not resolve to a real field/association (commonly a `computed()` field marked sortable, whose sort column defaults to the field name) | *The sort/filter "…" on JSON:API type "…" targets column "…", which is not a field or association on …* |
-| A pivot `belongsToMany` (declaring `pivotFields()`) whose association entity cannot be discovered | *Could not auto-detect a Doctrine association entity for the pivot relation "…" … Declare it explicitly with ->through(PivotEntity::class).* |
+| A pivot `belongsToMany` declaring a stored pivot field whose association entity cannot be discovered (one whose pivot fields are all computed needs none) | *Could not auto-detect a Doctrine association entity for the pivot relation "…" … Declare it explicitly with ->through(PivotEntity::class).* |
 
 The sort check validates the **resolved** column, so a `computed()` field marked
 `sortable()` that ALSO has a matching [`sorts()`](resources.md) override supplying a real
@@ -1131,9 +1131,11 @@ you name, independent of the column. The relation's `withFilters()`/`withSorts()
 the `pivot.` convention are covered on
 [relationships → pivot data](relationships.md#pivot-belongstomany-data).
 
-**Pivot data only exists over an association entity.** A plain `#[ORM\ManyToMany]`
+**Stored pivot data only exists over an association entity.** A plain `#[ORM\ManyToMany]`
 join table holds only the two foreign keys; Doctrine cannot map a `position` column
-on it. So a pivot relation must be backed by an **association entity** — `Playlist
+on it. A relation whose pivot fields are all
+[computed](relationships.md#computed-pivot-fields) reads that plain join table and runs
+no pivot query. So a pivot relation must be backed by an **association entity** — `Playlist
 -> OneToMany -> PlaylistTrack(position, addedAt) -> ManyToOne -> Track`. The provider
 **auto-detects** that entity from your metadata (`PivotAssociationResolver`: the one
 to-many on the parent whose target also has a `ManyToOne` to the far type), or
