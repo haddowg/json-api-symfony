@@ -17,6 +17,10 @@ A serializer, hydrator or relations set registered for a type with `#[AsJsonApiS
 The set of CRUD operations a type declares it serves; the route loader emits a route for each one and nothing else.
 _Avoid_: exposed endpoints
 
+**Related-only type**:
+A type declared `#[AsJsonApiResource(relatedOnly: true)]`: it serves no endpoint of its own and is reached only as another type's related or included resources, or as a custom action's `inputType`.
+_Avoid_: embedded type, endpointless type
+
 **Named server**:
 A server declared under `json_api.servers`, beside the implicit **default server** defined by the top-level `base_uri`/`version`.
 

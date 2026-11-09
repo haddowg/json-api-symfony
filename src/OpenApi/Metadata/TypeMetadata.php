@@ -12,6 +12,7 @@ use haddowg\JsonApi\OpenApi\Metadata\DeclaresNamedOperationExtensions;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationExamples;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationExtensions;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationScopes;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresRelatedOnly;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresResourceClass;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresResourceLinks;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresSingularName;
@@ -64,8 +65,11 @@ use haddowg\JsonApi\Resource\Sort\SortInterface;
  * And core's opt-in {@see DeclaresDeprecation}: whether `#[AsJsonApiResource(deprecation:)]`
  * deprecates the whole type, the date its `sunset:` names, and the operations its
  * `deprecatedOperations:` lists.
+ *
+ * And core's opt-in {@see DeclaresRelatedOnly}: whether `#[AsJsonApiResource(relatedOnly:)]`
+ * says the type serves no endpoint of its own.
  */
-final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOperationExtensions, DeclaresNamedOperationExtensions, DeclaresSingularName, DeclaresOperationExamples, DeclaresAlwaysCounted, DeclaresResourceLinks, DeclaresActionLinks, DeclaresOperationScopes, DeclaresResourceClass, DeclaresDeprecation
+final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOperationExtensions, DeclaresNamedOperationExtensions, DeclaresSingularName, DeclaresOperationExamples, DeclaresAlwaysCounted, DeclaresResourceLinks, DeclaresActionLinks, DeclaresOperationScopes, DeclaresResourceClass, DeclaresDeprecation, DeclaresRelatedOnly
 {
     /**
      * @param list<FieldInterface>            $fields
@@ -93,6 +97,7 @@ final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOper
      * @param bool                            $deprecated          whether the whole type is declared deprecated
      * @param ?\DateTimeInterface             $sunset              the declared sunset date, or null
      * @param list<string>                    $deprecatedOperations the operations deprecated on their own, by core's operation name
+     * @param bool                            $relatedOnly         whether the type serves no endpoint of its own
      */
     public function __construct(
         private string $type,
@@ -129,7 +134,13 @@ final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOper
         private bool $deprecated = false,
         private ?\DateTimeInterface $sunset = null,
         private array $deprecatedOperations = [],
+        private bool $relatedOnly = false,
     ) {}
+
+    public function isRelatedOnly(): bool
+    {
+        return $this->relatedOnly;
+    }
 
     public function type(): string
     {

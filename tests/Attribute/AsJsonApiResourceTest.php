@@ -57,6 +57,42 @@ final class AsJsonApiResourceTest extends TestCase
     }
 
     #[Test]
+    public function relatedOnlyAloneIsAccepted(): void
+    {
+        $attribute = new AsJsonApiResource(relatedOnly: true);
+
+        self::assertTrue($attribute->relatedOnly);
+        self::assertFalse((new AsJsonApiResource())->relatedOnly);
+    }
+
+    #[Test]
+    public function relatedOnlyWithOperationsIsRejected(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('declares relatedOnly: true together with a non-empty operations list');
+
+        new AsJsonApiResource(relatedOnly: true, operations: [Operation::FetchOne]);
+    }
+
+    #[Test]
+    public function relatedOnlyWithReadOnlyIsRejected(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('declares relatedOnly: true together with readOnly: true');
+
+        new AsJsonApiResource(relatedOnly: true, readOnly: true);
+    }
+
+    #[Test]
+    public function aRelatedOnlyTypeExposesNoOperationToOverride(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('not exposed');
+
+        new AsJsonApiResource(relatedOnly: true, fetchOne: new Ok());
+    }
+
+    #[Test]
     public function singularDefaultsToNullAndIsStoredAsDeclared(): void
     {
         self::assertNull((new AsJsonApiResource())->singular);

@@ -974,6 +974,10 @@ final class JsonApiBundle extends AbstractBundle
                     // operations. The attribute constructor forbids declaring both, so
                     // at most one of these branches contributes a non-null value.
                     'operations' => self::operationsTag($attribute),
+                    // A related-only type serves no endpoint of its own; the
+                    // ResourceLocatorPass gives it no operations and refuses an action
+                    // mounted on it.
+                    'related_only' => $attribute->relatedOnly ? true : null,
                     // The declarative authorization expressions,
                     // recorded as scalar tag attributes the ResourceSecurityPass reads
                     // into the ResourceSecurityRegistry, under each of the resource's servers.
