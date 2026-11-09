@@ -76,7 +76,8 @@ to `/data/attributes/<name>` without first reshaping the entity. The work lives 
 [`ResourceValidator::validate()`](../src/Validation/ResourceValidator.php).
 
 For each attribute field (the `Id` field and relationships are not attributes, so
-they are validated separately — see [id format, below](#id-format-both-directions);
+they are validated separately — see [id format, below](#id-format-both-directions)
+and [to-many member counts](#to-many-member-counts);
 read-only fields are skipped per create/update context), the bridge builds one
 Symfony `Collection` field entry, then validates the attributes array against a
 `Collection(fields: …, allowExtraFields: true)` — unknown attributes are ignored,
@@ -240,6 +241,34 @@ must carry it; an existing member need not re-send it) and
 `Integer::make('weight')->compareWith('position', …)` (compared against the *merged*
 pivot, so `weight` may be set without re-sending `position`). See
 [relationships.md](relationships.md#writing-pivot-data) for the write convention.
+
+## To-many member counts
+
+A to-many relation's `minItems()` and `maxItems()` bound how many members a write
+may set. The bridge checks them whenever a write supplies the whole member set:
+
+| Write | Pointer |
+|---|---|
+| a to-many in a create or update's `data.relationships` | `/data/relationships/<rel>/data` |
+| a `PATCH …/relationships/{rel}` full replacement | `/data` |
+
+Atomic operations run the same checks, with the operation's prefix on the pointer
+(`/atomic:operations/<n>/data/relationships/<rel>/data` or `/atomic:operations/<n>/data`).
+Each broken bound is one `422` carrying the `Count` message:
+
+```php
+BelongsToMany::make('players', 'players')->minItems(1)->maxItems(2),
+
+// PATCH /squads/1/relationships/players with "data": []
+// → 422 VALIDATION_FAILED at /data:
+//   "This collection should contain 1 element or more."
+```
+
+A repeated member counts once, because the write stores a deduplicated set. A
+`POST` or `DELETE` on `…/relationships/{rel}` adds or removes members rather than
+setting them, so the bounds don't apply there; declare an entity-level constraint
+([after a relationship write](#after-a-relationship-write)) when the resulting set
+must stay in range. A create that leaves the relationship out isn't checked either.
 
 ## The constraint-translation map
 
