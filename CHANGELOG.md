@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.1](https://github.com/haddowg/json-api-symfony/compare/v2.4.0...v2.4.1) (2026-11-09)
+
+
+### Bug Fixes
+
+* **validation:** require the core release that validates write-hooked values ([#329](https://github.com/haddowg/json-api-symfony/issues/329)) ([fea4e3a](https://github.com/haddowg/json-api-symfony/commit/fea4e3aaec7633118f2dfc2c8420fa2591a28be7))
+
 ## [2.4.0](https://github.com/haddowg/json-api-symfony/compare/v2.3.2...v2.4.0) (2026-11-09)
 
 
