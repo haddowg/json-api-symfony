@@ -876,7 +876,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $polymorphic => $this->polymorphicSerializer($relation, $server),
                 // Computed pivot fields need no stored row, so they render off the parent
                 // even where no pivot query ran.
-                PivotFields::hasComputed($relation) => new PivotMetaSerializer($server->serializerFor($relatedType), [], $relation, $parent, $this->outputTimezone?->timezone()),
+                PivotFields::hasComputed($relation) => new PivotMetaSerializer($server->serializerFor($relatedType), [], $relation, $parent, $this->outputTimezone?->timezone(), computedOnly: true),
                 default => $server->serializerFor($relatedType),
             };
 
@@ -1424,7 +1424,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                     $relationshipName,
                     $relation,
                     $server,
-                    new PivotMetaSerializer($server->serializerFor($relatedType), [], $relation, $parent, $this->outputTimezone?->timezone()),
+                    new PivotMetaSerializer($server->serializerFor($relatedType), [], $relation, $parent, $this->outputTimezone?->timezone(), computedOnly: true),
                 )
                 : $server->serializerFor($type);
             $response = IdentifierResponse::forRelationship($parent, $parentSerializer, $relationshipName);
@@ -1952,10 +1952,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // outer key by the parent serializer's OWN encoder — never reverse-resolved
             // from the entity class, which would diverge for a multi-type-backed entity
             // whose served type carries a different id encoder (BLOCKER).
-            // Computed pivot fields alone need no map: they render off each parent.
+            // Without pivot storage there is no map: the computed fields render off each parent.
             $maps[$relation->name()] = $stored
                 ? $relatedProvider->fetchRelatedPivotMapBatch($type, $relatedType, $items, $relation)
-                : [];
+                : null;
         }
 
         if ($relations === []) {

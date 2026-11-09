@@ -26,7 +26,7 @@ final class CpInMemoryTestKernel extends CpDoctrineTestKernel
 
     protected function configureData(ContainerConfigurator $container, ServicesConfigurator $services): void
     {
-        $services->set(CpCrewResource::class);
+        $services->set(InMemoryCpCrewResource::class);
         $services->set(CpMemberResource::class);
         $services->set('test.cp_fixtures', CpFixtures::class);
 

@@ -38,7 +38,7 @@ final class PivotLinkageParentSerializer extends AbstractPivotParentSerializer
      * @param SerializerInterface              $inner     the real parent serializer
      * @param SerializerResolverInterface      $resolver  the base resolver (the Server)
      * @param array<string, RelationInterface> $relations the pivot relations to rebind, keyed by relation name
-     * @param array<string, array<string, array<string, array<string, mixed>>>> $maps the batched per-parent pivot maps, `relationName => parentWireId => memberId => [field => value]`
+     * @param array<string, array<string, array<string, array<string, mixed>>>|null> $maps the batched per-parent pivot maps, `relationName => parentWireId => memberId => [field => value]`, `null` for a relation with no pivot storage, which renders its computed fields only
      * @param string|null                      $outputTimezone the server's default output zone a computed pivot date field adopts
      */
     public function __construct(
@@ -76,12 +76,13 @@ final class PivotLinkageParentSerializer extends AbstractPivotParentSerializer
             // PivotMetaSerializer looks up only the members the linkage renders (and
             // composes with any windowing/filtering for free). Empty when this parent
             // has no association rows.
-            $mapForThisParent = $this->maps[$name][$parentWireId] ?? [];
+            $map = $this->maps[$name] ?? null;
+            $mapForThisParent = $map[$parentWireId] ?? [];
 
             $relationships[$name] = $this->pivotLinkageBuilder(
                 $relation,
                 $this->resolver,
-                new PivotMetaSerializer($this->resolver->serializerFor($relatedType), $mapForThisParent, $relation, \is_object($object) ? $object : null, $this->outputTimezone),
+                new PivotMetaSerializer($this->resolver->serializerFor($relatedType), $mapForThisParent, $relation, \is_object($object) ? $object : null, $this->outputTimezone, computedOnly: $map === null),
             );
         }
 

@@ -6,9 +6,6 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\ComputedPivot;
 
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
-use haddowg\JsonApi\Resource\Field\Integer;
-use haddowg\JsonApi\Resource\Field\PivotEdge;
-use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 
 /**
@@ -28,13 +25,7 @@ final class DoctrineCpCrewResource extends CpCrewResource
                 ->extractUsing(static fn(mixed $crew, JsonApiRequestInterface $request): array => $crew instanceof CpCrew && isset($crew->shifts)
                     ? \array_values(\array_map(static fn(CpShift $shift): CpMember => $shift->member, $crew->shifts->toArray()))
                     : [])
-                ->fields(
-                    Integer::make('shift'),
-                    Str::make('note')->extractUsing(static fn(mixed $edge): ?string => $edge instanceof PivotEdge && \is_string($edge->pivot['note'] ?? null)
-                        ? \strtoupper($edge->pivot['note'])
-                        : null),
-                    Str::make('role')->computedUsing(self::role(...)),
-                ),
+                ->fields(...self::staffFields()),
         ];
     }
 }

@@ -8,6 +8,7 @@ use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\Id;
+use haddowg\JsonApi\Resource\Field\Integer;
 use haddowg\JsonApi\Resource\Field\PivotEdge;
 use haddowg\JsonApi\Resource\Field\Str;
 
@@ -32,6 +33,23 @@ class CpCrewResource extends AbstractResource
                     ->extractUsing(static fn(mixed $edge): string => $edge instanceof PivotEdge && $edge->related instanceof CpMember ? \strtoupper($edge->related->name) : '')
                     ->hidden(static fn(mixed $member, JsonApiRequestInterface $request): bool => $member instanceof CpMember && $member->name === 'Linus'),
             ),
+        ];
+    }
+
+    /**
+     * The `staff` pivot: the stored `shift`, the stored `note` read through an extract hook
+     * that upper-cases it, and the computed `role`.
+     *
+     * @return list<\haddowg\JsonApi\Resource\Field\FieldBuilderInterface>
+     */
+    protected static function staffFields(): array
+    {
+        return [
+            Integer::make('shift'),
+            Str::make('note')->extractUsing(static fn(mixed $edge): ?string => $edge instanceof PivotEdge && \is_string($edge->pivot['note'] ?? null)
+                ? \strtoupper($edge->pivot['note'])
+                : null),
+            Str::make('role')->computedUsing(self::role(...)),
         ];
     }
 

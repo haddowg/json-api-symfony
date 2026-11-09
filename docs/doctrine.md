@@ -1195,8 +1195,9 @@ operation's create/update context) before the diff runs — a violation is a `42
 pointed at the linkage meta, with no write.
 
 **Boundaries.** Pivot is **Doctrine-only** — the in-memory provider has no association
-entity, so a pivot key `400`s there, no pivot meta renders, and a pivot-meta **write
-is ignored** (the relation is a plain to-many in-memory). A `belongsToMany` without
+entity, so a pivot key `400`s there, no stored pivot field renders, and a pivot-meta
+**write is ignored** (the relation is a plain to-many in-memory). Only the computed
+pivot fields render there, which need no storage. A `belongsToMany` without
 `fields()` keeps the plain related-collection scoping above. See
 [relationships.md](relationships.md#pivot-belongstomany-data) for the resource
 declaration, the rendered shape and the write convention.

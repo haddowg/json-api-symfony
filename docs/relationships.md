@@ -544,9 +544,10 @@ relationships block** — wherever that relation's linkage data renders, i.e. wh
 > not-included relation renders links-only and carries no pivot, so opt it in with
 > `withData()` (or request it with `?include`) to surface pivot without an `?include`.
 > Stored pivot data is Doctrine-only (it needs an association entity): the in-memory
-> provider never renders a stored field, on any endpoint or document. A
+> provider never renders a stored field, on any endpoint or document, a stored field
+> with an `extractUsing()` hook included. A
 > [computed pivot field](#computed-pivot-fields) needs no storage, so both providers
-> render it.
+> render it, on an all-computed and a mixed relation alike.
 
 Each member's `meta.pivot` carries the pivot fields core's
 `BelongsToMany::readablePivotFieldsFor($request, $member)` returns: those neither
@@ -684,8 +685,13 @@ on the in-memory provider, and both render its `meta.pivot` on the related endpo
 relationship endpoint and a primary document's linkage. No `through()` is needed, and
 `cache:warmup` does not look for an association entity. A relation that mixes computed
 fields with stored ones still needs its association entity, as before, and reads the
-stored fields from it; on the in-memory provider a mixed relation renders no
-`meta.pivot`.
+stored fields from it.
+
+The in-memory provider keeps no pivot storage, so it renders only the computed fields of
+`meta.pivot`, evaluated with no stored values (`$edge->pivot` is empty), on an
+all-computed and a mixed relation alike. It never renders a stored field, a stored field
+with an `extractUsing()` hook included, so a mixed relation's members carry just their
+computed fields there.
 
 A computed pivot field is **read-only**. A write that sends it in the linkage `meta` is
 ignored, exactly like a read-only field, so a relation with only computed fields is
@@ -761,9 +767,11 @@ relationship-endpoint `POST`/`PATCH` and the whole-resource `POST`/`PATCH` alike
 
 - **Doctrine-only.** Stored pivot data requires an association entity to query and write. The
   in-memory provider does not support it: a pivot `?filter`/`?sort` key is
-  unrecognised there (`400`), no `meta.pivot` renders, and a pivot-meta **write is
-  ignored** (the relation is a plain to-many in-memory — there is no join row to hold
-  it). A `belongsToMany` *without* `fields()` (and any `HasMany`) keeps the plain
+  unrecognised there (`400`), no stored pivot field renders in `meta.pivot`, and a
+  pivot-meta **write is ignored** (the relation is a plain to-many in-memory — there is
+  no join row to hold it). Its `meta.pivot` carries only the
+  [computed pivot fields](#computed-pivot-fields), which need no storage. A
+  `belongsToMany` *without* `fields()` (and any `HasMany`) keeps the plain
   related-collection behaviour on both providers.
 - **Scoped to the pivot relation's related endpoint.** A pivot key is unrecognised on
   the primary `/{relatedType}` collection (`400`), exactly like a relation-scoped key.
