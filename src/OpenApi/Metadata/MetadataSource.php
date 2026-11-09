@@ -377,7 +377,8 @@ final class MetadataSource
             // would emit no `sort` parameter while `?sort=field` works.
             sorts: $resource !== null ? \array_values($resource->allSorts()) : [],
             actions: $actions,
-            tags: $this->typeTags($descriptor['tags'], $type),
+            // A related-only type has no operations to group, so it names no tag.
+            tags: $relatedOnly ? [] : $this->typeTags($descriptor['tags'], $type),
             // The OpenAPI description overrides (docs/openapi.md), each resolved with
             // precedence resource method hook -> attribute override -> null (the
             // projector then supplies the generated default). A standalone serializer

@@ -245,7 +245,7 @@ another type works as before: `GET /records/1/imprint`, `?include=imprint`, and 
 action taking it as its request document. Its resources render no `self` link and its
 relationship objects no links, since those would point at routes that don't exist; a
 relationship object with no links carries its linkage `data` instead. In the
-[OpenAPI document](openapi.md) the type has no paths, its resource object's links
+[OpenAPI document](openapi.md) the type has no paths and names no tag, its resource object's links
 component lists no `self`, and it still gets its create components when an action takes
 it as input.
 
