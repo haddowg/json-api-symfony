@@ -211,9 +211,9 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
 
         if ($linkage instanceof ToOneRelationship) {
             $identifier = $linkage->resourceIdentifier;
-            $entity->{$property} = $identifier?->id !== null
+            $this->property($entity, $property)->setValue($entity, $identifier?->id !== null
                 ? $this->reference($relation, $identifier)
-                : null;
+                : null);
         } else {
             $this->mutateToMany($entity, $property, $relation, $linkage, $mode);
         }
@@ -434,7 +434,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
             if (!\is_object($row)) {
                 continue;
             }
-            $far = $row->{$association->farProperty} ?? null;
+            $far = $this->readProperty($row, $association->farProperty);
             if (!\is_object($far)) {
                 continue;
             }
@@ -469,7 +469,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
                 continue;
             }
 
-            $value = (new \ReflectionProperty($parent, $field))->isInitialized($parent) ? ($parent->{$field} ?? null) : null;
+            $value = $this->readProperty($parent, $field);
 
             return \is_iterable($value)
                 ? \array_values(\array_filter([...$value], '\is_object'))
@@ -530,7 +530,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
             }
 
             $column = $field->column() ?? $field->name();
-            $row->{$column} = $this->dateTimeForColumn($row, $column, $this->coercePivotValue($field, $meta[$field->name()]));
+            $this->property($row, $column)->setValue($row, $this->dateTimeForColumn($row, $column, $this->coercePivotValue($field, $meta[$field->name()])));
         }
     }
 
@@ -574,8 +574,8 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
     private function newPivotRow(PivotAssociation $association, object $parent, object $reference): object
     {
         $row = $this->entityManager->getClassMetadata($association->entityClass)->newInstance();
-        $row->{$association->parentProperty} = $parent;
-        $row->{$association->farProperty} = $reference;
+        $this->property($row, $association->parentProperty)->setValue($row, $parent);
+        $this->property($row, $association->farProperty)->setValue($row, $reference);
 
         return $row;
     }
@@ -593,13 +593,8 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
             return;
         }
 
-        $reflection = new \ReflectionProperty($parent, $field);
-        if (!$reflection->isInitialized($parent)) {
-            $parent->{$field} = new ArrayCollection();
-        }
-
-        $collection = $parent->{$field} ?? null;
-        if ($collection instanceof Collection && !$collection->contains($row)) {
+        $collection = $this->toManyCollection($parent, $field);
+        if ($collection !== null && !$collection->contains($row)) {
             $collection->add($row);
         }
     }
@@ -611,8 +606,8 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
     private function removePivotRow(object $parent, PivotAssociation $association, object $row): void
     {
         $field = $this->parentInverseField($parent, $association);
-        if ($field !== null && (new \ReflectionProperty($parent, $field))->isInitialized($parent)) {
-            $collection = $parent->{$field} ?? null;
+        if ($field !== null) {
+            $collection = $this->readProperty($parent, $field);
             if ($collection instanceof Collection) {
                 $collection->removeElement($row);
             }
@@ -738,7 +733,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
             return;
         }
 
-        $member->{$owningField} = $owner;
+        $this->property($member, $owningField)->setValue($member, $owner);
     }
 
     /**
@@ -837,7 +832,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
             return;
         }
 
-        $member->{$owningField} = null;
+        $this->property($member, $owningField)->setValue($member, null);
     }
 
     /**
@@ -869,18 +864,57 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
      */
     private function toManyCollection(object $entity, string $property): ?Collection
     {
-        $reflection = new \ReflectionProperty($entity, $property);
+        $reflection = $this->property($entity, $property);
 
         if (!$reflection->isInitialized($entity)) {
             $collection = new ArrayCollection();
-            $entity->{$property} = $collection;
+            $reflection->setValue($entity, $collection);
 
             return $collection;
         }
 
-        $value = $entity->{$property};
+        $value = $reflection->getValue($entity);
 
         return $value instanceof Collection ? $value : null;
+    }
+
+    /**
+     * The property's value, or null while a typed property is uninitialised.
+     */
+    private function readProperty(object $entity, string $property): mixed
+    {
+        $reflection = $this->property($entity, $property);
+
+        return $reflection->isInitialized($entity) ? $reflection->getValue($entity) : null;
+    }
+
+    /**
+     * Reflection on the entity's property, so a private or protected property, one
+     * declared on a parent class included, is read and written the way Doctrine
+     * hydrates it rather than through public property access.
+     */
+    private function property(object $entity, string $property): \ReflectionProperty
+    {
+        // Reflection does not load a lazy proxy, so an unloaded one would read as
+        // uninitialised and have its collection replaced.
+        $this->entityManager->initializeObject($entity);
+        $metadata = $this->entityManager->getClassMetadata($entity::class);
+        // getReflectionProperty() covers the whole supported doctrine/orm range; see
+        // DoctrineRelationshipLoadState.
+        if ($metadata->hasField($property) || $metadata->hasAssociation($property)) {
+            $reflection = $metadata->getReflectionProperty($property);
+            if ($reflection !== null) {
+                return $reflection;
+            }
+        }
+
+        for ($class = new \ReflectionClass($entity); $class !== false; $class = $class->getParentClass()) {
+            if ($class->hasProperty($property)) {
+                return $class->getProperty($property);
+            }
+        }
+
+        return new \ReflectionProperty($entity, $property);
     }
 
     /**
