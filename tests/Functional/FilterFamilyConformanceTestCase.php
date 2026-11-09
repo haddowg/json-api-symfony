@@ -16,6 +16,10 @@ use Symfony\Component\HttpFoundation\Response;
  * Items 1 to 4 sit on board 1 and items 5 and 6 on board 2. Names run apple, banana,
  * cherry, damson, elder, fig; colors red, yellow, red, purple, purple, green; sizes
  * small, large, large, small, small, large; labels `a,b`, `a`, `b`, `c,d`, `a,b`, `d`.
+ *
+ * Board 1 pins items 2, 4 and 1 at ranks 1 to 3, pinned on January 1st, 5th and 3rd
+ * 2025; board 2 pins item 6. The pivot values live only in the Doctrine store, so on
+ * the in-memory kernel every pivot filter, exact or from a family, is unrecognised.
  */
 #[Group('spec:fetching-filtering')]
 abstract class FilterFamilyConformanceTestCase extends JsonApiFunctionalTestCase
@@ -108,6 +112,88 @@ abstract class FilterFamilyConformanceTestCase extends JsonApiFunctionalTestCase
     {
         // The `attr` family would reject `shade`; the exact filter answers it.
         self::assertSame(['4', '5'], $this->ids('/ffItems?filter[attr.shade]=purple'));
+    }
+
+    /**
+     * Whether the kernel's provider keeps pivot values, which only Doctrine does.
+     */
+    abstract protected function pivotAware(): bool;
+
+    #[Test]
+    public function aFamilyResolvingToASingularFilterCollapsesTheResponse(): void
+    {
+        foreach (['only', 'one.name'] as $key) {
+            $response = $this->handle('/ffItems?filter[' . $key . ']=cherry');
+            self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+            $data = $this->decode($response)['data'] ?? null;
+            self::assertIsArray($data, $key);
+            self::assertSame('3', $data['id'] ?? null, $key);
+
+            $response = $this->handle('/ffItems?filter[' . $key . ']=quince');
+            self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+            $document = $this->decode($response);
+            self::assertArrayHasKey('data', $document);
+            self::assertNull($document['data'], $key);
+        }
+    }
+
+    #[Test]
+    public function aPivotFilterFromAFamilyMatchesTheExactOne(): void
+    {
+        $pairs = [
+            'filter[rank]=2' => 'filter[pin.rank]=2',
+            'filter[pinnedAfter]=2025-01-02T00:00:00Z' => 'filter[pin.after]=2025-01-02T00:00:00Z',
+            // Compared as a string this would keep only item 4; the pivot cast reads it
+            // as January 2nd 23:00 UTC.
+            'filter[pinnedAfter]=2025-01-03T01:00:00%2B02:00' => 'filter[pin.after]=2025-01-03T01:00:00%2B02:00',
+        ];
+        foreach (['/ffBoards/1/pinned', '/ffBoards/1/relationships/pinned'] as $endpoint) {
+            foreach ($pairs as $exact => $family) {
+                $exactResponse = $this->handle($endpoint . '?' . $exact);
+                $familyResponse = $this->handle($endpoint . '?' . $family);
+
+                if (!$this->pivotAware()) {
+                    $this->assertBadFilter($exactResponse, 'FILTERING_UNRECOGNIZED', \explode('=', $exact)[0]);
+                    $this->assertBadFilter($familyResponse, 'FILTERING_UNRECOGNIZED', \explode('=', $family)[0]);
+
+                    continue;
+                }
+
+                self::assertSame(200, $familyResponse->getStatusCode(), (string) $familyResponse->getContent());
+                $data = $this->decode($familyResponse)['data'] ?? null;
+                self::assertIsArray($data);
+                self::assertSame($this->ids($endpoint . '?' . $exact), $this->sortedIds($data), $endpoint . '?' . $family);
+            }
+        }
+
+        if ($this->pivotAware()) {
+            self::assertSame(['4'], $this->ids('/ffBoards/1/pinned?filter[pin.rank]=2'));
+            self::assertSame(['1', '4'], $this->ids('/ffBoards/1/relationships/pinned?filter[pin.after]=2025-01-02T00:00:00Z'));
+            self::assertSame(['1', '4'], $this->ids('/ffBoards/1/pinned?filter[pin.after]=2025-01-03T01:00:00%2B02:00'));
+            self::assertSame(['1'], $this->ids('/ffBoards/1/pinned?filter[pin.after]=2025-01-02T00:00:00Z&filter[name]=apple'));
+        }
+    }
+
+    #[Test]
+    #[Group('spec:errors')]
+    public function aPivotFamilySuffixItDoesNotResolveIsA400(): void
+    {
+        $this->assertBadFilter($this->handle('/ffBoards/1/pinned?filter[pin.weight]=1'), 'FILTERING_UNRECOGNIZED', 'filter[pin.weight]');
+        $this->assertBadFilter($this->handle('/ffBoards/1/pinned?filter[pin]=1'), 'FILTERING_UNRECOGNIZED', 'filter[pin]');
+    }
+
+    #[Test]
+    #[Group('spec:profiles')]
+    #[Group('spec:errors')]
+    public function aPivotFilterFromAFamilyIsStrippedWhereTheExactOneIs(): void
+    {
+        // An include carries no pivot values, so neither form of the pivot filter is
+        // recognised there, on either store.
+        foreach (['rank', 'pin.rank'] as $key) {
+            $response = $this->handle('/ffBoards/1?include=pinned&relatedQuery[pinned][filter][' . $key . ']=2', extraServer: $this->profileHeader());
+            self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+            self::assertSame('FILTERING_UNRECOGNIZED', $this->firstError($response)['code'] ?? null, $key);
+        }
     }
 
     #[Test]

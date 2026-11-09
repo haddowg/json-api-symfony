@@ -10,6 +10,7 @@ use haddowg\JsonApi\Pagination\WindowInterface;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\Filter\FilterFamilyInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\FilterMatcher;
 use haddowg\JsonApi\Resource\Filter\Where;
@@ -139,10 +140,11 @@ final class RelationCriteriaFactory
         $relationFilters = $includePivotFields
             ? $this->withPivotCasts($relation)
             : $this->withoutPivotFilters($relation->allFilters());
+        $filters = $this->mergeFilters($relatedResource?->allFilters() ?? [], $relationFilters);
 
         return new CollectionCriteria(
             $queryParameters,
-            $this->mergeFilters($relatedResource?->allFilters() ?? [], $relationFilters),
+            $filters,
             SortMatcher::merge(
                 $relatedResource?->allSorts() ?? [],
                 $relation->sorts(),
@@ -156,7 +158,7 @@ final class RelationCriteriaFactory
             // — the literal alias 'pivot'); every related key resolves to the root.
             // Empty off the pivot path, so the alias-aware applier is inert there and
             // for the in-memory provider.
-            $includePivotFields ? $this->pivotAliases($relation) : [],
+            $includePivotFields ? $this->pivotAliases($relation, $filters, $queryParameters, $request) : [],
             // Whether the provider should run the COUNT for this related fetch:
             // the related endpoint passes `true` only when the relation's own paginator
             // opted in via withCount() OR the client asked `?withCount=_self_` under a
@@ -179,7 +181,8 @@ final class RelationCriteriaFactory
      * `->deserializeUsing()` on the authored filter still wins (only a {@see Where}
      * exposes a deserializer to thread — `WhereIn`/`WhereNotIn` bind their split list
      * raw, and `WhereNull`/`WhereNotNull` carry no value — so the cast only attaches to
-     * a {@see Where} pivot filter). A non-`pivot.` filter is returned unchanged.
+     * a {@see Where} pivot filter). A non-`pivot.` filter is returned unchanged, and a
+     * filter family gets the same cast on each filter it resolves.
      *
      * @return list<FilterInterface>
      */
@@ -187,7 +190,9 @@ final class RelationCriteriaFactory
     {
         $filters = [];
         foreach ($relation->allFilters() as $filter) {
-            $filters[] = $this->withPivotCast($relation, $filter);
+            $filters[] = $filter instanceof FilterFamilyInterface
+                ? new PivotTreatedFilterFamily($filter, fn(FilterInterface $resolved): FilterInterface => $this->withPivotCast($relation, $resolved))
+                : $this->withPivotCast($relation, $filter);
         }
 
         return $filters;
@@ -239,7 +244,8 @@ final class RelationCriteriaFactory
      * an empty `aliasOf`) never see a pivot-column filter: in-memory the requested
      * pivot key stays unrecognised (`400`), and the include/count paths never route a
      * `pivot.`-column to the root alias (a `root.pivot.position` path is not a valid
-     * Doctrine field path).
+     * Doctrine field path). A filter family stays, but a filter it resolves to a
+     * `pivot.` column is dropped the same way, so its key is unrecognised too.
      *
      * @param list<FilterInterface> $filters
      *
@@ -247,10 +253,16 @@ final class RelationCriteriaFactory
      */
     private function withoutPivotFilters(array $filters): array
     {
-        return \array_values(\array_filter(
-            $filters,
-            fn(FilterInterface $filter): bool => $this->pivotColumn($this->columnOf($filter)) === null,
-        ));
+        $kept = [];
+        foreach ($filters as $filter) {
+            if ($filter instanceof FilterFamilyInterface) {
+                $kept[] = new PivotTreatedFilterFamily($filter, fn(FilterInterface $resolved): ?FilterInterface => $this->pivotColumn($this->columnOf($resolved)) === null ? $resolved : null);
+            } elseif ($this->pivotColumn($this->columnOf($filter)) === null) {
+                $kept[] = $filter;
+            }
+        }
+
+        return $kept;
     }
 
     /**
@@ -301,14 +313,29 @@ final class RelationCriteriaFactory
      * derive from the auto-derived pivot sort vocabulary ({@see PivotFields::sortsFor()},
      * keyed by the pivot field name): pivot sorts remain zero-config.
      *
+     * A filter family's keys are only known once requested, so each requested key a
+     * relation family resolves to a `pivot.`-columned filter routes to the pivot alias
+     * as well. An exact filter of the merged vocabulary always wins the key, as it does
+     * in the applier.
+     *
+     * @param list<FilterInterface> $filters the merged filter vocabulary of the criteria
+     *
      * @return array<string, string>
      */
-    private function pivotAliases(RelationInterface $relation): array
+    private function pivotAliases(RelationInterface $relation, array $filters, QueryParameters $queryParameters, ?JsonApiRequestInterface $request): array
     {
         $aliasOf = [];
         foreach ($relation->allFilters() as $filter) {
-            if ($this->pivotColumn($this->columnOf($filter)) !== null) {
+            if (!$filter instanceof FilterFamilyInterface && $this->pivotColumn($this->columnOf($filter)) !== null) {
                 $aliasOf[$filter->key()] = 'pivot';
+            }
+        }
+        if ($request !== null) {
+            foreach (\array_keys($queryParameters->filter) as $key) {
+                $resolved = FilterMatcher::match($filters, (string) $key, $request);
+                if ($resolved !== null && !\in_array($resolved, $filters, true) && $this->pivotColumn($this->columnOf($resolved)) !== null) {
+                    $aliasOf[(string) $key] = 'pivot';
+                }
             }
         }
         foreach (PivotFields::sortsFor($relation) as $sort) {

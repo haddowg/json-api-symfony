@@ -596,6 +596,23 @@ comparison — so a typed pivot column filters correctly with no extra wiring; a
 explicit `->deserializeUsing()` on the filter still wins. A filter with **no** `pivot.`
 prefix targets the related entity, exactly like any relation-scoped filter.
 
+A [filter family](https://github.com/haddowg/json-api/blob/main/docs/filters.md#filter-families-keys-matched-by-prefix)
+on the relation can resolve to a pivot filter too. The bundle resolves the family first
+and then treats what it returns as it treats an exact pivot filter: a `pivot.` column
+routes to the pivot alias and gets the field's cast on the related and relationship
+endpoints, and on the paths that carry no pivot values, such as an include, its key is
+unrecognised just as the exact one is.
+
+```php
+->withFilters(
+    FilterFamily::make('pin', fn(string $suffix, JsonApiRequestInterface $request): ?FilterInterface => match ($suffix) {
+        'rank' => Where::make('pin.rank', 'pivot.rank')->build(),            // filter[pin.rank]=2
+        'after' => Where::make('pin.after', 'pivot.pinnedAt', '>')->build(), // cast as a date
+        default => null,
+    }),
+);
+```
+
 The **documented** value type does not come along for free. Core types an
 unconstrained filter's OpenAPI value from the single column it targets, and `pivot.`
 means nothing to it — the prefix is this bundle's convention, not core's — so a pivot

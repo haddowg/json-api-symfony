@@ -8,10 +8,12 @@ final class Board
 {
     /**
      * @param list<Item> $items
+     * @param list<Item> $pinned
      */
     public function __construct(
         public string $id,
         public string $name,
         public array $items = [],
+        public array $pinned = [],
     ) {}
 }

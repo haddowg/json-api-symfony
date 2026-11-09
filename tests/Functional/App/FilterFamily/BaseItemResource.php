@@ -18,6 +18,7 @@ use haddowg\JsonApi\Resource\Filter\WhereIn;
  * Items filterable by list and by family. `name` and `weight` take a delimited list,
  * `labels` an array-only one. The `attr` family resolves a column to a scalar filter,
  * the `any` family to a list filter, and the exact `attr.shade` sits beside `attr`.
+ * `only` and the `one` family's `one.name` are singular filters on the same column.
  */
 abstract class BaseItemResource extends AbstractResource
 {
@@ -42,6 +43,10 @@ abstract class BaseItemResource extends AbstractResource
             WhereIn::make('labels', 'label')->acceptsList(delimited: false),
             WhereIn::make('weight')->acceptsList()->integer(),
             Where::make('attr.shade', 'color'),
+            Where::make('only', 'name')->singular(),
+            FilterFamily::make('one', static fn(string $suffix, JsonApiRequestInterface $request): ?FilterInterface => $suffix === 'name'
+                ? Where::make('one.name', 'name')->singular()->build()
+                : null),
             FilterFamily::make('attr', static fn(string $suffix, JsonApiRequestInterface $request): ?FilterInterface => \in_array($suffix, ['color', 'size'], true)
                 ? Where::make('attr.' . $suffix, $suffix)->build()
                 : null)

@@ -12,4 +12,9 @@ final class InMemoryFilterFamilyTest extends FilterFamilyConformanceTestCase
     {
         return FilterFamilyInMemoryTestKernel::class;
     }
+
+    protected function pivotAware(): bool
+    {
+        return false;
+    }
 }

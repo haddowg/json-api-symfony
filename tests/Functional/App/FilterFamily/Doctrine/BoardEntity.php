@@ -18,6 +18,12 @@ class BoardEntity
     #[ORM\OneToMany(targetEntity: ItemEntity::class, mappedBy: 'board')]
     public Collection $items;
 
+    /**
+     * @var Collection<int, PinEntity>
+     */
+    #[ORM\OneToMany(targetEntity: PinEntity::class, mappedBy: 'board')]
+    public Collection $pins;
+
     public function __construct(
         #[ORM\Id]
         #[ORM\Column]
@@ -26,5 +32,6 @@ class BoardEntity
         public string $name = '',
     ) {
         $this->items = new ArrayCollection();
+        $this->pins = new ArrayCollection();
     }
 }

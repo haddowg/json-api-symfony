@@ -11,6 +11,7 @@ use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineFilterHandler;
 use haddowg\JsonApiBundle\Tests\Functional\App\FilterFamily\Doctrine\BoardEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\FilterFamily\Doctrine\FilterFamilyDoctrineTestKernel;
 use haddowg\JsonApiBundle\Tests\Functional\App\FilterFamily\Doctrine\ItemEntity;
+use haddowg\JsonApiBundle\Tests\Functional\App\FilterFamily\Doctrine\PinEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\FilterFamily\ItemFixtures;
 use PHPUnit\Framework\Attributes\Test;
 
@@ -19,6 +20,11 @@ final class DoctrineFilterFamilyTest extends FilterFamilyConformanceTestCase
     protected static function getKernelClass(): string
     {
         return FilterFamilyDoctrineTestKernel::class;
+    }
+
+    protected function pivotAware(): bool
+    {
+        return true;
     }
 
     protected function afterBoot(): void
@@ -31,8 +37,14 @@ final class DoctrineFilterFamilyTest extends FilterFamilyConformanceTestCase
         foreach (ItemFixtures::boards() as $id => $name) {
             $entityManager->persist($boards[$id] = new BoardEntity($id, $name));
         }
+        $items = [];
         foreach (ItemFixtures::items() as $id => $row) {
-            $entityManager->persist(new ItemEntity($id, $boards[$row['board']], $row['name'], $row['label'], $row['color'], $row['size'], $row['weight']));
+            $entityManager->persist($items[$id] = new ItemEntity($id, $boards[$row['board']], $row['name'], $row['label'], $row['color'], $row['size'], $row['weight']));
+        }
+        foreach (ItemFixtures::pins() as $board => $pins) {
+            foreach ($pins as $item => $pin) {
+                $entityManager->persist(new PinEntity(null, $boards[$board], $items[$item], $pin['rank'], new \DateTimeImmutable($pin['pinnedAt'])));
+            }
         }
         $entityManager->flush();
         $entityManager->clear();

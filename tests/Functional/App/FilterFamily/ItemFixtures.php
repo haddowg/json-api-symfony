@@ -31,4 +31,24 @@ final class ItemFixtures
     {
         return [1 => 'orchard', 2 => 'hedgerow'];
     }
+
+    /**
+     * The items each board pins, keyed by board then item id, with the pin's rank and
+     * time. Only the Doctrine store keeps the pivot values.
+     *
+     * @return array<int, array<int, array{rank: int, pinnedAt: string}>>
+     */
+    public static function pins(): array
+    {
+        return [
+            1 => [
+                1 => ['rank' => 3, 'pinnedAt' => '2025-01-03T00:00:00+00:00'],
+                2 => ['rank' => 1, 'pinnedAt' => '2025-01-01T00:00:00+00:00'],
+                4 => ['rank' => 2, 'pinnedAt' => '2025-01-05T00:00:00+00:00'],
+            ],
+            2 => [
+                6 => ['rank' => 1, 'pinnedAt' => '2025-01-02T00:00:00+00:00'],
+            ],
+        ];
+    }
 }

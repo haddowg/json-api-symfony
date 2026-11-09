@@ -28,8 +28,15 @@ final class FilterFamilyProviderFactory
         foreach (ItemFixtures::boards() as $id => $name) {
             $boards[(string) $id] = new Board((string) $id, $name);
         }
+        $items = [];
         foreach (self::seededItems() as $item) {
+            $items[(int) $item->id] = $item;
             $boards[(string) ItemFixtures::items()[(int) $item->id]['board']]->items[] = $item;
+        }
+        foreach (ItemFixtures::pins() as $board => $pins) {
+            foreach (\array_keys($pins) as $item) {
+                $boards[(string) $board]->pinned[] = $items[$item];
+            }
         }
 
         return new InMemoryDataProvider('ffBoards', $boards, static function (object $board): string {
