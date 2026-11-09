@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.4.0](https://github.com/haddowg/json-api-symfony/compare/v2.3.2...v2.4.0) (2026-11-09)
+
+
+### ⚠ BREAKING CHANGES
+
+* **actions:** require an inputType for document input ([#325](https://github.com/haddowg/json-api-symfony/issues/325))
+
+### Features
+
+* **actions:** require an inputType for document input ([#325](https://github.com/haddowg/json-api-symfony/issues/325)) ([c724758](https://github.com/haddowg/json-api-symfony/commit/c724758097d213b51e187cd3c8597be3cc5e121a))
+* **doctrine:** serve computed pivot fields without an association entity ([#326](https://github.com/haddowg/json-api-symfony/issues/326)) ([06501a6](https://github.com/haddowg/json-api-symfony/commit/06501a668acb281386a20d765340d2553dbd7b97))
+* **openapi:** type the identifier meta a relation declares ([#324](https://github.com/haddowg/json-api-symfony/issues/324)) ([1df2125](https://github.com/haddowg/json-api-symfony/commit/1df2125f11edb22275b76a7928dc6d79e8639204))
+* **resources:** add relatedOnly types ([#322](https://github.com/haddowg/json-api-symfony/issues/322)) ([49a6d9e](https://github.com/haddowg/json-api-symfony/commit/49a6d9eb9fdac252a1c4b7686e90ec1300bfb83e))
+* support list filters and filter families ([#323](https://github.com/haddowg/json-api-symfony/issues/323)) ([7e09a1c](https://github.com/haddowg/json-api-symfony/commit/7e09a1ca359df2cf28ef59eb1f8cc81c2c0bf64a))
+* validate the members of open objects ([#327](https://github.com/haddowg/json-api-symfony/issues/327)) ([d0072f2](https://github.com/haddowg/json-api-symfony/commit/d0072f2b15e5c77b774934e14453d390603e8f0e))
+
 ## [2.3.2](https://github.com/haddowg/json-api-symfony/compare/v2.3.1...v2.3.2) (2026-11-09)
 
 
