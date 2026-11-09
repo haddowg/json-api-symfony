@@ -47,7 +47,7 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Query\FullTextSearch;
  * `Map` with a read-only child. The one Doctrine-specific divergence: where core's
  * in-memory app spreads the `releaseInfo` Map across flat `label`/`catalogueNumber`
  * columns, here it round-trips through a single JSON `releaseInfo` column via the
- * Map-level serialize/fill hooks (the pattern the bundle's Doctrine infra already
+ * Map-level extract/fill hooks (the pattern the bundle's Doctrine infra already
  * proves for a nested object stored as one JSON value).
  */
 #[AsJsonApiResource(entity: Album::class, server: ['default', 'admin'], tags: ['Catalog'])]
@@ -88,14 +88,15 @@ final class AlbumResource extends AbstractResource
                 ->nullable()
                 ->compareWith('availableFrom', Comparison::GreaterThan),
             // The `releaseInfo` Map round-trips through a single JSON column (rather
-            // than flat columns), via the Map-level serialize/fill hooks. The child
+            // than flat columns), via the Map-level extract/fill hooks. The child
             // constraints still cascade to /data/attributes/releaseInfo/<child>
-            // (catalogueNumber is read-only, so it never hydrates).
-            // The read hook shapes the value itself, so the map needs its own example.
-            Map::make('releaseInfo')->example(['label' => 'Apple Records', 'catalogueNumber' => 'PCS 7088'])->nullable()->fields(
+            // (catalogueNumber is read-only, so it never hydrates). The read value
+            // renders through the children, so each example comes from the children
+            // its schema shows and a write's leaves the read-only one out.
+            Map::make('releaseInfo')->nullable()->fields(
                 Str::make('label')->example('Apple Records'),
                 Str::make('catalogueNumber')->example('PCS 7088')->readOnly(),
-            )->serializeUsing(static function (mixed $model): mixed {
+            )->extractUsing(static function (mixed $model): mixed {
                 $info = $model instanceof Album ? ($model->releaseInfo ?? null) : null;
 
                 return $info === [] ? null : $info;
