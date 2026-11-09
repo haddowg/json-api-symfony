@@ -133,6 +133,94 @@ abstract class OpenObjectConformanceTestCase extends JsonApiFunctionalTestCase
         self::assertSame(SheetFactory::SEED_METRICS, $this->attributesOf($this->handle('/sheets/1'))['metrics'] ?? null);
     }
 
+    /**
+     * A `fillUsing()` hook changes how a value is stored, not what is valid, so the
+     * hooked `imported` list is held to its declared rows.
+     */
+    #[Test]
+    #[Group('spec:crud')]
+    public function aWriteHookedListRefusesAnEmptyRow(): void
+    {
+        $this->assertImportRefusedAt([[]], '/data/attributes/imported/0');
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function aWriteHookedListRefusesACellOverItsMaxLength(): void
+    {
+        $this->assertImportRefusedAt([['cell' => \str_repeat('x', 70000)]], '/data/attributes/imported/0/cell');
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function aWriteHookedListRefusesARowOverItsMemberCount(): void
+    {
+        $wide = [];
+        for ($i = 0; $i < 201; ++$i) {
+            $wide['c' . $i] = 'v';
+        }
+
+        $this->assertImportRefusedAt([$wide], '/data/attributes/imported/0');
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function aWriteHookedListRefusesMoreRowsThanItsMaxItems(): void
+    {
+        $this->assertImportRefusedAt(\array_fill(0, 1001, ['cell' => 'v']), '/data/attributes/imported');
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function aValidWriteHookedListIsAccepted(): void
+    {
+        $response = $this->create(['imported' => [['cell' => \str_repeat('x', 65535)], ['a' => '1', 'b' => '2']]]);
+
+        self::assertSame(201, $response->getStatusCode(), (string) $response->getContent());
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function aWriteHookedObjIsValidatedAgainstItsDeclaredChildren(): void
+    {
+        $response = $this->update(['preferences' => ['theme' => \str_repeat('x', 11), 'limits' => ['daily' => -1, 'weekly' => 1, 'monthly' => 2]]]);
+
+        self::assertSame(422, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(
+            ['/data/attributes/preferences/theme', '/data/attributes/preferences/limits', '/data/attributes/preferences/limits/daily'],
+            $this->pointersOf($response),
+        );
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function aWriteHookedObjRefusesAnUndeclaredMember(): void
+    {
+        $response = $this->update(['preferences' => ['theme' => 'light', 'colour' => 'red']]);
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['/data/attributes/preferences/colour'], $this->pointersOf($response));
+        self::assertSame(['ATTRIBUTE_MEMBER_UNRECOGNIZED'], $this->codesOf($response));
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    public function theOpenApiDocumentDescribesWriteHookedValuesInFull(): void
+    {
+        $factory = static::getContainer()->get(DocumentFactory::class);
+        self::assertInstanceOf(DocumentFactory::class, $factory);
+        $attributes = $this->at($factory->forServer()->toArray(), 'components', 'schemas', 'SheetsCreateAttributes', 'properties');
+
+        $items = $this->at($attributes, 'imported', 'items');
+        self::assertIsArray($items);
+        self::assertSame(['type' => 'string', 'maxLength' => 65535], $items['additionalProperties'] ?? null);
+        self::assertSame(1, $items['minProperties'] ?? null);
+        self::assertSame(200, $items['maxProperties'] ?? null);
+        self::assertSame(1000, $this->at($attributes, 'imported', 'maxItems'));
+        self::assertFalse($this->at($attributes, 'preferences', 'additionalProperties'));
+        self::assertSame(2, $this->at($attributes, 'preferences', 'properties', 'limits', 'maxProperties'));
+    }
+
     #[Test]
     #[Group('spec:openapi')]
     public function theOpenApiDocumentCarriesTheMemberSchemas(): void
@@ -181,6 +269,18 @@ abstract class OpenObjectConformanceTestCase extends JsonApiFunctionalTestCase
         return $this->handle('/sheets/1', 'PATCH', [
             'data' => ['type' => 'sheets', 'id' => '1', 'attributes' => $attributes],
         ]);
+    }
+
+    /**
+     * @param list<mixed> $rows
+     */
+    private function assertImportRefusedAt(array $rows, string $pointer): void
+    {
+        $response = $this->create(['imported' => $rows]);
+
+        self::assertSame(422, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame([$pointer], $this->pointersOf($response));
+        self::assertSame(['VALIDATION_FAILED'], $this->codesOf($response));
     }
 
     private function createdId(Response $response): string
