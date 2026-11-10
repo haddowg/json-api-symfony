@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.7.2](https://github.com/haddowg/json-api-symfony/compare/v2.7.1...v2.7.2) (2026-11-10)
+
+
+### Bug Fixes
+
+* scope the linkage and includes of an action's response ([#353](https://github.com/haddowg/json-api-symfony/issues/353)) ([a157b74](https://github.com/haddowg/json-api-symfony/commit/a157b745737a092fe30b4346facdf88cec77a394))
+
 ## [2.7.1](https://github.com/haddowg/json-api-symfony/compare/v2.7.0...v2.7.1) (2026-11-10)
 
 
