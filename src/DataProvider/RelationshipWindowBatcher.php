@@ -266,7 +266,10 @@ final class RelationshipWindowBatcher
         // like the primary and related-collection endpoints (superseding the
         // earlier "countable() always counts on include"). The
         // `?withCount` flag rides the ORIGINAL request, not the synthetic page request.
-        $wantsCount = ($paginator?->wantsCount() ?? false) || $request->countsRelationship($relation->name());
+        // A cursor window renders no total, and the relation's `meta.total` comes from
+        // the grouped relation count, so a cursor-windowed include never counts here.
+        $wantsCount = !$paginator instanceof CursorPaginator
+            && (($paginator?->wantsCount() ?? false) || $request->countsRelationship($relation->name()));
 
         $criteria = $this->relationCriteria->criteriaFor(
             new QueryParameters(

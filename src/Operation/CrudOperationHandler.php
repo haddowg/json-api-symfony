@@ -457,14 +457,12 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         }
         $window = $paginator !== null && $request !== null ? $paginator->window($request) : null;
 
-        // The single COUNT decision: a count-based paginator counts when its
-        // own withCount() author opt-in flipped it, OR the client asked
-        // `?withCount=_self_` (already 400-ed by core's document gate if the resource
-        // is not countable(), so an accepted `_self_` here implies countable). The
-        // cursor strategy is inherently count-free and resolves a total-null page on
-        // its own branch, so it is excluded.
+        // The single COUNT decision: a paginator counts when its own withCount()
+        // author opt-in flipped it, OR the client asked `?withCount=_self_` (already
+        // 400-ed by core's document gate if the resource is not countable(), so an
+        // accepted `_self_` here implies countable). A cursor paginator has no author
+        // opt-in, so only `_self_` counts a cursor page.
         $wantsCount = $paginator !== null
-            && !($paginator instanceof CursorPaginator)
             && ($paginator->wantsCount() || ($request !== null && $request->countsRelationship('_self_')));
 
         $result = $provider->fetchCollection($type, new CollectionCriteria(
@@ -532,9 +530,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // the row → boundary-value reader), so render through the paginator's cursor
         // path (CursorPaginator::fromBoundaries) carrying the pre-minted prev/next
         // tokens + the has-flags. `from`/`to` are the wire ids of the first/last
-        // rendered rows (meta.page.from/to). This is the only total-null primary
-        // path (a primary collection is otherwise always countable), so the offset
-        // and fromCollection branches below stay byte-identical.
+        // rendered rows (meta.page.from/to). A `?withCount=_self_` total renders as
+        // the top-level meta.total only: a cursor page has no meta.page.total or last.
         if ($result instanceof CursorCollectionResult && $paginator instanceof CursorPaginator && $request !== null) {
             $from = $items === [] ? null : $serializer->getId($items[0]);
             $to = $items === [] ? null : $serializer->getId($items[\array_key_last($items)]);
@@ -552,6 +549,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 ),
                 $serializer,
             );
+            if ($result->total !== null) {
+                $response = $response->withMeta(['total' => $result->total]);
+            }
 
             return $this->afterFetchCollection($response, $type, $request, $items, $paginator, $activatedProfiles);
         }
@@ -754,10 +754,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // The single COUNT decision for the related collection: the relation's
             // paginator counts when its own withCount() author opt-in flipped it, OR the
             // client asked `?withCount=_self_` (gated above on the relation's countable()).
-            // The cursor strategy is inherently count-free and resolves total-null on its
-            // own branch, so it is excluded.
             $relWantsCount = $paginator !== null
-                && !($paginator instanceof CursorPaginator)
                 && ($paginator->wantsCount() || $request->countsRelationship('_self_'));
 
             $relatedProvider = $this->providers->forType($relatedType);
@@ -818,13 +815,13 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 // tokens off the same query that read the pivot map, so render
                 // through the paginator's cursor path exactly as the non-pivot twin
                 // below — the members ride the PivotMetaSerializer, so each carries
-                // its `meta.pivot`. Total-null by design, so the counted and
-                // count-free offset arms below stay byte-identical.
+                // its `meta.pivot`. A `?withCount=_self_` total renders as the
+                // top-level meta.total only.
                 if ($pivotResult instanceof CursorCollectionResult && $paginator instanceof CursorPaginator) {
                     $from = $items === [] ? null : $serializer->getId($items[0]);
                     $to = $items === [] ? null : $serializer->getId($items[\array_key_last($items)]);
 
-                    return RelatedResponse::fromPage(
+                    return $this->withCursorTotal(RelatedResponse::fromPage(
                         $paginator->fromBoundaries(
                             $request,
                             $items,
@@ -837,7 +834,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                         ),
                         $serializer,
                         $relation->isCountable(),
-                    );
+                    ), $pivotResult);
                 }
 
                 // Counted page: the single total fans to BOTH meta.page.total (inside
@@ -917,14 +914,13 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // paginator's cursor path (CursorPaginator::fromBoundaries) carrying the
             // pre-minted prev/next tokens + the has-flags — the related twin of the
             // primary collection's cursor branch. `from`/`to` are
-            // the wire ids of the first/last rendered rows (meta.page.from/to). The
-            // cursor strategy is total-null by design, so the counted and count-free
-            // offset branches below stay byte-identical.
+            // the wire ids of the first/last rendered rows (meta.page.from/to). A
+            // `?withCount=_self_` total renders as the top-level meta.total only.
             if ($result instanceof CursorCollectionResult && $paginator instanceof CursorPaginator) {
                 $from = $items === [] ? null : $serializer->getId($items[0]);
                 $to = $items === [] ? null : $serializer->getId($items[\array_key_last($items)]);
 
-                return RelatedResponse::fromPage(
+                return $this->withCursorTotal(RelatedResponse::fromPage(
                     $paginator->fromBoundaries(
                         $request,
                         $items,
@@ -937,7 +933,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                     ),
                     $serializer,
                     $relation->isCountable(),
-                );
+                ), $result);
             }
 
             // Counted page: the single total fans to BOTH meta.page.total (inside the
@@ -1270,7 +1266,6 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             }
 
             $relWantsCount = $paginator !== null
-                && !($paginator instanceof CursorPaginator)
                 && ($paginator->wantsCount() || $request->countsRelationship('_self_'));
 
             // includePivotFields: true joins the pivot field keys into the recognised
@@ -1307,12 +1302,11 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $pivotSerializer,
             );
 
-            $response = IdentifierResponse::forRelationship($parent, $parentSerializer, $relationshipName);
+            // The wrapper hides the relation from core's `_self_` gate, so it is
+            // handed the relation's countable() directly.
+            $response = IdentifierResponse::forRelationship($parent, $parentSerializer, $relationshipName, $relation->isCountable());
 
-            // Attach the page that windowed the linkage so a page profile (the
-            // cursor-pagination profile) is advertised on the response; the body
-            // stays links-only (core docs/responses.md).
-            return $page !== null ? $response->withPage($page) : $response;
+            return $this->linkageResponse($response, $page, $pivotResult, $request);
         }
 
         // A MorphToMany declared with identifiedBy() pages its admitted link rows exactly as
@@ -1330,7 +1324,6 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             }
 
             $relWantsCount = $paginator !== null
-                && !($paginator instanceof CursorPaginator)
                 && ($paginator->wantsCount() || $request->countsRelationship('_self_'));
             $criteria = $this->relationCriteria->criteriaFor(
                 $operation->queryParameters(),
@@ -1348,7 +1341,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
             $response = IdentifierResponse::forRelationship($parent, $server->serializerFor($type), $relationshipName);
 
-            return $page !== null ? $response->withPage($page) : $response;
+            return $this->linkageResponse($response, $page, $result, $request);
         }
 
         // A polymorphic to-many (MorphToMany) relationship endpoint's members span types,
@@ -1398,9 +1391,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
             // The single COUNT decision, mirroring fetchRelated: the paginator
             // counts when its own withCount() opt-in flipped it OR the client asked
-            // `?withCount=_self_` (gated above); the cursor strategy is count-free.
+            // `?withCount=_self_` (gated above).
             $relWantsCount = $paginator !== null
-                && !($paginator instanceof CursorPaginator)
                 && ($paginator->wantsCount() || $request->countsRelationship('_self_'));
 
             // The merged filter/sort vocabulary (related resource ⊕ relation-scoped) and
@@ -1438,15 +1430,43 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                     new PivotMetaSerializer($server->serializerFor($relatedType), [], $relation, $parent, $this->outputTimezone?->timezone(), computedOnly: true),
                 )
                 : $server->serializerFor($type);
-            $response = IdentifierResponse::forRelationship($parent, $parentSerializer, $relationshipName);
+            $response = IdentifierResponse::forRelationship($parent, $parentSerializer, $relationshipName, $relation->isCountable());
 
-            // Attach the page that windowed the linkage so a page profile (the
-            // cursor-pagination profile) is advertised on the response; the body
-            // stays links-only (core docs/responses.md).
-            return $page !== null ? $response->withPage($page) : $response;
+            return $this->linkageResponse($response, $page, $result, $request);
         }
 
         return IdentifierResponse::forRelationship($parent, $server->serializerFor($type), $relationshipName);
+    }
+
+    /**
+     * Attaches the page that windowed the linkage, so a page profile (the
+     * cursor-pagination profile) is advertised while the body stays links-only (core
+     * docs/responses.md), and renders the total a `?withCount=_self_` asked for as the
+     * top-level `meta.total`, as a counted collection does.
+     *
+     * @param PageInterface<mixed>|null $page
+     * @param CollectionResult<object>  $result
+     */
+    private function linkageResponse(IdentifierResponse $response, ?PageInterface $page, CollectionResult $result, JsonApiRequestInterface $request): IdentifierResponse
+    {
+        if ($page !== null) {
+            $response = $response->withPage($page);
+        }
+
+        return $request->countsRelationship('_self_') && $result->total !== null
+            ? $response->withMeta(['total' => $result->total])
+            : $response;
+    }
+
+    /**
+     * A cursor page's `?withCount=_self_` total, as the top-level `meta.total`. A cursor
+     * page has no `meta.page.total` or `last` link to carry it.
+     *
+     * @param CollectionResult<object> $result
+     */
+    private function withCursorTotal(RelatedResponse $response, CollectionResult $result): RelatedResponse
+    {
+        return $result->total === null ? $response : $response->withMeta(['total' => $result->total]);
     }
 
     /**

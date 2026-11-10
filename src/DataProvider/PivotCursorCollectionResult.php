@@ -22,8 +22,8 @@ use haddowg\JsonApi\Collection\CursorCollectionResult;
  * each member's resource (related endpoint) and identifier (relationship endpoint)
  * carries its per-member pivot values as `meta.pivot`.
  *
- * A cursor page is count-free BY DESIGN (the keyset strategy never derives a
- * total), so unlike {@see PivotCollectionResult} there is no counted variant.
+ * Count-free unless the request asked for the total with `?withCount=_self_`; then
+ * {@see $total} is the size of the filtered pivot collection.
  *
  * @template-covariant TEntity of object
  *
@@ -38,6 +38,7 @@ final class PivotCursorCollectionResult extends CursorCollectionResult
      * @param ?string                             $cursorAfter  the encoded `next` boundary (the last row's cursor), or null when the page is empty
      * @param bool                                $hasPrevious  whether a previous page exists (drives the `prev` link)
      * @param bool                                $hasMore      whether a following page exists (drives the `next` link)
+     * @param ?int                                $total        the size of the filtered collection when the request counts it, otherwise null
      */
     public function __construct(
         iterable $items,
@@ -46,7 +47,8 @@ final class PivotCursorCollectionResult extends CursorCollectionResult
         ?string $cursorAfter = null,
         bool $hasPrevious = false,
         bool $hasMore = false,
+        ?int $total = null,
     ) {
-        parent::__construct($items, $cursorBefore, $cursorAfter, $hasPrevious, $hasMore);
+        parent::__construct($items, $cursorBefore, $cursorAfter, $hasPrevious, $hasMore, $total);
     }
 }

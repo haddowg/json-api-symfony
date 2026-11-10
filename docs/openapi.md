@@ -546,7 +546,9 @@ relation an `exampleId()` (see [relationships](relationships.md#the-related-endp
 A collection whose paginator counts on every request, one built with `withCount()`, shows
 `meta.total`, `meta.page.total` and the `last` link as it is served. The bundle reads that
 from the same paginator the endpoint uses: the relation's own, then the related
-resource's `pagination()`, then the server default. A cursor page never counts.
+resource's `pagination()`, then the server default. A cursor paginator never counts every
+request, so a countable cursor collection shows the `meta.total` a `withCount=_self_`
+request gets, with no `meta.page.total` or `last`.
 
 `operationExamples` on `#[AsJsonApiResource]` (or `#[AsJsonApiSerializer]`) replaces or
 switches off an operation's example. Keys are core's operation names: `fetchCollection`,
