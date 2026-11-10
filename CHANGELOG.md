@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.5.0](https://github.com/haddowg/json-api-symfony/compare/v2.4.2...v2.5.0) (2026-11-10)
+
+
+### Features
+
+* apply a to-many's default read order on every read path ([#335](https://github.com/haddowg/json-api-symfony/issues/335)) ([ecc74e9](https://github.com/haddowg/json-api-symfony/commit/ecc74e920c94c735b24f92d41eac1eff26aebed2))
+* give an identified MorphToMany pivot fields on its link rows ([#337](https://github.com/haddowg/json-api-symfony/issues/337)) ([8ea610e](https://github.com/haddowg/json-api-symfony/commit/8ea610e75a2dd40ad0fef7faf889df837220185f))
+* guard to-many membership with cannotChangeMembership ([#336](https://github.com/haddowg/json-api-symfony/issues/336)) ([c6152dc](https://github.com/haddowg/json-api-symfony/commit/c6152dccd6c7f7b3ba2ea0dc501d4f0768754d1d))
+* write a positioned to-many's positions from its linkage ([#338](https://github.com/haddowg/json-api-symfony/issues/338)) ([779e4e2](https://github.com/haddowg/json-api-symfony/commit/779e4e2d6d2d4434cf6e562ac8c8d6edd1011faa))
+
+
+### Bug Fixes
+
+* **example:** drop the read-only catalogueNumber from releaseInfo write examples ([#332](https://github.com/haddowg/json-api-symfony/issues/332)) ([2b89c78](https://github.com/haddowg/json-api-symfony/commit/2b89c78c5908107cd88e10f95dccab1361c54761))
+
 ## [2.4.2](https://github.com/haddowg/json-api-symfony/compare/v2.4.1...v2.4.2) (2026-11-09)
 
 
