@@ -343,6 +343,11 @@ links, the `jsonapi` object, content negotiation, and error rendering are all
 reused unchanged — an action document is indistinguishable from a CRUD document on
 the wire.
 
+A `DataResponse` loads its resources' relations the way a read does, whether the
+handler built it with `$context->data()` or by hand. Linkage, `?include` and
+`?withCount` go through the related type's provider, so the scope, filter defaults
+and default order its relationship endpoint applies hold in the action's document too.
+
 ### Advertising the output in OpenAPI
 
 The runtime response is whatever the handler returns; the **generated OpenAPI

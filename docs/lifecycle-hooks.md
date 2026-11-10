@@ -109,7 +109,9 @@ to diff against). The other hook methods differ only in what comes before the
   `AfterRelationshipMutate`, `AfterFetchOne`, `AfterFetchCollection`) runs
   **post-commit** and may **replace** the response value object (custom-action
   shaping). On the event, call `setResponse(...)`; on a resource method, `return`
-  the replacement (or `null` to keep the handler's response).
+  the replacement (or `null` to keep the handler's response). A replacement
+  `DataResponse` that renders other resources has their relations loaded through
+  their providers as a read would, so its linkage and `included` are scoped the same.
 
 `serving` is before-only — it carries no response. Request-wide response shaping
 belongs to the per-operation after hooks.

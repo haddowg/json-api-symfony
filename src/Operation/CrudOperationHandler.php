@@ -227,6 +227,13 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      */
     private array $relatedActivatedProfiles = [];
 
+    /**
+     * The primary resources this operation loaded relations for, by object id.
+     *
+     * @var array<int, true>
+     */
+    private array $preloaded = [];
+
     public function __construct(
         private readonly DataProviderRegistry $providers,
         private readonly DataPersisterRegistry $persisters,
@@ -271,6 +278,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $this->relationshipLinkage?->setIncluded(null);
         // Nor another operation's counts.
         $this->relationshipCount?->set(null);
+        $this->preloaded = [];
         // Related rows are judged against their own read gate afresh per operation.
         $serverName = $this->contextServerName($operation->context());
         $this->relationshipLinkage?->bind($server instanceof Server ? $server : null, $serverName);
@@ -282,7 +290,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $this->assertObjectMembers($operation->body());
         }
 
-        return match (true) {
+        $response = match (true) {
             $operation instanceof FetchResourceOperation => $this->fetch($operation),
             $operation instanceof FetchRelatedOperation => $this->fetchRelated($operation),
             $operation instanceof FetchRelationshipOperation => $this->fetchRelationship($operation),
@@ -296,6 +304,51 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $operation instanceof AtomicOperationsOperation => $this->atomic($operation),
             default => ErrorResponse::fromException(new ResourceNotFound()),
         };
+
+        $request = $operation->context()->httpRequest();
+
+        return $response instanceof DataResponse && $server instanceof Server && $request instanceof JsonApiRequestInterface
+            ? $this->loadRendered($server, $response, $request)
+            : $response;
+    }
+
+    /**
+     * Loads the relations of the resources a response renders that this operation did
+     * not load them for: a custom action's resources, or ones an after-hook answered
+     * with. They render through the same windows, scoped preload and counts a read
+     * runs, so no linkage, included resource or count is read off the model.
+     */
+    private function loadRendered(Server $server, DataResponse $response, JsonApiRequestInterface $request): DataResponse
+    {
+        $groups = [];
+        $loaded = true;
+        foreach ($response->primaryResources() as $member) {
+            if (!\is_object($member)) {
+                continue;
+            }
+            $groups[$response->serializer()->getType($member)][] = $member;
+            $loaded = $loaded && isset($this->preloaded[\spl_object_id($member)]);
+        }
+        if ($loaded || $groups === []) {
+            return $response;
+        }
+
+        if (\count($groups) > 1) {
+            $this->relationshipPagination?->set(null);
+            $this->relationshipLinkage?->set(null);
+            $this->relationshipCount?->set(null);
+            $this->preloadGroups($groups, $request, $server);
+
+            return $response;
+        }
+
+        $type = \array_key_first($groups);
+        $members = $groups[$type];
+        $activatedProfiles = $this->applyRelationshipWindows($server, $type, $members, $request);
+        $this->preloadIncludes($members, $type, $request, $server);
+        $this->applyRelationshipCounts($server, $type, $members, $request);
+
+        return $activatedProfiles === [] ? $response : $response->withActivatedProfiles(...$activatedProfiles);
     }
 
     /**
@@ -383,7 +436,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // Load the relations the document renders through their providers (scoped
             // like the related endpoint, no N+1), descending into the windowed pages; a single
             // resource is a one-element list.
-            $this->preloadIncludes($provider, [$model], $type, $request, $server);
+            $this->preloadIncludes([$model], $type, $request, $server);
 
             // Install the ?withCount batched counts for this single resource so its
             // relationship objects render meta.total.
@@ -490,7 +543,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // A singular filter collapses to a single resource; window + count it too.
             $activatedProfiles = $this->applyRelationshipWindows($server, $type, $first === null ? [] : [$first], $request);
             if ($first !== null) {
-                $this->preloadIncludes($provider, [$first], $type, $request, $server);
+                $this->preloadIncludes([$first], $type, $request, $server);
             }
             $this->applyRelationshipCounts($server, $type, $first === null ? [] : [$first], $request);
 
@@ -516,7 +569,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // Load the relations the document renders across the whole page through their
         // providers (scoped like the related endpoint, no N+1), descending into the
         // windowed pages.
-        $this->preloadIncludes($provider, $items, $type, $request, $server);
+        $this->preloadIncludes($items, $type, $request, $server);
 
         // Install the ?withCount batched counts across the whole page in ONE grouped
         // count per relation (no N+1), so every parent's relationship objects render
@@ -812,7 +865,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $serializer = new PivotMetaSerializer($server->serializerFor($relatedType), $pivotResult->pivotMap, $relation, $parent, $this->outputTimezone?->timezone());
                 $items = \is_array($pivotResult->items) ? \array_values($pivotResult->items) : \iterator_to_array($pivotResult->items, false);
                 $this->windowRelatedItems($server, $relatedType, $items, $request);
-                $this->preloadIncludes($relatedProvider, $items, $relatedType, $request, $server);
+                $this->preloadIncludes($items, $relatedType, $request, $server);
                 $this->applyRelationshipCounts($server, $relatedType, $items, $request);
 
                 // A cursor (keyset) pivot page: the provider minted the boundary
@@ -906,7 +959,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $this->preloadPolymorphic($relation, $items, $request, $server, $identifiedTypes ?? []);
             } else {
                 $this->windowRelatedItems($server, $relatedType, $items, $request);
-                $this->preloadIncludes($relatedProvider, $items, $relatedType, $request, $server);
+                $this->preloadIncludes($items, $relatedType, $request, $server);
                 // ?withCount on a related collection counts the RELATED type's own
                 // countable relations across the related page; a
                 // polymorphic page spans types, so it carries no single related type.
@@ -1794,16 +1847,17 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * holder, so `included` and linkage `data` match the related endpoint. Also batches
      * includes so they do not N+1.
      *
-     * The `$provider` argument is retained for the call sites but unused: the
-     * orchestrator resolves the right provider per relation itself.
+     * The orchestrator resolves the right provider per relation itself.
      *
-     * @param DataProviderInterface<object> $provider
-     * @param list<object>                  $entities
+     * @param list<object> $entities
      */
-    private function preloadIncludes(DataProviderInterface $provider, array $entities, string $type, ?JsonApiRequestInterface $request, ?Server $server = null): void
+    private function preloadIncludes(array $entities, string $type, ?JsonApiRequestInterface $request, ?Server $server = null): void
     {
         if ($request !== null && $server !== null) {
             $this->assertInMemoryRelatedObjects($type, $entities, $request, $server);
+        }
+        if ($request !== null) {
+            $this->markPreloaded($entities);
         }
 
         if ($request === null || $entities === [] || $this->includeBatcher === null) {
@@ -1869,8 +1923,23 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $groups[$serializer->getType($item)][] = $item;
             }
         }
+        $this->preloadGroups($groups, $request, $server);
+    }
+
+    /**
+     * Loads the relations of primary resources of several types, keyed by type.
+     *
+     * @param array<string, list<object>> $groups
+     */
+    private function preloadGroups(array $groups, JsonApiRequestInterface $request, Server $server): void
+    {
         foreach ($groups as $type => $members) {
             $this->assertInMemoryRelatedObjects($type, $members, $request, $server);
+            $this->markPreloaded($members);
+        }
+
+        if ($this->includeBatcher === null) {
+            return;
         }
 
         $linkage = $this->includeBatcher->preloadGrouped($groups, $request, $server);
@@ -1880,6 +1949,16 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         }
 
         $this->relationshipLinkage?->setIncluded($linkage);
+    }
+
+    /**
+     * @param list<object> $entities
+     */
+    private function markPreloaded(array $entities): void
+    {
+        foreach ($entities as $entity) {
+            $this->preloaded[\spl_object_id($entity)] = true;
+        }
     }
 
     /**
@@ -2242,7 +2321,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $this->applyRelationshipWindows($server, $type, [$entity], $request);
         // A write response honours ?include too: load the relations it renders, scoped
         // and batched as a fetch does.
-        $this->preloadIncludes($this->providers->forType($type), [$entity], $type, $request, $server);
+        $this->preloadIncludes([$entity], $type, $request, $server);
         $this->applyRelationshipCounts($server, $type, [$entity], $request);
 
         // The Location uses the resource's URI segment (its uriType), so it matches
@@ -2367,7 +2446,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // a ?withCount.
         $this->applyRelationshipWindows($server, $type, [$entity], $request);
         // A PATCH response honours ?include as a fetch does.
-        $this->preloadIncludes($provider, [$entity], $type, $request, $server);
+        $this->preloadIncludes([$entity], $type, $request, $server);
         $this->applyRelationshipCounts($server, $type, [$entity], $request);
 
         $response = DataResponse::fromResource($entity, $serializer);
