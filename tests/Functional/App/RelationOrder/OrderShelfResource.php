@@ -19,10 +19,12 @@ use haddowg\JsonApi\Resource\Sort\SortDirective;
 
 /**
  * `books` declares its own order, title descending, replacing the books' own oldest
- * first; `booksByYear` reads the same books and keeps the books' order. `items` is a
+ * first; `booksByYear` reads the same books and keeps the books' order, and
+ * `shelvedBooks` reads them in the position each holds on the shelf. `items` is a
  * MorphToMany over books and magazines declared by its link rows' fields, which carry a
- * rank and a note, read in rank order. `closureItems` reads the same rows through an
- * identifiedBy() closure, so only core's in-memory query serves it.
+ * rank and a note, read in rank order, and keep a hidden position. `closureItems` reads
+ * the same rows through an identifiedBy() closure, so only core's in-memory query serves
+ * it.
  */
 class OrderShelfResource extends AbstractResource
 {
@@ -40,13 +42,19 @@ class OrderShelfResource extends AbstractResource
             HasMany::make('booksByYear', 'books')
                 ->storedAs('books')
                 ->withData(),
+            HasMany::make('shelvedBooks', 'books')
+                ->storedAs('books')
+                ->withData()
+                ->positionedBy('position'),
             MorphToMany::make('items', ['books', 'magazines'])
                 ->through(OrderShelfItem::class)
                 ->identifiedByRows(owner: 'shelf', type: 'itemType', id: 'itemId')
                 ->fields(
                     Integer::make('rank')->required(),
                     Str::make('note'),
+                    Integer::make('position')->hidden(),
                 )
+                ->positionedBy('position')
                 ->withFilters(Where::make('minRank', 'pivot.rank', '>=')->deserializeUsing(self::integer(...)))
                 ->paginate(PagePaginator::make())
                 ->defaultSort(new SortDirective(SortByField::make('rank'), descending: false)),
@@ -57,7 +65,9 @@ class OrderShelfResource extends AbstractResource
                 ->fields(
                     Integer::make('rank')->required(),
                     Str::make('note'),
+                    Integer::make('position')->hidden(),
                 )
+                ->positionedBy('position')
                 ->withFilters(Where::make('minRank', 'pivot.rank', '>=')->deserializeUsing(self::integer(...)))
                 ->defaultSort(new SortDirective(SortByField::make('rank'), descending: false))
                 ->fillUsing(self::fillItems(...)),

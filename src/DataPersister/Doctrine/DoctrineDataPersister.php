@@ -19,14 +19,17 @@ use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\FieldInterface;
 use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
+use haddowg\JsonApi\Resource\Field\Positions;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Schema\ResourceIdentifier;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\MovedMember;
+use haddowg\JsonApiBundle\DataPersister\PositionTargets;
 use haddowg\JsonApiBundle\DataPersister\ReportsMovedMembersInterface;
 use haddowg\JsonApiBundle\DataPersister\StoresDateTimesInterface;
 use haddowg\JsonApiBundle\DataPersister\TransactionalDataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\WritesLinkRowsInterface;
+use haddowg\JsonApiBundle\DataPersister\WritesPositionsInterface;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineIdentifiers;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\NaiveDateTimeStorage;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\PivotAssociation;
@@ -71,7 +74,7 @@ use haddowg\JsonApiBundle\Validation\RelationshipTypeUnacceptable;
  * (`404`), rather than passing the raw wire string to `getReference` (which would
  * build a proxy that errors on initialization, surfacing as a `500`).
  */
-final class DoctrineDataPersister implements DataPersisterInterface, TransactionalDataPersisterInterface, ReportsMovedMembersInterface, StoresDateTimesInterface, WritesLinkRowsInterface
+final class DoctrineDataPersister implements DataPersisterInterface, TransactionalDataPersisterInterface, ReportsMovedMembersInterface, StoresDateTimesInterface, WritesLinkRowsInterface, WritesPositionsInterface
 {
     private readonly DoctrineIdentifiers $ids;
 
@@ -227,6 +230,111 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
         }
 
         return $entity;
+    }
+
+    /**
+     * Mutates a positioned to-many and writes its members' positions: on each pivot row
+     * of a pivot relation, on each member otherwise. A parent already stored writes them
+     * through {@see writePositions()}'s passes, so a unique owner and position key holds
+     * throughout.
+     */
+    public function mutatePositioned(
+        string $type,
+        object $entity,
+        RelationInterface $relation,
+        ToManyRelationship $linkage,
+        Mode $mode,
+        string $column,
+        bool $flush = true,
+    ): object {
+        $relatedType = $relation->relatedTypes()[0] ?? '';
+        $relatedClass = $this->entityClassFor($relatedType);
+
+        if ($this->pivotAssociations !== null && $this->pivotAssociations->isPivotRelation($relation)) {
+            $association = $this->pivotAssociations->resolve($relation, $entity, $relatedClass);
+            $current = PositionTargets::current($this->existingPivotRows($entity, $association, $relatedClass), $column);
+            $rows = $this->mutatePivot($entity, $relation, $relatedType, $relatedClass, $linkage, $mode);
+        } else {
+            $property = $relation->column() ?? $relation->name();
+            $current = PositionTargets::current($this->membersByKey($entity, $property, $relatedClass), $column);
+            $this->mutateToMany($entity, $property, $relation, $linkage, $mode);
+            $rows = $this->membersByKey($entity, $property, $relatedClass);
+        }
+
+        $incoming = [];
+        foreach ($linkage->resourceIdentifiers as $identifier) {
+            if ($identifier->id !== null && $identifier->type === $relatedType) {
+                $incoming[] = $this->mapKey($relatedClass, $this->decodeLinkageId($relatedType, $identifier->id));
+            }
+        }
+
+        $this->writePositions($entity, $current, PositionTargets::for($mode, $current, $incoming), $rows, $column, $flush);
+
+        return $entity;
+    }
+
+    /**
+     * Writes positions in core's {@see Positions::plan()} order, a flush after each
+     * pass, so no two rows share an owner and position at any flush: the removed members
+     * go and any new row is written at a temporary position past every one in use, then
+     * the rows that move take their temporary positions, then everything takes its final
+     * one. A parent not yet stored holds no positions to collide with, so it takes its
+     * final positions in one write. The last pass is flushed only with `$flush`.
+     */
+    public function writePositions(object $parent, array $current, array $target, array $rows, string $column, bool $flush = true): void
+    {
+        $plan = Positions::plan($current, $target);
+
+        if ($current !== [] && $this->entityManager->getUnitOfWork()->isInIdentityMap($parent)) {
+            $offset = \max([-1, ...\array_values($current), ...\array_values($target)]) + 1;
+            foreach ($plan->final as $key => $position) {
+                if (!\array_key_exists($key, $current) && isset($rows[$key])) {
+                    $this->property($rows[$key], $column)->setValue($rows[$key], $offset + $position);
+                }
+            }
+            $this->entityManager->flush();
+
+            if ($plan->temporary !== []) {
+                foreach ($plan->temporary as $key => $position) {
+                    if (isset($rows[$key])) {
+                        $this->property($rows[$key], $column)->setValue($rows[$key], $position);
+                    }
+                }
+                $this->entityManager->flush();
+            }
+        }
+
+        foreach ($plan->final as $key => $position) {
+            if (isset($rows[$key])) {
+                $this->property($rows[$key], $column)->setValue($rows[$key], $position);
+            }
+        }
+
+        if ($flush) {
+            $this->entityManager->flush();
+        }
+    }
+
+    /**
+     * The members of `$entity`'s to-many `$property`, keyed by their storage key.
+     *
+     * @param class-string $relatedClass
+     *
+     * @return array<string, object>
+     */
+    private function membersByKey(object $entity, string $property, string $relatedClass): array
+    {
+        $members = [];
+        foreach ($this->toManyCollection($entity, $property)?->toArray() ?? [] as $member) {
+            if (\is_object($member)) {
+                $key = $this->ids->valueOf($this->entityManager->getClassMetadata($member::class), $member);
+                if ($key !== null) {
+                    $members[$this->mapKey($relatedClass, $key)] = $member;
+                }
+            }
+        }
+
+        return $members;
     }
 
     /**
@@ -440,9 +548,12 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
      * A readOnly pivot field is NEVER written from `meta`; on a freshly-created row it
      * takes its server-owned value (the association entity's own default / a
      * `PrePersist` callback). The association entities are managed (persisted /
-     * removed here), so the flush the caller controls is storage-correct.
+     * removed here), so the flush the caller controls is storage-correct. Returns the
+     * rows the parent holds afterwards, keyed by far member.
      *
      * @param class-string $relatedClass the far (related) entity class
+     *
+     * @return array<string, object>
      */
     private function mutatePivot(
         object $parent,
@@ -451,7 +562,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
         string $relatedClass,
         ToManyRelationship $linkage,
         Mode $mode,
-    ): void {
+    ): array {
         \assert($relation instanceof BelongsToMany);
         \assert($this->pivotAssociations !== null);
 
@@ -462,25 +573,27 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
 
         if ($mode === Mode::Remove) {
             foreach ($incomingMembers as [$storageKey]) {
-                $row = $existing[$this->mapKey($relatedClass, $storageKey)] ?? null;
+                $mapKey = $this->mapKey($relatedClass, $storageKey);
+                $row = $existing[$mapKey] ?? null;
                 if ($row !== null) {
                     $this->removePivotRow($parent, $association, $row);
+                    unset($existing[$mapKey]);
                 }
             }
 
-            return;
+            return $existing;
         }
 
-        $keptKeys = [];
+        $kept = [];
         foreach ($incomingMembers as [$storageKey, $reference, $meta]) {
             $mapKey = $this->mapKey($relatedClass, $storageKey);
-            $keptKeys[$mapKey] = true;
 
             $row = $existing[$mapKey] ?? null;
             if ($row !== null) {
                 // Reorder / update an existing row's writable pivot fields IN PLACE
                 // (update context — the row exists).
                 $this->writePivotFields($row, $relation->writablePivotFields(false), $meta);
+                $kept[$mapKey] = $row;
 
                 continue;
             }
@@ -491,15 +604,20 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
             $this->writePivotFields($row, $relation->writablePivotFields(true), $meta);
             $this->attachPivotRow($parent, $association, $row);
             $this->entityManager->persist($row);
+            $kept[$mapKey] = $row;
         }
 
         if ($mode === Mode::Replace) {
             foreach ($existing as $mapKey => $row) {
-                if (!isset($keptKeys[$mapKey])) {
+                if (!isset($kept[$mapKey])) {
                     $this->removePivotRow($parent, $association, $row);
                 }
             }
+
+            return $kept;
         }
+
+        return $kept + $existing;
     }
 
     /**

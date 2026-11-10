@@ -18,15 +18,15 @@ final class OrderFixtures
     public const array SHELVES = [1 => 'Fiction', 2 => 'Poetry', 3 => 'Empty'];
 
     /**
-     * Each book's title, year and shelf.
+     * Each book's title, year, shelf and position on it.
      */
     public const array BOOKS = [
-        1 => ['Bravo', 2001, 1],
-        2 => ['Delta', 1999, 1],
-        3 => ['Alpha', 2005, 1],
-        4 => ['Charlie', 1990, 1],
-        5 => ['Echo', 2010, 2],
-        6 => ['Foxtrot', 2020, 2],
+        1 => ['Bravo', 2001, 1, 0],
+        2 => ['Delta', 1999, 1, 2],
+        3 => ['Alpha', 2005, 1, 1],
+        4 => ['Charlie', 1990, 1, 3],
+        5 => ['Echo', 2010, 2, 0],
+        6 => ['Foxtrot', 2020, 2, 1],
     ];
 
     /**
@@ -68,15 +68,15 @@ final class OrderFixtures
         }
 
         $books = [];
-        foreach (self::BOOKS as $id => [$title, $year, $shelf]) {
-            $book = new OrderBook($id, $title, $year, $shelves[$shelf]);
+        foreach (self::BOOKS as $id => [$title, $year, $shelf, $position]) {
+            $book = new OrderBook($id, $title, $year, $shelves[$shelf], $position);
             $shelves[$shelf]->books->add($book);
             $books[$id] = $book;
         }
 
         $picks = [];
-        foreach (self::PICKS as [$shelf, $book, $rank]) {
-            $pick = new OrderPick(null, $shelves[$shelf], $books[$book] ?? throw new \LogicException('No book ' . $book), $rank);
+        foreach (self::PICKS as $position => [$shelf, $book, $rank]) {
+            $pick = new OrderPick(null, $shelves[$shelf], $books[$book] ?? throw new \LogicException('No book ' . $book), $rank, $position);
             $shelves[$shelf]->picks->add($pick);
             $picks[] = $pick;
         }
@@ -87,7 +87,7 @@ final class OrderFixtures
         }
 
         foreach (self::ITEMS as $index => [$shelf, $type, $id, $rank, $note]) {
-            $shelves[$shelf]->items->add(new OrderShelfItem($index + 1, $shelves[$shelf], $type, $id, $rank, $note));
+            $shelves[$shelf]->items->add(new OrderShelfItem($index + 1, $shelves[$shelf], $type, $id, $rank, $note, $index));
         }
 
         return ['shelves' => \array_values($shelves), 'books' => \array_values($books), 'picks' => $picks, 'magazines' => $magazines];

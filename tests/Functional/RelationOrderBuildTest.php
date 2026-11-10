@@ -8,6 +8,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\RelationOrder\OrderInMemoryTestKe
 use haddowg\JsonApiBundle\Tests\Functional\App\RelationOrder\OrderShelfResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\RelationOrder\PivotOrderShelfResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\RelationOrder\UnknownOrderShelfResource;
+use haddowg\JsonApiBundle\Tests\Functional\App\RelationOrder\WritablePositionShelfResource;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
@@ -43,10 +44,19 @@ final class RelationOrderBuildTest extends KernelTestCase
     }
 
     #[Test]
+    public function aRelationPositionedByAWritableFieldFailsWarmUp(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('Relation "booksByAge" on resource type "shelves" is positioned by "year" on type "books", but it is writable');
+
+        $this->bootWith(WritablePositionShelfResource::class);
+    }
+
+    #[Test]
     public function aPivotDefaultSortOnAProviderWithoutPivotRowsFailsWarmUp(): void
     {
         $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('Relation "picks" on resource type "shelves" declares a defaultSort() on the pivot field "rank", but the data provider of "books" does not read the relation through a pivot query');
+        $this->expectExceptionMessage('Relation "picks" on resource type "shelves" is ordered by the pivot field "rank", but the data provider of "books" does not read the relation through a pivot query');
 
         $this->bootWith(PivotOrderShelfResource::class);
     }

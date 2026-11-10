@@ -40,20 +40,20 @@ final class DoctrineRelationOrderTest extends RelationOrderConformanceTestCase
             $entityManager->flush();
         }
         $books = [];
-        foreach (OrderFixtures::BOOKS as $id => [$title, $year, $shelf]) {
-            $entityManager->persist($books[$id] = new OrderBook(title: $title, year: $year, shelf: $shelves[$shelf]));
+        foreach (OrderFixtures::BOOKS as $id => [$title, $year, $shelf, $position]) {
+            $entityManager->persist($books[$id] = new OrderBook(title: $title, year: $year, shelf: $shelves[$shelf], position: $position));
             $entityManager->flush();
         }
-        foreach (OrderFixtures::PICKS as [$shelf, $book, $rank]) {
-            $entityManager->persist(new OrderPick(shelf: $shelves[$shelf], book: $books[$book] ?? throw new \LogicException('No book ' . $book), rank: $rank));
+        foreach (OrderFixtures::PICKS as $position => [$shelf, $book, $rank]) {
+            $entityManager->persist(new OrderPick(shelf: $shelves[$shelf], book: $books[$book] ?? throw new \LogicException('No book ' . $book), rank: $rank, position: $position));
             $entityManager->flush();
         }
         foreach (OrderFixtures::MAGAZINES as $title) {
             $entityManager->persist(new OrderMagazine(title: $title));
             $entityManager->flush();
         }
-        foreach (OrderFixtures::ITEMS as [$shelf, $itemType, $itemId, $rank, $note]) {
-            $entityManager->persist(new OrderShelfItem(shelf: $shelves[$shelf], itemType: $itemType, itemId: $itemId, rank: $rank, note: $note));
+        foreach (OrderFixtures::ITEMS as $position => [$shelf, $itemType, $itemId, $rank, $note]) {
+            $entityManager->persist(new OrderShelfItem(shelf: $shelves[$shelf], itemType: $itemType, itemId: $itemId, rank: $rank, note: $note, position: $position));
             $entityManager->flush();
         }
         $entityManager->clear();
@@ -81,14 +81,15 @@ final class DoctrineRelationOrderTest extends RelationOrderConformanceTestCase
 
         $this->document('/shelves');
 
-        // One ordered read each for books and booksByYear across the three shelves.
+        // One ordered read each for books, booksByYear and shelvedBooks across the three
+        // shelves.
         $bookReads = \array_filter(
             $logger->statements(),
             static fn(string $sql): bool => \str_starts_with(\strtolower(\ltrim($sql)), 'select')
                 && \preg_match('/\bfrom ro_book\b/i', $sql) === 1
                 && !\str_contains(\strtolower($sql), 'ro_pick'),
         );
-        self::assertCount(2, $bookReads, \implode("\n", $logger->statements()));
+        self::assertCount(3, $bookReads, \implode("\n", $logger->statements()));
     }
 
     #[Test]
@@ -108,6 +109,33 @@ final class DoctrineRelationOrderTest extends RelationOrderConformanceTestCase
         );
         self::assertCount(1, $rowReads, \implode("\n", $logger->statements()));
         self::assertStringContainsString('LIMIT', \implode('', $rowReads));
+    }
+
+    #[Test]
+    #[Group('spec:crud-updating-relationships')]
+    public function aPivotRelationWritesItsPositionsUnderAUniqueKey(): void
+    {
+        $this->replace('picks', [['books', '4'], ['books', '1'], ['books', '3']]);
+        // Read by rank, books 3, 4 and 1, each carrying its new position.
+        self::assertSame([2, 0, 1], $this->pivotPositions());
+
+        $this->replace('picks', [['books', '3'], ['books', '4'], ['books', '1']]);
+        self::assertSame([0, 1, 2], $this->pivotPositions());
+
+        $response = $this->handle(self::BASE_URI . '/shelves/1/relationships/picks', 'POST', ['data' => [['type' => 'books', 'id' => '2', 'meta' => ['pivot' => ['rank' => 4]]]]]);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame([0, 1, 2, 3], $this->pivotPositions());
+    }
+
+    /**
+     * @return list<mixed>
+     */
+    private function pivotPositions(): array
+    {
+        return \array_map(
+            static fn(mixed $pivot): mixed => \is_array($pivot) ? ($pivot['position'] ?? null) : null,
+            $this->linkagePivots($this->document('/shelves/1')['data'] ?? null, 'picks'),
+        );
     }
 
     private function entityManager(): EntityManagerInterface

@@ -44,12 +44,15 @@ use haddowg\JsonApi\Resource\Field\Date;
 use haddowg\JsonApi\Resource\Field\DateTime;
 use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
+use haddowg\JsonApi\Resource\Field\PivotRelationInterface;
+use haddowg\JsonApi\Resource\Field\PositionedRelationInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Field\Time;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\FilterMatcher;
 use haddowg\JsonApi\Resource\Filter\SupportsSingular;
 use haddowg\JsonApi\Resource\ResolvesCompletionRedirect;
+use haddowg\JsonApi\Resource\Sort\RelationSorts;
 use haddowg\JsonApi\Response\AcceptedResponse;
 use haddowg\JsonApi\Response\AtomicResultsResponse;
 use haddowg\JsonApi\Response\DataResponse;
@@ -73,10 +76,12 @@ use haddowg\JsonApiBundle\DataPersister\AsyncWriteNotAllowedInAtomicOperation;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataPersister\LinkRowPivots;
+use haddowg\JsonApiBundle\DataPersister\PositionTargets;
 use haddowg\JsonApiBundle\DataPersister\ReportsMovedMembersInterface;
 use haddowg\JsonApiBundle\DataPersister\StoresDateTimesInterface;
 use haddowg\JsonApiBundle\DataPersister\TransactionalDataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\WritesLinkRowsInterface;
+use haddowg\JsonApiBundle\DataPersister\WritesPositionsInterface;
 use haddowg\JsonApiBundle\DataPersister\WriteTransactionContext;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
@@ -2557,8 +2562,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
     /**
      * Writes a relation's members through the persister. A `MorphToMany` declared with
-     * `identifiedByRows()` writes its link rows from the plan core computes, when the
-     * persister writes link rows.
+     * `identifiedByRows()` writes its link rows from the plan core computes, positions
+     * included, and any other relation declared with `positionedBy()` writes its
+     * positions too, when the persister writes them.
      */
     private function mutateMembers(
         Server $server,
@@ -2573,6 +2579,11 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
     ): object {
         if ($relation instanceof MorphToMany && $relation->linkRowFields() !== null && $linkage instanceof ToManyRelationship && $persister instanceof WritesLinkRowsInterface) {
             return $persister->writeLinkRows($entity, $relation, $this->linkRowPlan($server, $type, $relation, $entity, $linkage, $mode, $request), $flush);
+        }
+
+        $column = $linkage instanceof ToManyRelationship ? $this->positionColumn($server, $relation) : null;
+        if ($column !== null && $linkage instanceof ToManyRelationship && $persister instanceof WritesPositionsInterface) {
+            return $persister->mutatePositioned($type, $entity, $relation, $linkage, $mode, $column, $flush);
         }
 
         return $persister->mutateRelationship($type, $entity, $relation, $linkage, $mode, $flush);
@@ -2622,6 +2633,25 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
     }
 
     /**
+     * The stored column a positioned to-many keeps each member's position in: its pivot
+     * field's on a pivot relation, the related type's field's otherwise. `null` when the
+     * relation isn't positioned.
+     */
+    private function positionColumn(Server $server, RelationInterface $relation): ?string
+    {
+        $position = $relation->isToMany() && $relation instanceof PositionedRelationInterface ? $relation->positionField() : null;
+        if ($position === null) {
+            return null;
+        }
+
+        $field = $relation instanceof PivotRelationInterface
+            ? $relation->pivotField($position)
+            : RelationSorts::relatedField($relation, $server, $position);
+
+        return $field?->column() ?? $position;
+    }
+
+    /**
      * Whether `$relation` declares a `fillUsing()` hook, which then owns how the
      * relationship is written.
      */
@@ -2658,7 +2688,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $linkRows = RelatedReadRouter::identifiesMembers($relation) && $linkage instanceof ToManyRelationship && $relation->storedPivotFields() !== []
             ? $relation
             : null;
-        $before = $linkRows !== null ? LinkRowPivots::memberKeys($linkRows, $entity, $server, $request) : [];
+        $before = $linkRows !== null ? LinkRowPivots::rows($linkRows, $entity, $server, $request) : [];
+        $column = $linkRows !== null ? $this->positionColumn($server, $linkRows) : null;
+        $current = $column !== null ? PositionTargets::current($before, $column) : [];
 
         $filled = $endpoint && $linkage instanceof ToManyRelationship
             ? $relation->applyToMany($entity, $linkage, $mode)
@@ -2667,6 +2699,15 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         if ($linkRows !== null && $linkage instanceof ToManyRelationship) {
             LinkRowPivots::write($linkRows, $entity, $linkage, $mode, $before, $server, $request, $persister instanceof StoresDateTimesInterface ? $persister : null);
+
+            // The hook decides which rows exist; their positions follow the linkage.
+            if ($column !== null) {
+                $rows = LinkRowPivots::rows($linkRows, $entity, $server, $request);
+                $target = PositionTargets::for($mode, $current, LinkRowPivots::keys($linkage));
+                $persister instanceof WritesPositionsInterface
+                    ? $persister->writePositions($entity, $current, $target, $rows, $column, flush: false)
+                    : PositionTargets::writeFinal($target, $rows, $column);
+            }
         }
 
         return $entity;

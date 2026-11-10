@@ -24,6 +24,7 @@ final class OrderBookResource extends AbstractResource
             Id::make(),
             Str::make('title')->sortable(),
             Integer::make('year')->sortable(),
+            Integer::make('position')->readOnly(),
         ];
     }
 

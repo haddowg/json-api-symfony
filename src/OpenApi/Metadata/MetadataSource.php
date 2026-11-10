@@ -465,6 +465,7 @@ final class MetadataSource
         // serve: the relation's own, else the related resource's, else the server
         // default. A polymorphic to-many has no single related resource, as at runtime.
         $paginator = null;
+        $relatedResource = null;
         if ($relation->isToMany()) {
             $relatedTypes = $relation->relatedTypes();
             $relatedResource = Polymorphism::isMonomorphic($relation) ? $this->types->resourceFor($server, $relatedTypes[0]) : null;
@@ -477,6 +478,7 @@ final class MetadataSource
             $this->includePaths->relatedPathsFor($server, $relation),
             self::alwaysCounts($paginator),
             $ownerServesEndpoints,
+            $relatedResource,
         );
     }
 

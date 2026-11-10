@@ -16,6 +16,7 @@ use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\MorphTo;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\Sort\RelationSorts;
 use haddowg\JsonApi\Schema\Relationship\IdentifiedMember;
 use haddowg\JsonApi\Serializer\SerializerInterface;
 use haddowg\JsonApi\Server\Server;
@@ -58,11 +59,11 @@ final class RelatedReadRouter
     /**
      * Each parent's members for an identified `MorphToMany`, each carrying its link row,
      * read for the whole page at once when the parent type's provider reads a declared
-     * relation's rows ({@see ReadsLinkRowsInterface}), in
-     * the relation's default read order, else pair order, ties broken by a declared
-     * relation's tiebreak. Each guarded type is narrowed to the ids its provider admits
-     * across every parent at once ({@see narrowed()}), and the other types keep their pairs
-     * unloaded. With `$load`, every type's rows load instead, one
+     * relation's rows ({@see ReadsLinkRowsInterface}), in the relation's own order,
+     * declared or positioned, else pair order, ties broken by a declared relation's
+     * tiebreak. Each guarded type is narrowed to the ids its provider admits across every
+     * parent at once ({@see narrowed()}), and the other types keep their pairs unloaded.
+     * With `$load`, every type's rows load instead, one
      * {@see FetchesByIdsInterface::fetchByIds()} per type, and a pair whose row doesn't come
      * back is dropped. A type no provider serves keeps its pairs unloaded.
      *
@@ -95,7 +96,7 @@ final class RelatedReadRouter
             }
         }
 
-        $base = new LinkRowQuery($relation->defaultSort(), fields: $relation->linkRowFields());
+        $base = new LinkRowQuery(RelationSorts::ownDefault($relation), fields: $relation->linkRowFields());
         $queries = $load ? \array_fill(0, \count($parents), $base) : $this->narrowed($server, $type, $relation, $parents, $base, $request);
 
         $members = [];

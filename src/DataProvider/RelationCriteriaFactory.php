@@ -10,6 +10,8 @@ use haddowg\JsonApi\Pagination\WindowInterface;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\DefaultSortedRelationInterface;
+use haddowg\JsonApi\Resource\Field\PivotRelationInterface;
+use haddowg\JsonApi\Resource\Field\PositionedRelationInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\FilterFamilyInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
@@ -19,7 +21,9 @@ use haddowg\JsonApi\Resource\Filter\WhereIn;
 use haddowg\JsonApi\Resource\Filter\WhereNotIn;
 use haddowg\JsonApi\Resource\Filter\WhereNotNull;
 use haddowg\JsonApi\Resource\Filter\WhereNull;
+use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApi\Resource\Sort\SortDirective;
+use haddowg\JsonApi\Resource\Sort\SortInterface;
 use haddowg\JsonApi\Resource\Sort\SortMatcher;
 use haddowg\JsonApi\Server\Server;
 
@@ -155,7 +159,7 @@ final class RelationCriteriaFactory
             $filters,
             SortMatcher::merge(
                 $relatedResource?->allSorts() ?? [],
-                $relation->sorts(),
+                self::relationSorts($relation, $relatedResource),
                 $includePivotFields || $pivotSorts ? PivotFields::sortsFor($relation) : [],
             ),
             $window,
@@ -194,7 +198,7 @@ final class RelationCriteriaFactory
     {
         return new CollectionCriteria(
             new QueryParameters(fields: [], includes: [], sort: [], filter: [], pagination: $request->getPagination()),
-            sorts: SortMatcher::merge($relatedResource?->allSorts() ?? [], $relation->sorts(), $pivotSorts ? PivotFields::sortsFor($relation) : []),
+            sorts: SortMatcher::merge($relatedResource?->allSorts() ?? [], self::relationSorts($relation, $relatedResource), $pivotSorts ? PivotFields::sortsFor($relation) : []),
             defaultSort: $this->defaultOrder($relation, $relatedResource, $pivotSorts),
             aliasOf: $pivotSorts ? $this->pivotSortAliases($relation) : [],
             request: $request,
@@ -212,8 +216,8 @@ final class RelationCriteriaFactory
 
     /**
      * The order a relation's members are read in when no sort is requested: the
-     * relation's own default, else the related type's, as core's
-     * {@see \haddowg\JsonApi\Resource\Sort\RelationSorts::defaultFor()} resolves it.
+     * relation's own default, else its position order, else the related type's, as
+     * core's {@see \haddowg\JsonApi\Resource\Sort\RelationSorts::defaultFor()} resolves it.
      * On the pivot path a directive naming a pivot field takes the pivot sort, so it
      * orders by the field's stored column on the pivot alias.
      *
@@ -222,6 +226,9 @@ final class RelationCriteriaFactory
     private function defaultOrder(RelationInterface $relation, ?AbstractResource $relatedResource, bool $pivot): array
     {
         $own = $relation instanceof DefaultSortedRelationInterface ? $relation->defaultSort() : [];
+        if ($own === [] && ($position = self::positionSort($relation, $relatedResource)) !== null) {
+            $own = [new SortDirective($position, false)];
+        }
         if ($own === [] || !$relation->isToMany()) {
             return $relatedResource?->defaultSort() ?? [];
         }
@@ -241,6 +248,42 @@ final class RelationCriteriaFactory
                 : $directive,
             $own,
         );
+    }
+
+    /**
+     * The sort a positioned relation reads its members by: ascending by its position
+     * field's stored column, a pivot field's or the related type's, or `null` when it
+     * isn't positioned.
+     */
+    public static function positionSort(RelationInterface $relation, ?AbstractResource $relatedResource): ?SortByField
+    {
+        $position = $relation instanceof PositionedRelationInterface ? $relation->positionField() : null;
+        if ($position === null) {
+            return null;
+        }
+
+        $field = $relation instanceof PivotRelationInterface ? $relation->pivotField($position) : null;
+        foreach ($field === null ? $relatedResource?->allFields() ?? [] : [] as $candidate) {
+            if ($candidate->name() === $position && !$candidate instanceof RelationInterface) {
+                $field = $candidate;
+            }
+        }
+
+        return SortByField::make($position, $field?->column() ?? $position);
+    }
+
+    /**
+     * The sorts a relation adds to the related type's: its own `withSorts()`, and the
+     * position sort of a positioned `HasMany`, whose field belongs to the related type
+     * and is accepted as a sort here even when that type doesn't sort by it.
+     *
+     * @return list<SortInterface>
+     */
+    public static function relationSorts(RelationInterface $relation, ?AbstractResource $relatedResource): array
+    {
+        $position = $relation instanceof PivotRelationInterface ? null : self::positionSort($relation, $relatedResource);
+
+        return $position === null ? $relation->sorts() : SortMatcher::merge([$position], $relation->sorts());
     }
 
     /**

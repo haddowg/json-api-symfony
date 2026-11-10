@@ -23,6 +23,8 @@ class MtmUserCompany
         public string $companyType,
         #[ORM\Column(type: 'integer')]
         public int $companyId,
+        #[ORM\Column(type: 'integer', nullable: true)]
+        public ?int $position = null,
     ) {}
 
     public function key(): string

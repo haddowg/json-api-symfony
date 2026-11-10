@@ -46,14 +46,21 @@ final class LinkRowPivots
     }
 
     /**
-     * The keys of the members `$parent` holds now, to tell a member a write adds from
-     * one it already had.
+     * The linkage's members as the keys its rows are matched by, in order.
      *
-     * @return array<string, true>
+     * @return list<string>
      */
-    public static function memberKeys(MorphToMany $relation, object $parent, SerializerResolverInterface $resolver, JsonApiRequestInterface $request): array
+    public static function keys(ToManyRelationship $linkage): array
     {
-        return \array_map(static fn(): bool => true, self::rows($relation, $parent, $resolver, $request));
+        $keys = [];
+        foreach ($linkage->resourceIdentifiers as $identifier) {
+            \assert($identifier instanceof ResourceIdentifier);
+            if ($identifier->id !== null) {
+                $keys[] = $identifier->type . "\0" . $identifier->id;
+            }
+        }
+
+        return $keys;
     }
 
     /**
@@ -62,7 +69,7 @@ final class LinkRowPivots
      * otherwise. A field the member doesn't send keeps its value. A remove carries no
      * pivot values.
      *
-     * @param array<string, true> $before the members' keys before the write
+     * @param array<string, object> $before the members' rows before the write, keyed as {@see rows()} keys them
      */
     public static function write(
         MorphToMany $relation,
@@ -105,11 +112,11 @@ final class LinkRowPivots
     }
 
     /**
-     * The parent's link rows keyed by member type and wire id.
+     * The parent's link rows keyed by member type and wire id, joined by a NUL byte.
      *
      * @return array<string, object>
      */
-    private static function rows(MorphToMany $relation, object $parent, SerializerResolverInterface $resolver, JsonApiRequestInterface $request): array
+    public static function rows(MorphToMany $relation, object $parent, SerializerResolverInterface $resolver, JsonApiRequestInterface $request): array
     {
         $rows = [];
         foreach ($relation->identifiedMembers($parent, $request) as $member) {

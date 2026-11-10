@@ -11,6 +11,7 @@ use Doctrine\ORM\Mapping as ORM;
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'ro_shelf_item')]
+#[ORM\UniqueConstraint(columns: ['shelf_id', 'position'])]
 class OrderShelfItem
 {
     public function __construct(
@@ -29,6 +30,8 @@ class OrderShelfItem
         public int $rank = 0,
         #[ORM\Column]
         public string $note = '',
+        #[ORM\Column]
+        public int $position = 0,
     ) {}
 
     public function key(): string

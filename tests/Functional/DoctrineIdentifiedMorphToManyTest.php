@@ -51,6 +51,19 @@ class DoctrineIdentifiedMorphToManyTest extends IdentifiedMorphToManyConformance
         return $this->entityManager()->find(MtmUser::class, $user)?->companyKeys() ?? [];
     }
 
+    protected function storedPositions(int $user): array
+    {
+        $positions = [];
+        foreach ($this->entityManager()->getConnection()->fetchAllAssociative('SELECT companyType, companyId, position FROM mtm_user_company WHERE user_id = ? ORDER BY position', [$user]) as $row) {
+            $type = $row['companyType'] ?? null;
+            $id = $row['companyId'] ?? null;
+            self::assertTrue(\is_scalar($type) && \is_scalar($id));
+            $positions[$type . ':' . $id] = \is_numeric($row['position'] ?? null) ? (int) $row['position'] : null;
+        }
+
+        return $positions;
+    }
+
     protected function storeCompany(int $user, string $type, int $id): void
     {
         $this->entityManager()->getConnection()->insert('mtm_user_company', ['user_id' => $user, 'companyType' => $type, 'companyId' => $id]);
@@ -125,7 +138,7 @@ class DoctrineIdentifiedMorphToManyTest extends IdentifiedMorphToManyConformance
         $logger = $this->logger();
         $logger->reset();
 
-        $this->get('/accounts');
+        $this->get('/accounts?fields[accounts]=companies');
 
         $keyReads = \array_values(\array_filter(
             $this->selectsFrom($logger, 'mtm_user_company'),

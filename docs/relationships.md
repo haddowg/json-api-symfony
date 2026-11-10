@@ -349,6 +349,60 @@ document states the relation's own order as the `default` of the `sort` paramete
 its relationship and related endpoints; the related type's default isn't the
 relation's, so it isn't stated there.
 
+### Members kept in position order (`positionedBy()`)
+
+A to-many can keep its members in an order the client controls. `positionedBy()` names a
+stored `Integer` field holding each member's position: a pivot field on a
+`belongsToMany` or an identified `MorphToMany`, or a field of the related type on a
+`hasMany`.
+
+```php
+HasMany::make('tracks', 'tracks')->positionedBy('position');
+
+BelongsToMany::make('tracks', 'tracks')
+    ->through(PlaylistTrack::class)
+    ->fields(Integer::make('position'))
+    ->positionedBy('position');
+```
+
+The linkage a client sends is the only way to change a position:
+
+- a replace, on the relationship endpoint or as the relation's linkage in a
+  whole-resource `PATCH`, writes each member's index in the linkage, from `0`;
+- an add appends the new members after the current highest position, in linkage order,
+  and leaves the others where they are;
+- a remove leaves gaps and renumbers nothing.
+
+Clients never write a position. A pivot position is read-only on the relation, and a
+`hasMany`'s field has to be declared `->readOnly()` on the related type, which the
+container warm-up checks along with it being a stored `Integer`. The position is the
+relation's default read order, ascending, unless it declares a
+[`defaultSort()`](#a-relations-default-read-order), and a positioned `hasMany` accepts
+`sort` by its position field on its endpoints even when the related type doesn't sort by
+it; the OpenAPI document lists that sort.
+
+A position column is normally unique per owner, so writing positions in place would
+collide with rows that haven't moved yet. The Doctrine persister writes them in passes,
+flushing after each inside the write's transaction: the removed members go and any new
+member is written at a temporary position past every one in use, then each member that
+moves takes a temporary position, then everything takes its final one. A parent being
+created holds no positions yet, so it takes them in one write. A unique key over the
+owner and the position is safe.
+
+A `MorphToMany` declared with `identifiedByRows()` takes its positions from the plan
+core computes for every write: the persister deletes the removed rows, moves the rows
+that change to temporary positions, updates the kept rows, then inserts the new rows
+already at their final positions, flushing after each pass. Since no row is ever written
+without its position, the position column can be `NOT NULL`. A `MorphToMany` read through
+an `identifiedBy()` closure still has its rows decided by its `fillUsing()` hook, and the
+bundle writes their positions afterwards in the passes above, a new row starting at a
+temporary position. The in-memory provider
+writes a `hasMany`'s positions onto its members; it holds no pivot rows, so a positioned
+`belongsToMany` is Doctrine-only, and the warm-up refuses one whose related type the
+in-memory provider serves. A custom persister writes positions by implementing
+`WritesPositionsInterface`, which the handler calls with the column the position is
+stored in; core's `Positions` computes what to write.
+
 ### Filtering and sorting a relationship from the primary request (the Relationship Queries profile)
 
 The same scoped vocabulary is reachable from the **primary** request — without a

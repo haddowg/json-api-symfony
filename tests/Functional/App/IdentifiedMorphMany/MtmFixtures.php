@@ -41,6 +41,10 @@ final class MtmFixtures
                 [$type, $companyId] = \explode(':', $company);
                 $user->addCompany($type, (int) $companyId);
             }
+            // The rows' positions follow their stored order.
+            foreach ($user->userCompanies->toArray() as $position => $row) {
+                $row->position = $position;
+            }
             $users[] = $user;
         }
 
