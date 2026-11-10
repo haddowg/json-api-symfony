@@ -4,9 +4,15 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\DataPersister;
 
+use Doctrine\Common\Collections\Collection;
+use haddowg\JsonApi\Collection\LinkRows\InMemoryLinkRows;
+use haddowg\JsonApi\Collection\LinkRows\LinkRowWrite;
+use haddowg\JsonApi\Collection\LinkRows\LinkRowWritePlan;
 use haddowg\JsonApi\Hydrator\Relationship\ToManyRelationship;
 use haddowg\JsonApi\Hydrator\Relationship\ToOneRelationship;
+use haddowg\JsonApi\Resource\Field\Accessor;
 use haddowg\JsonApi\Resource\Field\Mode;
+use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Schema\ResourceIdentifier;
 use haddowg\JsonApiBundle\DataProvider\InMemoryStore;
@@ -30,7 +36,7 @@ use haddowg\JsonApiBundle\Validation\RelationshipTypeUnacceptable;
  * association property to that object (or list of objects). A persister with no
  * resolver supports only whole-resource writes.
  */
-final class InMemoryDataPersister implements DataPersisterInterface, TransactionalDataPersisterInterface
+final class InMemoryDataPersister implements DataPersisterInterface, TransactionalDataPersisterInterface, WritesLinkRowsInterface
 {
     /**
      * @param InMemoryStore                          $store           the store shared with the read provider
@@ -128,6 +134,100 @@ final class InMemoryDataPersister implements DataPersisterInterface, Transaction
         }
 
         return $entity;
+    }
+
+    /**
+     * Applies a declared `MorphToMany`'s link-row plan to the rows held on the parent
+     * through core's {@see InMemoryLinkRows::write()}, which checks no pass puts two rows at
+     * one position. A new row's scalar values take the types its class declares, the
+     * in-memory store's storage form, and the rows go back into the collection the parent
+     * held them in.
+     */
+    public function writeLinkRows(object $parent, MorphToMany $relation, LinkRowWritePlan $plan, bool $flush = true): object
+    {
+        $through = $relation->linkRowFields()?->through;
+        $inserts = [];
+        foreach ($plan->inserts as $insert) {
+            $values = [];
+            foreach ($insert->values as $field => $value) {
+                $values[$field] = $through !== null ? $this->storageValue($through, $field, $value) : $value;
+            }
+            $inserts[] = new LinkRowWrite($insert->member, $values);
+        }
+
+        $written = (new InMemoryLinkRows())->write(
+            $relation,
+            $parent,
+            new LinkRowWritePlan($plan->deletes, $plan->temporary, $plan->updates, $inserts),
+            $through !== null && \class_exists($through) ? static fn(): object => self::newRow($through) : null,
+            static fn(mixed $held, array $rows): mixed => self::storeRows($relation, $held, $rows),
+        );
+        $parent = \is_object($written) ? $written : $parent;
+
+        if ($flush) {
+            $this->store->save($parent);
+        }
+
+        return $parent;
+    }
+
+    /**
+     * Stores `$rows` back on the parent: refilling the collection it holds them in, so a
+     * typed collection property keeps its type, else as a list.
+     *
+     * @param list<mixed> $rows
+     */
+    private static function storeRows(MorphToMany $relation, mixed $parent, array $rows): mixed
+    {
+        $field = $relation->column() ?? $relation->name();
+        $held = Accessor::get($parent, $field);
+        if (!$held instanceof Collection) {
+            return Accessor::set($parent, $field, $rows);
+        }
+
+        $held->clear();
+        foreach ($rows as $row) {
+            $held->add($row);
+        }
+
+        return $parent;
+    }
+
+    /**
+     * A new link row: constructed when its class takes no required argument, else
+     * created without its constructor, as Doctrine does, since the plan sets every field
+     * the row needs.
+     *
+     * @param class-string $class
+     */
+    private static function newRow(string $class): object
+    {
+        $reflection = new \ReflectionClass($class);
+        $constructor = $reflection->getConstructor();
+
+        return $constructor === null || $constructor->getNumberOfRequiredParameters() === 0
+            ? $reflection->newInstance()
+            : $reflection->newInstanceWithoutConstructor();
+    }
+
+    /**
+     * `$value` as the scalar type `$class` declares for `$field`, so a key that arrives as
+     * a numeric string lands in an `int` property.
+     */
+    private function storageValue(string $class, string $field, mixed $value): mixed
+    {
+        if (!\is_string($value) || !\class_exists($class) || !\property_exists($class, $field)) {
+            return $value;
+        }
+
+        $type = (new \ReflectionProperty($class, $field))->getType();
+        $name = $type instanceof \ReflectionNamedType ? $type->getName() : null;
+
+        return match (true) {
+            $name === 'int' && \preg_match('/^-?\d+$/', $value) === 1 => (int) $value,
+            $name === 'float' && \is_numeric($value) => (float) $value,
+            default => $value,
+        };
     }
 
     /**

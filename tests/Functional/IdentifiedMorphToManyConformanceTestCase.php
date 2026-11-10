@@ -44,6 +44,12 @@ abstract class IdentifiedMorphToManyConformanceTestCase extends JsonApiFunctiona
     private const array USER_ONE = ['agencies:1', 'advertisers:1', 'publishers:1', 'agencies:2', 'advertisers:2', 'agencies:3'];
 
     /**
+     * User one's companies as the declared `accounts.companies` reads them: by stored
+     * type, then id.
+     */
+    private const array ACCOUNT_ONE = ['advertisers:1', 'advertisers:2', 'agencies:1', 'agencies:2', 'agencies:3', 'publishers:1'];
+
+    /**
      * Whether agency 2 is hidden from the agencies' provider.
      */
     abstract protected function hides(): bool;
@@ -198,6 +204,61 @@ abstract class IdentifiedMorphToManyConformanceTestCase extends JsonApiFunctiona
 
         self::assertSame(['agencies:1', 'publishers:1', 'advertisers:1'], $this->storedCompanies(3));
         self::assertSame(['agencies:1', 'publishers:1', 'advertisers:1'], $this->keys($this->at($this->get('/users/3/companies'), 'data')));
+    }
+
+    #[Test]
+    public function aDeclaredRelationsLinkageDropsOnlyAHiddenMember(): void
+    {
+        self::assertSame($this->visible(self::ACCOUNT_ONE), $this->keys($this->at($this->get('/accounts/1'), 'data', 'relationships', 'companies', 'data')));
+    }
+
+    #[Test]
+    public function aDeclaredRelationsEndpointsPageTheAdmittedRowsWithExactTotals(): void
+    {
+        $visible = $this->visible(self::ACCOUNT_ONE);
+        $total = \count($visible);
+
+        foreach (['/accounts/1/companies', '/accounts/1/relationships/companies'] as $path) {
+            foreach ([1, 2, 3] as $number) {
+                $document = $this->get($path . '?withCount=_self_&page[size]=2&page[number]=' . $number, self::COUNTS_ACCEPT);
+                self::assertSame(\array_slice($visible, ($number - 1) * 2, 2), $this->keys($this->at($document, 'data')), $path . ' page ' . $number);
+                if (\str_contains($path, 'relationships')) {
+                    self::assertSame($number < 3, $this->at($document, 'links', 'next') !== null, $path . ' page ' . $number);
+                } else {
+                    self::assertSame($total, $this->at($document, 'meta', 'total'), $path);
+                }
+            }
+        }
+    }
+
+    #[Test]
+    public function aDeclaredRelationsReplaceWritesItsRowsAndKeepsAHiddenMember(): void
+    {
+        $response = $this->handle('/accounts/1/relationships/companies', 'PATCH', ['data' => [
+            ['type' => 'publishers', 'id' => '1'],
+            ['type' => 'agencies', 'id' => '1'],
+        ]]);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        $stored = $this->hides() ? ['agencies:1', 'publishers:1', 'agencies:2'] : ['agencies:1', 'publishers:1'];
+        self::assertSame($stored, $this->storedCompanies(1));
+        self::assertSame(['agencies:1', 'publishers:1'], $this->keys($this->at($this->get('/accounts/1/relationships/companies'), 'data')));
+    }
+
+    #[Test]
+    public function aDeclaredRelationsAddAndRemoveWriteItsRows(): void
+    {
+        $response = $this->handle('/accounts/3/relationships/companies', 'POST', ['data' => [
+            ['type' => 'advertisers', 'id' => '1'],
+        ]]);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['agencies:1', 'publishers:1', 'advertisers:1'], $this->storedCompanies(3));
+
+        $response = $this->handle('/accounts/3/relationships/companies', 'DELETE', ['data' => [
+            ['type' => 'agencies', 'id' => '1'],
+        ]]);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['publishers:1', 'advertisers:1'], $this->storedCompanies(3));
     }
 
     /**

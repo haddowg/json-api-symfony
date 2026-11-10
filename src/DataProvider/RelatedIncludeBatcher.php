@@ -436,7 +436,7 @@ final class RelatedIncludeBatcher
         // Its linkage renders from the stored pairs. A read of the members loads them all;
         // otherwise each guarded type is narrowed to the ids its provider admits.
         if (RelatedReadRouter::identifiesMembers($relation)) {
-            return $this->loadIdentifiedMembers($server, $entities, $relation, $request, $included || $descends, $linkages);
+            return $this->loadIdentifiedMembers($server, $type, $entities, $relation, $request, $included || $descends, $linkages);
         }
 
         // An extractUsing() relation's closure picks its candidates. Into a scoped type the
@@ -674,22 +674,26 @@ final class RelatedIncludeBatcher
     /**
      * Supplies each parent's members of a `MorphToMany` declared with `identifiedBy()`:
      * with `$load` every member's row, loaded one query per type, and otherwise the
-     * pairs of each guarded type its provider admits. With no guarded type and nothing
-     * to load, core renders the pairs as stored.
+     * pairs of each guarded type its provider admits. A relation declared with
+     * `identifiedByRows()` is always supplied, its rows read for the whole page at once.
+     * Otherwise, with no guarded type and nothing to load, core renders the pairs as
+     * stored.
      *
      * @param list<object>                                   $entities
      * @param array<int, array<string, RelationshipLinkage>> $linkages
      *
      * @return list<object>
      */
-    private function loadIdentifiedMembers(Server $server, array $entities, MorphToMany $relation, JsonApiRequestInterface $request, bool $load, array &$linkages): array
+    private function loadIdentifiedMembers(Server $server, string $type, array $entities, MorphToMany $relation, JsonApiRequestInterface $request, bool $load, array &$linkages): array
     {
-        if (!$load && $this->guard->guardedMemberTypes($relation) === []) {
+        // A closure relation's linkage renders from the closure unless a type is guarded; a
+        // declared one is read for the whole page, so no parent loads its rows alone.
+        if (!$load && $relation->linkRowFields() === null && $this->guard->guardedMemberTypes($relation) === []) {
             return [];
         }
 
         $targets = [];
-        foreach ($this->router->identifiedMembers($server, $relation, $entities, $request, $load) as $index => $members) {
+        foreach ($this->router->identifiedMembers($server, $type, $relation, $entities, $request, $load) as $index => $members) {
             $linkages[\spl_object_id($entities[$index])][$relation->name()] = new RelationshipLinkage($members);
             foreach ($members as $member) {
                 if ($member->target !== null) {

@@ -1451,15 +1451,16 @@ and a total is exact:
 
 - `GET /users/{id}/companies` cuts the page from the admitted pairs, in pair order, and
   loads only that page's rows, one `id IN (...)` per type. `filter` and `sort` are a
-  `400`, as for any polymorphic to-many, and `?withCount=_self_` counts the admitted
-  pairs.
+  `400` unless the relation declares [pivot fields](#pivot-fields-on-a-morphtomanys-link-rows),
+  and `?withCount=_self_` counts the admitted pairs.
 - `?withCount=companies` on a user or a collection counts the admitted pairs.
 - `?include=companies` loads every member's row, one query per type, and leaves a row
   that doesn't come back out of both the linkage and `included`.
 - `GET /users/{id}/relationships/companies` pages the admitted pairs exactly as the
   related endpoint does, with the same paginator, `page` parameters and
-  `?withCount=_self_`, but loads no rows. `filter` and `sort` are a `400`. Other
-  polymorphic to-many relationship endpoints still refuse `page` too.
+  `?withCount=_self_`, but loads no rows. `filter` and `sort` are a `400` unless the
+  relation declares pivot fields. Other polymorphic to-many relationship endpoints still
+  refuse `page` too.
 
 The pairs must point at rows that exist. A guarded type checks every pair, so a pair
 whose row is gone drops out and pages and totals stay exact. An unguarded type costs no
@@ -1472,6 +1473,73 @@ types without overriding `getType()`. A stored type the relation doesn't declare
 replace keeps the members the scope hides, as for any scoped to-many. A provider that
 can answer the id-only check without loading rows implements `AdmitsIdsInterface`
 (see [custom providers → loading many rows by id](custom-data-providers.md#loading-many-rows-by-id)).
+
+#### Declaring the link rows with `identifiedByRows()`
+
+When each member is a row with an owner, a stored type and an id, declare those fields
+instead of a closure, and the data layer queries and writes the rows itself:
+
+```php
+MorphToMany::make('companies', ['agencies', 'advertisers', 'publishers'])
+    ->storedAs('userCompanies')
+    ->through(UserCompany::class)
+    ->identifiedByRows(owner: 'user', type: 'companyType', id: 'companyId')
+    ->fields(Integer::make('rank')->required(), Str::make('note'))
+    ->withFilters(Where::make('minRank', 'pivot.rank', '>='))
+    ->defaultSort(new SortDirective(SortByField::make('rank'), descending: false)),
+```
+
+The fields are properties of the `through()` entity. A stored type is the member's
+JSON:API type unless a `typeMap` maps stored values to types. A row whose type names no
+declared type, or that has no id, isn't a member, and members read by the request's
+`sort`, else the relation's default order, ties broken by stored type then id.
+
+On Doctrine the relationship and related endpoints read a page in one query on the
+`through()` entity: the rows whose owner is the parent and whose type counts, filtered and
+sorted on the row's own fields, ordered by the tiebreak and cut to the page. A guarded
+member type is narrowed in the same query to the ids its provider admits, so a page is
+never short and a total is exact. Which ids those are takes one key-only read of the
+entity for every parent being rendered, the owner, type and id fields alone, and one
+admission query per guarded type across all of them, the linkage of a whole page of
+parents included. That linkage reads every parent's rows in one query over the owner
+field, so a page renders it in one row read plus that key read and admission. A custom
+provider reads a page's rows by implementing `ReadsLinkRowsInterface`. The page's members then load one `id IN (...)` per type.
+The in-memory provider runs core's `InMemoryLinkRows` over the rows the parent holds, with
+the same rules.
+
+A relation declared this way takes no `fillUsing()`; declaring one fails the build. Core
+plans every write as a `LinkRowWritePlan` and the persister applies it: the rows to
+delete, then the rows that move to a temporary position, then the updated rows, then a
+new `through()` entity for each added member, its owner set through the association and
+each value converted to its column's form. Doctrine flushes after each pass inside the
+write's transaction. A replace keeps the members the scope hides, after the members the
+client sent, in their current order. A custom persister applies plans by implementing
+`WritesLinkRowsInterface`, and a custom provider serves the key read by implementing
+core's `LinkRowKeysInterface`.
+
+#### Pivot fields on a `MorphToMany`'s link rows
+
+The link rows can carry fields of their own, declared with the same `fields()` and
+`withFilters()` a [pivot `belongsToMany`](#pivot-belongstomany-data) uses. Each linkage
+identifier renders the readable fields as `meta.pivot`, and on the related endpoint each
+member's resource object carries the same `meta.pivot`. Both endpoints take `sort` by any
+stored pivot field and `filter` by a `pivot.`-prefixed filter, run over the link rows, and
+nothing else, since the members share no other vocabulary. A
+[default read order](#a-relations-default-read-order) may name a pivot field and orders
+the linkage too.
+
+A write sends the writable fields in `meta.pivot`, validated like a `belongsToMany`'s: a
+new member in the create context, a member already present merged over its stored values
+in the update context. A relation declared with `identifiedByRows()` writes them through
+its plan.
+
+A relation read through an `identifiedBy()` closure can declare pivot fields too, by
+returning each member as a `[$type, $id, $row]` triple. Nothing but the closure can read
+its rows, so every request loads all of a parent's rows and core's `InMemoryLinkRows`
+filters, sorts and pages them, on every provider; the container warm-up logs a notice for
+such a relation once it declares pivot fields, filters, sorts, an order, a count or a
+paginator. Its `fillUsing()` decides which rows exist, and the bundle then writes each
+member's `meta.pivot` onto the row the closure returns for it.
 
 ## Flattened (`on()`) attributes and eager loading
 

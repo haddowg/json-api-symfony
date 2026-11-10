@@ -38,6 +38,18 @@ final class OrderFixtures
         [1, 4, 2],
     ];
 
+    public const array MAGAZINES = [1 => 'Monthly', 2 => 'Weekly'];
+
+    /**
+     * Each shelf item's shelf, type, id, rank and note, in insertion order.
+     */
+    public const array ITEMS = [
+        [1, 'books', 1, 3, 'c'],
+        [1, 'magazines', 1, 1, 'a'],
+        [1, 'books', 2, 2, 'b'],
+        [1, 'magazines', 2, 4, 'd'],
+    ];
+
     /**
      * @var array<string, InMemoryDataProvider>|null
      */
@@ -46,7 +58,7 @@ final class OrderFixtures
     /**
      * The object graph both kernels seed.
      *
-     * @return array{shelves: list<OrderShelf>, books: list<OrderBook>, picks: list<OrderPick>}
+     * @return array{shelves: list<OrderShelf>, books: list<OrderBook>, picks: list<OrderPick>, magazines: list<OrderMagazine>}
      */
     public static function graph(): array
     {
@@ -69,16 +81,25 @@ final class OrderFixtures
             $picks[] = $pick;
         }
 
-        return ['shelves' => \array_values($shelves), 'books' => \array_values($books), 'picks' => $picks];
+        $magazines = [];
+        foreach (self::MAGAZINES as $id => $title) {
+            $magazines[] = new OrderMagazine($id, $title);
+        }
+
+        foreach (self::ITEMS as $index => [$shelf, $type, $id, $rank, $note]) {
+            $shelves[$shelf]->items->add(new OrderShelfItem($index + 1, $shelves[$shelf], $type, $id, $rank, $note));
+        }
+
+        return ['shelves' => \array_values($shelves), 'books' => \array_values($books), 'picks' => $picks, 'magazines' => $magazines];
     }
 
     public function provider(string $type): InMemoryDataProvider
     {
         if ($this->providers === null) {
             $graph = self::graph();
-            $identify = static fn(object $item): string => $item instanceof OrderShelf || $item instanceof OrderBook ? (string) $item->id : '';
+            $identify = static fn(object $item): string => $item instanceof OrderShelf || $item instanceof OrderBook || $item instanceof OrderMagazine ? (string) $item->id : '';
             $this->providers = [];
-            foreach (['shelves', 'books'] as $name) {
+            foreach (['shelves', 'books', 'magazines'] as $name) {
                 $byId = [];
                 foreach ($graph[$name] as $item) {
                     $byId[(string) $item->id] = $item;
@@ -95,7 +116,11 @@ final class OrderFixtures
         return new InMemoryDataPersister(
             $type,
             $this->provider($type)->store(),
-            static fn(): object => $type === 'shelves' ? new OrderShelf() : new OrderBook(),
+            static fn(): object => match ($type) {
+                'shelves' => new OrderShelf(),
+                'magazines' => new OrderMagazine(),
+                default => new OrderBook(),
+            },
             fn(string $relatedType, string $id): ?object => $this->provider($relatedType)->store()->find($id),
         );
     }

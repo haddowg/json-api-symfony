@@ -106,6 +106,43 @@ class DoctrineIdentifiedMorphToManyTest extends IdentifiedMorphToManyConformance
     }
 
     #[Test]
+    public function aDeclaredRelationPagesItsRowsInOneQueryNarrowedBeforeThePage(): void
+    {
+        $logger = $this->logger();
+        $logger->reset();
+
+        $this->get('/accounts/1/relationships/companies?page[number]=2&page[size]=2');
+
+        $pages = \array_values(\array_filter($this->selectsFrom($logger, 'mtm_user_company'), static fn(string $sql): bool => \str_contains($sql, 'LIMIT')));
+        self::assertCount(1, $pages, \implode("\n", $logger->statements()));
+        // A guarded type counts only its admitted ids, in the same query.
+        self::assertSame($this->hides(), \substr_count($pages[0], ' IN (') === 2, $pages[0]);
+    }
+
+    #[Test]
+    public function aPageOfParentsReadsItsRowsOnceAndNarrowsWithOneKeyReadAndOneAdmissionPerGuardedType(): void
+    {
+        $logger = $this->logger();
+        $logger->reset();
+
+        $this->get('/accounts');
+
+        $keyReads = \array_values(\array_filter(
+            $this->selectsFrom($logger, 'mtm_user_company'),
+            // A key read selects the owner, type and id fields, never the row's own id.
+            static fn(string $sql): bool => \preg_match('/\.id AS /i', \stristr($sql, ' from ', true) ?: $sql) !== 1,
+        ));
+        self::assertCount($this->hides() ? 1 : 0, $keyReads, \implode("\n", $logger->statements()));
+        // Every parent's link rows in one read, never one parent at a time.
+        $rowReads = \array_diff($this->selectsFrom($logger, 'mtm_user_company'), $keyReads);
+        self::assertCount(1, $rowReads, \implode("\n", $logger->statements()));
+        self::assertStringContainsString(' IN (', \implode('', $rowReads));
+        self::assertCount($this->hides() ? 1 : 0, $this->selectsFrom($logger, 'mtm_agency'), \implode("\n", $logger->statements()));
+        self::assertSame([], $this->selectsFrom($logger, 'mtm_advertiser'), \implode("\n", $logger->statements()));
+        self::assertSame([], $this->selectsFrom($logger, 'mtm_publisher'), \implode("\n", $logger->statements()));
+    }
+
+    #[Test]
     public function aPlainPolymorphicToManyIsRefusedPointingAtIdentifiedBy(): void
     {
         $provider = static::getContainer()->get(DoctrineDataProvider::class);

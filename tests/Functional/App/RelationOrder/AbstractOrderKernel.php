@@ -84,8 +84,11 @@ abstract class AbstractOrderKernel extends Kernel
             ->autowire()
             ->autoconfigure();
 
+        $services->set('logger', CollectingLogger::class)->public();
+
         $services->set($this->shelfResource());
         $services->set(OrderBookResource::class);
+        $services->set(OrderMagazineResource::class);
 
         $this->configureData($container, $services);
     }

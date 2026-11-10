@@ -12,6 +12,9 @@ use haddowg\JsonApi\Collection\CursorCollectionResult;
 use haddowg\JsonApi\Collection\Keyset\CursorTokenMinter;
 use haddowg\JsonApi\Collection\Keyset\KeysetColumn;
 use haddowg\JsonApi\Collection\Keyset\KeysetResolver;
+use haddowg\JsonApi\Collection\LinkRows\LinkRowKeysInterface;
+use haddowg\JsonApi\Collection\LinkRows\LinkRowQuery;
+use haddowg\JsonApi\Collection\LinkRows\LinkRowQueryInterface;
 use haddowg\JsonApi\Collection\WindowExecutor;
 use haddowg\JsonApi\Operation\QueryParameters;
 use haddowg\JsonApi\Pagination\CursorCodec;
@@ -19,6 +22,7 @@ use haddowg\JsonApi\Pagination\CursorWindow;
 use haddowg\JsonApi\Pagination\OffsetWindow;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\IdEncoderInterface;
+use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\FilterDefaults;
 use haddowg\JsonApi\Resource\Filter\FilterMatcher;
@@ -37,6 +41,7 @@ use haddowg\JsonApiBundle\DataProvider\PivotCollectionResult;
 use haddowg\JsonApiBundle\DataProvider\PivotCursorCollectionResult;
 use haddowg\JsonApiBundle\DataProvider\PivotFields;
 use haddowg\JsonApiBundle\DataProvider\QueriesFilteredCollectionInterface;
+use haddowg\JsonApiBundle\DataProvider\ReadsLinkRowsInterface;
 use haddowg\JsonApiBundle\DataProvider\RelatedBatch;
 use haddowg\JsonApiBundle\DataProvider\ScopesRelatedReadsInterface;
 use haddowg\JsonApiBundle\Serializer\RequestScopedOutputTimezone;
@@ -88,7 +93,7 @@ use haddowg\JsonApiBundle\Server\IdEncoderResolver;
  * @implements DataProviderInterface<object>
  * @implements PivotAwareProviderInterface<object>
  */
-final class DoctrineDataProvider implements DataProviderInterface, PivotAwareProviderInterface, ScopesRelatedReadsInterface, AdmitsRowsInterface, FetchesByIdsInterface, AdmitsIdsInterface, QueriesFilteredCollectionInterface
+final class DoctrineDataProvider implements DataProviderInterface, PivotAwareProviderInterface, ScopesRelatedReadsInterface, AdmitsRowsInterface, FetchesByIdsInterface, AdmitsIdsInterface, QueriesFilteredCollectionInterface, LinkRowQueryInterface, LinkRowKeysInterface, ReadsLinkRowsInterface
 {
     /**
      * The root alias every generated QueryBuilder uses; handlers re-read it
@@ -119,6 +124,8 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
     private readonly DoctrineIdentifiers $ids;
 
+    private readonly DoctrineLinkRows $linkRows;
+
     /**
      * @param array<string, class-string>            $entityClassByType a `type → entity FQCN` map
      * @param IdEncoderResolver                      $idEncoders        resolves a type's id encoder (route `{id}` decode)
@@ -146,6 +153,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $this->filterHandler = new DoctrineFilterHandler($filterArms);
         $this->sortHandler = new DoctrineSortHandler($sortArms);
         $this->ids = new DoctrineIdentifiers($this->entityManager);
+        $this->linkRows = new DoctrineLinkRows($this->entityManager, $this->filterHandler, $this->sortHandler);
         $this->relationScope = new RelationScope($this->entityManager, $this->ids);
         $this->keysetResolver = new KeysetResolver();
         $this->minter = new CursorTokenMinter(new CursorCodec());
@@ -1635,6 +1643,33 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $builder->innerJoin(\sprintf('pivot.%s', $association->farProperty), 'related');
 
         return $this->applier->apply($criteria, $builder, $this->filterHandler, $this->sortHandler, 'related');
+    }
+
+    /**
+     * An identified `MorphToMany`'s link rows, queried as the association entity its
+     * builder names with `through()` ({@see DoctrineLinkRows}).
+     */
+    public function queryLinkRows(mixed $parent, MorphToMany $relation, LinkRowQuery $query, JsonApiRequestInterface $request): CollectionResult
+    {
+        return $this->linkRows->queryLinkRows($parent, $relation, $query, $request);
+    }
+
+    /**
+     * The keys a batch of parents link through a declared `MorphToMany`, in one key-only
+     * read ({@see DoctrineLinkRows}).
+     */
+    public function linkRowKeys(array $parents, MorphToMany $relation, array $types, JsonApiRequestInterface $request): array
+    {
+        return $this->linkRows->linkRowKeys($parents, $relation, $types, $request);
+    }
+
+    /**
+     * A page of parents' link rows for a declared `MorphToMany`, in one read
+     * ({@see DoctrineLinkRows}).
+     */
+    public function linkRowMembers(array $parents, MorphToMany $relation, JsonApiRequestInterface $request): array
+    {
+        return $this->linkRows->linkRowMembers($parents, $relation, $request);
     }
 
     // --- pivot (belongsToMany association-entity) collection -------------------

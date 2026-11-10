@@ -1634,6 +1634,7 @@ final class JsonApiBundle extends AbstractBundle
                 '$metadata' => service(\haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource::class),
                 '$serverNames' => \array_keys($servers),
                 '$actions' => service(\haddowg\JsonApiBundle\Action\ActionRegistry::class),
+                '$logger' => service('logger')->nullOnInvalid(),
             ])
             ->tag('kernel.cache_warmer');
     }

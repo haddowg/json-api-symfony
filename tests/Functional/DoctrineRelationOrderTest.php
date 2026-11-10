@@ -10,8 +10,10 @@ use haddowg\JsonApiBundle\Tests\Functional\App\QueryCountingLogger;
 use haddowg\JsonApiBundle\Tests\Functional\App\RelationOrder\OrderBook;
 use haddowg\JsonApiBundle\Tests\Functional\App\RelationOrder\OrderDoctrineTestKernel;
 use haddowg\JsonApiBundle\Tests\Functional\App\RelationOrder\OrderFixtures;
+use haddowg\JsonApiBundle\Tests\Functional\App\RelationOrder\OrderMagazine;
 use haddowg\JsonApiBundle\Tests\Functional\App\RelationOrder\OrderPick;
 use haddowg\JsonApiBundle\Tests\Functional\App\RelationOrder\OrderShelf;
+use haddowg\JsonApiBundle\Tests\Functional\App\RelationOrder\OrderShelfItem;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
@@ -44,6 +46,14 @@ final class DoctrineRelationOrderTest extends RelationOrderConformanceTestCase
         }
         foreach (OrderFixtures::PICKS as [$shelf, $book, $rank]) {
             $entityManager->persist(new OrderPick(shelf: $shelves[$shelf], book: $books[$book] ?? throw new \LogicException('No book ' . $book), rank: $rank));
+            $entityManager->flush();
+        }
+        foreach (OrderFixtures::MAGAZINES as $title) {
+            $entityManager->persist(new OrderMagazine(title: $title));
+            $entityManager->flush();
+        }
+        foreach (OrderFixtures::ITEMS as [$shelf, $itemType, $itemId, $rank, $note]) {
+            $entityManager->persist(new OrderShelfItem(shelf: $shelves[$shelf], itemType: $itemType, itemId: $itemId, rank: $rank, note: $note));
             $entityManager->flush();
         }
         $entityManager->clear();
@@ -79,6 +89,25 @@ final class DoctrineRelationOrderTest extends RelationOrderConformanceTestCase
                 && !\str_contains(\strtolower($sql), 'ro_pick'),
         );
         self::assertCount(2, $bookReads, \implode("\n", $logger->statements()));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    public function aLinkRowPageIsOneQueryAndLoadsNoOtherRow(): void
+    {
+        $logger = static::getContainer()->get(QueryCountingLogger::class);
+        self::assertInstanceOf(QueryCountingLogger::class, $logger);
+        $logger->reset();
+
+        self::assertSame(['books:1', 'magazines:2'], $this->members('/shelves/1/relationships/items?page[number]=2&page[size]=2'));
+
+        $rowReads = \array_filter(
+            $logger->statements(),
+            static fn(string $sql): bool => \str_starts_with(\strtolower(\ltrim($sql)), 'select')
+                && \preg_match('/\bfrom ro_shelf_item\b/i', $sql) === 1,
+        );
+        self::assertCount(1, $rowReads, \implode("\n", $logger->statements()));
+        self::assertStringContainsString('LIMIT', \implode('', $rowReads));
     }
 
     private function entityManager(): EntityManagerInterface

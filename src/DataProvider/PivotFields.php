@@ -7,12 +7,14 @@ namespace haddowg\JsonApiBundle\DataProvider;
 use haddowg\JsonApi\Resource\Field\AcceptsDefaultOutputTimezoneInterface;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\FieldInterface;
+use haddowg\JsonApi\Resource\Field\PivotRelationInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Sort\SortByField;
 
 /**
- * Reads a {@see BelongsToMany} relation's declared pivot fields
- * ({@see BelongsToMany::pivotFields()} — real {@see FieldInterface} definitions) and
+ * Reads a pivot relation's declared pivot fields ({@see PivotRelationInterface::pivotFields()}
+ * — real {@see FieldInterface} definitions — on a {@see BelongsToMany} or an identified
+ * {@see \haddowg\JsonApi\Resource\Field\MorphToMany}) and
  * derives the host's interpretation of them: the recognised `sort=` vocabulary keys
  * (one {@see SortByField} per field, keyed by the field name and columned by its
  * declared {@see FieldInterface::column()}) and the per-field value cast applied to
@@ -42,7 +44,7 @@ final class PivotFields
      */
     public static function declaredFor(RelationInterface $relation): array
     {
-        return $relation instanceof BelongsToMany ? $relation->pivotFields() : [];
+        return $relation instanceof PivotRelationInterface ? $relation->pivotFields() : [];
     }
 
     /**
@@ -55,7 +57,7 @@ final class PivotFields
      */
     public static function storedFor(RelationInterface $relation): array
     {
-        return $relation instanceof BelongsToMany ? $relation->storedPivotFields() : [];
+        return $relation instanceof PivotRelationInterface ? $relation->storedPivotFields() : [];
     }
 
     /**

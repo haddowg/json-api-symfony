@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Server;
 
+use haddowg\JsonApi\Collection\LinkRows\LinkRowQuery;
 use haddowg\JsonApi\OpenApi\Metadata\ActionDeclarations;
 use haddowg\JsonApi\OpenApi\ProjectedTypes;
 use haddowg\JsonApi\OpenApi\RelatedTypeNotRegistered;
 use haddowg\JsonApi\Resource\AbstractResource;
-use haddowg\JsonApi\Resource\Field\DefaultSortedRelationInterface;
+use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\Id;
+use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Sort\SortMatcher;
@@ -25,6 +27,7 @@ use haddowg\JsonApiBundle\OpenApi\Metadata\ActionMetadata;
 use haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource;
 use haddowg\JsonApiBundle\Operation\Operation;
 use haddowg\JsonApiBundle\Security\UnenforceableSecurityException;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
 
 /**
@@ -105,6 +108,7 @@ final class ServableResourceWarmer implements CacheWarmerInterface
         private readonly array $serverNames,
         private readonly array $unenforceableSecurity = [],
         private readonly ?ActionRegistry $actions = null,
+        private readonly ?LoggerInterface $logger = null,
     ) {}
 
     /**
@@ -213,8 +217,9 @@ final class ServableResourceWarmer implements CacheWarmerInterface
 
     /**
      * Checks each to-many's default read order names sorts it accepts, through core's
-     * {@see RelationOrderValidator}, and that a key only a pivot field answers is read
-     * by a provider that sorts its pivot rows. The in-memory provider holds no pivot
+     * {@see RelationOrderValidator}, and that a key only a `belongsToMany` pivot field
+     * answers is read by a provider that sorts its pivot rows. An identified
+     * `MorphToMany` sorts its link rows on every provider. The in-memory provider holds no pivot
      * data, so a pivot order would otherwise fail every read of the relation.
      */
     private function guardRelationOrder(string $serverName, string $type): void
@@ -231,7 +236,14 @@ final class ServableResourceWarmer implements CacheWarmerInterface
         }
 
         foreach ($serializer->allFields() as $relation) {
-            if (!$relation instanceof DefaultSortedRelationInterface || $relation->defaultSort() === [] || PivotFields::sortsFor($relation) === []) {
+            $notice = $relation instanceof MorphToMany ? LinkRowQuery::inMemoryNotice($relation, $server->defaultPaginator()) : null;
+            if ($notice !== null) {
+                $this->logger?->notice($notice, ['type' => $type, 'server' => $serverName]);
+            }
+        }
+
+        foreach ($serializer->allFields() as $relation) {
+            if (!$relation instanceof BelongsToMany || $relation->defaultSort() === [] || PivotFields::sortsFor($relation) === []) {
                 continue;
             }
 

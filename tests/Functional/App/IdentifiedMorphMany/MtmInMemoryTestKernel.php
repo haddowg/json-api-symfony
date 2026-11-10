@@ -34,7 +34,7 @@ class MtmInMemoryTestKernel extends AbstractMtmKernel
     {
         $services->set(MtmFixtures::class);
 
-        foreach (['users', 'agencies', 'advertisers', 'publishers'] as $type) {
+        foreach (['users', 'accounts', 'agencies', 'advertisers', 'publishers'] as $type) {
             $provider = $services->set('test.mtm_provider.' . $type, InMemoryDataProvider::class)
                 ->factory([service(MtmFixtures::class), 'provider'])
                 ->args([$type]);
