@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.6.2](https://github.com/haddowg/json-api-symfony/compare/v2.6.1...v2.6.2) (2026-11-10)
+
+
+### Bug Fixes
+
+* render withCount=_self_ totals on cursor pages ([#345](https://github.com/haddowg/json-api-symfony/issues/345)) ([0c63bd5](https://github.com/haddowg/json-api-symfony/commit/0c63bd5e7475e6d9aa5b11dce6a1eec837e3cf3f))
+
 ## [2.6.1](https://github.com/haddowg/json-api-symfony/compare/v2.6.0...v2.6.1) (2026-11-10)
 
 
