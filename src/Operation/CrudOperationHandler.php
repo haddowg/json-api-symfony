@@ -1306,7 +1306,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // handed the relation's countable() directly.
             $response = IdentifierResponse::forRelationship($parent, $parentSerializer, $relationshipName, $relation->isCountable());
 
-            return $this->linkageResponse($response, $page, $pivotResult, $relWantsCount);
+            return $this->linkageResponse($response, $page, $pivotResult, $request);
         }
 
         // A MorphToMany declared with identifiedBy() pages its admitted link rows exactly as
@@ -1341,7 +1341,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
             $response = IdentifierResponse::forRelationship($parent, $server->serializerFor($type), $relationshipName);
 
-            return $this->linkageResponse($response, $page, $result, $relWantsCount);
+            return $this->linkageResponse($response, $page, $result, $request);
         }
 
         // A polymorphic to-many (MorphToMany) relationship endpoint's members span types,
@@ -1432,7 +1432,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 : $server->serializerFor($type);
             $response = IdentifierResponse::forRelationship($parent, $parentSerializer, $relationshipName, $relation->isCountable());
 
-            return $this->linkageResponse($response, $page, $result, $relWantsCount);
+            return $this->linkageResponse($response, $page, $result, $request);
         }
 
         return IdentifierResponse::forRelationship($parent, $server->serializerFor($type), $relationshipName);
@@ -1441,19 +1441,19 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
     /**
      * Attaches the page that windowed the linkage, so a page profile (the
      * cursor-pagination profile) is advertised while the body stays links-only (core
-     * docs/responses.md), and renders a counted total as the top-level `meta.total`,
-     * as a counted collection does.
+     * docs/responses.md), and renders the total a `?withCount=_self_` asked for as the
+     * top-level `meta.total`, as a counted collection does.
      *
      * @param PageInterface<mixed>|null $page
      * @param CollectionResult<object>  $result
      */
-    private function linkageResponse(IdentifierResponse $response, ?PageInterface $page, CollectionResult $result, bool $wantsCount): IdentifierResponse
+    private function linkageResponse(IdentifierResponse $response, ?PageInterface $page, CollectionResult $result, JsonApiRequestInterface $request): IdentifierResponse
     {
         if ($page !== null) {
             $response = $response->withPage($page);
         }
 
-        return $wantsCount && $result->total !== null
+        return $request->countsRelationship('_self_') && $result->total !== null
             ? $response->withMeta(['total' => $result->total])
             : $response;
     }
