@@ -26,10 +26,10 @@ use PHPUnit\Framework\Attributes\Test;
  * It seeds extra artists/albums/tracks beyond the base {@see DataFixtures\Seed} so a
  * bounded query count (≈ one per include level) is clearly distinct from N+1 across
  * the population, then counts the SQL the DBAL logging middleware feeds to the
- * {@see QueryCountingLogger} and asserts the bound — decisively, by toggling the
- * batcher off on the same request and watching the lazy count grow with the album
- * population. The compound documents are asserted correct and proven byte-identical
- * with batching disabled — the batch is a pure optimization.
+ * {@see QueryCountingLogger} and asserts the bound. An album's tracks load through
+ * the provider whether batching is on or not, because the tracks type's default filter
+ * narrows them, so the same request with batching off issues the same queries and
+ * renders the same document.
  *
  * Probes ride the (non-cyclic) include trees rooted at `albums` (which the bundled
  * Doctrine provider serves directly, and whose to-many relations are all load-aware
@@ -129,29 +129,26 @@ final class IncludePreloadTest extends MusicCatalogKernelTestCase
     }
 
     #[Test]
-    public function disablingThePreloaderRevealsTheNPlusOneItPrevents(): void
+    public function aDefaultFilteredIncludeLoadsThroughItsProviderWithBatchingOff(): void
     {
-        // The decisive batching proof: the SAME request, preloaded vs lazy. Preloaded,
-        // the tracks load is one batched query (a small bound). Lazy (preloader off),
-        // each album's tracks load on demand — a count that scales with the album
-        // population (the N+1 the preloader exists to prevent).
-        $this->fetchDocument('/albums?include=tracks&page[size]=100');
+        // The tracks type's default filter hides explicit tracks, so an album's tracks
+        // load through the provider like a scoped relation, batching on or off: reading
+        // them off each album would render the explicit ones the related endpoint hides.
+        // Turning batching off therefore adds no per-album query here; the N+1 it
+        // reveals for a plain relation is witnessed by DoctrineFlattenQueryBudgetTest.
+        $batchedDocument = $this->fetchDocument('/albums?include=tracks&page[size]=100');
         $batched = $this->queries->countExcluding(self::PLAYLIST_NOISE);
 
         $albumCount = $this->disablePreloaderAndCountAlbums();
 
         $this->queries->reset();
-        $this->fetchDocument('/albums?include=tracks&page[size]=100');
+        $lazyDocument = $this->fetchDocument('/albums?include=tracks&page[size]=100');
         $lazy = $this->queries->countExcluding(self::PLAYLIST_NOISE);
 
-        self::assertGreaterThan(
-            $batched + 2,
-            $lazy,
-            \sprintf('lazy issues materially more queries than the batched %d (the N+1)', $batched),
-        );
-        // Lazy scales with the population; batched does not.
-        self::assertGreaterThanOrEqual($albumCount, $lazy, 'the lazy path issues roughly one tracks query per album');
-        self::assertLessThan($albumCount, $batched, 'the batched path is bounded below the album population');
+        self::assertSame($batched, $lazy);
+        self::assertLessThan($albumCount, $lazy, 'the tracks load is bounded below the album population');
+        self::assertSame($batchedDocument, $lazyDocument);
+        self::assertArrayNotHasKey('tracks:2', $this->includedIndex($lazyDocument), 'the explicit track stays hidden');
     }
 
     // --- default includes -----------------------------------------------------

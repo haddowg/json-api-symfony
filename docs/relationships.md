@@ -1331,7 +1331,15 @@ relationship whether or not it is included (a `withData()` relation, a collectio
 code already loaded, a to-one), pivot `meta.pivot`, `?withCount` totals, the
 Relationship Queries window, `on()` attributes flattened through a to-one, and the
 to-one related and relationship endpoints. A Doctrine query extension or a provider
-that hides rows hides them from all of these, on every server.
+that hides rows hides them from all of these, on every server. So does a filter
+default of the related type or of the relation: an included or always-emitted to-many
+lists only the members the related endpoint serves with no `filter` sent, which is the
+set `?withCount` counts.
+
+The members are loaded before the document renders. A lazy to-many into a scoped or
+default-filtered type, or one with a default read order, that wasn't loaded then
+renders links and no `data`, even if an attribute or a hook initialises its collection
+afterwards. Declare it `withData()` or include it to render its linkage.
 
 The bundle reads a relation through the provider that serves its related endpoint
 (the provider of its first related type). When that provider scopes its reads and is

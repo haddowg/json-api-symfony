@@ -16,6 +16,7 @@ use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\FilterFamilyInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\FilterMatcher;
+use haddowg\JsonApi\Resource\Filter\HasDefaultValue;
 use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Filter\WhereIn;
 use haddowg\JsonApi\Resource\Filter\WhereNotIn;
@@ -195,20 +196,41 @@ final class RelationCriteriaFactory
 
     /**
      * The criteria an include or linkage read of a to-many runs when nothing is
-     * requested for it: no filter and no window, only the relation's default read
-     * order and the sort vocabulary it is checked against, so the members render in
-     * the order the relation's endpoints serve them. `$pivotSorts` is whether the
+     * requested for it: no requested filter and no window, only the filter defaults the
+     * related endpoint folds in, the relation's default read order and the sort
+     * vocabulary it is checked against. The members are then the ones the relation's
+     * endpoints serve, in the order they serve them. `$pivotSorts` is whether the
      * provider reads the relation through its pivot query.
      */
-    public function orderFor(?AbstractResource $relatedResource, RelationInterface $relation, JsonApiRequestInterface $request, bool $pivotSorts = false): CollectionCriteria
+    public function linkageFor(?AbstractResource $relatedResource, RelationInterface $relation, JsonApiRequestInterface $request, bool $pivotSorts = false): CollectionCriteria
     {
         return new CollectionCriteria(
             new QueryParameters(fields: [], includes: [], sort: [], filter: [], pagination: $request->getPagination()),
+            filters: $this->linkageFilters($relatedResource, $relation),
             sorts: SortMatcher::merge($relatedResource?->allSorts() ?? [], self::relationSorts($relation, $relatedResource), $pivotSorts ? PivotFields::sortsFor($relation) : []),
             defaultSort: $this->defaultOrder($relation, $relatedResource, $pivotSorts),
             aliasOf: $pivotSorts ? $this->pivotSortAliases($relation) : [],
             request: $request,
         );
+    }
+
+    /**
+     * Whether a to-many's related endpoint folds a filter default into its read, so its
+     * members are not simply the ones the model holds.
+     */
+    public function hasFilterDefaults(?AbstractResource $relatedResource, RelationInterface $relation): bool
+    {
+        if (!$relation->isToMany()) {
+            return false;
+        }
+
+        foreach ($this->linkageFilters($relatedResource, $relation) as $filter) {
+            if ($filter instanceof HasDefaultValue && $filter->hasDefault()) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -475,6 +497,17 @@ final class RelationCriteriaFactory
             }
         }
         return [...$aliasOf, ...$this->pivotSortAliases($relation)];
+    }
+
+    /**
+     * The filters a linkage read folds the defaults of: the related type's and the
+     * relation's own, without the pivot ones, as a count reads them.
+     *
+     * @return list<FilterInterface>
+     */
+    private function linkageFilters(?AbstractResource $relatedResource, RelationInterface $relation): array
+    {
+        return $this->mergeFilters($relatedResource?->allFilters() ?? [], $this->withoutPivotFilters($relation->allFilters()));
     }
 
     /**
