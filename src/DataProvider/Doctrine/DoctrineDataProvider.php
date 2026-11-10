@@ -25,7 +25,6 @@ use haddowg\JsonApi\Resource\Field\IdEncoderInterface;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\FilterDefaults;
-use haddowg\JsonApi\Resource\Filter\FilterMatcher;
 use haddowg\JsonApi\Resource\Filter\WhereDoesntHave;
 use haddowg\JsonApi\Resource\Filter\WhereHas;
 use haddowg\JsonApi\Resource\Sort\SortByField;
@@ -1248,9 +1247,9 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
      * filtered-out parent to `0`, matching the in-memory witness. With an empty
      * criteria (the common no-relatedQuery case) no predicate is added and the count
      * is raw membership unchanged; the zero-fill is then idempotent (every parent has
-     * a row). A relationship-existence filter ({@see WhereHas}/{@see WhereDoesntHave})
-     * cannot route to the `related` alias — it re-roots on the count query's parent —
-     * so it is rejected on this path (supply a custom provider).
+     * a row). A relationship filter ({@see WhereHas}, {@see WhereDoesntHave},
+     * {@see \haddowg\JsonApi\Resource\Filter\WhereThrough}) correlates its `EXISTS`
+     * to the `related` alias it is applied on, so it tests each counted member.
      *
      * A polymorphic to-many is the same boundary as
      * {@see fetchRelatedCollection()}: its members span entity classes, so there is
@@ -1303,12 +1302,6 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
         $relatedType = $relation->relatedTypes()[0] ?? null;
         $parentIds = \array_keys($storageToWire);
-
-        // A relationship-existence filter re-roots on the count query's own root (the
-        // parent), not the joined related entity, so it cannot scope the count to the
-        // related alias — reject it on this path (the related-collection endpoint still
-        // supports it; a custom provider can count it).
-        $this->guardCountFilters($criteria, $relation);
 
         // A pivot-backed belongsToMany counts the ASSOCIATION-entity rows per parent
         // (so duplicate membership counts each row), grouped over the association
@@ -1559,34 +1552,6 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         }
 
         return $surviving;
-    }
-
-    /**
-     * Rejects a relationship-existence filter ({@see WhereHas}/{@see WhereDoesntHave})
-     * in a `?withCount` count criteria: the count query roots on the parent and joins
-     * the related entity as `related`, but a relationship-existence filter re-roots on
-     * the query's own root entity, so routed to `related` it would scope the parent,
-     * not the related members — the wrong semantics. It is supported on the
-     * related-collection endpoint (which roots on the related entity); for the count,
-     * supply a custom provider. The common related-attribute filters (`Where`,
-     * `WhereIn`, …) apply correctly on the `related` join and are untouched.
-     */
-    private function guardCountFilters(CollectionCriteria $criteria, RelationInterface $relation): void
-    {
-        $requested = FilterDefaults::apply($criteria->queryParameters->filter, $criteria->filters);
-
-        foreach (\array_keys($requested) as $key) {
-            $filter = FilterMatcher::match($criteria->filters, (string) $key, $criteria->request);
-
-            if ($filter instanceof WhereHas || $filter instanceof WhereDoesntHave) {
-                throw new \LogicException(\sprintf(
-                    'The %s cannot apply a relationship-existence filter "%s" to a ?withCount count of "%s": the count roots on the parent, so the filter would scope the parent, not the related members. Supply a custom DataProvider to count this filtered relationship.',
-                    self::class,
-                    (string) $key,
-                    $relation->name(),
-                ));
-            }
-        }
     }
 
     /**
