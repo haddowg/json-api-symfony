@@ -1090,8 +1090,9 @@ the requests it returns `true` for, and the document keeps every verb.
 
 The current members are read off the loaded parent the way the relationship linkage
 renders them, so the check works the same on every data layer: an identified
-`MorphToMany` reads its stored pairs, any other relation reads its value (a Doctrine
-collection, the far side of a pivot `belongsToMany` through its `extractUsing()`, or a
+`MorphToMany` reads its stored pairs, and a pivot `belongsToMany` reads the far members
+of its association entity rows, as its linkage does, whether or not it declares an
+`extractUsing()`. Any other relation reads its value (a Doctrine collection, or a
 `fillUsing()` relation's read side) with each member's id as its serializer writes it.
 The check runs on the linkage after the scope is applied, which keeps the members the
 scope hides, so a caller lists exactly the members it can see; naming one it can't see
