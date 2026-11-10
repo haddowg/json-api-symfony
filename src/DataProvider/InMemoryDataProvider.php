@@ -319,7 +319,9 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
         $tiebreak = new SortByField('__jsonapi_pk_tiebreak', $this->idColumn);
 
         $requested = $criteria->queryParameters->sort;
-        $sort = [...$requested, $tiebreak->key()];
+        // With nothing requested the tiebreak rides the default order instead, so the
+        // default still applies.
+        $sort = $requested === [] ? [] : [...$requested, $tiebreak->key()];
 
         // The default sort applies only when no sort was requested; append the tiebreak
         // to it too so a default-ordered window is tiebroken the same way.

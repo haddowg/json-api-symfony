@@ -9,6 +9,7 @@ use haddowg\JsonApi\OpenApi\Metadata\DeclaresDeprecatedRelation;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresIdentifiedMembers;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresIdentifierMeta;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresPolymorphicRelation;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresRelationDefaultSort;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresRelationExampleId;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresRelationUriFieldName;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresWriteOnlyRelation;
@@ -16,6 +17,7 @@ use haddowg\JsonApi\OpenApi\Metadata\RelationMetadataInterface;
 use haddowg\JsonApi\OpenApi\Schema;
 use haddowg\JsonApi\Resource\Deprecatable;
 use haddowg\JsonApi\Resource\Field\AbstractRelationValue;
+use haddowg\JsonApi\Resource\Field\DefaultSortedRelationInterface;
 use haddowg\JsonApi\Resource\Field\ExemplifiedRelationInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Sort\SortMatcher;
@@ -35,7 +37,7 @@ use haddowg\JsonApiBundle\DataProvider\RelatedReadRouter;
  * the {@see \haddowg\JsonApi\Server\Server} fallback chain + the relation graph) and
  * passed in, as is whether that paginator counts on every request.
  */
-final readonly class RelationMetadata implements RelationMetadataInterface, DeclaresWriteOnlyRelation, DeclaresDeprecatedRelation, DeclaresRelationUriFieldName, DeclaresAlwaysCounted, DeclaresRelationExampleId, DeclaresPolymorphicRelation, DeclaresIdentifiedMembers, DeclaresIdentifierMeta
+final readonly class RelationMetadata implements RelationMetadataInterface, DeclaresWriteOnlyRelation, DeclaresDeprecatedRelation, DeclaresRelationUriFieldName, DeclaresAlwaysCounted, DeclaresRelationExampleId, DeclaresPolymorphicRelation, DeclaresIdentifiedMembers, DeclaresIdentifierMeta, DeclaresRelationDefaultSort
 {
     /**
      * @param list<string> $relatedIncludablePaths the related type's includable paths (resolved by the source)
@@ -177,6 +179,15 @@ final readonly class RelationMetadata implements RelationMetadataInterface, Decl
         // being author-declared in filters(), are already advertised. Empty for a
         // non-pivot relation (docs/openapi.md).
         return SortMatcher::merge($this->relation->sorts(), PivotFields::sortsFor($this->relation));
+    }
+
+    /**
+     * Only the relation's own order: the related type's default isn't the relation's
+     * to document.
+     */
+    public function defaultSort(): array
+    {
+        return $this->relation instanceof DefaultSortedRelationInterface ? $this->relation->defaultSort() : [];
     }
 
     public function relatedIncludablePaths(): array

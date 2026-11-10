@@ -253,7 +253,9 @@ final class RelationshipWindowBatcher
         // The page-1 synthetic request and the merged criteria are resolved once for the
         // relation — they do not vary per parent (page is OUT for includes, fixed at page
         // 1; the relatedQuery sort/filter ride as the plain `?sort`/`?filter`). The merge
-        // is owned by the shared RelationCriteriaFactory; includes never pivot.
+        // is owned by the shared RelationCriteriaFactory. Includes take no pivot filter,
+        // but a relation the provider reads through its pivot query sorts by its pivot
+        // fields, as its default order may.
         $pageRequest = $this->page1Request($request, $relatedQuery);
         $window = $paginator?->window($pageRequest);
 
@@ -280,6 +282,7 @@ final class RelationshipWindowBatcher
             includePivotFields: false,
             wantsCount: $wantsCount,
             request: $request,
+            pivotSorts: $this->router->isPivot($relation),
         );
 
         // Validate the relatedQuery filter VALUE against the per-relation merged
@@ -488,6 +491,7 @@ final class RelationshipWindowBatcher
                 null,
                 includePivotFields: false,
                 request: $request,
+                pivotSorts: $this->router->isPivot($relation),
             );
 
             $this->assertRelatedQueryKeysRecognised($relatedQuery, $criteria);
