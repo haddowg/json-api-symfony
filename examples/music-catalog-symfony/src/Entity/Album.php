@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Entity;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
+use haddowg\JsonApiBundle\Examples\MusicCatalog\Model\AlbumStatus;
 
 /**
  * An album — the Doctrine-mapped twin of core's in-memory
@@ -57,12 +58,11 @@ class Album
     #[ORM\Column(type: 'boolean')]
     public bool $explicit = false;
 
-    // The release lifecycle, stored as the backing scalar of the
-    // {@see \haddowg\JsonApiBundle\Examples\MusicCatalog\Model\AlbumStatus} backed
-    // enum — surfaced on the `albums.status` attribute via `->enum()` so the
-    // generated OpenAPI hoists a reusable, described `AlbumStatus` component.
-    #[ORM\Column(type: 'string', length: 16)]
-    public string $status = 'released';
+    // The release lifecycle as an AlbumStatus case. The column keeps the backing
+    // string, and the `albums.status` attribute declared with `->enum()` writes the
+    // case here and renders its value.
+    #[ORM\Column(type: 'string', length: 16, enumType: AlbumStatus::class)]
+    public AlbumStatus $status = AlbumStatus::Released;
 
     #[ORM\Column(type: 'date_immutable', nullable: true)]
     public ?\DateTimeImmutable $availableFrom = null;
@@ -96,7 +96,7 @@ class Album
         ?\DateTimeImmutable $releasedAt = null,
         bool $published = true,
         bool $explicit = false,
-        string $status = 'released',
+        AlbumStatus $status = AlbumStatus::Released,
         ?\DateTimeImmutable $availableFrom = null,
         ?\DateTimeImmutable $availableUntil = null,
         ?array $releaseInfo = null,

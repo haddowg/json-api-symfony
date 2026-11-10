@@ -11,6 +11,7 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Playlist;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\PlaylistEntry;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Track;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\User;
+use haddowg\JsonApiBundle\Examples\MusicCatalog\Model\AlbumStatus;
 
 /**
  * Extra, DEMO-ONLY catalogue data layered on top of the deterministic {@see Seed}.
@@ -106,7 +107,7 @@ final class DemoSeed
                     releasedAt: $base->modify(\sprintf('+%d months', $titleIndex * 3)),
                     published: true,
                     explicit: false,
-                    status: 'released',
+                    status: AlbumStatus::Released,
                     availableFrom: $base->modify(\sprintf('+%d months', $titleIndex * 3)),
                     availableUntil: new \DateTimeImmutable('2035-12-31'),
                     releaseInfo: ['label' => 'Demo Records', 'catalogueNumber' => \sprintf('DEMO-%03d', $titleIndex + 1)],

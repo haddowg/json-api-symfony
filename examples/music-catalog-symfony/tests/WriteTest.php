@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Tests;
 
+use Doctrine\ORM\EntityManagerInterface;
+use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Album;
+use haddowg\JsonApiBundle\Examples\MusicCatalog\Model\AlbumStatus;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
@@ -129,6 +132,35 @@ final class WriteTest extends MusicCatalogKernelTestCase
             ->assertHasAttribute('durationSeconds', 300);
 
         $browser->get('/tracks/1')->assertFetchedOne()->assertHasAttribute('durationSeconds', 300);
+    }
+
+    #[Test]
+    #[Group('spec:updating-resources')]
+    public function anEnumAttributeIsStoredAsItsCaseAndReadBackAsItsValue(): void
+    {
+        // `status` is declared with ->enum(AlbumStatus::class), so the write hands the
+        // entity an AlbumStatus case and the column keeps its backing string.
+        $browser = $this->browser();
+        $browser->patch('/albums/1', [
+            'data' => [
+                'type' => 'albums',
+                'id' => '1',
+                'attributes' => ['status' => 'withdrawn'],
+            ],
+        ])
+            ->assertFetchedOne()
+            ->assertHasAttribute('status', 'withdrawn');
+
+        $entityManager = static::getContainer()->get('doctrine.orm.entity_manager');
+        self::assertInstanceOf(EntityManagerInterface::class, $entityManager);
+        $entityManager->clear();
+        $album = $entityManager->find(Album::class, 1);
+        self::assertInstanceOf(Album::class, $album);
+        self::assertSame(AlbumStatus::Withdrawn, $album->status);
+
+        $browser->get('/albums/1')
+            ->assertFetchedOne()
+            ->assertHasAttribute('status', 'withdrawn');
     }
 
     #[Test]

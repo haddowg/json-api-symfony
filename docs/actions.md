@@ -818,7 +818,7 @@ final class AlbumResource extends AbstractResource
     {
         return [
             ActionLink::for('download')
-                ->when(static fn(Album $album, JsonApiRequestInterface $request): bool => $album->status === AlbumStatus::Released->value)
+                ->when(static fn(Album $album, JsonApiRequestInterface $request): bool => $album->status === AlbumStatus::Released)
                 ->describedAs('A short-lived link to the album as CSV, present while the album is released.'),
         ];
     }

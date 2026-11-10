@@ -14,6 +14,7 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\PlaylistEntry;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Release;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Track;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\User;
+use haddowg\JsonApiBundle\Examples\MusicCatalog\Model\AlbumStatus;
 
 /**
  * Plain, deterministic fixtures (no Foundry) — the Doctrine twin of core's
@@ -97,7 +98,7 @@ final class Seed
             explicit: false,
             // The backed-enum `status` witness: an unreleased album is `upcoming`
             // (the two published albums keep the constructor default `released`).
-            status: 'upcoming',
+            status: AlbumStatus::Upcoming,
             availableFrom: null,
             availableUntil: null,
             releaseInfo: null,
