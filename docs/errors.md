@@ -489,9 +489,10 @@ names none; `ErrorScope::kinds()` covers operations of a kind on every type, and
 combines scopes. A class found under `error_codes.paths` keeps its descriptor's scope, so
 a scoped error can live in the scanned directory beside the rest.
 
-Only the covered operations then offer the code: each points its response for the code's
-status at a narrowed one such as `ConflictWithAlbumLocked`, gaining that status if it
-didn't advertise it, and every other operation keeps the shared response. See core's
+Only the covered operations then offer the code. Each gets its own error document for the
+code's status, named for the operation, such as `AlbumsUpdate409`, and an inline response
+that uses it, gaining that status if it didn't advertise it. Every other operation keeps the
+shared response. See core's
 [scoping a code to the operations that raise it](https://github.com/haddowg/json-api/blob/main/docs/openapi.md#scoping-a-code-to-the-operations-that-raise-it).
 
 For an error you don't own, such as one a package ships with no scope, register core's

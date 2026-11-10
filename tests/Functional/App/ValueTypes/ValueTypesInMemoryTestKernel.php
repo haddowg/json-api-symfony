@@ -84,6 +84,7 @@ final class ValueTypesInMemoryTestKernel extends Kernel
 
         $services->set('test.submissions_provider', InMemoryDataProvider::class)
             ->factory([SubmissionFactory::class, 'createProvider'])
+            ->public()
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
 
         $services->set('test.submissions_persister', InMemoryDataPersister::class)

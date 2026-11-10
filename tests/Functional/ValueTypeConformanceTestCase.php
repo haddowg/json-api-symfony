@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\SubmissionEntity;
+use haddowg\JsonApiBundle\Tests\Functional\App\Resource\SubmissionKind;
+use haddowg\JsonApiBundle\Tests\Functional\App\ValueTypes\Submission;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Response;
@@ -193,6 +196,46 @@ abstract class ValueTypeConformanceTestCase extends JsonApiFunctionalTestCase
         self::assertSame(422, $response->getStatusCode(), (string) $response->getContent());
         self::assertSame(['/data/attributes/flag', '/data/attributes/options/notifyPublishers'], $this->pointersOf($response));
     }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function anEnumIsStoredAsItsCaseAndReadBackAsItsValue(): void
+    {
+        $response = $this->create(['kind' => 'final']);
+
+        self::assertSame(201, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame('final', $this->at($this->decode($response), 'data', 'attributes', 'kind'));
+        $id = $this->at($this->decode($response), 'data', 'id');
+        self::assertIsString($id);
+        self::assertSame(SubmissionKind::Final, $this->storedSubmission($id)->kind);
+
+        $response = $this->handle('/submissions/' . $id, 'PATCH', [
+            'data' => ['type' => 'submissions', 'id' => $id, 'attributes' => ['kind' => 'draft']],
+        ]);
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(SubmissionKind::Draft, $this->storedSubmission($id)->kind);
+        self::assertSame('draft', $this->at($this->decode($this->handle('/submissions/' . $id)), 'data', 'attributes', 'kind'));
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function anEnumInsideAJsonColumnKeepsItsBackingValue(): void
+    {
+        $response = $this->create(['review' => ['verdict' => 'final']]);
+
+        self::assertSame(201, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['verdict' => 'final'], $this->at($this->decode($response), 'data', 'attributes', 'review'));
+        $id = $this->at($this->decode($response), 'data', 'id');
+        self::assertIsString($id);
+        self::assertSame(['verdict' => 'final'], $this->storedSubmission($id)->review);
+        self::assertSame(['verdict' => 'final'], $this->at($this->decode($this->handle('/submissions/' . $id)), 'data', 'attributes', 'review'));
+    }
+
+    /**
+     * The submission as the data layer stored it, read fresh from the store.
+     */
+    abstract protected function storedSubmission(string $id): Submission|SubmissionEntity;
 
     /**
      * @param array<string, mixed> $attributes

@@ -96,12 +96,12 @@ final class ErrorCatalogContributionTest extends JsonApiFunctionalTestCase
         $shape = self::errorShapeOf($this->at($document, 'components', 'schemas'), AccountFrozen::describe()->code);
 
         self::assertNotNull($shape);
-        // Only the update the descriptor names offers the code, through a narrowed
-        // response; the create's 409 keeps the shared one.
+        // Only the update the descriptor names offers the code, through its own inline
+        // error document; the create's 409 keeps the shared one.
         self::assertSame(['patch /ledgerAccounts/{id}'], $this->operationsOffering($document, $shape));
         self::assertSame(
-            '#/components/responses/ConflictWithAccountFrozen',
-            $this->at($document, 'paths', '/ledgerAccounts/{id}', 'patch', 'responses', '409')['$ref'] ?? null,
+            '#/components/schemas/LedgerAccountsUpdate409',
+            $this->inlineSchemaRef($document, '/ledgerAccounts/{id}', 'patch', '409'),
         );
         self::assertSame(
             '#/components/responses/Conflict',
@@ -123,6 +123,10 @@ final class ErrorCatalogContributionTest extends JsonApiFunctionalTestCase
         self::assertNotNull($shape);
         // The delete gains the 402 it did not advertise, and nothing else offers it.
         self::assertSame(['delete /ledgerAccounts/{id}'], $this->operationsOffering($document, $shape));
+        self::assertSame(
+            '#/components/schemas/LedgerAccountsDelete402',
+            $this->inlineSchemaRef($document, '/ledgerAccounts/{id}', 'delete', '402'),
+        );
         foreach (['get', 'patch'] as $method) {
             self::assertArrayNotHasKey('402', $this->at($document, 'paths', '/ledgerAccounts/{id}', $method, 'responses'));
         }
@@ -162,7 +166,8 @@ final class ErrorCatalogContributionTest extends JsonApiFunctionalTestCase
 
     /**
      * Every operation, as `<method> <path>`, one of whose error responses offers `$shape`:
-     * the response it `$ref`s carries an error document whose `errors.items.anyOf` lists it.
+     * the response, inline or the one it `$ref`s, carries an error document whose
+     * `errors.items.anyOf` lists it.
      *
      * @param array<array-key, mixed> $document
      *
@@ -177,13 +182,21 @@ final class ErrorCatalogContributionTest extends JsonApiFunctionalTestCase
                 if (!\is_array($operation) || !\is_array($operation['responses'] ?? null)) {
                     continue;
                 }
-                foreach ($operation['responses'] as $response) {
-                    $ref = \is_array($response) ? ($response['$ref'] ?? null) : null;
-                    if (!\is_string($ref) || !\str_starts_with($ref, '#/components/responses/')) {
+                foreach ($operation['responses'] as $status => $response) {
+                    if (!\is_array($response) || (int) $status < 400) {
                         continue;
                     }
-                    $schemaRef = $this->at($document, 'components', 'responses', \substr($ref, \strlen('#/components/responses/')), 'content', 'application/vnd.api+json', 'schema')['$ref'] ?? null;
-                    self::assertIsString($schemaRef);
+                    $ref = $response['$ref'] ?? null;
+                    if (\is_string($ref)) {
+                        if (!\str_starts_with($ref, '#/components/responses/')) {
+                            continue;
+                        }
+                        $response = $this->at($document, 'components', 'responses', \substr($ref, \strlen('#/components/responses/')));
+                    }
+                    $schemaRef = $this->schemaRefOf($response);
+                    if ($schemaRef === null || !\str_starts_with($schemaRef, '#/components/schemas/')) {
+                        continue;
+                    }
                     $branches = $this->at($document, 'components', 'schemas', \substr($schemaRef, \strlen('#/components/schemas/')), 'properties', 'errors', 'items', 'anyOf');
                     if (\in_array(['$ref' => '#/components/schemas/' . $shape], $branches, true)) {
                         $offering[] = $method . ' ' . $path;
@@ -193,6 +206,34 @@ final class ErrorCatalogContributionTest extends JsonApiFunctionalTestCase
         }
 
         return $offering;
+    }
+
+    /**
+     * The schema `$ref` an operation's inline response carries, asserting it is inline.
+     *
+     * @param array<array-key, mixed> $document
+     */
+    private function inlineSchemaRef(array $document, string $path, string $method, string $status): ?string
+    {
+        $response = $this->at($document, 'paths', $path, $method, 'responses', $status);
+        self::assertArrayNotHasKey('$ref', $response);
+
+        return $this->schemaRefOf($response);
+    }
+
+    /**
+     * The schema `$ref` of a response's JSON:API content, or `null` when it has none.
+     *
+     * @param array<array-key, mixed> $response
+     */
+    private function schemaRefOf(array $response): ?string
+    {
+        $content = $response['content'] ?? null;
+        $mediaType = \is_array($content) ? ($content['application/vnd.api+json'] ?? null) : null;
+        $schema = \is_array($mediaType) ? ($mediaType['schema'] ?? null) : null;
+        $ref = \is_array($schema) ? ($schema['$ref'] ?? null) : null;
+
+        return \is_string($ref) ? $ref : null;
     }
 
     /**

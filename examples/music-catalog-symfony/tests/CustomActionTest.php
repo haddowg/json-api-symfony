@@ -232,7 +232,7 @@ final class CustomActionTest extends MusicCatalogKernelTestCase
         self::assertInstanceOf(EntityManagerInterface::class, $entityManager);
         $album = $entityManager->find(Album::class, 1);
         self::assertInstanceOf(Album::class, $album);
-        $album->status = AlbumStatus::Withdrawn->value;
+        $album->status = AlbumStatus::Withdrawn;
         $entityManager->flush();
         $entityManager->clear();
 

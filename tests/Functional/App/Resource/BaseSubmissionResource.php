@@ -54,6 +54,10 @@ abstract class BaseSubmissionResource extends AbstractResource
             ),
             OneOf::make('block')->nullable()->discriminator('kind')
                 ->variant('heading', Str::make('text')->required()->maxLength(40), Integer::make('level')->min(1)->max(6)),
+            // An enum nested in an object stored as one JSON column keeps its backing value.
+            Obj::make('review')->nullable()->fields(
+                Str::make('verdict')->required()->enum(SubmissionKind::class),
+            ),
         ];
     }
 }
