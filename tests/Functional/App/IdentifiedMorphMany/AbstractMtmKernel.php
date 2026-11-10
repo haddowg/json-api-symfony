@@ -68,6 +68,14 @@ abstract class AbstractMtmKernel extends Kernel
         return [];
     }
 
+    /**
+     * @return class-string<MtmUserResource>
+     */
+    protected function userResource(): string
+    {
+        return MtmUserResource::class;
+    }
+
     abstract protected function configureData(ContainerConfigurator $container, DefaultsConfigurator $services): void;
 
     protected function configureContainer(ContainerConfigurator $container, LoaderInterface $loader, ContainerBuilder $builder): void
@@ -94,7 +102,7 @@ abstract class AbstractMtmKernel extends Kernel
             ->autowire()
             ->autoconfigure();
 
-        foreach ([MtmAgencyResource::class, MtmAdvertiserResource::class, MtmPublisherResource::class, MtmUserResource::class, MtmAccountResource::class] as $resource) {
+        foreach ([MtmAgencyResource::class, MtmAdvertiserResource::class, MtmPublisherResource::class, $this->userResource(), MtmAccountResource::class] as $resource) {
             $definition = $services->set($resource);
             $entity = $this->entities()[$resource] ?? null;
             if ($entity !== null) {

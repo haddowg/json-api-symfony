@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\OpenApi\Metadata;
 
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresAlwaysCounted;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresDeprecatedRelation;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresFixedMembership;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresIdentifiedMembers;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresIdentifierMeta;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresPolymorphicRelation;
@@ -20,6 +21,7 @@ use haddowg\JsonApi\Resource\Deprecatable;
 use haddowg\JsonApi\Resource\Field\AbstractRelationValue;
 use haddowg\JsonApi\Resource\Field\DefaultSortedRelationInterface;
 use haddowg\JsonApi\Resource\Field\ExemplifiedRelationInterface;
+use haddowg\JsonApi\Resource\Field\GuardsMembershipInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Sort\SortMatcher;
 use haddowg\JsonApiBundle\DataProvider\PivotFields;
@@ -39,7 +41,7 @@ use haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory;
  * the {@see \haddowg\JsonApi\Server\Server} fallback chain + the relation graph) and
  * passed in, as is whether that paginator counts on every request.
  */
-final readonly class RelationMetadata implements RelationMetadataInterface, DeclaresWriteOnlyRelation, DeclaresDeprecatedRelation, DeclaresRelationUriFieldName, DeclaresAlwaysCounted, DeclaresRelationExampleId, DeclaresPolymorphicRelation, DeclaresIdentifiedMembers, DeclaresIdentifierMeta, DeclaresRelationDefaultSort
+final readonly class RelationMetadata implements RelationMetadataInterface, DeclaresWriteOnlyRelation, DeclaresDeprecatedRelation, DeclaresRelationUriFieldName, DeclaresAlwaysCounted, DeclaresRelationExampleId, DeclaresPolymorphicRelation, DeclaresIdentifiedMembers, DeclaresIdentifierMeta, DeclaresRelationDefaultSort, DeclaresFixedMembership
 {
     /**
      * @param list<string> $relatedIncludablePaths the related type's includable paths (resolved by the source)
@@ -136,6 +138,11 @@ final readonly class RelationMetadata implements RelationMetadataInterface, Decl
     public function allowsRemove(): bool
     {
         return $this->relation->allowsRemove();
+    }
+
+    public function fixesMembership(): bool
+    {
+        return $this->relation instanceof GuardsMembershipInterface && $this->relation->fixesMembership();
     }
 
     public function isCountable(): bool
