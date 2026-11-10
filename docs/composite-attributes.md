@@ -134,6 +134,53 @@ hydration ignores them, and a closed object still refuses an undeclared member w
 Doctrine stores an open object in its `json` column like any other `Obj`, the undeclared
 members beside the declared children.
 
+## Unions
+
+A `Union` holds a value that may be a string, a number, a boolean or a list of those,
+with at most one member per JSON type. Core's
+[field docs](https://github.com/haddowg/json-api/blob/main/docs/field-types.md#union)
+cover the semantics. A setting whose value is a label, an amount, a flag or a short
+list of those looks like this:
+
+```php
+Union::make('value')->of(
+    Str::make()->maxLength(10),
+    Decimal::make(),
+    Boolean::make(),
+    ArrayList::make()->maxItems(3)->of(Union::of(Str::make()->maxLength(5), Decimal::make(), Boolean::make())),
+)->nullable(),
+```
+
+The value's JSON type picks the member, and the bridge runs that member's translated
+constraints at the union's own pointer. A twelve-character string is a `422` at
+`/data/attributes/value` for the string member's `maxLength()`, a four-element list one
+there for the list member's `maxItems()`, and a long string in that list one at
+`/data/attributes/value/1`. A value no member takes, such as an object here, is one type
+error at the union whose detail lists the types it does take. Core's `UnionValues` walk
+finds every place a member applies, so this holds for a union inside an `Obj`, `Map` or
+`OneOf` variant, for a list of unions, and for a union pivot field in a linkage member's
+`meta`.
+
+A required union has to be present and not `null`. It also refuses `""` and `[]`, but
+only when its string or list member takes the value, so `false` and `0` pass. A nullable
+union takes `null` and a union that isn't nullable refuses it.
+
+Doctrine stores a union in a `json` column, which keeps a string, a number, a boolean
+and a list apart. A date member is the one case that needs care. Core hydrates a union
+attribute's date to a `\DateTimeImmutable`, which Doctrine's `json` type would encode as
+an object no member reads back. So just before the write, the bundle replaces the value
+with core's `Union::toStoredForm()` whenever the column can't hold a date-time. That is
+the member's wire form, so a `Date` member stores its date string. Validation and the
+before-write events still see the hydrated value. A union pivot field is stored the same
+way. A column of your own type that can hold a date-time receives the object, and the
+in-memory provider keeps the `\DateTimeImmutable` as core gives it. Code reading a
+Doctrine-stored union off the entity gets the stored form, and
+`Union::fromStoredForm()` turns it back into the hydrated value.
+
+The conformance witness is
+[`UnionConformanceTestCase`](../tests/Functional/UnionConformanceTestCase.php), run
+against both kernels.
+
 ## Authoring your own composite constraint
 
 `Shape` is not privileged — it is just a core

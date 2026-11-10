@@ -22,11 +22,8 @@ use haddowg\JsonApi\Resource\Constraint\Shape;
 use haddowg\JsonApi\Resource\Constraint\When;
 use haddowg\JsonApi\Resource\DateTimeParser;
 use haddowg\JsonApi\Resource\Field\ArrayList;
-use haddowg\JsonApi\Resource\Field\Boolean;
-use haddowg\JsonApi\Resource\Field\Decimal;
 use haddowg\JsonApi\Resource\Field\FieldInterface;
 use haddowg\JsonApi\Resource\Field\Id;
-use haddowg\JsonApi\Resource\Field\Integer;
 use haddowg\JsonApi\Resource\Field\Map;
 use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
@@ -35,6 +32,8 @@ use haddowg\JsonApi\Resource\Field\OneOf;
 use haddowg\JsonApi\Resource\Field\PivotRelationInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\ObjectValues;
+use haddowg\JsonApi\Resource\UnionValue;
+use haddowg\JsonApi\Resource\UnionValues;
 use haddowg\JsonApi\Resource\ValueTypeMismatch;
 use haddowg\JsonApi\Resource\ValueTypes;
 use haddowg\JsonApi\Schema\Error\Error;
@@ -258,6 +257,12 @@ final class ResourceValidator
         // /data/attributes/<field>/<child>; a value selecting no variant to
         // /data/attributes/<field>/<discriminator>, or to the field when undiscriminated.
         foreach ($this->oneOfErrors($resource, $attributes, $incoming, $creating, $request) as $error) {
+            $errors[] = $error;
+        }
+
+        // A Union's rules belong to the member the value's JSON type selects, so core
+        // finds each place a member applies and the member's rules run at its pointer.
+        foreach ($this->unionErrors(UnionValues::in($resource->allFields(), $incoming, $creating, $request), $creating, $request) as $error) {
             $errors[] = $error;
         }
 
@@ -547,12 +552,9 @@ final class ResourceValidator
         foreach ($this->endpointPivotMetaErrors($this->pivotMetaCollection($relation, $creating), $meta, $index) as $metaError) {
             $errors[] = $metaError;
         }
-        $errors = $this->withTypeMismatches($errors, $this->pivotTypeMismatches(
-            $relation,
-            $incoming,
-            $creating,
-            fn(string $field): string => $this->pointers->forRelationshipEndpointLinkageMeta('[' . $field . ']', $index),
-        ));
+        $pointer = fn(string $field): string => $this->pointers->forRelationshipEndpointLinkageMeta('[' . $field . ']', $index);
+        $errors = [...$errors, ...$this->unionErrors($this->pivotUnionValues($relation, $incoming, $creating, $pointer), $creating, null)];
+        $errors = $this->withTypeMismatches($errors, $this->pivotTypeMismatches($relation, $incoming, $creating, $pointer));
         foreach ($this->pivotCompareErrors(
             $relation,
             $meta,
@@ -1071,12 +1073,9 @@ final class ResourceValidator
                 ),
             );
         }
-        $errors = $this->withTypeMismatches($errors, $this->pivotTypeMismatches(
-            $relation,
-            $incomingMeta,
-            $creating,
-            fn(string $field): string => $this->pointers->forLinkageMeta($name, '[' . $field . ']', $index),
-        ));
+        $pointer = fn(string $field): string => $this->pointers->forLinkageMeta($name, '[' . $field . ']', $index);
+        $errors = [...$errors, ...$this->unionErrors($this->pivotUnionValues($relation, $incomingMeta, $creating, $pointer), $creating, null)];
+        $errors = $this->withTypeMismatches($errors, $this->pivotTypeMismatches($relation, $incomingMeta, $creating, $pointer));
 
         // Cross-pivot-field comparisons over the merged meta (the pivot analogue of the
         // attribute compare loop), pointed at the linkage meta.
@@ -1111,6 +1110,27 @@ final class ResourceValidator
         }
 
         return $mismatches;
+    }
+
+    /**
+     * The places a union member applies in the pivot values a linkage member sent, as
+     * {@see pivotTypeMismatches()} finds the values of the wrong type.
+     *
+     * @param array<array-key, mixed>  $meta    the member's incoming pivot meta
+     * @param \Closure(string): string $pointer maps a pivot field name to its meta pointer
+     *
+     * @return list<UnionValue>
+     */
+    private function pivotUnionValues(PivotRelationInterface $relation, array $meta, bool $creating, \Closure $pointer): array
+    {
+        $places = [];
+        foreach ($relation->writablePivotFields($creating) as $field) {
+            if (\array_key_exists($field->name(), $meta)) {
+                $places = [...$places, ...UnionValues::of($field, $meta[$field->name()], $pointer($field->name()), $creating)];
+            }
+        }
+
+        return $places;
     }
 
     /**
@@ -1490,9 +1510,9 @@ final class ResourceValidator
     /**
      * The value rule behind a required field, matching core's projection of
      * {@see Required}: a string, list or object may not be empty, while a boolean,
-     * number or discriminated union only has to be non-null, so `false` and `0`
-     * pass. `NotBlank` would reject `false`. A nullable required field accepts
-     * `null` either way.
+     * number, `OneOf` or `Union` only has to be non-null, so `false` and `0` pass.
+     * `NotBlank` would reject `false`. A nullable required field accepts `null` either
+     * way. A union's string or list member refuses an empty value in {@see unionErrors()}.
      *
      * When the field's own value rules already demand at least one item, property or
      * character, an empty value would fail both; the minimum's message is the more
@@ -1504,11 +1524,7 @@ final class ResourceValidator
      */
     private function requiredValue(FieldInterface $field, bool $nullable, array $valueConstraints): array
     {
-        $nonEmpty = !($field instanceof Boolean
-            || $field instanceof Integer
-            || $field instanceof Decimal
-            || $field instanceof OneOf
-            || $this->demandsNonEmpty($valueConstraints));
+        $nonEmpty = ValueTypes::requiredRefusesEmpty($field) && !$this->demandsNonEmpty($valueConstraints);
 
         if ($nonEmpty) {
             return [new NotBlank(allowNull: $nullable)];
@@ -1801,6 +1817,35 @@ final class ResourceValidator
             $violations = $this->validator->validate($value, $this->variantCollection($variant, $value, $creating, $request, whole: $field->writesWhole(), elements: $elements));
             foreach ($violations as $violation) {
                 $errors[] = $this->error((string) $violation->getMessage(), '[' . $field->name() . ']' . (string) $violation->getPropertyPath());
+            }
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Validates each place core's {@see UnionValues} found against the rules of the member
+     * its value selected, at the place's pointer, so a list member's element violation
+     * lands at `<union>/<index>`. A place of a required union refuses an empty string or
+     * list, unless the member's own minimum already reports it.
+     *
+     * @param list<UnionValue> $places
+     *
+     * @return list<Error>
+     */
+    private function unionErrors(array $places, bool $creating, ?JsonApiRequestInterface $request): array
+    {
+        $errors = [];
+        foreach ($places as $place) {
+            $constraints = $this->valueConstraints($place->member, $creating, request: $request);
+            if ($place->nonEmpty && !$this->demandsNonEmpty($constraints)) {
+                \array_unshift($constraints, new NotBlank());
+            }
+            foreach ($this->validator->validate($place->value, $constraints) as $violation) {
+                $errors[] = $this->errorAt(
+                    (string) $violation->getMessage(),
+                    $this->pointers->appendPropertyPath($place->pointer, (string) $violation->getPropertyPath()),
+                );
             }
         }
 

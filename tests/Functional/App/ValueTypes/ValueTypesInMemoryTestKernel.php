@@ -21,7 +21,9 @@ use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 /**
  * A kernel serving the {@see SubmissionResource} over the in-memory provider, the JSON
- * type witness ({@see \haddowg\JsonApiBundle\Tests\Functional\ValueTypeConformanceTestCase}).
+ * type witness ({@see \haddowg\JsonApiBundle\Tests\Functional\ValueTypeConformanceTestCase}),
+ * and the {@see SettingResource}, the union witness
+ * ({@see \haddowg\JsonApiBundle\Tests\Functional\UnionConformanceTestCase}).
  */
 final class ValueTypesInMemoryTestKernel extends Kernel
 {
@@ -87,6 +89,17 @@ final class ValueTypesInMemoryTestKernel extends Kernel
         $services->set('test.submissions_persister', InMemoryDataPersister::class)
             ->factory([SubmissionFactory::class, 'createPersister'])
             ->args([service('test.submissions_provider')])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
+
+        $services->set(SettingResource::class);
+
+        $services->set('test.settings_provider', InMemoryDataProvider::class)
+            ->factory([SettingFactory::class, 'createProvider'])
+            ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+
+        $services->set('test.settings_persister', InMemoryDataPersister::class)
+            ->factory([SettingFactory::class, 'createPersister'])
+            ->args([service('test.settings_provider')])
             ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
     }
 

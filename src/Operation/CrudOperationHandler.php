@@ -40,6 +40,7 @@ use haddowg\JsonApi\Request\RelatedQuery;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\DateTimeParser;
 use haddowg\JsonApi\Resource\Field\AbstractFieldValue;
+use haddowg\JsonApi\Resource\Field\Accessor;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\Date;
 use haddowg\JsonApi\Resource\Field\DateTime;
@@ -50,6 +51,7 @@ use haddowg\JsonApi\Resource\Field\PivotRelationInterface;
 use haddowg\JsonApi\Resource\Field\PositionedRelationInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Field\Time;
+use haddowg\JsonApi\Resource\Field\Union;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\FilterMatcher;
 use haddowg\JsonApi\Resource\Filter\SupportsSingular;
@@ -2185,7 +2187,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $this->dispatch(new BeforeSaveEvent($type, $request, $entity, true, $this->serverName($request)));
         $this->dispatch(new BeforeCreateEvent($type, $request, $entity, $this->serverName($request)));
 
-        $entity = $persister->create($type, $entity);
+        $entity = $persister->create($type, $this->unionsForStorage($this->types->resourceFor($server, $type), $persister, $entity, $body, creating: true));
         // The write may have changed whether a related row is readable.
         $this->relationshipLinkage?->forgetReadDecisions();
 
@@ -2316,7 +2318,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $this->dispatch(new BeforeRelationshipCommitEvent($type, $request, $entity, $relationship['relation'], $relationship['linkage'], Mode::Replace, $this->serverName($request)));
             }
 
-            return $persister->update($type, $entity);
+            return $persister->update($type, $this->unionsForStorage($this->types->resourceFor($server, $type), $persister, $entity, $body, creating: false));
         });
         // The write may have changed whether a related row is readable.
         $this->relationshipLinkage?->forgetReadDecisions();
@@ -2853,6 +2855,53 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         \assert($converted instanceof JsonApiRequestInterface);
 
         return $converted;
+    }
+
+    /**
+     * Puts each top-level `Union` the request sent in core's stored form, when the
+     * persister's column for it cannot hold a date-time object. A Doctrine `json` column
+     * would encode a date member's `\DateTimeImmutable` as an object no member reads back.
+     * It runs just before the persister writes, so validation and the before-write events
+     * see the hydrated value.
+     */
+    private function unionsForStorage(?AbstractResource $resource, DataPersisterInterface $persister, object $entity, JsonApiRequestInterface $body, bool $creating): object
+    {
+        if ($resource === null || !$persister instanceof StoresDateTimesInterface) {
+            return $entity;
+        }
+
+        $data = $body->getResource();
+        $attributes = \is_array($data) ? ($data['attributes'] ?? null) : null;
+        if (!\is_array($attributes)) {
+            return $entity;
+        }
+
+        foreach ($resource->allFields() as $field) {
+            if (!$field instanceof Union
+                || !\array_key_exists($field->name(), $attributes)
+                || $field->hydratesThroughHook()
+                || $field->relatedVia() !== null
+                || $field->isHidden()
+                || $field->isReadOnlyFor($creating, $body)) {
+                continue;
+            }
+
+            $column = $field->column();
+            if ($column === null || $persister->holdsDateTimes($entity, $column)) {
+                continue;
+            }
+
+            $value = Accessor::get($entity, $column);
+            if ($value === null) {
+                continue;
+            }
+
+            $stored = Accessor::set($entity, $column, $field->toStoredForm($value));
+            \assert(\is_object($stored));
+            $entity = $stored;
+        }
+
+        return $entity;
     }
 
     private function withoutRelationships(JsonApiRequestInterface $body): JsonApiRequestInterface

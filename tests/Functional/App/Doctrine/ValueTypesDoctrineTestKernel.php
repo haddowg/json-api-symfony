@@ -18,9 +18,9 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
 /**
  * The Doctrine half of the JSON type witness pair: serves the
- * {@see DoctrineSubmissionResource} over the Doctrine provider, its objects and lists in
- * `json` columns of an in-memory SQLite database (seeded by
- * {@see \haddowg\JsonApiBundle\Tests\Functional\DoctrineValueTypeTest}).
+ * {@see DoctrineSubmissionResource} and the {@see DoctrineSettingResource} over the
+ * Doctrine provider, their objects, lists and unions in `json` columns of an in-memory
+ * SQLite database (seeded by the tests that boot it).
  */
 final class ValueTypesDoctrineTestKernel extends Kernel
 {
@@ -110,6 +110,7 @@ final class ValueTypesDoctrineTestKernel extends Kernel
             ->autoconfigure();
 
         $services->set(DoctrineSubmissionResource::class);
+        $services->set(DoctrineSettingResource::class);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

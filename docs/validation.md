@@ -101,14 +101,17 @@ Symfony `Collection` wrapper:
 | Field declaration | On create (`POST`) | On update (`PATCH`) |
 |---|---|---|
 | `->required()` on a string, list or object | `Required` + `NotBlank` (present and non-empty) | `Optional` + `NotBlank` (may be omitted; if supplied, non-empty) |
-| `->required()` on a `Boolean`, `Integer`, `Decimal` or `OneOf` | `Required` + `NotNull` (present; `false` and `0` are valid) | `Optional` + `NotNull` |
+| `->required()` on a `Boolean`, `Integer`, `Decimal`, `OneOf` or `Union` | `Required` + `NotNull` (present; `false` and `0` are valid) | `Optional` + `NotNull` |
 | `->required()->nullable()` | as above, with `null` allowed | same |
 | not required, not nullable | `Optional` + `NotNull` (an explicit `null` is rejected) | same |
 
 Required means what core's OpenAPI projection says: `minLength: 1`, `minItems: 1`
 or `minProperties: 1` for a string, list or object, and nothing more than presence
 for a boolean or number. Date, time, email, URL and other string-typed fields count
-as strings, so `""` fails them.
+as strings, so `""` fails them, and so does a field of your own that supplies its own
+schema. Core's `ValueTypes::requiredRefusesEmpty()` makes that call for every field. A required `Union` refuses `""` or `[]` only when its string or
+list member takes the value, so `false` and `0` pass
+([composite attributes](composite-attributes.md#unions)).
 
 A required field that also declares its own minimum (`minItems`, `minLength` or
 `minProperties` of at least 1) reports an empty value once, with the minimum's
@@ -196,13 +199,15 @@ Content-Type: application/vnd.api+json
 
 Before the constraints get a say, each written value must have the JSON type the write
 schema documents for its field: a string for `Str` and the date fields, a boolean for
-`Boolean`, an integer for `Integer`, a number for `Decimal`, a list for `ArrayList` and an
-object for `Obj`, `OneOf`, `Map` and `ArrayHash`. Core's `ValueTypes::mismatchesIn()` finds
+`Boolean`, an integer for `Integer`, a number for `Decimal`, a list for `ArrayList`, an
+object for `Obj`, `OneOf`, `Map` and `ArrayHash`, and one of its members' types for a
+`Union`. Core's `ValueTypes::mismatchesIn()` finds
 every value without it, at any depth, and the bridge reports each one as the only error at
 its pointer, so `"yes"` sent for a `Boolean` is a `422` rather than a stored `true`, and
 `42` sent for a `Str` with a `maxLength()` gets one error about its type, not a length
 error as well. The detail reads `This value should be of type boolean.`, or
-`This value should be an object.` for an object. An explicit `null` keeps the
+`This value should be an object.` for an object. A union names every type it takes,
+as in `This value should be of type string|number|boolean|array.` An explicit `null` keeps the
 nullability rule's error when the field is not nullable. A pivot field's value in a
 linkage member's `meta` is checked the same way.
 
