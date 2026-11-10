@@ -104,6 +104,15 @@ jobs:
           coverage: none
           tools: composer:v2
 
+      - name: Diagnose Packagist metadata
+        run: |
+          composer --version
+          composer config --global --list | grep -iE "repo|mirror|policy|cooldown|packagist" || true
+          curl -sSI https://repo.packagist.org/p2/haddowg/json-api.json | grep -iE "last-modified|cdn|age|date|server" || true
+          curl -sS https://repo.packagist.org/p2/haddowg/json-api.json | grep -o '"version":"v2.1[01][^"]*"' | head -3
+          composer show haddowg/json-api --all 2>&1 | grep versions | cut -c1-80
+          COMPOSER_HOME=$(mktemp -d) composer show haddowg/json-api --all 2>&1 | grep versions | cut -c1-80
+
       - name: Install dependencies
         uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
 
