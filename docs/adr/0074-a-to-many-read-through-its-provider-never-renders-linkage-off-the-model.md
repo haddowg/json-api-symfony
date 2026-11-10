@@ -1,0 +1,3 @@
+# A to-many read through its provider never renders linkage off the model
+
+A to-many whose provider scopes it, whose related endpoint folds in a filter default, or which has a default read order renders linkage only from the members the include batcher loaded through the provider, and those reads fold in the same filter defaults the related endpoint does. The batcher decides what to load before the document renders, so a collection that an attribute or a hook initialises afterwards would otherwise render every row the model holds, including the ones the scope hides. Such a relation that the batcher left lazy renders links and no `data` instead, the same as when nothing touched it.

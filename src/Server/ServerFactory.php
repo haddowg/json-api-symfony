@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Server;
 
+use haddowg\JsonApi\Exception\NoResourceRegistered;
 use haddowg\JsonApi\Operation\OperationHandlerInterface;
 use haddowg\JsonApi\Pagination\CursorPaginationProfile;
 use haddowg\JsonApi\Pagination\PagePaginator;
 use haddowg\JsonApi\Pagination\PaginatorInterface;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Schema\Error\ErrorMessageResolverInterface;
 use haddowg\JsonApi\Schema\Profile\CountableProfile;
 use haddowg\JsonApi\Schema\Profile\ProfileInterface;
@@ -20,9 +22,11 @@ use haddowg\JsonApi\Scope\ScopeMatcherInterface;
 use haddowg\JsonApi\Serializer\RelationshipLoadStateInterface;
 use haddowg\JsonApi\Serializer\ResourceLinkContributorInterface;
 use haddowg\JsonApi\Server\Server;
+use haddowg\JsonApiBundle\DataProvider\RelatedReadRouter;
 use haddowg\JsonApiBundle\Event\ServingEvent;
 use haddowg\JsonApiBundle\Scope\ScopeTableProvider;
 use haddowg\JsonApiBundle\Security\RelationAuthorizer;
+use haddowg\JsonApiBundle\Serializer\ProviderReadLoadState;
 use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipCount;
 use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipLinkage;
 use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipPagination;
@@ -159,6 +163,7 @@ final class ServerFactory
         private readonly ?ScopeMatcherInterface $scopeMatcher = null,
         private readonly ?LoggerInterface $logger = null,
         private readonly array $relatedOnlyTypes = [],
+        private readonly ?RelatedReadRouter $relatedReads = null,
     ) {}
 
     /**
@@ -174,7 +179,7 @@ final class ServerFactory
             ->withBaseUri($this->baseUri)
             ->withVersion($this->version)
             ->withPsr17($this->responseFactory, $this->streamFactory)
-            ->withRelationshipLoadState($this->relationshipLoadState)
+            ->withRelationshipLoadState($this->loadState())
             // The per-request count seam: a stable holder threaded in once (the
             // Server is memoized), whose batched backing the handler swaps per read
             // so the render emits `meta.total` for ?withCount-named countable
@@ -300,6 +305,29 @@ final class ServerFactory
         }
 
         return $this->server = $server->withHandler($this->handler);
+    }
+
+    /**
+     * The storage load state, wrapped so that a to-many read through its provider
+     * renders only the linkage the batcher loaded for it.
+     */
+    private function loadState(): ?RelationshipLoadStateInterface
+    {
+        if ($this->relationshipLoadState === null || $this->relatedReads === null) {
+            return $this->relationshipLoadState;
+        }
+
+        return new ProviderReadLoadState(
+            $this->relationshipLoadState,
+            $this->relatedReads,
+            function (string $type): ?AbstractResource {
+                try {
+                    return $this->server?->resourceFor($type);
+                } catch (NoResourceRegistered) {
+                    return null;
+                }
+            },
+        );
     }
 
     /**

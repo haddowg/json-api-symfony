@@ -1524,6 +1524,7 @@ final class JsonApiBundle extends AbstractBundle
                     // Doctrine application that maps an entity, else null (core then
                     // treats every relation as loaded).
                     '$relationshipLoadState' => service(DoctrineRelationshipLoadState::class)->nullOnInvalid(),
+                    '$relatedReads' => service(\haddowg\JsonApiBundle\DataProvider\RelatedReadRouter::class),
                     // The per-request count seam holder: a stable
                     // service threaded into the memoized Server once, whose batched
                     // backing the handler swaps per read so the render emits

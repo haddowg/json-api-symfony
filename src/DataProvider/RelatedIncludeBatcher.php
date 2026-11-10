@@ -19,6 +19,7 @@ use haddowg\JsonApi\Serializer\IncludeControlsInterface;
 use haddowg\JsonApi\Serializer\RelationshipLinkageInterface;
 use haddowg\JsonApi\Serializer\SerializerInterface;
 use haddowg\JsonApi\Server\Server;
+use haddowg\JsonApiBundle\Serializer\ProviderReadLoadState;
 use haddowg\JsonApiBundle\Serializer\WindowedRelationshipLinkage;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
@@ -39,7 +40,10 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
  *    `withData()` relation, a relation the load-state predicate reports as loaded, a
  *    Doctrine to-one, or one with no links to render instead) is loaded the same way
  *    when its provider scopes related reads, so its identifiers are scoped too, or
- *    when it has a default read order, so they come in that order.
+ *    when it has a default read order or a filter default, so they are the ones its
+ *    endpoints serve. A to-many like that which this walk leaves lazy renders no data
+ *    even if something loads it on the model later
+ *    ({@see \haddowg\JsonApiBundle\Serializer\ProviderReadLoadState}).
  *
  * Loaded relations reach core out of band through the relationship-linkage seams
  * ({@see preload()} returns the map): a to-many's members, and a scoped to-one's target
@@ -47,10 +51,11 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
  *
  * Each relation loads through the provider that serves its related endpoint, routed by
  * {@see RelatedReadRouter}. A to-many loads in its default read order, the relation's
- * own `defaultSort()` else the related type's, so its linkage lists the members in the
- * order its endpoints serve them. Reading a relation with no default read order straight
- * off the model is allowed only when that equals what the provider would load: the
- * provider reports it unscoped
+ * own `defaultSort()` else the related type's, and narrowed by the filter defaults its
+ * related endpoint folds in, so its linkage lists the members its endpoints serve, in
+ * their order. Reading a relation with no default read order and no filter default
+ * straight off the model is allowed only when that equals what the provider would load:
+ * the provider reports it unscoped
  * ({@see ScopesRelatedReadsInterface}), the author computes its value (an
  * `extractUsing()` closure, or a getter that is not an association, reported as
  * {@see RelatedBatch::computed()}), or no provider serves the related type.
@@ -444,7 +449,7 @@ final class RelatedIncludeBatcher
         // otherwise they render as the closure returns them. A pivot
         // belongsToMany is not computed: the provider's pivot query is what it serves.
         if ($this->router->isComputed($relation)) {
-            if (!$this->isScoped($relation) && !$this->isOrdered($server, $relation)) {
+            if (!$this->isScoped($relation) && !$this->readsThroughProvider($server, $relation)) {
                 return $descends ? $this->readTargets($entities, $relation, $request) : [];
             }
 
@@ -485,9 +490,10 @@ final class RelatedIncludeBatcher
             return [];
         }
 
-        // A relation with a default read order loads through the provider too, so its
-        // linkage renders in the order its endpoints serve rather than storage order.
-        $ordered = $this->isOrdered($server, $relation);
+        // A relation with a default read order or a filter default loads through the
+        // provider too, so its linkage renders the members its endpoints serve, in their
+        // order, rather than the model's.
+        $ordered = $this->readsThroughProvider($server, $relation);
         if (!$this->providers->supportsType($relatedType) || (!$scoped && !$ordered && (!$included || !$this->enabled))) {
             return $descends ? $this->readTargets($entities, $relation, $request) : [];
         }
@@ -857,6 +863,9 @@ final class RelatedIncludeBatcher
         }
 
         $loadState = $server->relationshipLoadState();
+        if ($loadState instanceof ProviderReadLoadState) {
+            return $loadState->isLoadedOnModel($entity, $relation);
+        }
 
         return $loadState === null || $loadState->isRelationshipLoaded($entity, $relation);
     }
@@ -949,15 +958,20 @@ final class RelatedIncludeBatcher
             return $this->plainIncludeCriteria($request);
         }
 
-        return $this->relationCriteria->orderFor($this->relatedResource($server, $relation), $relation, $request, $this->router->isPivot($relation));
+        return $this->relationCriteria->linkageFor($this->relatedResource($server, $relation), $relation, $request, $this->router->isPivot($relation));
     }
 
     /**
-     * Whether `$relation` renders its members in a declared default read order.
+     * Whether `$relation`'s members are read through the provider even where its scope
+     * does not apply: a default read order or a filter default makes them differ from
+     * the ones the model holds.
      */
-    private function isOrdered(Server $server, RelationInterface $relation): bool
+    private function readsThroughProvider(Server $server, RelationInterface $relation): bool
     {
-        return $this->relationCriteria->isOrdered($this->relatedResource($server, $relation), $relation);
+        $relatedResource = $this->relatedResource($server, $relation);
+
+        return $this->relationCriteria->isOrdered($relatedResource, $relation)
+            || $this->relationCriteria->hasFilterDefaults($relatedResource, $relation);
     }
 
     private function relatedResource(Server $server, RelationInterface $relation): ?AbstractResource
