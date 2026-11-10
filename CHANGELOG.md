@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.6.0](https://github.com/haddowg/json-api-symfony/compare/v2.5.1...v2.6.0) (2026-11-10)
+
+
+### Features
+
+* validate and store Union fields ([#341](https://github.com/haddowg/json-api-symfony/issues/341)) ([912c653](https://github.com/haddowg/json-api-symfony/commit/912c6538715fb4bd78dd95600ec452a383d55243))
+
 ## [2.5.1](https://github.com/haddowg/json-api-symfony/compare/v2.5.0...v2.5.1) (2026-11-10)
 
 
