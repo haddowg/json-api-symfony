@@ -94,7 +94,7 @@ abstract class AbstractMtmKernel extends Kernel
             ->autowire()
             ->autoconfigure();
 
-        foreach ([MtmAgencyResource::class, MtmAdvertiserResource::class, MtmPublisherResource::class, MtmUserResource::class] as $resource) {
+        foreach ([MtmAgencyResource::class, MtmAdvertiserResource::class, MtmPublisherResource::class, MtmUserResource::class, MtmAccountResource::class] as $resource) {
             $definition = $services->set($resource);
             $entity = $this->entities()[$resource] ?? null;
             if ($entity !== null) {

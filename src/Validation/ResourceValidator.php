@@ -22,7 +22,6 @@ use haddowg\JsonApi\Resource\Constraint\Shape;
 use haddowg\JsonApi\Resource\Constraint\When;
 use haddowg\JsonApi\Resource\DateTimeParser;
 use haddowg\JsonApi\Resource\Field\ArrayList;
-use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\Boolean;
 use haddowg\JsonApi\Resource\Field\Decimal;
 use haddowg\JsonApi\Resource\Field\FieldInterface;
@@ -30,8 +29,10 @@ use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Integer;
 use haddowg\JsonApi\Resource\Field\Map;
 use haddowg\JsonApi\Resource\Field\Mode;
+use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\Obj;
 use haddowg\JsonApi\Resource\Field\OneOf;
+use haddowg\JsonApi\Resource\Field\PivotRelationInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\ObjectValues;
 use haddowg\JsonApi\Resource\ValueTypeMismatch;
@@ -445,7 +446,7 @@ final class ResourceValidator
 
         $errors = [];
 
-        $isPivot = $mode !== Mode::Remove && $relation instanceof BelongsToMany && $relation->pivotFields() !== [];
+        $isPivot = $mode !== Mode::Remove && $relation instanceof PivotRelationInterface && $relation->pivotFields() !== [];
 
         if ($linkage instanceof ToOneRelationship) {
             $identifier = $linkage->resourceIdentifier;
@@ -454,8 +455,8 @@ final class ResourceValidator
                 if ($error !== null) {
                     $errors[] = $error;
                 }
-                if ($isPivot && $relation instanceof BelongsToMany) {
-                    foreach ($this->endpointMemberPivotErrors($relation, $identifier->id, $this->pivotMetaIn($identifier->meta), null, $existingPivot) as $metaError) {
+                if ($isPivot && $relation instanceof PivotRelationInterface) {
+                    foreach ($this->endpointMemberPivotErrors($relation, $this->pivotKey($relation, $identifier->type, $identifier->id), $this->pivotMetaIn($identifier->meta), null, $existingPivot) as $metaError) {
                         $errors[] = $metaError;
                     }
                 }
@@ -466,8 +467,8 @@ final class ResourceValidator
                 if ($error !== null) {
                     $errors[] = $error;
                 }
-                if ($isPivot && $relation instanceof BelongsToMany) {
-                    foreach ($this->endpointMemberPivotErrors($relation, $identifier->id, $this->pivotMetaIn($identifier->meta), $index, $existingPivot) as $metaError) {
+                if ($isPivot && $relation instanceof PivotRelationInterface) {
+                    foreach ($this->endpointMemberPivotErrors($relation, $this->pivotKey($relation, $identifier->type, $identifier->id), $this->pivotMetaIn($identifier->meta), $index, $existingPivot) as $metaError) {
                         $errors[] = $metaError;
                     }
                 }
@@ -490,6 +491,19 @@ final class ResourceValidator
         }
 
         throw new ValidationFailed($errors);
+    }
+
+    /**
+     * The key a member's stored pivot values sit under in the existing pivot map: its id,
+     * or for a `MorphToMany`, whose members span types, its type and id.
+     */
+    private function pivotKey(RelationInterface $relation, string $type, ?string $id): ?string
+    {
+        if ($id === null) {
+            return null;
+        }
+
+        return $relation instanceof MorphToMany ? $type . "\0" . $id : $id;
     }
 
     /**
@@ -523,7 +537,7 @@ final class ResourceValidator
      *
      * @return list<Error>
      */
-    private function endpointMemberPivotErrors(BelongsToMany $relation, ?string $id, array $incoming, ?int $index, array $existingPivot): array
+    private function endpointMemberPivotErrors(PivotRelationInterface $relation, ?string $id, array $incoming, ?int $index, array $existingPivot): array
     {
         $stored = \is_string($id) ? ($existingPivot[$id] ?? null) : null;
         $creating = $stored === null;
@@ -1019,7 +1033,7 @@ final class ResourceValidator
      */
     private function pivotMetaErrors(RelationInterface $relation, mixed $member, string $name, ?int $index, array $existingPivot = []): array
     {
-        if (!$relation instanceof BelongsToMany || $relation->pivotFields() === []) {
+        if (!$relation instanceof PivotRelationInterface || $relation->pivotFields() === []) {
             return [];
         }
         if (!\is_array($member)) {
@@ -1034,7 +1048,9 @@ final class ResourceValidator
         // incoming meta and validates in the update context; a new member validates
         // the incoming meta alone in the create context.
         $id = $member['id'] ?? null;
-        $stored = \is_string($id) ? ($existingPivot[$id] ?? null) : null;
+        $memberType = $member['type'] ?? null;
+        $key = \is_string($id) ? $this->pivotKey($relation, \is_string($memberType) ? $memberType : '', $id) : null;
+        $stored = $key !== null ? ($existingPivot[$key] ?? null) : null;
         $creating = $stored === null;
         $meta = $stored === null ? $meta : \array_merge($stored, $meta);
 
@@ -1085,7 +1101,7 @@ final class ResourceValidator
      *
      * @return list<ValueTypeMismatch>
      */
-    private function pivotTypeMismatches(BelongsToMany $relation, array $meta, bool $creating, \Closure $pointer): array
+    private function pivotTypeMismatches(PivotRelationInterface $relation, array $meta, bool $creating, \Closure $pointer): array
     {
         $mismatches = [];
         foreach ($relation->writablePivotFields($creating) as $field) {
@@ -1106,7 +1122,7 @@ final class ResourceValidator
      * (`allowExtraFields: true`). Returns `null` when the relation has no writable
      * pivot field in this context (nothing to validate).
      */
-    private function pivotMetaCollection(BelongsToMany $relation, bool $creating): ?Collection
+    private function pivotMetaCollection(PivotRelationInterface $relation, bool $creating): ?Collection
     {
         $fields = [];
         foreach ($relation->writablePivotFields($creating) as $field) {
@@ -1132,7 +1148,7 @@ final class ResourceValidator
      *
      * @return list<Error>
      */
-    private function pivotCompareErrors(BelongsToMany $relation, array $meta, bool $creating, \Closure $pointer): array
+    private function pivotCompareErrors(PivotRelationInterface $relation, array $meta, bool $creating, \Closure $pointer): array
     {
         $errors = [];
         foreach ($relation->writablePivotFields($creating) as $field) {

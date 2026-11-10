@@ -28,6 +28,13 @@ class OrderShelf
     #[ORM\OneToMany(targetEntity: OrderPick::class, mappedBy: 'shelf', orphanRemoval: true)]
     public Collection $picks;
 
+    /**
+     * @var Collection<int, OrderShelfItem>
+     */
+    #[ORM\OneToMany(targetEntity: OrderShelfItem::class, mappedBy: 'shelf', cascade: ['persist'], orphanRemoval: true)]
+    #[ORM\OrderBy(['id' => 'ASC'])]
+    public Collection $items;
+
     public function __construct(
         #[ORM\Id]
         #[ORM\GeneratedValue(strategy: 'AUTO')]
@@ -38,5 +45,6 @@ class OrderShelf
     ) {
         $this->books = new ArrayCollection();
         $this->picks = new ArrayCollection();
+        $this->items = new ArrayCollection();
     }
 }

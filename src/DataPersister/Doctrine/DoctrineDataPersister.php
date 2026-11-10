@@ -6,8 +6,10 @@ namespace haddowg\JsonApiBundle\DataPersister\Doctrine;
 
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
+use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Mapping\ClassMetadata;
+use haddowg\JsonApi\Collection\LinkRows\LinkRowWritePlan;
 use haddowg\JsonApi\Exception\FullReplacementProhibited;
 use haddowg\JsonApi\Exception\RemovalProhibited;
 use haddowg\JsonApi\Exception\ResourceNotFound;
@@ -16,6 +18,7 @@ use haddowg\JsonApi\Hydrator\Relationship\ToOneRelationship;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\FieldInterface;
 use haddowg\JsonApi\Resource\Field\Mode;
+use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Schema\ResourceIdentifier;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
@@ -23,6 +26,7 @@ use haddowg\JsonApiBundle\DataPersister\MovedMember;
 use haddowg\JsonApiBundle\DataPersister\ReportsMovedMembersInterface;
 use haddowg\JsonApiBundle\DataPersister\StoresDateTimesInterface;
 use haddowg\JsonApiBundle\DataPersister\TransactionalDataPersisterInterface;
+use haddowg\JsonApiBundle\DataPersister\WritesLinkRowsInterface;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineIdentifiers;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\NaiveDateTimeStorage;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\PivotAssociation;
@@ -67,7 +71,7 @@ use haddowg\JsonApiBundle\Validation\RelationshipTypeUnacceptable;
  * (`404`), rather than passing the raw wire string to `getReference` (which would
  * build a proxy that errors on initialization, surfacing as a `500`).
  */
-final class DoctrineDataPersister implements DataPersisterInterface, TransactionalDataPersisterInterface, ReportsMovedMembersInterface, StoresDateTimesInterface
+final class DoctrineDataPersister implements DataPersisterInterface, TransactionalDataPersisterInterface, ReportsMovedMembersInterface, StoresDateTimesInterface, WritesLinkRowsInterface
 {
     private readonly DoctrineIdentifiers $ids;
 
@@ -223,6 +227,97 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
         }
 
         return $entity;
+    }
+
+    /**
+     * Applies a declared `MorphToMany`'s link-row plan, flushing after each pass that
+     * writes anything so no two rows share an owner and position at any flush: the
+     * deletes, the temporary positions, the updates, then the inserts. A new row is a
+     * `through()` entity, constructed when it can be so its defaults apply, with its owner
+     * set through the association and each value converted to the field's storage form. A parent not yet stored has no rows to
+     * delete or move, so its inserts wait for the caller's flush.
+     */
+    public function writeLinkRows(object $parent, MorphToMany $relation, LinkRowWritePlan $plan, bool $flush = true): object
+    {
+        $fields = $relation->linkRowFields()
+            ?? throw new \LogicException(\sprintf('MorphToMany relation "%s" was not declared with identifiedByRows(), so it has no link rows to write.', $relation->name()));
+        $metadata = $this->entityManager->getClassMetadata($fields->through);
+        $rows = $this->toManyCollection($parent, $relation->column() ?? $relation->name());
+        $stored = $this->entityManager->getUnitOfWork()->isInIdentityMap($parent);
+
+        foreach ($plan->deletes as $deleted) {
+            if (\is_object($deleted->row)) {
+                $rows?->removeElement($deleted->row);
+                $this->entityManager->remove($deleted->row);
+            }
+        }
+        if ($plan->deletes !== [] && $stored) {
+            $this->entityManager->flush();
+        }
+
+        foreach ([$plan->temporary, $plan->updates] as $pass) {
+            foreach ($pass as $write) {
+                if (\is_object($write->member->row)) {
+                    $this->writeRowValues($metadata, $write->member->row, $write->values, $fields->owner, $parent);
+                }
+            }
+            if ($pass !== [] && $stored) {
+                $this->entityManager->flush();
+            }
+        }
+
+        foreach ($plan->inserts as $insert) {
+            $row = $this->newLinkRow($metadata);
+            $this->writeRowValues($metadata, $row, $insert->values, $fields->owner, $parent);
+            $rows?->add($row);
+            $this->entityManager->persist($row);
+        }
+
+        if ($flush) {
+            $this->entityManager->flush();
+        }
+
+        return $parent;
+    }
+
+    /**
+     * A new link row, constructed when its class takes no required argument so its
+     * defaults apply, and otherwise created as Doctrine hydrates one.
+     *
+     * @param ClassMetadata<object> $metadata
+     */
+    private function newLinkRow(ClassMetadata $metadata): object
+    {
+        $constructor = $metadata->getReflectionClass()->getConstructor();
+
+        return $constructor === null || $constructor->getNumberOfRequiredParameters() === 0
+            ? $metadata->getReflectionClass()->newInstance()
+            : $metadata->newInstance();
+    }
+
+    /**
+     * Sets a link row's fields, the owner to `$parent` through its association and every
+     * other value converted to its column's PHP form and stored zone.
+     *
+     * @param ClassMetadata<object> $metadata
+     * @param array<string, mixed>  $values
+     */
+    private function writeRowValues(ClassMetadata $metadata, object $row, array $values, string $ownerField, object $parent): void
+    {
+        foreach ($values as $field => $value) {
+            if ($field === $ownerField) {
+                $metadata->setFieldValue($row, $field, $parent);
+
+                continue;
+            }
+
+            if ($metadata->hasField($field) && \is_scalar($value)) {
+                $value = Type::getType($metadata->getTypeOfField($field) ?? 'string')
+                    ->convertToPHPValue($value, $this->entityManager->getConnection()->getDatabasePlatform());
+            }
+
+            $metadata->setFieldValue($row, $field, $this->dateTimeForColumn($row, $field, $value));
+        }
     }
 
     /**

@@ -63,5 +63,6 @@ class OrderDoctrineTestKernel extends AbstractOrderKernel
         // Map each resource to its entity, so the Doctrine provider serves it.
         $services->set(PivotOrderShelfResource::class)->tag(JsonApiBundle::RESOURCE_TAG, ['entity' => OrderShelf::class]);
         $services->set(OrderBookResource::class)->tag(JsonApiBundle::RESOURCE_TAG, ['entity' => OrderBook::class]);
+        $services->set(OrderMagazineResource::class)->tag(JsonApiBundle::RESOURCE_TAG, ['entity' => OrderMagazine::class]);
     }
 }

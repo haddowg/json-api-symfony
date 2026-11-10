@@ -41,7 +41,7 @@ class OrderInMemoryTestKernel extends AbstractOrderKernel
     {
         $services->set(OrderFixtures::class);
 
-        foreach (['shelves', 'books'] as $type) {
+        foreach (['shelves', 'books', 'magazines'] as $type) {
             $services->set('test.order_provider.' . $type, InMemoryDataProvider::class)
                 ->factory([service(OrderFixtures::class), 'provider'])
                 ->args([$type])

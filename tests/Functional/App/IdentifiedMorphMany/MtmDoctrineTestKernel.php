@@ -36,6 +36,7 @@ class MtmDoctrineTestKernel extends AbstractMtmKernel
             MtmAdvertiserResource::class => MtmAdvertiser::class,
             MtmPublisherResource::class => MtmPublisher::class,
             MtmUserResource::class => MtmUser::class,
+            MtmAccountResource::class => MtmUser::class,
         ];
     }
 

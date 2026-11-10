@@ -10,6 +10,10 @@ use haddowg\JsonApi\Collection\Keyset\CursorTokenMinter;
 use haddowg\JsonApi\Collection\Keyset\InMemoryKeyset;
 use haddowg\JsonApi\Collection\Keyset\KeysetColumn;
 use haddowg\JsonApi\Collection\Keyset\KeysetResolver;
+use haddowg\JsonApi\Collection\LinkRows\InMemoryLinkRows;
+use haddowg\JsonApi\Collection\LinkRows\LinkRowKeysInterface;
+use haddowg\JsonApi\Collection\LinkRows\LinkRowQuery;
+use haddowg\JsonApi\Collection\LinkRows\LinkRowQueryInterface;
 use haddowg\JsonApi\Collection\WindowExecutor;
 use haddowg\JsonApi\Operation\QueryParameters;
 use haddowg\JsonApi\Pagination\CursorCodec;
@@ -17,6 +21,7 @@ use haddowg\JsonApi\Pagination\CursorWindow;
 use haddowg\JsonApi\Pagination\OffsetWindow;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\Accessor;
+use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Field\StoresIdentifiersInterface;
 use haddowg\JsonApi\Resource\Filter\InMemory\ArrayFilterArmInterface;
@@ -48,7 +53,7 @@ use haddowg\JsonApiBundle\Action\ActionDescriptor;
  *
  * @implements DataProviderInterface<object>
  */
-final class InMemoryDataProvider implements DataProviderInterface, ScopesRelatedReadsInterface, FetchesByIdsInterface, AdmitsIdsInterface, QueriesFilteredCollectionInterface
+final class InMemoryDataProvider implements DataProviderInterface, ScopesRelatedReadsInterface, FetchesByIdsInterface, AdmitsIdsInterface, QueriesFilteredCollectionInterface, LinkRowQueryInterface, LinkRowKeysInterface
 {
     private readonly InMemoryStore $store;
 
@@ -123,6 +128,24 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
     public function supports(string $type): bool
     {
         return $type === $this->type;
+    }
+
+    /**
+     * An identified `MorphToMany`'s link rows are the rows its `identifiedBy()` closure
+     * returns off the stored parent, queried by core's reference {@see InMemoryLinkRows}.
+     */
+    public function queryLinkRows(mixed $parent, MorphToMany $relation, LinkRowQuery $query, JsonApiRequestInterface $request): CollectionResult
+    {
+        return (new InMemoryLinkRows())->queryLinkRows($parent, $relation, $query, $request);
+    }
+
+    /**
+     * The keys of the link rows each stored parent holds, read by core's reference
+     * {@see InMemoryLinkRows}.
+     */
+    public function linkRowKeys(array $parents, MorphToMany $relation, array $types, JsonApiRequestInterface $request): array
+    {
+        return (new InMemoryLinkRows())->linkRowKeys($parents, $relation, $types, $request);
     }
 
     public function fetchOne(string $type, string $id): ?object

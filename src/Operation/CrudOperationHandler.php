@@ -7,6 +7,8 @@ namespace haddowg\JsonApiBundle\Operation;
 use haddowg\JsonApi\Atomic\AtomicLoop;
 use haddowg\JsonApi\Collection\CollectionResult;
 use haddowg\JsonApi\Collection\CursorCollectionResult;
+use haddowg\JsonApi\Collection\LinkRows\LinkRowQuery;
+use haddowg\JsonApi\Collection\LinkRows\LinkRowWritePlan;
 use haddowg\JsonApi\Exception\AdditionProhibited;
 use haddowg\JsonApi\Exception\FullReplacementProhibited;
 use haddowg\JsonApi\Exception\RelationshipNotExists;
@@ -41,6 +43,7 @@ use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\Date;
 use haddowg\JsonApi\Resource\Field\DateTime;
 use haddowg\JsonApi\Resource\Field\Mode;
+use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Field\Time;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
@@ -69,9 +72,11 @@ use haddowg\JsonApiBundle\DataPersister\AcceptedForProcessing;
 use haddowg\JsonApiBundle\DataPersister\AsyncWriteNotAllowedInAtomicOperation;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
+use haddowg\JsonApiBundle\DataPersister\LinkRowPivots;
 use haddowg\JsonApiBundle\DataPersister\ReportsMovedMembersInterface;
 use haddowg\JsonApiBundle\DataPersister\StoresDateTimesInterface;
 use haddowg\JsonApiBundle\DataPersister\TransactionalDataPersisterInterface;
+use haddowg\JsonApiBundle\DataPersister\WritesLinkRowsInterface;
 use haddowg\JsonApiBundle\DataPersister\WriteTransactionContext;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
@@ -854,14 +859,16 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                     ->withMeta(['total' => \count($items)]);
             }
 
-            // A MorphToMany declared with identifiedBy() pages its stored pairs, narrowed by
-            // each guarded type's provider, and loads only the page's rows. Each row renders
-            // as its pair's type, which a class serving several types can't report.
+            // A MorphToMany declared with identifiedBy() pages its link rows, filtered and
+            // sorted by their pivot fields and narrowed by each guarded type's provider,
+            // and loads only the page's rows. Each row renders as its pair's type, which a
+            // class serving several types can't report, with its link's meta.pivot.
             $identifiedTypes = null;
+            $identifiedPivots = [];
             if ($this->readRouter !== null && RelatedReadRouter::identifiesMembers($relation)) {
-                $this->refusePolymorphicQuery($operation->queryParameters());
+                $this->validateFilterValues($operation->queryParameters()->filter, LinkRowQuery::filters($relation), $request);
                 $identifiedTypes = [];
-                $result = $this->readRouter->fetchIdentified($server, $parent, $relation, $criteria, $request, $identifiedTypes);
+                $result = $this->readRouter->fetchIdentified($server, $type, $parent, $relation, $criteria, $request, $identifiedTypes, $identifiedPivots);
             } else {
                 $result = match (true) {
                     $this->readRouter?->isComputed($relation) === true => $this->readRouter->fetchComputed($server, $parent, $relation, $criteria, $request),
@@ -873,7 +880,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             }
 
             $serializer = match (true) {
-                $identifiedTypes !== null => $this->identifiedSerializer($relation, $server, $identifiedTypes),
+                $identifiedTypes !== null => $this->identifiedSerializer($relation, $server, $identifiedTypes, $identifiedPivots),
                 $polymorphic => $this->polymorphicSerializer($relation, $server),
                 // Computed pivot fields need no stored row, so they render off the parent
                 // even where no pivot query ran.
@@ -1096,33 +1103,27 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
     /**
      * A {@see PolymorphicSerializer} for the related page of a `MorphToMany` declared
      * with `identifiedBy()`: each row renders with the serializer of the type its pair
-     * named.
+     * named, carrying its link's `meta.pivot` when it has one.
      *
-     * @param array<int, string> $types each row's type, keyed by object id
+     * @param array<int, string>               $types  each row's type, keyed by object id
+     * @param array<int, array<string, mixed>> $pivots each row's `meta.pivot`, keyed by object id
      */
-    private function identifiedSerializer(RelationInterface $relation, Server $server, array $types): PolymorphicSerializer
+    private function identifiedSerializer(RelationInterface $relation, Server $server, array $types, array $pivots = []): PolymorphicSerializer
     {
         return new PolymorphicSerializer(
-            static fn(mixed $object): SerializerInterface => \is_object($object) && isset($types[\spl_object_id($object)])
-                ? $server->serializerFor($types[\spl_object_id($object)])
-                : throw new \LogicException(\sprintf('No stored pair of the "%s" relationship names a related object.', $relation->name())),
+            static function (mixed $object) use ($relation, $server, $types, $pivots): SerializerInterface {
+                if (!\is_object($object) || !isset($types[\spl_object_id($object)])) {
+                    throw new \LogicException(\sprintf('No stored pair of the "%s" relationship names a related object.', $relation->name()));
+                }
+
+                $serializer = $server->serializerFor($types[\spl_object_id($object)]);
+                $pivot = $pivots[\spl_object_id($object)] ?? null;
+
+                return $pivot === null ? $serializer : new PivotMetaSerializer($serializer, [$serializer->getId($object) => $pivot]);
+            },
         );
     }
 
-    /**
-     * A polymorphic to-many's members share no filter or sort vocabulary, so a requested
-     * `filter` or `sort` is the same `400` its other reads answer with.
-     */
-    private function refusePolymorphicQuery(QueryParameters $queryParameters): void
-    {
-        if ($queryParameters->filter !== []) {
-            throw new \haddowg\JsonApi\Exception\FilterParamUnrecognized((string) \array_key_first($queryParameters->filter));
-        }
-
-        if ($queryParameters->sort !== []) {
-            throw new \haddowg\JsonApi\Exception\SortingUnsupported();
-        }
-    }
 
     /**
      * `GET /{type}/{id}/relationships/{relationship}` — the relationship-linkage
@@ -1304,13 +1305,12 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return $page !== null ? $response->withPage($page) : $response;
         }
 
-        // A MorphToMany declared with identifiedBy() pages its admitted pairs in pair order,
-        // exactly as its related endpoint does, and renders them without loading a row.
-        // Its members share no filter or sort vocabulary, so those stay a 400.
+        // A MorphToMany declared with identifiedBy() pages its admitted link rows exactly as
+        // its related endpoint does, filtered and sorted by their pivot fields, and renders
+        // them without loading a member; core renders each meta.pivot off its row.
         if ($this->readRouter !== null && RelatedReadRouter::identifiesMembers($relation)) {
-            $this->refusePolymorphicQuery($operation->queryParameters());
-
             $request = $this->jsonApiRequest($operation->context());
+            $this->validateFilterValues($operation->queryParameters()->filter, LinkRowQuery::filters($relation), $request);
             $paginator = $this->relationCriteria->paginatorFor($relation, null, $server)?->resolve($request);
 
             if ($request->countsRelationship('_self_') && !$relation->isCountable()) {
@@ -1332,7 +1332,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 request: $request,
             );
 
-            $result = $this->readRouter->pageIdentified($server, $parent, $relation, $criteria, $request);
+            $result = $this->readRouter->pageIdentified($server, $type, $parent, $relation, $criteria, $request);
             $items = \is_array($result->items) ? \array_values($result->items) : \iterator_to_array($result->items, false);
             $page = $this->supplyWindowedRelationship($parent, $relationshipName, $items, $paginator, $result, $relWantsCount, $request, $operation->queryParameters());
 
@@ -1584,11 +1584,14 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // are read off the loaded parent so a pivot member already in the relationship
         // validates its MERGED pivot in the update context (a new member stays create
         // context); a Remove carries no pivot, so it reads none.
-        $existingPivot = $mode !== Mode::Remove && $relation instanceof BelongsToMany && $relation->pivotFields() !== []
-            ? $this->providers->forType($type)->fetchRelationshipPivot($type, $parent, $relation)
-            : [];
+        $existingPivot = match (true) {
+            $mode === Mode::Remove => [],
+            $relation instanceof BelongsToMany && $relation->pivotFields() !== [] => $this->providers->forType($type)->fetchRelationshipPivot($type, $parent, $relation),
+            RelatedReadRouter::identifiesMembers($relation) && $relation->storedPivotFields() !== [] => LinkRowPivots::stored($relation, $parent, $server, $this->jsonApiRequest($operation->context())),
+            default => [],
+        };
         // A member the scope hides validates as a new one, as a missing one would.
-        if ($existingPivot !== [] && $linkage instanceof ToManyRelationship && $this->linkageGuard !== null) {
+        if ($existingPivot !== [] && $relation instanceof BelongsToMany && $linkage instanceof ToManyRelationship && $this->linkageGuard !== null) {
             $existingPivot = $this->linkageGuard->visiblePivot($relation, $existingPivot, $linkage);
         }
         $this->validateLinkage($relation, $linkage, $mode, $existingPivot);
@@ -1615,9 +1618,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // A relation that declares fillUsing() owns how it is written: run it, then
             // save the parent, rather than having the persister write its column.
             if (!$this->fillsThroughHook($relation)) {
-                $parent = $persister->mutateRelationship($type, $parent, $relation, $scopedLinkage, $mode);
+                $parent = $this->mutateMembers($server, $persister, $type, $parent, $relation, $scopedLinkage, $mode, $request, flush: true);
             } else {
-                $parent = $this->fillRelationship($relation, $parent, $scopedLinkage, $mode, endpoint: true);
+                $parent = $this->fillRelationship($server, $persister, $relation, $parent, $scopedLinkage, $mode, $request, endpoint: true);
             }
             $this->validateEntity($server, $type, $parent, creating: false);
             $this->dispatch(new BeforeRelationshipCommitEvent($type, $request, $parent, $relation, $scopedLinkage, $mode, $this->serverName($request)));
@@ -2523,19 +2526,12 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $this->guardMovedMembers($persister, $type, $request, $entity, $relationship['relation'], $linkage, Mode::Replace);
 
             if ($this->fillsThroughHook($relationship['relation'])) {
-                $entity = $this->fillRelationship($relationship['relation'], $entity, $linkage, Mode::Replace, endpoint: false);
+                $entity = $this->fillRelationship($server, $persister, $relationship['relation'], $entity, $linkage, Mode::Replace, $body, endpoint: false);
 
                 continue;
             }
 
-            $persister->mutateRelationship(
-                $type,
-                $entity,
-                $relationship['relation'],
-                $linkage,
-                Mode::Replace,
-                flush: false,
-            );
+            $this->mutateMembers($server, $persister, $type, $entity, $relationship['relation'], $linkage, Mode::Replace, $body, flush: false);
         }
 
         return $entity;
@@ -2560,6 +2556,72 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
     }
 
     /**
+     * Writes a relation's members through the persister. A `MorphToMany` declared with
+     * `identifiedByRows()` writes its link rows from the plan core computes, when the
+     * persister writes link rows.
+     */
+    private function mutateMembers(
+        Server $server,
+        DataPersisterInterface $persister,
+        string $type,
+        object $entity,
+        RelationInterface $relation,
+        ToOneRelationship|ToManyRelationship $linkage,
+        Mode $mode,
+        JsonApiRequestInterface $request,
+        bool $flush,
+    ): object {
+        if ($relation instanceof MorphToMany && $relation->linkRowFields() !== null && $linkage instanceof ToManyRelationship && $persister instanceof WritesLinkRowsInterface) {
+            return $persister->writeLinkRows($entity, $relation, $this->linkRowPlan($server, $type, $relation, $entity, $linkage, $mode, $request), $flush);
+        }
+
+        return $persister->mutateRelationship($type, $entity, $relation, $linkage, $mode, $flush);
+    }
+
+    /**
+     * Core's plan for writing `$linkage` to a declared `MorphToMany`'s link rows. A member
+     * the parent links already keeps its storage key; a new one's wire id is decoded
+     * through its type's id encoder. The members a guarded type's provider hides are
+     * passed as hidden, and left out of the linkage the scope guard appended them to, so
+     * core keeps them and orders them after the members the client sent.
+     */
+    private function linkRowPlan(Server $server, string $type, MorphToMany $relation, object $parent, ToManyRelationship $linkage, Mode $mode, JsonApiRequestInterface $request): LinkRowWritePlan
+    {
+        $current = $relation->identifiedMembers($parent, $request);
+        $visible = $this->readRouter?->narrowed($server, $type, $relation, [$parent], new LinkRowQuery(fields: $relation->linkRowFields()), $request)[0];
+
+        $keys = [];
+        $hidden = [];
+        foreach ($current as $member) {
+            if (!$server->hasSerializerFor($member->type)) {
+                continue;
+            }
+
+            $wireKey = $member->type . "\0" . RelatedReadRouter::wireId($server->serializerFor($member->type), $member->id);
+            $keys[$wireKey] = $member->id;
+            if ($visible !== null && !$visible->admits($member)) {
+                $hidden[$wireKey] = [$member->type, $member->id];
+            }
+        }
+
+        $members = [];
+        foreach ($linkage->resourceIdentifiers as $identifier) {
+            if ($identifier->id === null || isset($hidden[$identifier->type . "\0" . $identifier->id])) {
+                continue;
+            }
+
+            $key = $keys[$identifier->type . "\0" . $identifier->id] ?? $this->idEncoders?->encoderFor($identifier->type)?->decode($identifier->id) ?? $identifier->id;
+            $pivot = [];
+            foreach (\is_array($identifier->meta['pivot'] ?? null) ? $identifier->meta['pivot'] : [] as $field => $value) {
+                $pivot[(string) $field] = $value;
+            }
+            $members[] = [$identifier->type, \is_int($key) ? $key : (\is_scalar($key) ? (string) $key : $identifier->id), $pivot];
+        }
+
+        return LinkRowWritePlan::for($relation, $parent, $mode, $members, $current, \array_values($hidden));
+    }
+
+    /**
      * Whether `$relation` declares a `fillUsing()` hook, which then owns how the
      * relationship is written.
      */
@@ -2580,15 +2642,34 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * Writes `$linkage` through the relation's `fillUsing()` hook, the way core hydrates
      * it: a whole-resource write passes the linkage as core's own hydration does, and a
      * relationship endpoint passes a to-many's mode as core's `applyToMany()` does. The
-     * hook may return a replacement model.
+     * hook may return a replacement model. An identified `MorphToMany` then has each
+     * member's `meta.pivot` written onto the link row the hook left for it.
      */
-    private function fillRelationship(RelationInterface $relation, object $entity, ToOneRelationship|ToManyRelationship $linkage, Mode $mode, bool $endpoint): object
-    {
+    private function fillRelationship(
+        Server $server,
+        DataPersisterInterface $persister,
+        RelationInterface $relation,
+        object $entity,
+        ToOneRelationship|ToManyRelationship $linkage,
+        Mode $mode,
+        JsonApiRequestInterface $request,
+        bool $endpoint,
+    ): object {
+        $linkRows = RelatedReadRouter::identifiesMembers($relation) && $linkage instanceof ToManyRelationship && $relation->storedPivotFields() !== []
+            ? $relation
+            : null;
+        $before = $linkRows !== null ? LinkRowPivots::memberKeys($linkRows, $entity, $server, $request) : [];
+
         $filled = $endpoint && $linkage instanceof ToManyRelationship
             ? $relation->applyToMany($entity, $linkage, $mode)
             : $relation->hydrateRelationship($entity, $linkage);
+        $entity = \is_object($filled) ? $filled : $entity;
 
-        return \is_object($filled) ? $filled : $entity;
+        if ($linkRows !== null && $linkage instanceof ToManyRelationship) {
+            LinkRowPivots::write($linkRows, $entity, $linkage, $mode, $before, $server, $request, $persister instanceof StoresDateTimesInterface ? $persister : null);
+        }
+
+        return $entity;
     }
 
     /**
@@ -2801,6 +2882,11 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $existingPivots = [];
         foreach ($this->bodyRelationshipNames($body) as $name) {
             $relation = $this->types->relationNamed($server, $type, $name);
+            if ($relation !== null && RelatedReadRouter::identifiesMembers($relation) && $relation->storedPivotFields() !== []) {
+                $existingPivots[$name] = LinkRowPivots::stored($relation, $parent, $server, $body);
+
+                continue;
+            }
             if (!$relation instanceof BelongsToMany || $relation->pivotFields() === []) {
                 continue;
             }
