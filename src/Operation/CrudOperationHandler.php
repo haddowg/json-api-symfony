@@ -1752,7 +1752,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return;
         }
 
-        $relation->assertMembershipUnchanged($body, $parent, CurrentMembers::of($server, $parent, $relation, $body), $linkage);
+        $relation->assertMembershipUnchanged($body, $parent, CurrentMembers::of($server, $this->providers, $parent, $relation, $body), $linkage);
     }
 
     /**

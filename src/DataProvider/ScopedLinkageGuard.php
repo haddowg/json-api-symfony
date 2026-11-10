@@ -105,6 +105,19 @@ final class ScopedLinkageGuard
             return $hidden === [] ? $linkage : new ToManyRelationship([...$linkage->resourceIdentifiers, ...$hidden]);
         }
 
+        // A pivot's value holds its association rows, so its members are read through them.
+        $pivotIds = CurrentMembers::throughPivot($this->providers, $parent, $relation);
+        if ($pivotIds !== null) {
+            $type = $relation->relatedTypes()[0];
+            foreach ($pivotIds as $id) {
+                if (!isset($sent[$type . "\0" . $id]) && !$this->isVisible($type, $id, $relation)) {
+                    $hidden[] = new ResourceIdentifier($type, $id);
+                }
+            }
+
+            return $hidden === [] ? $linkage : new ToManyRelationship([...$linkage->resourceIdentifiers, ...$hidden]);
+        }
+
         foreach ($this->members($relation->readValue($parent, $request)) as $member) {
             $serializer = $relation->resolveSerializer($member, $server);
             if ($serializer === null) {
