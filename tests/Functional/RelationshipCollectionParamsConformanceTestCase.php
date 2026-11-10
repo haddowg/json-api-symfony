@@ -210,6 +210,37 @@ abstract class RelationshipCollectionParamsConformanceTestCase extends JsonApiFu
     #[Test]
     #[Group('spec:fetching-relationships')]
     #[Group('spec:fetching-pagination')]
+    #[Group('spec:profiles')]
+    public function aCountedRelationshipLinkageRendersTheTotalAtTheTopLevel(): void
+    {
+        // The Countable profile puts a `_self_` count in the top-level meta.total; the
+        // offset page keeps its `last` link beside it.
+        $response = $this->handle(self::BASE_URI . '/articles/1/relationships/pagedComments?withCount=_self_&page[size]=1&page[number]=1', extraServer: [
+            'HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . CountableProfile::URI . '"',
+        ]);
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $document = $this->decode($response);
+
+        self::assertSame(['total' => 2], $document['meta'] ?? null);
+        $links = $document['links'] ?? null;
+        self::assertIsArray($links);
+        self::assertNotNull($links['last'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    #[Group('spec:fetching-pagination')]
+    public function anUncountedRelationshipLinkageRendersNoTotal(): void
+    {
+        $document = $this->fetchDocument('/articles/1/relationships/pagedComments?page[size]=1&page[number]=1');
+
+        self::assertArrayNotHasKey('meta', $document);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    #[Group('spec:fetching-pagination')]
     public function aCountableRelationshipLinkagePaginatesCountFreeWithoutWithCount(): void
     {
         // The default: even a countable() relation paginates count-FREE until the
