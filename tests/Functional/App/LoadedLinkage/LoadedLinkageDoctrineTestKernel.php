@@ -103,6 +103,10 @@ final class LoadedLinkageDoctrineTestKernel extends Kernel
 
         $services->set(DoctrineTemplateResource::class);
         $services->set(DoctrineBindingResource::class);
+        $services->set(ShowTemplate::class);
+        $services->set(ListTemplates::class);
+        $services->set(ShowBinding::class);
+        $services->set(AnswerWithTemplateSubscriber::class);
         $services->set(HiddenBindingsExtension::class);
     }
 
