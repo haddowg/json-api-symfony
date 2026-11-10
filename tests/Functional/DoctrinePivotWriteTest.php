@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use Doctrine\ORM\EntityManagerInterface;
 use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\DoctrineJsonApiTestKernel;
+use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\PlaylistTrackEntity;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
@@ -172,6 +174,67 @@ final class DoctrinePivotWriteTest extends JsonApiFunctionalTestCase
 
         self::assertSame(422, $response->getStatusCode(), (string) $response->getContent());
         self::assertSame('/data/relationships/tracks/data/0/meta/pivot/position', $this->firstErrorPointer($response));
+    }
+
+    #[Test]
+    #[Group('spec:updating-relationships')]
+    public function aUnionPivotValueMeetsItsMembersRules(): void
+    {
+        // `tempoTracks.tempo` takes a string of at most five characters or a number of
+        // at least 1.
+        foreach (['much too long', 0] as $tempo) {
+            $response = $this->handle(
+                self::BASE_URI . '/playlists/1/relationships/tempoTracks',
+                'PATCH',
+                ['data' => [['type' => 'tracks', 'id' => '1', 'meta' => ['pivot' => ['position' => 1, 'tempo' => $tempo]]]]],
+            );
+
+            self::assertSame(422, $response->getStatusCode(), (string) $response->getContent());
+            self::assertSame('/data/0/meta/pivot/tempo', $this->firstErrorPointer($response));
+        }
+
+        $response = $this->handle(
+            self::BASE_URI . '/playlists',
+            'POST',
+            ['data' => [
+                'type' => 'playlists',
+                'attributes' => ['name' => 'Fresh'],
+                'relationships' => [
+                    'tempoTracks' => ['data' => [['type' => 'tracks', 'id' => '1', 'meta' => ['pivot' => ['position' => 1, 'tempo' => 'much too long']]]]],
+                ],
+            ]],
+        );
+
+        self::assertSame(422, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame('/data/relationships/tempoTracks/data/0/meta/pivot/tempo', $this->firstErrorPointer($response));
+    }
+
+    #[Test]
+    #[Group('spec:updating-relationships')]
+    public function aUnionPivotValueIsStoredByItsMember(): void
+    {
+        $response = $this->handle(
+            self::BASE_URI . '/playlists/2/relationships/tempoTracks',
+            'POST',
+            ['data' => [
+                ['type' => 'tracks', 'id' => '2', 'meta' => ['pivot' => ['position' => 2, 'tempo' => 'fast', 'cueOn' => '2026-04-05']]],
+                ['type' => 'tracks', 'id' => '3', 'meta' => ['pivot' => ['position' => 3, 'tempo' => 120, 'cueOn' => true]]],
+            ]],
+        );
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        $this->entityManager()->clear();
+        $byId = $this->byId($this->fetchDocument('/playlists/2/relationships/tempoTracks'));
+        self::assertSame('fast', $this->pivotField($byId['2'] ?? [], 'tempo'));
+        self::assertSame(120, $this->pivotField($byId['3'] ?? [], 'tempo'));
+        self::assertSame('2026-04-05', $this->pivotField($byId['2'] ?? [], 'cueOn'));
+        self::assertTrue($this->pivotField($byId['3'] ?? [], 'cueOn'));
+
+        // The json column holds the date member's stored form, a date string.
+        $row = $this->entityManager()->getRepository(PlaylistTrackEntity::class)->findOneBy(['playlist' => 2, 'track' => 2]);
+        self::assertInstanceOf(PlaylistTrackEntity::class, $row);
+        self::assertSame('2026-04-05', $row->cueOn);
     }
 
     #[Test]
@@ -421,6 +484,14 @@ final class DoctrinePivotWriteTest extends JsonApiFunctionalTestCase
     }
 
     // --- helpers ---------------------------------------------------------------
+
+    private function entityManager(): EntityManagerInterface
+    {
+        $entityManager = static::getContainer()->get('doctrine.orm.entity_manager');
+        \assert($entityManager instanceof EntityManagerInterface);
+
+        return $entityManager;
+    }
 
     /**
      * @return array<string, mixed>

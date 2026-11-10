@@ -60,6 +60,11 @@ class PlaylistTrackEntity
         // Hidden by predicate for one member only (see DoctrinePlaylistResource).
         #[ORM\Column(type: 'string', nullable: true)]
         public ?string $label = null,
+        // Union pivot fields' columns: a string or an integer, and a date or a boolean.
+        #[ORM\Column(type: 'json', nullable: true)]
+        public mixed $tempo = null,
+        #[ORM\Column(type: 'json', nullable: true)]
+        public mixed $cueOn = null,
     ) {}
 
     /**

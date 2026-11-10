@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\DataPersister\Doctrine;
 
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
+use Doctrine\DBAL\Types\JsonType;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Mapping\ClassMetadata;
@@ -21,6 +22,7 @@ use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\Positions;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\Field\Union;
 use haddowg\JsonApi\Schema\ResourceIdentifier;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\MovedMember;
@@ -363,10 +365,17 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
             $this->entityManager->flush();
         }
 
+        $unions = [];
+        foreach ($relation->pivotFields() as $pivotField) {
+            if ($pivotField instanceof Union) {
+                $unions[$pivotField->column() ?? $pivotField->name()] = $pivotField;
+            }
+        }
+
         foreach ([$plan->temporary, $plan->updates] as $pass) {
             foreach ($pass as $write) {
                 if (\is_object($write->member->row)) {
-                    $this->writeRowValues($metadata, $write->member->row, $write->values, $fields->owner, $parent);
+                    $this->writeRowValues($metadata, $write->member->row, $write->values, $fields->owner, $parent, $unions);
                 }
             }
             if ($pass !== [] && $stored) {
@@ -376,7 +385,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
 
         foreach ($plan->inserts as $insert) {
             $row = $this->newLinkRow($metadata);
-            $this->writeRowValues($metadata, $row, $insert->values, $fields->owner, $parent);
+            $this->writeRowValues($metadata, $row, $insert->values, $fields->owner, $parent, $unions);
             $rows?->add($row);
             $this->entityManager->persist($row);
         }
@@ -407,14 +416,24 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
      * Sets a link row's fields, the owner to `$parent` through its association and every
      * other value converted to its column's PHP form and stored zone.
      *
+     * A union pivot field's value goes in core's stored form where its column can't hold
+     * a date-time.
+     *
      * @param ClassMetadata<object> $metadata
      * @param array<string, mixed>  $values
+     * @param array<string, Union>  $unions   the relation's union pivot fields, by column
      */
-    private function writeRowValues(ClassMetadata $metadata, object $row, array $values, string $ownerField, object $parent): void
+    private function writeRowValues(ClassMetadata $metadata, object $row, array $values, string $ownerField, object $parent, array $unions = []): void
     {
         foreach ($values as $field => $value) {
             if ($field === $ownerField) {
                 $metadata->setFieldValue($row, $field, $parent);
+
+                continue;
+            }
+
+            if (isset($unions[$field]) && !$this->holdsDateTimes($row, $field)) {
+                $metadata->setFieldValue($row, $field, $unions[$field]->toStoredForm($value));
 
                 continue;
             }
@@ -743,7 +762,11 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
             }
 
             $column = $field->column() ?? $field->name();
-            $this->property($row, $column)->setValue($row, $this->dateTimeForColumn($row, $column, $this->coercePivotValue($field, $meta[$field->name()])));
+            $value = $this->coercePivotValue($field, $meta[$field->name()]);
+            if ($field instanceof Union && !$this->holdsDateTimes($row, $column)) {
+                $value = $field->toStoredForm($value);
+            }
+            $this->property($row, $column)->setValue($row, $this->dateTimeForColumn($row, $column, $value));
         }
     }
 
@@ -763,6 +786,18 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
         $type = $metadata->getTypeOfField($column);
 
         return $this->dates->asColumnClass($this->dates->toStorage($value, $type), $type);
+    }
+
+    public function holdsDateTimes(object $entity, string $column): bool
+    {
+        $metadata = $this->entityManager->getClassMetadata($entity::class);
+        if (!$metadata->hasField($column)) {
+            return true;
+        }
+
+        $type = $metadata->getTypeOfField($column);
+
+        return !($type !== null && Type::hasType($type) && Type::getType($type) instanceof JsonType);
     }
 
     /**

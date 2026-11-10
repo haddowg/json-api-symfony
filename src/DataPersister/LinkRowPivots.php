@@ -9,6 +9,7 @@ use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\Accessor;
 use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
+use haddowg\JsonApi\Resource\Field\Union;
 use haddowg\JsonApi\Resource\SerializerResolverInterface;
 use haddowg\JsonApi\Schema\ResourceIdentifier;
 use haddowg\JsonApiBundle\DataProvider\PivotFields;
@@ -106,6 +107,9 @@ final class LinkRowPivots
 
                 $column = $field->column() ?? $field->name();
                 $value = $field->castWireValue($pivot[$field->name()]);
+                if ($field instanceof Union && $dates !== null && !$dates->holdsDateTimes($row, $column)) {
+                    $value = $field->toStoredForm($value);
+                }
                 Accessor::set($row, $column, $dates?->dateTimeForColumn($row, $column, $value) ?? $value);
             }
         }

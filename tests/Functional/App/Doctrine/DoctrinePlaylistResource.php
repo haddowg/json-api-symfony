@@ -9,10 +9,13 @@ use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Constraint\Comparison;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
+use haddowg\JsonApi\Resource\Field\Boolean;
+use haddowg\JsonApi\Resource\Field\Date;
 use haddowg\JsonApi\Resource\Field\DateTime;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Integer;
 use haddowg\JsonApi\Resource\Field\Str;
+use haddowg\JsonApi\Resource\Field\Union;
 use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Filter\WhereIn;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
@@ -112,6 +115,17 @@ final class DoctrinePlaylistResource extends AbstractResource
                 ->withFilters(Where::make('position', 'pivot.position'))
                 ->extractUsing($this->extractTracks())
                 ->paginate(PagePaginator::make()),
+
+            // The union pivot witness: the SAME association entity, with a `tempo` that
+            // is a short name or a positive number, and a `cueOn` that is a date or a flag.
+            BelongsToMany::make('tempoTracks', 'tracks')
+                ->through(PlaylistTrackEntity::class)
+                ->fields(
+                    Integer::make('position')->required()->min(1)->build(),
+                    Union::make('tempo')->of(Str::make()->maxLength(5), Integer::make()->min(1))->nullable()->build(),
+                    Union::make('cueOn')->of(Date::make(), Boolean::make())->nullable()->build(),
+                )
+                ->extractUsing($this->extractTracks()),
 
             // The DEFAULT-RENDERED-LINKAGE pivot witness: the SAME
             // association entity, but `withData()` so its linkage data renders on a
