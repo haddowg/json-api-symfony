@@ -20,7 +20,7 @@
              build for the music-catalog kernel tips past 256M on the PHP 8.5 /
              lowest-deps runner, and each compiled container's classes stay loaded
              for the rest of the run, so give it headroom. -->
-        <ini name="memory_limit" value="768M"/>
+        <ini name="memory_limit" value="1G"/>
         <!-- Kernel::preBoot() exports SHELL_VERBOSITY=3 process-wide when a DEBUG
              kernel boots (the OpenAPI expose-gate suite boots one on purpose), and
              every logger constructed afterwards then leaks [info] lines into the
