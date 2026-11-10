@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.7.1](https://github.com/haddowg/json-api-symfony/compare/v2.7.0...v2.7.1) (2026-11-10)
+
+
+### Bug Fixes
+
+* never render a provider-read to-many's linkage off the model ([#351](https://github.com/haddowg/json-api-symfony/issues/351)) ([9baaa88](https://github.com/haddowg/json-api-symfony/commit/9baaa881542c698fa20f0d119f57f1c509ef0059))
+
 ## [2.7.0](https://github.com/haddowg/json-api-symfony/compare/v2.6.2...v2.7.0) (2026-11-10)
 
 
