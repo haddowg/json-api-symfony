@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.7.0](https://github.com/haddowg/json-api-symfony/compare/v2.6.2...v2.7.0) (2026-11-10)
+
+
+### Features
+
+* filter through a relationship path by a list of related ids ([#347](https://github.com/haddowg/json-api-symfony/issues/347)) ([3e44515](https://github.com/haddowg/json-api-symfony/commit/3e445154bbed601472d34db4de15b827ffe36809))
+
+
+### Bug Fixes
+
+* correlate relationship filters to the counted member ([#348](https://github.com/haddowg/json-api-symfony/issues/348)) ([3ab34f3](https://github.com/haddowg/json-api-symfony/commit/3ab34f34f387fa53fcff2f42aea03f6cfb8c9227))
+* keep enum fields as their case in the example and fixtures ([#350](https://github.com/haddowg/json-api-symfony/issues/350)) ([f0ca80e](https://github.com/haddowg/json-api-symfony/commit/f0ca80eeab3d187552060a38ccc38ec6fa02b85d))
+
 ## [2.6.2](https://github.com/haddowg/json-api-symfony/compare/v2.6.1...v2.6.2) (2026-11-10)
 
 
