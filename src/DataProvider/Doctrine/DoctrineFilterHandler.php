@@ -161,10 +161,10 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
             $filter instanceof WhereIdNotIn => $this->whereIn($query, $filter->column, $this->members($filter, $value), true, $alias),
             $filter instanceof WhereNull => $query->andWhere(\sprintf('%s IS NULL', $this->path($this->pivotColumn($filter->column, $alias), $alias))),
             $filter instanceof WhereNotNull => $query->andWhere(\sprintf('%s IS NOT NULL', $this->path($this->pivotColumn($filter->column, $alias), $alias))),
-            $filter instanceof WhereThrough => $this->whereThrough($query, $filter, $value),
-            $filter instanceof WhereHas => $this->whereHas($query, $filter->relationship, false),
-            $filter instanceof WhereDoesntHave => $this->whereHas($query, $filter->relationship, true),
-            $filter instanceof WhereHasMatching => $this->whereHasMatching($query, $filter, $value),
+            $filter instanceof WhereThrough => $this->whereThrough($query, $filter, $value, $alias),
+            $filter instanceof WhereHas => $this->whereHas($query, $filter->relationship, false, $alias),
+            $filter instanceof WhereDoesntHave => $this->whereHas($query, $filter->relationship, true, $alias),
+            $filter instanceof WhereHasMatching => $this->whereHasMatching($query, $filter, $value, $alias),
             // Range (and DateRange, which extends it) is a structured min/max filter:
             // two push-down andWhere predicates on the SAME builder, no subquery.
             $filter instanceof Range => $this->range($query, $filter, $value, $alias),
@@ -213,10 +213,10 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
      * relationship is the leaf hop) with NO leaf predicate, so a row matches iff
      * it has at least one related row (negated for `WhereDoesntHave`).
      */
-    private function whereHas(QueryBuilder $query, string $relationship, bool $negate): QueryBuilder
+    private function whereHas(QueryBuilder $query, string $relationship, bool $negate, string $alias): QueryBuilder
     {
         $exists = $query->expr()->exists(
-            $this->existsSubquery($query, [$relationship], null)->getDQL(),
+            $this->existsSubquery($query, [$relationship], null, $alias)->getDQL(),
         );
 
         return $query->andWhere($negate ? $query->expr()->not($exists) : $exists);
@@ -230,7 +230,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
      * (the shared {@see applyComparison()}). The leaf parameter binds on the
      * OUTER `$query` (which executes), the predicate is added on the leaf alias.
      */
-    private function whereThrough(QueryBuilder $query, WhereThrough $filter, mixed $value): QueryBuilder
+    private function whereThrough(QueryBuilder $query, WhereThrough $filter, mixed $value, string $alias): QueryBuilder
     {
         $expected = $filter->deserialize !== null ? ($filter->deserialize)($value) : $value;
 
@@ -254,6 +254,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
                     // across several traversal filters on one query cannot happen.
                     $this->applyComparison($query, $sub, $leafAlias . '.' . $leafField, $filter->operator, $expected, $filter->key());
                 },
+                $alias,
             )->getDQL(),
         );
 
@@ -267,7 +268,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
      * Feeds the SAME {@see existsSubquery()} builder; the related entity stays the
      * subquery root so both narrowing surfaces hang off it naturally.
      */
-    private function whereHasMatching(QueryBuilder $query, WhereHasMatching $filter, mixed $value): QueryBuilder
+    private function whereHasMatching(QueryBuilder $query, WhereHasMatching $filter, mixed $value, string $alias): QueryBuilder
     {
         $criteria = $filter->criteria;
         $build = $filter->build;
@@ -296,6 +297,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
                         $query->getParameters()->add($parameter);
                     }
                 },
+                $alias,
             )->getDQL(),
         );
 
@@ -305,16 +307,20 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
     /**
      * The ONE correlated `EXISTS` subquery builder behind every relationship
      * filter. `$segments` is the dotted path: the first segment is the
-     * relationship off the outer root (its TARGET becomes the subquery root —
-     * the RELATED entity, so an author predicate hangs off it), each subsequent
+     * relationship off the entity `$alias` names on the outer query (its TARGET
+     * becomes the subquery root — the RELATED entity, so an author predicate hangs
+     * off it), each subsequent
      * intermediate segment is a further relationship joined in turn, and the LAST
      * segment is the leaf attribute. A length-1 path is the degenerate case
      * (relationship only, no further hops, no leaf attribute).
      *
      * The subquery roots on the related entity and correlates back to the outer
-     * owner by a membership `IN`-subquery on the owning association (uniform for
-     * to-one and to-many, owning-side and many-to-many — it never needs the
-     * inverse field), so the related root is the builder's first alias and
+     * owner, the entity at `$alias`, by a membership `IN`-subquery on the owning
+     * association. That is the outer root on a collection read and the joined
+     * related entity on a relation count or window, so the filter tests the counted
+     * member rather than its parent. The membership subquery is uniform for
+     * to-one and to-many, owning-side and many-to-many, and never needs the
+     * inverse field, so the related root is the builder's first alias and
      * `addCriteria` / the traversal joins both target it.
      *
      * `$applyLeaf` (null for pure existence) receives `(subquery, leafAlias, leafField)`
@@ -324,14 +330,13 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
      * @param list<string>                                $segments  the dotted path's segments (≥ 1)
      * @param \Closure(QueryBuilder, string, string): void|null $applyLeaf
      */
-    private function existsSubquery(QueryBuilder $query, array $segments, ?\Closure $applyLeaf): QueryBuilder
+    private function existsSubquery(QueryBuilder $query, array $segments, ?\Closure $applyLeaf, string $alias): QueryBuilder
     {
-        $rootAlias = $this->rootAlias($query);
-        $rootEntity = $query->getRootEntities()[0]
-            ?? throw new \LogicException('The QueryBuilder has no root entity to filter on.');
+        $ownerMetadata = $this->metadataOfAlias($query, $alias)
+            ?? throw new \LogicException(\sprintf('The QueryBuilder has no entity at alias "%s" to filter on.', $alias));
+        $ownerEntity = $ownerMetadata->getName();
 
         $entityManager = $query->getEntityManager();
-        $ownerMetadata = $entityManager->getClassMetadata($rootEntity);
 
         // The first segment is the owning relationship; resolve its target as the
         // RELATED root and split off any remaining intermediate relationships and
@@ -360,9 +365,9 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         $membershipAlias = $stem . '_member';
         $membership = $entityManager->createQueryBuilder()
             ->select(DoctrineIdentifiers::path($relatedMetadata, $membershipAlias))
-            ->from($rootEntity, $ownerAlias)
+            ->from($ownerEntity, $ownerAlias)
             ->innerJoin(\sprintf('%s.%s', $ownerAlias, $firstSegment), $membershipAlias)
-            ->where(\sprintf('%s = %s', DoctrineIdentifiers::entity($ownerMetadata, $ownerAlias), DoctrineIdentifiers::entity($ownerMetadata, $rootAlias)));
+            ->where(\sprintf('%s = %s', DoctrineIdentifiers::entity($ownerMetadata, $ownerAlias), DoctrineIdentifiers::entity($ownerMetadata, $alias)));
         $subQuery->andWhere($subQuery->expr()->in(
             DoctrineIdentifiers::path($relatedMetadata, $relatedAlias),
             $membership->getDQL(),

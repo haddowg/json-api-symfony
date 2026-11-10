@@ -703,6 +703,12 @@ described above, so they share its
 properties: no fetch-join, no row multiplication, and free composition with linkage
 / `?include` / the relationQuery profile.
 
+The subquery correlates to the entity the filter runs on. On a related collection
+that is the query root; on a `?withCount` total or a windowed `?include`, where the
+query joins the related entity to its parent, it is that joined entity. So
+`relatedQuery[leads][filter][brand.name]=Acme` with `?withCount=leads` counts each
+campaign's leads whose brand is Acme, the same total the related endpoint reports.
+
 - **`WhereHas` / `WhereDoesntHave`** — pure existence. They ignore the request value
   and match rows whose named association has (`WhereHas`) or lacks
   (`WhereDoesntHave`) at least one related row.
