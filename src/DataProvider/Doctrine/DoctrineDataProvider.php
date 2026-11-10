@@ -523,6 +523,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             defaultSort: [],
             aliasOf: $criteria->aliasOf,
             request: $criteria->request,
+            paths: $criteria->paths,
         );
     }
 

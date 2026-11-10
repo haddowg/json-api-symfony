@@ -155,8 +155,10 @@ JSON:API service needs. Each links the page that covers it in full:
   object), opt-in by negotiating the profile. See
   [relationships](relationships.md#counting-relations-countable-and-withcount).
 - **Constrained-existence filtering** — `WhereThrough` dotted-path traversal
-  (`filter[author.name]=Smith`) as a correlated `EXISTS`, plus the `WhereHas`/
-  `WhereDoesntHave` existence filters. See
+  (`filter[author.name]=Smith`) as a correlated `EXISTS`, `WhereThroughIn` for a list
+  (`filter[advertiser]=4,7` through `campaign.advertiser`), paths that end on a
+  relationship and compare its decoded id, plus the `WhereHas`/`WhereDoesntHave`
+  existence filters. See
   [doctrine](doctrine.md#relationship-existence-filtering-wherehas-wherethrough-wherehasmatching).
 - **Lifecycle hooks** — per-operation author seams (`beforeCreate`, `afterSave`, …)
   as overridable resource methods *or* plain event subscribers. See

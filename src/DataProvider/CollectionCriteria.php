@@ -56,6 +56,9 @@ use haddowg\JsonApi\Resource\Sort\SortInterface;
  *   needs to resolve a requested key (core's `SortMatcher` and `FilterMatcher`). `null`
  *   for a programmatic fetch with no request, where matching a family key is a server
  *   error.
+ * - {@see $paths} resolves each matched filter's traversal path against the type the
+ *   filters run against, so a path ending on a relationship compares the related id.
+ *   `null` leaves every path read as ending on a field.
  */
 final readonly class CollectionCriteria
 {
@@ -66,6 +69,7 @@ final readonly class CollectionCriteria
      * @param array<string, string>     $aliasOf     directive KEY → target query alias; an absent key resolves to the root alias (bundle-only, empty off the Doctrine pivot path)
      * @param bool                      $wantsCount  whether the provider should run the `COUNT` for this windowed fetch (author/client opt-in; default false = count-free)
      * @param ?JsonApiRequestInterface  $request     the request the fetch answers, passed to the sort and filter matchers so a family can resolve a key
+     * @param ?FilterPaths              $paths       resolves each matched filter's traversal path against the type the filters run against
      */
     public function __construct(
         public QueryParameters $queryParameters,
@@ -76,5 +80,6 @@ final readonly class CollectionCriteria
         public array $aliasOf = [],
         public bool $wantsCount = false,
         public ?JsonApiRequestInterface $request = null,
+        public ?FilterPaths $paths = null,
     ) {}
 }

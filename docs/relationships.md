@@ -545,6 +545,50 @@ GET /albums?filter[artist.name]=Portishead  → albums by Portishead
 GET /albums?filter[artist.name]=Nobody      → data: []
 ```
 
+### `WhereThroughIn` and paths that end on a relationship
+
+`WhereThroughIn` is `WhereThrough` with an `IN` at the leaf. The row matches when the
+value the path reaches is any of the requested values, so its value is always a list,
+sent delimited or as an array:
+
+```php
+use haddowg\JsonApi\Resource\Filter\WhereThrough;
+use haddowg\JsonApi\Resource\Filter\WhereThroughIn;
+
+public function filters(): array
+{
+    return [
+        WhereThroughIn::make('advertiser', 'campaign.advertiser'), // filter[advertiser]=4,7
+        WhereThroughIn::make('template', 'templates'),             // filter[template][]=tpl-1&filter[template][]=tpl-2
+        WhereThroughIn::make('advertiserName', 'campaign.advertiser.name'),
+        WhereThrough::make('advertiserIs', 'campaign.advertiser'), // filter[advertiserIs]=4
+    ];
+}
+```
+
+Either filter's path may end on a relationship instead of a field. `campaign.advertiser`
+ends on the campaign's `advertiser`, and a single segment like `templates` ends on the
+type's own relation. The filter then compares the related resource's id. The client sends
+the wire ids it reads in `data.id`, and each one is decoded through the related type's
+[id encoder](resources.md#encoded-resource-ids) before the query runs, so an id the encoder cannot decode is a
+`400` `FILTER_VALUE_INVALID` at the parameter. With no declared constraints the values
+take the related id's format: a `numeric()` id validates each member as an integer and a
+`uuid()` id as a UUID, and the OpenAPI document types the list items the same way.
+
+The bundle resolves each path against the type the filters run against, the primary type
+on `GET /{type}` and the related type on a related or relationship endpoint, after
+matching the requested keys, so a filter family's filter resolves per request too. A
+path whose segments do not all name relations, matched by their storage name, ends on a
+field and behaves as it always did. The leaf must be monomorphic: a path ending on a
+`MorphTo` or `MorphToMany` fails `cache:warmup`, as does a relationship-ending
+`WhereThrough` with an operator other than `=` or `!=` or a `deserializeUsing()`.
+
+Both providers run it. In memory, core's `ArrayFilterHandler` compares each related
+row's key. On Doctrine it is one correlated `EXISTS` with an `IN` over the decoded keys
+at the leaf, never one `EXISTS` per value, and an empty list matches nothing without an
+`IN ()`. See [doctrine](doctrine.md#relationship-existence-filtering-wherehas-wherethrough-wherehasmatching)
+for the SQL.
+
 ### `WhereHasMatching` — the Doctrine escape hatch (not portable)
 
 When the inner predicate is more than a single column comparison — a multi-column /
@@ -586,7 +630,7 @@ Two boundaries set it apart from `WhereThrough`:
   no declared operator compares it), so `constraints()` returns `[]` — there is
   nothing for the validator bridge to check.
 
-Both `WhereThrough` and `WhereHasMatching` share the one `EXISTS` builder in
+`WhereThrough`, `WhereThroughIn` and `WhereHasMatching` share the one `EXISTS` builder in
 [`DoctrineFilterHandler`](../src/DataProvider/Doctrine/DoctrineFilterHandler.php); see
 [doctrine.md](doctrine.md) for the DQL detail.
 

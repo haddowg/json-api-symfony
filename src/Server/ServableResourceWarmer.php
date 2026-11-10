@@ -14,6 +14,7 @@ use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
+use haddowg\JsonApi\Resource\Filter\ThroughPathResolver;
 use haddowg\JsonApi\Resource\Sort\RelationSorts;
 use haddowg\JsonApi\Resource\Sort\SortMatcher;
 use haddowg\JsonApi\Serializer\RelationOrderValidator;
@@ -88,6 +89,10 @@ use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
  *    declared with a list of `filters` takes those keys from its mount type. The type's
  *    filters are built by the resource, which the container build cannot construct, so
  *    the keys are checked here, naming the action's handler class.
+ *  - **A traversal filter's path must resolve.** Each declared filter, the relation-scoped
+ *    ones included, resolves through core's {@see ThroughPathResolver} against the type it
+ *    runs against, so a path ending on a polymorphic relation fails here. A filter family
+ *    builds its filters per request, so it resolves then.
  *
  * Gating is on the per-type operation allow-list, so an embedded-only standalone
  * serializer (no operations) and a relationship-only target (served through its
@@ -148,6 +153,7 @@ final class ServableResourceWarmer implements CacheWarmerInterface
                 $this->guardActionLinks($serverName, $type);
                 $this->guardActionFilters($serverName, $type);
                 $this->guardRelationOrder($serverName, $type);
+                $this->guardFilterPaths($serverName, $type);
             }
 
             $this->guardRelatedEndpointTargets($serverName);
@@ -309,6 +315,38 @@ final class ServableResourceWarmer implements CacheWarmerInterface
                 $type,
                 $link->path,
             ));
+        }
+    }
+
+    /**
+     * Resolves the type's declared filters against its fields, and each monomorphic
+     * relation's filters against the related type's, so a path that cannot resolve, such
+     * as one ending on a polymorphic relation, fails the build instead of the first
+     * request that names it.
+     */
+    private function guardFilterPaths(string $serverName, string $type): void
+    {
+        $server = $this->servers->get($serverName);
+        $resource = $this->typeMetadata->resourceFor($server, $type);
+        if ($resource === null) {
+            return;
+        }
+
+        $paths = ThroughPathResolver::forResolver($server);
+        try {
+            $paths->resolveAll($resource->allFilters(), $resource->allFields());
+            foreach ($resource->allFields() as $relation) {
+                if (!$relation instanceof RelationInterface || \count($relation->relatedTypes()) !== 1) {
+                    continue;
+                }
+
+                $related = $this->typeMetadata->resourceFor($server, $relation->relatedTypes()[0]);
+                if ($related !== null) {
+                    $paths->resolveAll($relation->allFilters(), $related->allFields());
+                }
+            }
+        } catch (\LogicException $e) {
+            throw new \LogicException(\sprintf('The JSON:API resource for type "%s" on server "%s" declares a filter that cannot run: %s', $type, $serverName, $e->getMessage()), 0, $e);
         }
     }
 

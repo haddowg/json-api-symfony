@@ -130,10 +130,11 @@ final class CriteriaApplier
         $requested = FilterDefaults::apply($criteria->queryParameters->filter, $criteria->filters);
 
         // A filter family resolves to the concrete filter keyed by the full requested
-        // key, so the key routes through `aliasOf` as is.
+        // key, so the key routes through `aliasOf` as is. Each matched filter's
+        // traversal path resolves against the type the filters run against.
         foreach (FilterMatcher::directives($requested, $criteria->filters, $criteria->request) as $directive) {
             $key = $directive->key();
-            $filter = $directive->filter;
+            $filter = $criteria->paths?->resolve($directive->filter) ?? $directive->filter;
             $value = $directive->value;
 
             // A key routes to its target alias when the criteria declares one

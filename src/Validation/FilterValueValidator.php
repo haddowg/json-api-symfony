@@ -9,6 +9,7 @@ use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Filter\AcceptsList;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\FilterMatcher;
+use haddowg\JsonApiBundle\DataProvider\FilterPaths;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
@@ -75,10 +76,11 @@ final class FilterValueValidator
      * @param array<array-key, mixed> $requested the request's raw `filter[<key>]` map
      * @param list<FilterInterface>   $filters   the declared filter vocabulary to match against
      * @param ?JsonApiRequestInterface $request  the request, which a filter family needs to resolve a key
+     * @param ?FilterPaths             $paths    resolves a matched traversal filter's path, so a relationship leaf validates against the related id's format
      *
      * @throws FilterValueInvalid when a client-supplied value violates its filter's constraints, or a list filter's value is not a list it accepts
      */
-    public function validate(array $requested, array $filters, ?JsonApiRequestInterface $request = null): void
+    public function validate(array $requested, array $filters, ?JsonApiRequestInterface $request = null, ?FilterPaths $paths = null): void
     {
         foreach ($requested as $key => $value) {
             $key = (string) $key;
@@ -86,6 +88,7 @@ final class FilterValueValidator
             if ($filter === null) {
                 continue;
             }
+            $filter = $paths?->resolve($filter) ?? $filter;
 
             $list = $filter instanceof AcceptsList ? $filter->listValue() : null;
             $members = $list?->values($key, $value);

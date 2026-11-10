@@ -653,11 +653,12 @@ resource declaration:
 | Read/write without a data layer | a read operation has no `DataProvider`, or a write has no `DataPersister`, supporting the type | Map an `entity`, register the SPI service, or drop the operation. |
 | Missing/duplicate Id | a resource does not declare exactly one `Id` field | Add `Id::make()` (or remove the duplicate). |
 | Non-discriminating polymorphic candidate | a polymorphic relation lists a candidate resource that does not override `getType()` (so it would silently claim siblings' members) | Override `getType()` on that resource to discriminate the member by class (e.g. with `instanceof`). |
+| Unresolvable traversal path | a `WhereThrough` or `WhereThroughIn` path, on the resource or a relation, ends on a polymorphic relation, or a relationship-ending `WhereThrough` declares a non-equality operator or `deserializeUsing()` | End the path on a monomorphic relation or a field, or compare by `=` / `!=` only. |
 
 The write-without-hydrator guard lives in `ResourceLocatorPass::validateWriteCapability()`;
-the override and server guards alongside it in the same pass. The last three run at
-**cache warm-up** in the non-optional `ServableResourceWarmer` (the provider/persister/Id
-and polymorphic-discrimination checks). Doctrine adds its own warm-up guards — sortable /
+the override and server guards alongside it in the same pass. The last four run at
+**cache warm-up** in the non-optional `ServableResourceWarmer` (the provider/persister/Id,
+polymorphic-discrimination and traversal-path checks). Doctrine adds its own warm-up guards — sortable /
 filterable columns must resolve to a real field/association, and a pivot `belongsToMany`
 must resolve its association entity (see [doctrine § Build-time faults](doctrine.md#build-time-faults)).
 Because they all run at build time, CI catches them before deployment.
