@@ -346,7 +346,8 @@ final readonly class CollectionCriteria
 / `allSorts()`) — what the requested `filter[…]`/`sort` keys are matched against,
 not the request itself. `$defaultSort` is the resource's
 [`defaultSort()`](https://github.com/haddowg/json-api/blob/main/docs/sorts.md#defaultsort-the-order-with-no-sort)
-directives, applied by the `CriteriaApplier` **only when the request carries no
+directives, or on a related read the relation's default read order (its own
+`defaultSort()`, else the related type's), applied by the `CriteriaApplier` **only when the request carries no
 `sort`** (an explicit `?sort=` overrides it entirely); each default is matched
 against `$sorts` exactly as a requested sort is, so it executes through the same
 sort handler. `$window` is the pagination fetch window to push down to the store,
@@ -354,9 +355,9 @@ or `null` for an unpaginated fetch; it is the polymorphic `WindowInterface`, and
 count-based provider narrows to the `OffsetWindow` it can execute. `$aliasOf` is a
 **bundle-only** routing hint (no core change) mapping a filter/sort key to a
 non-root query alias the `CriteriaApplier` applies it on — populated **only** on the
-Doctrine pivot related-collection path (pivot keys → the `pivot` join alias) and
-empty (so provably inert) on every other Doctrine path and **every** in-memory path,
-where each key resolves to the query root. `$request` is the request the fetch
+Doctrine pivot paths (pivot keys → the `pivot` join alias, a default directive
+naming a pivot field included) and empty (so provably inert) on every other Doctrine
+path and **every** in-memory path, where each key resolves to the query root. `$request` is the request the fetch
 answers. A [sort family](https://github.com/haddowg/json-api/blob/main/docs/sorts.md#sort-families-keys-matched-by-prefix)
 or [filter family](https://github.com/haddowg/json-api/blob/main/docs/filters.md#filter-families-keys-matched-by-prefix)
 needs it to resolve a key, so a provider that builds its own criteria should pass it
@@ -401,9 +402,9 @@ one place and a provider only ever differs in *execution*:
   [`SortMatcher`](https://github.com/haddowg/json-api/blob/main/docs/sorts.md#reading-the-requested-sorts),
   so an exact key wins and a sort family answers `<prefix>.<suffix>`, handing the
   handler the concrete sort it resolves to;
-- with no `sort` requested, the resource's `defaultSort()` directives apply (an
-  explicit `?sort=` overrides them); each default is validated against the declared
-  sort vocabulary just like a requested sort;
+- with no `sort` requested, the criteria's default directives apply (an explicit
+  `?sort=` overrides them); each default is validated against the declared sort
+  vocabulary just like a requested sort, and routes through `$aliasOf` like one;
 - the `-` prefix → descending; sorts passed as one composite call (they do not
   compose commutatively, so the handler owns the combination).
 

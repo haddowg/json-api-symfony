@@ -369,7 +369,11 @@ final class TenantAgencyProvider implements DataProviderInterface, ScopesRelated
 ```
 
 Return `false` only when your related reads return exactly what the parent model
-holds. A provider that does not implement the interface is treated as scoping every
+holds. A to-many with a
+[default read order](relationships.md#a-relations-default-read-order) loads through
+your `fetchRelatedCollectionBatch()` whatever you answer, with the order in the
+criteria's `defaultSort`, since the model's own order isn't the one its endpoints
+serve. A provider that does not implement the interface is treated as scoping every
 relation: its relations are loaded through it, per parent when the parent type has a
 different provider, and one it cannot load (an `unsupported()` batch) is refused with a
 `500`. A polymorphic relation's members are kept per member type: the rows of a type

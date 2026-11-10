@@ -316,6 +316,39 @@ and works out of the box. A filter/sort that reads a **pivot/join-table column**
 handled separately — see [Pivot (`belongsToMany`) data](#pivot-belongstomany-data)
 below.
 
+### A relation's default read order
+
+A to-many reads its members in a declared order when the request names no `sort`.
+Declare it on the relation with `defaultSort()`, taking the same directives as a
+resource's `defaultSort()`; for that relation it replaces the related type's own
+default. Without one, the related type's default applies, and without either the
+members come in the order the store returns them.
+
+```php
+HasMany::make('tracks', 'tracks')
+    ->defaultSort(new SortDirective(SortByField::make('title'), descending: true));
+```
+
+The order applies on every read of the relation, so they all agree: its document
+linkage, `?include` and the include batching behind it, a Relationship Queries
+window, the relationship endpoint and the related endpoint. A requested `sort`, on an
+endpoint or as a `relatedQuery[<rel>][sort]`, replaces the whole default.
+
+Applying the order to linkage means the members have to be read through the provider,
+so a to-many with a default read order loads in one ordered query per relation across
+a page of parents, even when it isn't included. Linkage of a relation with no order
+still reads straight off the model when its provider doesn't scope related reads.
+
+Each key must name a sort the relation accepts: one of the related type's sorts, a
+`withSorts()` sort or, on a pivot `belongsToMany`, a pivot field. A pivot key orders
+by the pivot field's stored column on every path, include batching included. The
+container warm-up checks the keys, so a typo fails `cache:clear` rather than every
+read. It also refuses a pivot key on a relation whose related type is served by a
+provider that doesn't read pivot rows, such as the in-memory provider. The OpenAPI
+document states the relation's own order as the `default` of the `sort` parameter on
+its relationship and related endpoints; the related type's default isn't the
+relation's, so it isn't stated there.
+
 ### Filtering and sorting a relationship from the primary request (the Relationship Queries profile)
 
 The same scoped vocabulary is reachable from the **primary** request — without a

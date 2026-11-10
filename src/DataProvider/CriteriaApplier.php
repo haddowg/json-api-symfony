@@ -176,40 +176,27 @@ final class CriteriaApplier
     {
         $requested = $criteria->queryParameters->sort;
 
-        // No `?sort`: fall back to the resource's default order (if any). An
-        // explicit `?sort=` overrides the default entirely — the default is never
-        // appended to a requested sort (core docs/sorts.md). The defaults are still
-        // matched against the declared sort vocabulary (same as a requested sort),
-        // so a default naming an undeclared sort is a server-config error rather
-        // than a silently dropped directive. A default never names a pivot field
-        // (a pivot field declares no default direction), so it never routes through
-        // a per-key `aliasOf` entry; but when the caller supplies a `$defaultAlias`
-        // the default sort routes there too (the batched parent-rooted related fetch
-        // roots on the PARENT and applies the related resource's default order on the
-        // `related` join alias), so the default order is not resolved
-        // against the wrong root. With no `$defaultAlias` (every other path) the default
-        // routes to the query root through the composite call exactly as before. A count
-        // carries no sort and no default order (sort is irrelevant to a count),
-        // so this returns the query untouched on that path.
+        // No `?sort`: fall back to the default order (if any). An explicit `?sort=`
+        // overrides the default entirely — the default is never appended to a
+        // requested sort (core docs/sorts.md). The defaults are still matched against
+        // the declared sort vocabulary (same as a requested sort), so a default naming
+        // an undeclared sort is a server-config error rather than a silently dropped
+        // directive. A relation's default may name a pivot field, which routes through
+        // its `aliasOf` entry exactly as a requested pivot sort does; every other key
+        // routes to `$defaultAlias` when the caller supplies one (the batched
+        // parent-rooted related fetch roots on the PARENT and applies the default order
+        // on the `related` join alias), else to the query root. A count carries no sort
+        // and no default order, so this returns the query untouched on that path.
         if ($requested === []) {
-            $directives = $this->defaultDirectives($criteria);
+            $directives = \array_map(
+                static fn(SortDirective $directive): array => [$directive->sort->key(), $directive],
+                $this->defaultDirectives($criteria),
+            );
             if ($directives === []) {
                 return $query;
             }
 
-            if ($defaultAlias === null) {
-                return $handler->apply($directives, $query);
-            }
-
-            if (!$handler instanceof AliasAwareSortHandler) {
-                throw new \LogicException(\sprintf(
-                    'A default sort is routed to alias "%s", but %s is not alias-aware.',
-                    $defaultAlias,
-                    $handler::class,
-                ));
-            }
-
-            return $handler->applyOn($directives, $query, $defaultAlias);
+            return $this->applyDirectives($criteria, $directives, $query, $handler, $defaultAlias);
         }
 
         // Resolve the requested directives in request order, carrying each key so a
@@ -221,6 +208,22 @@ final class CriteriaApplier
             SortMatcher::directives($requested, $criteria->sorts, $criteria->request),
         );
 
+        return $this->applyDirectives($criteria, $directives, $query, $handler, $defaultAlias);
+    }
+
+    /**
+     * Applies resolved directives, each paired with its key, most significant first.
+     *
+     * @template TQuery
+     *
+     * @param list<array{0: string, 1: SortDirective}>   $directives
+     * @param TQuery                                     $query
+     * @param SortHandlerInterface<contravariant TQuery> $handler
+     *
+     * @return TQuery
+     */
+    private function applyDirectives(CollectionCriteria $criteria, array $directives, mixed $query, SortHandlerInterface $handler, ?string $defaultAlias): mixed
+    {
         // Empty aliasOf and no caller-supplied default alias — every non-pivot fetch
         // path and the whole in-memory provider: one composite call, most significant
         // directive first. Sorts do not compose commutatively, so the handler owns the
@@ -252,9 +255,9 @@ final class CriteriaApplier
     }
 
     /**
-     * The resource's `defaultSort()` directives, validated against the declared
-     * sort vocabulary exactly as a requested sort is: each default must name a
-     * declared sort (else {@see SortParamUnrecognized}, a server-config error).
+     * The default order's directives, validated against the declared sort vocabulary
+     * exactly as a requested sort is: each default must name a declared sort (else
+     * {@see SortParamUnrecognized}, a server-config error).
      * Returns the directives unchanged when valid — they already carry their
      * direction — so the same handler executes them as a requested sort.
      *

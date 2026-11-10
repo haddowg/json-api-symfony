@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\DataProvider;
 use haddowg\JsonApi\Collection\CollectionResult;
 use haddowg\JsonApi\Operation\QueryParameters;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\Accessor;
 use haddowg\JsonApi\Resource\Field\MorphTo;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
@@ -37,15 +38,19 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
  *  - a relation that is not included but whose linkage `data` still renders (a
  *    `withData()` relation, a relation the load-state predicate reports as loaded, a
  *    Doctrine to-one, or one with no links to render instead) is loaded the same way
- *    when its provider scopes related reads, so its identifiers are scoped too.
+ *    when its provider scopes related reads, so its identifiers are scoped too, or
+ *    when it has a default read order, so they come in that order.
  *
  * Loaded relations reach core out of band through the relationship-linkage seams
  * ({@see preload()} returns the map): a to-many's members, and a scoped to-one's target
  * or none. Nothing is written onto the model.
  *
  * Each relation loads through the provider that serves its related endpoint, routed by
- * {@see RelatedReadRouter}. Reading a relation straight off the model is allowed only
- * when that equals what the provider would load: the provider reports it unscoped
+ * {@see RelatedReadRouter}. A to-many loads in its default read order, the relation's
+ * own `defaultSort()` else the related type's, so its linkage lists the members in the
+ * order its endpoints serve them. Reading a relation with no default read order straight
+ * off the model is allowed only when that equals what the provider would load: the
+ * provider reports it unscoped
  * ({@see ScopesRelatedReadsInterface}), the author computes its value (an
  * `extractUsing()` closure, or a getter that is not an association, reported as
  * {@see RelatedBatch::computed()}), or no provider serves the related type.
@@ -116,6 +121,7 @@ final class RelatedIncludeBatcher
         private readonly ServerProvider $servers,
         private readonly RelatedReadRouter $router,
         private readonly IdentifiedTargetGuard $guard,
+        private readonly RelationCriteriaFactory $relationCriteria = new RelationCriteriaFactory(),
     ) {}
 
     /**
@@ -438,7 +444,7 @@ final class RelatedIncludeBatcher
         // otherwise they render as the closure returns them. A pivot
         // belongsToMany is not computed: the provider's pivot query is what it serves.
         if ($this->router->isComputed($relation)) {
-            if (!$this->isScoped($relation)) {
+            if (!$this->isScoped($relation) && !$this->isOrdered($server, $relation)) {
                 return $descends ? $this->readTargets($entities, $relation, $request) : [];
             }
 
@@ -479,7 +485,10 @@ final class RelatedIncludeBatcher
             return [];
         }
 
-        if (!$this->providers->supportsType($relatedType) || (!$scoped && (!$included || !$this->enabled))) {
+        // A relation with a default read order loads through the provider too, so its
+        // linkage renders in the order its endpoints serve rather than storage order.
+        $ordered = $this->isOrdered($server, $relation);
+        if (!$this->providers->supportsType($relatedType) || (!$scoped && !$ordered && (!$included || !$this->enabled))) {
             return $descends ? $this->readTargets($entities, $relation, $request) : [];
         }
 
@@ -507,7 +516,7 @@ final class RelatedIncludeBatcher
             }
         }
 
-        $batch = $this->router->batch($server, $type, $entities, $relation, $this->plainIncludeCriteria($request), $request);
+        $batch = $this->router->batch($server, $type, $entities, $relation, $this->includeCriteria($server, $relation, $request), $request);
 
         if (!$batch->isSupported()) {
             if ($scoped && !$batch->isComputed()) {
@@ -531,7 +540,7 @@ final class RelatedIncludeBatcher
      */
     private function supply(Server $server, string $type, array $entities, RelationInterface $relation, bool $scoped, array $targets, JsonApiRequestInterface $request, array &$linkages): array
     {
-        $batch = $this->router->batch($server, $type, $entities, $relation, $this->plainIncludeCriteria($request), $request);
+        $batch = $this->router->batch($server, $type, $entities, $relation, $this->includeCriteria($server, $relation, $request), $request);
 
         return $this->fill($server, $type, $entities, $relation, $scoped, $targets, $batch, $linkages);
     }
@@ -924,6 +933,34 @@ final class RelatedIncludeBatcher
             $type,
             $reason,
         ));
+    }
+
+    /**
+     * The criteria a relation loads its members with for a document: a to-many's whole
+     * set in its default read order, a to-one's target with no criteria at all.
+     */
+    private function includeCriteria(Server $server, RelationInterface $relation, JsonApiRequestInterface $request): CollectionCriteria
+    {
+        if (!$relation->isToMany()) {
+            return $this->plainIncludeCriteria($request);
+        }
+
+        return $this->relationCriteria->orderFor($this->relatedResource($server, $relation), $relation, $request, $this->router->isPivot($relation));
+    }
+
+    /**
+     * Whether `$relation` renders its members in a declared default read order.
+     */
+    private function isOrdered(Server $server, RelationInterface $relation): bool
+    {
+        return $this->relationCriteria->isOrdered($this->relatedResource($server, $relation), $relation);
+    }
+
+    private function relatedResource(Server $server, RelationInterface $relation): ?AbstractResource
+    {
+        $relatedTypes = $relation->relatedTypes();
+
+        return \count($relatedTypes) === 1 ? $this->types->resourceFor($server, $relatedTypes[0]) : null;
     }
 
     /**

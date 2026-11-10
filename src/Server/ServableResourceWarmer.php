@@ -8,14 +8,19 @@ use haddowg\JsonApi\OpenApi\Metadata\ActionDeclarations;
 use haddowg\JsonApi\OpenApi\ProjectedTypes;
 use haddowg\JsonApi\OpenApi\RelatedTypeNotRegistered;
 use haddowg\JsonApi\Resource\AbstractResource;
+use haddowg\JsonApi\Resource\Field\DefaultSortedRelationInterface;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
+use haddowg\JsonApi\Resource\Sort\SortMatcher;
+use haddowg\JsonApi\Serializer\RelationOrderValidator;
 use haddowg\JsonApiBundle\Action\ActionDescriptor;
 use haddowg\JsonApiBundle\Action\ActionRegistry;
 use haddowg\JsonApiBundle\Action\ActionScope;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
+use haddowg\JsonApiBundle\DataProvider\PivotAwareProviderInterface;
+use haddowg\JsonApiBundle\DataProvider\PivotFields;
 use haddowg\JsonApiBundle\OpenApi\Metadata\ActionMetadata;
 use haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource;
 use haddowg\JsonApiBundle\Operation\Operation;
@@ -121,6 +126,7 @@ final class ServableResourceWarmer implements CacheWarmerInterface
      *                         serializer, or a related endpoint points at a type the
      *                         server does not register
      * @throws UnenforceableSecurityException when a relation declares a security expression the app cannot evaluate
+     * @throws \LogicException                 when a to-many's default read order names a sort it does not accept
      */
     public function warmUp(string $cacheDir, ?string $buildDir = null): array
     {
@@ -136,6 +142,7 @@ final class ServableResourceWarmer implements CacheWarmerInterface
                 $this->guardRelationSecurity($serverName, $type);
                 $this->guardActionLinks($serverName, $type);
                 $this->guardActionFilters($serverName, $type);
+                $this->guardRelationOrder($serverName, $type);
             }
 
             $this->guardRelatedEndpointTargets($serverName);
@@ -201,6 +208,57 @@ final class ServableResourceWarmer implements CacheWarmerInterface
                 $type,
                 \count($idFields),
             ));
+        }
+    }
+
+    /**
+     * Checks each to-many's default read order names sorts it accepts, through core's
+     * {@see RelationOrderValidator}, and that a key only a pivot field answers is read
+     * by a provider that sorts its pivot rows. The in-memory provider holds no pivot
+     * data, so a pivot order would otherwise fail every read of the relation.
+     */
+    private function guardRelationOrder(string $serverName, string $type): void
+    {
+        $server = $this->servers->get($serverName);
+        if (!$server->hasSerializerFor($type)) {
+            return;
+        }
+
+        $serializer = $server->serializerFor($type);
+        (new RelationOrderValidator($server))->validate($type, $serializer);
+        if (!$serializer instanceof AbstractResource) {
+            return;
+        }
+
+        foreach ($serializer->allFields() as $relation) {
+            if (!$relation instanceof DefaultSortedRelationInterface || $relation->defaultSort() === [] || PivotFields::sortsFor($relation) === []) {
+                continue;
+            }
+
+            $relatedType = $relation->relatedTypes()[0] ?? null;
+            if ($relatedType === null || !$this->providers->supportsType($relatedType)) {
+                continue;
+            }
+
+            $provider = $this->providers->forType($relatedType);
+            if ($provider instanceof PivotAwareProviderInterface && $provider->supportsPivot($relatedType, $relation)) {
+                continue;
+            }
+
+            $vocabulary = SortMatcher::merge($this->typeMetadata->resourceFor($server, $relatedType)?->allSorts() ?? [], $relation->sorts());
+            foreach ($relation->defaultSort() as $directive) {
+                if (!SortMatcher::recognises($vocabulary, $directive->sort->key())) {
+                    throw new \LogicException(\sprintf(
+                        'Relation "%s" on resource type "%s" declares a defaultSort() on the pivot field "%s", but the data provider of "%s" does not read the relation through a pivot query, so it cannot order by a pivot field. Order it by a field of "%s", or serve "%s" from a provider that reads pivot rows.',
+                        $relation->name(),
+                        $type,
+                        $directive->sort->key(),
+                        $relatedType,
+                        $relatedType,
+                        $relatedType,
+                    ));
+                }
+            }
         }
     }
 
