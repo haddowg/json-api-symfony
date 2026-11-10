@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.6.1](https://github.com/haddowg/json-api-symfony/compare/v2.6.0...v2.6.1) (2026-11-10)
+
+
+### Bug Fixes
+
+* **deps:** require haddowg/json-api 2.10 ([#343](https://github.com/haddowg/json-api-symfony/issues/343)) ([9e2fbd0](https://github.com/haddowg/json-api-symfony/commit/9e2fbd0305e80bce08366144fcdeda364f24f90f))
+
 ## [2.6.0](https://github.com/haddowg/json-api-symfony/compare/v2.5.1...v2.6.0) (2026-11-10)
 
 
