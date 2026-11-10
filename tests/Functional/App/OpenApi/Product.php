@@ -17,7 +17,7 @@ final class Product
     public function __construct(
         public string $id = '',
         public string $name = '',
-        public string $status = 'draft',
+        public CatalogStatus $status = CatalogStatus::Draft,
         public ?string $categoryId = null,
         public array $tagIds = [],
     ) {}

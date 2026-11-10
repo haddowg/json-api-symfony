@@ -29,4 +29,15 @@ final class DoctrineValueTypeTest extends ValueTypeConformanceTestCase
         $entityManager->flush();
         $entityManager->clear();
     }
+
+    protected function storedSubmission(string $id): SubmissionEntity
+    {
+        $entityManager = static::getContainer()->get('doctrine.orm.entity_manager');
+        \assert($entityManager instanceof EntityManagerInterface);
+        $entityManager->clear();
+        $submission = $entityManager->find(SubmissionEntity::class, (int) $id);
+        self::assertInstanceOf(SubmissionEntity::class, $submission);
+
+        return $submission;
+    }
 }
