@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.1](https://github.com/haddowg/json-api-symfony/compare/v2.5.0...v2.5.1) (2026-11-10)
+
+
+### Bug Fixes
+
+* read a pivot's current members through its association rows ([#339](https://github.com/haddowg/json-api-symfony/issues/339)) ([a788bc8](https://github.com/haddowg/json-api-symfony/commit/a788bc86996ba2d295149306a7c446ee05b2e615))
+
 ## [2.5.0](https://github.com/haddowg/json-api-symfony/compare/v2.4.2...v2.5.0) (2026-11-10)
 
 
