@@ -171,6 +171,17 @@ final class DoctrineAssociationIdTest extends JsonApiFunctionalTestCase
     }
 
     #[Test]
+    public function aRunIsFilteredByTheCampaignIdsOfItsConfigs(): void
+    {
+        $ids = fn(string $query): array => \array_column($this->rows($this->decode($this->get('/runs?sort=name&' . $query))), 'id');
+
+        self::assertSame([$this->runs['first'], $this->runs['second']], $ids('filter[config]=20,30'));
+        self::assertSame([$this->runs['first'], $this->runs['third']], $ids('filter[primaryIn]=10,20'));
+        self::assertSame([$this->runs['third']], $ids('filter[primaryIs]=10'));
+        self::assertSame(400, $this->handle('/runs?filter[config]=10,campaign')->getStatusCode());
+    }
+
+    #[Test]
     public function theRelatedEndpointsResolveTheConfigs(): void
     {
         $configs = $this->rows($this->decode($this->get('/runs/' . $this->runs['first'] . '/configs?sort=label')));

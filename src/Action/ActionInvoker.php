@@ -23,6 +23,7 @@ use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
+use haddowg\JsonApiBundle\DataProvider\FilterPaths;
 use haddowg\JsonApiBundle\DataProvider\QueriesFilteredCollectionInterface;
 use haddowg\JsonApiBundle\Event\AfterActionEvent;
 use haddowg\JsonApiBundle\Event\BeforeActionEvent;
@@ -176,12 +177,14 @@ final readonly class ActionInvoker
         $requested = $operation->queryParameters()->filter;
         FilterMatcher::directives($requested, $filters, $request);
 
-        $this->filterValues?->validate($requested, $filters, $request);
+        $paths = FilterPaths::of($server, $resource);
+        $this->filterValues?->validate($requested, $filters, $request, $paths);
 
         $criteria = new CollectionCriteria(
             new QueryParameters(fields: [], includes: [], sort: [], filter: $requested, pagination: []),
             $filters,
             request: $request,
+            paths: $paths,
         );
 
         return function () use ($type, $criteria, $descriptor): FilteredCollection {

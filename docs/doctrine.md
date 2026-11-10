@@ -569,6 +569,7 @@ so the same spec test passes on both providers.
 | `WhereNull` / `WhereNotNull` | `col IS NULL` / `col IS NOT NULL` (request value ignored) |
 | `WhereHas` / `WhereDoesntHave` | correlated `EXISTS` / `NOT EXISTS` subquery |
 | `WhereThrough` | dotted-traversal correlated `EXISTS` (the related entity narrowed by the leaf comparison) |
+| `WhereThroughIn` | the same correlated `EXISTS` with `IN (:list)` at the leaf; an empty list is `1 = 0` |
 | `WhereHasMatching` | correlated `EXISTS` whose related entity is narrowed by an author-supplied `Criteria`/closure (Doctrine-only) |
 | `WhereAll` / `WhereAny` | the children recombined with `andX()` / `orX()` as one composite `andWhere` (see below) |
 | `Where` pinned with `->fixed()` | the same DQL as the underlying `Where`, its compared value pinned server-side (no dedicated arm — it rides the `deserialize` seam) |
@@ -627,7 +628,8 @@ A few translations carry nuance:
   ask of that builder: `WhereHas`/`WhereDoesntHave` are the degenerate
   pure-existence path (no leaf predicate); `WhereThrough` chains the path's
   intermediate segments as joins off the related root and compares the final segment
-  as the leaf; `WhereHasMatching` narrows the related root with an author-supplied
+  as the leaf, and `WhereThroughIn` does the same with an `IN` over the list;
+  `WhereHasMatching` narrows the related root with an author-supplied
   predicate. See the [relationship-existence filtering](#relationship-existence-filtering-wherehas-wherethrough-wherehasmatching)
   subsection below.
 
@@ -662,7 +664,8 @@ filter it returned: a `Where` or `WhereIn` translates as above, anything else go
 its arm like any custom filter. The same matching runs for the primary collection,
 related and relationship endpoints, `relatedQuery[<path>][filter]`, `?withCount`
 counts and a collection action's filters. The cache warmer cannot check a family's
-columns, since it resolves them only against a request.
+columns, since it resolves them only against a request. A traversal filter a family
+returns has its path resolved then too.
 
 Source: [`DoctrineFilterHandler`](../src/DataProvider/Doctrine/DoctrineFilterHandler.php).
 
@@ -731,6 +734,29 @@ campaign's leads whose brand is Acme, the same total the related endpoint report
   object graph; the Doctrine reference renders the correlated `EXISTS` rooted on the
   related `Artist`). The example's `AlbumResource` declares it — `GET
   /albums?filter[artist.name]=Radiohead` keeps Radiohead's albums.
+
+- **`WhereThroughIn`** — `WhereThrough` with an `IN` at the leaf. However many values
+  the list holds, the query carries one subquery:
+
+  ```sql
+  WHERE EXISTS (
+    SELECT 1 FROM campaign c
+    INNER JOIN advertiser a ON a.id = c.advertiser_id
+    WHERE c.id IN (SELECT ... correlated to the outer lead ...)
+      AND a.id IN (?, ?, ?)
+  )
+  ```
+
+  An empty list adds `1 = 0` and no subquery.
+
+- **Paths that end on a relationship.** When a `WhereThrough` or `WhereThroughIn`
+  path ends on a relation (`campaign.advertiser`, or a bare `templates`), every
+  segment is joined and the leaf compares the identifier of the entity the last hop
+  reached, through the same id path the rest of the provider uses, so an id that is
+  itself an association compares as `IDENTITY(alias.field)`. The values are the decoded
+  storage keys, bound with the id's Doctrine type, so a binary `uuid` id matches. See
+  [relationships](relationships.md#wherethroughin-and-paths-that-end-on-a-relationship)
+  for how paths resolve and validate.
 
 - **`WhereHasMatching`** — the **Doctrine-only escape hatch** for what `WhereThrough`'s
   single dotted comparison cannot express: a multi-column / OR / NOT predicate, or raw

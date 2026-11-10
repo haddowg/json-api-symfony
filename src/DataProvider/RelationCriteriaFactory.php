@@ -21,6 +21,7 @@ use haddowg\JsonApi\Resource\Filter\WhereIn;
 use haddowg\JsonApi\Resource\Filter\WhereNotIn;
 use haddowg\JsonApi\Resource\Filter\WhereNotNull;
 use haddowg\JsonApi\Resource\Filter\WhereNull;
+use haddowg\JsonApi\Resource\SerializerResolverInterface;
 use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApi\Resource\Sort\SortDirective;
 use haddowg\JsonApi\Resource\Sort\SortInterface;
@@ -138,6 +139,9 @@ final class RelationCriteriaFactory
      * pivot filters: a path that reads a pivot relation through the provider's pivot
      * query but takes no pivot filter (the Relationship Queries window) still sorts by
      * a pivot field, its default order included.
+     *
+     * `$resources` lets a traversal filter's path resolve against the related type, so a
+     * path ending on a relationship compares the related resource's id.
      */
     public function criteriaFor(
         QueryParameters $queryParameters,
@@ -148,6 +152,7 @@ final class RelationCriteriaFactory
         bool $wantsCount = false,
         ?JsonApiRequestInterface $request = null,
         bool $pivotSorts = false,
+        ?SerializerResolverInterface $resources = null,
     ): CollectionCriteria {
         $relationFilters = $includePivotFields
             ? $this->withPivotCasts($relation)
@@ -184,6 +189,7 @@ final class RelationCriteriaFactory
             // RelationCountInterface seam).
             wantsCount: $wantsCount,
             request: $request,
+            paths: $resources !== null ? FilterPaths::of($resources, $relatedResource) : null,
         );
     }
 

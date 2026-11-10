@@ -680,6 +680,7 @@ final class WindowedRelationBatch
             defaultSort: [],
             aliasOf: $criteria->aliasOf,
             request: $criteria->request,
+            paths: $criteria->paths,
         );
     }
 

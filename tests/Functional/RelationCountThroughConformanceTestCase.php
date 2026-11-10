@@ -13,8 +13,8 @@ use PHPUnit\Framework\Attributes\Test;
 /**
  * Relationship filters on a counted relation, asserted identically against the
  * in-memory provider ({@see InMemoryRelationCountThroughTest}) and the Doctrine provider
- * ({@see DoctrineRelationCountThroughTest}). A `WhereThrough`, `WhereHas` or
- * `WhereDoesntHave` on a campaign's leads or shortlist tests each lead, so a
+ * ({@see DoctrineRelationCountThroughTest}). A `WhereThrough`, `WhereThroughIn`, `WhereHas`
+ * or `WhereDoesntHave` on a campaign's leads or shortlist tests each lead, so a
  * `?withCount` total and a Relationship Queries window total count the leads it keeps.
  * Campaigns and leads both have a `brand`, so a filter tested on the campaign instead
  * counts the wrong leads. The graph is {@see CountThroughFixtures}.
@@ -40,6 +40,12 @@ abstract class RelationCountThroughConformanceTestCase extends JsonApiFunctional
         yield 'a relation-scoped WhereThrough on a join table' => ['shortlist', 'leadBrand]=Acme', [1 => 2, 2 => 0, 3 => 0]];
         yield 'a requested WhereThrough on a join table' => ['shortlist', 'templateName]=Reminder', [1 => 2, 2 => 0, 3 => 0]];
         yield 'a WhereHas on a join table' => ['shortlist', 'branded]=1', [1 => 3, 2 => 1, 3 => 0]];
+        yield 'a relation-scoped WhereThroughIn on an inverse foreign key' => ['leads', 'usesTemplate]=1,2', [1 => 2, 2 => 1, 3 => 1]];
+        yield 'a relation-scoped WhereThroughIn on a join table' => ['shortlist', 'usesTemplate]=1', [1 => 2, 2 => 1, 3 => 0]];
+        yield 'a requested WhereThroughIn ending on the shared relationship' => ['leads', 'brandIn]=1', [1 => 1, 2 => 0, 3 => 1]];
+        yield 'a requested WhereThroughIn on a join table' => ['shortlist', 'brandIn]=1,2', [1 => 3, 2 => 1, 3 => 0]];
+        yield 'a WhereThrough ending on the shared relationship' => ['leads', 'brandIs]=2', [1 => 1, 2 => 1, 3 => 0]];
+        yield 'a relationship-ending WhereThrough on a join table' => ['shortlist', 'brandIs]=2', [1 => 1, 2 => 1, 3 => 0]];
     }
 
     #[Test]

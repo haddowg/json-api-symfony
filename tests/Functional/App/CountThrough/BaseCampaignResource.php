@@ -11,12 +11,13 @@ use haddowg\JsonApi\Resource\Field\HasMany;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApi\Resource\Filter\WhereThrough;
+use haddowg\JsonApi\Resource\Filter\WhereThroughIn;
 use haddowg\JsonApiBundle\Tests\Functional\App\CountThrough\Doctrine\CampaignEntity;
 
 /**
  * Campaigns of one brand, counting their leads through an inverse foreign key and
- * their shortlist through a join table. Each relation scopes a `leadBrand` filter to
- * its related endpoint and its counts.
+ * their shortlist through a join table. Each relation scopes a `leadBrand` and a
+ * `usesTemplate` filter to its related endpoint and its counts.
  */
 abstract class BaseCampaignResource extends AbstractResource
 {
@@ -31,11 +32,11 @@ abstract class BaseCampaignResource extends AbstractResource
             HasMany::make('leads', 'ctLeads')
                 ->paginate(PagePaginator::make())
                 ->countable()
-                ->withFilters(WhereThrough::make('leadBrand', 'brand.name')),
+                ->withFilters(WhereThrough::make('leadBrand', 'brand.name'), WhereThroughIn::make('usesTemplate', 'templates')),
             HasMany::make('shortlist', 'ctLeads')
                 ->paginate(PagePaginator::make())
                 ->countable()
-                ->withFilters(WhereThrough::make('leadBrand', 'brand.name')),
+                ->withFilters(WhereThrough::make('leadBrand', 'brand.name'), WhereThroughIn::make('usesTemplate', 'templates')),
         ];
     }
 

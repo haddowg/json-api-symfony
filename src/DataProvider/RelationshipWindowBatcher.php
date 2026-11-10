@@ -286,13 +286,14 @@ final class RelationshipWindowBatcher
             wantsCount: $wantsCount,
             request: $request,
             pivotSorts: $this->router->isPivot($relation),
+            resources: $server,
         );
 
         // Validate the relatedQuery filter VALUE against the per-relation merged
         // vocabulary before the batched window fetch, so a mistyped value on the
         // include/linkage path is the endpoint's same 400.
         // RAW client input only (RelatedQuery::filter); a no-op without the validator.
-        $this->filterValues?->validate($relatedQuery->filter, $criteria->filters, $criteria->request);
+        $this->filterValues?->validate($relatedQuery->filter, $criteria->filters, $criteria->request, $criteria->paths);
 
         // ONE batched fetch for the whole page, driven through the PRIMARY type's
         // provider — like RelationCountBatcher, and so the provider keys each parent's
@@ -495,6 +496,7 @@ final class RelationshipWindowBatcher
                 includePivotFields: false,
                 request: $request,
                 pivotSorts: $this->router->isPivot($relation),
+                resources: $server,
             );
 
             $this->assertRelatedQueryKeysRecognised($relatedQuery, $criteria);
@@ -502,7 +504,7 @@ final class RelationshipWindowBatcher
             // The mistyped-VALUE check rides the same path as the windowed fetch: a links-only
             // relation validates its raw filter
             // values too, so a bad value is the endpoint's same `400` here as well.
-            $this->filterValues?->validate($relatedQuery->filter, $criteria->filters, $criteria->request);
+            $this->filterValues?->validate($relatedQuery->filter, $criteria->filters, $criteria->request, $criteria->paths);
         }
     }
 
@@ -599,6 +601,7 @@ final class RelationshipWindowBatcher
                 null,
                 includePivotFields: false,
                 request: $request,
+                resources: $server,
             );
 
             // Validate the relatedQuery filter VALUE against the per-relation merged
@@ -606,7 +609,7 @@ final class RelationshipWindowBatcher
             // include/linkage path is the endpoint's same 400. RAW client input only
             // (RelatedQuery::filter), so an author default is
             // never validated (docs/data-layer.md); a no-op without the validator.
-            $this->filterValues?->validate($request->getRelatedQuery($relation->name())->filter, $criteria->filters, $criteria->request);
+            $this->filterValues?->validate($request->getRelatedQuery($relation->name())->filter, $criteria->filters, $criteria->request, $criteria->paths);
 
             $matches = $this->router->toOneMatches($server, $type, $parents, $relation, $criteria, $request);
 

@@ -91,6 +91,7 @@ use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\CurrentMembers;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
+use haddowg\JsonApiBundle\DataProvider\FilterPaths;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 use haddowg\JsonApiBundle\DataProvider\PivotAwareProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\PivotFields;
@@ -427,6 +428,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $resource = $this->types->resourceFor($server, $type);
 
         $filters = $resource?->allFilters() ?? [];
+        $paths = FilterPaths::of($server, $resource);
 
         // Validate each client-supplied filter value against the declared value
         // constraints before the filter reaches the provider, so a mistyped value
@@ -435,7 +437,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // without the optional validator, or for a filter with no declared
         // constraints; only the raw requested values are checked, never an
         // author-set default (docs/data-layer.md).
-        $this->validateFilterValues($operation->queryParameters()->filter, $filters, $request);
+        $this->validateFilterValues($operation->queryParameters()->filter, $filters, $request, $paths);
 
         // A singular filter the client applied collapses the collection to a
         // zero-to-one response — a single resource (the first match) or null,
@@ -475,6 +477,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $resource?->defaultSort() ?? [],
             wantsCount: $wantsCount,
             request: $request,
+            paths: $paths,
         ));
 
         // Materialize once so the items can be both preloaded and rendered (and a
@@ -790,6 +793,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 includePivotFields: $pivot,
                 wantsCount: $relWantsCount,
                 request: $request,
+                resources: $server,
             );
 
             // The related endpoint validates a client-supplied filter value against
@@ -798,7 +802,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // scoped filters, and any pivot filters), so a relation-scoped or
             // related-resource constrained filter rejects a mistyped value with the
             // same 400 (docs/data-layer.md).
-            $this->validateFilterValues($operation->queryParameters()->filter, $criteria->filters, $criteria->request);
+            $this->validateFilterValues($operation->queryParameters()->filter, $criteria->filters, $criteria->request, $criteria->paths);
 
             if ($pivot) {
                 \assert($relatedProvider instanceof PivotAwareProviderInterface);
@@ -1016,12 +1020,13 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                     null,
                     includePivotFields: false,
                     request: $request,
+                    resources: $server,
                 );
                 // Validate the MERGED requested filter map (the operation's own `?filter`
                 // ⊕ the relatedQuery `[filter]` already driven into the criteria), so a
                 // mistyped relatedQuery filter value is the endpoint's same 400, not just
                 // a mistyped `?filter` value.
-                $this->validateFilterValues($filter, $criteria->filters, $criteria->request);
+                $this->validateFilterValues($filter, $criteria->filters, $criteria->request, $criteria->paths);
 
                 if (!$this->providers->forType($relatedType)->relatedToOneMatches($relatedType, $related, $relation, $criteria, $request)) {
                     $related = null;
@@ -1086,10 +1091,11 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      *
      * @param array<string, mixed>  $requested the raw requested `filter[<key>]` map
      * @param list<FilterInterface> $filters
+     * @param ?FilterPaths          $paths     resolves a traversal filter's path, so a relationship leaf validates against the related id's format
      */
-    private function validateFilterValues(array $requested, array $filters, ?JsonApiRequestInterface $request): void
+    private function validateFilterValues(array $requested, array $filters, ?JsonApiRequestInterface $request, ?FilterPaths $paths = null): void
     {
-        $this->filterValues?->validate($requested, $filters, $request);
+        $this->filterValues?->validate($requested, $filters, $request, $paths);
     }
 
     /**
@@ -1214,11 +1220,12 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                         null,
                         includePivotFields: false,
                         request: $request,
+                        resources: $server,
                     );
                     // Validate the MERGED requested filter map (the operation's own
                     // `?filter` ⊕ the relatedQuery `[filter]`), so a mistyped relatedQuery
                     // filter value is the endpoint's same 400.
-                    $this->validateFilterValues($filter, $criteria->filters, $criteria->request);
+                    $this->validateFilterValues($filter, $criteria->filters, $criteria->request, $criteria->paths);
 
                     if (!$this->providers->forType($relatedType)->relatedToOneMatches($relatedType, $related, $relation, $criteria, $request)) {
                         $this->relationshipLinkage?->set(new WindowedRelationshipLinkage([], [
@@ -1279,8 +1286,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 includePivotFields: true,
                 wantsCount: $relWantsCount,
                 request: $request,
+                resources: $server,
             );
-            $this->validateFilterValues($operation->queryParameters()->filter, $criteria->filters, $criteria->request);
+            $this->validateFilterValues($operation->queryParameters()->filter, $criteria->filters, $criteria->request, $criteria->paths);
 
             $pivotResult = $relatedProvider
                 ->fetchRelatedPivotCollection($relatedType, $parent, $relation, $criteria, $request);
@@ -1333,6 +1341,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 includePivotFields: false,
                 wantsCount: $relWantsCount,
                 request: $request,
+                resources: $server,
             );
 
             $result = $this->readRouter->pageIdentified($server, $type, $parent, $relation, $criteria, $request);
@@ -1406,8 +1415,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 includePivotFields: false,
                 wantsCount: $relWantsCount,
                 request: $request,
+                resources: $server,
             );
-            $this->validateFilterValues($operation->queryParameters()->filter, $criteria->filters, $criteria->request);
+            $this->validateFilterValues($operation->queryParameters()->filter, $criteria->filters, $criteria->request, $criteria->paths);
 
             $result = $this->readRouter?->isComputed($relation) === true
                 ? $this->readRouter->fetchComputed($server, $parent, $relation, $criteria, $request)

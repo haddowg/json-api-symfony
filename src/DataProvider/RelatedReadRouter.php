@@ -714,7 +714,7 @@ final class RelatedReadRouter
         }
 
         $relatedType = $relation->relatedTypes()[0] ?? '';
-        $unpaged = new CollectionCriteria($criteria->queryParameters, $criteria->filters, $criteria->sorts, null, $criteria->defaultSort, $criteria->aliasOf, request: $criteria->request);
+        $unpaged = new CollectionCriteria($criteria->queryParameters, $criteria->filters, $criteria->sorts, null, $criteria->defaultSort, $criteria->aliasOf, request: $criteria->request, paths: $criteria->paths);
         $result = $this->providers->forType($relatedType)->fetchRelatedCollection($relatedType, $parent, $relation, $unpaged, $request);
 
         return $this->queryMembers($relation, $this->narrow($server, [$this->objects($result->items)], $relation, $request)[0], $criteria);

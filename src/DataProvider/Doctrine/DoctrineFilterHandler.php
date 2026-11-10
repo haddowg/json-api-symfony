@@ -11,6 +11,7 @@ use haddowg\JsonApi\Resource\Filter\DateRange;
 use haddowg\JsonApi\Resource\Filter\FilterHandlerInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\Range;
+use haddowg\JsonApi\Resource\Filter\ThroughPath;
 use haddowg\JsonApi\Resource\Filter\UnsupportedFilter;
 use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Filter\WhereAll;
@@ -24,6 +25,7 @@ use haddowg\JsonApi\Resource\Filter\WhereNotIn;
 use haddowg\JsonApi\Resource\Filter\WhereNotNull;
 use haddowg\JsonApi\Resource\Filter\WhereNull;
 use haddowg\JsonApi\Resource\Filter\WhereThrough;
+use haddowg\JsonApi\Resource\Filter\WhereThroughIn;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\Filter\WhereHasMatching;
 
 /**
@@ -74,6 +76,11 @@ use haddowg\JsonApiBundle\DataProvider\Doctrine\Filter\WhereHasMatching;
  *   - {@see WhereThrough} — a dotted traversal: the intermediate segments chain
  *     as joins off the related root and the final segment compares as the leaf,
  *     `EXISTS-ANY` (the portable, value-validated default).
+ *   - {@see WhereThroughIn} — the same traversal with an `IN` over the requested
+ *     list at the leaf, still one `EXISTS` however many values are requested; an
+ *     empty list matches nothing. For either traversal, a path resolved to end on a
+ *     relationship joins every segment and compares the identifier of the entity
+ *     the last hop reached.
  *   - {@see WhereHasMatching} — a single relationship hop whose related root is
  *     narrowed by an author-supplied {@see \Doctrine\Common\Collections\Criteria}
  *     (via `addCriteria`) or a raw-subquery closure (the Doctrine-only escape
@@ -114,6 +121,8 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
     private readonly array $arms;
 
     private readonly NaiveDateTimeStorage $dates;
+
+    private int $subqueries = 0;
 
     /**
      * @param iterable<DoctrineFilterArmInterface> $arms author arms for custom filter types, consulted in order
@@ -162,6 +171,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
             $filter instanceof WhereNull => $query->andWhere(\sprintf('%s IS NULL', $this->path($this->pivotColumn($filter->column, $alias), $alias))),
             $filter instanceof WhereNotNull => $query->andWhere(\sprintf('%s IS NOT NULL', $this->path($this->pivotColumn($filter->column, $alias), $alias))),
             $filter instanceof WhereThrough => $this->whereThrough($query, $filter, $value, $alias),
+            $filter instanceof WhereThroughIn => $this->whereThroughIn($query, $filter, $value, $alias),
             $filter instanceof WhereHas => $this->whereHas($query, $filter->relationship, false, $alias),
             $filter instanceof WhereDoesntHave => $this->whereHas($query, $filter->relationship, true, $alias),
             $filter instanceof WhereHasMatching => $this->whereHasMatching($query, $filter, $value, $alias),
@@ -229,36 +239,111 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
      * with the same operator vocabulary / `like` semantics as {@see where()}
      * (the shared {@see applyComparison()}). The leaf parameter binds on the
      * OUTER `$query` (which executes), the predicate is added on the leaf alias.
+     * A path resolved to a relationship leaf compares the related entity's id with
+     * the decoded storage key, bound through the id's Doctrine type.
      */
     private function whereThrough(QueryBuilder $query, WhereThrough $filter, mixed $value, string $alias): QueryBuilder
     {
-        $expected = $filter->deserialize !== null ? ($filter->deserialize)($value) : $value;
-
-        $segments = \explode('.', $filter->path);
-        if (\count($segments) < 2) {
-            throw new \LogicException(\sprintf(
-                'WhereThrough filter "%s" needs a dotted path "relationship.attribute"; got "%s".',
-                $filter->key(),
-                $filter->path,
-            ));
-        }
+        $expected = $filter->storageValue($value);
+        $onRelation = $this->endsOnRelation($filter->resolved);
+        $segments = $this->segments($filter->key(), $filter->path, $onRelation);
 
         $exists = $query->expr()->exists(
             $this->existsSubquery(
                 $query,
                 $segments,
-                function (QueryBuilder $sub, string $leafAlias, string $leafField) use ($query, $filter, $expected): void {
+                function (QueryBuilder $sub, string $leafAlias, string $leafField, ClassMetadata $leafMetadata) use ($query, $filter, $expected, $onRelation): void {
                     // The predicate TEXT goes on the subquery (via its leaf alias);
                     // the placeholder name and the bound value go on the OUTER $query,
                     // which executes the embedded EXISTS — so a placeholder collision
                     // across several traversal filters on one query cannot happen.
-                    $this->applyComparison($query, $sub, $leafAlias . '.' . $leafField, $filter->operator, $expected, $filter->key());
+                    if (!$onRelation) {
+                        $this->applyComparison($query, $sub, $leafAlias . '.' . $leafField, $filter->operator, $expected, $filter->key());
+
+                        return;
+                    }
+
+                    $placeholder = $this->placeholder($query);
+                    $operator = \in_array($filter->operator, ['!=', '<>'], true) ? '<>' : '=';
+                    $sub->andWhere(\sprintf('%s %s :%s', DoctrineIdentifiers::path($leafMetadata, $leafAlias), $operator, $placeholder));
+                    (new DoctrineIdentifiers($query->getEntityManager()))->bind($query, $placeholder, $leafMetadata, $expected);
                 },
                 $alias,
+                $onRelation,
             )->getDQL(),
         );
 
         return $query->andWhere($exists);
+    }
+
+    /**
+     * Traversal set predicate ({@see WhereThroughIn}): {@see whereThrough()}'s one
+     * correlated `EXISTS` with an `IN` over the requested list at the leaf, so the
+     * query carries one subquery however many values are requested. A relationship
+     * leaf compares the related entity's id with the decoded storage keys, bound
+     * through the id's Doctrine type. An empty list matches nothing, with no `IN ()`.
+     */
+    private function whereThroughIn(QueryBuilder $query, WhereThroughIn $filter, mixed $value, string $alias): QueryBuilder
+    {
+        $values = $filter->storageValues($value);
+        if ($values === []) {
+            return $query->andWhere('1 = 0');
+        }
+
+        $onRelation = $this->endsOnRelation($filter->resolved);
+        $segments = $this->segments($filter->key(), $filter->path, $onRelation);
+
+        $exists = $query->expr()->exists(
+            $this->existsSubquery(
+                $query,
+                $segments,
+                function (QueryBuilder $sub, string $leafAlias, string $leafField, ClassMetadata $leafMetadata) use ($query, $values, $onRelation): void {
+                    $placeholder = $this->placeholder($query);
+                    if (!$onRelation) {
+                        $sub->andWhere(\sprintf('%s.%s IN (:%s)', $leafAlias, $leafField, $placeholder));
+                        $query->setParameter($placeholder, $values);
+
+                        return;
+                    }
+
+                    $sub->andWhere(\sprintf('%s IN (:%s)', DoctrineIdentifiers::path($leafMetadata, $leafAlias), $placeholder));
+                    (new DoctrineIdentifiers($query->getEntityManager()))->bindList($query, $placeholder, $leafMetadata, $values);
+                },
+                $alias,
+                $onRelation,
+            )->getDQL(),
+        );
+
+        return $query->andWhere($exists);
+    }
+
+    /**
+     * @phpstan-assert-if-true !null $path
+     */
+    private function endsOnRelation(?ThroughPath $path): bool
+    {
+        return $path !== null && $path->endsOnRelation();
+    }
+
+    /**
+     * A traversal path's segments. A path ending on a field needs a relationship and
+     * the field it compares; one resolved to a relationship leaf may be that single
+     * relationship.
+     *
+     * @return non-empty-list<string>
+     */
+    private function segments(string $key, string $path, bool $onRelation): array
+    {
+        $segments = ThroughPath::split($path);
+        if (!$onRelation && \count($segments) < 2) {
+            throw new \LogicException(\sprintf(
+                'Traversal filter "%s" needs a dotted path "relationship.attribute", or a path that ends on a relationship; got "%s".',
+                $key,
+                $path,
+            ));
+        }
+
+        return $segments;
     }
 
     /**
@@ -277,10 +362,9 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
             $this->existsSubquery(
                 $query,
                 [$filter->relationship],
-                static function (QueryBuilder $sub, string $relatedAlias, string $leafField) use ($query, $criteria, $build, $value): void {
+                static function (QueryBuilder $sub, string $relatedAlias) use ($query, $criteria, $build, $value): void {
                     // The leaf segment IS the related root for a single hop, so
-                    // $leafField is empty and ignored: the author narrows the
-                    // related root directly.
+                    // the author narrows the related root directly.
                     if ($criteria !== null) {
                         $sub->addCriteria($criteria);
                     }
@@ -323,14 +407,18 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
      * inverse field, so the related root is the builder's first alias and
      * `addCriteria` / the traversal joins both target it.
      *
-     * `$applyLeaf` (null for pure existence) receives `(subquery, leafAlias, leafField)`
-     * to add the leaf predicate: `leafAlias` is the alias the final hop reached and
-     * `leafField` the leaf attribute name (empty for a length-1 path).
+     * `$applyLeaf` (null for pure existence) receives `(subquery, leafAlias, leafField,
+     * leafMetadata)` to add the leaf predicate: `leafAlias` is the alias the final hop
+     * reached, `leafField` the leaf attribute name (empty for a length-1 path or a
+     * relationship leaf) and `leafMetadata` the entity `leafAlias` names.
      *
-     * @param list<string>                                $segments  the dotted path's segments (≥ 1)
-     * @param \Closure(QueryBuilder, string, string): void|null $applyLeaf
+     * With `$leafIsRelation` every segment is a relationship, the last one included, so
+     * each is joined and `leafAlias` is the related entity whose id the leaf compares.
+     *
+     * @param list<string>                                                      $segments  the dotted path's segments (≥ 1)
+     * @param \Closure(QueryBuilder, string, string, ClassMetadata<object>): void|null $applyLeaf
      */
-    private function existsSubquery(QueryBuilder $query, array $segments, ?\Closure $applyLeaf, string $alias): QueryBuilder
+    private function existsSubquery(QueryBuilder $query, array $segments, ?\Closure $applyLeaf, string $alias, bool $leafIsRelation = false): QueryBuilder
     {
         $ownerMetadata = $this->metadataOfAlias($query, $alias)
             ?? throw new \LogicException(\sprintf('The QueryBuilder has no entity at alias "%s" to filter on.', $alias));
@@ -347,9 +435,10 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         $subQuery = $entityManager->createQueryBuilder();
 
         // A per-subquery alias stem so several relationship filters on one query keep
-        // distinct subquery scopes (\spl_object_id is unique for the lifetime of this
-        // builder, which lives only as long as this DQL string is built).
-        $stem = 'jsonapi_has_' . \spl_object_id($subQuery);
+        // distinct subquery scopes. A counter rather than the builder's object id: a
+        // group builds its children's subqueries one after another, and a freed
+        // builder's id is reused.
+        $stem = 'jsonapi_has_' . ++$this->subqueries;
         $relatedAlias = $stem . '_rel';
 
         $subQuery
@@ -380,7 +469,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         $currentMetadata = $entityManager->getClassMetadata($relatedClass);
         $leafField = '';
 
-        $intermediate = \array_slice($segments, 1, -1);
+        $intermediate = $leafIsRelation ? \array_slice($segments, 1) : \array_slice($segments, 1, -1);
         foreach ($intermediate as $segment) {
             $association = $this->assertAssociation($currentMetadata, $segment);
             $nextAlias = $currentAlias . '_' . $segment;
@@ -389,12 +478,12 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
             $currentAlias = $nextAlias;
         }
 
-        if (\count($segments) > 1) {
+        if (!$leafIsRelation && \count($segments) > 1) {
             $leafField = $this->assertField($currentMetadata, $segments[\count($segments) - 1]);
         }
 
         if ($applyLeaf !== null) {
-            $applyLeaf($subQuery, $currentAlias, $leafField);
+            $applyLeaf($subQuery, $currentAlias, $leafField, $currentMetadata);
         }
 
         return $subQuery;

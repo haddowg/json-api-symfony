@@ -14,6 +14,7 @@ use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Filter\WhereThrough;
+use haddowg\JsonApi\Resource\Filter\WhereThroughIn;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 
 #[AsJsonApiResource(entity: AssocRunEntity::class)]
@@ -51,6 +52,9 @@ final class AssocRunResource extends AbstractResource
         return [
             Where::make('name', 'name'),
             WhereThrough::make('configLabel', 'configs.label'),
+            WhereThroughIn::make('config', 'configs'),
+            WhereThroughIn::make('primaryIn', 'primary'),
+            WhereThrough::make('primaryIs', 'primary'),
         ];
     }
 }

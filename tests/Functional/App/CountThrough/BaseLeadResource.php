@@ -12,6 +12,7 @@ use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApi\Resource\Filter\WhereDoesntHave;
 use haddowg\JsonApi\Resource\Filter\WhereHas;
 use haddowg\JsonApi\Resource\Filter\WhereThrough;
+use haddowg\JsonApi\Resource\Filter\WhereThroughIn;
 use haddowg\JsonApiBundle\Tests\Functional\App\CountThrough\Doctrine\LeadEntity;
 
 /**
@@ -39,6 +40,8 @@ abstract class BaseLeadResource extends AbstractResource
             WhereThrough::make('templateName', 'templates.name'),
             WhereHas::make('branded', 'brand'),
             WhereDoesntHave::make('unbranded', 'brand'),
+            WhereThroughIn::make('brandIn', 'brand'),
+            WhereThrough::make('brandIs', 'brand'),
         ];
     }
 

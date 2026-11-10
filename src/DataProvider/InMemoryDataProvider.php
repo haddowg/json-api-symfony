@@ -370,6 +370,7 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
             // criteria must carry the same wantsCount the batcher resolved.
             wantsCount: $criteria->wantsCount,
             request: $criteria->request,
+            paths: $criteria->paths,
         );
     }
 
@@ -675,6 +676,7 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
             window: null,
             defaultSort: [],
             request: $criteria->request,
+            paths: $criteria->paths,
         );
 
         /** @var list<object> $applied */
