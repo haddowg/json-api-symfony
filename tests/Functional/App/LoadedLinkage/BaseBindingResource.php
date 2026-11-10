@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Functional\App\LoadedLinkage;
 
 use haddowg\JsonApi\Resource\AbstractResource;
+use haddowg\JsonApi\Resource\Field\BelongsTo;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApi\Resource\Filter\Where;
@@ -22,6 +23,7 @@ abstract class BaseBindingResource extends AbstractResource
         return [
             Id::make(),
             Str::make('name'),
+            BelongsTo::make('template', 'templates')->readOnly(),
         ];
     }
 

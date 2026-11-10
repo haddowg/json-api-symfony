@@ -1,0 +1,3 @@
+# A response loads the relations of the resources it renders
+
+The handler loads relations through the include batcher for whatever primary resources a returned `DataResponse` renders, read through core's `primaryResources()`, unless this operation already loaded them. A custom action or an after hook builds its own response, and before this only the read and write arms loaded relations, so an action's linkage, `included` and counts came off the model with no scope or filter default applied. Checking at the one place every response leaves the handler covers actions, hook replacements and the soft-delete response alike, where loading in each arm would miss the next path that builds a response.

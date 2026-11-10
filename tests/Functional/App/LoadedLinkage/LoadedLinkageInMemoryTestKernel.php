@@ -77,6 +77,10 @@ final class LoadedLinkageInMemoryTestKernel extends Kernel
 
         $services->set(InMemoryTemplateResource::class);
         $services->set(InMemoryBindingResource::class);
+        $services->set(ShowTemplate::class);
+        $services->set(ListTemplates::class);
+        $services->set(ShowBinding::class);
+        $services->set(AnswerWithTemplateSubscriber::class);
 
         foreach (['templates', 'bindings'] as $type) {
             $services->set('test.loaded_linkage_provider.' . $type, \haddowg\JsonApiBundle\DataProvider\DataProviderInterface::class)
