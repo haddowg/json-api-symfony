@@ -1068,6 +1068,36 @@ existing relationship is gated.
 a full set, never an incremental `POST`-add or `DELETE`-remove, so those two gates apply
 only at the `…/relationships/{rel}` endpoint.
 
+### Fixed membership
+
+A to-many declared with core's `cannotChangeMembership()` keeps the members it has. A
+replacement may restate them in any order, with repeats, but it must name exactly the
+current members, compared by `type` and `id`; a member sent with only a `lid` counts as
+new. Anything else is `403` `MEMBERSHIP_CHANGE_PROHIBITED` at
+`/data/relationships/{rel}`:
+
+```php
+HasMany::make('tracks', 'tracks')->cannotChangeMembership(),
+```
+
+The handler checks it on a `PATCH …/relationships/{rel}`, on the relation embedded in a
+whole-resource `PATCH` and on both inside Atomic Operations, where the pointer gains the
+operation's prefix. A create sets the members freely. The relation can't grow or shrink,
+so a `POST` or `DELETE` on its relationship endpoint is `ADDITION_PROHIBITED` or
+`REMOVAL_PROHIBITED`, and the OpenAPI document lists only `GET` and `PATCH` for it. A
+closure, `cannotChangeMembership(fn($model, $request) => …)`, fixes the members only for
+the requests it returns `true` for, and the document keeps every verb.
+
+The current members are read off the loaded parent the way the relationship linkage
+renders them, so the check works the same on every data layer: an identified
+`MorphToMany` reads its stored pairs, any other relation reads its value (a Doctrine
+collection, the far side of a pivot `belongsToMany` through its `extractUsing()`, or a
+`fillUsing()` relation's read side) with each member's id as its serializer writes it.
+The check runs on the linkage after the scope is applied, which keeps the members the
+scope hides, so a caller lists exactly the members it can see; naming one it can't see
+is the usual `404`. The bundle writes every association itself, so this is the only
+membership check a request goes through.
+
 ## Per-relation endpoint exposure
 
 A relation can suppress individual endpoints. The exposure flags themselves are
@@ -1084,6 +1114,7 @@ endpoint, so a rendered `self`/`related` link never points at a 404:
 | `cannotAdd()` | `POST …/relationships/{rel}` | `403` `ADDITION_PROHIBITED` |
 | `cannotReplace()` | `PATCH …/relationships/{rel}` | `403` `FULL_REPLACEMENT_PROHIBITED` |
 | `cannotRemove()` | `DELETE` / to-one clear | `403` `REMOVAL_PROHIBITED` |
+| `cannotChangeMembership()` | `PATCH` that changes the members; `POST`/`DELETE` | `403` `MEMBERSHIP_CHANGE_PROHIBITED`; `ADDITION_PROHIBITED`/`REMOVAL_PROHIBITED` |
 | `readOnly()` / `readOnlyOnUpdate()` | `PATCH`/`POST`/`DELETE …/relationships/{rel}` | `403`, the code for the verb |
 
 The enforcement is in

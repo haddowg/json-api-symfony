@@ -518,6 +518,7 @@ applies**, and the family is consistent across reading, writing and relationship
 | `writeOnly(fn)` | `fn($request)` | accepted on write, never rendered |
 | `readOnly(fn)` / `readOnlyOnCreate(fn)` / `readOnlyOnUpdate(fn)` | `fn($request)` | ignored on write (never hydrated, never validated) |
 | `cannotReplace(fn)` / `cannotAdd(fn)` / `cannotRemove(fn)` | `fn($model, $request)` | the relationship verb is `403` |
+| `cannotChangeMembership(fn)` | `fn($model, $request)` | a replacement must restate the current members, and add and remove are `403` |
 | `cannotBeIncluded(fn)` | `fn($model, $request)` | `?include` naming it is `400` |
 | `when(fn, …)` | `fn($value, $request)` | the wrapped validation rules apply (e.g. `required()` per caller) |
 

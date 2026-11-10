@@ -11,6 +11,7 @@ use haddowg\JsonApi\Collection\LinkRows\LinkRowQuery;
 use haddowg\JsonApi\Collection\LinkRows\LinkRowWritePlan;
 use haddowg\JsonApi\Exception\AdditionProhibited;
 use haddowg\JsonApi\Exception\FullReplacementProhibited;
+use haddowg\JsonApi\Exception\MembershipChangeProhibited;
 use haddowg\JsonApi\Exception\RelationshipNotExists;
 use haddowg\JsonApi\Exception\RelationshipTypeInappropriate;
 use haddowg\JsonApi\Exception\RemovalProhibited;
@@ -42,6 +43,7 @@ use haddowg\JsonApi\Resource\Field\AbstractFieldValue;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\Date;
 use haddowg\JsonApi\Resource\Field\DateTime;
+use haddowg\JsonApi\Resource\Field\GuardsMembershipInterface;
 use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\PivotRelationInterface;
@@ -84,6 +86,7 @@ use haddowg\JsonApiBundle\DataPersister\WritesLinkRowsInterface;
 use haddowg\JsonApiBundle\DataPersister\WritesPositionsInterface;
 use haddowg\JsonApiBundle\DataPersister\WriteTransactionContext;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
+use haddowg\JsonApiBundle\DataProvider\CurrentMembers;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
@@ -1611,6 +1614,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // Linkage naming a resource the related endpoint does not serve is rejected as
         // missing, and a replace keeps the members the scope hides.
         $scopedLinkage = $this->linkageGuard?->scope($server, $parent, $relation, $linkage, $mode, $request, atEndpoint: true) ?? $linkage;
+        $this->guardMembership($server, $relation, $scopedLinkage, $mode, $body, $parent);
 
         $persister = $this->persisters->forType($type);
         $this->guardMovedMembers($persister, $type, $request, $parent, $relation, $scopedLinkage, $mode);
@@ -1720,6 +1724,35 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         if ($mode === Mode::Remove && $relation->allowsRemoveFor($body, $parent) === false) {
             throw new RemovalProhibited($relationshipName);
         }
+    }
+
+    /**
+     * Refuses a to-many replace that changes the members of a relation declaring
+     * `cannotChangeMembership()`, against the members the store holds now. It runs on
+     * the scoped linkage, which keeps the members the scope hides, so a client listing
+     * exactly the members it can see leaves the set unchanged.
+     *
+     * The bundle writes every association itself, outside core's
+     * `AbstractResource::hydrateRelationship()`, so core's own check never runs for it.
+     *
+     * @throws MembershipChangeProhibited
+     */
+    private function guardMembership(
+        Server $server,
+        RelationInterface $relation,
+        ToOneRelationship|ToManyRelationship $linkage,
+        Mode $mode,
+        JsonApiRequestInterface $body,
+        object $parent,
+    ): void {
+        if ($mode !== Mode::Replace
+            || !$linkage instanceof ToManyRelationship
+            || !$relation instanceof GuardsMembershipInterface
+            || $relation->allowsMembershipChangeFor($body, $parent)) {
+            return;
+        }
+
+        $relation->assertMembershipUnchanged($body, $parent, CurrentMembers::of($server, $parent, $relation, $body), $linkage);
     }
 
     /**
@@ -2528,6 +2561,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
             $linkage = $this->linkageGuard?->scope($server, $entity, $relationship['relation'], $relationship['linkage'], Mode::Replace, $body, $creating)
                 ?? $relationship['linkage'];
+            if ($creating === false) {
+                $this->guardMembership($server, $relationship['relation'], $linkage, Mode::Replace, $body, $entity);
+            }
             $this->guardMovedMembers($persister, $type, $request, $entity, $relationship['relation'], $linkage, Mode::Replace);
 
             if ($this->fillsThroughHook($relationship['relation'])) {
