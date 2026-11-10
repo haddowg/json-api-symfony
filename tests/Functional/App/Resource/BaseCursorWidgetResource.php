@@ -13,6 +13,7 @@ use haddowg\JsonApi\Resource\Field\DateTime;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Integer;
 use haddowg\JsonApi\Resource\Field\Str;
+use haddowg\JsonApi\Resource\Filter\Where;
 
 /**
  * The shared `cursorWidgets` declaration both functional kernels serve for the
@@ -34,6 +35,12 @@ abstract class BaseCursorWidgetResource extends AbstractResource
 {
     public static string $type = 'cursorWidgets';
 
+    public function __construct()
+    {
+        // Client-countable, so `?withCount=_self_` counts a cursor-paged collection.
+        $this->countable();
+    }
+
     public function fields(): array
     {
         return [
@@ -45,6 +52,11 @@ abstract class BaseCursorWidgetResource extends AbstractResource
             Integer::make('priority')->nullable()->sortable(),
             DateTime::make('releasedAt')->nullable()->sortable(),
         ];
+    }
+
+    public function filters(): array
+    {
+        return [Where::make('category')];
     }
 
     public function pagination(?PaginatorInterface $serverDefault): ?PaginatorInterface

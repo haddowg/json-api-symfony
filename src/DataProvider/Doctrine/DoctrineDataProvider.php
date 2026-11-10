@@ -448,6 +448,9 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             $this->keysetResolver->assertFresh($boundary, $columns, $parameter);
         }
 
+        // `?withCount=_self_` counts the filtered collection, before the keyset bound.
+        $counter = $criteria->wantsCount ? clone $builder : null;
+
         $keyset = new DoctrineKeyset($metadata, self::ROOT_ALIAS, sorts: $this->sortHandler, ids: $this->ids);
         if ($boundary !== null) {
             $keyset->applyAfter($builder, $boundary, $orderColumns);
@@ -462,7 +465,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             probe: fn(CursorWindow $w): array => $this->items(
                 (clone $builder)->setMaxResults($w->limit + 1),
             ),
-            cursors: function (array $rows, bool $hasMore) use ($window, $columns, $backward, $metadata): CursorCollectionResult {
+            cursors: function (array $rows, bool $hasMore, ?int $total) use ($window, $columns, $backward, $metadata): CursorCollectionResult {
                 // Re-orient a backward page to natural forward order for rendering.
                 $page = $backward ? \array_reverse($rows) : $rows;
 
@@ -474,8 +477,10 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
                     fn(object $row, string $column): string|int|float|bool|null => CursorTokenMinter::coerce(
                         $this->ids->fieldValue($metadata, $row, $column),
                     ),
+                    $total,
                 );
             },
+            count: $counter === null ? null : fn(): int => $this->count($counter),
         );
     }
 
@@ -1880,6 +1885,9 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             $this->keysetResolver->assertFresh($boundary, $columns, $parameter);
         }
 
+        // `?withCount=_self_` counts the filtered pivot collection, before the keyset bound.
+        $total = $criteria->wantsCount ? $this->count($builder, distinct: true) : null;
+
         $keyset = new DoctrineKeyset($metadata, self::ROOT_ALIAS, $aliasOfColumn, ['pivot' => $pivotMetadata], $this->sortHandler, $this->ids);
         if ($boundary !== null) {
             $keyset->applyAfter($builder, $boundary, $orderColumns);
@@ -1942,6 +1950,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             $minted->cursorAfter,
             $minted->hasPrevious,
             $minted->hasMore,
+            $total,
         );
     }
 

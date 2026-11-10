@@ -154,9 +154,10 @@ final class WidgetResource extends AbstractResource
 }
 ```
 
-> The cursor strategy is **inherently count-free** — it never derives a total, so it
-> takes neither `withCount()` nor `?withCount=_self_` and emits no `meta.page.total`
-> or `last` link. The count-free default flip above leaves it unchanged.
+> The cursor strategy pages without a total, so it has no `withCount()` and never
+> emits `meta.page.total` or a `last` link. A client's `?withCount=_self_` on a
+> `countable()` collection still counts it: the total renders as the top-level
+> `meta.total` alone. The count-free default flip above leaves it unchanged.
 
 `CursorPaginator::make()` defaults to **15 per page**, capped at **100**. Tune both
 with the withers:
@@ -305,8 +306,7 @@ stale `400` (below).
 
 ### What a cursor page renders
 
-A cursor page is **count-free by design**, which shapes both its links and its
-meta:
+A cursor page needs no total to page, which shapes both its links and its meta:
 
 - **Links:** `first`, `prev`, `next` — and **no `last`**. Computing the last page
   would require a total count, which defeats the purpose of cursors. `next` is
@@ -318,10 +318,15 @@ meta:
   boolean — whether a further forward page exists, the same signal as the presence
   of `next`).
 
-**Totals are off by default** and there is no opt-in for a cursor collection — a
-cursor strategy never derives a total, so it emits no `meta.page.total` and no
-`last` link. (A related to-many's count is a separate, relationship-level concern,
-governed by `countable()`; see
+**Totals are off by default**, and a cursor paginator has no `withCount()` to turn
+them on for every request. A client that wants the size of a `countable()`
+collection asks with `?withCount=_self_` under the Countable profile. The server then
+runs one `COUNT` over the filtered collection, with its scopes and without the cursor
+bounds or the page size, and renders it as the top-level `meta.total` on every page,
+the related and relationship endpoints included. A cursor page never carries
+`meta.page.total` or a `last` link, counted or not. (A related to-many's count in a
+relationship object is a separate, relationship-level concern, governed by
+`countable()`; see
 [relationships](relationships.md#counting-relations-countable-and-withcount).)
 
 ### Worked example

@@ -610,6 +610,8 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
         // never applied (a sort-stripped criteria leaves the filter application
         // untouched and adds no ordering).
         $items = $this->applyFiltersOnly($criteria, $items);
+        // `?withCount=_self_` counts the filtered collection, before the keyset bound.
+        $total = $criteria->wantsCount ? \count($items) : null;
 
         // page[before] wins over page[after]: a backward page flips the column
         // directions (which, under NULL=largest, flips the null bucket too) and
@@ -644,6 +646,7 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
             \array_values($page),
             $hasSurplus,
             static fn(object $row, string $column): string|int|float|bool|null => CursorTokenMinter::coerce(Accessor::get($row, $column)),
+            $total,
         );
     }
 
