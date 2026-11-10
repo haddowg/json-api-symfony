@@ -64,6 +64,11 @@ abstract class IdentifiedMorphToManyConformanceTestCase extends JsonApiFunctiona
      */
     abstract protected function storeCompany(int $user, string $type, int $id): void;
 
+    /**
+     * @return array<string, int|null> each of the user's stored companies as `type:id` to its position, in position order
+     */
+    abstract protected function storedPositions(int $user): array;
+
     #[Test]
     public function everyResponseIsItsSharedDocument(): void
     {
@@ -259,6 +264,22 @@ abstract class IdentifiedMorphToManyConformanceTestCase extends JsonApiFunctiona
         ]]);
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
         self::assertSame(['publishers:1', 'advertisers:1'], $this->storedCompanies(3));
+    }
+
+    #[Test]
+    public function aPositionedReplaceWritesIndexesAndKeepsAHiddenMemberAfterThem(): void
+    {
+        $response = $this->handle('/accounts/1/relationships/rankedCompanies', 'PATCH', ['data' => [
+            ['type' => 'agencies', 'id' => '3'],
+            ['type' => 'publishers', 'id' => '1'],
+        ]]);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        $stored = $this->hides()
+            ? ['agencies:3' => 0, 'publishers:1' => 1, 'agencies:2' => 2]
+            : ['agencies:3' => 0, 'publishers:1' => 1];
+        self::assertSame($stored, $this->storedPositions(1));
+        self::assertSame(['agencies:3', 'publishers:1'], $this->keys($this->at($this->get('/accounts/1/relationships/rankedCompanies'), 'data')));
     }
 
     /**

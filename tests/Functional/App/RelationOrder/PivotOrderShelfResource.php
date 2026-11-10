@@ -21,7 +21,8 @@ final class PivotOrderShelfResource extends OrderShelfResource
             ...parent::fields(),
             BelongsToMany::make('picks', 'books')
                 ->through(OrderPick::class)
-                ->fields(Integer::make('rank'))
+                ->fields(Integer::make('rank'), Integer::make('position'))
+                ->positionedBy('position')
                 ->extractUsing(static fn(mixed $shelf): array => $shelf instanceof OrderShelf
                     ? \array_values(\array_map(static fn(OrderPick $pick): ?OrderBook => $pick->book, $shelf->picks->toArray()))
                     : [])

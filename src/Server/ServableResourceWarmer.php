@@ -14,6 +14,7 @@ use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
+use haddowg\JsonApi\Resource\Sort\RelationSorts;
 use haddowg\JsonApi\Resource\Sort\SortMatcher;
 use haddowg\JsonApi\Serializer\RelationOrderValidator;
 use haddowg\JsonApiBundle\Action\ActionDescriptor;
@@ -243,7 +244,8 @@ final class ServableResourceWarmer implements CacheWarmerInterface
         }
 
         foreach ($serializer->allFields() as $relation) {
-            if (!$relation instanceof BelongsToMany || $relation->defaultSort() === [] || PivotFields::sortsFor($relation) === []) {
+            $order = $relation instanceof BelongsToMany ? RelationSorts::ownDefault($relation) : [];
+            if ($order === [] || PivotFields::sortsFor($relation) === []) {
                 continue;
             }
 
@@ -258,10 +260,10 @@ final class ServableResourceWarmer implements CacheWarmerInterface
             }
 
             $vocabulary = SortMatcher::merge($this->typeMetadata->resourceFor($server, $relatedType)?->allSorts() ?? [], $relation->sorts());
-            foreach ($relation->defaultSort() as $directive) {
+            foreach ($order as $directive) {
                 if (!SortMatcher::recognises($vocabulary, $directive->sort->key())) {
                     throw new \LogicException(\sprintf(
-                        'Relation "%s" on resource type "%s" declares a defaultSort() on the pivot field "%s", but the data provider of "%s" does not read the relation through a pivot query, so it cannot order by a pivot field. Order it by a field of "%s", or serve "%s" from a provider that reads pivot rows.',
+                        'Relation "%s" on resource type "%s" is ordered by the pivot field "%s", but the data provider of "%s" does not read the relation through a pivot query, so it cannot order by a pivot field. Order it by a field of "%s", or serve "%s" from a provider that reads pivot rows.',
                         $relation->name(),
                         $type,
                         $directive->sort->key(),

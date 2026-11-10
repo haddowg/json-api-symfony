@@ -263,6 +263,121 @@ abstract class RelationOrderConformanceTestCase extends JsonApiFunctionalTestCas
     }
 
     #[Test]
+    #[Group('spec:fetching-relationships')]
+    public function aPositionedRelationReadsInPositionOrder(): void
+    {
+        self::assertSame(['1', '3', '2', '4'], $this->linkage($this->document('/shelves/1')['data'] ?? null, 'shelvedBooks'));
+        self::assertSame(['1', '3', '2', '4'], $this->ids('/shelves/1/shelvedBooks'));
+        self::assertSame(['1', '3', '2', '4'], $this->ids('/shelves/1/relationships/shelvedBooks'));
+        self::assertSame(['4', '2', '3', '1'], $this->ids('/shelves/1/shelvedBooks?sort=-position'));
+    }
+
+    #[Test]
+    #[Group('spec:crud-updating-relationships')]
+    public function aReplaceWritesEachMembersLinkageIndex(): void
+    {
+        $this->replace('shelvedBooks', [['books', '4'], ['books', '1'], ['books', '3'], ['books', '2']]);
+
+        self::assertSame(['4', '1', '3', '2'], $this->ids('/shelves/1/shelvedBooks'));
+        self::assertSame(['4' => 0, '1' => 1, '3' => 2, '2' => 3], $this->bookPositions(1));
+    }
+
+    #[Test]
+    #[Group('spec:crud-updating-relationships')]
+    public function anAddAppendsAfterTheHighestPosition(): void
+    {
+        $response = $this->handle(self::BASE_URI . '/shelves/1/relationships/shelvedBooks', 'POST', ['data' => [
+            ['type' => 'books', 'id' => '6'],
+            ['type' => 'books', 'id' => '5'],
+            ['type' => 'books', 'id' => '1'],
+        ]]);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        self::assertSame(['1' => 0, '3' => 1, '2' => 2, '4' => 3, '6' => 4, '5' => 5], $this->bookPositions(1));
+    }
+
+    #[Test]
+    #[Group('spec:crud-updating-relationships')]
+    public function aRemoveLeavesGaps(): void
+    {
+        $response = $this->handle(self::BASE_URI . '/shelves/1/relationships/shelvedBooks', 'DELETE', ['data' => [['type' => 'books', 'id' => '3']]]);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        self::assertSame(['1' => 0, '2' => 2, '4' => 3], $this->bookPositions(1));
+    }
+
+    #[Test]
+    #[Group('spec:crud-updating')]
+    public function aWholeResourceWriteWritesItsLinkagesPositions(): void
+    {
+        $response = $this->handle(self::BASE_URI . '/shelves/1', 'PATCH', ['data' => [
+            'type' => 'shelves',
+            'id' => '1',
+            'relationships' => ['shelvedBooks' => ['data' => [['type' => 'books', 'id' => '2'], ['type' => 'books', 'id' => '1']]]],
+        ]]);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        self::assertSame(['2' => 0, '1' => 1], $this->bookPositions(1));
+    }
+
+    #[Test]
+    #[Group('spec:crud-updating-relationships')]
+    public function anIdentifiedRelationWritesItsLinkRowsPositions(): void
+    {
+        $this->replace('items', [['magazines', '2', 5], ['books', '1', 6], ['books', '3', 7]]);
+        self::assertSame(['magazines:2', 'books:1', 'books:3'], $this->members('/shelves/1/relationships/items?sort=position'));
+
+        $this->replace('items', [['books', '3', 7], ['magazines', '2', 5], ['books', '1', 6]]);
+        self::assertSame(['books:3', 'magazines:2', 'books:1'], $this->members('/shelves/1/relationships/items?sort=position'));
+
+        $response = $this->handle(self::BASE_URI . '/shelves/1/relationships/items', 'POST', ['data' => [
+            ['type' => 'magazines', 'id' => '1', 'meta' => ['pivot' => ['rank' => 1]]],
+        ]]);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['books:3', 'magazines:2', 'books:1', 'magazines:1'], $this->members('/shelves/1/relationships/items?sort=position'));
+    }
+
+    /**
+     * Replaces a shelf's relationship with the members given as type, id and, for
+     * `items`, a rank.
+     *
+     * @param list<array{0: string, 1: string, 2?: int}> $members
+     */
+    protected function replace(string $relationship, array $members): void
+    {
+        $data = \array_map(
+            static fn(array $member): array => isset($member[2])
+                ? ['type' => $member[0], 'id' => $member[1], 'meta' => ['pivot' => ['rank' => $member[2]]]]
+                : ['type' => $member[0], 'id' => $member[1]],
+            $members,
+        );
+        $response = $this->handle(self::BASE_URI . '/shelves/1/relationships/' . $relationship, 'PATCH', ['data' => $data]);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+    }
+
+    /**
+     * The position each book on the shelf holds, keyed by book id, in position order.
+     *
+     * @return array<string, mixed>
+     */
+    private function bookPositions(int $shelf): array
+    {
+        $data = $this->document('/shelves/' . $shelf . '/shelvedBooks')['data'] ?? null;
+        self::assertIsArray($data);
+
+        $positions = [];
+        foreach ($data as $book) {
+            self::assertIsArray($book);
+            $attributes = $book['attributes'] ?? null;
+            self::assertIsArray($attributes);
+            self::assertIsString($book['id'] ?? null);
+            $positions[$book['id']] = $attributes['position'] ?? null;
+        }
+
+        return $positions;
+    }
+
+    #[Test]
     #[Group('openapi')]
     public function theDocumentStatesOnlyTheRelationsOwnOrder(): void
     {

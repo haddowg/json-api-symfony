@@ -13,6 +13,7 @@ use haddowg\JsonApi\Hydrator\Relationship\ToOneRelationship;
 use haddowg\JsonApi\Resource\Field\Accessor;
 use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
+use haddowg\JsonApi\Resource\Field\PivotRelationInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Schema\ResourceIdentifier;
 use haddowg\JsonApiBundle\DataProvider\InMemoryStore;
@@ -36,7 +37,7 @@ use haddowg\JsonApiBundle\Validation\RelationshipTypeUnacceptable;
  * association property to that object (or list of objects). A persister with no
  * resolver supports only whole-resource writes.
  */
-final class InMemoryDataPersister implements DataPersisterInterface, TransactionalDataPersisterInterface, WritesLinkRowsInterface
+final class InMemoryDataPersister implements DataPersisterInterface, TransactionalDataPersisterInterface, WritesLinkRowsInterface, WritesPositionsInterface
 {
     /**
      * @param InMemoryStore                          $store           the store shared with the read provider
@@ -126,7 +127,17 @@ final class InMemoryDataPersister implements DataPersisterInterface, Transaction
                 ? $this->resolveRelated($this->relatedTypeOf($relation, $identifier), $identifier->id)
                 : null;
         } else {
-            $entity->{$property} = $this->applyToMany($entity, $property, $relation, $linkage, $mode);
+            $members = $this->applyToMany($entity, $property, $relation, $linkage, $mode);
+            $held = $entity->{$property} ?? null;
+            if ($held instanceof Collection) {
+                // Refill the collection the model holds, so a typed property keeps its type.
+                $held->clear();
+                foreach ($members as $member) {
+                    $held->add($member);
+                }
+            } else {
+                $entity->{$property} = $members;
+            }
         }
 
         if ($flush) {
@@ -134,6 +145,67 @@ final class InMemoryDataPersister implements DataPersisterInterface, Transaction
         }
 
         return $entity;
+    }
+
+    /**
+     * Mutates a positioned to-many and writes each member's position onto it. A pivot
+     * relation's positions live on pivot rows, which the in-memory store doesn't hold, so
+     * only its members change.
+     */
+    public function mutatePositioned(
+        string $type,
+        object $entity,
+        RelationInterface $relation,
+        ToManyRelationship $linkage,
+        Mode $mode,
+        string $column,
+        bool $flush = true,
+    ): object {
+        if ($relation instanceof PivotRelationInterface) {
+            return $this->mutateRelationship($type, $entity, $relation, $linkage, $mode, $flush);
+        }
+
+        $property = $relation->column() ?? $relation->name();
+        $current = PositionTargets::current($this->keyed($this->currentList($entity, $property)), $column);
+        $this->mutateRelationship($type, $entity, $relation, $linkage, $mode, false);
+
+        $incoming = [];
+        foreach ($linkage->resourceIdentifiers as $identifier) {
+            if ($identifier->id !== null) {
+                $incoming[] = $identifier->id;
+            }
+        }
+
+        $this->writePositions($entity, $current, PositionTargets::for($mode, $current, $incoming), $this->keyed($this->currentList($entity, $property)), $column, $flush);
+
+        return $entity;
+    }
+
+    /**
+     * The store holds no unique position key, so the final positions are written at once.
+     */
+    public function writePositions(object $parent, array $current, array $target, array $rows, string $column, bool $flush = true): void
+    {
+        PositionTargets::writeFinal($target, $rows, $column);
+
+        if ($flush) {
+            $this->store->save($parent);
+        }
+    }
+
+    /**
+     * @param list<object> $members
+     *
+     * @return array<string, object>
+     */
+    private function keyed(array $members): array
+    {
+        $keyed = [];
+        foreach ($members as $member) {
+            $keyed[$this->idOf($member)] = $member;
+        }
+
+        return $keyed;
     }
 
     /**

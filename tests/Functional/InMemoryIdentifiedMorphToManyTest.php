@@ -30,6 +30,17 @@ class InMemoryIdentifiedMorphToManyTest extends IdentifiedMorphToManyConformance
         $this->user($user)?->addCompany($type, $id);
     }
 
+    protected function storedPositions(int $user): array
+    {
+        $positions = [];
+        foreach ($this->user($user)?->userCompanies->toArray() ?? [] as $row) {
+            $positions[$row->key()] = $row->position;
+        }
+        \asort($positions);
+
+        return $positions;
+    }
+
     private function user(int $id): ?MtmUser
     {
         $fixtures = static::getContainer()->get(MtmFixtures::class);

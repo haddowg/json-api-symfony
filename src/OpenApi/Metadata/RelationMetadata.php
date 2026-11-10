@@ -15,6 +15,7 @@ use haddowg\JsonApi\OpenApi\Metadata\DeclaresRelationUriFieldName;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresWriteOnlyRelation;
 use haddowg\JsonApi\OpenApi\Metadata\RelationMetadataInterface;
 use haddowg\JsonApi\OpenApi\Schema;
+use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Deprecatable;
 use haddowg\JsonApi\Resource\Field\AbstractRelationValue;
 use haddowg\JsonApi\Resource\Field\DefaultSortedRelationInterface;
@@ -24,6 +25,7 @@ use haddowg\JsonApi\Resource\Sort\SortMatcher;
 use haddowg\JsonApiBundle\DataProvider\PivotFields;
 use haddowg\JsonApiBundle\DataProvider\Polymorphism;
 use haddowg\JsonApiBundle\DataProvider\RelatedReadRouter;
+use haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory;
 
 /**
  * Adapts a core {@see RelationInterface} (a resource's relation field, or a
@@ -42,6 +44,7 @@ final readonly class RelationMetadata implements RelationMetadataInterface, Decl
     /**
      * @param list<string> $relatedIncludablePaths the related type's includable paths (resolved by the source)
      * @param bool         $ownerServesEndpoints   false when the owning type is related-only, so neither endpoint exists
+     * @param ?AbstractResource $relatedResource    a monomorphic to-many's related resource, where a positioned relation's field lives
      */
     public function __construct(
         private RelationInterface $relation,
@@ -49,6 +52,7 @@ final readonly class RelationMetadata implements RelationMetadataInterface, Decl
         private array $relatedIncludablePaths,
         private bool $alwaysCounts = false,
         private bool $ownerServesEndpoints = true,
+        private ?AbstractResource $relatedResource = null,
     ) {}
 
     public function name(): string
@@ -178,7 +182,7 @@ final readonly class RelationMetadata implements RelationMetadataInterface, Decl
         // OpenAPI `sort` enum advertises them too — mirroring how the pivot FILTERS,
         // being author-declared in filters(), are already advertised. Empty for a
         // non-pivot relation (docs/openapi.md).
-        return SortMatcher::merge($this->relation->sorts(), PivotFields::sortsFor($this->relation));
+        return SortMatcher::merge(RelationCriteriaFactory::relationSorts($this->relation, $this->relatedResource), PivotFields::sortsFor($this->relation));
     }
 
     /**

@@ -11,6 +11,7 @@ use Doctrine\ORM\Mapping as ORM;
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'ro_pick')]
+#[ORM\UniqueConstraint(columns: ['shelf_id', 'position'])]
 class OrderPick
 {
     public function __construct(
@@ -24,5 +25,7 @@ class OrderPick
         public ?OrderBook $book = null,
         #[ORM\Column]
         public int $rank = 0,
+        #[ORM\Column(nullable: true)]
+        public ?int $position = null,
     ) {}
 }
