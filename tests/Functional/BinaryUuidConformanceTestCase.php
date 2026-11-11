@@ -175,6 +175,15 @@ abstract class BinaryUuidConformanceTestCase extends JsonApiFunctionalTestCase
     }
 
     #[Test]
+    public function withCountCountsTheToOneRelatedResource(): void
+    {
+        $shelf = $this->dataOf($this->get('/books/' . $this->ids['beta'] . '/shelf?withCount=books', self::COUNTS_ACCEPT));
+
+        self::assertSame($this->ids['fiction'], $shelf['id'] ?? null);
+        self::assertSame(2, $this->relationshipMeta($shelf, 'books')['total'] ?? null);
+    }
+
+    #[Test]
     public function relatedQueryWindowsEachParent(): void
     {
         $rows = $this->rows($this->decode($this->get('/shelves?sort=name&include=books&relatedQuery[books][sort]=-title', self::QUERIES_ACCEPT)));
