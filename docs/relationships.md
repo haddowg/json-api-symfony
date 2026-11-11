@@ -250,7 +250,8 @@ Counting is exposed two ways, both on the `total` meta key:
 
 **`?withCount` counts the relation's filtered set.** The count reflects the SAME
 filters the related-collection endpoint applies: a relation's own
-`filters()`, the related resource's filter **defaults**, and any
+`filters()`, the related resource's filter **defaults** (less any the relation
+[drops](#dropping-the-related-types-filter-defaults)), and any
 `relatedQuery[<rel>][filter]` the request carries through the Relationship Queries
 profile. So `?withCount=tracks` of a relation whose related resource defaults
 `explicit=false` reports the default-scoped total, and
@@ -315,6 +316,47 @@ A relation-scoped filter/sort operates on the **related entity** (the common cas
 and works out of the box. A filter/sort that reads a **pivot/join-table column** is
 handled separately — see [Pivot (`belongsToMany`) data](#pivot-belongstomany-data)
 below.
+
+### Dropping the related type's filter defaults
+
+A filter default on the related type narrows every read of a to-many to that type,
+not only `/{relatedType}`. When a relation should list every member, drop the default
+on the relation with core's `withoutFilterDefaults()`. Name keys to drop only those
+defaults, or pass none to drop every default the related type declares:
+
+```php
+// TrackResource declares Where::make('explicit')->asBoolean()->default(false)
+HasMany::make('tracklist', 'tracks')
+    ->storedAs('tracks')
+    ->withoutFilterDefaults('explicit'),
+```
+
+The relation then reads its members without that default on all of these: its
+linkage, `?include` and its batching, `?withCount`, the related and relationship
+endpoints, and a Relationship Queries `relatedQuery` window. The filter itself stays.
+`GET /albums/1/tracklist?filter[explicit]=false` still narrows the members, and
+`relatedQuery[tracklist][filter][explicit]=…` works too. `/tracks` keeps its default.
+A default the relation declares on its own `withFilters()` filter still applies.
+
+Each named key must be a filter of the related type that declares a default. The
+bundle checks this at `cache:warmup`, beside the relation's default read order, so a
+typo fails `cache:clear` rather than the first request. A polymorphic `MorphToMany`
+has no shared filter vocabulary in the bundle, so no related-type default applies to
+it in the first place; the warm-up check still accepts a key defaulted on any one of
+its related types.
+
+Once a relation drops every default it would have applied, and it is unordered and
+its related type unscoped, its linkage reads straight off the model again instead of
+through the related type's provider.
+
+The music-catalog example's album declares `tracklist` this way, beside the default
+`tracks`:
+
+```
+GET /albums/1/tracks     → tracks 1, 3 (track 2 is explicit, filtered out)
+GET /albums/1/tracklist  → tracks 1, 2, 3
+GET /albums/1/tracklist?filter[explicit]=false → tracks 1, 3
+```
 
 ### A relation's default read order
 
@@ -1336,7 +1378,8 @@ to-one related and relationship endpoints. A Doctrine query extension or a provi
 that hides rows hides them from all of these, on every server. So does a filter
 default of the related type or of the relation: an included or always-emitted to-many
 lists only the members the related endpoint serves with no `filter` sent, which is the
-set `?withCount` counts.
+set `?withCount` counts. A default the relation drops with `withoutFilterDefaults()`
+narrows none of them.
 
 The members are loaded before the document renders. A lazy to-many into a scoped or
 default-filtered type, or one with a default read order, that wasn't loaded then

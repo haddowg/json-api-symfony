@@ -17,6 +17,7 @@ use haddowg\JsonApi\Resource\Filter\FilterFamilyInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\FilterMatcher;
 use haddowg\JsonApi\Resource\Filter\HasDefaultValue;
+use haddowg\JsonApi\Resource\Filter\RelationFilters;
 use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Filter\WhereIn;
 use haddowg\JsonApi\Resource\Filter\WhereNotIn;
@@ -158,7 +159,7 @@ final class RelationCriteriaFactory
         $relationFilters = $includePivotFields
             ? $this->withPivotCasts($relation)
             : $this->withoutPivotFilters($relation->allFilters());
-        $filters = $this->mergeFilters($relatedResource?->allFilters() ?? [], $relationFilters);
+        $filters = $this->mergeFilters($this->relatedFilters($relatedResource, $relation), $relationFilters);
 
         return new CollectionCriteria(
             $queryParameters,
@@ -507,7 +508,18 @@ final class RelationCriteriaFactory
      */
     private function linkageFilters(?AbstractResource $relatedResource, RelationInterface $relation): array
     {
-        return $this->mergeFilters($relatedResource?->allFilters() ?? [], $this->withoutPivotFilters($relation->allFilters()));
+        return $this->mergeFilters($this->relatedFilters($relatedResource, $relation), $this->withoutPivotFilters($relation->allFilters()));
+    }
+
+    /**
+     * The related type's filters as the relation applies them, without each default
+     * the relation drops through `withoutFilterDefaults()`.
+     *
+     * @return list<FilterInterface>
+     */
+    private function relatedFilters(?AbstractResource $relatedResource, RelationInterface $relation): array
+    {
+        return RelationFilters::relatedFilters($relation, $relatedResource?->allFilters() ?? []);
     }
 
     /**

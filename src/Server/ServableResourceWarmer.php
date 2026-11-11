@@ -17,6 +17,7 @@ use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\ThroughPathResolver;
 use haddowg\JsonApi\Resource\Sort\RelationSorts;
 use haddowg\JsonApi\Resource\Sort\SortMatcher;
+use haddowg\JsonApi\Serializer\RelationFilterDefaultsValidator;
 use haddowg\JsonApi\Serializer\RelationOrderValidator;
 use haddowg\JsonApiBundle\Action\ActionDescriptor;
 use haddowg\JsonApiBundle\Action\ActionRegistry;
@@ -137,6 +138,7 @@ final class ServableResourceWarmer implements CacheWarmerInterface
      *                         server does not register
      * @throws UnenforceableSecurityException when a relation declares a security expression the app cannot evaluate
      * @throws \LogicException                 when a to-many's default read order names a sort it does not accept
+     * @throws \LogicException                 when a relation drops the default of a filter its related type doesn't default, or can't drop
      */
     public function warmUp(string $cacheDir, ?string $buildDir = null): array
     {
@@ -238,6 +240,7 @@ final class ServableResourceWarmer implements CacheWarmerInterface
 
         $serializer = $server->serializerFor($type);
         (new RelationOrderValidator($server))->validate($type, $serializer);
+        (new RelationFilterDefaultsValidator($server))->validate($type, $serializer);
         if (!$serializer instanceof AbstractResource) {
             return;
         }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Tests;
 
+use haddowg\JsonApi\Schema\Profile\CountableProfile;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\DataFixtures\SeedManifest;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
@@ -104,6 +105,42 @@ final class RelatedCollectionTest extends MusicCatalogKernelTestCase
         $document = $this->fetch('/albums/1/tracks?filter[title]=air');
 
         self::assertSame(['1'], $this->ids($document));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    public function aRelationThatDropsTheExplicitDefaultListsEveryTrack(): void
+    {
+        // `tracklist` reads the same tracks as `tracks` but drops the tracks type's
+        // explicit=false default, so the explicit track 2 is a member everywhere.
+        $ids = $this->ids($this->fetch('/albums/1/tracklist'));
+        \sort($ids);
+        self::assertSame(['1', '2', '3'], $ids);
+
+        $ids = $this->ids($this->fetch('/albums/1/relationships/tracklist'));
+        \sort($ids);
+        self::assertSame(['1', '2', '3'], $ids);
+
+        $response = $this->handle('/albums/1?include=tracklist&withCount=tracks,tracklist', extraServer: [
+            'HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . CountableProfile::URI . '"',
+        ]);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $album = $this->decode($response)['data'] ?? null;
+        self::assertIsArray($album);
+        $relationships = $album['relationships'] ?? null;
+        self::assertIsArray($relationships);
+        $tracks = $relationships['tracks'] ?? null;
+        $tracklist = $relationships['tracklist'] ?? null;
+        self::assertIsArray($tracks);
+        self::assertIsArray($tracklist);
+        self::assertSame(['total' => 2], $tracks['meta'] ?? null);
+        self::assertSame(['total' => 3], $tracklist['meta'] ?? null);
+        self::assertSame(['1', '2', '3'], $this->ids(['data' => $tracklist['data'] ?? null]));
+
+        // The filter itself stays, so a client can still ask for the clean tracks.
+        $ids = $this->ids($this->fetch('/albums/1/tracklist?filter[explicit]=false'));
+        \sort($ids);
+        self::assertSame(['1', '3'], $ids);
     }
 
     // --- IN-subquery (playlists.tracks, many-to-many) ------------------------

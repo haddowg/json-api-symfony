@@ -165,6 +165,17 @@ final class AlbumResource extends AbstractResource
                 // relationship-object meta.total on an album.
                 // (A to-many is lazy by default — links-only until loaded/included.)
                 ->countable(),
+            // The same tracks as the full tracklist. `tracks` keeps the `tracks` type's
+            // `explicit=false` default, so it hides an explicit track; `tracklist` drops
+            // that default with withoutFilterDefaults('explicit'), so its linkage,
+            // includes, counts and both endpoints list every track. The filter stays, so
+            // `GET /albums/1/tracklist?filter[explicit]=false` still narrows it, and
+            // `/tracks` keeps its default. It is read-only; `tracks` takes the writes.
+            HasMany::make('tracklist', 'tracks')
+                ->storedAs('tracks')
+                ->readOnly()
+                ->withoutFilterDefaults('explicit')
+                ->countable(),
         ];
     }
 
