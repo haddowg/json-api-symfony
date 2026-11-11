@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.8.0](https://github.com/haddowg/json-api-symfony/compare/v2.7.2...v2.8.0) (2026-11-11)
+
+
+### Features
+
+* batch reads through a related type's own provider ([#356](https://github.com/haddowg/json-api-symfony/issues/356)) ([e870371](https://github.com/haddowg/json-api-symfony/commit/e87037124f5b82b255b78e6288f85eb7c9c1ec9e))
+
 ## [2.7.2](https://github.com/haddowg/json-api-symfony/compare/v2.7.1...v2.7.2) (2026-11-10)
 
 
