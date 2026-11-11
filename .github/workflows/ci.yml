@@ -37,10 +37,10 @@ jobs:
           coverage: none
           tools: composer:v2
 
-      # Packagist's US storage served metadata from before core 2.11.0 for hours after
-      # it was published, so CI reads haddowg/json-api from its GitHub repository.
-      - name: Resolve haddowg/json-api from GitHub
-        run: composer config --global repositories.haddowg-json-api '{"type":"vcs","url":"https://github.com/haddowg/json-api","no-api":true}'
+      - name: Show which Packagist storage serves haddowg/json-api
+        run: |
+          curl -sI https://repo.packagist.org/p2/haddowg/json-api.json | grep -iE '^(cdn-storageserver|last-modified|server):'
+          curl -s https://repo.packagist.org/p2/haddowg/json-api.json | jq -r '.packages["haddowg/json-api"][0].version'
 
       - name: Install dependencies
         uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
@@ -74,10 +74,10 @@ jobs:
           coverage: none
           tools: composer:v2
 
-      # Packagist's US storage served metadata from before core 2.11.0 for hours after
-      # it was published, so CI reads haddowg/json-api from its GitHub repository.
-      - name: Resolve haddowg/json-api from GitHub
-        run: composer config --global repositories.haddowg-json-api '{"type":"vcs","url":"https://github.com/haddowg/json-api","no-api":true}'
+      - name: Show which Packagist storage serves haddowg/json-api
+        run: |
+          curl -sI https://repo.packagist.org/p2/haddowg/json-api.json | grep -iE '^(cdn-storageserver|last-modified|server):'
+          curl -s https://repo.packagist.org/p2/haddowg/json-api.json | jq -r '.packages["haddowg/json-api"][0].version'
 
       # doctrine/persistence 2.x only pairs with symfony/doctrine-bridge 6.4, so the
       # whole Symfony tree is pinned to 6.4 alongside ORM 2.20 / DBAL 3.
@@ -114,10 +114,10 @@ jobs:
           coverage: none
           tools: composer:v2
 
-      # Packagist's US storage served metadata from before core 2.11.0 for hours after
-      # it was published, so CI reads haddowg/json-api from its GitHub repository.
-      - name: Resolve haddowg/json-api from GitHub
-        run: composer config --global repositories.haddowg-json-api '{"type":"vcs","url":"https://github.com/haddowg/json-api","no-api":true}'
+      - name: Show which Packagist storage serves haddowg/json-api
+        run: |
+          curl -sI https://repo.packagist.org/p2/haddowg/json-api.json | grep -iE '^(cdn-storageserver|last-modified|server):'
+          curl -s https://repo.packagist.org/p2/haddowg/json-api.json | jq -r '.packages["haddowg/json-api"][0].version'
 
 
       - name: Install dependencies
@@ -145,10 +145,10 @@ jobs:
           coverage: none
           tools: composer:v2
 
-      # Packagist's US storage served metadata from before core 2.11.0 for hours after
-      # it was published, so CI reads haddowg/json-api from its GitHub repository.
-      - name: Resolve haddowg/json-api from GitHub
-        run: composer config --global repositories.haddowg-json-api '{"type":"vcs","url":"https://github.com/haddowg/json-api","no-api":true}'
+      - name: Show which Packagist storage serves haddowg/json-api
+        run: |
+          curl -sI https://repo.packagist.org/p2/haddowg/json-api.json | grep -iE '^(cdn-storageserver|last-modified|server):'
+          curl -s https://repo.packagist.org/p2/haddowg/json-api.json | jq -r '.packages["haddowg/json-api"][0].version'
 
       - name: Install dependencies
         uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
