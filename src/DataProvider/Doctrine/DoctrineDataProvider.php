@@ -16,6 +16,7 @@ use haddowg\JsonApi\Collection\LinkRows\LinkRowKeysInterface;
 use haddowg\JsonApi\Collection\LinkRows\LinkRowQuery;
 use haddowg\JsonApi\Collection\LinkRows\LinkRowQueryInterface;
 use haddowg\JsonApi\Collection\WindowExecutor;
+use haddowg\JsonApi\Exception\SortParamUnrecognized;
 use haddowg\JsonApi\Operation\QueryParameters;
 use haddowg\JsonApi\Pagination\CursorCodec;
 use haddowg\JsonApi\Pagination\CursorWindow;
@@ -28,6 +29,7 @@ use haddowg\JsonApi\Resource\Filter\FilterDefaults;
 use haddowg\JsonApi\Resource\Filter\WhereDoesntHave;
 use haddowg\JsonApi\Resource\Filter\WhereHas;
 use haddowg\JsonApi\Resource\Sort\SortByField;
+use haddowg\JsonApi\Resource\Sort\SortMatcher;
 use haddowg\JsonApiBundle\Action\ActionDescriptor;
 use haddowg\JsonApiBundle\DataProvider\AdmitsIdsInterface;
 use haddowg\JsonApiBundle\DataProvider\AdmitsRowsInterface;
@@ -660,21 +662,10 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         // as it is; an association this cannot batch is unsupported, which the
         // orchestrator refuses when the related type is scoped.
         // A pivot belongsToMany reaches its members through the association entity, not a
-        // parent property, so it is read per parent through the same scoped pivot query
-        // the related endpoint runs.
+        // parent property, so it reads through its own grouped pivot query.
         $pivotRelatedType = $relation->relatedTypes()[0] ?? $parentType;
         if ($relation->isToMany() && $this->supportsPivot($pivotRelatedType, $relation)) {
-            $parentMetadata = $this->entityManager->getClassMetadata($parents[0]::class);
-            $encoder = $this->idEncoders->encoderFor($parentType);
-            $results = [];
-            foreach ($parents as $parent) {
-                $wireId = $this->parentWireId($parent, $parentMetadata, $encoder);
-                if ($wireId !== null) {
-                    $results[$wireId] = $this->fetchRelatedPivotCollection($pivotRelatedType, $parent, $relation, $criteria, $request);
-                }
-            }
-
-            return new RelatedBatch($results);
+            return $this->fetchPivotBatch($parentType, $parents, $pivotRelatedType, $relation, $criteria, $request);
         }
 
         $metadata = $this->entityManager->getClassMetadata($parents[0]::class);
@@ -2141,6 +2132,278 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         }
 
         return $map;
+    }
+
+    /**
+     * A page of parents' pivot relation, in one grouped query over the association
+     * entity. It is {@see fetchRelatedPivotCollection()} for every parent at once: the
+     * same join, filters, extensions and order, scoped to the page with
+     * `pivot.<parentProperty> IN (:parents)` and grouped by parent and far member, so each
+     * parent keeps one row per distinct member as the single-parent query does.
+     *
+     * Each row carries the far entity, the parent id and the pivot fields, and the rows
+     * hydrate one at a time. Hydrated as one result, a member two parents share would come
+     * back once and lose one parent's pivot values. So a page costs one query per
+     * relation however many parents it holds.
+     *
+     * A windowed include (an offset page) wraps the grouped query in a per-parent
+     * `ROW_NUMBER` window, and a counted one adds the per-parent total, so each parent
+     * reads at most a page. Window functions turned off, a related type with query
+     * extensions, or a sort that is not a plain column falls back to the single-parent
+     * query per parent, as the other windowed batch arms do. So does a cursor window.
+     *
+     * @param list<object> $parents
+     */
+    private function fetchPivotBatch(
+        string $parentType,
+        array $parents,
+        string $relatedType,
+        RelationInterface $relation,
+        CollectionCriteria $criteria,
+        JsonApiRequestInterface $request,
+    ): RelatedBatch {
+        $window = $criteria->window;
+
+        if ($window instanceof OffsetWindow) {
+            $orderBy = $this->windowSortColumns($criteria, $this->entityManager->getClassMetadata($this->entityClassFor($relatedType)));
+            if ($orderBy !== null && $this->windowFunctions && WindowedRelationBatch::readsQueryInternals() && $this->isNativelyWindowable($relatedType, $relation, $criteria)) {
+                return $this->fetchWindowedPivotBatch($parentType, $parents, $relatedType, $relation, $criteria, $window, $orderBy, $request);
+            }
+        }
+
+        if ($window !== null || !WindowedRelationBatch::readsQueryInternals()) {
+            return $this->fetchPivotBatchPerParent($parentType, $parents, $relatedType, $relation, $criteria, $request);
+        }
+
+        $builder = $this->pivotBatchQuery($relatedType, $parents, $relation);
+        foreach ($this->extensionsFor($relatedType) as $extension) {
+            $builder = $extension->apply($builder, new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request));
+        }
+        $builder = $this->applier->apply($criteria, $builder, $this->filterHandler, $this->sortHandler);
+
+        $results = [];
+        foreach ($this->pivotRowsByParent($this->windowedBatch->iterateRows($builder), $parentType, $parents) as $wireId => $rows) {
+            $results[$wireId] = $this->pivotResult($rows, $relatedType, $relation, null);
+        }
+
+        return new RelatedBatch($results);
+    }
+
+    /**
+     * The windowed arm of {@see fetchPivotBatch()}: the grouped pivot query with only its
+     * filters applied, each sort column projected as a `jsonapi_sort_<n>` scalar, wrapped
+     * in the per-parent `ROW_NUMBER` window. The window orders by those scalars and then
+     * the far id, which is the order the grouped single-parent query returns its rows in.
+     * A counted relation caps each parent at the page and reads its total off
+     * `COUNT(*) OVER` the parent's distinct members. A count-free one caps at the page
+     * plus one and reads the surplus row as `hasMore`. The results match the
+     * single-parent query's: a counted page carries its total, a count-free page is
+     * windowed with `hasMore`.
+     *
+     * @param list<object>                    $parents
+     * @param list<array{0: string, 1: bool}> $orderBy the DQL path of each sort column and whether it descends
+     */
+    private function fetchWindowedPivotBatch(
+        string $parentType,
+        array $parents,
+        string $relatedType,
+        RelationInterface $relation,
+        CollectionCriteria $criteria,
+        OffsetWindow $window,
+        array $orderBy,
+        JsonApiRequestInterface $request,
+    ): RelatedBatch {
+        $builder = $this->pivotBatchQuery($relatedType, $parents, $relation);
+        $builder = $this->applier->apply($this->filtersOnly($criteria), $builder, $this->filterHandler, $this->sortHandler);
+
+        $order = [];
+        foreach ($orderBy as $i => [$path, $descending]) {
+            $alias = \sprintf('jsonapi_sort_%d', $i);
+            $builder->addSelect(\sprintf('%s AS %s', $path, $alias));
+            $order[] = [$alias, $descending];
+        }
+
+        $countable = $criteria->wantsCount;
+        $rowCap = $window->offset + $window->limit + ($countable ? 0 : 1);
+        $rows = $this->windowedBatch->windowRows($builder, $order, $rowCap, $countable);
+
+        // The outer select carries no ORDER BY, so each parent's rows are put back in
+        // row-number order.
+        \usort($rows, static fn(array $a, array $b): int => (\is_numeric($a['rn'] ?? null) ? (int) $a['rn'] : 0) <=> (\is_numeric($b['rn'] ?? null) ? (int) $b['rn'] : 0));
+
+        $results = [];
+        foreach ($this->pivotRowsByParent($rows, $parentType, $parents) as $wireId => $parentRows) {
+            if ($countable) {
+                $total = $parentRows[0]['total'] ?? 0;
+                $results[$wireId] = $this->pivotResult(
+                    \array_slice($parentRows, $window->offset, $window->limit),
+                    $relatedType,
+                    $relation,
+                    \is_numeric($total) ? (int) $total : 0,
+                );
+
+                continue;
+            }
+
+            $page = \array_slice($parentRows, $window->offset, $window->limit + 1);
+            $hasMore = \count($page) > $window->limit;
+            $results[$wireId] = $this->pivotResult(
+                $hasMore ? \array_slice($page, 0, $window->limit) : $page,
+                $relatedType,
+                $relation,
+                total: null,
+                windowed: true,
+                hasMore: $hasMore,
+            );
+        }
+
+        return new RelatedBatch($results);
+    }
+
+    /**
+     * The fallback of {@see fetchPivotBatch()}: the single-parent pivot query for each
+     * parent.
+     *
+     * @param list<object> $parents
+     */
+    private function fetchPivotBatchPerParent(
+        string $parentType,
+        array $parents,
+        string $relatedType,
+        RelationInterface $relation,
+        CollectionCriteria $criteria,
+        JsonApiRequestInterface $request,
+    ): RelatedBatch {
+        $parentMetadata = $this->entityManager->getClassMetadata($parents[0]::class);
+        $encoder = $this->idEncoders->encoderFor($parentType);
+
+        $results = [];
+        foreach ($parents as $parent) {
+            $wireId = $this->parentWireId($parent, $parentMetadata, $encoder);
+            if ($wireId !== null) {
+                $results[$wireId] = $this->fetchRelatedPivotCollection($relatedType, $parent, $relation, $criteria, $request);
+            }
+        }
+
+        return new RelatedBatch($results);
+    }
+
+    /**
+     * The order a windowed pivot batch sorts each parent's members by: the requested sort,
+     * else the criteria's default order, as the DQL path of each column on its alias and
+     * whether it descends. A pivot field's key routes to the `pivot` join through the
+     * criteria's `aliasOf`, every other key to the far entity. An unknown requested key is
+     * the same `400` the single-parent query raises. Null when a directive is not a plain
+     * {@see SortByField}: a sort arm writes its own ORDER BY, which the window cannot
+     * project, so that page reads per parent.
+     *
+     * @param ClassMetadata<object> $relatedMetadata
+     *
+     * @return list<array{0: string, 1: bool}>|null
+     */
+    private function windowSortColumns(CollectionCriteria $criteria, ClassMetadata $relatedMetadata): ?array
+    {
+        $requested = $criteria->queryParameters->sort;
+        $directives = $requested === []
+            ? $criteria->defaultSort
+            : SortMatcher::directives($requested, $criteria->sorts, $criteria->request);
+
+        // A default naming an undeclared sort fails as it does when the applier runs it.
+        foreach ($requested === [] ? $directives : [] as $directive) {
+            if (SortMatcher::match($criteria->sorts, $directive->sort->key(), $criteria->request) === null) {
+                throw new SortParamUnrecognized($directive->sort->key());
+            }
+        }
+
+        $columns = [];
+        foreach ($directives as $directive) {
+            $sort = $directive->sort;
+            if (!$sort instanceof SortByField || \str_contains($sort->column, '.')) {
+                return null;
+            }
+
+            $alias = $criteria->aliasOf[$sort->key()] ?? self::ROOT_ALIAS;
+            $path = $alias === self::ROOT_ALIAS && $sort->column === $relatedMetadata->getSingleIdentifierFieldName()
+                ? DoctrineIdentifiers::path($relatedMetadata, self::ROOT_ALIAS)
+                : $alias . '.' . $sort->column;
+            $columns[] = [$path, $directive->descending];
+        }
+
+        return $columns;
+    }
+
+    /**
+     * The grouped pivot query for a page of parents: the far entity rooted at
+     * {@see ROOT_ALIAS}, the association entity joined as `pivot` and scoped to the
+     * page, selecting the far entity plus the parent id, the far id and each rendered
+     * pivot field as scalars, one row per parent and distinct far member.
+     * {@see pivotQuery()} is its single-parent twin.
+     *
+     * @param list<object> $parents
+     */
+    private function pivotBatchQuery(string $relatedType, array $parents, RelationInterface $relation): QueryBuilder
+    {
+        $relatedClass = $this->entityClassFor($relatedType);
+        $association = $this->pivotAssociation($relation, $parents[0], $relatedClass);
+        $relatedMetadata = $this->entityManager->getClassMetadata($relatedClass);
+        $parentMetadata = $this->entityManager->getClassMetadata($parents[0]::class);
+
+        $builder = $this->entityManager
+            ->getRepository($relatedClass)
+            ->createQueryBuilder(self::ROOT_ALIAS)
+            ->addSelect(\sprintf('IDENTITY(pivot.%s) AS %s', $association->parentProperty, BatchScope::PARENT_DISCRIMINATOR_ALIAS))
+            ->addSelect(\sprintf('%s AS %s', DoctrineIdentifiers::path($relatedMetadata, self::ROOT_ALIAS), BatchScope::RELATED_DISCRIMINATOR_ALIAS))
+            ->innerJoin(
+                $association->entityClass,
+                'pivot',
+                'WITH',
+                \sprintf('pivot.%s = %s', $association->farProperty, self::ROOT_ALIAS),
+            )
+            ->andWhere(\sprintf('pivot.%s IN (:jsonapi_parents)', $association->parentProperty))
+            ->groupBy(BatchScope::PARENT_DISCRIMINATOR_ALIAS)
+            ->addGroupBy(\sprintf('%s.%s', self::ROOT_ALIAS, $relatedMetadata->getSingleIdentifierFieldName()));
+        $this->ids->bindList($builder, 'jsonapi_parents', $parentMetadata, \array_map(fn(object $parent): mixed => $this->ids->valueOf($parentMetadata, $parent), $parents));
+
+        foreach (PivotFields::storedFor($relation) as $field) {
+            if ($field->isHidden()) {
+                continue;
+            }
+            $builder->addSelect(\sprintf('pivot.%s AS pivot_%s', $field->column() ?? $field->name(), $field->name()));
+        }
+
+        return $builder;
+    }
+
+    /**
+     * Groups the batch's rows by parent wire id, in query order. Every parent of the page
+     * gets an entry, empty when it has no members.
+     *
+     * @param list<array<int|string, mixed>> $rows
+     * @param list<object>                   $parents
+     *
+     * @return array<string, list<array<int|string, mixed>>>
+     */
+    private function pivotRowsByParent(array $rows, string $parentType, array $parents): array
+    {
+        $parentMetadata = $this->entityManager->getClassMetadata($parents[0]::class);
+        $encoder = $this->idEncoders->encoderFor($parentType);
+
+        $grouped = [];
+        foreach ($parents as $parent) {
+            $wireId = $this->parentWireId($parent, $parentMetadata, $encoder);
+            if ($wireId !== null) {
+                $grouped[$wireId] = [];
+            }
+        }
+
+        foreach ($rows as $row) {
+            $wireId = $this->ids->wireId($parentMetadata, $row[BatchScope::PARENT_DISCRIMINATOR_ALIAS] ?? null, $encoder);
+            if ($wireId !== null && isset($grouped[$wireId])) {
+                $grouped[$wireId][] = $row;
+            }
+        }
+
+        return $grouped;
     }
 
     /**

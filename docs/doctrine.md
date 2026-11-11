@@ -284,8 +284,9 @@ to-many, or any to-many whose linkage `data` renders on a page of parents, loads
 `IN (…)` query per relation per level, at the top level and below an include, instead
 of initialising each parent's collection on its own. A collection the unit of work has
 already initialised is read as it is, and relations stored on the same association
-share one load. A pivot `belongsToMany` is still read one parent at a time through its
-pivot query, and a to-one renders its identifier off the proxy without a load.
+share one load. A pivot `belongsToMany` loads through its pivot query run once for the
+whole page (see [`belongsToMany` pivot data](#belongstomany-pivot-data)), and a to-one
+renders its identifier off the proxy without a load.
 
 A batch keeps the order a lazy load of the collection would give. When the relation
 and its related type declare no `defaultSort()` and the request names no sort, it
@@ -384,7 +385,10 @@ native query too: the inner scoped query carries the relatedQuery filter through
 DQL filter executor the related-collection endpoint runs, then is wrapped with the window
 functions — so a filtered windowed include is also one bounded query on `on`, with the
 **filtered** per-parent total. Only a related type with a **query
-extension** (or `window_functions: false`) takes the per-parent bounded fallback. See
+extension** (or `window_functions: false`) takes the per-parent bounded fallback. A pivot
+`belongsToMany` windows its grouped pivot query the same way, in one statement that
+carries each member's pivot values (see
+[`belongsToMany` pivot data](#belongstomany-pivot-data)). See
 [pagination → windowed includes](pagination.md#windowed-includes-are-bounded-window_functions).
 
 ## The write pipeline
@@ -1219,6 +1223,17 @@ ORDER BY -- [pivot.<field> | resource.<field>]
 So the rendered pivot values come from the same query that scopes, filters, sorts and
 paginates the page — no two-stage query and no page-shortening, so pagination is
 correct.
+
+An include, a `withData()` linkage or a `relatedQuery` over a page of parents runs that
+query once for the whole page. It scopes the join with `pivot.playlist IN (:parents)`,
+selects the parent id beside the far entity and the pivot fields, and groups by parent
+and far member, so each parent gets the members, order and `meta.pivot` its own query
+would give, and a track on two playlists keeps each playlist's position. A windowed
+include wraps it in the per-parent `ROW_NUMBER()` window the other to-many includes use
+(see [windowed includes](#windowed-includes-window_functions)), with the per-parent
+total from `COUNT(*) OVER` when the page is counted. A windowed include falls back to one
+pivot query per parent where the other windowed includes do: a related type with a query
+extension, `window_functions: false`, a cursor page, or a sort written by a sort arm.
 
 A `?sort` mixing a pivot and a related field is applied in the **request's directive
 order** across both aliases, so `?sort=position,title` orders by the pivot key first

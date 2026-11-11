@@ -306,6 +306,103 @@ final class WindowedRelationBatch
     }
 
     /**
+     * Whether this Doctrine release still exposes the internal {@see Query} methods the
+     * native reads go through. When it does not, a caller that can read another way should.
+     */
+    public static function readsQueryInternals(): bool
+    {
+        foreach (['getResultSetMapping', 'parse'] as $method) {
+            if (!\method_exists(Query::class, $method)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Runs `$builder`'s query and hydrates its rows one at a time, so an entity it selects
+     * comes back on every row it appears in, not once per result.
+     *
+     * {@see Query::toIterable()} would do that too, but it refuses a to-many join anywhere
+     * in the query, an existence filter's subquery included. So the query's own SQL runs as
+     * a native query with the same result set mapping, and that iterates.
+     *
+     * @return list<array<int|string, mixed>>
+     */
+    public function iterateRows(QueryBuilder $builder): array
+    {
+        $query = $builder->getQuery();
+        $sql = $query->getSQL();
+        \assert(\is_string($sql));
+
+        $rsm = $this->reflectResultSetMapping($query);
+        $native = $this->entityManager->createNativeQuery($sql, $rsm);
+        $this->rebindParameters($native, $query, $this->reflectParameterMappings($query), null);
+
+        $rows = [];
+        foreach ($native->toIterable() as $row) {
+            if (\is_array($row)) {
+                $rows[] = $row;
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Wraps an inner query in the per-parent `ROW_NUMBER` window and returns its rows, at
+     * most `$rowCap` per parent, each carrying `rn` and, when `$countable`, the parent's
+     * whole `total`. The inner query projects the parent id under
+     * {@see BatchScope::PARENT_DISCRIMINATOR_ALIAS}, the related id under
+     * {@see BatchScope::RELATED_DISCRIMINATOR_ALIAS}, and each `$orderBy` result alias.
+     * The window orders by those aliases, then the related id ascending.
+     *
+     * The pivot batch reads through this. Its terms are bare columns, so NULLs fall where
+     * the engine puts them, as they do in the single-parent pivot query this replaces.
+     * The rows hydrate one at a time, so an entity the inner query selects comes back on
+     * every row it appears in, not once per result.
+     *
+     * @param list<array{0: string, 1: bool}> $orderBy result alias and whether it descends
+     *
+     * @return list<array<int|string, mixed>>
+     */
+    public function windowRows(QueryBuilder $inner, array $orderBy, int $rowCap, bool $countable): array
+    {
+        $query = $inner->getQuery();
+        $innerSql = $query->getSQL();
+        \assert(\is_string($innerSql));
+
+        $innerRsm = $this->reflectResultSetMapping($query);
+        $parameterMappings = $this->reflectParameterMappings($query);
+
+        $parentAlias = $this->scalarAlias($innerRsm, BatchScope::PARENT_DISCRIMINATOR_ALIAS);
+        $terms = [];
+        foreach ($orderBy as [$resultAlias, $descending]) {
+            $terms[] = \sprintf('w.%s %s', $this->scalarAlias($innerRsm, $resultAlias), $descending ? 'DESC' : 'ASC');
+        }
+        $terms[] = \sprintf('w.%s ASC', $this->scalarAlias($innerRsm, BatchScope::RELATED_DISCRIMINATOR_ALIAS));
+
+        $sql = \sprintf(
+            'SELECT * FROM (SELECT w.*, ROW_NUMBER() OVER (PARTITION BY w.%s ORDER BY %s) AS jsonapi_rn%s FROM (%s) w) x WHERE x.jsonapi_rn <= ?',
+            $parentAlias,
+            \implode(', ', $terms),
+            $countable ? \sprintf(', COUNT(*) OVER (PARTITION BY w.%s) AS jsonapi_total', $parentAlias) : '',
+            (string) \preg_replace('/\s+ORDER BY .*$/is', '', $innerSql),
+        );
+
+        $innerRsm->addScalarResult('jsonapi_rn', 'rn', 'integer');
+        if ($countable) {
+            $innerRsm->addScalarResult('jsonapi_total', 'total', 'integer');
+        }
+
+        $native = $this->entityManager->createNativeQuery($sql, $innerRsm);
+        $this->rebindParameters($native, $query, $parameterMappings, $rowCap);
+
+        return $this->runOrThrow($native, iterate: true);
+    }
+
+    /**
      * The keyset columns as {@see SortByField} directives, so the shared {@see innerQuery()}
      * projection (the join-table shape's `jsonapi_sort_%d` scalars) and {@see orderByKeyset()}
      * index the SAME positions. The PK tiebreak is one of the columns (never a hardcoded
@@ -755,7 +852,7 @@ final class WindowedRelationBatch
      *
      * @param array<string, list<int>> $parameterMappings
      */
-    private function rebindParameters(\Doctrine\ORM\NativeQuery $native, Query $query, array $parameterMappings, int $rowCap): void
+    private function rebindParameters(\Doctrine\ORM\NativeQuery $native, Query $query, array $parameterMappings, ?int $rowCap): void
     {
         $maxPosition = -1;
         foreach ($query->getParameters() as $parameter) {
@@ -767,7 +864,9 @@ final class WindowedRelationBatch
         }
 
         // The row cap binds at the next ordinal (max SQL position + 2, 1-based).
-        $native->setParameter($maxPosition + 2, $rowCap);
+        if ($rowCap !== null) {
+            $native->setParameter($maxPosition + 2, $rowCap);
+        }
     }
 
     /**
@@ -1019,11 +1118,11 @@ final class WindowedRelationBatch
      *
      * @return list<array<int|string, mixed>>
      */
-    private function runOrThrow(\Doctrine\ORM\NativeQuery $query): array
+    private function runOrThrow(\Doctrine\ORM\NativeQuery $query, bool $iterate = false): array
     {
         try {
             /** @var list<array<int|string, mixed>> $rows */
-            $rows = $query->getResult();
+            $rows = $iterate ? \iterator_to_array($query->toIterable(), false) : $query->getResult();
 
             return $rows;
         } catch (\Doctrine\DBAL\Exception $exception) {
