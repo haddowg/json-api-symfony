@@ -502,6 +502,13 @@ final class RelatedIncludeBatcher
         // renders, discloses nothing the scope would hide, so only the rest is loaded.
         $targets = [];
         if ($scoped && !$relation->isToMany()) {
+            // A related provider that batches the page is the source of every target,
+            // so it is asked for all of them, whatever the model holds.
+            $batch = $this->router->relatedProviderBatch($type, $entities, $relation, $this->includeCriteria($server, $relation, $request), $request);
+            if ($batch !== null) {
+                return $this->fill($server, $type, $entities, $relation, true, [], $batch, $linkages);
+            }
+
             $pending = [];
             foreach ($entities as $entity) {
                 $target = Accessor::get($entity, $relation->column() ?? $relation->name());

@@ -1263,7 +1263,11 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $filter = $this->toOneRequestedFilter($operation->queryParameters(), $relation, $request);
             if ($filter !== []) {
                 $relatedType = $relation->relatedTypes()[0];
-                $related = $relation->readValue($parent, $request);
+                // A related provider that batches the to-one is the source of its target.
+                $targets = $this->readRouter?->relatedToOneTargets($server, $type, [$parent], $relation, $request);
+                $related = $targets !== null
+                    ? ($targets[$server->serializerFor($type)->getId($parent)] ?? null)
+                    : $relation->readValue($parent, $request);
                 if (\is_object($related)) {
                     $relatedResource = $this->types->resourceFor($server, $relatedType);
                     $criteria = $this->relationCriteria->criteriaFor(
@@ -1726,6 +1730,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         }
         // The write may have changed whether a related row is readable.
         $this->relationshipLinkage?->forgetReadDecisions();
+        $this->readRouter?->forget();
 
         // Render the linkage `GET` on the relationship endpoint serves (unpaginated), not
         // the model's members, which still include the ones the scope hides.
@@ -2299,6 +2304,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $entity = $persister->create($type, $this->unionsForStorage($this->types->resourceFor($server, $type), $persister, $entity, $body, creating: true));
         // The write may have changed whether a related row is readable.
         $this->relationshipLinkage?->forgetReadDecisions();
+        $this->readRouter?->forget();
 
         // The persister accepted the write for asynchronous processing (it dispatched
         // the work instead of committing) — render a `202 Accepted` pointing at the
@@ -2431,6 +2437,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         });
         // The write may have changed whether a related row is readable.
         $this->relationshipLinkage?->forgetReadDecisions();
+        $this->readRouter?->forget();
 
         // The persister accepted the update for asynchronous processing — render a
         // `202 Accepted` pointing at the job resource, as the async create does; the

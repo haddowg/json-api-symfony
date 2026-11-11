@@ -144,6 +144,21 @@ interface DataProviderInterface
      * {@see fetchRelatedCollection()}: Doctrine throws (members span entity classes —
      * not one scoped query), the in-memory witness reads the mixed set off each parent.
      *
+     * It is also called on the provider of the relation's RELATED type, when that
+     * provider scopes its related reads ({@see ScopesRelatedReadsInterface}) and is not
+     * the parent type's provider. `$parents` are then of another type, `$parentType`,
+     * served by another provider, and each result is keyed by that parent's wire id as
+     * its serializer renders it. One call answers the page for the include, the linkage
+     * and the Relationship Queries window. A to-one answered this way is the source of
+     * each parent's target: the first item, or none for `null`, so the parent model
+     * needs no getter, property or `extractUsing()` for it. It is asked with empty
+     * criteria, and a filter on it runs through {@see relatedToOneMatches()} on the
+     * target returned. {@see RelatedBatch::unsupported()} or {@see RelatedBatch::computed()}
+     * keeps the relation read one parent at a time, through
+     * {@see fetchRelatedCollection()} for a to-many, or the parent's value checked by
+     * {@see relatedToOneMatches()} for a to-one. A pivot or polymorphic relation is
+     * never batched this way.
+     *
      * @param list<object> $parents the already-fetched page of parents (the handler holds it)
      *
      * @throws \haddowg\JsonApi\Exception\FilterParamUnrecognized when a requested filter key is not declared

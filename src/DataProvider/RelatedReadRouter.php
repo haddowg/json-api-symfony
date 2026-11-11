@@ -9,6 +9,7 @@ use haddowg\JsonApi\Collection\LinkRows\InMemoryLinkRows;
 use haddowg\JsonApi\Collection\LinkRows\LinkRowKeysInterface;
 use haddowg\JsonApi\Collection\LinkRows\LinkRowQuery;
 use haddowg\JsonApi\Collection\LinkRows\LinkRowQueryInterface;
+use haddowg\JsonApi\Operation\QueryParameters;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\AbstractFieldValue;
@@ -20,6 +21,7 @@ use haddowg\JsonApi\Resource\Sort\RelationSorts;
 use haddowg\JsonApi\Schema\Relationship\IdentifiedMember;
 use haddowg\JsonApi\Serializer\SerializerInterface;
 use haddowg\JsonApi\Server\Server;
+use Symfony\Contracts\Service\ResetInterface;
 
 /**
  * Decides which provider loads a relation's members for a document (includes,
@@ -30,20 +32,50 @@ use haddowg\JsonApi\Server\Server;
  * type. A relation is **scoped** when that provider may return fewer members than the
  * parent model holds: it declares so through {@see ScopesRelatedReadsInterface}, or
  * it does not implement that interface. A scoped relation whose related provider is
- * not the parent type's provider is read per parent through the related provider, as
- * the endpoint does. Otherwise the parent type's provider batches the whole page.
+ * not the parent type's provider is read through the related provider: the whole page
+ * at once when its {@see DataProviderInterface::fetchRelatedCollectionBatch()} answers
+ * for parents of another type, else per parent, as the endpoint does. Otherwise the
+ * parent type's provider batches the whole page.
+ *
+ * A to-one the related provider batches takes its target from the batch on every read
+ * path, so the model needs no getter for it. The batch is read once per parent page
+ * and request, and {@see forget()} drops it after a write.
  *
  * @internal
  */
-final class RelatedReadRouter
+final class RelatedReadRouter implements ResetInterface
 {
     private readonly IdentifiedTargetGuard $guard;
+
+    /**
+     * The to-one batches the related types' own providers answered, per request, keyed
+     * by parent type, relation and parent page. Each entry holds its parents, so their
+     * object ids stay theirs while the request lives. `false` under a parent type and
+     * relation alone records a provider that doesn't batch that relation.
+     *
+     * @var \WeakMap<JsonApiRequestInterface, array<string, array{parents: list<object>, batch: RelatedBatch}|false>>
+     */
+    private \WeakMap $relatedBatches;
 
     public function __construct(
         private readonly DataProviderRegistry $providers,
         ?IdentifiedTargetGuard $guard = null,
     ) {
         $this->guard = $guard ?? new IdentifiedTargetGuard($providers);
+        $this->relatedBatches = new \WeakMap();
+    }
+
+    /**
+     * Drops every batch read so far, after a write may have changed what it holds.
+     */
+    public function forget(): void
+    {
+        $this->relatedBatches = new \WeakMap();
+    }
+
+    public function reset(): void
+    {
+        $this->forget();
     }
 
     /**
@@ -369,8 +401,8 @@ final class RelatedReadRouter
     }
 
     /**
-     * Whether `$relation`'s members must be read per parent through the related
-     * endpoint's provider rather than batched by the parent type's provider.
+     * Whether `$relation`'s members must be read through the related endpoint's
+     * provider rather than batched by the parent type's provider.
      */
     public function readsThroughRelatedProvider(string $type, RelationInterface $relation): bool
     {
@@ -408,6 +440,11 @@ final class RelatedReadRouter
                 ->fetchRelatedCollectionBatch($type, $parents, $relation, $criteria, $request);
         }
 
+        $batch = $this->relatedProviderBatch($type, $parents, $relation, $criteria, $request);
+        if ($batch !== null) {
+            return $batch;
+        }
+
         $relatedType = $relation->relatedTypes()[0];
         $provider = $this->providers->forType($relatedType);
         $serializer = $server->serializerFor($type);
@@ -430,6 +467,109 @@ final class RelatedReadRouter
         }
 
         return new RelatedBatch($results);
+    }
+
+    /**
+     * The page of `$relation` the related type's own provider answers for `$parents` in
+     * one {@see DataProviderInterface::fetchRelatedCollectionBatch()} call, or `null` when
+     * the relation is not read through that provider, or the provider doesn't batch it.
+     *
+     * Only a monomorphic relation is asked, and a pivot `belongsToMany` never is: the
+     * related endpoint reads it through its pivot query, per parent. A provider that
+     * answers {@see RelatedBatch::unsupported()} is not asked again for the relation in
+     * the same request. One that answers {@see RelatedBatch::computed()} is treated the
+     * same way: the model holds the value, so it is read off each parent and checked
+     * against the related provider's scope, which the related type still applies.
+     *
+     * A to-one is asked with no criteria, since its batch is the source of each parent's
+     * target: the first item, or none. That batch is kept for the request, so every path
+     * that reads the same parents' target shares one call.
+     *
+     * @param list<object> $parents
+     */
+    public function relatedProviderBatch(string $type, array $parents, RelationInterface $relation, CollectionCriteria $criteria, JsonApiRequestInterface $request): ?RelatedBatch
+    {
+        if (\count($relation->relatedTypes()) !== 1 || $this->isPivot($relation) || !$this->readsThroughRelatedProvider($type, $relation)) {
+            return null;
+        }
+
+        $relationKey = $type . "\0" . $relation->name();
+        $known = $this->relatedBatches[$request] ?? [];
+        if (($known[$relationKey] ?? null) === false) {
+            return null;
+        }
+
+        $pageKey = null;
+        if (!$relation->isToMany()) {
+            $pageKey = $relationKey . "\0" . \implode(',', \array_map(\spl_object_id(...), $parents));
+            $entry = $known[$pageKey] ?? null;
+            if (\is_array($entry)) {
+                return $entry['batch'];
+            }
+            $criteria = self::plainCriteria($request);
+        }
+
+        $relatedType = $relation->relatedTypes()[0];
+        $batch = $this->providers->forType($relatedType)->fetchRelatedCollectionBatch($type, $parents, $relation, $criteria, $request);
+
+        if (!$batch->isSupported()) {
+            $known[$relationKey] = false;
+            $this->relatedBatches[$request] = $known;
+
+            return null;
+        }
+
+        if ($pageKey !== null) {
+            $known[$pageKey] = ['parents' => $parents, 'batch' => $batch];
+            $this->relatedBatches[$request] = $known;
+        }
+
+        return $batch;
+    }
+
+    /**
+     * Each parent's to-one target, keyed by parent wire id, when the related type's own
+     * provider batches `$relation` ({@see relatedProviderBatch()}), or `null` when it
+     * doesn't and the target is read off the model.
+     *
+     * @param list<object> $parents
+     *
+     * @return array<string, ?object>|null
+     */
+    public function relatedToOneTargets(Server $server, string $type, array $parents, RelationInterface $relation, JsonApiRequestInterface $request): ?array
+    {
+        if ($relation->isToMany()) {
+            return null;
+        }
+
+        $batch = $this->relatedProviderBatch($type, $parents, $relation, self::plainCriteria($request), $request);
+        if ($batch === null) {
+            return null;
+        }
+
+        $serializer = $server->serializerFor($type);
+        $targets = [];
+        foreach ($parents as $parent) {
+            $wireId = $serializer->getId($parent);
+            $targets[$wireId] = null;
+            foreach ($batch->for($wireId)->items as $item) {
+                if (\is_object($item)) {
+                    $targets[$wireId] = $item;
+                }
+                break;
+            }
+        }
+
+        return $targets;
+    }
+
+    /**
+     * No filters, sorts or window: each parent's whole related set, as its provider
+     * scopes it.
+     */
+    private static function plainCriteria(JsonApiRequestInterface $request): CollectionCriteria
+    {
+        return new CollectionCriteria(new QueryParameters(fields: [], includes: [], sort: [], filter: [], pagination: $request->getPagination()));
     }
 
     /**
@@ -599,7 +739,9 @@ final class RelatedReadRouter
 
     /**
      * Whether each parent's to-one target survives `$criteria` (and the related
-     * provider's scope), keyed by parent wire id.
+     * provider's scope), keyed by parent wire id. Read through the related provider,
+     * the target comes from its batch when it batches the relation
+     * ({@see relatedToOneTargets()}), else off the model.
      *
      * @param list<object> $parents
      *
@@ -615,10 +757,14 @@ final class RelatedReadRouter
         $provider = $this->providers->forType($relatedType);
         $serializer = $server->serializerFor($type);
 
+        // A batching related provider is the source of each target; otherwise the model is.
+        $targets = $this->relatedToOneTargets($server, $type, $parents, $relation, $request);
+
         $matches = [];
         foreach ($parents as $parent) {
-            $target = $relation->readValue($parent, $request);
-            $matches[$serializer->getId($parent)] = \is_object($target)
+            $wireId = $serializer->getId($parent);
+            $target = $targets !== null ? ($targets[$wireId] ?? null) : $relation->readValue($parent, $request);
+            $matches[$wireId] = \is_object($target)
                 && $provider->relatedToOneMatches($relatedType, $target, $relation, $criteria, $request);
         }
 

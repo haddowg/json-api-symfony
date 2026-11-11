@@ -646,6 +646,13 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             return new RelatedBatch([]);
         }
 
+        // Parents another provider serves need not be entities at all.
+        try {
+            $this->entityManager->getClassMetadata($parents[0]::class);
+        } catch (\Doctrine\ORM\Mapping\MappingException|\Doctrine\Persistence\Mapping\MappingException) {
+            return RelatedBatch::unsupported();
+        }
+
         // The opt-out moves into how the provider batches: a column
         // that is not a real Doctrine association (a computed/extractUsing value, or an
         // alias that is not the association name), or a target with a composite id, is
