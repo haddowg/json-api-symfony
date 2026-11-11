@@ -1105,6 +1105,15 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $this->preloadPolymorphic($relation, [$related], $request, $server);
         }
 
+        // ?withCount counts the related resource's own countable relations, keyed by
+        // the object's own type so a MorphTo target counts as itself.
+        $this->applyRelationshipCounts(
+            $server,
+            \is_object($related) ? $serializer->getType($related) : $relatedType,
+            \is_object($related) ? [$related] : [],
+            $request,
+        );
+
         return RelatedResponse::fromResource($related, $serializer);
     }
 

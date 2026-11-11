@@ -221,6 +221,20 @@ abstract class IncludeScopingConformanceTestCase extends JsonApiFunctionalTestCa
     }
 
     #[Test]
+    #[TestWith(['', '', 'agency'], 'default server')]
+    #[TestWith(['/partner', 'partner-', 'agency'], 'named server')]
+    #[TestWith(['', '', 'party'], 'default server, polymorphic')]
+    #[TestWith(['/partner', 'partner-', 'party'], 'named server, polymorphic')]
+    public function withCountOnAToOneRelatedEndpointCountsTheTargetsScopedSet(string $mount, string $prefix, string $relation): void
+    {
+        $document = $this->get($mount . '/' . $prefix . 'members/1/' . $relation . '?withCount=members', [
+            'HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . CountableProfile::URI . '"',
+        ]);
+
+        self::assertSame(1, $this->value($this->relationship($document, '1', 'members'), 'meta', 'total'));
+    }
+
+    #[Test]
     #[TestWith(['', ''], 'default server')]
     #[TestWith(['/partner', 'partner-'], 'named server')]
     public function theToManyRelatedAndRelationshipEndpointsAreScoped(string $mount, string $prefix): void
