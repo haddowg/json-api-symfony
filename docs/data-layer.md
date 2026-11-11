@@ -112,6 +112,12 @@ interface DataProviderInterface
   `AbstractDataProvider` default. An empty `new RelatedBatch([])` instead says every
   parent has no members (see
   [custom data providers](custom-data-providers.md#eager-loading-include-is-automatic-no-extension-no-extra-dependency)).
+  It is also called on the provider of a relation's related type, when that provider
+  scopes its related reads and the parent type has another provider: the parents are
+  then of another type, keyed by their own wire ids, and a to-one's target comes from
+  the batch, so the parent model needs no getter for it. `unsupported()` keeps that
+  relation read one parent at a time
+  ([batching a relation into a type you serve](custom-data-providers.md#batching-a-relation-into-a-type-you-serve)).
 - `relatedToOneMatches()` / `relatedToOneMatchesBatch()` answer "does this to-one's
   target survive the relation's `?filter`?" for the single-resource (`relatedToOneMatches`)
   and the batched include/primary (`relatedToOneMatchesBatch`) paths. When the answer
