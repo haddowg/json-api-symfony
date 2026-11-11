@@ -104,8 +104,8 @@ interface DataProviderInterface
 - `fetchRelatedCollectionBatch()` is the page-at-a-time twin of
   `fetchRelatedCollection()`: it answers a whole page of `$parents` for one relation
   in a single store round-trip, returning a `RelatedBatch` keyed by parent wire id.
-  It is what the include batcher (`?include`, no N+1) and the windowed-include batch
-  drive — so it serves the same automatic include batching the Doctrine layer does
+  It is what the include batcher (`?include` and always-rendered to-many linkage, no
+  N+1) and the windowed-include batch drive — so it serves the same automatic include batching the Doctrine layer does
   ([doctrine → eager-loading includes](doctrine.md#eager-loading-includes-no-n1)). A
   relation a provider cannot batch returns **`RelatedBatch::unsupported()`**, and the
   caller renders that relation's includes lazily — which is also the

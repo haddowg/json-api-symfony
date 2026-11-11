@@ -763,6 +763,14 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         // filters/sorts land on the related entity exactly as the per-parent fetch does.
         $builder = $this->applier->apply($criteria, $builder, $this->filterHandler, $this->sortHandler, $scope->relatedAlias);
 
+        // With no requested or default order, the members come in the order a lazy load
+        // of the collection would give them: the association's mapped orderBy.
+        if ($criteria->queryParameters->sort === [] && $criteria->defaultSort === []) {
+            foreach ($this->mappedOrderBy($metadata, $property) as $field => $direction) {
+                $builder->addOrderBy(\sprintf('%s.%s', $scope->relatedAlias, $field), $direction);
+            }
+        }
+
         // Materialize the scoped rows once, then partition by parent — Approach B's
         // single round-trip.
         $partitions = $this->partitionByParent($builder, $scope, $parentType, $relatedType, $request);
@@ -1021,6 +1029,44 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
      * computed/`extractUsing` value, or an alias that is not the association name) or
      * the target carries a composite identifier (the batch id-loads by a single id).
      */
+    /**
+     * The `orderBy` mapped on a to-many association, field to direction. The mapping is
+     * an array on ORM 2 and an object on ORM 3, and no `ClassMetadata` method both share
+     * returns it.
+     *
+     * @param ClassMetadata<object> $metadata
+     *
+     * @return array<string, string>
+     */
+    private function mappedOrderBy(ClassMetadata $metadata, string $property): array
+    {
+        $orderBy = $this->mappingOrderBy($metadata->getAssociationMapping($property));
+
+        $order = [];
+        foreach (\is_array($orderBy) ? $orderBy : [] as $field => $direction) {
+            if (!\is_string($field)) {
+                continue;
+            }
+
+            // Newer ORM 3 releases normalise the direction to PHP 8.6's `\SortDirection`.
+            $descending = $direction instanceof \UnitEnum
+                ? $direction->name === 'Descending'
+                : \is_string($direction) && \strtoupper($direction) === 'DESC';
+            $order[$field] = $descending ? 'DESC' : 'ASC';
+        }
+
+        return $order;
+    }
+
+    private function mappingOrderBy(mixed $mapping): mixed
+    {
+        if (\is_array($mapping)) {
+            return $mapping['orderBy'] ?? null;
+        }
+
+        return \is_object($mapping) && \property_exists($mapping, 'orderBy') ? $mapping->orderBy : null;
+    }
+
     private function isBatchableAssociation(object $parent, RelationInterface $relation): bool
     {
         $property = $relation->column() ?? $relation->name();

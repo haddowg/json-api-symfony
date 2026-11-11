@@ -43,7 +43,9 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
  *    when it has a default read order or a filter default, so they are the ones its
  *    endpoints serve. A to-many like that which this walk leaves lazy renders no data
  *    even if something loads it on the model later
- *    ({@see \haddowg\JsonApiBundle\Serializer\ProviderReadLoadState}).
+ *    ({@see \haddowg\JsonApiBundle\Serializer\ProviderReadLoadState}). Any other
+ *    monomorphic to-many whose collection the model has not loaded is batched too, so
+ *    its linkage costs one query for the level rather than one per parent.
  *
  * Loaded relations reach core out of band through the relationship-linkage seams
  * ({@see preload()} returns the map): a to-many's members, and a scoped to-one's target
@@ -114,6 +116,15 @@ final class RelatedIncludeBatcher
      * @var array<int, string>
      */
     private array $typeOf = [];
+
+    /**
+     * The batches of unscoped, unordered to-manys, keyed by the parent type, related type
+     * and backing column, with the parents each covered. Relations over the same
+     * association load the same members, so they share one load.
+     *
+     * @var array<string, array{batch: RelatedBatch, parents: array<int, true>}>
+     */
+    private array $shared = [];
 
     /**
      * The Relationship Queries window pages already installed for the primary level.
@@ -187,6 +198,7 @@ final class RelatedIncludeBatcher
         $this->known = [];
         $this->toOne = [];
         $this->typeOf = [];
+        $this->shared = [];
         foreach ($entitiesByType as $entities) {
             $this->remember($entities);
         }
@@ -277,6 +289,7 @@ final class RelatedIncludeBatcher
         $this->known = [];
         $this->toOne = [];
         $this->typeOf = [];
+        $this->shared = [];
         $this->windowed = null;
     }
 
@@ -359,7 +372,7 @@ final class RelatedIncludeBatcher
                 fn(object $entity): bool => $this->rendersLinkageData($server, $entity, $relation),
             ));
             if ($rendering !== []) {
-                $this->loadRelation($server, $type, $rendering, $relation, $request, false, false, $linkages);
+                $this->loadRelation($server, $type, $rendering, $relation, $request, false, false, $linkages, linkageOnly: true);
             }
         }
     }
@@ -406,7 +419,9 @@ final class RelatedIncludeBatcher
      *
      * `$included` marks a relation whose targets render in `included`; `$descends` marks
      * one whose targets the walk continues into. Either needs the targets back even when
-     * the relation is left lazy.
+     * the relation is left lazy. `$linkageOnly` marks a relation of a document level that
+     * renders linkage data without being included: an unscoped to-many like that is
+     * batched for the parents whose collection the model has not loaded yet.
      *
      * @param list<object>                                   $entities
      * @param array<int, array<string, RelationshipLinkage>> $linkages
@@ -422,6 +437,7 @@ final class RelatedIncludeBatcher
         bool $included,
         bool $descends,
         array &$linkages,
+        bool $linkageOnly = false,
     ): array {
         // Its linkage renders from the stored pair. A read of the targets loads them all;
         // otherwise only the guarded types load, so their pairs are checked.
@@ -494,8 +510,22 @@ final class RelatedIncludeBatcher
         // provider too, so its linkage renders the members its endpoints serve, in their
         // order, rather than the model's.
         $ordered = $this->readsThroughProvider($server, $relation);
-        if (!$this->providers->supportsType($relatedType) || (!$scoped && !$ordered && (!$included || !$this->enabled))) {
+        $linkageBatch = $linkageOnly && $this->batchesLinkage($relation);
+        if (!$this->providers->supportsType($relatedType) || (!$scoped && !$ordered && (!$this->enabled || (!$included && !$linkageBatch)))) {
             return $descends ? $this->readTargets($entities, $relation, $request) : [];
+        }
+
+        // An unscoped to-many rendered for its linkage alone would otherwise read each
+        // parent's collection off the model, one query per parent. A collection the model
+        // already holds costs nothing to read, so only the rest are batched.
+        if (!$scoped && !$ordered && $linkageBatch) {
+            $entities = \array_values(\array_filter(
+                $entities,
+                fn(object $entity): bool => !$this->isLoadedOnModel($server, $entity, $relation),
+            ));
+            if ($entities === []) {
+                return [];
+            }
         }
 
         // A scoped to-one that is empty, or points at an object this document already
@@ -529,7 +559,9 @@ final class RelatedIncludeBatcher
             }
         }
 
-        $batch = $this->router->batch($server, $type, $entities, $relation, $this->includeCriteria($server, $relation, $request), $request);
+        $batch = !$scoped && !$ordered && $this->batchesLinkage($relation)
+            ? $this->sharedBatch($server, $type, $entities, $relation, $request)
+            : $this->router->batch($server, $type, $entities, $relation, $this->includeCriteria($server, $relation, $request), $request);
 
         if (!$batch->isSupported()) {
             if ($scoped && !$batch->isComputed()) {
@@ -540,6 +572,33 @@ final class RelatedIncludeBatcher
         }
 
         return $this->fill($server, $type, $entities, $relation, $scoped, $targets, $batch, $linkages);
+    }
+
+    /**
+     * The batch of an unscoped, unordered to-many over `$entities`, reusing one an earlier
+     * relation over the same association loaded for all of them. Nothing narrows or
+     * orders such a load, so it holds the members the model would.
+     *
+     * @param list<object> $entities
+     */
+    private function sharedBatch(Server $server, string $type, array $entities, RelationInterface $relation, JsonApiRequestInterface $request): RelatedBatch
+    {
+        $key = $type . "\0" . $relation->relatedTypes()[0] . "\0" . ($relation->column() ?? $relation->name());
+        $shared = $this->shared[$key] ?? null;
+        if ($shared !== null && \array_diff_key(\array_flip(\array_map(\spl_object_id(...), $entities)), $shared['parents']) === []) {
+            return $shared['batch'];
+        }
+
+        $batch = $this->router->batch($server, $type, $entities, $relation, $this->includeCriteria($server, $relation, $request), $request);
+        if ($batch->isSupported()) {
+            $parents = [];
+            foreach ($entities as $entity) {
+                $parents[\spl_object_id($entity)] = true;
+            }
+            $this->shared[$key] = ['batch' => $batch, 'parents' => $parents];
+        }
+
+        return $batch;
     }
 
     /**
@@ -869,6 +928,26 @@ final class RelatedIncludeBatcher
             return true;
         }
 
+        return $this->isLoadedOnModel($server, $entity, $relation);
+    }
+
+    /**
+     * Whether `$relation`'s linkage alone is worth batching when it is unscoped: a
+     * monomorphic to-many. A to-one renders its identifier without loading its target,
+     * and a pivot `belongsToMany` is read one parent at a time either way.
+     */
+    private function batchesLinkage(RelationInterface $relation): bool
+    {
+        return $relation->isToMany() && \count($relation->relatedTypes()) === 1 && !$this->router->isPivot($relation);
+    }
+
+    /**
+     * Whether the model already holds `$relation`'s value on `$entity`, as storage
+     * reports it. With no load state wired every relation counts as loaded, so a store
+     * whose models hold their relations in memory is never batched for linkage.
+     */
+    private function isLoadedOnModel(Server $server, object $entity, RelationInterface $relation): bool
+    {
         $loadState = $server->relationshipLoadState();
         if ($loadState instanceof ProviderReadLoadState) {
             return $loadState->isLoadedOnModel($entity, $relation);
