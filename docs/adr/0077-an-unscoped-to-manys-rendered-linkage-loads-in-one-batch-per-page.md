@@ -9,6 +9,6 @@ ADR 0069 left a to-many with no default read order, no filter default and an uns
 
 ## Consequences
 
-- The members come in the order the batch returns them, as they already did when the relation was included. A Doctrine `#[ORM\OrderBy]` on the association no longer orders this linkage; a relation or related-type `defaultSort()` does.
+- The members keep the order a lazy load gives them. When neither the relation nor its related type declares a `defaultSort()` and the request names no sort, the Doctrine batch orders by the association's mapped `#[ORM\OrderBy]`, on the included path as well as this one, so the two agree.
 - A pivot `belongsToMany` and a to-one keep their current reads: the pivot batch reads one parent at a time anyway, and a to-one's identifier needs no load.
 - With no load state wired every relation counts as loaded, so nothing changes for the in-memory provider.
