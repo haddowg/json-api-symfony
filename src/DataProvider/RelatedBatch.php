@@ -87,6 +87,15 @@ final readonly class RelatedBatch
     }
 
     /**
+     * Whether the batch holds a result for the parent with `$parentWireId`, as opposed
+     * to {@see for()} filling an absent parent with an empty one.
+     */
+    public function has(string $parentWireId): bool
+    {
+        return isset($this->resultsByParentWireId[$parentWireId]);
+    }
+
+    /**
      * The windowed page for the parent with `$parentWireId`, or an EMPTY
      * {@see CollectionResult} when the parent has no related members in this batch
      * (it was absent from the partitioned result). The empty result carries no

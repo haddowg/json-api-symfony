@@ -74,6 +74,13 @@ abstract class AbstractDataProvider implements DataProviderInterface, ScopesRela
      * relation, so the include preloader reads it off the parent instead (or refuses it,
      * when {@see scopesRelatedReads()} says the reads are scoped). Override to batch an
      * include without N+1.
+     *
+     * It is also called for a relation whose related type this provider serves, when
+     * {@see scopesRelatedReads()} returns `true` and the parents, of `$parentType`, have
+     * another provider. Key each result by the parent's wire id. A to-one's target is
+     * then the first item for its parent, or none, so the parent model needs no getter
+     * for it. Left unsupported, the bundle reads such a relation one parent at a time
+     * through {@see fetchRelatedCollection()} or {@see relatedToOneMatches()}.
      */
     public function fetchRelatedCollectionBatch(
         string $parentType,

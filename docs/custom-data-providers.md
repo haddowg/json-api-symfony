@@ -347,6 +347,48 @@ seam per included relation over the level's parents. Return
 `RelatedBatch::computed()` for one whose value the model computes itself. An empty
 `new RelatedBatch([])` means every parent has no members.
 
+### Batching a relation into a type you serve
+
+The same method is also called on the provider of a relation's **related** type, when
+that provider scopes its related reads and isn't the parent type's provider. The
+parents are then of another type: `$parentType` names it, and you key each result by
+the parent's wire id, the id the parent's serializer renders. One call answers the
+whole page at every level, for `?include`, for linkage `data`, for the relationship
+queries window and for `?withCount`, so a grouped query over the page replaces a
+`fetchRelatedCollection()` per parent.
+
+```php
+public function fetchRelatedCollectionBatch(string $parentType, array $parents, RelationInterface $relation, CollectionCriteria $criteria, JsonApiRequestInterface $request): RelatedBatch
+{
+    $runIds = \array_map(static fn(Run $run): int => $run->id, $parents);
+    $results = [];
+    foreach ($this->progress->forRuns($runIds) as $progress) { // one GROUP BY
+        $results[(string) $progress->runId] = new CollectionResult([$progress]);
+    }
+
+    return new RelatedBatch($results);
+}
+```
+
+For a to-one, the batch is where the target comes from: the first item for a parent
+is its target, and no item means `null`. The parent model needs no property, getter or
+`extractUsing()` for it. The bundle reads the target from your batch on every path that
+renders it: an include, linkage, the related and relationship endpoints, and a
+`relatedQuery` or `?filter` check, where your `relatedToOneMatches()` then runs
+against the target you returned. A single parent is a one-element batch, and the
+batch for a page is read once per request and shared by those paths. A to-one is asked
+with empty criteria; a to-many gets the criteria its per-parent fetch would, window
+and default order included. A `?withCount` asks with the count's filters and no window,
+and counts each parent's `total` when you set one, else its items.
+
+Answer `RelatedBatch::unsupported()`, the `AbstractDataProvider` default, and the
+bundle keeps reading the relation one parent at a time, through
+`fetchRelatedCollection()` for a to-many and the parent's value plus
+`relatedToOneMatches()` for a to-one. `RelatedBatch::computed()` is read the same
+way, since the related type's scope still applies to what the model holds. A pivot
+`belongsToMany` is always read per parent through its pivot query, and a polymorphic
+relation is never batched this way.
+
 ### Saying whether related reads are scoped
 
 Included and linkage data always match the related endpoint (see
@@ -374,9 +416,10 @@ holds. A to-many with a
 your `fetchRelatedCollectionBatch()` whatever you answer, with the order in the
 criteria's `defaultSort`, since the model's own order isn't the one its endpoints
 serve. A provider that does not implement the interface is treated as scoping every
-relation: its relations are loaded through it, per parent when the parent type has a
-different provider, and one it cannot load (an `unsupported()` batch) is refused with a
-`500`. A polymorphic relation's members are kept per member type: the rows of a type
+relation: its relations are loaded through it, in one batch or per parent when the
+parent type has a different provider
+(see [batching a relation into a type you serve](#batching-a-relation-into-a-type-you-serve)),
+and one it cannot load (an `unsupported()` batch) is refused with a `500`. A polymorphic relation's members are kept per member type: the rows of a type
 your provider scopes render only when your `admitRows()` (from `AdmitsRowsInterface`)
 or your `fetchOne()` returns them. `AbstractDataProvider` implements it
 and returns `false`, so override it there when your reads filter.
