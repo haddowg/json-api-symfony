@@ -279,6 +279,16 @@ target is refused with a `500` instead. An
 the model's own value. The relation's storage column drives the batch
 (`column() ?? name()`), so a `storedAs()` rename is honoured.
 
+Linkage that renders without an include goes through the same batch. A `withData()`
+to-many, or any to-many whose linkage `data` renders on a page of parents, loads in one
+`IN (…)` query per relation per level, at the top level and below an include, instead
+of initialising each parent's collection on its own. A collection the unit of work has
+already initialised is read as it is, and relations stored on the same association
+share one load. A pivot `belongsToMany` is still read one parent at a time through its
+pivot query, and a to-one renders its identifier off the proxy without a load. The
+batch doesn't apply an `#[ORM\OrderBy]` mapped on the association, so give the relation
+or its related type a `defaultSort()` to order the linkage.
+
 The batching runs through the same provider-agnostic
 [`fetchRelatedCollectionBatch()`](../src/DataProvider/DataProviderInterface.php) seam
 that windowed related collections use, so it works on the in-memory provider too. A

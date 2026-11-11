@@ -126,6 +126,9 @@ final class QueryCountingDoctrineKernel extends Kernel
         // A second type over the SAME ArticleEntity with pagination disabled — the
         // Fetch-all witness (renders meta.total with no COUNT).
         $services->set(UnpaginatedArticleResource::class);
+        // A second type over the SAME CommentEntity linking each comment to its article,
+        // so an `?include=article` reaches the article level's withData() comments.
+        $services->set(ArticleCommentResource::class);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

@@ -336,8 +336,10 @@ endpoint or as a `relatedQuery[<rel>][sort]`, replaces the whole default.
 
 Applying the order to linkage means the members have to be read through the provider,
 so a to-many with a default read order loads in one ordered query per relation across
-a page of parents, even when it isn't included. Linkage of a relation with no order
-still reads straight off the model when its provider doesn't scope related reads.
+a page of parents, even when it isn't included. A to-many with no order whose provider
+doesn't scope related reads renders the members the model holds. When its linkage
+renders without an include and the model hasn't loaded the collection, the bundle
+loads it for the whole page in one query per relation rather than one per parent.
 
 Each key must name a sort the relation accepts: one of the related type's sorts, a
 `withSorts()` sort or, on a pivot `belongsToMany`, a pivot field. A pivot key orders

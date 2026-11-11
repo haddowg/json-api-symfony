@@ -9,6 +9,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\QueryCountingDoctrineKer
 use haddowg\JsonApiBundle\Tests\Functional\App\QueryCountingLogger;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Query-budget witnesses for the READ paths the windowed-include / `?withCount`
@@ -17,7 +18,9 @@ use PHPUnit\Framework\Attributes\Test;
  *    relation across the whole page, not one per parent;
  *  - a `WhereHas` existence filter compiles to a correlated `EXISTS` subquery — the
  *    `comment` table is never SELECTed standalone (no per-row probe, no fetch-join);
- *  - a paginated collection issues exactly one `COUNT` and one primary `SELECT`.
+ *  - a paginated collection issues exactly one `COUNT` and one primary `SELECT`;
+ *  - a withData() to-many that is not included loads its linkage in one batched query
+ *    across the page, at the top level and one include level down.
  *
  * Boots the {@see QueryCountingDoctrineKernel}; assertions read the SQL back off the
  * {@see QueryCountingLogger}.
@@ -77,9 +80,9 @@ final class DoctrineReadQueryBudgetTest extends JsonApiFunctionalTestCase
         // correlated EXISTS subquery folded into the article query (never a fetch-join
         // that multiplies rows, never a per-article probe to evaluate the predicate).
         // So the primary article SELECT carries an `EXISTS (… FROM comment …)`. (The
-        // separate per-parent comment loads on the result are linkage rendering — the
-        // audit's second finding — not the filter, so this asserts the filter shape
-        // directly: an EXISTS subquery referencing the comment table.)
+        // separate comment load for the result's linkage is not the filter, so this
+        // asserts the filter shape directly: an EXISTS subquery referencing the comment
+        // table.)
         $response = $this->handle(self::BASE_URI . '/articles?filter[hasComments]=1&sort=title');
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
 
@@ -164,6 +167,79 @@ final class DoctrineReadQueryBudgetTest extends JsonApiFunctionalTestCase
                 \count($perParentPinnedLoads),
                 \implode("\n", $perParentPinnedLoads),
             ),
+        );
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    public function aWithDataToManyOnACollectionLoadsItsLinkageInOneQuery(): void
+    {
+        $logger = $this->logger();
+        $logger->reset();
+
+        // GET /articles (5 parents), `comments` not included. It is a withData() to-many,
+        // unscoped and unordered, so its linkage renders on every parent. The batcher
+        // loads it for the whole page in one `article_id IN (…)` query; read off the
+        // model it would initialise each parent's collection with its own
+        // `article_id = ?` query. The sparse fieldset keeps flaggedComments, which
+        // shares the column, out of the count.
+        $response = $this->handle(self::BASE_URI . '/articles?fields[articles]=comments');
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $this->assertLinkageRendered($response, 5);
+
+        $this->assertOneCommentLinkageLoad($logger);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    public function aWithDataToManyOneIncludeLevelDownLoadsItsLinkageInOneQuery(): void
+    {
+        $logger = $this->logger();
+        $logger->reset();
+
+        // Every comment's article is included, and each included article renders its
+        // withData() comments linkage: one batched load across the level.
+        $response = $this->handle(self::BASE_URI . '/articleComments?include=article&fields[articles]=comments');
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        $included = $this->decode($response)['included'] ?? null;
+        self::assertIsArray($included);
+        self::assertNotEmpty($included);
+        foreach ($included as $resource) {
+            self::assertIsArray($resource);
+            self::assertSame('articles', $resource['type'] ?? null);
+            $relationships = $resource['relationships'] ?? null;
+            self::assertIsArray($relationships);
+            $comments = $relationships['comments'] ?? null;
+            self::assertIsArray($comments);
+            self::assertArrayHasKey('data', $comments);
+        }
+
+        $this->assertOneCommentLinkageLoad($logger);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    public function aWithDataToManyOnASingleResourceLoadsItsLinkageInOneQuery(): void
+    {
+        $logger = $this->logger();
+        $logger->reset();
+
+        $response = $this->handle(self::BASE_URI . '/articles/1?fields[articles]=comments');
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        $data = $this->decode($response)['data'] ?? null;
+        self::assertIsArray($data);
+        $relationships = $data['relationships'] ?? null;
+        self::assertIsArray($relationships);
+        $comments = $relationships['comments'] ?? null;
+        self::assertIsArray($comments);
+        self::assertNotEmpty($comments['data'] ?? null);
+
+        self::assertCount(
+            1,
+            $this->selectsFrom($logger, 'comment'),
+            "a single article's withData() comments must load in one query:\n" . \implode("\n", $logger->statements()),
         );
     }
 
@@ -257,6 +333,51 @@ final class DoctrineReadQueryBudgetTest extends JsonApiFunctionalTestCase
             $counts,
             \sprintf("fetch-all must run NO COUNT; ran %d:\n%s", \count($counts), \implode("\n", $counts)),
         );
+    }
+
+    /**
+     * Each of the `$parents` primary articles renders its `comments` linkage data.
+     */
+    private function assertLinkageRendered(Response $response, int $parents): void
+    {
+        $data = $this->decode($response)['data'] ?? null;
+        self::assertIsArray($data);
+        self::assertCount($parents, $data);
+        foreach ($data as $resource) {
+            self::assertIsArray($resource);
+            $relationships = $resource['relationships'] ?? null;
+            self::assertIsArray($relationships);
+            $comments = $relationships['comments'] ?? null;
+            self::assertIsArray($comments);
+            self::assertArrayHasKey('data', $comments);
+        }
+    }
+
+    /**
+     * The `comments` linkage loaded in one `article_id IN (…)` query and never per parent.
+     */
+    private function assertOneCommentLinkageLoad(QueryCountingLogger $logger): void
+    {
+        $comments = $this->selectsFrom($logger, 'comment');
+        $perParent = \array_values(\array_filter(
+            $comments,
+            static fn(string $sql): bool => \str_contains(\strtolower($sql), 'article_id = '),
+        ));
+        self::assertSame([], $perParent, \sprintf(
+            "a withData() to-many's linkage must not load once per parent; matched %d:\n%s",
+            \count($perParent),
+            \implode("\n", $perParent),
+        ));
+
+        $batched = \array_values(\array_filter(
+            $comments,
+            static fn(string $sql): bool => \str_contains(\strtolower($sql), 'article_id in ('),
+        ));
+        self::assertCount(1, $batched, \sprintf(
+            "a withData() to-many's linkage must load in ONE batched query; matched %d:\n%s",
+            \count($batched),
+            \implode("\n", $batched),
+        ));
     }
 
     /**
