@@ -353,8 +353,8 @@ The same method is also called on the provider of a relation's **related** type,
 that provider scopes its related reads and isn't the parent type's provider. The
 parents are then of another type: `$parentType` names it, and you key each result by
 the parent's wire id, the id the parent's serializer renders. One call answers the
-whole page at every level, for `?include`, for linkage `data` and for the relationship
-queries window, so a grouped query over the page replaces a
+whole page at every level, for `?include`, for linkage `data`, for the relationship
+queries window and for `?withCount`, so a grouped query over the page replaces a
 `fetchRelatedCollection()` per parent.
 
 ```php
@@ -378,7 +378,8 @@ renders it: an include, linkage, the related and relationship endpoints, and a
 against the target you returned. A single parent is a one-element batch, and the
 batch for a page is read once per request and shared by those paths. A to-one is asked
 with empty criteria; a to-many gets the criteria its per-parent fetch would, window
-and default order included.
+and default order included. A `?withCount` asks with the count's filters and no window,
+and counts each parent's `total` when you set one, else its items.
 
 Answer `RelatedBatch::unsupported()`, the `AbstractDataProvider` default, and the
 bundle keeps reading the relation one parent at a time, through

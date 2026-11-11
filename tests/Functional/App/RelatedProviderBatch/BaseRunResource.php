@@ -24,7 +24,7 @@ abstract class BaseRunResource extends AbstractResource
             Id::make()->numeric(),
             Str::make('name'),
             HasOne::make('progress', 'runProgress')->withData(),
-            HasMany::make('advertisers', 'runAdvertisers')->withData(),
+            HasMany::make('advertisers', 'runAdvertisers')->withData()->countable(),
             HasMany::make('notes', 'runNotes')->withData(),
         ];
     }

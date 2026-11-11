@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\RelatedProviderBatch;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Str;
+use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 
 #[AsJsonApiResource(readOnly: true)]
@@ -20,5 +21,10 @@ final class RunAdvertiserResource extends AbstractResource
             Id::make()->numeric(),
             Str::make('name'),
         ];
+    }
+
+    public function filters(): array
+    {
+        return [Where::make('name')];
     }
 }

@@ -57,6 +57,9 @@ final class RunReadsProvider extends AbstractDataProvider
     {
         $relatedType = $relation->relatedTypes()[0] ?? '';
         ProviderCalls::record('batch', $relatedType);
+        if ($criteria->queryParameters->filter !== []) {
+            ProviderCalls::record('filtered batch', $relatedType);
+        }
 
         $results = [];
         foreach ($parents as $parent) {

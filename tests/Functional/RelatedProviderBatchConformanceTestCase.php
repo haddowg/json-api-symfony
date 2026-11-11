@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use haddowg\JsonApi\Schema\Profile\CountableProfile;
 use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
 use haddowg\JsonApiBundle\Tests\Functional\App\RelatedProviderBatch\ProviderCalls;
 use PHPUnit\Framework\Attributes\Test;
@@ -134,6 +135,36 @@ abstract class RelatedProviderBatchConformanceTestCase extends JsonApiFunctional
         $excluded = $this->read('/runs/1/relationships/progress?filter[percent]=100');
         self::assertArrayHasKey('data', $excluded);
         self::assertNull($excluded['data']);
+    }
+
+    /**
+     * The count runs over the filtered set the related endpoint serves, in one batch
+     * for the page.
+     */
+    #[Test]
+    public function aFilteredCountReadsInOneBatch(): void
+    {
+        $response = $this->handle(
+            '/runs?withCount=advertisers&relatedQuery[advertisers][filter][name]=Acme',
+            extraServer: ['HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . CountableProfile::URI . ' ' . RelationshipQueriesProfile::URI . '"'],
+        );
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $document = $this->decode($response);
+
+        foreach (['1' => 1, '2' => 0, '3' => 0] as $id => $total) {
+            $meta = $this->relationship($document, (string) $id, 'advertisers')['meta'] ?? null;
+            self::assertIsArray($meta, 'meta of ' . $id);
+            self::assertSame($total, $meta['total'] ?? null, 'count of ' . $id);
+        }
+        self::assertSame(0, ProviderCalls::count('related', 'runAdvertisers'));
+        self::assertSame(2, ProviderCalls::count('filtered batch', 'runAdvertisers'), 'one for the window, one for the count');
+
+        ProviderCalls::reset();
+        $this->handle(
+            '/runs?relatedQuery[advertisers][filter][name]=Acme',
+            extraServer: ['HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . RelationshipQueriesProfile::URI . '"'],
+        );
+        self::assertSame(1, ProviderCalls::count('filtered batch', 'runAdvertisers'), 'the window alone');
     }
 
     #[Test]

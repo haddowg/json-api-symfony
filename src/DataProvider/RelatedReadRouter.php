@@ -671,7 +671,9 @@ final class RelatedReadRouter implements ResetInterface
 
     /**
      * The `?withCount` total of `$relation` per parent wire id, over the members the
-     * related endpoint serves.
+     * related endpoint serves. Read through a related provider that batches the
+     * relation, each answered parent's count is its result's total, else its item count;
+     * a parent the batch leaves out is counted on its own.
      *
      * @param list<object> $parents
      *
@@ -726,12 +728,25 @@ final class RelatedReadRouter implements ResetInterface
         // same rows.
         $pivot = $provider instanceof PivotAwareProviderInterface && $provider->supportsPivot($relatedType, $relation);
 
+        // A batching related provider counts the page in one call, over the same filtered
+        // set with no window.
+        $batch = $pivot || !$relation->isToMany() ? null : $this->relatedProviderBatch($type, $parents, $relation, $criteria, $request);
+
         $counts = [];
         foreach ($parents as $parent) {
+            $wireId = $serializer->getId($parent);
+            if ($batch !== null && $batch->has($wireId)) {
+                $answered = $batch->for($wireId);
+                $counts[$wireId] = $answered->total
+                    ?? (\is_array($answered->items) ? \count($answered->items) : \iterator_count($answered->items));
+
+                continue;
+            }
+
             $result = $pivot
                 ? $provider->fetchRelatedPivotCollection($relatedType, $parent, $relation, $criteria, $request)
                 : $provider->fetchRelatedCollection($relatedType, $parent, $relation, $criteria, $request);
-            $counts[$serializer->getId($parent)] = \is_array($result->items) ? \count($result->items) : \iterator_count($result->items);
+            $counts[$wireId] = \is_array($result->items) ? \count($result->items) : \iterator_count($result->items);
         }
 
         return $counts;

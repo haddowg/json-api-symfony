@@ -148,8 +148,9 @@ interface DataProviderInterface
      * provider scopes its related reads ({@see ScopesRelatedReadsInterface}) and is not
      * the parent type's provider. `$parents` are then of another type, `$parentType`,
      * served by another provider, and each result is keyed by that parent's wire id as
-     * its serializer renders it. One call answers the page for the include, the linkage
-     * and the Relationship Queries window. A to-one answered this way is the source of
+     * its serializer renders it. One call answers the page for the include, the linkage,
+     * the Relationship Queries window and `?withCount`, which counts each parent's total
+     * or items over the filtered set it is asked for. A to-one answered this way is the source of
      * each parent's target: the first item, or none for `null`, so the parent model
      * needs no getter, property or `extractUsing()` for it. It is asked with empty
      * criteria, and a filter on it runs through {@see relatedToOneMatches()} on the
