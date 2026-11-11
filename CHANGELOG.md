@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.9.0](https://github.com/haddowg/json-api-symfony/compare/v2.8.0...v2.9.0) (2026-11-11)
+
+
+### Features
+
+* let a relation drop its related type's filter defaults ([#359](https://github.com/haddowg/json-api-symfony/issues/359)) ([02b8380](https://github.com/haddowg/json-api-symfony/commit/02b8380e79778fefd2707fa0fdafa512fa246a06))
+
+
+### Bug Fixes
+
+* batch a withData to-many's linkage across a page ([#358](https://github.com/haddowg/json-api-symfony/issues/358)) ([dd0d808](https://github.com/haddowg/json-api-symfony/commit/dd0d8081ff871126641a8ef45fcbd4db7216d9b2))
+
 ## [2.8.0](https://github.com/haddowg/json-api-symfony/compare/v2.7.2...v2.8.0) (2026-11-11)
 
 
