@@ -784,6 +784,9 @@ final class JsonApiBundle extends AbstractBundle
             }
 
             $services = $container->services();
+            $builder->getDefinition(\haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource::class)
+                ->setArgument('$validatesRequestDocuments', true);
+
             $services->set(\haddowg\JsonApi\Validation\VendoredSchemaProvider::class);
             $services->set(\haddowg\JsonApi\Validation\DocumentValidator::class)
                 ->args([

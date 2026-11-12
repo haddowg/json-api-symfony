@@ -117,6 +117,25 @@ abstract class RelationshipCollectionParamsConformanceTestCase extends JsonApiFu
     }
 
     #[Test]
+    #[Group('spec:crud-updating-relationships')]
+    #[Group('spec:fetching-includes')]
+    public function anUnknownIncludePathOnAnEchoingRelationshipMutationIs400BeforeTheWrite(): void
+    {
+        // A mutation that answers with its linkage checks include the way the read does,
+        // before anything is written.
+        foreach (['PATCH' => [['type' => 'comments', 'id' => '1']], 'POST' => [['type' => 'comments', 'id' => '3']], 'DELETE' => [['type' => 'comments', 'id' => '2']]] as $method => $data) {
+            $response = $this->handle('/articles/1/relationships/comments?include=nonsense', $method, ['data' => $data]);
+
+            self::assertSame(400, $response->getStatusCode(), $method . ': ' . $response->getContent());
+            $error = $this->firstError($this->decode($response));
+            self::assertSame('INCLUSION_UNRECOGNIZED', $error['code'] ?? null, $method);
+            self::assertSame(['parameter' => 'include'], $error['source'] ?? null, $method);
+        }
+
+        self::assertSame(['1', '2'], $this->ids($this->fetchDocument('/articles/1/relationships/comments')));
+    }
+
+    #[Test]
     #[Group('spec:fetching-relationships')]
     #[Group('spec:fetching-sorting')]
     public function aToManyRelationshipLinkageSortsByTheRelatedVocabulary(): void

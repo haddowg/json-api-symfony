@@ -134,7 +134,27 @@ return static function (ContainerConfigurator $container): void {
         ->arg('$atomicPath', '%haddowg_json_api.atomic_operations.path%')
         // An empty base_uri advertises the server's recorded route mounts as relative
         // servers.
-        ->arg('$mountServers', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\OpenApi\Metadata\MountServers::class));
+        ->arg('$mountServers', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\OpenApi\Metadata\MountServers::class))
+        ->arg('$securityFacts', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Security\OperationSecurityFacts::class))
+        ->arg('$persisters', \Symfony\Component\DependencyInjection\Loader\Configurator\service(DataPersisterRegistry::class))
+        ->arg('$relatedReads', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataProvider\RelatedReadRouter::class));
+
+    // Which operations the security layer can refuse, for the error codes each operation
+    // documents: the declared expressions, and the firewall and access_control in front
+    // of each route when symfony/security-bundle is installed.
+    $services->set(\haddowg\JsonApiBundle\Security\RouteFirewall::class)
+        ->args([
+            \Symfony\Component\DependencyInjection\Loader\Configurator\service('router')->nullOnInvalid(),
+            \Symfony\Component\DependencyInjection\Loader\Configurator\service('security.firewall.map')->nullOnInvalid(),
+            \Symfony\Component\DependencyInjection\Loader\Configurator\service('security.access_map')->nullOnInvalid(),
+        ]);
+    $services->set(\haddowg\JsonApiBundle\Security\OperationSecurityFacts::class)
+        ->args([
+            \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Action\ActionRegistry::class),
+            \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Security\ResourceSecurityRegistry::class)->nullOnInvalid(),
+            \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Security\RouteFirewall::class),
+            \Symfony\Component\DependencyInjection\Loader\Configurator\service(DataPersisterRegistry::class),
+        ]);
 
     $services->set(\haddowg\JsonApiBundle\OpenApi\Metadata\MountServers::class)
         ->arg('$router', \Symfony\Component\DependencyInjection\Loader\Configurator\service('router')->nullOnInvalid());

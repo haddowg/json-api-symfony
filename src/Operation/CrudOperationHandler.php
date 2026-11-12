@@ -1206,8 +1206,6 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $type = $target->type;
         $relationshipName = (string) $target->relationship;
 
-        RelationshipIncludePaths::validate($server, $this->jsonApiRequest($operation->context()), $type);
-
         $parent = $this->loadParent($type, $target->id);
         if ($parent === null) {
             return ErrorResponse::fromException(new ResourceNotFound());

@@ -504,6 +504,11 @@ Both render as `application/vnd.api+json` with the standard `errors[].status` /
 `errors[].title`, plus the stable `errors[].code`: `ACCESS_DENIED` for the `403`,
 `AUTHENTICATION_REQUIRED` for the `401` (see [errors](errors.md#authentication-and-authorization-failures)).
 
+The OpenAPI document offers `ACCESS_DENIED` only on the operations one of these
+expressions, or an `access_control` rule, can refuse, and `AUTHENTICATION_REQUIRED` on
+those and on every route behind an authenticating firewall (see
+[errors](errors.md#documenting-your-own-error-codes)).
+
 ## Request-aware predicates: lightweight per-caller authz
 
 Separate from the firewall/voter path, the **field and relation builders** carry a

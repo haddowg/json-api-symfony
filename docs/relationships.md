@@ -36,7 +36,10 @@ the related endpoint. The relationship endpoint renders linkage only, never an
 `included` member, but it still checks `?include`. Its paths start at the parent, as in
 the spec's `GET /articles/1/relationships/comments?include=comments.author`, and a path
 naming a relationship the parent's tree doesn't have is a `400`
-`INCLUSION_UNRECOGNIZED`. The relation DSL drives all of this — see
+`INCLUSION_UNRECOGNIZED`, checked before the parent loads. A `PATCH`, `POST` or `DELETE`
+that answers with its linkage checks `?include` the same way, before it writes. A
+write-only relation's mutation answers `204` with no document, so it ignores `?include`,
+as a delete does. The relation DSL drives all of this — see
 [core relations](https://github.com/haddowg/json-api/blob/main/docs/relations.md)
 (`withoutLinks()`) and
 [core sparse-fieldsets-and-includes](https://github.com/haddowg/json-api/blob/main/docs/sparse-fieldsets-and-includes.md)

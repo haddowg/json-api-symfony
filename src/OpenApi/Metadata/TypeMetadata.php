@@ -7,8 +7,12 @@ namespace haddowg\JsonApiBundle\OpenApi\Metadata;
 use haddowg\JsonApi\OpenApi\Metadata\ActionMetadataInterface;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresActionLinks;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresAlwaysCounted;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresClientIdCollisions;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresDefaultSort;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresDeprecation;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresHydratorCardinality;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresIncludeSafeguards;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresInclusionUnsupported;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresNamedOperationExtensions;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationExamples;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationExtensions;
@@ -19,6 +23,7 @@ use haddowg\JsonApi\OpenApi\Metadata\DeclaresResourceLinks;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresSingularName;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresSortExample;
 use haddowg\JsonApi\OpenApi\Metadata\OperationExample;
+use haddowg\JsonApi\OpenApi\Metadata\OperationKey;
 use haddowg\JsonApi\OpenApi\Metadata\OperationResponseInterface;
 use haddowg\JsonApi\OpenApi\Metadata\OperationResponses;
 use haddowg\JsonApi\OpenApi\Metadata\OperationType;
@@ -75,8 +80,12 @@ use haddowg\JsonApi\Resource\Sort\SortInterface;
  * And core's opt-in {@see DeclaresDefaultSort} and {@see DeclaresSortExample}: the
  * resource's `defaultSort()` and `sortExample()`, which the projector turns into the
  * `sort` parameter's example. Both are empty for a standalone type.
+ *
+ * And the facts core's error coverage reads about the type: the include safeguards its
+ * serializer applies as a document's root, that no operation refuses `include`, that a
+ * taken client id is a `409`, and that a hand-written hydrator never reads linkage.
  */
-final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOperationExtensions, DeclaresNamedOperationExtensions, DeclaresSingularName, DeclaresOperationExamples, DeclaresAlwaysCounted, DeclaresResourceLinks, DeclaresActionLinks, DeclaresOperationScopes, DeclaresResourceClass, DeclaresDeprecation, DeclaresRelatedOnly, DeclaresDefaultSort, DeclaresSortExample
+final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOperationExtensions, DeclaresNamedOperationExtensions, DeclaresSingularName, DeclaresOperationExamples, DeclaresAlwaysCounted, DeclaresResourceLinks, DeclaresActionLinks, DeclaresOperationScopes, DeclaresResourceClass, DeclaresDeprecation, DeclaresRelatedOnly, DeclaresDefaultSort, DeclaresSortExample, DeclaresIncludeSafeguards, DeclaresInclusionUnsupported, DeclaresClientIdCollisions, DeclaresHydratorCardinality
 {
     /**
      * @param list<FieldInterface>            $fields
@@ -107,6 +116,9 @@ final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOper
      * @param bool                            $relatedOnly         whether the type serves no endpoint of its own
      * @param list<SortDirective>             $defaultSort         the resource's default order, most significant first
      * @param list<string>|null               $sortExample         the resource's declared `sort` example tokens, or null to derive one
+     * @param list<string>|null               $allowedIncludePaths  the root include allow-list the type's serializer declares, or null for none
+     * @param list<string>                    $excludedIncludePaths the root include paths the type's serializer refuses
+     * @param ?int                            $maxIncludeDepth      the type's own maximum include depth, or null for the server's
      */
     public function __construct(
         private string $type,
@@ -146,6 +158,9 @@ final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOper
         private bool $relatedOnly = false,
         private array $defaultSort = [],
         private ?array $sortExample = null,
+        private ?array $allowedIncludePaths = null,
+        private array $excludedIncludePaths = [],
+        private ?int $maxIncludeDepth = null,
     ) {}
 
     public function isRelatedOnly(): bool
@@ -331,5 +346,46 @@ final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOper
     public function sortExample(): ?array
     {
         return $this->sortExample;
+    }
+
+    public function allowedIncludePaths(): ?array
+    {
+        return $this->allowedIncludePaths;
+    }
+
+    public function excludedIncludePaths(): array
+    {
+        return $this->excludedIncludePaths;
+    }
+
+    public function maxIncludeDepth(): ?int
+    {
+        return $this->maxIncludeDepth;
+    }
+
+    /**
+     * No handler the bundle ships refuses `include` outright.
+     */
+    public function rejectsInclude(OperationKey $operation): bool
+    {
+        return false;
+    }
+
+    /**
+     * Both reference persisters refuse a taken client id, and a custom one may.
+     */
+    public function detectsClientIdCollisions(): bool
+    {
+        return true;
+    }
+
+    /**
+     * The handler takes `relationships` out of a body before the hydrator sees it and
+     * writes linkage through the persister, so a hand-written hydrator never checks its
+     * cardinality.
+     */
+    public function checksRelationshipCardinality(): bool
+    {
+        return false;
     }
 }

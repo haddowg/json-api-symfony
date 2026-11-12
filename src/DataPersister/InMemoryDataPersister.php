@@ -8,6 +8,7 @@ use Doctrine\Common\Collections\Collection;
 use haddowg\JsonApi\Collection\LinkRows\InMemoryLinkRows;
 use haddowg\JsonApi\Collection\LinkRows\LinkRowWrite;
 use haddowg\JsonApi\Collection\LinkRows\LinkRowWritePlan;
+use haddowg\JsonApi\Exception\ClientGeneratedIdAlreadyExists;
 use haddowg\JsonApi\Hydrator\Relationship\ToManyRelationship;
 use haddowg\JsonApi\Hydrator\Relationship\ToOneRelationship;
 use haddowg\JsonApi\Resource\Field\Accessor;
@@ -93,6 +94,12 @@ final class InMemoryDataPersister implements DataPersisterInterface, Transaction
 
     public function create(string $type, object $entity): object
     {
+        // A server-generated create carries no id yet, so only a client id can collide.
+        $id = $this->store->idOf($entity);
+        if ($id !== null && $this->store->find($id) !== null) {
+            throw new ClientGeneratedIdAlreadyExists($id);
+        }
+
         $this->store->save($entity);
 
         return $entity;

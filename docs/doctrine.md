@@ -403,6 +403,11 @@ carries each member's pivot values (see
   and `Location`. So a plain `Id::make()` over an auto-increment entity round-trips
   the database-assigned id with no persister change (see
   [resources § Sourcing the resource id](resources.md#sourcing-the-resource-id)).
+  An id already on the new entity is a client id, and when a row with it exists the
+  create is a `409` `CLIENT_GENERATED_ID_ALREADY_EXISTS` rather than the database's
+  unique-key error. The lookup goes through `find()`, so a Doctrine filter hiding the
+  row hides it from the check too. The in-memory persister refuses a taken id the same
+  way.
 - **`update()`** relies on the target being a *managed* instance the hydrator
   mutated in place — the provider loaded it through this same `EntityManager`, so
   `update()` is just `flush()`. There is no `persist`/`merge`.

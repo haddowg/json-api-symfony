@@ -11,6 +11,7 @@ use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Mapping\ClassMetadata;
 use haddowg\JsonApi\Collection\LinkRows\LinkRowWritePlan;
+use haddowg\JsonApi\Exception\ClientGeneratedIdAlreadyExists;
 use haddowg\JsonApi\Exception\FullReplacementProhibited;
 use haddowg\JsonApi\Exception\RemovalProhibited;
 use haddowg\JsonApi\Exception\ResourceNotFound;
@@ -169,6 +170,14 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
 
     public function create(string $type, object $entity): object
     {
+        // An id already on the new entity is a client id; one that is taken is a 409
+        // rather than the database's unique-key error at flush.
+        $metadata = $this->entityManager->getClassMetadata($entity::class);
+        $ids = $metadata->getIdentifierValues($entity);
+        if ($ids !== [] && !\in_array(null, $ids, true) && $this->entityManager->find($metadata->getName(), $ids) !== null) {
+            throw new ClientGeneratedIdAlreadyExists(\implode(' ', \array_map(static fn(mixed $id): string => \is_scalar($id) || $id instanceof \Stringable ? (string) $id : \get_debug_type($id), $ids)));
+        }
+
         $this->entityManager->persist($entity);
         $this->entityManager->flush();
 
@@ -232,6 +241,56 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
         }
 
         return $entity;
+    }
+
+    /**
+     * Whether linkage naming a related resource can be refused with a `404` by
+     * {@see decodeLinkageId()}: a related type whose ids pass an encoder, or whose
+     * identifier is not a plain string column, can be sent an id that is not one of
+     * its own.
+     */
+    public function canMissLinkage(RelationInterface $relation): bool
+    {
+        foreach ($relation->relatedTypes() as $relatedType) {
+            if (!isset($this->entityClassByType[$relatedType]) || $this->idEncoders->encoderFor($relatedType) !== null) {
+                return true;
+            }
+
+            $metadata = $this->entityManager->getClassMetadata($this->entityClassByType[$relatedType]);
+            $identifier = $metadata->getIdentifierFieldNames();
+            if (\count($identifier) !== 1 || $metadata->hasAssociation($identifier[0])
+                || !\in_array($metadata->getTypeOfField($identifier[0]), ['string', 'ascii_string', 'text'], true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether a write to `$relation` of `$type` can be refused for leaving a member
+     * without the parent its NOT NULL foreign key requires, as
+     * {@see refuseOrphaningRequiredMembers()} decides from the mapping: an inverse,
+     * non-pivot to-many with no `orphanRemoval` whose owning side has a non-nullable join
+     * column.
+     */
+    public function canRefuseDetachment(string $type, RelationInterface $relation): bool
+    {
+        if (!$relation->isToMany() || ($this->pivotAssociations?->isPivotRelation($relation) ?? false)) {
+            return false;
+        }
+
+        $metadata = $this->entityManager->getClassMetadata($this->entityClassFor($type));
+        $property = $relation->column() ?? $relation->name();
+        if (!$metadata->hasAssociation($property) || !$metadata->isAssociationInverseSide($property)
+            || $this->mappingValue($metadata->getAssociationMapping($property), 'orphanRemoval') === true) {
+            return false;
+        }
+
+        $owningField = $metadata->getAssociationMappedByTargetField($property);
+        $target = $this->entityManager->getClassMetadata($metadata->getAssociationTargetClass($property));
+
+        return $this->requiresParentOf($target, $owningField);
     }
 
     /**
@@ -445,6 +504,27 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
 
             $metadata->setFieldValue($row, $field, $this->dateTimeForColumn($row, $field, $value));
         }
+    }
+
+    /**
+     * Whether {@see movedMembers()} can report a move for `$relation` of `$type`: an
+     * inverse, non-pivot to-many whose owning side is single-valued.
+     */
+    public function canMoveMembers(string $type, RelationInterface $relation): bool
+    {
+        if (!$relation->isToMany() || ($this->pivotAssociations?->isPivotRelation($relation) ?? false)) {
+            return false;
+        }
+
+        $metadata = $this->entityManager->getClassMetadata($this->entityClassFor($type));
+        $property = $relation->column() ?? $relation->name();
+        $relatedType = $relation->relatedTypes()[0] ?? '';
+        if (!$metadata->hasAssociation($property) || !$metadata->isAssociationInverseSide($property) || !isset($this->entityClassByType[$relatedType])) {
+            return false;
+        }
+
+        return $this->entityManager->getClassMetadata($this->entityClassFor($relatedType))
+            ->isSingleValuedAssociation($metadata->getAssociationMappedByTargetField($property));
     }
 
     /**
@@ -1034,7 +1114,14 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
      */
     private function requiresParent(object $member, string $owningField): bool
     {
-        $metadata = $this->entityManager->getClassMetadata($member::class);
+        return $this->requiresParentOf($this->entityManager->getClassMetadata($member::class), $owningField);
+    }
+
+    /**
+     * @param ClassMetadata<object> $metadata
+     */
+    private function requiresParentOf(ClassMetadata $metadata, string $owningField): bool
+    {
         if (!$metadata->hasAssociation($owningField) || $metadata->isCollectionValuedAssociation($owningField)) {
             return false;
         }

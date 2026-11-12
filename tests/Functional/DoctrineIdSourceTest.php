@@ -130,6 +130,21 @@ final class DoctrineIdSourceTest extends JsonApiFunctionalTestCase
 
     #[Test]
     #[Group('spec:crud')]
+    public function aCreateNamingATakenClientIdIs409(): void
+    {
+        $create = fn(): Response => $this->handle('/tokens', 'POST', [
+            'data' => ['type' => 'tokens', 'id' => 'taken-key', 'attributes' => ['value' => 'v']],
+        ]);
+        self::assertSame(201, $create()->getStatusCode());
+
+        $response = $create();
+
+        self::assertSame(409, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame('CLIENT_GENERATED_ID_ALREADY_EXISTS', $this->firstErrorCode($response));
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
     public function aGeneratedUlidCreateMintsAUlid(): void
     {
         $response = $this->handle('/badges', 'POST', [

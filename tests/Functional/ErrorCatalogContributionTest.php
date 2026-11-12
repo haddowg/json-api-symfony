@@ -84,8 +84,9 @@ final class ErrorCatalogContributionTest extends JsonApiFunctionalTestCase
     #[Group('spec:errors')]
     public function coresOwnCodesAreStillCatalogued(): void
     {
-        // The contribution joins core's catalogue; it never replaces it.
-        self::assertSame('Error404', self::errorShapeOf($this->schemas(), 'RESOURCE_NOT_FOUND'));
+        // The contribution joins core's catalogue; it never replaces it. A collection read
+        // never answers RESOURCE_NOT_FOUND, so the code has a shape of its own.
+        self::assertSame('Error404ResourceNotFound', self::errorShapeOf($this->schemas(), 'RESOURCE_NOT_FOUND'));
     }
 
     #[Test]
