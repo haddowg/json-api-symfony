@@ -118,7 +118,9 @@ executor the related endpoint uses. Only a related type with a query
 extension (soft-delete / tenant / published-only) — or `window_functions: false` — takes
 the per-parent bounded fallback. Either way the fetch is bounded; plain (un-windowed)
 includes use the `WHERE fk IN (…)` fast-path and are unaffected. See
-[the Doctrine eager-loading section](doctrine.md#eager-loading-includes-no-n1).
+[the Doctrine eager-loading section](doctrine.md#eager-loading-includes-no-n1). A pivot
+`belongsToMany` include is one bounded query per relation too, carrying each member's
+pivot values (see [doctrine → `belongsToMany` pivot data](doctrine.md#belongstomany-pivot-data)).
 
 ## Cursor (keyset) pagination
 
