@@ -61,9 +61,8 @@ abstract class RelationshipCollectionParamsConformanceTestCase extends JsonApiFu
     public function aRelationshipEndpointRendersLinkageOnlyAndNeverACompoundIncluded(): void
     {
         // A relationship endpoint returns linkage only — never a compound `included`
-        // document. `?include` is not part of its contract:
-        // it is tolerated (not a 400) but inert, and no `included` member is emitted.
-        // This locks the linkage-only contract on BOTH providers.
+        // document. A known `?include` path is accepted but inert, and no `included`
+        // member is emitted. This locks the linkage-only contract on BOTH providers.
         $response = $this->handle('/articles/1/relationships/comments?include=author');
 
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
@@ -77,6 +76,63 @@ abstract class RelationshipCollectionParamsConformanceTestCase extends JsonApiFu
             ],
             $this->identifiers($document),
         );
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    #[Group('spec:fetching-includes')]
+    public function anUnknownIncludePathOnTheRelationshipEndpointIs400(): void
+    {
+        // Include paths on a relationship endpoint start at the parent resource, as in the
+        // spec's own `GET /articles/1/relationships/comments?include=comments.author`.
+        foreach ([
+            'unknown top-level path' => ['/articles/1/relationships/comments?include=nonsense', 'nonsense'],
+            'unknown segment below the relationship' => ['/articles/1/relationships/comments?include=comments.nonsense', 'comments.nonsense'],
+            'unknown segment below another relationship' => ['/articles/1/relationships/comments?include=author.nonsense', 'author.nonsense'],
+            'to-one relationship' => ['/articles/1/relationships/author?include=author.nonsense', 'author.nonsense'],
+            'missing parent' => ['/articles/9999/relationships/comments?include=nonsense', 'nonsense'],
+        ] as $case => [$path, $include]) {
+            $response = $this->handle($path);
+
+            self::assertSame(400, $response->getStatusCode(), $case . ': ' . $response->getContent());
+            $error = $this->firstError($this->decode($response));
+            self::assertSame('INCLUSION_UNRECOGNIZED', $error['code'] ?? null, $case);
+            self::assertSame(['parameter' => 'include'], $error['source'] ?? null, $case);
+            self::assertIsString($error['detail'] ?? null, $case);
+            self::assertStringContainsString($include, $error['detail'], $case);
+        }
+    }
+
+    #[Test]
+    #[Group('spec:fetching-relationships')]
+    #[Group('spec:fetching-includes')]
+    public function aKnownIncludePathBelowTheRelationshipIsInert(): void
+    {
+        $response = $this->handle('/articles/1/relationships/comments?include=comments');
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $document = $this->decode($response);
+        self::assertArrayNotHasKey('included', $document);
+        self::assertSame(['1', '2'], $this->ids($document));
+    }
+
+    #[Test]
+    #[Group('spec:crud-updating-relationships')]
+    #[Group('spec:fetching-includes')]
+    public function anUnknownIncludePathOnAnEchoingRelationshipMutationIs400BeforeTheWrite(): void
+    {
+        // A mutation that answers with its linkage checks include the way the read does,
+        // before anything is written.
+        foreach (['PATCH' => [['type' => 'comments', 'id' => '1']], 'POST' => [['type' => 'comments', 'id' => '3']], 'DELETE' => [['type' => 'comments', 'id' => '2']]] as $method => $data) {
+            $response = $this->handle('/articles/1/relationships/comments?include=nonsense', $method, ['data' => $data]);
+
+            self::assertSame(400, $response->getStatusCode(), $method . ': ' . $response->getContent());
+            $error = $this->firstError($this->decode($response));
+            self::assertSame('INCLUSION_UNRECOGNIZED', $error['code'] ?? null, $method);
+            self::assertSame(['parameter' => 'include'], $error['source'] ?? null, $method);
+        }
+
+        self::assertSame(['1', '2'], $this->ids($this->fetchDocument('/articles/1/relationships/comments')));
     }
 
     #[Test]

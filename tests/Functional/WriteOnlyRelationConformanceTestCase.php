@@ -101,4 +101,17 @@ abstract class WriteOnlyRelationConformanceTestCase extends JsonApiFunctionalTes
 
         self::assertSame(Response::HTTP_NO_CONTENT, $response->getStatusCode(), (string) $response->getContent());
     }
+
+    #[Test]
+    #[Group('spec:crud-updating-relationships')]
+    #[Group('spec:fetching-includes')]
+    public function aWriteOnlyRelationshipMutationIgnoresInclude(): void
+    {
+        // The mutation renders nothing, so like a delete it never reads include.
+        $response = $this->handle('/articles/1/relationships/secretComments?include=nonsense', 'PATCH', [
+            'data' => [['type' => 'comments', 'id' => '1']],
+        ]);
+
+        self::assertSame(Response::HTTP_NO_CONTENT, $response->getStatusCode(), (string) $response->getContent());
+    }
 }

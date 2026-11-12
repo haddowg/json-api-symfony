@@ -6,10 +6,12 @@ namespace haddowg\JsonApiBundle\OpenApi\Metadata;
 
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresAlwaysCounted;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresDeprecatedRelation;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresDetachmentRefusal;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresDroppedFilterDefaults;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresFixedMembership;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresIdentifiedMembers;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresIdentifierMeta;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresLinkageResolution;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresPolymorphicRelation;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresRelationDefaultSort;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresRelationExampleId;
@@ -46,13 +48,19 @@ use haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory;
  * The related type's filter defaults the relation drops through
  * `withoutFilterDefaults()` are read off core's {@see DropsFilterDefaultsInterface},
  * so the projector leaves them off the relation's endpoints.
+ *
+ * Whether the data layer can refuse to detach a member or miss a resource the linkage
+ * names is resolved by the {@see MetadataSource} from the owning type's persister and
+ * the related types' providers.
  */
-final readonly class RelationMetadata implements RelationMetadataInterface, DeclaresWriteOnlyRelation, DeclaresDeprecatedRelation, DeclaresRelationUriFieldName, DeclaresAlwaysCounted, DeclaresRelationExampleId, DeclaresPolymorphicRelation, DeclaresIdentifiedMembers, DeclaresIdentifierMeta, DeclaresRelationDefaultSort, DeclaresFixedMembership, DeclaresDroppedFilterDefaults
+final readonly class RelationMetadata implements RelationMetadataInterface, DeclaresWriteOnlyRelation, DeclaresDeprecatedRelation, DeclaresRelationUriFieldName, DeclaresAlwaysCounted, DeclaresRelationExampleId, DeclaresPolymorphicRelation, DeclaresIdentifiedMembers, DeclaresIdentifierMeta, DeclaresRelationDefaultSort, DeclaresFixedMembership, DeclaresDroppedFilterDefaults, DeclaresDetachmentRefusal, DeclaresLinkageResolution
 {
     /**
      * @param list<string> $relatedIncludablePaths the related type's includable paths (resolved by the source)
      * @param bool         $ownerServesEndpoints   false when the owning type is related-only, so neither endpoint exists
      * @param ?AbstractResource $relatedResource    a monomorphic to-many's related resource, where a positioned relation's field lives
+     * @param \Closure(): bool|null $canRefuseDetachment whether the persister can refuse to leave a member without its required parent, read only when the projection asks; null answers yes
+     * @param \Closure(): bool|null $canMissLinkage      whether linkage can name a related resource the data layer answers `404` for, read only when the projection asks; null answers yes
      */
     public function __construct(
         private RelationInterface $relation,
@@ -61,7 +69,27 @@ final readonly class RelationMetadata implements RelationMetadataInterface, Decl
         private bool $alwaysCounts = false,
         private bool $ownerServesEndpoints = true,
         private ?AbstractResource $relatedResource = null,
+        private ?\Closure $canRefuseDetachment = null,
+        private ?\Closure $canMissLinkage = null,
     ) {}
+
+    /**
+     * The relation definition this metadata describes.
+     */
+    public function relation(): RelationInterface
+    {
+        return $this->relation;
+    }
+
+    public function canRefuseDetachment(): bool
+    {
+        return $this->canRefuseDetachment === null || ($this->canRefuseDetachment)();
+    }
+
+    public function canMissLinkage(): bool
+    {
+        return $this->canMissLinkage === null || ($this->canMissLinkage)();
+    }
 
     public function name(): string
     {

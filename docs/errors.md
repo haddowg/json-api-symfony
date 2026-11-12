@@ -387,7 +387,49 @@ a status, a `source` member and a declared `meta` are grouped into one shape
 `code`, and `ErrorDocument.errors.items` offers the shapes through an `anyOf` a
 generated client can dispatch on (see core's
 [error-code catalogue](https://github.com/haddowg/json-api/blob/main/docs/openapi.md#the-error-code-catalogue)).
-Your application's codes join them when you say where they are.
+The bundle's own codes are catalogued beside them: `VALIDATION_FAILED` on creates, updates,
+relationship writes, actions that take a document and `POST /operations`, and the Atomic
+Operations codes (`ATOMIC_HREF_INVALID`, `ATOMIC_HREF_UNRESOLVABLE`,
+`ATOMIC_OPERATION_NOT_EXPOSED`, `ATOMIC_OPERATIONS_NOT_SUPPORTED`,
+`ATOMIC_OPERATIONS_UNAVAILABLE`, `ATOMIC_TARGET_TYPE_UNKNOWN` and
+`ASYNC_WRITE_IN_ATOMIC_OPERATION`) on `POST /operations` alone. Your application's codes
+join them when you say where they are.
+
+Each of core's codes is offered only on the operations that can raise it, and the bundle
+tells core what decides that from its own runtime:
+
+- `ACCESS_DENIED` appears on an operation a security expression guards, or one declared
+  `true`, which says something outside the bundle enforces it. That covers the type's own
+  `security*` declarations, a relation's `security(read:, mutate:)` on its endpoints and
+  on linkage a create or update sets, the related type's update expression on a member a
+  to-many write takes from another parent and on an attribute flattened onto a related
+  row, the related type's list expression on a to-many's reads, and an action's own
+  `security`. An `access_control` rule matching the operation's route adds it too. A rule
+  whose matcher reads more than the path, method and host, such as the client's IP, counts
+  as matching every route.
+- `AUTHENTICATION_REQUIRED` appears wherever `ACCESS_DENIED` does, since an expression
+  refusing an anonymous caller answers `401`, and on every route whose firewall has an
+  authenticator, because an authenticator refuses bad credentials even on a public
+  route. A firewall whose matcher reads more than the path, method and host counts as
+  matching every route.
+- `FULL_REPLACEMENT_PROHIBITED` and `REMOVAL_PROHIBITED` from the data layer appear on an
+  inverse to-many whose owning side has a non-nullable join column and no
+  `orphanRemoval`, as the Doctrine mapping says.
+- `RESOURCE_NOT_FOUND` appears on a create whose linkage can name a missing resource: a
+  related type whose provider scopes what the caller sees, one with an id encoder, or one
+  whose identifier isn't a string column.
+- An `include` that reaches a relation or related type the caller may not read never
+  refuses the request: the relationship renders its links with no data, so it adds
+  neither code.
+- `INCLUSION_NOT_ALLOWED` and `INCLUSION_DEPTH_EXCEEDED` follow the root type's allowed
+  and excluded include paths and maximum depth, and the server's `max_include_depth`.
+- `REQUEST_BODY_INVALID_JSON_API` appears on every write with `schema_validation` on, and
+  otherwise on creates and updates, whose `attributes`, `relationships` and `meta` the
+  handler checks are objects. No response is validated, so the `RESPONSE_BODY_INVALID_*`
+  codes appear nowhere.
+
+A persister of your own, or a route the bundle can't find, offers the codes it might
+raise, since the bundle can't see what it does.
 
 An error that wants a place in the catalogue implements core's
 `DescribedErrorInterface`, which reads the code, status and title off the class —

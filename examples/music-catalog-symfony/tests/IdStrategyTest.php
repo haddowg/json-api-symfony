@@ -73,6 +73,26 @@ final class IdStrategyTest extends MusicCatalogKernelTestCase
     #[Test]
     #[Group('spec:creating-resources')]
     #[Group('spec:errors')]
+    public function aCreateNamingATakenNaturalKeyIs409(): void
+    {
+        $create = fn(): Response => $this->handle('/genres', 'POST', [
+            'data' => ['type' => 'genres', 'id' => 'zydeco', 'attributes' => ['name' => 'Zydeco']],
+        ]);
+        self::assertSame(201, $create()->getStatusCode());
+
+        $response = $create();
+
+        self::assertSame(409, $response->getStatusCode(), (string) $response->getContent());
+        $errors = $this->decode($response)['errors'] ?? null;
+        self::assertIsArray($errors);
+        $first = $errors[0] ?? null;
+        self::assertIsArray($first);
+        self::assertSame('CLIENT_GENERATED_ID_ALREADY_EXISTS', $first['code'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:creating-resources')]
+    #[Group('spec:errors')]
     public function aRequireClientIdCreateWithoutAnIdIs403(): void
     {
         // requireClientId() makes the id mandatory: absent is ClientGeneratedIdRequired.

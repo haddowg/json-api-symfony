@@ -10,11 +10,16 @@ use haddowg\JsonApi\OpenApi\ExternalDocumentation;
 use haddowg\JsonApi\OpenApi\License;
 use haddowg\JsonApi\OpenApi\Metadata\AtomicOperationsMetadataInterface;
 use haddowg\JsonApi\OpenApi\Metadata\ContributesErrorCodes;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresDocumentValidation;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresExampleGeneration;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresLinkObjects;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresMaxIncludeDepth;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresMethodNotAllowed;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationScopeTable;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationSecurity;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresReadOnlyAttributeRejection;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresStrictQueryParameters;
+use haddowg\JsonApi\OpenApi\Metadata\OperationKey;
 use haddowg\JsonApi\OpenApi\Metadata\ServerMetadataInterface;
 use haddowg\JsonApi\OpenApi\Metadata\TypeMetadataInterface;
 use haddowg\JsonApi\OpenApi\SecurityRequirement;
@@ -34,9 +39,9 @@ use haddowg\JsonApi\Scope\ScopeTable;
  *
  * It implements core's {@see ContributesErrorCodes} (a {@see ServerMetadataInterface}
  * that also names error sources) rather than the bare interface, so an application's
- * own described errors join core's in the projected catalogue. The sources come from
- * the {@see \haddowg\JsonApiBundle\DependencyInjection\Compiler\ErrorCatalogPass}; a
- * server with none contributes an empty list, which changes no document.
+ * own described errors join core's in the projected catalogue, after the bundle's own
+ * ({@see BuiltInErrorSources}). The application's sources come from the
+ * {@see \haddowg\JsonApiBundle\DependencyInjection\Compiler\ErrorCatalogPass}.
  *
  * It also implements core's {@see DeclaresLinkObjects}, so the links components describe
  * the form the server renders its links in and each example `describedby` points into
@@ -49,8 +54,12 @@ use haddowg\JsonApi\Scope\ScopeTable;
  * And core's {@see DeclaresOperationScopeTable}, handing the projection the same scope
  * table enforcement checks, read from the {@see \haddowg\JsonApiBundle\Scope\ScopeTableProvider}
  * only when the projection asks for it.
+ *
+ * And the runtime facts core's error coverage reads: which operations the security
+ * layer can refuse ({@see DeclaresOperationSecurity}), whether query parameters are
+ * strict, which documents are checked, and the default include depth.
  */
-final readonly class ServerMetadata implements ContributesErrorCodes, DeclaresLinkObjects, DeclaresReadOnlyAttributeRejection, DeclaresExampleGeneration, DeclaresOperationScopeTable, DeclaresMethodNotAllowed
+final readonly class ServerMetadata implements ContributesErrorCodes, DeclaresLinkObjects, DeclaresReadOnlyAttributeRejection, DeclaresExampleGeneration, DeclaresOperationScopeTable, DeclaresMethodNotAllowed, DeclaresOperationSecurity, DeclaresStrictQueryParameters, DeclaresDocumentValidation, DeclaresMaxIncludeDepth
 {
     /**
      * @param list<Server>                      $servers
@@ -62,6 +71,7 @@ final readonly class ServerMetadata implements ContributesErrorCodes, DeclaresLi
      * @param list<ErrorCatalogSourceInterface> $errorSources
      * @param (\Closure(): ScopeTable)|null      $scopeTable   reads the server's scope table when the projection asks for it; null uses no scopes
      * @param array<string, string>             $scopeCatalog every scope the app defines, with its description
+     * @param (\Closure(?TypeMetadataInterface, OperationKey, bool): bool)|null $security answers whether the security layer can refuse an operation, with `ACCESS_DENIED` when the bool is true and `AUTHENTICATION_REQUIRED` otherwise; null answers yes
      */
     public function __construct(
         private string $title,
@@ -86,7 +96,58 @@ final readonly class ServerMetadata implements ContributesErrorCodes, DeclaresLi
         private ?\Closure $scopeTable = null,
         private string $scopeScheme = 'oauth2',
         private array $scopeCatalog = [],
+        private ?\Closure $security = null,
+        private bool $strictQueryParameters = true,
+        private bool $validatesRequestDocuments = false,
+        private bool $checksResourceObjectMembers = true,
+        private ?int $maxIncludeDepth = null,
     ) {}
+
+    public function canDenyAccess(?TypeMetadataInterface $type, OperationKey $operation): bool
+    {
+        return $this->security === null || ($this->security)($type, $operation, true);
+    }
+
+    public function canRequireAuthentication(?TypeMetadataInterface $type, OperationKey $operation): bool
+    {
+        return $this->security === null || ($this->security)($type, $operation, false);
+    }
+
+    public function strictQueryParameters(): bool
+    {
+        return $this->strictQueryParameters;
+    }
+
+    /**
+     * The optional opis linter (`json_api.schema_validation`) checks every resource and
+     * relationship body and every action document.
+     */
+    public function validatesRequestDocuments(): bool
+    {
+        return $this->validatesRequestDocuments;
+    }
+
+    /**
+     * The CRUD handler refuses a create or update body whose members aren't objects,
+     * linter or not.
+     */
+    public function checksResourceObjectMembers(): bool
+    {
+        return $this->checksResourceObjectMembers;
+    }
+
+    /**
+     * The bundle never validates a response before sending it.
+     */
+    public function validatesResponseDocuments(): bool
+    {
+        return false;
+    }
+
+    public function maxIncludeDepth(): ?int
+    {
+        return $this->maxIncludeDepth;
+    }
 
     public function scopeTable(): ScopeTable
     {
@@ -133,11 +194,13 @@ final readonly class ServerMetadata implements ContributesErrorCodes, DeclaresLi
     }
 
     /**
+     * The bundle's own described errors, then the application's.
+     *
      * @return list<ErrorCatalogSourceInterface>
      */
     public function errorSources(): iterable
     {
-        return $this->errorSources;
+        return [...BuiltInErrorSources::for($this->types), ...$this->errorSources];
     }
 
     public function title(): string
