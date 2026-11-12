@@ -532,6 +532,45 @@ The constraints you already declare (`minLength`, `pattern`, `in`, `min`/`max`, 
 `CompareField`, the `After`/`Before`/`Between` date bounds) degrade to a human-readable
 note in the schema `description` rather than emitting a wrong schema.
 
+### Describing filters and sorts
+
+Every filter and sort can carry its own description, and the bundle reports what core
+needs to give each `filter[<key>]` and `sort` parameter an example. Core's
+[filters](https://github.com/haddowg/json-api/blob/main/docs/filters.md) and
+[sorts](https://github.com/haddowg/json-api/blob/main/docs/sorts.md) pages cover the
+builders. In short:
+
+- A presence filter, meaning `WhereHas`, `WhereDoesntHave`, `WhereNull`,
+  `WhereNotNull`, a fixed `Where` or an all-fixed group, takes `describedAs()`. The
+  document adds "Applied when present; value ignored." and always shows `true` as the
+  example.
+- `SortByField` and `SortFamily` take `describedAs()`. Described keys are listed as a
+  table in the `sort` parameter's description and in its `x-sort-descriptions` map, and
+  a sortable field's sort reuses the field's description.
+- `FilterFamily` takes `describedAs()` and `example($suffix, $value)`.
+- The `sort` example is the resource's `sortExample()` when it returns one, else its
+  `defaultSort()`, else the first sort ascending. A relation's related and relationship
+  endpoints show the relation's own `defaultSort()` first.
+- A filter's `default()` shows as the default of its parameter's schema, except on a
+  relation's endpoints when the relation [drops it](relationships.md#dropping-the-related-types-filter-defaults).
+- The Doctrine-only [`WhereHasMatching`](relationships.md#wherehasmatching--the-doctrine-escape-hatch-not-portable)
+  takes `describedAs()` and `example()` like core's value filters.
+
+```php
+public function filters(): array
+{
+    return [WhereHas::make('tracks')->describedAs('Only albums with at least one track.')];
+}
+
+public function sortExample(): array
+{
+    return ['-releasedAt', 'title'];
+}
+```
+
+The music-catalog example's `AlbumResource` declares both, and describes the
+`duration` sort on its `tracks` relation.
+
 ### Operation examples
 
 Every operation's request body and success responses, and each shared error response,

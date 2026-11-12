@@ -7,7 +7,8 @@ namespace haddowg\JsonApiBundle\DataProvider\Doctrine\Filter;
 use Doctrine\Common\Collections\Criteria;
 use Doctrine\ORM\QueryBuilder;
 use haddowg\JsonApi\Resource\Constraint\ConstraintInterface;
-use haddowg\JsonApi\Resource\Filter\FilterInterface;
+use haddowg\JsonApi\Resource\Filter\DescribedFilter;
+use haddowg\JsonApi\Resource\Filter\ExemplifiedFilter;
 
 /**
  * A **Doctrine-only** relationship-existence filter: keep a row whose named
@@ -34,8 +35,11 @@ use haddowg\JsonApi\Resource\Filter\FilterInterface;
  *
  * NOT value-validated: the author owns the value (it is consumed by their closure,
  * not compared by a declared operator), so {@see constraints()} returns `[]`.
+ *
+ * {@see describedAs()} and {@see example()} document its `filter[<key>]` parameter in
+ * the OpenAPI document, the same as core's value filters.
  */
-final readonly class WhereHasMatching implements FilterInterface
+final readonly class WhereHasMatching implements DescribedFilter, ExemplifiedFilter
 {
     /**
      * @param \Closure(QueryBuilder, string, mixed): void|null $build
@@ -45,6 +49,9 @@ final readonly class WhereHasMatching implements FilterInterface
         public string $relationship,
         public ?Criteria $criteria = null,
         public ?\Closure $build = null,
+        private ?string $description = null,
+        private bool $hasExample = false,
+        private mixed $example = null,
     ) {}
 
     /**
@@ -72,6 +79,39 @@ final readonly class WhereHasMatching implements FilterInterface
     public function key(): string
     {
         return $this->key;
+    }
+
+    /**
+     * A copy carrying a description for its `filter[<key>]` parameter in the OpenAPI
+     * document, in place of the generic one.
+     */
+    public function describedAs(string $description): self
+    {
+        return new self($this->key, $this->relationship, $this->criteria, $this->build, $description, $this->hasExample, $this->example);
+    }
+
+    /**
+     * A copy carrying an example value for its `filter[<key>]` parameter in the OpenAPI
+     * document. A declared `null` counts as an example.
+     */
+    public function example(mixed $example): self
+    {
+        return new self($this->key, $this->relationship, $this->criteria, $this->build, $this->description, true, $example);
+    }
+
+    public function getDescription(): ?string
+    {
+        return $this->description;
+    }
+
+    public function hasExample(): bool
+    {
+        return $this->hasExample;
+    }
+
+    public function getExample(): mixed
+    {
+        return $this->example;
     }
 
     /**

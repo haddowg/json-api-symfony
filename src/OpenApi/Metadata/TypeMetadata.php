@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\OpenApi\Metadata;
 use haddowg\JsonApi\OpenApi\Metadata\ActionMetadataInterface;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresActionLinks;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresAlwaysCounted;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresDefaultSort;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresDeprecation;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresNamedOperationExtensions;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationExamples;
@@ -16,6 +17,7 @@ use haddowg\JsonApi\OpenApi\Metadata\DeclaresRelatedOnly;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresResourceClass;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresResourceLinks;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresSingularName;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresSortExample;
 use haddowg\JsonApi\OpenApi\Metadata\OperationExample;
 use haddowg\JsonApi\OpenApi\Metadata\OperationResponseInterface;
 use haddowg\JsonApi\OpenApi\Metadata\OperationResponses;
@@ -27,6 +29,7 @@ use haddowg\JsonApi\Resource\Field\FieldInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Link\ActionLink;
 use haddowg\JsonApi\Resource\Link\DeclaredLink;
+use haddowg\JsonApi\Resource\Sort\SortDirective;
 use haddowg\JsonApi\Resource\Sort\SortInterface;
 
 /**
@@ -68,8 +71,12 @@ use haddowg\JsonApi\Resource\Sort\SortInterface;
  *
  * And core's opt-in {@see DeclaresRelatedOnly}: whether `#[AsJsonApiResource(relatedOnly:)]`
  * says the type serves no endpoint of its own.
+ *
+ * And core's opt-in {@see DeclaresDefaultSort} and {@see DeclaresSortExample}: the
+ * resource's `defaultSort()` and `sortExample()`, which the projector turns into the
+ * `sort` parameter's example. Both are empty for a standalone type.
  */
-final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOperationExtensions, DeclaresNamedOperationExtensions, DeclaresSingularName, DeclaresOperationExamples, DeclaresAlwaysCounted, DeclaresResourceLinks, DeclaresActionLinks, DeclaresOperationScopes, DeclaresResourceClass, DeclaresDeprecation, DeclaresRelatedOnly
+final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOperationExtensions, DeclaresNamedOperationExtensions, DeclaresSingularName, DeclaresOperationExamples, DeclaresAlwaysCounted, DeclaresResourceLinks, DeclaresActionLinks, DeclaresOperationScopes, DeclaresResourceClass, DeclaresDeprecation, DeclaresRelatedOnly, DeclaresDefaultSort, DeclaresSortExample
 {
     /**
      * @param list<FieldInterface>            $fields
@@ -98,6 +105,8 @@ final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOper
      * @param ?\DateTimeInterface             $sunset              the declared sunset date, or null
      * @param list<string>                    $deprecatedOperations the operations deprecated on their own, by core's operation name
      * @param bool                            $relatedOnly         whether the type serves no endpoint of its own
+     * @param list<SortDirective>             $defaultSort         the resource's default order, most significant first
+     * @param list<string>|null               $sortExample         the resource's declared `sort` example tokens, or null to derive one
      */
     public function __construct(
         private string $type,
@@ -135,6 +144,8 @@ final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOper
         private ?\DateTimeInterface $sunset = null,
         private array $deprecatedOperations = [],
         private bool $relatedOnly = false,
+        private array $defaultSort = [],
+        private ?array $sortExample = null,
     ) {}
 
     public function isRelatedOnly(): bool
@@ -310,5 +321,15 @@ final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOper
     public function deprecatedOperations(): array
     {
         return $this->deprecatedOperations;
+    }
+
+    public function defaultSort(): array
+    {
+        return $this->defaultSort;
+    }
+
+    public function sortExample(): ?array
+    {
+        return $this->sortExample;
     }
 }

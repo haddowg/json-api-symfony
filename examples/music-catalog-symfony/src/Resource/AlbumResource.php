@@ -159,7 +159,7 @@ final class AlbumResource extends AbstractResource
             HasMany::make('tracks', 'tracks')
                 ->paginate(PagePaginator::make()->withDefaultPerPage(2))
                 ->withFilters(Where::make('longerThan', 'length_seconds', '>')->integer())
-                ->withSorts(SortByField::make('duration', 'length_seconds'))
+                ->withSorts(SortByField::make('duration', 'length_seconds')->describedAs('The track\'s length in seconds.'))
                 // Countable: the related-collection endpoint emits
                 // meta.page.total + a last link, and ?withCount=tracks activates the
                 // relationship-object meta.total on an album.
@@ -183,8 +183,9 @@ final class AlbumResource extends AbstractResource
     {
         return [
             // WhereHas('tracks'): albums with at least one related track — the Doctrine
-            // reference renders this as an EXISTS subquery over the same relation.
-            WhereHas::make('tracks'),
+            // reference renders this as an EXISTS subquery over the same relation. It is
+            // a presence filter, so the document adds that the value is ignored.
+            WhereHas::make('tracks')->describedAs('Only albums with at least one track.'),
             // WhereThrough('artist.name'): the constrained-existence DOTTED-TRAVERSAL
             // filter. `filter[artist.name]=Radiohead`
             // keeps albums whose `artist` relation's `name` matches — a portable
@@ -247,6 +248,17 @@ final class AlbumResource extends AbstractResource
         return [
             new SortDirective(SortByField::make('releasedAt'), descending: true),
         ];
+    }
+
+    /**
+     * The `sort` example the OpenAPI document shows on `GET /albums`: newest first,
+     * then by title. Without it the document shows the default order.
+     *
+     * @return list<string>
+     */
+    public function sortExample(): array
+    {
+        return ['-releasedAt', 'title'];
     }
 
     /**

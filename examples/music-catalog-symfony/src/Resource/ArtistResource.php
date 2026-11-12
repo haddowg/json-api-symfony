@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Resource;
 
+use Doctrine\ORM\QueryBuilder;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\DateTime;
 use haddowg\JsonApi\Resource\Field\HasMany;
@@ -13,6 +14,7 @@ use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApi\Resource\Field\Url;
 use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
+use haddowg\JsonApiBundle\DataProvider\Doctrine\Filter\WhereHasMatching;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Artist;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Query\FullTextSearch;
 
@@ -90,6 +92,20 @@ final class ArtistResource extends AbstractResource
             // search across the artist's name and bio, the richest demo of the custom
             // FullTextSearch arm.
             FullTextSearch::make('q', ['name', 'bio']),
+            // WhereHasMatching: the Doctrine-only escape hatch. Its closure narrows the
+            // EXISTS subquery over the artist's albums with the request value, which
+            // only the author knows the meaning of, so the description and example tell
+            // the client what to send.
+            WhereHasMatching::using(
+                'albumTitle',
+                'albums',
+                static function (QueryBuilder $albums, string $album, mixed $value): void {
+                    $albums->andWhere(\sprintf('LOWER(%s.title) LIKE :albumTitle', $album))
+                        ->setParameter('albumTitle', '%' . \mb_strtolower(\is_string($value) ? $value : '') . '%');
+                },
+            )
+                ->describedAs('Only artists with an album whose title contains the value, ignoring case.')
+                ->example('computer'),
         ];
     }
 

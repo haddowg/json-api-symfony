@@ -180,7 +180,7 @@ abstract class DescribedLinksConformanceTestCase extends JsonApiFunctionalTestCa
         self::assertIsArray($self);
         self::assertSame('#/components/schemas/RenderedLink', self::at($self, '$ref'));
         self::assertArrayNotHasKey('allOf', $self);
-        self::assertArrayNotHasKey('example', $self);
+        self::assertArrayNotHasKey('examples', $self);
 
         // The asLink action is listed by name, beside the shared members.
         self::assertSame('#/components/schemas/RenderedLink', self::at($links, 'allOf', 1, 'properties', 'publish', '$ref'));
@@ -189,7 +189,7 @@ abstract class DescribedLinksConformanceTestCase extends JsonApiFunctionalTestCa
         // The one link example left in the components points at the fetch operation.
         self::assertSame(
             ['href' => '/api/articles/1', 'describedby' => $this->pointer('/articles/{id}')],
-            self::at($schemas, 'LinkObject', 'example'),
+            self::at($schemas, 'LinkObject', 'examples', 0),
         );
     }
 
@@ -252,7 +252,7 @@ abstract class DescribedLinksConformanceTestCase extends JsonApiFunctionalTestCa
         self::assertSame('#/components/schemas/LinkObject', self::at($schemas, 'ResourceLinks', 'properties', 'self', '$ref'));
         self::assertSame('#/components/schemas/LinkObject', self::at($schemas, 'ArticlesResourceLinks', 'allOf', 1, 'properties', 'publish', '$ref'));
         // Nor can the link example carry a describedby.
-        self::assertSame('/api/articles/1', self::at($schemas, 'LinkObject', 'example'));
+        self::assertSame('/api/articles/1', self::at($schemas, 'LinkObject', 'examples', 0));
     }
 
     #[Test]

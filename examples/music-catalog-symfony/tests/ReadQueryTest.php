@@ -73,6 +73,18 @@ final class ReadQueryTest extends MusicCatalogKernelTestCase
         self::assertSame([], $this->albumIds($this->fetch('/albums?filter[artist.name]=Nobody')));
     }
 
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    #[Group('spec:fetching-relationships')]
+    public function aWhereHasMatchingFilterNarrowsTheExistsSubqueryByTheValue(): void
+    {
+        // `filter[albumTitle]` keeps artists with an album whose title contains the
+        // value: OK Computer is Radiohead's (artist 1), Dummy is Portishead's (artist 2).
+        self::assertSame(['1'], $this->idsOfType($this->fetch('/artists?filter[albumTitle]=COMPUTER'), 'artists'));
+        self::assertSame(['2'], $this->idsOfType($this->fetch('/artists?filter[albumTitle]=dum'), 'artists'));
+        self::assertSame([], $this->idsOfType($this->fetch('/artists?filter[albumTitle]=zzz'), 'artists'));
+    }
+
     // --- convenience filter library ------------------------------------
 
     #[Test]

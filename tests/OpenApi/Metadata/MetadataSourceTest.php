@@ -6,12 +6,14 @@ namespace haddowg\JsonApiBundle\Tests\OpenApi\Metadata;
 
 use haddowg\JsonApi\OpenApi\Metadata\ActionInputMode;
 use haddowg\JsonApi\OpenApi\Metadata\ActionScope;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresDefaultSort;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresExampleGeneration;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresNamedOperationExtensions;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationExamples;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationExtensions;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresResourceLinks;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresSingularName;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresSortExample;
 use haddowg\JsonApi\OpenApi\Metadata\OperationExample;
 use haddowg\JsonApi\OpenApi\Metadata\OperationResponseInterface;
 use haddowg\JsonApi\OpenApi\Metadata\OperationType;
@@ -24,6 +26,8 @@ use haddowg\JsonApi\Resource\Field\BelongsTo;
 use haddowg\JsonApi\Resource\Field\HasMany;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Str;
+use haddowg\JsonApi\Resource\Sort\SortByField;
+use haddowg\JsonApi\Resource\Sort\SortDirective;
 use haddowg\JsonApi\Schema\Profile\CountableProfile;
 use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
 use haddowg\JsonApi\Server\Server;
@@ -575,6 +579,26 @@ final class MetadataSourceTest extends TestCase
     }
 
     #[Test]
+    public function theTypeReportsItsResourcesDefaultSortAndSortExample(): void
+    {
+        $server = $this->source(describedArticle: true)->forServer();
+        $articles = $this->typeNamed($server, 'articles');
+        $people = $this->typeNamed($server, 'people');
+
+        self::assertInstanceOf(DeclaresDefaultSort::class, $articles);
+        self::assertInstanceOf(DeclaresSortExample::class, $articles);
+        self::assertSame(['title'], \array_map(static fn(SortDirective $directive): string => $directive->sort->key(), $articles->defaultSort()));
+        self::assertTrue($articles->defaultSort()[0]->descending);
+        self::assertSame(['-title', 'id'], $articles->sortExample());
+
+        // A resource that declares neither leaves core to derive the example.
+        self::assertInstanceOf(DeclaresDefaultSort::class, $people);
+        self::assertInstanceOf(DeclaresSortExample::class, $people);
+        self::assertSame([], $people->defaultSort());
+        self::assertNull($people->sortExample());
+    }
+
+    #[Test]
     public function aRelationCarriesItsDescribedAsAsTheRelationDescription(): void
     {
         $articles = $this->typeNamed($this->source()->forServer(), 'articles');
@@ -938,6 +962,16 @@ final class DescribedArticleResource extends ArticleResource
     public function getSingularName(): string
     {
         return 'method-hook noun';
+    }
+
+    public function defaultSort(): array
+    {
+        return [new SortDirective(SortByField::make('title'), true)];
+    }
+
+    public function sortExample(): array
+    {
+        return ['-title', 'id'];
     }
 }
 

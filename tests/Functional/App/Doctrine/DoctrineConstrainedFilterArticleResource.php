@@ -62,7 +62,7 @@ final class DoctrineConstrainedFilterArticleResource extends ConstrainedFilterAr
                     $sub->andWhere(\sprintf('%s.name LIKE :editorNameLike', $relatedAlias))
                         ->setParameter('editorNameLike', '%' . (\is_string($value) ? $value : '') . '%');
                 },
-            ),
+            )->describedAs('Articles with an editor whose name contains the value.')->example('Grace'),
         ];
     }
 }

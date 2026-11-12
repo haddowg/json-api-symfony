@@ -353,6 +353,12 @@ has no shared filter vocabulary in the bundle, so no related-type default applie
 it in the first place; the warm-up check still accepts a key defaulted on any one of
 its related types.
 
+The OpenAPI document follows the same rule. A filter default shows as the `default` of
+its `filter[<key>]` parameter's schema, and the relation's related and relationship
+endpoints leave off each default the relation drops. On the example's
+`/albums/{id}/tracklist`, `filter[explicit]` has no `default`, while
+`/albums/{id}/tracks` shows `default: false`.
+
 Once a relation drops every default it would have applied, and it is unordered and
 its related type unscoped, its linkage reads straight off the model again instead of
 through the related type's provider.
@@ -681,6 +687,20 @@ Two boundaries set it apart from `WhereThrough`:
 - **Not value-validated.** The author owns the request value (the closure consumes it,
   no declared operator compares it), so `constraints()` returns `[]` — there is
   nothing for the validator bridge to check.
+
+Since only you know what the value means, tell clients with `describedAs()` and
+`example()`. Both return a copy, and the OpenAPI document shows them on the
+`filter[<key>]` parameter the way it does for core's value filters. The music-catalog
+example's artists declare one:
+
+```php
+WhereHasMatching::using('albumTitle', 'albums', static function (QueryBuilder $albums, string $album, mixed $value): void {
+    $albums->andWhere(\sprintf('LOWER(%s.title) LIKE :albumTitle', $album))
+        ->setParameter('albumTitle', '%' . \mb_strtolower(\is_string($value) ? $value : '') . '%');
+})
+    ->describedAs('Only artists with an album whose title contains the value, ignoring case.')
+    ->example('computer'),
+```
 
 `WhereThrough`, `WhereThroughIn` and `WhereHasMatching` share the one `EXISTS` builder in
 [`DoctrineFilterHandler`](../src/DataProvider/Doctrine/DoctrineFilterHandler.php); see

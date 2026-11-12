@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional;
 
 use haddowg\JsonApi\Schema\Profile\CountableProfile;
 use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
+use haddowg\JsonApiBundle\OpenApi\DocumentFactory;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
@@ -135,5 +136,32 @@ abstract class RelationFilterDefaultsConformanceTestCase extends JsonApiFunction
     {
         self::assertSame(['1', '5'], $this->ids($this->get(self::BASE_URI . '/tracks')['data'] ?? null));
         self::assertSame(['2'], $this->ids($this->get(self::BASE_URI . '/tracks?filter[explicit]=true')['data'] ?? null));
+    }
+
+    #[Test]
+    public function theDocumentLeavesADroppedDefaultOffTheRelationsEndpoints(): void
+    {
+        $factory = static::getContainer()->get(DocumentFactory::class);
+        self::assertInstanceOf(DocumentFactory::class, $factory);
+        $paths = (array) $this->value((array) \json_decode((string) \json_encode($factory->forServer()->toArray()), true), 'paths');
+
+        $defaults = function (string $path) use ($paths): array {
+            $found = [];
+            foreach ((array) $this->value((array) ($paths[$path] ?? []), 'get', 'parameters') as $parameter) {
+                if (\is_array($parameter) && \in_array($parameter['name'] ?? null, ['filter[explicit]', 'filter[archived]'], true)) {
+                    $found[$parameter['name']] = $this->value($parameter, 'schema', 'default');
+                }
+            }
+            \ksort($found);
+
+            return $found;
+        };
+
+        $both = ['filter[archived]' => false, 'filter[explicit]' => false];
+        self::assertSame($both, $defaults('/tracks'));
+        foreach (['tracks' => $both, 'explicitTracks' => ['filter[archived]' => false, 'filter[explicit]' => null], 'allTracks' => ['filter[archived]' => null, 'filter[explicit]' => null]] as $name => $expected) {
+            self::assertSame($expected, $defaults('/albums/{id}/' . $name), $name);
+            self::assertSame($expected, $defaults('/albums/{id}/relationships/' . $name), $name);
+        }
     }
 }

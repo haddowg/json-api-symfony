@@ -63,7 +63,7 @@ final class OpenApiDocumentRouteLookupTest extends \Symfony\Bundle\FrameworkBund
         $spec = $this->document($kernel, '/api/v5/docs.json');
         self::assertSame(
             '/api/v5/docs.json' . self::ADMIN_POINTER,
-            $this->at($spec, 'components', 'schemas', 'LinkObject', 'example', 'describedby'),
+            $this->at($spec, 'components', 'schemas', 'LinkObject', 'examples', '0', 'describedby'),
         );
 
         $kernel->shutdown();
