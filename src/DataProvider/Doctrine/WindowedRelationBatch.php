@@ -306,6 +306,13 @@ final class WindowedRelationBatch
     }
 
     /**
+     * The result alias of a second copy of the parent id that a query selecting one
+     * entity per (parent, entity) row adds, so the rows hydrate apart; see
+     * {@see keyedByParent()}.
+     */
+    public const string ROW_KEY_ALIAS = 'jsonapi_row_key';
+
+    /**
      * Whether this Doctrine release still exposes the internal {@see Query} methods the
      * native reads go through. When it does not, a caller that can read another way should.
      */
@@ -321,33 +328,43 @@ final class WindowedRelationBatch
     }
 
     /**
-     * Runs `$builder`'s query and hydrates its rows one at a time, so an entity it selects
-     * comes back on every row it appears in, not once per result.
-     *
-     * {@see Query::toIterable()} would do that too, but it refuses a to-many join anywhere
-     * in the query, an existence filter's subquery included. So the query's own SQL runs as
-     * a native query with the same result set mapping, and that iterates.
+     * Runs `$builder`'s query and returns every row, one per parent and entity: an entity
+     * two parents share comes back on both parents' rows. See {@see keyedByParent()}.
      *
      * @return list<array<int|string, mixed>>
      */
-    public function iterateRows(QueryBuilder $builder): array
+    public function rowsPerParent(QueryBuilder $builder, string $entityAlias): array
     {
         $query = $builder->getQuery();
         $sql = $query->getSQL();
         \assert(\is_string($sql));
 
-        $rsm = $this->reflectResultSetMapping($query);
-        $native = $this->entityManager->createNativeQuery($sql, $rsm);
+        $native = $this->entityManager->createNativeQuery($sql, $this->keyedByParent($this->reflectResultSetMapping($query), $entityAlias));
         $this->rebindParameters($native, $query, $this->reflectParameterMappings($query), null);
 
-        $rows = [];
-        foreach ($native->toIterable() as $row) {
-            if (\is_array($row)) {
-                $rows[] = $row;
-            }
-        }
+        /** @var list<array<int|string, mixed>> */
+        return $native->getResult();
+    }
 
-        return $rows;
+    /**
+     * A copy of `$rsm` that hydrates the `$entityAlias` entity once per parent rather than
+     * once per result. The object hydrator folds every row of one entity into the first,
+     * so a row whose scalars belong to a second parent would be lost. Mapping the
+     * {@see ROW_KEY_ALIAS} copy of the parent id as an identifier column of the entity
+     * makes the hydrator tell those rows apart. The entity itself is still the one managed
+     * instance. `toIterable()` would also keep the rows apart, but the lowest supported
+     * Doctrine releases refuse to iterate a result with scalars, and every release refuses
+     * a join to a to-many association anywhere in the query.
+     */
+    private function keyedByParent(ResultSetMapping $rsm, string $entityAlias): ResultSetMapping
+    {
+        $keyed = clone $rsm;
+        $column = $this->scalarAlias($keyed, self::ROW_KEY_ALIAS);
+        $type = $keyed->typeMappings[$column] ?? null;
+        unset($keyed->scalarMappings[$column]);
+        $keyed->addMetaResult($entityAlias, $column, self::ROW_KEY_ALIAS, true, $type);
+
+        return $keyed;
     }
 
     /**
@@ -360,20 +377,20 @@ final class WindowedRelationBatch
      *
      * The pivot batch reads through this. Its terms are bare columns, so NULLs fall where
      * the engine puts them, as they do in the single-parent pivot query this replaces.
-     * The rows hydrate one at a time, so an entity the inner query selects comes back on
-     * every row it appears in, not once per result.
+     * The `$entityAlias` entity comes back once per parent, as {@see rowsPerParent()}
+     * returns it.
      *
      * @param list<array{0: string, 1: bool}> $orderBy result alias and whether it descends
      *
      * @return list<array<int|string, mixed>>
      */
-    public function windowRows(QueryBuilder $inner, array $orderBy, int $rowCap, bool $countable): array
+    public function windowRows(QueryBuilder $inner, string $entityAlias, array $orderBy, int $rowCap, bool $countable): array
     {
         $query = $inner->getQuery();
         $innerSql = $query->getSQL();
         \assert(\is_string($innerSql));
 
-        $innerRsm = $this->reflectResultSetMapping($query);
+        $innerRsm = $this->keyedByParent($this->reflectResultSetMapping($query), $entityAlias);
         $parameterMappings = $this->reflectParameterMappings($query);
 
         $parentAlias = $this->scalarAlias($innerRsm, BatchScope::PARENT_DISCRIMINATOR_ALIAS);
@@ -399,7 +416,7 @@ final class WindowedRelationBatch
         $native = $this->entityManager->createNativeQuery($sql, $innerRsm);
         $this->rebindParameters($native, $query, $parameterMappings, $rowCap);
 
-        return $this->runOrThrow($native, iterate: true);
+        return $this->runOrThrow($native);
     }
 
     /**
@@ -1118,11 +1135,11 @@ final class WindowedRelationBatch
      *
      * @return list<array<int|string, mixed>>
      */
-    private function runOrThrow(\Doctrine\ORM\NativeQuery $query, bool $iterate = false): array
+    private function runOrThrow(\Doctrine\ORM\NativeQuery $query): array
     {
         try {
             /** @var list<array<int|string, mixed>> $rows */
-            $rows = $iterate ? \iterator_to_array($query->toIterable(), false) : $query->getResult();
+            $rows = $query->getResult();
 
             return $rows;
         } catch (\Doctrine\DBAL\Exception $exception) {

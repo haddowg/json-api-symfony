@@ -2141,10 +2141,9 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
      * `pivot.<parentProperty> IN (:parents)` and grouped by parent and far member, so each
      * parent keeps one row per distinct member as the single-parent query does.
      *
-     * Each row carries the far entity, the parent id and the pivot fields, and the rows
-     * hydrate one at a time. Hydrated as one result, a member two parents share would come
-     * back once and lose one parent's pivot values. So a page costs one query per
-     * relation however many parents it holds.
+     * Each row carries the far entity, the parent id and the pivot fields, and the far
+     * entity hydrates once per parent, so a member two parents share keeps both parents'
+     * pivot values. A page costs one query per relation however many parents it holds.
      *
      * A windowed include (an offset page) wraps the grouped query in a per-parent
      * `ROW_NUMBER` window, and a counted one adds the per-parent total, so each parent
@@ -2182,7 +2181,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $builder = $this->applier->apply($criteria, $builder, $this->filterHandler, $this->sortHandler);
 
         $results = [];
-        foreach ($this->pivotRowsByParent($this->windowedBatch->iterateRows($builder), $parentType, $parents) as $wireId => $rows) {
+        foreach ($this->pivotRowsByParent($this->windowedBatch->rowsPerParent($builder, self::ROOT_ALIAS), $parentType, $parents) as $wireId => $rows) {
             $results[$wireId] = $this->pivotResult($rows, $relatedType, $relation, null);
         }
 
@@ -2225,7 +2224,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
         $countable = $criteria->wantsCount;
         $rowCap = $window->offset + $window->limit + ($countable ? 0 : 1);
-        $rows = $this->windowedBatch->windowRows($builder, $order, $rowCap, $countable);
+        $rows = $this->windowedBatch->windowRows($builder, self::ROOT_ALIAS, $order, $rowCap, $countable);
 
         // The outer select carries no ORDER BY, so each parent's rows are put back in
         // row-number order.
@@ -2335,8 +2334,9 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
     /**
      * The grouped pivot query for a page of parents: the far entity rooted at
      * {@see ROOT_ALIAS}, the association entity joined as `pivot` and scoped to the
-     * page, selecting the far entity plus the parent id, the far id and each rendered
-     * pivot field as scalars, one row per parent and distinct far member.
+     * page, selecting the far entity plus the parent id (twice, the second copy keying
+     * the hydration by parent), the far id and each rendered pivot field as scalars, one
+     * row per parent and distinct far member.
      * {@see pivotQuery()} is its single-parent twin.
      *
      * @param list<object> $parents
@@ -2352,6 +2352,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             ->getRepository($relatedClass)
             ->createQueryBuilder(self::ROOT_ALIAS)
             ->addSelect(\sprintf('IDENTITY(pivot.%s) AS %s', $association->parentProperty, BatchScope::PARENT_DISCRIMINATOR_ALIAS))
+            ->addSelect(\sprintf('IDENTITY(pivot.%s) AS %s', $association->parentProperty, WindowedRelationBatch::ROW_KEY_ALIAS))
             ->addSelect(\sprintf('%s AS %s', DoctrineIdentifiers::path($relatedMetadata, self::ROOT_ALIAS), BatchScope::RELATED_DISCRIMINATOR_ALIAS))
             ->innerJoin(
                 $association->entityClass,
