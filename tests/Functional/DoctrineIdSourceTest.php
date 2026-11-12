@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
+use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\HideEveryRowFilter;
 use haddowg\JsonApiBundle\Tests\Functional\App\IdSource\IdSourceTestKernel;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
@@ -126,6 +127,29 @@ final class DoctrineIdSourceTest extends JsonApiFunctionalTestCase
 
         self::assertSame(201, $response->getStatusCode(), (string) $response->getContent());
         self::assertSame('natural-key', $this->idOf($response));
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function aClientIdTakenAfterTheLookupIs409RatherThanTheUniqueKeyError(): void
+    {
+        self::assertSame(201, $this->handle('/tokens', 'POST', [
+            'data' => ['type' => 'tokens', 'id' => 'raced-key', 'attributes' => ['value' => 'v']],
+        ])->getStatusCode());
+
+        // The lookup misses the stored row, so the insert meets the primary key.
+        $entityManager = static::getContainer()->get('doctrine.orm.entity_manager');
+        \assert($entityManager instanceof EntityManagerInterface);
+        $entityManager->clear();
+        $entityManager->getConfiguration()->addFilter('hide_every_row', HideEveryRowFilter::class);
+        $entityManager->getFilters()->enable('hide_every_row');
+
+        $response = $this->handle('/tokens', 'POST', [
+            'data' => ['type' => 'tokens', 'id' => 'raced-key', 'attributes' => ['value' => 'w']],
+        ]);
+
+        self::assertSame(409, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame('CLIENT_GENERATED_ID_ALREADY_EXISTS', $this->firstErrorCode($response));
     }
 
     #[Test]

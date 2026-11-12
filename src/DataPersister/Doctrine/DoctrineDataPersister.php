@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\DataPersister\Doctrine;
 
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\DBAL\Types\JsonType;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManagerInterface;
@@ -174,14 +175,72 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
         // rather than the database's unique-key error at flush.
         $metadata = $this->entityManager->getClassMetadata($entity::class);
         $ids = $metadata->getIdentifierValues($entity);
-        if ($ids !== [] && !\in_array(null, $ids, true) && $this->entityManager->find($metadata->getName(), $ids) !== null) {
-            throw new ClientGeneratedIdAlreadyExists(\implode(' ', \array_map(static fn(mixed $id): string => \is_scalar($id) || $id instanceof \Stringable ? (string) $id : \get_debug_type($id), $ids)));
+        $clientId = $ids !== [] && !\in_array(null, $ids, true);
+        if ($clientId && $this->entityManager->find($metadata->getName(), $ids) !== null) {
+            throw new ClientGeneratedIdAlreadyExists(self::describeId($ids));
         }
 
         $this->entityManager->persist($entity);
-        $this->entityManager->flush();
+        try {
+            $this->entityManager->flush();
+        } catch (UniqueConstraintViolationException $exception) {
+            // A concurrent create can take the id between the lookup above and the insert.
+            if ($clientId && $this->lostTheRace($exception, $metadata, $ids)) {
+                throw new ClientGeneratedIdAlreadyExists(self::describeId($ids));
+            }
+
+            throw $exception;
+        }
 
         return $entity;
+    }
+
+    /**
+     * Whether a unique violation came from inserting the new entity's own row under an id
+     * another row now holds. The lookup reads through the connection, since the failed
+     * flush closed the entity manager; a lookup the database refuses, as PostgreSQL does
+     * inside a failed transaction, leaves the violation as it is.
+     *
+     * @param ClassMetadata<object> $metadata
+     * @param array<string, mixed>  $ids
+     */
+    private function lostTheRace(UniqueConstraintViolationException $exception, ClassMetadata $metadata, array $ids): bool
+    {
+        $connection = $this->entityManager->getConnection();
+        $platform = $connection->getDatabasePlatform();
+        $quotes = $this->entityManager->getConfiguration()->getQuoteStrategy();
+        $table = $quotes->getTableName($metadata, $platform);
+
+        $sql = $exception->getQuery()?->getSQL() ?? '';
+        if (\preg_match('/^\s*INSERT\s+INTO\s+' . \preg_quote($table, '/') . '[\s(]/i', $sql) !== 1) {
+            return false;
+        }
+
+        $conditions = [];
+        $values = [];
+        $types = [];
+        foreach ($ids as $field => $value) {
+            if ($metadata->hasAssociation($field)) {
+                return false;
+            }
+            $conditions[] = $quotes->getColumnName($field, $metadata, $platform) . ' = ?';
+            $values[] = $value;
+            $types[] = $metadata->getTypeOfField($field) ?? 'string';
+        }
+
+        try {
+            return $connection->fetchOne(\sprintf('SELECT 1 FROM %s WHERE %s', $table, \implode(' AND ', $conditions)), $values, $types) !== false;
+        } catch (\Doctrine\DBAL\Exception) {
+            return false;
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $ids
+     */
+    private static function describeId(array $ids): string
+    {
+        return \implode(' ', \array_map(static fn(mixed $id): string => \is_scalar($id) || $id instanceof \Stringable ? (string) $id : \get_debug_type($id), $ids));
     }
 
     public function update(string $type, object $entity): object

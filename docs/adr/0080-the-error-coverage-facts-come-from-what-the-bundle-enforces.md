@@ -5,8 +5,8 @@ Core offers an error code only on the operations whose runtime can raise it, and
 ## Considered options
 
 - Answering `AUTHENTICATION_REQUIRED` from each operation's declared security requirement: a stateless authenticator rejects a bad token on a public route too, so only the firewall knows.
-- Leaving a duplicate client id to the database: Doctrine answered a `500` where the Laravel package answers `409 CLIENT_GENERATED_ID_ALREADY_EXISTS`, so both reference persisters now look the id up before they write.
+- Leaving a duplicate client id to the database: Doctrine answered a `500` where the Laravel package answers `409 CLIENT_GENERATED_ID_ALREADY_EXISTS`, so both reference persisters now look the id up before they write, and the Doctrine persister also answers `409` when its own insert breaks the primary key because a concurrent create took the id after the lookup.
 
 ## Consequences
 
-A rule matching on something a request built from the route can't carry, such as the client's IP, is judged against a request from `127.0.0.1`.
+Only a firewall or `access_control` matcher that reads the path, method or host is judged against a request built from the route. One that reads the client's IP, the port or anything a matcher of the application's own may look at counts as matching, so its firewall's authenticators and its rule's roles document `401` and `403`, since a real request may match where the built one doesn't. Reading the matchers needs the firewall map's and access map's private members, and a map the bundle can't read counts as refusing every operation.

@@ -8,7 +8,13 @@ use haddowg\JsonApi\OpenApi\Metadata\OperationKey;
 use haddowg\JsonApi\OpenApi\Metadata\OperationKind;
 use haddowg\JsonApiBundle\Operation\TargetResolver;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
+use Psr\Container\ContainerInterface;
+use Symfony\Component\HttpFoundation\ChainRequestMatcher;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RequestMatcher\HostRequestMatcher;
+use Symfony\Component\HttpFoundation\RequestMatcher\MethodRequestMatcher;
+use Symfony\Component\HttpFoundation\RequestMatcher\PathRequestMatcher;
+use Symfony\Component\HttpFoundation\RequestMatcherInterface;
 use Symfony\Component\Routing\Route;
 use Symfony\Component\Routing\RouterInterface;
 
@@ -18,11 +24,12 @@ use Symfony\Component\Routing\RouterInterface;
  * carries, and a `401` or `403` from an `access_control` rule.
  *
  * It finds the route the {@see JsonApiRouteLoader} emitted for the operation, builds a
- * request for its path, method and host, and asks the firewall map and the access map
- * about it, as the firewall does at runtime. A rule matching on something that request
- * cannot carry, such as the client's IP, is judged against a request from
- * `127.0.0.1`. An operation whose route it cannot find is answered as refusable, since
- * nothing can rule a firewall out.
+ * request for its path, method and host, and walks the firewalls and `access_control`
+ * rules in the order Symfony does. A matcher reading only the path, method or host is
+ * judged against that request. One reading anything else, such as the client's IP, its
+ * port or a matcher of the application's own, counts as matching, because a real
+ * request may match it. So does an operation whose route it cannot find, or a firewall
+ * or access map it cannot read.
  *
  * @internal
  */
@@ -39,8 +46,8 @@ final class RouteFirewall
     private array $answers = [];
 
     /**
-     * @param object|null $firewallMap the `security.firewall.map` service, read through its `getFirewallConfig()`
-     * @param object|null $accessMap   the `security.access_map` service, read through its `getPatterns()`
+     * @param object|null $firewallMap the `security.firewall.map` service, whose matchers and firewall configs it reads
+     * @param object|null $accessMap   the `security.access_map` service, whose rules it reads
      */
     public function __construct(
         private readonly ?RouterInterface $router = null,
@@ -87,40 +94,173 @@ final class RouteFirewall
             : [$this->authenticatorsFor($request), $this->accessRulesFor($request)];
     }
 
+    /**
+     * Walks the firewalls in order, as the firewall map does. A firewall whose matcher
+     * reads only the path, method or host is judged against the request, and the first
+     * that matches decides. One whose matcher reads anything else, such as the client's
+     * IP or a custom matcher, may match a real request, so its authenticators count
+     * whether or not it matches this one.
+     */
     private function authenticatorsFor(Request $request): bool
     {
-        if ($this->firewallMap === null || !\method_exists($this->firewallMap, 'getFirewallConfig')) {
-            return false;
+        $firewalls = $this->firewalls();
+        if ($firewalls === null) {
+            return true;
         }
 
-        $config = $this->firewallMap->getFirewallConfig($request);
-        if (!\is_object($config) || !\method_exists($config, 'isSecurityEnabled') || !\method_exists($config, 'getAuthenticators')) {
-            return false;
-        }
+        $maybe = false;
+        foreach ($firewalls as [$matcher, $authenticates]) {
+            $exact = $matcher === null || self::isExact($matcher);
+            if (!$exact) {
+                $maybe = $maybe || $authenticates;
 
-        return $config->isSecurityEnabled() && $config->getAuthenticators() !== [];
-    }
-
-    private function accessRulesFor(Request $request): bool
-    {
-        if ($this->accessMap === null || !\method_exists($this->accessMap, 'getPatterns')) {
-            return false;
-        }
-
-        $patterns = $this->accessMap->getPatterns($request);
-        $attributes = \is_array($patterns) ? ($patterns[0] ?? null) : null;
-        if (!\is_array($attributes)) {
-            return false;
-        }
-
-        // PUBLIC_ACCESS lets every caller through, so a rule granting only it refuses no one.
-        foreach ($attributes as $attribute) {
-            if ($attribute !== 'PUBLIC_ACCESS') {
-                return true;
+                continue;
+            }
+            if ($matcher === null || $matcher->matches($request)) {
+                return $maybe || $authenticates;
             }
         }
 
-        return false;
+        return $maybe;
+    }
+
+    /**
+     * Walks the `access_control` rules in order, as the access map does, judging a rule
+     * by the same test as {@see authenticatorsFor()}.
+     */
+    private function accessRulesFor(Request $request): bool
+    {
+        $rules = $this->accessRules();
+        if ($rules === null) {
+            return true;
+        }
+
+        $maybe = false;
+        foreach ($rules as [$matcher, $restricts]) {
+            if (!self::isExact($matcher)) {
+                $maybe = $maybe || $restricts;
+
+                continue;
+            }
+            if ($matcher->matches($request)) {
+                return $maybe || $restricts;
+            }
+        }
+
+        return $maybe;
+    }
+
+    /**
+     * The firewall map's matchers in order, each with whether its firewall
+     * authenticates; null when the map can't be read.
+     *
+     * @return list<array{RequestMatcherInterface|null, bool}>|null
+     */
+    private function firewalls(): ?array
+    {
+        if ($this->firewallMap === null) {
+            return [];
+        }
+
+        $map = self::property($this->firewallMap, 'map');
+        $container = self::property($this->firewallMap, 'container');
+        if (!\is_iterable($map) || !$container instanceof ContainerInterface) {
+            return null;
+        }
+
+        $firewalls = [];
+        foreach ($map as $contextId => $matcher) {
+            if (($matcher !== null && !$matcher instanceof RequestMatcherInterface) || !\is_string($contextId)) {
+                return null;
+            }
+
+            $context = $container->get($contextId);
+            $config = \is_object($context) && \method_exists($context, 'getConfig') ? $context->getConfig() : null;
+            if (!\is_object($config) || !\method_exists($config, 'isSecurityEnabled') || !\method_exists($config, 'getAuthenticators')) {
+                return null;
+            }
+
+            $firewalls[] = [$matcher, $config->isSecurityEnabled() && $config->getAuthenticators() !== []];
+        }
+
+        return $firewalls;
+    }
+
+    /**
+     * The `access_control` rules in order, each with whether it requires anything of the
+     * caller; null when the access map can't be read.
+     *
+     * @return list<array{RequestMatcherInterface, bool}>|null
+     */
+    private function accessRules(): ?array
+    {
+        if ($this->accessMap === null) {
+            return [];
+        }
+
+        $map = self::property($this->accessMap, 'map');
+        if (!\is_array($map)) {
+            return null;
+        }
+
+        $rules = [];
+        foreach ($map as $rule) {
+            $matcher = \is_array($rule) ? ($rule[0] ?? null) : null;
+            $attributes = \is_array($rule) ? ($rule[1] ?? null) : null;
+            if (!$matcher instanceof RequestMatcherInterface || !\is_array($attributes)) {
+                return null;
+            }
+
+            // PUBLIC_ACCESS lets every caller through, so a rule granting only it refuses no one.
+            $restricts = false;
+            foreach ($attributes as $attribute) {
+                $restricts = $restricts || $attribute !== 'PUBLIC_ACCESS';
+            }
+            $rules[] = [$matcher, $restricts];
+        }
+
+        return $rules;
+    }
+
+    /**
+     * Whether a matcher reads only what a request built from the route carries: its path,
+     * method and host.
+     */
+    private static function isExact(RequestMatcherInterface $matcher): bool
+    {
+        if ($matcher instanceof ChainRequestMatcher) {
+            $matchers = self::property($matcher, 'matchers');
+            if (!\is_iterable($matchers)) {
+                return false;
+            }
+            foreach ($matchers as $inner) {
+                if (!$inner instanceof RequestMatcherInterface || !self::isExact($inner)) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        return $matcher instanceof PathRequestMatcher
+            || $matcher instanceof MethodRequestMatcher
+            || $matcher instanceof HostRequestMatcher;
+    }
+
+    /**
+     * A private member of a Symfony service, or null when it has no such member.
+     */
+    private static function property(object $object, string $name): mixed
+    {
+        $class = new \ReflectionClass($object);
+        while (!$class->hasProperty($name)) {
+            $class = $class->getParentClass();
+            if ($class === false) {
+                return null;
+            }
+        }
+
+        return $class->getProperty($name)->getValue($object);
     }
 
     private function requestFor(string $server, ?string $type, OperationKey $operation, ?string $relationSegment): ?Request

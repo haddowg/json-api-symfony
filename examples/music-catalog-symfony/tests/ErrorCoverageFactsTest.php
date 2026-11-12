@@ -17,6 +17,7 @@ use haddowg\JsonApi\OpenApi\Metadata\OperationKind;
 use haddowg\JsonApi\OpenApi\Metadata\RelationMetadataInterface;
 use haddowg\JsonApi\OpenApi\Metadata\ServerMetadataInterface;
 use haddowg\JsonApi\OpenApi\Metadata\TypeMetadataInterface;
+use haddowg\JsonApiBundle\Examples\MusicCatalog\DataFixtures\SeedManifest;
 use haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
@@ -58,6 +59,26 @@ final class ErrorCoverageFactsTest extends MusicCatalogKernelTestCase
         self::assertTrue($server->canRequireAuthentication($this->type($server, 'artists'), OperationKey::crud(OperationKind::FetchCollection)));
         self::assertTrue($server->canRequireAuthentication(null, OperationKey::atomic()));
         self::assertFalse($server->canDenyAccess(null, OperationKey::atomic()));
+    }
+
+    #[Test]
+    public function anIncludeReachingARefusedReadWithholdsTheDataInsteadOfRefusing(): void
+    {
+        // `owner` declares security(read:) for admins only, which an anonymous caller
+        // fails. The include renders the relationship's links with no data, so it
+        // documents no 401 or 403.
+        $response = $this->handle('/admin/playlists/' . SeedManifest::OWNED_PLAYLIST_ID . '?include=owner');
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $document = $this->decode($response);
+        $data = $document['data'] ?? null;
+        self::assertIsArray($data);
+        $relationships = $data['relationships'] ?? null;
+        self::assertIsArray($relationships);
+        $owner = $relationships['owner'] ?? null;
+        self::assertIsArray($owner);
+        self::assertArrayNotHasKey('data', $owner);
+        self::assertSame([], $document['included'] ?? []);
     }
 
     #[Test]
