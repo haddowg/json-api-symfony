@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.12.1](https://github.com/haddowg/json-api-symfony/compare/v2.12.0...v2.12.1) (2026-11-12)
+
+
+### Bug Fixes
+
+* resolve the metadata's data-layer facts lazily ([#369](https://github.com/haddowg/json-api-symfony/issues/369)) ([b54be35](https://github.com/haddowg/json-api-symfony/commit/b54be353813aae70aa5ad6ec7a107ddefaeb77b7))
+
 ## [2.12.0](https://github.com/haddowg/json-api-symfony/compare/v2.11.0...v2.12.0) (2026-11-12)
 
 
