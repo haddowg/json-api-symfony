@@ -7,4 +7,9 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\ComputedMorph;
 final class CmAdvertiserResource extends CmCompanyResource
 {
     public static string $type = 'cm-advertisers';
+
+    protected function relations(): array
+    {
+        return [$this->peers()];
+    }
 }

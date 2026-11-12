@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use haddowg\JsonApiBundle\OpenApi\DocumentFactory;
 use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\ConstrainedFilterDoctrineTestKernel;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
@@ -89,6 +90,31 @@ final class DoctrineWhereHasMatchingTest extends JsonApiFunctionalTestCase
 
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
         self::assertSame(['1', '3'], $this->idsOf($response));
+    }
+
+    #[Test]
+    public function theDocumentCarriesADeclaredDescriptionAndExample(): void
+    {
+        $factory = static::getContainer()->get(DocumentFactory::class);
+        self::assertInstanceOf(DocumentFactory::class, $factory);
+        $document = \json_decode((string) \json_encode($factory->forServer()->toArray()), true);
+
+        $parameters = $document;
+        foreach (['paths', '/articles', 'get', 'parameters'] as $key) {
+            self::assertIsArray($parameters);
+            $parameters = $parameters[$key] ?? null;
+        }
+        self::assertIsArray($parameters);
+        $parameter = null;
+        foreach ($parameters as $candidate) {
+            if (\is_array($candidate) && ($candidate['name'] ?? null) === 'filter[editorNameLike]') {
+                $parameter = $candidate;
+            }
+        }
+
+        self::assertIsArray($parameter);
+        self::assertSame('Articles with an editor whose name contains the value.', $parameter['description'] ?? null);
+        self::assertSame('Grace', $parameter['example'] ?? null);
     }
 
     /**

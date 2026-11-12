@@ -411,6 +411,8 @@ final class MetadataSource
             sunset: SunsetDate::parse($declaredDeprecation?->sunset),
             deprecatedOperations: $this->responseHeaders?->deprecatedOperationsFor($type, $serverName) ?? [],
             relatedOnly: $relatedOnly,
+            defaultSort: $resource !== null ? \array_values($resource->defaultSort()) : [],
+            sortExample: $resource?->sortExample(),
         );
     }
 

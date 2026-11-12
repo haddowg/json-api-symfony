@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\OpenApi\Metadata;
 
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresAlwaysCounted;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresDeprecatedRelation;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresDroppedFilterDefaults;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresFixedMembership;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresIdentifiedMembers;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresIdentifierMeta;
@@ -20,6 +21,7 @@ use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Deprecatable;
 use haddowg\JsonApi\Resource\Field\AbstractRelationValue;
 use haddowg\JsonApi\Resource\Field\DefaultSortedRelationInterface;
+use haddowg\JsonApi\Resource\Field\DropsFilterDefaultsInterface;
 use haddowg\JsonApi\Resource\Field\ExemplifiedRelationInterface;
 use haddowg\JsonApi\Resource\Field\GuardsMembershipInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
@@ -40,8 +42,12 @@ use haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory;
  * endpoint includable paths — are resolved by the {@see MetadataSource} (which has
  * the {@see \haddowg\JsonApi\Server\Server} fallback chain + the relation graph) and
  * passed in, as is whether that paginator counts on every request.
+ *
+ * The related type's filter defaults the relation drops through
+ * `withoutFilterDefaults()` are read off core's {@see DropsFilterDefaultsInterface},
+ * so the projector leaves them off the relation's endpoints.
  */
-final readonly class RelationMetadata implements RelationMetadataInterface, DeclaresWriteOnlyRelation, DeclaresDeprecatedRelation, DeclaresRelationUriFieldName, DeclaresAlwaysCounted, DeclaresRelationExampleId, DeclaresPolymorphicRelation, DeclaresIdentifiedMembers, DeclaresIdentifierMeta, DeclaresRelationDefaultSort, DeclaresFixedMembership
+final readonly class RelationMetadata implements RelationMetadataInterface, DeclaresWriteOnlyRelation, DeclaresDeprecatedRelation, DeclaresRelationUriFieldName, DeclaresAlwaysCounted, DeclaresRelationExampleId, DeclaresPolymorphicRelation, DeclaresIdentifiedMembers, DeclaresIdentifierMeta, DeclaresRelationDefaultSort, DeclaresFixedMembership, DeclaresDroppedFilterDefaults
 {
     /**
      * @param list<string> $relatedIncludablePaths the related type's includable paths (resolved by the source)
@@ -199,6 +205,16 @@ final readonly class RelationMetadata implements RelationMetadataInterface, Decl
     public function defaultSort(): array
     {
         return $this->relation instanceof DefaultSortedRelationInterface ? $this->relation->defaultSort() : [];
+    }
+
+    public function dropsAllFilterDefaults(): bool
+    {
+        return $this->relation instanceof DropsFilterDefaultsInterface && $this->relation->dropsAllFilterDefaults();
+    }
+
+    public function droppedFilterDefaults(): array
+    {
+        return $this->relation instanceof DropsFilterDefaultsInterface ? $this->relation->droppedFilterDefaults() : [];
     }
 
     public function relatedIncludablePaths(): array

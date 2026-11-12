@@ -36,6 +36,24 @@ final class BatchedRelationshipCount implements RelationshipCountInterface
      */
     public function __construct(private readonly array $counts) {}
 
+    /**
+     * One map holding every count of `$counts`, or `null` when none holds any.
+     */
+    public static function merge(?self ...$counts): ?self
+    {
+        $merged = [];
+        foreach ($counts as $count) {
+            if ($count === null) {
+                continue;
+            }
+            foreach ($count->counts as $parent => $relations) {
+                $merged[$parent] = [...$merged[$parent] ?? [], ...$relations];
+            }
+        }
+
+        return $merged === [] ? null : new self($merged);
+    }
+
     public function countRelationship(mixed $model, RelationInterface $relation): ?int
     {
         if (!\is_object($model)) {

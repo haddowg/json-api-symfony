@@ -278,6 +278,14 @@ in-memory provider (the mixed member set) but, over several types, is unsupporte
 the Doctrine reference provider (its members span entity classes) — supply a custom
 `DataProvider` if you need it on Doctrine.
 
+A response whose primary data mixes types, such as a polymorphic `MorphToMany`'s
+related page or a custom action answering with several types, accepts
+`?withCount=<rel>` when at least one member type counts `<rel>`. Each member renders
+its own `meta.total` where its type counts the relation, and the others carry none.
+Nothing is summed across types. A name no member type counts is still a `400`. An
+action building its own `PolymorphicSerializer` passes the member serializers as its
+second argument, or nothing on the response is countable.
+
 ### Relation-scoped filters and sorts
 
 A relation can declare **its own** `filters()`/`sorts()` that augment **only** its
@@ -344,6 +352,12 @@ typo fails `cache:clear` rather than the first request. A polymorphic `MorphToMa
 has no shared filter vocabulary in the bundle, so no related-type default applies to
 it in the first place; the warm-up check still accepts a key defaulted on any one of
 its related types.
+
+The OpenAPI document follows the same rule. A filter default shows as the `default` of
+its `filter[<key>]` parameter's schema, and the relation's related and relationship
+endpoints leave off each default the relation drops. On the example's
+`/albums/{id}/tracklist`, `filter[explicit]` has no `default`, while
+`/albums/{id}/tracks` shows `default: false`.
 
 Once a relation drops every default it would have applied, and it is unordered and
 its related type unscoped, its linkage reads straight off the model again instead of
@@ -673,6 +687,20 @@ Two boundaries set it apart from `WhereThrough`:
 - **Not value-validated.** The author owns the request value (the closure consumes it,
   no declared operator compares it), so `constraints()` returns `[]` — there is
   nothing for the validator bridge to check.
+
+Since only you know what the value means, tell clients with `describedAs()` and
+`example()`. Both return a copy, and the OpenAPI document shows them on the
+`filter[<key>]` parameter the way it does for core's value filters. The music-catalog
+example's artists declare one:
+
+```php
+WhereHasMatching::using('albumTitle', 'albums', static function (QueryBuilder $albums, string $album, mixed $value): void {
+    $albums->andWhere(\sprintf('LOWER(%s.title) LIKE :albumTitle', $album))
+        ->setParameter('albumTitle', '%' . \mb_strtolower(\is_string($value) ? $value : '') . '%');
+})
+    ->describedAs('Only artists with an album whose title contains the value, ignoring case.')
+    ->example('computer'),
+```
 
 `WhereThrough`, `WhereThroughIn` and `WhereHasMatching` share the one `EXISTS` builder in
 [`DoctrineFilterHandler`](../src/DataProvider/Doctrine/DoctrineFilterHandler.php); see
