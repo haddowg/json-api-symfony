@@ -124,6 +124,7 @@ use haddowg\JsonApiBundle\Event\BeforeUpdateEvent;
 use haddowg\JsonApiBundle\Hook\DeletesEntityInterface;
 use haddowg\JsonApiBundle\Hook\HookContext;
 use haddowg\JsonApiBundle\Hook\InstantiatesEntityInterface;
+use haddowg\JsonApiBundle\Serializer\BatchedRelationshipCount;
 use haddowg\JsonApiBundle\Serializer\PivotLinkageParentSerializer;
 use haddowg\JsonApiBundle\Serializer\PivotMetaSerializer;
 use haddowg\JsonApiBundle\Serializer\PivotParentSerializer;
@@ -336,8 +337,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         if (\count($groups) > 1) {
             $this->relationshipPagination?->set(null);
             $this->relationshipLinkage?->set(null);
-            $this->relationshipCount?->set(null);
             $this->preloadGroups($groups, $request, $server);
+            $this->applyGroupedRelationshipCounts($server, $groups, $request);
 
             return $response;
         }
@@ -945,7 +946,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
             $serializer = match (true) {
                 $identifiedTypes !== null => $this->identifiedSerializer($relation, $server, $identifiedTypes, $identifiedPivots),
-                $polymorphic => $this->polymorphicSerializer($relation, $server),
+                $polymorphic => PolymorphicSerializer::forRelation($relation, $server),
                 // Computed pivot fields need no stored row, so they render off the parent
                 // even where no pivot query ran.
                 PivotFields::hasComputed($relation) => new PivotMetaSerializer($server->serializerFor($relatedType), [], $relation, $parent, $this->outputTimezone?->timezone(), computedOnly: true),
@@ -956,13 +957,14 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // rendered. A polymorphic page is preloaded per member type.
             $items = \is_array($result->items) ? \array_values($result->items) : \iterator_to_array($result->items, false);
             if ($polymorphic) {
+                // A polymorphic page spans types, so each type counts its own members.
                 $this->preloadPolymorphic($relation, $items, $request, $server, $identifiedTypes ?? []);
+                $this->applyGroupedRelationshipCounts($server, $this->groupByRenderedType($relation, $items, $server, $identifiedTypes ?? []), $request);
             } else {
                 $this->windowRelatedItems($server, $relatedType, $items, $request);
                 $this->preloadIncludes($items, $relatedType, $request, $server);
                 // ?withCount on a related collection counts the RELATED type's own
-                // countable relations across the related page; a
-                // polymorphic page spans types, so it carries no single related type.
+                // countable relations across the related page.
                 $this->applyRelationshipCounts($server, $relatedType, $items, $request);
             }
 
@@ -1161,23 +1163,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
     }
 
     /**
-     * A {@see PolymorphicSerializer} that renders a polymorphic to-many's
-     * mixed-type members: for each member object it resolves the serializer among
-     * the relation's declared types ({@see RelationInterface::resolveSerializer()}),
-     * throwing when no declared type serializes a related object.
-     */
-    private function polymorphicSerializer(RelationInterface $relation, Server $server): PolymorphicSerializer
-    {
-        return new PolymorphicSerializer(
-            fn(mixed $object): SerializerInterface => $relation->resolveSerializer($object, $server)
-                ?? throw new \LogicException(\sprintf('No declared type of the "%s" relationship serializes a related object.', $relation->name())),
-        );
-    }
-
-    /**
      * A {@see PolymorphicSerializer} for the related page of a `MorphToMany` declared
      * with `identifiedBy()`: each row renders with the serializer of the type its pair
-     * named, carrying its link's `meta.pivot` when it has one.
+     * named, carrying its link's `meta.pivot` when it has one. Every related type is a
+     * member type, so `?withCount` counts what any of them counts.
      *
      * @param array<int, string>               $types  each row's type, keyed by object id
      * @param array<int, array<string, mixed>> $pivots each row's `meta.pivot`, keyed by object id
@@ -1195,6 +1184,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
                 return $pivot === null ? $serializer : new PivotMetaSerializer($serializer, [$serializer->getId($object) => $pivot]);
             },
+            PolymorphicSerializer::forRelation($relation, $server)->members(),
         );
     }
 
@@ -1924,6 +1914,20 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return;
         }
 
+        $this->preloadGroups($this->groupByRenderedType($relation, $items, $server, $types), $request, $server);
+    }
+
+    /**
+     * `$items` grouped by the type each renders as.
+     *
+     * @param list<object>       $items
+     * @param array<int, string> $types the type a member renders as, keyed by object id,
+     *                                  when its object can't say
+     *
+     * @return array<string, list<object>>
+     */
+    private function groupByRenderedType(RelationInterface $relation, array $items, Server $server, array $types = []): array
+    {
         $groups = [];
         foreach ($items as $item) {
             if (isset($types[\spl_object_id($item)])) {
@@ -1937,7 +1941,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $groups[$serializer->getType($item)][] = $item;
             }
         }
-        $this->preloadGroups($groups, $request, $server);
+
+        return $groups;
     }
 
     /**
@@ -2000,6 +2005,26 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $this->relationshipCount->set(
             $request === null ? null : $this->countBatcher->batch($server, $type, $items, $request),
         );
+    }
+
+    /**
+     * {@see applyRelationshipCounts()} for primary resources of several types: each type
+     * counts its own `?withCount` relations over its members, and the maps merge.
+     *
+     * @param array<string, list<object>> $groups
+     */
+    private function applyGroupedRelationshipCounts(Server $server, array $groups, JsonApiRequestInterface $request): void
+    {
+        if ($this->countBatcher === null || $this->relationshipCount === null) {
+            return;
+        }
+
+        $counts = [];
+        foreach ($groups as $type => $members) {
+            $counts[] = $this->countBatcher->batch($server, $type, $members, $request);
+        }
+
+        $this->relationshipCount->set(BatchedRelationshipCount::merge(...$counts));
     }
 
     /**

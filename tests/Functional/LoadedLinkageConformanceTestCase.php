@@ -127,6 +127,34 @@ abstract class LoadedLinkageConformanceTestCase extends JsonApiFunctionalTestCas
     }
 
     #[Test]
+    public function aMixedTypeActionResponseCountsEachTypesRelations(): void
+    {
+        $counts = ['HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . CountableProfile::URI . '"'];
+
+        // Template 1 and binding 1 share a wire id, so the count must follow the object.
+        $document = $this->action('/templates/-actions/mixed?withCount=bindings', $counts);
+
+        self::assertSame(['templates', 'bindings'], \array_map(
+            static fn(mixed $resource): mixed => \is_array($resource) ? ($resource['type'] ?? null) : null,
+            (array) $this->value($document, 'data'),
+        ));
+        self::assertSame(1, $this->value($this->relationship($document, '1', 'bindings'), 'meta', 'total'));
+        // Only templates count `bindings`, so the binding renders no total for it.
+        self::assertStringNotContainsString('"total"', (string) \json_encode($this->value($document, 'data', '1')));
+        $this->assertNoHiddenBinding($document);
+    }
+
+    #[Test]
+    public function aMixedTypeActionResponseRefusesANameNoMemberTypeCounts(): void
+    {
+        $response = $this->handle('/templates/-actions/mixed?withCount=sharedBindings', 'POST', extraServer: [
+            'HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . CountableProfile::URI . '"',
+        ]);
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+    }
+
+    #[Test]
     public function aResponseAHookSwapsInIsScopedAndFiltered(): void
     {
         $document = $this->get('/bindings/1');

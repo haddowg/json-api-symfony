@@ -278,6 +278,14 @@ in-memory provider (the mixed member set) but, over several types, is unsupporte
 the Doctrine reference provider (its members span entity classes) — supply a custom
 `DataProvider` if you need it on Doctrine.
 
+A response whose primary data mixes types, such as a polymorphic `MorphToMany`'s
+related page or a custom action answering with several types, accepts
+`?withCount=<rel>` when at least one member type counts `<rel>`. Each member renders
+its own `meta.total` where its type counts the relation, and the others carry none.
+Nothing is summed across types. A name no member type counts is still a `400`. An
+action building its own `PolymorphicSerializer` passes the member serializers as its
+second argument, or nothing on the response is countable.
+
 ### Relation-scoped filters and sorts
 
 A relation can declare **its own** `filters()`/`sorts()` that augment **only** its

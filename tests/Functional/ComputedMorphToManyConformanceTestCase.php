@@ -67,6 +67,33 @@ abstract class ComputedMorphToManyConformanceTestCase extends JsonApiFunctionalT
     }
 
     #[Test]
+    public function withCountOnTheMixedPageCountsWhereTheMembersTypeCounts(): void
+    {
+        $document = $this->get('/cm-users/1/companies?withCount=peers', self::COUNTS_ACCEPT);
+
+        $data = $this->at($document, 'data');
+        $totals = [];
+        foreach ($this->keys($data) as $index => $key) {
+            $totals[$key] = $this->at($data, (string) $index, 'relationships', 'peers', 'meta', 'total');
+        }
+
+        // Advertisers declare `peers` without counting it, and publishers don't declare it.
+        $expected = [];
+        foreach ($this->visible(self::USER_ONE) as $key) {
+            $expected[$key] = \str_starts_with($key, 'cm-agencies:') ? 1 : null;
+        }
+        self::assertSame($expected, $totals);
+    }
+
+    #[Test]
+    public function withCountOnTheMixedPageRefusesANameNoMemberTypeCounts(): void
+    {
+        $response = $this->handle('/cm-users/1/companies?withCount=companies', extraServer: ['HTTP_ACCEPT' => self::COUNTS_ACCEPT]);
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+    }
+
+    #[Test]
     public function theRelatedEndpointHonoursSparseFieldsPerType(): void
     {
         $document = $this->get('/cm-users/1/companies?fields[cm-agencies]=name');

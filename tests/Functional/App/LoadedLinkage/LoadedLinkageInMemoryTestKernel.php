@@ -79,6 +79,7 @@ final class LoadedLinkageInMemoryTestKernel extends Kernel
         $services->set(InMemoryBindingResource::class);
         $services->set(ShowTemplate::class);
         $services->set(ListTemplates::class);
+        $services->set(ListMixed::class);
         $services->set(ShowBinding::class);
         $services->set(AnswerWithTemplateSubscriber::class);
 
