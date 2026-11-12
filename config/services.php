@@ -135,9 +135,11 @@ return static function (ContainerConfigurator $container): void {
         // An empty base_uri advertises the server's recorded route mounts as relative
         // servers.
         ->arg('$mountServers', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\OpenApi\Metadata\MountServers::class))
-        ->arg('$securityFacts', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Security\OperationSecurityFacts::class))
-        ->arg('$persisters', \Symfony\Component\DependencyInjection\Loader\Configurator\service(DataPersisterRegistry::class))
-        ->arg('$relatedReads', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataProvider\RelatedReadRouter::class));
+        // Closures, because a provider or persister may take the OperationCatalog, which
+        // reads this source. Only reading the facts reaches the data layer.
+        ->arg('$securityFacts', \Symfony\Component\DependencyInjection\Loader\Configurator\service_closure(\haddowg\JsonApiBundle\Security\OperationSecurityFacts::class))
+        ->arg('$persisters', \Symfony\Component\DependencyInjection\Loader\Configurator\service_closure(DataPersisterRegistry::class))
+        ->arg('$relatedReads', \Symfony\Component\DependencyInjection\Loader\Configurator\service_closure(\haddowg\JsonApiBundle\DataProvider\RelatedReadRouter::class));
 
     // Which operations the security layer can refuse, for the error codes each operation
     // documents: the declared expressions, and the firewall and access_control in front
