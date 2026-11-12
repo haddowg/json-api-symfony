@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.10.0](https://github.com/haddowg/json-api-symfony/compare/v2.9.0...v2.10.0) (2026-11-12)
+
+
+### Features
+
+* describe sorts, dropped defaults and WhereHasMatching in OpenAPI ([38b49fc](https://github.com/haddowg/json-api-symfony/commit/38b49fc580617ff1ecaec9e43b36db7d3b65e4eb))
+
+
+### Bug Fixes
+
+* batch a pivot relation's related reads across a page ([#363](https://github.com/haddowg/json-api-symfony/issues/363)) ([71434dd](https://github.com/haddowg/json-api-symfony/commit/71434dd47766f2602277c9687bac62d02ec12340))
+* count each member's relations on a mixed-type response ([38b49fc](https://github.com/haddowg/json-api-symfony/commit/38b49fc580617ff1ecaec9e43b36db7d3b65e4eb))
+* count the target of a to-one related endpoint ([#361](https://github.com/haddowg/json-api-symfony/issues/361)) ([3a9a402](https://github.com/haddowg/json-api-symfony/commit/3a9a40291555f437c5b752aeaaa7cd8e2d8895ce))
+
 ## [2.9.0](https://github.com/haddowg/json-api-symfony/compare/v2.8.0...v2.9.0) (2026-11-11)
 
 
