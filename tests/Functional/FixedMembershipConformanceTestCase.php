@@ -237,7 +237,7 @@ abstract class FixedMembershipConformanceTestCase extends JsonApiFunctionalTestC
 
         $schemas = self::dig($document, 'components', 'schemas');
         self::assertIsArray($schemas);
-        self::assertSame('Error403Pointer', self::errorShapeOf($schemas, 'MEMBERSHIP_CHANGE_PROHIBITED'));
+        self::assertSame('Error403PointerMembershipChangeProhibited', self::errorShapeOf($schemas, 'MEMBERSHIP_CHANGE_PROHIBITED'));
         self::assertSame(\max(GeneratorContract::BASELINE, GeneratorContract::FIXED_MEMBERSHIP), self::dig($document, 'info', 'x-generator', 'contract'));
     }
 

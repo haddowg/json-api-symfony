@@ -96,16 +96,20 @@ final class ErrorCatalogContributionTest extends JsonApiFunctionalTestCase
         $shape = self::errorShapeOf($this->at($document, 'components', 'schemas'), AccountFrozen::describe()->code);
 
         self::assertNotNull($shape);
-        // Only the update the descriptor names offers the code, through its own inline
-        // error document; the create's 409 keeps the shared one.
+        // Only the update the descriptor names offers the code. The create has its own
+        // 409 document too, and it leaves the code out.
         self::assertSame(['patch /ledgerAccounts/{id}'], $this->operationsOffering($document, $shape));
         self::assertSame(
             '#/components/schemas/LedgerAccountsUpdate409',
             $this->inlineSchemaRef($document, '/ledgerAccounts/{id}', 'patch', '409'),
         );
         self::assertSame(
-            '#/components/responses/Conflict',
-            $this->at($document, 'paths', '/ledgerAccounts', 'post', 'responses', '409')['$ref'] ?? null,
+            '#/components/schemas/LedgerAccountsCreate409',
+            $this->inlineSchemaRef($document, '/ledgerAccounts', 'post', '409'),
+        );
+        self::assertNotContains(
+            ['$ref' => '#/components/schemas/' . $shape],
+            $this->at($document, 'components', 'schemas', 'LedgerAccountsCreate409', 'properties', 'errors', 'items', 'anyOf'),
         );
     }
 
