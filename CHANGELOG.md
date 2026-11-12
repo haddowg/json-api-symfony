@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.12.0](https://github.com/haddowg/json-api-symfony/compare/v2.11.0...v2.12.0) (2026-11-12)
+
+
+### Features
+
+* offer each error code only where the bundle can raise it ([#367](https://github.com/haddowg/json-api-symfony/issues/367)) ([1981d52](https://github.com/haddowg/json-api-symfony/commit/1981d52d581f9e15ffa16c047c0ed493fc2cfb00))
+
 ## [2.11.0](https://github.com/haddowg/json-api-symfony/compare/v2.10.0...v2.11.0) (2026-11-12)
 
 
