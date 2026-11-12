@@ -86,6 +86,9 @@ final class MetadataSource
      * @param string                               $scopeScheme    the security scheme operation scopes are listed under (`json_api.openapi.security.scope_scheme`)
      * @param list<string>|null                    $atomicScopes   the Atomic Operations endpoint's own scopes (`json_api.atomic_operations.scopes`); null asks the resolver
      * @param bool                                 $validatesRequestDocuments whether the opis linter checks request documents (`json_api.schema_validation`)
+     * @param OperationSecurityFacts|(\Closure(): OperationSecurityFacts)|null $securityFacts
+     * @param DataPersisterRegistry|(\Closure(): DataPersisterRegistry)|null   $persisters
+     * @param RelatedReadRouter|(\Closure(): RelatedReadRouter)|null           $relatedReads
      */
     public function __construct(
         private readonly ServerProvider $servers,
@@ -109,11 +112,46 @@ final class MetadataSource
         private readonly ?ScopeCatalogInterface $scopeCatalog = null,
         private readonly ?array $atomicScopes = null,
         private readonly ?ResponseHeadersRegistry $responseHeaders = null,
-        private readonly ?OperationSecurityFacts $securityFacts = null,
+        private OperationSecurityFacts|\Closure|null $securityFacts = null,
         private readonly bool $validatesRequestDocuments = false,
-        private readonly ?DataPersisterRegistry $persisters = null,
-        private readonly ?RelatedReadRouter $relatedReads = null,
+        private DataPersisterRegistry|\Closure|null $persisters = null,
+        private RelatedReadRouter|\Closure|null $relatedReads = null,
     ) {}
+
+    // The data-layer collaborators are resolved on first use: a provider or persister
+    // may itself depend on this source, through the OperationCatalog.
+    private function securityFacts(): ?OperationSecurityFacts
+    {
+        if ($this->securityFacts instanceof \Closure) {
+            $facts = ($this->securityFacts)();
+            \assert($facts instanceof OperationSecurityFacts);
+            $this->securityFacts = $facts;
+        }
+
+        return $this->securityFacts;
+    }
+
+    private function persisters(): ?DataPersisterRegistry
+    {
+        if ($this->persisters instanceof \Closure) {
+            $persisters = ($this->persisters)();
+            \assert($persisters instanceof DataPersisterRegistry);
+            $this->persisters = $persisters;
+        }
+
+        return $this->persisters;
+    }
+
+    private function relatedReads(): ?RelatedReadRouter
+    {
+        if ($this->relatedReads instanceof \Closure) {
+            $relatedReads = ($this->relatedReads)();
+            \assert($relatedReads instanceof RelatedReadRouter);
+            $this->relatedReads = $relatedReads;
+        }
+
+        return $this->relatedReads;
+    }
 
     /**
      * The complete OpenAPI metadata for `$serverName` (the implicit `default` when
@@ -169,14 +207,13 @@ final class MetadataSource
      */
     private function securityFor(\Closure $serverOf, array $types): ?\Closure
     {
-        $facts = $this->securityFacts;
-        if ($facts === null) {
+        if ($this->securityFacts === null) {
             return null;
         }
 
-        return static fn(?TypeMetadataInterface $type, \haddowg\JsonApi\OpenApi\Metadata\OperationKey $operation, bool $access): bool => $access
-            ? $facts->canDenyAccess($serverOf($type?->type()), $types, $type, $operation)
-            : $facts->canRequireAuthentication($serverOf($type?->type()), $types, $type, $operation);
+        return fn(?TypeMetadataInterface $type, \haddowg\JsonApi\OpenApi\Metadata\OperationKey $operation, bool $access): bool => $access
+            ? ($this->securityFacts()?->canDenyAccess($serverOf($type?->type()), $types, $type, $operation) ?? false)
+            : ($this->securityFacts()?->canRequireAuthentication($serverOf($type?->type()), $types, $type, $operation) ?? false);
     }
 
     /**
@@ -521,8 +558,6 @@ final class MetadataSource
 
     private function buildRelation(Server $server, string $type, RelationInterface $relation, ?PaginatorInterface $serverDefault, bool $ownerServesEndpoints): RelationMetadata
     {
-        $persister = $this->persisters?->supportsType($type) === true ? $this->persisters->forType($type) : null;
-
         // Only a to-many relation has a related collection to paginate. Its page
         // schema comes from the paginator the related and relationship endpoints
         // serve: the relation's own, else the related resource's, else the server
@@ -542,9 +577,16 @@ final class MetadataSource
             self::alwaysCounts($paginator),
             $ownerServesEndpoints,
             $relatedResource,
-            static fn(): bool => self::canRefuseDetachment($persister, $type, $relation),
-            fn(): bool => $this->canMissLinkage($persister, $relation),
+            fn(): bool => self::canRefuseDetachment($this->persisterFor($type), $type, $relation),
+            fn(): bool => $this->canMissLinkage($this->persisterFor($type), $relation),
         );
+    }
+
+    private function persisterFor(string $type): ?DataPersisterInterface
+    {
+        $persisters = $this->persisters();
+
+        return $persisters?->supportsType($type) === true ? $persisters->forType($type) : null;
     }
 
     /**
@@ -569,7 +611,7 @@ final class MetadataSource
     private function canMissLinkage(?DataPersisterInterface $persister, RelationInterface $relation): bool
     {
         foreach ($relation->relatedTypes() as $relatedType) {
-            if ($this->relatedReads?->isScopedType($relatedType, $relation) ?? true) {
+            if ($this->relatedReads()?->isScopedType($relatedType, $relation) ?? true) {
                 return true;
             }
         }
