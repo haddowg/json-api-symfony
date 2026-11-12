@@ -387,7 +387,13 @@ a status, a `source` member and a declared `meta` are grouped into one shape
 `code`, and `ErrorDocument.errors.items` offers the shapes through an `anyOf` a
 generated client can dispatch on (see core's
 [error-code catalogue](https://github.com/haddowg/json-api/blob/main/docs/openapi.md#the-error-code-catalogue)).
-Your application's codes join them when you say where they are.
+The bundle's own codes are catalogued beside them: `VALIDATION_FAILED` on creates, updates,
+relationship writes, actions that take a document and `POST /operations`, and the Atomic
+Operations codes (`ATOMIC_HREF_INVALID`, `ATOMIC_HREF_UNRESOLVABLE`,
+`ATOMIC_OPERATION_NOT_EXPOSED`, `ATOMIC_OPERATIONS_NOT_SUPPORTED`,
+`ATOMIC_OPERATIONS_UNAVAILABLE`, `ATOMIC_TARGET_TYPE_UNKNOWN` and
+`ASYNC_WRITE_IN_ATOMIC_OPERATION`) on `POST /operations` alone. Your application's codes
+join them when you say where they are.
 
 An error that wants a place in the catalogue implements core's
 `DescribedErrorInterface`, which reads the code, status and title off the class —

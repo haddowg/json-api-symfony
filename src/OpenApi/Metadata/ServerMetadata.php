@@ -34,9 +34,9 @@ use haddowg\JsonApi\Scope\ScopeTable;
  *
  * It implements core's {@see ContributesErrorCodes} (a {@see ServerMetadataInterface}
  * that also names error sources) rather than the bare interface, so an application's
- * own described errors join core's in the projected catalogue. The sources come from
- * the {@see \haddowg\JsonApiBundle\DependencyInjection\Compiler\ErrorCatalogPass}; a
- * server with none contributes an empty list, which changes no document.
+ * own described errors join core's in the projected catalogue, after the bundle's own
+ * ({@see BuiltInErrorSources}). The application's sources come from the
+ * {@see \haddowg\JsonApiBundle\DependencyInjection\Compiler\ErrorCatalogPass}.
  *
  * It also implements core's {@see DeclaresLinkObjects}, so the links components describe
  * the form the server renders its links in and each example `describedby` points into
@@ -133,11 +133,13 @@ final readonly class ServerMetadata implements ContributesErrorCodes, DeclaresLi
     }
 
     /**
+     * The bundle's own described errors, then the application's.
+     *
      * @return list<ErrorCatalogSourceInterface>
      */
     public function errorSources(): iterable
     {
-        return $this->errorSources;
+        return [...BuiltInErrorSources::for($this->types), ...$this->errorSources];
     }
 
     public function title(): string

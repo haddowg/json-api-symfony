@@ -1,0 +1,3 @@
+# A relationship endpoint's include paths start at the parent and are checked before the read
+
+The spec's own example, `GET /articles/1/relationships/comments?include=comments.author`, roots a relationship endpoint's `include` at the parent resource, and a server that can't identify a path must answer `400`. Core checks `include` before dispatch on every other read but not on this one, so an unknown path only failed when the render happened to walk it, under the requested relationship, and passed anywhere else. The handler now runs core's include checks against the parent type before loading anything, so any unknown path is a `400` `INCLUSION_UNRECOGNIZED`, the same answer the Laravel package gives. The document stays linkage-only, so a known path changes nothing.

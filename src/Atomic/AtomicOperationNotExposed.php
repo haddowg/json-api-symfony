@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Atomic;
 
-use haddowg\JsonApi\Exception\JsonApiExceptionInterface;
-use haddowg\JsonApi\Schema\Error\Error;
+use haddowg\JsonApi\Exception\DescribedErrorInterface;
+use haddowg\JsonApi\Exception\ErrorContextType;
+use haddowg\JsonApi\Exception\ErrorDescriptor;
+use haddowg\JsonApi\Exception\ErrorFeature;
+use haddowg\JsonApi\Exception\ErrorScope;
+use haddowg\JsonApi\OpenApi\Metadata\OperationKind;
 use haddowg\JsonApiBundle\Operation\Operation;
 
 /**
@@ -14,7 +18,7 @@ use haddowg\JsonApiBundle\Operation\Operation;
  * relationship operation on a type without Update. A batch writes only what the same
  * server routes directly, and JSON:API answers an unsupported write with `403`.
  */
-final class AtomicOperationNotExposed extends \RuntimeException implements JsonApiExceptionInterface
+final class AtomicOperationNotExposed extends \RuntimeException implements DescribedErrorInterface
 {
     public function __construct(public readonly string $type, public readonly Operation $operation)
     {
@@ -25,20 +29,31 @@ final class AtomicOperationNotExposed extends \RuntimeException implements JsonA
         ));
     }
 
+    public static function describe(): ErrorDescriptor
+    {
+        return new ErrorDescriptor(
+            code: 'ATOMIC_OPERATION_NOT_EXPOSED',
+            status: 403,
+            title: 'Atomic operation not exposed',
+            context: ['type' => ErrorContextType::Str, 'operation' => ErrorContextType::Str],
+            feature: ErrorFeature::AtomicOperations,
+            scope: ErrorScope::kinds(OperationKind::Atomic),
+            description: 'An operation asks for a write its target type does not offer on this server: an `add` to a type that cannot be created, an `update` of one that cannot be updated, a `remove` of one that cannot be deleted, or a relationship operation on a type that cannot be updated. A batch makes only the writes the API exposes directly. The server applied none of the batch. Drop the operation and send the batch again.',
+        );
+    }
+
     public function getErrors(): array
     {
         return [
-            new Error(
-                status: '403',
-                code: 'ATOMIC_OPERATION_NOT_EXPOSED',
-                title: 'Atomic operation not exposed',
+            self::describe()->toError(
                 detail: $this->getMessage(),
+                context: ['type' => $this->type, 'operation' => $this->operation->value],
             ),
         ];
     }
 
     public function getStatusCode(): int
     {
-        return 403;
+        return self::describe()->status;
     }
 }
