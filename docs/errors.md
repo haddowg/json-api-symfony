@@ -492,7 +492,8 @@ a scoped error can live in the scanned directory beside the rest.
 Only the covered operations then offer the code. Each gets its own error document for the
 code's status, named for the operation, such as `AlbumsUpdate409`, and an inline response
 that uses it, gaining that status if it didn't advertise it. Every other operation keeps the
-shared response. See core's
+shared response, unless one of core's own feature codes, such as `CURSOR_MALFORMED` on a
+cursor-paged read, already gives it a document of its own for that status. See core's
 [scoping a code to the operations that raise it](https://github.com/haddowg/json-api/blob/main/docs/openapi.md#scoping-a-code-to-the-operations-that-raise-it).
 
 For an error you don't own, such as one a package ships with no scope, register core's

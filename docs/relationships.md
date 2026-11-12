@@ -212,8 +212,11 @@ Counting is exposed two ways, both on the `total` meta key:
 
 - **`?withCount=rel1,rel2`** — a flat primary-request parameter naming
   relationships (like `?include`) — adds `meta.total` to each named relationship
-  **object** when the parent is rendered (a single resource, every parent of a
-  collection, and a related-collection member). `withCount` is the
+  **object** when the parent is rendered: a fetched resource, the resource a create,
+  an update or an action answers with, a to-one related read, every parent of a
+  collection, and a related-collection member. The generated OpenAPI document offers
+  `withCount` on each of those operations with the countable relations of the type it
+  renders, and offers `_self_` only where there is a collection to total. `withCount` is the
   [**Countable profile**](https://haddowg.github.io/json-api/profiles/countable/)'s
   family (the bundle registers and advertises it), so a client opts in by
   negotiating the profile URI in the `Accept` header's `profile` parameter —
