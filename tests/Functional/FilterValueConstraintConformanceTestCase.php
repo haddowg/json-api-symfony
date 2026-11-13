@@ -210,19 +210,18 @@ abstract class FilterValueConstraintConformanceTestCase extends JsonApiFunctiona
     #[Group('spec:fetching-relationships')]
     #[Group('spec:fetching-filtering')]
     #[Group('spec:errors')]
-    public function aToOneRelatedEndpointValidatesAMergedRelatedQueryFilterValue(): void
+    public function aToOneRelatedEndpointAddressesTheRelatedResourcesRelations(): void
     {
-        // The endpoint MERGES relatedQuery[author][filter] into the filter map: a mistyped
-        // relatedQuery value must 400 too, not just a mistyped `?filter` value — the gap
-        // surface 1/2 closed (the validate call now receives the merged map). Profile
-        // negotiated so the relatedQuery family is parsed.
+        // `relatedQuery[author]` on GET /articles/1/author names a relation of the author
+        // it renders, not the author itself, and authors declare no `author` relation, so
+        // the path is refused before any value is read.
         $response = $this->profileRequest('/articles/1/author?relatedQuery[author][filter][authorId]=banana');
 
         self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
 
         $error = $this->firstError($this->decode($response));
-        self::assertSame('FILTER_VALUE_INVALID', $error['code'] ?? null);
-        self::assertSame(['parameter' => 'filter[authorId]'], $error['source'] ?? null);
+        self::assertSame('QUERY_PARAM_UNRECOGNIZED', $error['code'] ?? null);
+        self::assertSame(['parameter' => 'relatedQuery[author]'], $error['source'] ?? null);
     }
 
     #[Test]
@@ -230,17 +229,25 @@ abstract class FilterValueConstraintConformanceTestCase extends JsonApiFunctiona
     #[Group('spec:fetching-relationships')]
     #[Group('spec:fetching-filtering')]
     #[Group('spec:errors')]
-    public function aToOneRelationshipEndpointValidatesAMergedRelatedQueryFilterValue(): void
+    public function aToOneRelationshipEndpointValidatesItsOwnFilterValueAndIgnoresRelatedQuery(): void
     {
-        // The relationship-linkage endpoint mirrors the related endpoint: a mistyped
-        // merged relatedQuery filter value is the same 400 (follow-up #2 surface 2).
-        $response = $this->profileRequest('/articles/1/relationships/author?relatedQuery[author][filter][authorId]=banana');
+        // The relationship-linkage endpoint validates a mistyped value of its own filter
+        // as the related endpoint does (follow-up #2 surface 2).
+        $response = $this->profileRequest('/articles/1/relationships/author?filter[authorId]=banana');
 
         self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
 
         $error = $this->firstError($this->decode($response));
         self::assertSame('FILTER_VALUE_INVALID', $error['code'] ?? null);
         self::assertSame(['parameter' => 'filter[authorId]'], $error['source'] ?? null);
+
+        // Its linkage is the primary data, which `relatedQuery` does not address.
+        $ignored = $this->profileRequest('/articles/1/relationships/author?relatedQuery[author][filter][authorId]=banana');
+
+        self::assertSame(200, $ignored->getStatusCode(), (string) $ignored->getContent());
+        $linkage = $this->decode($ignored)['data'] ?? null;
+        self::assertIsArray($linkage);
+        self::assertSame('1', $linkage['id'] ?? null);
     }
 
     #[Test]
