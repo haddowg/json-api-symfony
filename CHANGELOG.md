@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.13.0](https://github.com/haddowg/json-api-symfony/compare/v2.12.1...v2.13.0) (2026-11-13)
+
+
+### Features
+
+* read relatedQuery wherever core 2.17 documents it ([#371](https://github.com/haddowg/json-api-symfony/issues/371)) ([9451ac8](https://github.com/haddowg/json-api-symfony/commit/9451ac80cedcede941177e8adaac9a1a9242b73d))
+
 ## [2.12.1](https://github.com/haddowg/json-api-symfony/compare/v2.12.0...v2.12.1) (2026-11-12)
 
 
