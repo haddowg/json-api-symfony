@@ -903,8 +903,10 @@ json_api:
 ### Enum descriptions
 
 An `In`-constrained attribute sourced from a **backed enum** becomes a reusable named
-component (`#/components/schemas/<Enum>`), `$ref`'d everywhere it is used. Declare
-per-value descriptions with the core enum trio:
+component (`#/components/schemas/<Enum>`), `$ref`'d everywhere it is used. Each reference
+carries the enum's backing type, `string` or `integer`, beside a single-entry `allOf` that
+holds it. A nullable field pairs that type and `null` with an `anyOf` of the reference and
+`null`. Either way the field reads the same type whether its enum is inline or hoisted. Declare per-value descriptions with the core enum trio:
 
 ```php
 use haddowg\JsonApi\Resource\Enum\DescribedEnum;

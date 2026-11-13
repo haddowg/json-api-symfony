@@ -503,7 +503,7 @@ abstract class CustomActionConformanceTestCase extends JsonApiFunctionalTestCase
         $content = self::at($document, 'paths', '/actionWidgets/-actions/export', 'get', 'responses', '200', 'content');
         self::assertIsArray($content);
         self::assertSame(['application/vnd.api+json', 'text/csv', 'application/pdf', 'application/json'], \array_keys($content));
-        self::assertSame(['$ref' => '#/components/schemas/WidgetExportSummary'], self::at($content, 'application/json', 'schema'));
+        self::assertSame(['type' => 'object', 'allOf' => [['$ref' => '#/components/schemas/WidgetExportSummary']]], self::at($content, 'application/json', 'schema'));
         self::assertNotNull(self::at($document, 'paths', '/actionWidgets/-actions/export', 'get', 'responses', '200', 'headers', 'Content-Disposition'));
     }
 
