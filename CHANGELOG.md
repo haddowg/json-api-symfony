@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.14.1](https://github.com/haddowg/json-api-symfony/compare/v2.14.0...v2.14.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* require core 2.18.1 so relatedQuery filters keep their enum types ([#375](https://github.com/haddowg/json-api-symfony/issues/375)) ([2f652c3](https://github.com/haddowg/json-api-symfony/commit/2f652c3e31fd462ec24f47b77415a1a5af84f169))
+
 ## [2.14.0](https://github.com/haddowg/json-api-symfony/compare/v2.13.0...v2.14.0) (2026-11-13)
 
 
