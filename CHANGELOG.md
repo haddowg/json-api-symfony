@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.14.0](https://github.com/haddowg/json-api-symfony/compare/v2.13.0...v2.14.0) (2026-11-13)
+
+
+### Features
+
+* adopt haddowg/json-api 2.18 ([#373](https://github.com/haddowg/json-api-symfony/issues/373)) ([0a7ded3](https://github.com/haddowg/json-api-symfony/commit/0a7ded3a32161ac5640e2cb46e494680f69db1c7))
+
 ## [2.13.0](https://github.com/haddowg/json-api-symfony/compare/v2.12.1...v2.13.0) (2026-11-13)
 
 
