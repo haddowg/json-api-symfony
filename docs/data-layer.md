@@ -124,8 +124,8 @@ interface DataProviderInterface
   is `false` the handler nulls the to-one — `data: null` on
   `GET /{type}/{id}/{toOneRel}?filter[…]`, null linkage on
   `…/relationships/{toOneRel}?filter[…]`, dropped from `included` on
-  `relatedQuery[<toOneRel>][filter]` (covered on
-  [relationships](relationships.md)). A `[filter]` is the only `relatedQuery` member a
+  `relatedQuery[<toOneRel>][filter]` on a response rendering the relation's parent
+  (covered on [relationships](relationships.md)). A `[filter]` is the only `relatedQuery` member a
   to-one accepts — a `[sort]`/`[page]` on a to-one path is a `400`. The
   `AbstractDataProvider` defaults are **all-match** — `relatedToOneMatches()` returns
   `true`, and `relatedToOneMatchesBatch()` returns the full `wireId => true` map —

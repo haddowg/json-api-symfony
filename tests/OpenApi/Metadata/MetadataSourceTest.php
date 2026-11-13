@@ -133,7 +133,7 @@ final class MetadataSourceTest extends TestCase
         // Projected through the core registration-aware projector, the
         // default registration pins the jsonapi.profile enum to the three URIs in order,
         // advertises the Relationship Queries `relatedQuery` parameter (articles declares
-        // relations) as a $ref to the single shared component, and the Countable
+        // relations) as a $ref to the articles type's own component, and the Countable
         // `?withCount` parameter (articles is countable).
         $document = (new OpenApiProjector())->project($this->source()->forServer())->toArray();
 
@@ -143,9 +143,9 @@ final class MetadataSourceTest extends TestCase
         );
 
         $collection = $this->at($document, 'paths', '/articles', 'get');
-        self::assertContains('#/components/parameters/relatedQuery', $this->parameterRefs($collection));
+        self::assertContains('#/components/parameters/ArticlesRelatedQuery', $this->parameterRefs($collection));
         self::assertContains('withCount', $this->parameterNames($collection));
-        self::assertArrayHasKey('relatedQuery', $this->at($document, 'components', 'parameters'));
+        self::assertArrayHasKey('ArticlesRelatedQuery', $this->at($document, 'components', 'parameters'));
     }
 
     #[Test]
@@ -167,7 +167,7 @@ final class MetadataSourceTest extends TestCase
         );
 
         $collection = $this->at($document, 'paths', '/articles', 'get');
-        self::assertNotContains('#/components/parameters/relatedQuery', $this->parameterRefs($collection));
+        self::assertNotContains('#/components/parameters/ArticlesRelatedQuery', $this->parameterRefs($collection));
         self::assertArrayNotHasKey('parameters', $this->at($document, 'components'));
         self::assertContains('withCount', $this->parameterNames($collection));
     }

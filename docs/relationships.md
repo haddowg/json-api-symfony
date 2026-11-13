@@ -191,6 +191,12 @@ GET /albums/1?include=artist&relatedQuery[artist][filter][name]=Portishead
   → data.relationships.artist.data = null, included = []
 ```
 
+The profile filters a to-one *of the rendered resource*. On the related endpoint the
+target is the primary data, so `GET /albums/1/artist?relatedQuery[artist][filter][…]`
+does not filter the artist: `artist` must name a relation of `artists`, and is a `400`
+when it doesn't. The relationship endpoint renders linkage, not resources, and ignores
+`relatedQuery`.
+
 `relatedQuery` on a to-one is **`[filter]` only** — a `[sort]` or `[page]` on a to-one
 path is a `400` (a to-one is not a list); see the profile section's
 [to-one bullet](#filtering-and-sorting-a-relationship-from-the-primary-request-the-relationship-queries-profile).
@@ -498,13 +504,31 @@ GET /albums/1?include=tracks&relatedQuery[tracks][sort]=-duration&relatedQuery[t
 GET /albums/1?include=tracks&rQ[tracks][sort]=duration
 ```
 
-On a related endpoint the paths address the related resources' relations, and each
-related resource's linkage, included members and `?withCount` total follow them exactly
-as a primary document's do: `GET /artists/1/albums?include=tracks&relatedQuery[tracks][filter][longerThan]=300`
-renders each album's tracks narrowed by the filter.
+The family applies to every response that renders resources of one type: a collection
+or single read, a create answering `201` or an update answering `200` with its resource,
+a related read of a relation over one type, and a custom action answering with a
+resource. Its paths are relations of that rendered type. On a related endpoint they
+address the related resources' relations, never the target, and each related
+resource's linkage, included members and `?withCount` total follow them exactly as a
+primary document's do: `GET /artists/1/albums?include=tracks&relatedQuery[tracks][filter][longerThan]=300`
+renders each album's tracks narrowed by the filter. The OpenAPI document lists
+`relatedQuery` on exactly these operations, through one `<Type>RelatedQuery` parameter
+component per rendered type that names each addressable relation and its vocabulary.
+
+A response rendering several types has no type to address, so any path on it is the
+`400` an unknown path gets: a related read of a `MorphTo` or `MorphToMany`, and an
+action answering with resources of more than one type. A delete, a relationship read or
+mutation, and an action answering without a resource render no resources and ignore the
+family.
+
+A create or update checks its `relatedQuery` before it writes anything: an unknown path,
+sort or filter key, or a mistyped filter value fails the request with the same `400` and
+leaves nothing stored.
 
 - The client addresses a **top-level** relation of the request's primary resource by
-  its name. A dotted path (`relatedQuery[tracks.album]`) is legal family **grammar** —
+  its name: a to-many or to-one over one type that a read renders. A polymorphic
+  relation (`MorphTo`, `MorphToMany`, even over one type) shares no vocabulary and a
+  write-only relation renders no linkage, so naming either is a `400`. A dotted path (`relatedQuery[tracks.album]`) is legal family **grammar** —
   it parses without error — but the bundle windows only top-level relations, so a
   dotted path addressing a relation of an *included* resource resolves to no relation
   and is a `400` (address that relation at its own endpoint instead). An **unknown

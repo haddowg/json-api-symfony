@@ -335,6 +335,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         }
 
         if (\count($groups) > 1) {
+            $this->windowBatcher?->refuse($request);
             $this->relationshipPagination?->set(null);
             $this->relationshipLinkage?->set(null);
             $this->preloadGroups($groups, $request, $server);
@@ -957,7 +958,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // rendered. A polymorphic page is preloaded per member type.
             $items = \is_array($result->items) ? \array_values($result->items) : \iterator_to_array($result->items, false);
             if ($polymorphic) {
-                // A polymorphic page spans types, so each type counts its own members.
+                // A polymorphic page spans types: each type counts its own members, and no
+                // `relatedQuery` path names a relation of all of them.
+                $this->windowBatcher?->refuse($request);
                 $this->preloadPolymorphic($relation, $items, $request, $server, $identifiedTypes ?? []);
                 $this->applyGroupedRelationshipCounts($server, $this->groupByRenderedType($relation, $items, $server, $identifiedTypes ?? []), $request);
             } else {
@@ -1047,25 +1050,27 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // polymorphic to-many path 400s through CriteriaApplier. There is no criteria to
         // run, so the offending key is surfaced directly as the same `400`
         // {@see \haddowg\JsonApi\Exception\FilterParamUnrecognized} (source.parameter
-        // `filter[<key>]`). Gated on the merged requested filter being present (not on
+        // `filter[<key>]`). Gated on the requested filter being present (not on
         // `\is_object($related)`), so a filter on an empty polymorphic to-one still 400s.
+        // It renders several types, so no `relatedQuery` path names a relation of it.
         if ($polymorphic) {
-            $filter = $this->toOneRequestedFilter($operation->queryParameters(), $relation, $request);
+            $filter = $operation->queryParameters()->filter;
             if ($filter !== []) {
                 throw new \haddowg\JsonApi\Exception\FilterParamUnrecognized(\array_key_first($filter));
             }
+            $this->windowBatcher?->refuse($request);
         }
 
         // A relation filter that excludes the single related object nulls the to-one,
         // so it renders `data: null` and contributes nothing — the to-one twin of the
-        // to-many endpoint's filtered collection. The filter is the
-        // operation's own `?filter` (a direct GET /{type}/{id}/{toOneRel}?filter[…])
-        // merged with any relatedQuery[<rel>][filter] for this path, resolved against the
-        // SAME merged vocabulary the to-many endpoint uses, validated the same (unknown
-        // key / mistyped value → the endpoint's 400). Monomorphic only: a polymorphic
-        // to-one has no single related resource and so no shared filter vocabulary.
+        // to-many endpoint's filtered collection. The filter is the operation's own
+        // `?filter`, resolved against the SAME merged vocabulary the to-many endpoint
+        // uses, validated the same (unknown key / mistyped value → the endpoint's 400).
+        // A `relatedQuery` path names a relation of the related resource, never this one.
+        // Monomorphic only: a polymorphic to-one has no single related resource and so no
+        // shared filter vocabulary.
         if (\is_object($related) && !$polymorphic) {
-            $filter = $this->toOneRequestedFilter($operation->queryParameters(), $relation, $request);
+            $filter = $operation->queryParameters()->filter;
             if ($filter !== []) {
                 $relatedResource = $this->types->resourceFor($server, $relatedType);
                 $criteria = $this->relationCriteria->criteriaFor(
@@ -1077,10 +1082,6 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                     request: $request,
                     resources: $server,
                 );
-                // Validate the MERGED requested filter map (the operation's own `?filter`
-                // ⊕ the relatedQuery `[filter]` already driven into the criteria), so a
-                // mistyped relatedQuery filter value is the endpoint's same 400, not just
-                // a mistyped `?filter` value.
                 $this->validateFilterValues($filter, $criteria->filters, $criteria->request, $criteria->paths);
 
                 if (!$this->providers->forType($relatedType)->relatedToOneMatches($relatedType, $related, $relation, $criteria, $request)) {
@@ -1099,11 +1100,11 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // Load the related resource's own rendered relations (a single related object
         // as a one-element list) so its includes and linkage are scoped and do not
         // N+1. Grouped by the object's own type, so a polymorphic
-        // to-one is covered too.
+        // to-one is covered too. An absent target still checks the `relatedQuery` paths.
+        if (!$polymorphic) {
+            $this->windowRelatedItems($server, $relatedType, \is_object($related) ? [$related] : [], $request);
+        }
         if (\is_object($related)) {
-            if (!$polymorphic) {
-                $this->windowRelatedItems($server, $relatedType, [$related], $request);
-            }
             $this->preloadPolymorphic($relation, [$related], $request, $server);
         }
 
@@ -1117,21 +1118,6 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         );
 
         return RelatedResponse::fromResource($related, $serializer);
-    }
-
-    /**
-     * The requested `filter[…]` for a to-one related/relationship endpoint: the
-     * operation's own `?filter` (a direct `GET /{type}/{id}/{toOneRel}?filter[…]`)
-     * merged with any `relatedQuery[<rel>][filter]` addressed to this relation's path
-     * under the negotiated Relationship Queries profile, the relatedQuery taking
-     * precedence on a key clash (the profile param is the more specific address). Empty
-     * when neither is present, so the to-one renders unconditionally (the common case).
-     *
-     * @return array<string, mixed>
-     */
-    private function toOneRequestedFilter(QueryParameters $queryParameters, RelationInterface $relation, JsonApiRequestInterface $request): array
-    {
-        return [...$queryParameters->filter, ...$request->getRelatedQuery($relation->name())->filter];
     }
 
     /**
@@ -1256,10 +1242,11 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // and on a no-match write `null` onto the parent's to-one property BEFORE the
         // serializer reads linkage off it — so core emits null linkage.
         // A GET read, so nothing flushes. Monomorphic only (a polymorphic to-one carries
-        // no shared filter vocabulary).
+        // no shared filter vocabulary). The filter is the endpoint's own `?filter`: the
+        // linkage is the primary data here, which `relatedQuery` does not address.
         if (!$relation->isToMany() && Polymorphism::isMonomorphic($relation)) {
             $request = $this->jsonApiRequest($operation->context());
-            $filter = $this->toOneRequestedFilter($operation->queryParameters(), $relation, $request);
+            $filter = $operation->queryParameters()->filter;
             if ($filter !== []) {
                 $relatedType = $relation->relatedTypes()[0];
                 // A related provider that batches the to-one is the source of its target.
@@ -1278,9 +1265,6 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                         request: $request,
                         resources: $server,
                     );
-                    // Validate the MERGED requested filter map (the operation's own
-                    // `?filter` ⊕ the relatedQuery `[filter]`), so a mistyped relatedQuery
-                    // filter value is the endpoint's same 400.
                     $this->validateFilterValues($filter, $criteria->filters, $criteria->request, $criteria->paths);
 
                     if (!$this->providers->forType($relatedType)->relatedToOneMatches($relatedType, $related, $relation, $criteria, $request)) {
@@ -1293,10 +1277,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         } elseif (!$relation->isToMany() && Polymorphism::of($relation)) {
             // A polymorphic to-one (MorphTo) carries no shared filter vocabulary, so ANY
             // requested filter key is unrecognised — the same `400` the polymorphic
-            // to-many surfaces. Gated on the merged requested filter being present (not on
+            // to-many surfaces. Gated on the requested filter being present (not on
             // a target existing), so a filter on an empty polymorphic to-one still 400s.
-            $request = $this->jsonApiRequest($operation->context());
-            $filter = $this->toOneRequestedFilter($operation->queryParameters(), $relation, $request);
+            $filter = $operation->queryParameters()->filter;
             if ($filter !== []) {
                 throw new \haddowg\JsonApi\Exception\FilterParamUnrecognized(\array_key_first($filter));
             }
@@ -2294,6 +2277,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $body = $operation->body();
         $request = $this->jsonApiRequest($operation->context());
 
+        // The response renders the created resource, so its `relatedQuery` is checked
+        // before anything is stored.
+        $this->windowBatcher?->check($server, $type, $request);
+
         ReadOnlyAttributeGuard::check($server, $this->types->resourceFor($server, $type), $body, creating: true);
         $this->validate($server, $type, $body, creating: true);
 
@@ -2424,6 +2411,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // rule that depends on a stored sibling absent from the body evaluates
         // correctly, and a required-on-update field present in stored state but
         // not re-sent does not spuriously 422.
+        $this->windowBatcher?->check($server, $type, $request);
         ReadOnlyAttributeGuard::check($server, $this->types->resourceFor($server, $type), $body, creating: false);
         $this->validate($server, $type, $body, creating: false, existingObject: $entity);
 
