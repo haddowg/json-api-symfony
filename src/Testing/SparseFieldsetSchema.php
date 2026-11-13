@@ -106,7 +106,7 @@ final class SparseFieldsetSchema
     /**
      * The schema object behind `$schema`, following one local component `$ref`, bare or
      * wrapped in the single-entry `allOf` the generator writes when the reference carries
-     * an `example` or `default`.
+     * a `type`, `example` or `default`.
      */
     private static function resolve(\stdClass $schemas, mixed $schema): ?\stdClass
     {
