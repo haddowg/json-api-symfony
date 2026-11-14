@@ -24,11 +24,13 @@ final readonly class FilterPaths
     /**
      * @param list<FieldInterface>                                     $fields   the inventory of the type the filters run against
      * @param (\Closure(string): (iterable<FieldInterface>|null))|null $fieldsOf a related type's inventory, or `null` when the type has none
+     * @param string|null                                              $type     the type the filters run against
      */
     public function __construct(
         private ThroughPathResolver $resolver,
         private array $fields,
         private ?\Closure $fieldsOf = null,
+        private ?string $type = null,
     ) {}
 
     /**
@@ -49,7 +51,16 @@ final readonly class FilterPaths
             $serializer = $resources->serializerFor($type);
 
             return $serializer instanceof AbstractResource ? $serializer->allFields() : null;
-        });
+        }, $resource::$type);
+    }
+
+    /**
+     * The type the filters run against, whose id encoder decodes the ids they compare
+     * with its own, or null when the paths were built without one.
+     */
+    public function type(): ?string
+    {
+        return $this->type;
     }
 
     /**

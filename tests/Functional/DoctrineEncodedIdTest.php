@@ -304,6 +304,19 @@ final class DoctrineEncodedIdTest extends JsonApiFunctionalTestCase
         self::assertEqualsCanonicalizing([$this->wireIds[1], $this->wireIds[2]], $ids('filter[id]=' . $this->wireIds[1] . ',' . $this->wireIds[2]));
         self::assertSame([$this->wireIds[1]], $ids('filter[idIs]=' . $this->wireIds[1]));
         self::assertSame([], $ids('filter[idIs]=cog-ff'));
+
+        // offset-cogs serves the same entity under another encoder.
+        $offset = function (string $query): array {
+            $response = $this->handle('/offset-cogs?' . $query);
+            self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+            $rows = $this->decode($response)['data'] ?? null;
+            self::assertIsArray($rows);
+
+            return \array_column($rows, 'id');
+        };
+        self::assertSame(['102'], $offset('filter[id]=102'));
+        self::assertSame(['101'], $offset('filter[idIs]=101'));
+        self::assertSame([], $offset('filter[id]=' . $this->wireIds[2]));
     }
 
     protected function afterBoot(): void

@@ -152,6 +152,7 @@ final class DoctrineJsonApiTestKernel extends Kernel
         // The encoded-id witness: a `cogs` type whose integer storage key is encoded
         // to an opaque wire token, so the Doctrine provider/persister decode the route
         // {id} and linkage ids before find/getReference.
+        $services->set(OffsetCogResource::class);
         $services->set(CogResource::class);
 
         // The belongsToMany pivot witnesses: a `playlists` parent whose `tracks`

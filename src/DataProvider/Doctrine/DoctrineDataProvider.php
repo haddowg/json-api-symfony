@@ -157,7 +157,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             fn(BelongsToMany $relation, string $ownerClass): ?PivotAssociation => $this->pivotAssociations !== null && isset($this->entityClassByType[$relation->relatedTypes()[0] ?? ''])
                 ? $this->pivotAssociations->discover($relation, $ownerClass, $this->entityClassByType[$relation->relatedTypes()[0]])
                 : null,
-            fn(string $class): ?IdEncoderInterface => $this->encoderForClass($class),
+            fn(string $class, ?string $type): ?IdEncoderInterface => $this->encoderForClass($class, $type),
         );
         $this->sortHandler = new DoctrineSortHandler($sortArms);
         $this->ids = new DoctrineIdentifiers($this->entityManager);
@@ -183,14 +183,19 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
     }
 
     /**
-     * The id encoder of the first type that serves `$class`, so a filter compares an
-     * encoded wire id with the storage key it names.
+     * The id encoder a filter decodes a wire id compared with `$class`'s id through:
+     * `$type`'s when it serves the class, otherwise that of the first type serving it,
+     * which only a target no declared type names needs.
      *
      * @param class-string $class
      */
-    private function encoderForClass(string $class): ?IdEncoderInterface
+    private function encoderForClass(string $class, ?string $type = null): ?IdEncoderInterface
     {
         $name = $this->entityManager->getClassMetadata($class)->getName();
+        if ($type !== null && isset($this->entityClassByType[$type]) && $this->entityManager->getClassMetadata($this->entityClassByType[$type])->getName() === $name) {
+            return $this->idEncoders->encoderFor($type);
+        }
+
         foreach ($this->entityClassByType as $type => $entityClass) {
             if ($this->entityManager->getClassMetadata($entityClass)->getName() === $name) {
                 return $this->idEncoders->encoderFor($type);

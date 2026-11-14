@@ -829,8 +829,12 @@ campaign's leads whose brand is Acme, the same total the related endpoint report
   type of the id it holds. So `filter[id]=<uuid>` matches a `BINARY(16)` id on SQLite
   or MySQL, on a plain column filter, a set filter and a traversal leaf alike. A value
   the type can't convert matches nothing. `WhereIdIn`, `WhereIdNotIn` and a `Where` on
-  the id column first decode each value through the type's id encoder, so a client
-  filters by the ids it reads; a value the encoder can't decode is compared as sent.
+  the id column first decode each value through the id encoder of the type the filter
+  runs against, so a client filters by the ids it reads, and an entity two types
+  serve decodes with the encoder of the type that was asked. A path ending on an
+  association of an entity no relation names, such as a pivot entity's, decodes
+  through the encoder of a type serving the associated entity. A value the encoder
+  can't decode is compared as sent.
 
 - **`WhereHasMatching`** — the **Doctrine-only escape hatch** for what `WhereThrough`'s
   single dotted comparison cannot express: a multi-column / OR / NOT predicate, or raw

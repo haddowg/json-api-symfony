@@ -141,7 +141,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
     /**
      * @param iterable<DoctrineFilterArmInterface>                                   $arms             author arms for custom filter types, consulted in order
      * @param (\Closure(BelongsToMany, class-string): ?PivotAssociation)|null $pivotAssociation the association entity behind a pivot `belongsToMany` declared on an entity class, or null when the relation's related type has no entity
-     * @param (\Closure(class-string): ?IdEncoderInterface)|null             $encoderFor       the id encoder of the type an entity class serves, which decodes a wire id compared with its id
+     * @param (\Closure(class-string, ?string): ?IdEncoderInterface)|null    $encoderFor       the id encoder of the named type when it serves the entity class, else of a type that serves the class, which decodes a wire id compared with its id
      */
     public function __construct(
         iterable $arms = [],
@@ -298,6 +298,11 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
                     [$path, $metadata] = $onRelation
                         ? [DoctrineIdentifiers::path($leafMetadata, $leafAlias), $leafMetadata]
                         : ['IDENTITY(' . $leafAlias . '.' . $leafField . ')', $query->getEntityManager()->getClassMetadata($leafMetadata->getAssociationTargetClass($leafField))];
+                    // Core decoded a relationship leaf's wire id already; an association
+                    // of an entity no relation names decodes through its class's type.
+                    if (!$onRelation) {
+                        $expected = $this->decodedIds($metadata, null, [$expected])[0];
+                    }
                     $placeholder = $this->placeholder($query);
                     $sub->andWhere(\sprintf('%s %s :%s', $path, $this->idOperator($filter), $placeholder));
                     (new DoctrineIdentifiers($query->getEntityManager()))->bind($query, $placeholder, $metadata, $expected);
@@ -344,7 +349,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
                         ? [DoctrineIdentifiers::path($leafMetadata, $leafAlias), $leafMetadata]
                         : ['IDENTITY(' . $leafAlias . '.' . $leafField . ')', $query->getEntityManager()->getClassMetadata($leafMetadata->getAssociationTargetClass($leafField))];
                     $sub->andWhere(\sprintf('%s IN (:%s)', $path, $placeholder));
-                    (new DoctrineIdentifiers($query->getEntityManager()))->bindList($query, $placeholder, $metadata, $values);
+                    (new DoctrineIdentifiers($query->getEntityManager()))->bindList($query, $placeholder, $metadata, $onRelation ? $values : $this->decodedIds($metadata, null, $values));
                 },
                 $alias,
                 $onRelation,
@@ -928,8 +933,9 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
 
     /**
      * Wire ids compared with the id of the entity at `$alias`, each decoded through the
-     * id encoder of the type that entity serves. A value the encoder can't decode, or
-     * any value when the type has no encoder, is compared as sent.
+     * id encoder of the type the filters run against, the one its paths name, so an
+     * entity several types serve decodes with the right one. A value the encoder can't
+     * decode, or any value when the type has no encoder, is compared as sent.
      *
      * @param list<mixed> $values
      *
@@ -938,13 +944,29 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
     private function storageIds(QueryBuilder $query, string $alias, array $values): array
     {
         $metadata = $this->encoderFor !== null ? $this->metadataOfAlias($query, $alias) : null;
-        if ($metadata === null) {
+
+        return $metadata === null ? $values : $this->decodedIds($metadata, $alias === 'pivot' ? null : $this->paths?->type(), $values);
+    }
+
+    /**
+     * `$values` decoded through the encoder of `$type` when it serves `$metadata`'s
+     * entity, else of a type that serves it. Only a target no declared type names, such
+     * as an association of a pivot entity, falls back to the class.
+     *
+     * @param ClassMetadata<object> $metadata
+     * @param list<mixed>           $values
+     *
+     * @return list<mixed>
+     */
+    private function decodedIds(ClassMetadata $metadata, ?string $type, array $values): array
+    {
+        if ($this->encoderFor === null) {
             return $values;
         }
 
         /** @var class-string $class */
         $class = $metadata->getName();
-        $encoder = ($this->encoderFor)($class);
+        $encoder = ($this->encoderFor)($class, $type);
         if ($encoder === null) {
             return $values;
         }
