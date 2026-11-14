@@ -26,6 +26,7 @@ use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
 use haddowg\JsonApiBundle\DataProvider\PivotAwareProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\PivotFields;
+use haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory;
 use haddowg\JsonApiBundle\OpenApi\Metadata\ActionMetadata;
 use haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource;
 use haddowg\JsonApiBundle\Operation\Operation;
@@ -345,11 +346,44 @@ final class ServableResourceWarmer implements CacheWarmerInterface
 
                 $related = $this->typeMetadata->resourceFor($server, $relation->relatedTypes()[0]);
                 if ($related !== null) {
+                    self::guardPivotRowFilters($relation, $related);
                     $paths->resolveAll($relation->allFilters(), $related->allFields());
                 }
             }
         } catch (\LogicException $e) {
             throw new \LogicException(\sprintf('The JSON:API resource for type "%s" on server "%s" declares a filter that cannot run: %s', $type, $serverName, $e->getMessage()), 0, $e);
+        }
+    }
+
+    /**
+     * Refuses a pivot relation's `pivot.`-prefixed relationship filter when its related
+     * type declares a relation stored as `pivot`, since the path could then mean that
+     * relation as much as the pivot row.
+     *
+     * @throws \LogicException
+     */
+    private static function guardPivotRowFilters(RelationInterface $relation, AbstractResource $related): void
+    {
+        if (!$relation instanceof BelongsToMany || $relation->storedPivotFields() === []) {
+            return;
+        }
+
+        foreach ($related->allFields() as $field) {
+            if (!$field instanceof RelationInterface || $field->column() !== 'pivot') {
+                continue;
+            }
+
+            foreach ($relation->allFilters() as $filter) {
+                if (RelationCriteriaFactory::startsFromPivotRow($filter)) {
+                    throw new \LogicException(\sprintf(
+                        'Filter "%s" of relation "%s" starts its path at "pivot.", which is ambiguous: the related type "%s" declares the relation "%s" stored as "pivot". Store that relation under another name with storedAs().',
+                        $filter->key(),
+                        $relation->name(),
+                        $related::$type,
+                        $field->name(),
+                    ));
+                }
+            }
         }
     }
 

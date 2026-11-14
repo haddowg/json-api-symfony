@@ -274,15 +274,17 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
      */
     private function whereThrough(QueryBuilder $query, WhereThrough $filter, mixed $value, string $alias): QueryBuilder
     {
-        $expected = $filter->storageValue($value);
-        $onRelation = $this->endsOnRelation($filter->resolved);
+        // A pivot row's path walks its entity's associations, which the related type's
+        // relations core resolved the path against say nothing about.
+        $onRelation = $alias !== 'pivot' && $this->endsOnRelation($filter->resolved);
+        $expected = $onRelation ? $filter->storageValue($value) : $value;
         $segments = ThroughPath::split($this->pivotColumn($filter->path, $alias));
 
         $exists = $query->expr()->exists(
             $this->existsSubquery(
                 $query,
                 $segments,
-                function (QueryBuilder $sub, string $leafAlias, string $leafField, ClassMetadata $leafMetadata) use ($query, $filter, $expected): void {
+                function (QueryBuilder $sub, string $leafAlias, string $leafField, ClassMetadata $leafMetadata) use ($query, $filter, $expected, $onRelation): void {
                     // The predicate TEXT goes on the subquery (via its leaf alias);
                     // the placeholder name and the bound value go on the OUTER $query,
                     // which executes the embedded EXISTS — so a placeholder collision
@@ -326,19 +328,19 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
      */
     private function whereThroughIn(QueryBuilder $query, WhereThroughIn $filter, mixed $value, string $alias): QueryBuilder
     {
-        $values = $filter->storageValues($value);
+        $onRelation = $alias !== 'pivot' && $this->endsOnRelation($filter->resolved);
+        $values = $onRelation ? $filter->storageValues($value) : $filter->listValue()->members($value);
         if ($values === []) {
             return $query->andWhere('1 = 0');
         }
 
-        $onRelation = $this->endsOnRelation($filter->resolved);
         $segments = ThroughPath::split($this->pivotColumn($filter->path, $alias));
 
         $exists = $query->expr()->exists(
             $this->existsSubquery(
                 $query,
                 $segments,
-                function (QueryBuilder $sub, string $leafAlias, string $leafField, ClassMetadata $leafMetadata) use ($query, $values): void {
+                function (QueryBuilder $sub, string $leafAlias, string $leafField, ClassMetadata $leafMetadata) use ($query, $values, $onRelation): void {
                     $placeholder = $this->placeholder($query);
                     // A column that holds an association's foreign key compares like it.
                     $leafField = $leafField === '' ? '' : DoctrineIdentifiers::foreignKeyAssociation($leafMetadata, $leafField) ?? $leafField;

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use haddowg\JsonApi\Schema\Profile\CountableProfile;
+use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
 use haddowg\JsonApiBundle\Tests\Functional\App\PivotBoundaryTestKernel;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
@@ -36,6 +38,25 @@ final class InMemoryPivotBoundaryTest extends JsonApiFunctionalTestCase
         $response = $this->handle(self::BASE_URI . '/playlists/1/tracks?filter[position]=1');
 
         self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    public function everyPivotFilterIsUnrecognisedOnEveryInMemoryPath(): void
+    {
+        $queries = 'application/vnd.api+json;profile="' . RelationshipQueriesProfile::URI . '",application/vnd.api+json;profile="' . CountableProfile::URI . '"';
+        foreach (['position' => '1', 'untagged' => '1', 'tagName' => 'chill'] as $key => $value) {
+            foreach ([
+                '/playlists/1/tracks?filter[' . $key . ']=' . $value,
+                '/playlists/1/relationships/tracks?filter[' . $key . ']=' . $value,
+                '/playlists?include=tracks&relatedQuery[tracks][filter][' . $key . ']=' . $value,
+                '/playlists?withCount=tracks&relatedQuery[tracks][filter][' . $key . ']=' . $value,
+            ] as $uri) {
+                $response = $this->handle(self::BASE_URI . $uri, 'GET', null, ['HTTP_ACCEPT' => $queries]);
+                self::assertSame(400, $response->getStatusCode(), $uri . ' ' . $response->getContent());
+                self::assertStringContainsString('FILTERING_UNRECOGNIZED', (string) $response->getContent(), $uri);
+            }
+        }
     }
 
     #[Test]

@@ -33,7 +33,8 @@ final class PivotKeysTestKernel extends Kernel
      * Adds types sharing the definition entity: `named` a second type with its own
      * encoder, `shared` a second type with the same encoder and templates whose filter
      * names no definition type, and `clash` both of the clashing ones, which fails the
-     * warm-up.
+     * warm-up, and `pivot-clash` a pivot relation whose pivot-row filter clashes with a
+     * related relation stored as `pivot`, which fails the warm-up too.
      */
     public static string $variant = '';
 
@@ -129,6 +130,10 @@ final class PivotKeysTestKernel extends Kernel
         }
         if (\in_array(self::$variant, ['shared', 'clash'], true)) {
             $services->set(PkBareTemplateResource::class);
+        }
+        if (self::$variant === 'pivot-clash') {
+            $services->set(PkClashTemplateResource::class);
+            $services->set(PkClashDefinitionResource::class);
         }
     }
 

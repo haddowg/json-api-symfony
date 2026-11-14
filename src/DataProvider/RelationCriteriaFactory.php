@@ -445,6 +445,25 @@ final class RelationCriteriaFactory
     }
 
     /**
+     * Whether `$filter` is a relationship filter a `pivot.` prefix points at the pivot
+     * row: a `WhereHas`, `WhereDoesntHave` or `WhereHasMatching` relationship, or a
+     * `WhereThrough` or `WhereThroughIn` path. A column filter is not one.
+     */
+    public static function startsFromPivotRow(FilterInterface $filter): bool
+    {
+        $target = match (true) {
+            $filter instanceof WhereHas,
+            $filter instanceof WhereDoesntHave,
+            $filter instanceof WhereHasMatching => $filter->relationship,
+            $filter instanceof WhereThrough,
+            $filter instanceof WhereThroughIn => $filter->path,
+            default => '',
+        };
+
+        return \str_starts_with($target, self::PIVOT_PREFIX);
+    }
+
+    /**
      * What a filter targets, so a `pivot.` prefix routes it to the pivot row: the
      * declared `column` of a scalar filter ({@see Where} and its operators,
      * {@see WhereIn}/{@see WhereNotIn}, {@see WhereNull}/{@see WhereNotNull}), the

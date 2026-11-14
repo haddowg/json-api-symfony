@@ -463,6 +463,26 @@ final class DoctrinePivotKeysTest extends JsonApiFunctionalTestCase
         self::assertNotContains('filter[unused]', $filters('/placeholder-definitions/{id}/templates'));
     }
 
+    #[Test]
+    public function aPivotRowFilterClashingWithARelationStoredAsPivotFailsTheWarmUp(): void
+    {
+        static::ensureKernelShutdown();
+        PivotKeysTestKernel::$variant = 'pivot-clash';
+
+        try {
+            $kernel = new PivotKeysTestKernel('test', false);
+            (new \Symfony\Component\Filesystem\Filesystem())->remove($kernel->getCacheDir());
+
+            $this->expectException(\LogicException::class);
+            $this->expectExceptionMessage('The JSON:API resource for type "clash-templates" on server "default" declares a filter that cannot run');
+            $this->expectExceptionMessage('Filter "unused" of relation "placeholders" starts its path at "pivot.", which is ambiguous: the related type "clash-definitions" declares the relation "pivot" stored as "pivot".');
+            KernelTestCase::bootKernel(['debug' => false]);
+        } finally {
+            PivotKeysTestKernel::$variant = '';
+            static::ensureKernelShutdown();
+        }
+    }
+
     /**
      * @return list<PkTemplatePlaceholderEntity>
      */
