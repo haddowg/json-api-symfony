@@ -836,9 +836,14 @@ prefix targets the related entity, exactly like any relation-scoped filter.
 A [filter family](https://github.com/haddowg/json-api/blob/main/docs/filters.md#filter-families-keys-matched-by-prefix)
 on the relation can resolve to a pivot filter too. The bundle resolves the family first
 and then treats what it returns as it treats an exact pivot filter: a `pivot.` column
-routes to the pivot alias and gets the field's cast on the related and relationship
-endpoints, and on the paths that carry no pivot values, such as an include, its key is
-unrecognised just as the exact one is.
+routes to the pivot alias and gets the field's cast wherever pivot filters apply, and
+where they don't its key is unrecognised just as the exact one is.
+
+Pivot filters apply wherever the Doctrine provider reads the relation through its pivot
+query: the related and relationship endpoints, a Relationship Queries
+`relatedQuery[<relation>][filter]` window on an include, and the `?withCount` total
+that window reports. A provider with no pivot query, such as the in-memory one, leaves
+a pivot filter's key unrecognised, a `400`.
 
 ```php
 ->withFilters(

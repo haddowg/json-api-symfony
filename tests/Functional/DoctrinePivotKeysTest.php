@@ -296,6 +296,18 @@ final class DoctrinePivotKeysTest extends JsonApiFunctionalTestCase
         self::assertSame([], $names('filter[idIs]=not-a-uuid'));
     }
 
+    #[Test]
+    public function aPivotFilterNarrowsARelatedQueryWindowAndItsCount(): void
+    {
+        $rows = $this->rows($this->decode($this->get('/campaign-templates?sort=name&include=placeholders&withCount=placeholders&relatedQuery[placeholders][filter][defaultOverride]=Bob', self::QUERIES_ACCEPT . ',' . self::COUNTS_ACCEPT)));
+        self::assertSame([[], [['type' => 'placeholder-definitions', 'id' => self::FIRST_NAME]], []], \array_map(fn(array $row): array => $this->identifiers($this->linkage($row, 'placeholders')), $rows));
+        self::assertSame([0, 1, 0], \array_map(fn(array $row): mixed => $this->relationshipMeta($row, 'placeholders')['total'] ?? null, $rows));
+
+        $definitions = $this->rows($this->decode($this->get('/placeholder-definitions?sort=name&include=templates&relatedQuery[templates][filter][defaultOverride]=Ann&relatedQuery[templates][sort]=-defaultOverride', self::QUERIES_ACCEPT)));
+        self::assertSame([$this->template('10')], $this->identifiers($this->linkage($definitions[1], 'templates')));
+        self::assertSame([], $this->identifiers($this->linkage($definitions[0], 'templates')));
+    }
+
     /**
      * @return list<PkTemplatePlaceholderEntity>
      */

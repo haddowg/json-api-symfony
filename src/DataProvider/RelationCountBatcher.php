@@ -148,7 +148,7 @@ final class RelationCountBatcher
             $relatedResource,
             $relation,
             null,
-            includePivotFields: false,
+            includePivotFields: $this->router->isPivot($relation),
             request: $request,
             resources: $server,
         );
