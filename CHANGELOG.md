@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.15.0](https://github.com/haddowg/json-api-symfony/compare/v2.14.1...v2.15.0) (2026-11-14)
+
+
+### Features
+
+* call an entity's constructor on create when it takes no argument ([#380](https://github.com/haddowg/json-api-symfony/issues/380)) ([abb0c4f](https://github.com/haddowg/json-api-symfony/commit/abb0c4f6c2c6673b23a6e564d1f38570a28a8b6f))
+* filter a pivot relation by the pivot row's own associations ([#379](https://github.com/haddowg/json-api-symfony/issues/379)) ([430bf3b](https://github.com/haddowg/json-api-symfony/commit/430bf3b0daf94631bc61508dc1dec0cba475a992))
+
+
+### Bug Fixes
+
+* read, write and filter pivots whose ends have unusual keys ([#378](https://github.com/haddowg/json-api-symfony/issues/378)) ([db927a0](https://github.com/haddowg/json-api-symfony/commit/db927a05f27f71d07212f11ce2ce18dd75ccefb8))
+
 ## [2.14.1](https://github.com/haddowg/json-api-symfony/compare/v2.14.0...v2.14.1) (2026-11-13)
 
 
