@@ -9,7 +9,7 @@ committing hydrated entities through one `EntityManager`.
 
 This page documents the Doctrine reference implementation: the entity-map
 compiler pass, the read and write pipelines, the DQL filter/sort translation, the
-related-collection scoping, constructor-less instantiation, and the load-state
+related-collection scoping, instantiation, and the load-state
 seam. The storage-agnostic SPI these classes implement is on
 [data-layer.md](data-layer.md); overriding or scoping the Doctrine layer is on
 [custom-data-providers.md](custom-data-providers.md).
@@ -500,36 +500,44 @@ relationship endpoint or in a whole-resource write) that leaves it out, is a `40
 written. When the inverse side declares `orphanRemoval: true` the child is deleted
 instead, so the write goes ahead.
 
-### Constructor-less instantiation
+### Instantiation
 
-On create, the persister builds a blank instance via
-`ClassMetadata::newInstance()` — the same constructor-less mechanism the ORM uses
-to hydrate entities on read. So entities with **required constructor
-arguments** work under the generic engine without a custom persister:
+On create, the persister builds the entity through its constructor when the
+constructor needs no argument. So an id the constructor mints, such as a UUIDv7, and
+the collections it initialises are there before the body is hydrated:
 
 ```php
-public function __construct(
+#[ORM\Entity]
+class PlaceholderDefinition
+{
     #[ORM\Id]
-    #[ORM\Column]
-    public string $id = '',
-    #[ORM\Column]
-    public string $title = '',
-    // …
-) {
-    $this->tracks = new ArrayCollection();
+    #[ORM\Column(type: 'uuid')]
+    public Uuid $id;
+
+    #[ORM\OneToMany(targetEntity: TemplatePlaceholder::class, mappedBy: 'definition')]
+    public Collection $usages;
+
+    public function __construct()
+    {
+        $this->id = Uuid::v7();
+        $this->usages = new ArrayCollection();
+    }
 }
 ```
 
-The trade-off: because the constructor is **not** invoked, its
-invariants/defaults do not run on create — consistent with read-hydration, where
-they also don't. (Note that the `Album` constructor above initialises
-`$this->tracks`; with the constructor skipped, that association collection is left
-uninitialised. The persister re-initialises an uninitialised to-many collection
-property to an empty `ArrayCollection` before applying embedded relationships, so a
-whole-resource create that sets a to-many does not hit an "accessed before
-initialization" `\Error`.)
+An entity whose constructor needs arguments is built with
+`ClassMetadata::newInstance()` instead, the mechanism the ORM uses to hydrate an
+entity on read, so it still works under the generic engine without a custom
+persister. Its constructor does not run, so an id or a collection it would set is
+missing. The persister does re-initialise an uninitialised to-many collection before
+applying embedded relationships, so a create that sets a to-many does not hit an
+"accessed before initialization" `\Error`.
 
-To run the constructor, or build the entity through a factory, implement
+The same rule builds a new pivot or link row. A constructor-minted id counts as a
+client id when the persister checks for a taken one, so a create of such an entity
+looks its id up once before the insert.
+
+To build an entity whose constructor needs arguments, or through a factory, implement
 `InstantiatesEntityInterface` on the resource. Its `instantiate()` builds the model
 every create of the type hydrates, an Atomic Operations `add` included, and the
 persister's own `instantiate()` is skipped:
@@ -540,9 +548,11 @@ use haddowg\JsonApiBundle\Hook\InstantiatesEntityInterface;
 
 final class AdvertiserResource extends AbstractResource implements InstantiatesEntityInterface
 {
+    public function __construct(private readonly string $defaultCurrency) {}
+
     public function instantiate(HookContext $context): object
     {
-        return new Advertiser(); // the constructor sets up its collections
+        return new Advertiser($this->defaultCurrency); // a constructor argument the persister can't supply
     }
 }
 ```
@@ -554,7 +564,7 @@ A type with no resource implements it on its standalone hydrator instead.
 A row the persister adds to a pivot `belongsToMany`'s association entity is built
 through its constructor when the constructor needs no argument, so an id or a
 collection the constructor sets is there when the row is persisted. A constructor
-that needs arguments is skipped, as for a resource. To build those rows, implement
+that needs arguments is skipped, as for an entity. To build those rows, implement
 `InstantiatesPivotInterface` on the resource that declares the relation, or on the
 type's standalone hydrator when it has none. It runs for every new row, whatever
 write adds it, and returns null to leave a relation to the persister:

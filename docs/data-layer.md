@@ -194,8 +194,9 @@ interface DataPersisterInterface
 
 - `instantiate()` hands the handler a blank instance for the hydrator to populate
   on create. The persister owns the storage mapping, so it owns instantiation —
-  this is why the [Doctrine persister](doctrine.md) can build
-  constructor-less entities (`ClassMetadata::newInstance()`).
+  this is why the [Doctrine persister](doctrine.md) can call a constructor that
+  needs no argument and build any other entity without one
+  (`ClassMetadata::newInstance()`).
 - `create()`/`update()` commit and return the entity; `delete()` returns nothing.
   Entities flow as plain `object` — the handler resolves the persister by type and
   never needs a narrower static type, so (unlike the covariant read provider) this
@@ -254,7 +255,7 @@ the in-memory one only the first:
 
 A resource can also take instantiation and deletion away from the persister by
 implementing `InstantiatesEntityInterface` or `DeletesEntityInterface` (see
-[doctrine → constructor-less instantiation](doctrine.md#constructor-less-instantiation) and [deleting without the persister](doctrine.md#deleting-without-the-persister)).
+[doctrine → instantiation](doctrine.md#instantiation) and [deleting without the persister](doctrine.md#deleting-without-the-persister)).
 
 Tagged `haddowg.json_api.data_persister`
 ([`JsonApiBundle::DATA_PERSISTER_TAG`](../src/JsonApiBundle.php)).

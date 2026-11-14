@@ -13,11 +13,9 @@ use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Filter\WhereIdIn;
 use haddowg\JsonApi\Resource\Filter\WhereThroughIn;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
-use haddowg\JsonApiBundle\Hook\HookContext;
-use haddowg\JsonApiBundle\Hook\InstantiatesEntityInterface;
 
 #[AsJsonApiResource(entity: PkDefinitionEntity::class)]
-final class PkDefinitionResource extends AbstractResource implements InstantiatesEntityInterface
+final class PkDefinitionResource extends AbstractResource
 {
     public static string $type = 'placeholder-definitions';
 
@@ -45,10 +43,5 @@ final class PkDefinitionResource extends AbstractResource implements Instantiate
             WhereThroughIn::make('template', 'usages.template'),
             WhereThroughIn::make('usedBy', 'templates'),
         ];
-    }
-
-    public function instantiate(HookContext $context): object
-    {
-        return new PkDefinitionEntity();
     }
 }

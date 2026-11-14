@@ -113,6 +113,7 @@ final class PivotKeysTestKernel extends Kernel
             'base_uri' => 'https://example.test',
             'version' => '1.1',
             'openapi' => ['expose_in_prod' => true],
+            'atomic_operations' => ['enabled' => true],
         ]);
 
         $services = $container->services()
