@@ -6,16 +6,24 @@ namespace haddowg\JsonApiBundle\DataProvider\Doctrine;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Mapping\ClassMetadata;
+use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
+use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\Range;
+use haddowg\JsonApi\Resource\Filter\TraversesPath;
 use haddowg\JsonApi\Resource\Filter\Where;
+use haddowg\JsonApi\Resource\Filter\WhereGroup;
 use haddowg\JsonApi\Resource\Filter\WhereIn;
 use haddowg\JsonApi\Resource\Filter\WhereNotIn;
 use haddowg\JsonApi\Resource\Filter\WhereNotNull;
 use haddowg\JsonApi\Resource\Filter\WhereNull;
+use haddowg\JsonApi\Resource\Filter\WhereThrough;
+use haddowg\JsonApi\Resource\Filter\WhereThroughIn;
 use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApi\Resource\Sort\SortInterface;
+use haddowg\JsonApiBundle\DataProvider\FilterPaths;
+use haddowg\JsonApiBundle\Server\IdEncoderResolver;
 use haddowg\JsonApiBundle\Server\RouteDescriptorRegistry;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
@@ -70,6 +78,7 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
         private readonly TypeMetadataResolver $typeMetadata,
         private readonly PivotAssociationResolver $pivotAssociations,
         private readonly array $serverNames,
+        private readonly ?IdEncoderResolver $idEncoders = null,
     ) {}
 
     /**
@@ -105,6 +114,7 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
                 if ($resource !== null) {
                     $this->guardSorts($type, $resource->allSorts(), $metadata);
                     $this->guardFilters($type, $resource->allFilters(), $metadata);
+                    $this->guardTargetEncoders($serverName, $type, $resource, $metadata);
                 }
 
                 $this->guardPivots($serverName, $type, $metadata);
@@ -205,6 +215,128 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
             $filter instanceof WhereNotNull => $filter->column,
             default => null,
         };
+    }
+
+    /**
+     * Refuses a traversal filter whose path ends on an entity, through an association or
+     * a foreign key no declared relation names, that several types serve with different
+     * id encoders when no type the declaration names serves it: the filter could not tell
+     * which encoder decodes the ids it is sent. The type's own filters are checked with
+     * the types its declaration names, and each relation's filters with those of the
+     * related type plus this one.
+     *
+     * @param ClassMetadata<object> $metadata
+     */
+    private function guardTargetEncoders(string $serverName, string $type, AbstractResource $resource, ClassMetadata $metadata): void
+    {
+        if ($this->idEncoders === null) {
+            return;
+        }
+
+        $server = $this->servers->get($serverName);
+        $encoders = new DoctrineTargetEncoders($this->entityManager, $this->entityClassByType, $this->idEncoders);
+        $this->guardTargetsOf($serverName, $type, $resource->allFilters(), $metadata, FilterPaths::of($server, $resource), $encoders);
+
+        foreach ($resource->allFields() as $relation) {
+            if (!$relation instanceof RelationInterface || \count($relation->relatedTypes()) !== 1) {
+                continue;
+            }
+            $relatedType = $relation->relatedTypes()[0];
+            $related = $this->typeMetadata->resourceFor($server, $relatedType);
+            if ($related === null || !isset($this->entityClassByType[$relatedType])) {
+                continue;
+            }
+
+            $this->guardTargetsOf($serverName, $type, $relation->allFilters(), $this->entityManager->getClassMetadata($this->entityClassByType[$relatedType]), FilterPaths::of($server, $related, $type), $encoders, $relation);
+        }
+    }
+
+    /**
+     * @param list<FilterInterface> $filters
+     * @param ClassMetadata<object> $metadata the entity the filters run against
+     */
+    private function guardTargetsOf(string $serverName, string $type, array $filters, ClassMetadata $metadata, ?FilterPaths $paths, DoctrineTargetEncoders $encoders, ?RelationInterface $relation = null): void
+    {
+        foreach ($filters as $filter) {
+            if ($filter instanceof WhereGroup) {
+                $this->guardTargetsOf($serverName, $type, $filter->children, $metadata, $paths, $encoders, $relation);
+
+                continue;
+            }
+            if (!$filter instanceof WhereThrough && !$filter instanceof WhereThroughIn) {
+                continue;
+            }
+
+            $resolved = $paths?->resolve($filter);
+            if ($resolved instanceof TraversesPath && $resolved->resolvedPath()?->endsOnRelation() === true) {
+                continue; // the relation the path ends on names the type
+            }
+
+            $target = $this->pathTarget($metadata, $filter->path, $paths);
+            if ($target === null) {
+                continue;
+            }
+
+            try {
+                $encoders->encoderFor($target, $paths?->named() ?? [], $serverName);
+            } catch (AmbiguousTargetEncoder $e) {
+                throw new \LogicException(\sprintf(
+                    'The JSON:API resource for type "%s" on server "%s" declares a filter that cannot run: filter "%s"%s ends its path "%s" on %s, which the types "%s" serve with different id encoders, and no type the declaration names serves it. Declare the path through a relation to the type it means, or give those types one encoder.',
+                    $type,
+                    $serverName,
+                    $filter->key(),
+                    $relation !== null ? \sprintf(' of relation "%s"', $relation->name()) : '',
+                    $filter->path,
+                    $e->entityClass,
+                    \implode('", "', $e->types),
+                ), 0, $e);
+            }
+        }
+    }
+
+    /**
+     * The entity a traversal path ends on when its last segment is an association, or a
+     * field mapping one's foreign key, rather than a declared relation: the entity whose
+     * ids the filter compares. Null for a path ending on another field, or one this walk
+     * cannot follow, which the filter reports when it runs.
+     *
+     * @param ClassMetadata<object> $metadata
+     *
+     * @return class-string|null
+     */
+    private function pathTarget(ClassMetadata $metadata, string $path, ?FilterPaths $paths): ?string
+    {
+        $segments = \explode('.', $path);
+        $relations = $paths?->relationsAlong($path) ?? [];
+        foreach ($segments as $index => $segment) {
+            $last = $index === \count($segments) - 1;
+            if (!$metadata->hasAssociation($segment)) {
+                $relation = $relations[$index] ?? null;
+                if ($relation instanceof BelongsToMany && $relation->storedPivotFields() !== [] && isset($this->entityClassByType[$relation->relatedTypes()[0] ?? ''])) {
+                    /** @var class-string $owner */
+                    $owner = $metadata->getName();
+                    $pivot = $this->pivotAssociations->discover($relation, $owner, $this->entityClassByType[$relation->relatedTypes()[0]]);
+                    $metadata = $this->entityManager->getClassMetadata($this->entityManager->getClassMetadata($pivot->entityClass)->getAssociationTargetClass($pivot->farProperty));
+                    if ($last) {
+                        return $metadata->getName();
+                    }
+
+                    continue;
+                }
+
+                $foreignKey = $last ? DoctrineIdentifiers::foreignKeyAssociation($metadata, $segment) : null;
+
+                return $foreignKey === null ? null : $metadata->getAssociationTargetClass($foreignKey);
+            }
+
+            $target = $metadata->getAssociationTargetClass($segment);
+            if ($last) {
+                return $target;
+            }
+            $metadata = $this->entityManager->getClassMetadata($target);
+        }
+
+        return null;
     }
 
     /**

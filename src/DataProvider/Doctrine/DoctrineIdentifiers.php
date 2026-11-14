@@ -205,6 +205,32 @@ final class DoctrineIdentifiers
     }
 
     /**
+     * The single-valued association on `$metadata` whose one foreign-key column is the
+     * column `$field` maps, when `$field` is a field mapped beside it.
+     *
+     * @param ClassMetadata<object> $metadata
+     */
+    public static function foreignKeyAssociation(ClassMetadata $metadata, string $field): ?string
+    {
+        if (!$metadata->hasField($field)) {
+            return null;
+        }
+
+        $column = $metadata->getColumnName($field);
+        foreach ($metadata->getAssociationNames() as $association) {
+            if (!$metadata->isSingleValuedAssociation($association) || $metadata->isAssociationInverseSide($association) || !$metadata->isAssociationWithSingleJoinColumn($association)) {
+                continue;
+            }
+
+            if ($metadata->getSingleAssociationJoinColumnName($association) === $column) {
+                return $association;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Reduces an entity or proxy held by an association id to the target's own id,
      * through as many association ids as the chain has. The UnitOfWork's copy is read
      * first, so a proxy is never initialised.

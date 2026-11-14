@@ -15,6 +15,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\PivotKeys\PkTemplateEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\PivotKeys\PkTemplatePlaceholderEntity;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
+use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Uid\UuidV7;
@@ -308,6 +309,58 @@ final class DoctrinePivotKeysTest extends JsonApiFunctionalTestCase
         $definitions = $this->rows($this->decode($this->get('/placeholder-definitions?sort=name&include=templates&relatedQuery[templates][filter][defaultOverride]=Ann&relatedQuery[templates][sort]=-defaultOverride', self::QUERIES_ACCEPT)));
         self::assertSame([$this->template('10')], $this->identifiers($this->linkage($definitions[1], 'templates')));
         self::assertSame([], $this->identifiers($this->linkage($definitions[0], 'templates')));
+    }
+
+    #[Test]
+    public function aTypeTheFilterNamesDecodesAnEntityTwoTypesServe(): void
+    {
+        $this->bootVariant('named');
+
+        $ids = fn(string $uri): array => \array_column($this->rows($this->decode($this->get($uri))), 'id');
+        self::assertSame(['10', '20'], $ids('/campaign-templates?sort=name&filter[definition]=' . self::FIRST_NAME));
+        self::assertSame(['def-' . self::COMPANY], $ids('/labelled-definitions?filter[id]=def-' . self::COMPANY));
+        self::assertSame([self::COMPANY], $ids('/placeholder-definitions?filter[id]=' . self::COMPANY));
+    }
+
+    #[Test]
+    public function typesSharingAnEncoderLeaveAnUnnamedPathAllowed(): void
+    {
+        $this->bootVariant('shared');
+
+        self::assertSame(['20'], \array_column($this->rows($this->decode($this->get('/bare-templates?filter[definition]=' . self::COMPANY))), 'id'));
+    }
+
+    #[Test]
+    public function anUnnamedPathToAnEntityTypesDecodeDifferentlyFailsTheWarmUp(): void
+    {
+        static::ensureKernelShutdown();
+        PivotKeysTestKernel::$variant = 'clash';
+
+        try {
+            $kernel = new PivotKeysTestKernel('test', false);
+            (new \Symfony\Component\Filesystem\Filesystem())->remove($kernel->getCacheDir());
+
+            $this->expectException(\LogicException::class);
+            $this->expectExceptionMessage('The JSON:API resource for type "bare-templates" on server "default" declares a filter that cannot run: filter "definition" ends its path "placeholderRows.definition" on ' . PkDefinitionEntity::class . ', which the types "placeholder-definitions", "labelled-definitions" serve with different id encoders');
+            KernelTestCase::bootKernel(['debug' => false]);
+        } finally {
+            PivotKeysTestKernel::$variant = '';
+            static::ensureKernelShutdown();
+        }
+    }
+
+    private function bootVariant(string $variant): void
+    {
+        static::ensureKernelShutdown();
+        PivotKeysTestKernel::$variant = $variant;
+        try {
+            $kernel = new PivotKeysTestKernel('test', false);
+            (new \Symfony\Component\Filesystem\Filesystem())->remove($kernel->getCacheDir());
+            static::bootKernel(['debug' => false]);
+            $this->afterBoot();
+        } finally {
+            PivotKeysTestKernel::$variant = '';
+        }
     }
 
     /**

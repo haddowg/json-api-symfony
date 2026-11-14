@@ -141,7 +141,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
     /**
      * @param iterable<DoctrineFilterArmInterface>                                   $arms             author arms for custom filter types, consulted in order
      * @param (\Closure(BelongsToMany, class-string): ?PivotAssociation)|null $pivotAssociation the association entity behind a pivot `belongsToMany` declared on an entity class, or null when the relation's related type has no entity
-     * @param (\Closure(class-string, ?string): ?IdEncoderInterface)|null    $encoderFor       the id encoder of the named type when it serves the entity class, else of a type that serves the class, which decodes a wire id compared with its id
+     * @param (\Closure(class-string, list<string>): ?IdEncoderInterface)|null $encoderFor   the id encoder that decodes a wire id compared with the entity class's id, given the types the filter names
      */
     public function __construct(
         iterable $arms = [],
@@ -288,7 +288,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
                     // which executes the embedded EXISTS — so a placeholder collision
                     // across several traversal filters on one query cannot happen.
                     // A column that holds an association's foreign key compares like it.
-                    $leafField = $onRelation ? $leafField : $this->foreignKeyAssociation($leafMetadata, $leafField) ?? $leafField;
+                    $leafField = $onRelation ? $leafField : DoctrineIdentifiers::foreignKeyAssociation($leafMetadata, $leafField) ?? $leafField;
                     if (!$onRelation && !$leafMetadata->hasAssociation($leafField)) {
                         $this->applyComparison($query, $sub, $leafAlias . '.' . $leafField, $filter->operator, $expected, $filter->key());
 
@@ -303,7 +303,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
                     // Core decoded a relationship leaf's wire id already; an association
                     // of an entity no relation names decodes through its class's type.
                     if (!$onRelation) {
-                        $expected = $this->decodedIds($metadata, null, [$expected])[0];
+                        $expected = $this->decodedIds($metadata, $this->paths?->named() ?? [], [$expected])[0];
                     }
                     $placeholder = $this->placeholder($query);
                     $sub->andWhere(\sprintf('%s %s :%s', $path, $this->idOperator($filter), $placeholder));
@@ -341,7 +341,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
                 function (QueryBuilder $sub, string $leafAlias, string $leafField, ClassMetadata $leafMetadata) use ($query, $values, $onRelation): void {
                     $placeholder = $this->placeholder($query);
                     // A column that holds an association's foreign key compares like it.
-                    $leafField = $onRelation ? $leafField : $this->foreignKeyAssociation($leafMetadata, $leafField) ?? $leafField;
+                    $leafField = $onRelation ? $leafField : DoctrineIdentifiers::foreignKeyAssociation($leafMetadata, $leafField) ?? $leafField;
                     if (!$onRelation && !$leafMetadata->hasAssociation($leafField)) {
                         $sub->andWhere(\sprintf('%s.%s IN (:%s)', $leafAlias, $leafField, $placeholder));
                         $query->setParameter($placeholder, ...$this->listParameter($query, $leafMetadata, $leafField, $values));
@@ -353,7 +353,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
                         ? [DoctrineIdentifiers::path($leafMetadata, $leafAlias), $leafMetadata]
                         : ['IDENTITY(' . $leafAlias . '.' . $leafField . ')', $query->getEntityManager()->getClassMetadata($leafMetadata->getAssociationTargetClass($leafField))];
                     $sub->andWhere(\sprintf('%s IN (:%s)', $path, $placeholder));
-                    (new DoctrineIdentifiers($query->getEntityManager()))->bindList($query, $placeholder, $metadata, $onRelation ? $values : $this->decodedIds($metadata, null, $values));
+                    (new DoctrineIdentifiers($query->getEntityManager()))->bindList($query, $placeholder, $metadata, $onRelation ? $values : $this->decodedIds($metadata, $this->paths?->named() ?? [], $values));
                 },
                 $alias,
                 $onRelation,
@@ -623,36 +623,6 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         ));
     }
 
-    /**
-     * The single-valued association on `$metadata` whose one foreign-key column is the
-     * column `$field` maps, when `$field` is a field mapped beside it, so a filter on the
-     * raw key compares as one on the association does.
-     *
-     * @param ClassMetadata<object> $metadata
-     */
-    private function foreignKeyAssociation(ClassMetadata $metadata, string $field): ?string
-    {
-        if (!$metadata->hasField($field)) {
-            return null;
-        }
-
-        $column = $metadata->getColumnName($field);
-        foreach ($metadata->getAssociationNames() as $association) {
-            if (!$metadata->isSingleValuedAssociation($association) || $metadata->isAssociationInverseSide($association)) {
-                continue;
-            }
-
-            if (!$metadata->isAssociationWithSingleJoinColumn($association)) {
-                continue;
-            }
-
-            if ($metadata->getSingleAssociationJoinColumnName($association) === $column) {
-                return $association;
-            }
-        }
-
-        return null;
-    }
 
     /**
      * The association entity behind `$segment` on `$metadata` when it names a pivot
@@ -980,20 +950,23 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
     {
         $metadata = $this->encoderFor !== null ? $this->metadataOfAlias($query, $alias) : null;
 
-        return $metadata === null ? $values : $this->decodedIds($metadata, $alias === 'pivot' ? null : $this->paths?->type(), $values);
+        $type = $alias === 'pivot' ? null : $this->paths?->type();
+
+        return $metadata === null ? $values : $this->decodedIds($metadata, $type === null ? [] : [$type], $values);
     }
 
     /**
-     * `$values` decoded through the encoder of `$type` when it serves `$metadata`'s
-     * entity, else of a type that serves it. Only a target no declared type names, such
-     * as an association of a pivot entity, falls back to the class.
+     * `$values` decoded through the encoder {@see DoctrineTargetEncoders} picks for
+     * `$metadata`'s entity among the `$named` types. A value the encoder can't decode is
+     * compared as sent.
      *
      * @param ClassMetadata<object> $metadata
+     * @param list<string>          $named
      * @param list<mixed>           $values
      *
      * @return list<mixed>
      */
-    private function decodedIds(ClassMetadata $metadata, ?string $type, array $values): array
+    private function decodedIds(ClassMetadata $metadata, array $named, array $values): array
     {
         if ($this->encoderFor === null) {
             return $values;
@@ -1001,7 +974,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
 
         /** @var class-string $class */
         $class = $metadata->getName();
-        $encoder = ($this->encoderFor)($class, $type);
+        $encoder = ($this->encoderFor)($class, $named);
         if ($encoder === null) {
             return $values;
         }

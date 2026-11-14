@@ -29,6 +29,14 @@ final class PivotKeysTestKernel extends Kernel
     private const string NAME = 'pivot-keys';
 
     /**
+     * Adds types sharing the definition entity: `named` a second type with its own
+     * encoder, `shared` a second type with the same encoder and templates whose filter
+     * names no definition type, and `clash` both of the clashing ones, which fails the
+     * warm-up.
+     */
+    public static string $variant = '';
+
+    /**
      * @return iterable<\Symfony\Component\HttpKernel\Bundle\BundleInterface>
      */
     public function registerBundles(): iterable
@@ -51,7 +59,7 @@ final class PivotKeysTestKernel extends Kernel
 
     public function getCacheDir(): string
     {
-        return \sys_get_temp_dir() . '/json-api-symfony-tests/' . self::NAME . '-cache/' . $this->environment;
+        return \sys_get_temp_dir() . '/json-api-symfony-tests/' . self::NAME . '-cache/' . self::$variant . $this->environment;
     }
 
     public function getLogDir(): string
@@ -111,6 +119,15 @@ final class PivotKeysTestKernel extends Kernel
 
         $services->set(PkTemplateResource::class);
         $services->set(PkDefinitionResource::class);
+        if (\in_array(self::$variant, ['named', 'clash'], true)) {
+            $services->set(PkLabelledDefinitionResource::class);
+        }
+        if (self::$variant === 'shared') {
+            $services->set(PkMirrorDefinitionResource::class);
+        }
+        if (\in_array(self::$variant, ['shared', 'clash'], true)) {
+            $services->set(PkBareTemplateResource::class);
+        }
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

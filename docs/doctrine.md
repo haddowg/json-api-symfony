@@ -833,8 +833,12 @@ campaign's leads whose brand is Acme, the same total the related endpoint report
   runs against, so a client filters by the ids it reads, and an entity two types
   serve decodes with the encoder of the type that was asked. A path ending on an
   association of an entity no relation names, such as a pivot entity's, decodes
-  through the encoder of a type serving the associated entity, the first that reads
-  the value when several types serve it. A path ending on a field that maps an
+  through the encoder of the type serving the associated entity. When several types
+  serve it with different encoders, the one the filter's declaration names decides:
+  the type the filter runs against, the related type of one of its relations, or on a
+  relation's reads the parent type. If none of those serves it, the cache warm-up
+  fails naming the filter and the candidate types. Types sharing an entity with the
+  same encoder, or none, need no name. A path ending on a field that maps an
   association's foreign key, such as a read-only `definitionId` beside `definition`,
   compares as the association does. A value the encoder
   can't decode is compared as sent.

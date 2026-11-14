@@ -851,6 +851,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 wantsCount: $relWantsCount,
                 request: $request,
                 resources: $server,
+                parentType: $type,
             );
 
             // The related endpoint validates a client-supplied filter value against
@@ -1083,6 +1084,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                     includePivotFields: false,
                     request: $request,
                     resources: $server,
+                    parentType: $type,
                 );
                 $this->validateFilterValues($filter, $criteria->filters, $criteria->request, $criteria->paths);
 
@@ -1266,6 +1268,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                         includePivotFields: false,
                         request: $request,
                         resources: $server,
+                        parentType: $type,
                     );
                     $this->validateFilterValues($filter, $criteria->filters, $criteria->request, $criteria->paths);
 
@@ -1328,6 +1331,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 wantsCount: $relWantsCount,
                 request: $request,
                 resources: $server,
+                parentType: $type,
             );
             $this->validateFilterValues($operation->queryParameters()->filter, $criteria->filters, $criteria->request, $criteria->paths);
 
@@ -1383,6 +1387,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 wantsCount: $relWantsCount,
                 request: $request,
                 resources: $server,
+                parentType: $type,
             );
 
             $result = $this->readRouter->pageIdentified($server, $type, $parent, $relation, $criteria, $request);
@@ -1457,6 +1462,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 wantsCount: $relWantsCount,
                 request: $request,
                 resources: $server,
+                parentType: $type,
             );
             $this->validateFilterValues($operation->queryParameters()->filter, $criteria->filters, $criteria->request, $criteria->paths);
 

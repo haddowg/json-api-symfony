@@ -128,6 +128,8 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
     private readonly DoctrineLinkRows $linkRows;
 
+    private readonly DoctrineTargetEncoders $targetEncoders;
+
     /**
      * @param array<string, class-string>            $entityClassByType a `type → entity FQCN` map
      * @param IdEncoderResolver                      $idEncoders        resolves a type's id encoder (route `{id}` decode)
@@ -150,6 +152,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         private readonly ?RequestScopedOutputTimezone $outputTimezone = null,
     ) {
         $this->extensions = \is_array($extensions) ? \array_values($extensions) : \iterator_to_array($extensions, false);
+        $this->targetEncoders = new DoctrineTargetEncoders($this->entityManager, $this->entityClassByType, $this->idEncoders);
         $this->applier = new CriteriaApplier();
         $this->windowExecutor = new WindowExecutor();
         $this->filterHandler = new DoctrineFilterHandler(
@@ -157,7 +160,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             fn(BelongsToMany $relation, string $ownerClass): ?PivotAssociation => $this->pivotAssociations !== null && isset($this->entityClassByType[$relation->relatedTypes()[0] ?? ''])
                 ? $this->pivotAssociations->discover($relation, $ownerClass, $this->entityClassByType[$relation->relatedTypes()[0]])
                 : null,
-            fn(string $class, ?string $type): ?IdEncoderInterface => $this->encoderForClass($class, $type),
+            fn(string $class, array $named): ?IdEncoderInterface => $this->targetEncoders->encoderFor($class, $named),
         );
         $this->sortHandler = new DoctrineSortHandler($sortArms);
         $this->ids = new DoctrineIdentifiers($this->entityManager);
@@ -182,59 +185,6 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         return isset($this->entityClassByType[$type]);
     }
 
-    /**
-     * The id encoder a filter decodes a wire id compared with `$class`'s id through:
-     * `$type`'s when it serves the class. Only a target no declared type names, such as
-     * an association of a pivot entity, goes by class, where the first encoder of a
-     * serving type that reads the value decodes it.
-     *
-     * @param class-string $class
-     */
-    private function encoderForClass(string $class, ?string $type = null): ?IdEncoderInterface
-    {
-        $name = $this->entityManager->getClassMetadata($class)->getName();
-        if ($type !== null && isset($this->entityClassByType[$type]) && $this->entityManager->getClassMetadata($this->entityClassByType[$type])->getName() === $name) {
-            return $this->idEncoders->encoderFor($type);
-        }
-
-        $encoders = [];
-        foreach ($this->entityClassByType as $serving => $entityClass) {
-            if ($this->entityManager->getClassMetadata($entityClass)->getName() === $name) {
-                $encoders[] = $this->idEncoders->encoderFor($serving);
-            }
-        }
-
-        $encoders = \array_values(\array_filter($encoders));
-        if (\count($encoders) < 2) {
-            return $encoders[0] ?? null;
-        }
-
-        // Several types serve the class and none is named: the first encoder that
-        // reads the value decodes it.
-        return new class ($encoders) implements IdEncoderInterface {
-            /**
-             * @param list<IdEncoderInterface> $encoders
-             */
-            public function __construct(private readonly array $encoders) {}
-
-            public function encode(mixed $storageKey): string
-            {
-                return $this->encoders[0]->encode($storageKey);
-            }
-
-            public function decode(string $wireId): mixed
-            {
-                foreach ($this->encoders as $encoder) {
-                    $decoded = $encoder->decode($wireId);
-                    if ($decoded !== null) {
-                        return $decoded;
-                    }
-                }
-
-                return null;
-            }
-        };
-    }
 
     public function fetchOne(string $type, string $id): ?object
     {

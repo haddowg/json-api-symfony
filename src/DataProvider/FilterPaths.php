@@ -25,19 +25,21 @@ final readonly class FilterPaths
      * @param list<FieldInterface>                                     $fields   the inventory of the type the filters run against
      * @param (\Closure(string): (iterable<FieldInterface>|null))|null $fieldsOf a related type's inventory, or `null` when the type has none
      * @param string|null                                              $type     the type the filters run against
+     * @param list<string>                                             $named    the types a filter's path may name, see {@see named()}
      */
     public function __construct(
         private ThroughPathResolver $resolver,
         private array $fields,
         private ?\Closure $fieldsOf = null,
         private ?string $type = null,
+        private array $named = [],
     ) {}
 
     /**
      * The paths of filters running against `$resource`'s type, read over the types
      * `$resources` registers, or `null` when there is no resource and so no inventory.
      */
-    public static function of(SerializerResolverInterface $resources, ?AbstractResource $resource): ?self
+    public static function of(SerializerResolverInterface $resources, ?AbstractResource $resource, ?string $parentType = null): ?self
     {
         if ($resource === null) {
             return null;
@@ -51,7 +53,41 @@ final readonly class FilterPaths
             $serializer = $resources->serializerFor($type);
 
             return $serializer instanceof AbstractResource ? $serializer->allFields() : null;
-        }, $resource::$type);
+        }, $resource::$type, self::namedBy($resource, $parentType));
+    }
+
+    /**
+     * The types the declaration of `$resource`'s filters names: its own, the related
+     * type of each relation it declares, and the parent type on a relation's reads.
+     *
+     * @return list<string>
+     */
+    public static function namedBy(AbstractResource $resource, ?string $parentType = null): array
+    {
+        $named = [$resource::$type];
+        foreach ($resource->allFields() as $field) {
+            if ($field instanceof RelationInterface) {
+                $named = [...$named, ...$field->relatedTypes()];
+            }
+        }
+        if ($parentType !== null) {
+            $named[] = $parentType;
+        }
+
+        return \array_values(\array_unique($named));
+    }
+
+    /**
+     * The types a filter's path may name: the type the filters run against, the related
+     * types of its relations and, on a relation's reads, the parent type. A path whose
+     * target entity several types serve with different id encoders decodes with the one
+     * of these that serves it.
+     *
+     * @return list<string>
+     */
+    public function named(): array
+    {
+        return $this->named;
     }
 
     /**

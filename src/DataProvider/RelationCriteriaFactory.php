@@ -143,7 +143,8 @@ final class RelationCriteriaFactory
      * a pivot field, its default order included.
      *
      * `$resources` lets a traversal filter's path resolve against the related type, so a
-     * path ending on a relationship compares the related resource's id.
+     * path ending on a relationship compares the related resource's id. `$parentType`, the
+     * type declaring the relation, is one of the types a filter's path may name.
      */
     public function criteriaFor(
         QueryParameters $queryParameters,
@@ -155,6 +156,7 @@ final class RelationCriteriaFactory
         ?JsonApiRequestInterface $request = null,
         bool $pivotSorts = false,
         ?SerializerResolverInterface $resources = null,
+        ?string $parentType = null,
     ): CollectionCriteria {
         $relationFilters = $includePivotFields
             ? $this->withPivotCasts($relation)
@@ -191,7 +193,7 @@ final class RelationCriteriaFactory
             // RelationCountInterface seam).
             wantsCount: $wantsCount,
             request: $request,
-            paths: $resources !== null ? FilterPaths::of($resources, $relatedResource) : null,
+            paths: $resources !== null ? FilterPaths::of($resources, $relatedResource, $parentType) : null,
         );
     }
 
