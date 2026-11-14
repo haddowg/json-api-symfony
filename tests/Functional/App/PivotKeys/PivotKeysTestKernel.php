@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\PivotKeys;
 use Doctrine\Bundle\DoctrineBundle\DoctrineBundle;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
+use haddowg\JsonApiBundle\Routing\OpenApiRouteLoader;
 use haddowg\JsonApiBundle\Tests\Functional\App\PinnedConfigDefaults;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
@@ -32,7 +33,8 @@ final class PivotKeysTestKernel extends Kernel
      * Adds types sharing the definition entity: `named` a second type with its own
      * encoder, `shared` a second type with the same encoder and templates whose filter
      * names no definition type, and `clash` both of the clashing ones, which fails the
-     * warm-up.
+     * warm-up, and `pivot-clash` a pivot relation whose pivot-row filter clashes with a
+     * related relation stored as `pivot`, which fails the warm-up too.
      */
     public static string $variant = '';
 
@@ -110,6 +112,7 @@ final class PivotKeysTestKernel extends Kernel
         $container->extension('json_api', [
             'base_uri' => 'https://example.test',
             'version' => '1.1',
+            'openapi' => ['expose_in_prod' => true],
         ]);
 
         $services = $container->services()
@@ -128,10 +131,15 @@ final class PivotKeysTestKernel extends Kernel
         if (\in_array(self::$variant, ['shared', 'clash'], true)) {
             $services->set(PkBareTemplateResource::class);
         }
+        if (self::$variant === 'pivot-clash') {
+            $services->set(PkClashTemplateResource::class);
+            $services->set(PkClashDefinitionResource::class);
+        }
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void
     {
         $routes->import('.', JsonApiRouteLoader::ROUTE_TYPE);
+        $routes->import('.', OpenApiRouteLoader::ROUTE_TYPE);
     }
 }

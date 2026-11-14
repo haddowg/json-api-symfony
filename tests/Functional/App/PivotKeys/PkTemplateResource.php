@@ -4,16 +4,19 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App\PivotKeys;
 
+use Doctrine\Common\Collections\Criteria;
 use haddowg\JsonApi\Pagination\PagePaginator;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApi\Resource\Filter\Where;
+use haddowg\JsonApi\Resource\Filter\WhereDoesntHave;
 use haddowg\JsonApi\Resource\Filter\WhereHas;
 use haddowg\JsonApi\Resource\Filter\WhereThrough;
 use haddowg\JsonApi\Resource\Filter\WhereThroughIn;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
+use haddowg\JsonApiBundle\DataProvider\Doctrine\Filter\WhereHasMatching;
 use haddowg\JsonApiBundle\Hook\HookContext;
 use haddowg\JsonApiBundle\Hook\InstantiatesPivotInterface;
 
@@ -30,7 +33,19 @@ final class PkTemplateResource extends AbstractResource implements InstantiatesP
             BelongsToMany::make('placeholders', 'placeholder-definitions')
                 ->through(PkTemplatePlaceholderEntity::class)
                 ->fields(Str::make('defaultOverride')->nullable()->sortable()->build())
-                ->withFilters(Where::make('defaultOverride', 'pivot.defaultOverride'))
+                ->withFilters(
+                    Where::make('defaultOverride', 'pivot.defaultOverride'),
+                    // Filters on the pivot row's own associations: a definition is
+                    // unused on this template when its row here has no target.
+                    WhereDoesntHave::make('unused', 'pivot.targets'),
+                    WhereHas::make('used', 'pivot.targets'),
+                    WhereThrough::make('targetName', 'pivot.targets.name'),
+                    WhereThroughIn::make('target', 'pivot.targets')->uuid(),
+                    // The row's own ends: named by the related and the parent type.
+                    WhereThroughIn::make('rowDefinition', 'pivot.definition')->uuid(),
+                    WhereThroughIn::make('rowTemplate', 'pivot.template'),
+                    WhereHasMatching::criteria('targetedAtHeader', 'pivot.targets', Criteria::create()->where(Criteria::expr()->eq('name', 'header'))),
+                )
                 ->withData()
                 ->paginate(PagePaginator::make())
                 ->countable(),

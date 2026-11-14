@@ -23,6 +23,7 @@ use haddowg\JsonApi\Resource\Filter\WhereThroughIn;
 use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApi\Resource\Sort\SortInterface;
 use haddowg\JsonApiBundle\DataProvider\FilterPaths;
+use haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory;
 use haddowg\JsonApiBundle\Server\IdEncoderResolver;
 use haddowg\JsonApiBundle\Server\RouteDescriptorRegistry;
 use haddowg\JsonApiBundle\Server\ServerProvider;
@@ -247,19 +248,20 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
                 continue;
             }
 
-            $this->guardTargetsOf($serverName, $type, $relation->allFilters(), $this->entityManager->getClassMetadata($this->entityClassByType[$relatedType]), FilterPaths::of($server, $related, $type), $encoders, $relation);
+            $this->guardTargetsOf($serverName, $type, $relation->allFilters(), $this->entityManager->getClassMetadata($this->entityClassByType[$relatedType]), FilterPaths::of($server, $related, $type), $encoders, $relation, $metadata);
         }
     }
 
     /**
-     * @param list<FilterInterface> $filters
-     * @param ClassMetadata<object> $metadata the entity the filters run against
+     * @param list<FilterInterface>      $filters
+     * @param ClassMetadata<object>      $metadata       the entity the filters run against
+     * @param ClassMetadata<object>|null $parentMetadata the entity declaring `$relation`
      */
-    private function guardTargetsOf(string $serverName, string $type, array $filters, ClassMetadata $metadata, ?FilterPaths $paths, DoctrineTargetEncoders $encoders, ?RelationInterface $relation = null): void
+    private function guardTargetsOf(string $serverName, string $type, array $filters, ClassMetadata $metadata, ?FilterPaths $paths, DoctrineTargetEncoders $encoders, ?RelationInterface $relation = null, ?ClassMetadata $parentMetadata = null): void
     {
         foreach ($filters as $filter) {
             if ($filter instanceof WhereGroup) {
-                $this->guardTargetsOf($serverName, $type, $filter->children, $metadata, $paths, $encoders, $relation);
+                $this->guardTargetsOf($serverName, $type, $filter->children, $metadata, $paths, $encoders, $relation, $parentMetadata);
 
                 continue;
             }
@@ -267,12 +269,22 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
                 continue;
             }
 
-            $resolved = $paths?->resolve($filter);
-            if ($resolved instanceof TraversesPath && $resolved->resolvedPath()?->endsOnRelation() === true) {
-                continue; // the relation the path ends on names the type
-            }
+            // A pivot-row filter walks the pivot entity's associations from the row.
+            if ($relation instanceof BelongsToMany && $relation->storedPivotFields() !== [] && $parentMetadata !== null && RelationCriteriaFactory::startsFromPivotRow($filter)) {
+                /** @var class-string $parentClass */
+                $parentClass = $parentMetadata->getName();
+                /** @var class-string $relatedClass */
+                $relatedClass = $metadata->getName();
+                $pivot = $this->pivotAssociations->discover($relation, $parentClass, $relatedClass);
+                $target = $this->pathTarget($this->entityManager->getClassMetadata($pivot->entityClass), \substr($filter->path, \strlen('pivot.')), null);
+            } else {
+                $resolved = $paths?->resolve($filter);
+                if ($resolved instanceof TraversesPath && $resolved->resolvedPath()?->endsOnRelation() === true) {
+                    continue; // the relation the path ends on names the type
+                }
 
-            $target = $this->pathTarget($metadata, $filter->path, $paths);
+                $target = $this->pathTarget($metadata, $filter->path, $paths);
+            }
             if ($target === null) {
                 continue;
             }

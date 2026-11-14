@@ -825,13 +825,41 @@ BelongsToMany::make('tracks', 'tracks')
 ```
 
 Any core scalar-column filter works on a pivot column: `Where` and its operators,
-`WhereIn`/`WhereNotIn`, `WhereNull`/`WhereNotNull`. (`WhereHas`/`WhereDoesntHave` are
-relationship-existence filters, not a scalar pivot column, so they are not
-pivot-applicable.) The value **cast** auto-resolves from the declared pivot field
+`WhereIn`/`WhereNotIn`, `WhereNull`/`WhereNotNull`. The value **cast** auto-resolves from the declared pivot field
 backing the stripped column — `Integer` coerces to `int`, `DateTime` to an ISO-8601
 comparison — so a typed pivot column filters correctly with no extra wiring; an
 explicit `->deserializeUsing()` on the filter still wins. A filter with **no** `pivot.`
 prefix targets the related entity, exactly like any relation-scoped filter.
+
+The relationship filters can start from the pivot row too, through the associations its
+entity maps. A `pivot.` prefix on the relationship or path makes `WhereHas`,
+`WhereDoesntHave`, `WhereThrough`, `WhereThroughIn` and the bundle's `WhereHasMatching`
+test the row that links this parent to each member, not the member itself:
+
+```php
+BelongsToMany::make('placeholders', 'placeholder-definitions')
+    ->through(CampaignTemplatePlaceholder::class)
+    ->fields(Str::make('defaultOverride')->nullable())
+    ->withFilters(
+        WhereDoesntHave::make('unused', 'pivot.targets'),            // filter[unused]: no target on this template's row
+        WhereThrough::make('targetName', 'pivot.targets.name'),      // filter[targetName]=header
+        WhereThroughIn::make('target', 'pivot.targets')->uuid(),     // filter[target]=<id>,<id>
+    ),
+```
+
+`GET /campaign-templates/7/placeholders?filter[unused]` lists the definitions template 7
+uses whose row on template 7 has no targets. A definition shared with another template
+where it does have targets is still unused here, which a filter on the definition
+itself can't express. A path that ends on one of the row's associations compares the
+id of the entity it reaches, bound with that id's Doctrine type. Its wire ids decode
+with the encoder of the type the relation names for that entity: the related type for
+the row's far side, the parent type for its near side. These filters apply
+where the pivot column filters do, and the in-memory provider, which has no pivot row,
+rejects them with a `400` on every path, as it does the column ones.
+
+A related type that declares a relation stored as `pivot` would make such a path
+ambiguous, so the cache warm-up fails naming the filter and the relation. Store that
+relation under another name with `storedAs()`.
 
 A [filter family](https://github.com/haddowg/json-api/blob/main/docs/filters.md#filter-families-keys-matched-by-prefix)
 on the relation can resolve to a pivot filter too. The bundle resolves the family first

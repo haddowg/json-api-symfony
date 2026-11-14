@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App\Resource;
 
+use haddowg\JsonApi\Pagination\PagePaginator;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Integer;
 use haddowg\JsonApi\Resource\Field\Str;
+use haddowg\JsonApi\Resource\Filter\Where;
+use haddowg\JsonApi\Resource\Filter\WhereDoesntHave;
+use haddowg\JsonApi\Resource\Filter\WhereThrough;
 
 /**
  * The in-memory `playlists` resource for the pivot boundary witness. It declares
@@ -34,7 +38,15 @@ final class PivotPlaylistResource extends AbstractResource
             Id::make()->build(),
             Str::make('name'),
             BelongsToMany::make('tracks', 'tracks')
-                ->fields(Integer::make('position')->build()),
+                ->fields(Integer::make('position')->build())
+                // Declared pivot filters, which the in-memory provider can't run.
+                ->withFilters(
+                    Where::make('position', 'pivot.position'),
+                    WhereDoesntHave::make('untagged', 'pivot.tags'),
+                    WhereThrough::make('tagName', 'pivot.tags.name'),
+                )
+                ->paginate(PagePaginator::make())
+                ->countable(),
             BelongsToMany::make('dataTracks', 'tracks')
                 ->storedAs('tracks')
                 ->fields(Integer::make('position')->build())

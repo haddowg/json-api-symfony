@@ -202,8 +202,8 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
             $filter instanceof WhereNotNull => $query->andWhere(\sprintf('%s IS NOT NULL', $this->path($this->pivotColumn($filter->column, $alias), $alias))),
             $filter instanceof WhereThrough => $this->whereThrough($query, $filter, $value, $alias),
             $filter instanceof WhereThroughIn => $this->whereThroughIn($query, $filter, $value, $alias),
-            $filter instanceof WhereHas => $this->whereHas($query, $filter->relationship, false, $alias),
-            $filter instanceof WhereDoesntHave => $this->whereHas($query, $filter->relationship, true, $alias),
+            $filter instanceof WhereHas => $this->whereHas($query, $this->pivotColumn($filter->relationship, $alias), false, $alias),
+            $filter instanceof WhereDoesntHave => $this->whereHas($query, $this->pivotColumn($filter->relationship, $alias), true, $alias),
             $filter instanceof WhereHasMatching => $this->whereHasMatching($query, $filter, $value, $alias),
             // Range (and DateRange, which extends it) is a structured min/max filter:
             // two push-down andWhere predicates on the SAME builder, no subquery.
@@ -274,9 +274,11 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
      */
     private function whereThrough(QueryBuilder $query, WhereThrough $filter, mixed $value, string $alias): QueryBuilder
     {
-        $expected = $filter->storageValue($value);
-        $onRelation = $this->endsOnRelation($filter->resolved);
-        $segments = $this->segments($filter->key(), $filter->path, $onRelation);
+        // A pivot row's path walks its entity's associations, which the related type's
+        // relations core resolved the path against say nothing about.
+        $onRelation = $alias !== 'pivot' && $this->endsOnRelation($filter->resolved);
+        $expected = $onRelation ? $filter->storageValue($value) : $value;
+        $segments = ThroughPath::split($this->pivotColumn($filter->path, $alias));
 
         $exists = $query->expr()->exists(
             $this->existsSubquery(
@@ -288,8 +290,8 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
                     // which executes the embedded EXISTS — so a placeholder collision
                     // across several traversal filters on one query cannot happen.
                     // A column that holds an association's foreign key compares like it.
-                    $leafField = $onRelation ? $leafField : DoctrineIdentifiers::foreignKeyAssociation($leafMetadata, $leafField) ?? $leafField;
-                    if (!$onRelation && !$leafMetadata->hasAssociation($leafField)) {
+                    $leafField = $leafField === '' ? '' : DoctrineIdentifiers::foreignKeyAssociation($leafMetadata, $leafField) ?? $leafField;
+                    if ($leafField !== '' && !$leafMetadata->hasAssociation($leafField)) {
                         $this->applyComparison($query, $sub, $leafAlias . '.' . $leafField, $filter->operator, $expected, $filter->key());
 
                         return;
@@ -297,7 +299,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
 
                     // A relationship leaf compares the related entity's id, and an
                     // association leaf the id of the entity it holds.
-                    [$path, $metadata] = $onRelation
+                    [$path, $metadata] = $leafField === ''
                         ? [DoctrineIdentifiers::path($leafMetadata, $leafAlias), $leafMetadata]
                         : ['IDENTITY(' . $leafAlias . '.' . $leafField . ')', $query->getEntityManager()->getClassMetadata($leafMetadata->getAssociationTargetClass($leafField))];
                     // Core decoded a relationship leaf's wire id already; an association
@@ -326,13 +328,13 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
      */
     private function whereThroughIn(QueryBuilder $query, WhereThroughIn $filter, mixed $value, string $alias): QueryBuilder
     {
-        $values = $filter->storageValues($value);
+        $onRelation = $alias !== 'pivot' && $this->endsOnRelation($filter->resolved);
+        $values = $onRelation ? $filter->storageValues($value) : $filter->listValue()->members($value);
         if ($values === []) {
             return $query->andWhere('1 = 0');
         }
 
-        $onRelation = $this->endsOnRelation($filter->resolved);
-        $segments = $this->segments($filter->key(), $filter->path, $onRelation);
+        $segments = ThroughPath::split($this->pivotColumn($filter->path, $alias));
 
         $exists = $query->expr()->exists(
             $this->existsSubquery(
@@ -341,15 +343,15 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
                 function (QueryBuilder $sub, string $leafAlias, string $leafField, ClassMetadata $leafMetadata) use ($query, $values, $onRelation): void {
                     $placeholder = $this->placeholder($query);
                     // A column that holds an association's foreign key compares like it.
-                    $leafField = $onRelation ? $leafField : DoctrineIdentifiers::foreignKeyAssociation($leafMetadata, $leafField) ?? $leafField;
-                    if (!$onRelation && !$leafMetadata->hasAssociation($leafField)) {
+                    $leafField = $leafField === '' ? '' : DoctrineIdentifiers::foreignKeyAssociation($leafMetadata, $leafField) ?? $leafField;
+                    if ($leafField !== '' && !$leafMetadata->hasAssociation($leafField)) {
                         $sub->andWhere(\sprintf('%s.%s IN (:%s)', $leafAlias, $leafField, $placeholder));
                         $query->setParameter($placeholder, ...$this->listParameter($query, $leafMetadata, $leafField, $values));
 
                         return;
                     }
 
-                    [$path, $metadata] = $onRelation
+                    [$path, $metadata] = $leafField === ''
                         ? [DoctrineIdentifiers::path($leafMetadata, $leafAlias), $leafMetadata]
                         : ['IDENTITY(' . $leafAlias . '.' . $leafField . ')', $query->getEntityManager()->getClassMetadata($leafMetadata->getAssociationTargetClass($leafField))];
                     $sub->andWhere(\sprintf('%s IN (:%s)', $path, $placeholder));
@@ -381,27 +383,6 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
     }
 
     /**
-     * A traversal path's segments. A path ending on a field needs a relationship and
-     * the field it compares; one resolved to a relationship leaf may be that single
-     * relationship.
-     *
-     * @return non-empty-list<string>
-     */
-    private function segments(string $key, string $path, bool $onRelation): array
-    {
-        $segments = ThroughPath::split($path);
-        if (!$onRelation && \count($segments) < 2) {
-            throw new \LogicException(\sprintf(
-                'Traversal filter "%s" needs a dotted path "relationship.attribute", or a path that ends on a relationship; got "%s".',
-                $key,
-                $path,
-            ));
-        }
-
-        return $segments;
-    }
-
-    /**
      * Author-supplied relationship-existence predicate ({@see WhereHasMatching}):
      * a single relationship hop whose related root is narrowed by a {@see \Doctrine\Common\Collections\Criteria}
      * (applied with `addCriteria` on the related root) or a raw-subquery closure.
@@ -416,7 +397,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         $exists = $query->expr()->exists(
             $this->existsSubquery(
                 $query,
-                [$filter->relationship],
+                [$this->pivotColumn($filter->relationship, $alias)],
                 static function (QueryBuilder $sub, string $relatedAlias) use ($query, $criteria, $build, $value): void {
                     // The leaf segment IS the related root for a single hop, so
                     // the author narrows the related root directly.
@@ -480,7 +461,8 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         $ownerEntity = $ownerMetadata->getName();
 
         $entityManager = $query->getEntityManager();
-        $relations = $this->paths?->relationsAlong(\implode('.', $segments)) ?? [];
+        // A pivot row's own paths are its entity's associations, not the related type's relations.
+        $relations = $alias === 'pivot' ? [] : $this->paths?->relationsAlong(\implode('.', $segments)) ?? [];
 
         // The first segment is the owning relationship; resolve its target as the
         // RELATED root and split off any remaining intermediate relationships and
@@ -541,26 +523,23 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         $currentMetadata = $entityManager->getClassMetadata($relatedClass);
         $leafField = '';
 
-        $intermediate = $leafIsRelation ? \array_slice($segments, 1) : \array_slice($segments, 1, -1);
+        // A path of one segment ends on that relationship, as does one whose last
+        // segment is an association no foreign key of the entity before it holds: a
+        // to-many, or the inverse side of a to-one. Either is joined, and the leaf
+        // compares the id of the entity it reaches.
+        $last = $segments[\count($segments) - 1];
+        $joinsLeaf = $leafIsRelation || \count($segments) === 1;
+        $intermediate = $joinsLeaf ? \array_slice($segments, 1) : \array_slice($segments, 1, -1);
         foreach ($intermediate as $offset => $segment) {
-            $nextAlias = $currentAlias . '_' . $segment;
-            $pivot = $this->pivotHop($currentMetadata, $segment, $relations[$offset + 1] ?? null);
-            if ($pivot !== null) {
-                $rowAlias = $nextAlias . '_row';
-                $subQuery
-                    ->innerJoin($pivot->entityClass, $rowAlias, 'WITH', DoctrineIdentifiers::joins($rowAlias . '.' . $pivot->parentProperty, $currentMetadata, $currentAlias))
-                    ->innerJoin(\sprintf('%s.%s', $rowAlias, $pivot->farProperty), $nextAlias);
-                $currentMetadata = $entityManager->getClassMetadata($entityManager->getClassMetadata($pivot->entityClass)->getAssociationTargetClass($pivot->farProperty));
-            } else {
-                $association = $this->assertAssociation($currentMetadata, $segment);
-                $subQuery->innerJoin(\sprintf('%s.%s', $currentAlias, $association), $nextAlias);
-                $currentMetadata = $entityManager->getClassMetadata($currentMetadata->getAssociationTargetClass($association));
-            }
-            $currentAlias = $nextAlias;
+            [$currentAlias, $currentMetadata] = $this->joinHop($subQuery, $currentAlias, $currentMetadata, $segment, $relations[$offset + 1] ?? null);
         }
 
-        if (!$leafIsRelation && \count($segments) > 1) {
-            $leafField = $this->assertLeaf($currentMetadata, $segments[\count($segments) - 1]);
+        if (!$joinsLeaf) {
+            if ($currentMetadata->hasAssociation($last) && ($currentMetadata->isCollectionValuedAssociation($last) || $currentMetadata->isAssociationInverseSide($last))) {
+                [$currentAlias, $currentMetadata] = $this->joinHop($subQuery, $currentAlias, $currentMetadata, $last, null);
+            } else {
+                $leafField = $this->assertLeaf($currentMetadata, $last);
+            }
         }
 
         if ($applyLeaf !== null) {
@@ -568,6 +547,35 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         }
 
         return $subQuery;
+    }
+
+    /**
+     * Joins the hop `$segment` names off `$alias` on the subquery, through a Doctrine
+     * association or a pivot `belongsToMany`'s association entity, and returns the new
+     * alias and the metadata of the entity it reaches.
+     *
+     * @param ClassMetadata<object> $metadata
+     *
+     * @return array{string, ClassMetadata<object>}
+     */
+    private function joinHop(QueryBuilder $subQuery, string $alias, ClassMetadata $metadata, string $segment, ?RelationInterface $relation): array
+    {
+        $entityManager = $subQuery->getEntityManager();
+        $nextAlias = $alias . '_' . $segment;
+        $pivot = $this->pivotHop($metadata, $segment, $relation);
+        if ($pivot !== null) {
+            $rowAlias = $nextAlias . '_row';
+            $subQuery
+                ->innerJoin($pivot->entityClass, $rowAlias, 'WITH', DoctrineIdentifiers::joins($rowAlias . '.' . $pivot->parentProperty, $metadata, $alias))
+                ->innerJoin(\sprintf('%s.%s', $rowAlias, $pivot->farProperty), $nextAlias);
+
+            return [$nextAlias, $entityManager->getClassMetadata($entityManager->getClassMetadata($pivot->entityClass)->getAssociationTargetClass($pivot->farProperty))];
+        }
+
+        $association = $this->assertAssociation($metadata, $segment);
+        $subQuery->innerJoin(\sprintf('%s.%s', $alias, $association), $nextAlias);
+
+        return [$nextAlias, $entityManager->getClassMetadata($metadata->getAssociationTargetClass($association))];
     }
 
     /**
