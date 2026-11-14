@@ -251,6 +251,8 @@ final class DoctrinePivotKeysTest extends JsonApiFunctionalTestCase
         self::assertSame(['10', '20'], $ids('filter[definition]=' . self::FIRST_NAME));
         self::assertSame(['10', '20'], $ids('filter[definition]=' . self::LAST_NAME . ',' . self::COMPANY));
         self::assertSame(['20'], $ids('filter[definitionIs]=' . self::COMPANY));
+        self::assertSame(['10'], $ids('filter[definitionKey]=' . self::LAST_NAME));
+        self::assertSame([], $ids('filter[definitionKey]=not-a-uuid'));
         self::assertSame([], $ids('filter[definitionIs]=01932f5e-1a2b-7c3d-8e4f-0000000000ff'));
 
         $row = $this->pivotRowsOf(20)[0]->id->toRfc4122();

@@ -184,8 +184,9 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
     /**
      * The id encoder a filter decodes a wire id compared with `$class`'s id through:
-     * `$type`'s when it serves the class, otherwise that of the first type serving it,
-     * which only a target no declared type names needs.
+     * `$type`'s when it serves the class. Only a target no declared type names, such as
+     * an association of a pivot entity, goes by class, where the first encoder of a
+     * serving type that reads the value decodes it.
      *
      * @param class-string $class
      */
@@ -196,13 +197,43 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             return $this->idEncoders->encoderFor($type);
         }
 
-        foreach ($this->entityClassByType as $type => $entityClass) {
+        $encoders = [];
+        foreach ($this->entityClassByType as $serving => $entityClass) {
             if ($this->entityManager->getClassMetadata($entityClass)->getName() === $name) {
-                return $this->idEncoders->encoderFor($type);
+                $encoders[] = $this->idEncoders->encoderFor($serving);
             }
         }
 
-        return null;
+        $encoders = \array_values(\array_filter($encoders));
+        if (\count($encoders) < 2) {
+            return $encoders[0] ?? null;
+        }
+
+        // Several types serve the class and none is named: the first encoder that
+        // reads the value decodes it.
+        return new class ($encoders) implements IdEncoderInterface {
+            /**
+             * @param list<IdEncoderInterface> $encoders
+             */
+            public function __construct(private readonly array $encoders) {}
+
+            public function encode(mixed $storageKey): string
+            {
+                return $this->encoders[0]->encode($storageKey);
+            }
+
+            public function decode(string $wireId): mixed
+            {
+                foreach ($this->encoders as $encoder) {
+                    $decoded = $encoder->decode($wireId);
+                    if ($decoded !== null) {
+                        return $decoded;
+                    }
+                }
+
+                return null;
+            }
+        };
     }
 
     public function fetchOne(string $type, string $id): ?object

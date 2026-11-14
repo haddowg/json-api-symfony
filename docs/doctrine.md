@@ -833,7 +833,10 @@ campaign's leads whose brand is Acme, the same total the related endpoint report
   runs against, so a client filters by the ids it reads, and an entity two types
   serve decodes with the encoder of the type that was asked. A path ending on an
   association of an entity no relation names, such as a pivot entity's, decodes
-  through the encoder of a type serving the associated entity. A value the encoder
+  through the encoder of a type serving the associated entity, the first that reads
+  the value when several types serve it. A path ending on a field that maps an
+  association's foreign key, such as a read-only `definitionId` beside `definition`,
+  compares as the association does. A value the encoder
   can't decode is compared as sent.
 
 - **`WhereHasMatching`** — the **Doctrine-only escape hatch** for what `WhereThrough`'s

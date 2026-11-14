@@ -59,6 +59,7 @@ final class PkTemplateResource extends AbstractResource implements InstantiatesP
             Where::make('name', 'name'),
             WhereThroughIn::make('definition', 'placeholderRows.definition'),
             WhereThrough::make('definitionIs', 'placeholderRows.definition'),
+            WhereThroughIn::make('definitionKey', 'placeholderRows.definitionId'),
             WhereThroughIn::make('placeholder', 'placeholders'),
             WhereThrough::make('placeholderName', 'placeholders.name'),
             WhereHas::make('hasPlaceholders', 'placeholders'),

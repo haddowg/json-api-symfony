@@ -287,6 +287,8 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
                     // the placeholder name and the bound value go on the OUTER $query,
                     // which executes the embedded EXISTS — so a placeholder collision
                     // across several traversal filters on one query cannot happen.
+                    // A column that holds an association's foreign key compares like it.
+                    $leafField = $onRelation ? $leafField : $this->foreignKeyAssociation($leafMetadata, $leafField) ?? $leafField;
                     if (!$onRelation && !$leafMetadata->hasAssociation($leafField)) {
                         $this->applyComparison($query, $sub, $leafAlias . '.' . $leafField, $filter->operator, $expected, $filter->key());
 
@@ -338,6 +340,8 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
                 $segments,
                 function (QueryBuilder $sub, string $leafAlias, string $leafField, ClassMetadata $leafMetadata) use ($query, $values, $onRelation): void {
                     $placeholder = $this->placeholder($query);
+                    // A column that holds an association's foreign key compares like it.
+                    $leafField = $onRelation ? $leafField : $this->foreignKeyAssociation($leafMetadata, $leafField) ?? $leafField;
                     if (!$onRelation && !$leafMetadata->hasAssociation($leafField)) {
                         $sub->andWhere(\sprintf('%s.%s IN (:%s)', $leafAlias, $leafField, $placeholder));
                         $query->setParameter($placeholder, ...$this->listParameter($query, $leafMetadata, $leafField, $values));
@@ -617,6 +621,37 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
             $segment,
             $metadata->getName(),
         ));
+    }
+
+    /**
+     * The single-valued association on `$metadata` whose one foreign-key column is the
+     * column `$field` maps, when `$field` is a field mapped beside it, so a filter on the
+     * raw key compares as one on the association does.
+     *
+     * @param ClassMetadata<object> $metadata
+     */
+    private function foreignKeyAssociation(ClassMetadata $metadata, string $field): ?string
+    {
+        if (!$metadata->hasField($field)) {
+            return null;
+        }
+
+        $column = $metadata->getColumnName($field);
+        foreach ($metadata->getAssociationNames() as $association) {
+            if (!$metadata->isSingleValuedAssociation($association) || $metadata->isAssociationInverseSide($association)) {
+                continue;
+            }
+
+            if (!$metadata->isAssociationWithSingleJoinColumn($association)) {
+                continue;
+            }
+
+            if ($metadata->getSingleAssociationJoinColumnName($association) === $column) {
+                return $association;
+            }
+        }
+
+        return null;
     }
 
     /**

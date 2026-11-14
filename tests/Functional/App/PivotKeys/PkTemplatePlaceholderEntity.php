@@ -30,6 +30,12 @@ class PkTemplatePlaceholderEntity
     #[ORM\JoinColumn(name: 'definitionId', referencedColumnName: 'id', nullable: false)]
     public ?PkDefinitionEntity $definition = null;
 
+    /**
+     * The definition's foreign key, mapped read-only beside the association.
+     */
+    #[ORM\Column(name: 'definitionId', type: 'uuid', insertable: false, updatable: false)]
+    public ?Uuid $definitionId = null;
+
     #[ORM\Column(nullable: true)]
     public ?string $defaultOverride = null;
 
