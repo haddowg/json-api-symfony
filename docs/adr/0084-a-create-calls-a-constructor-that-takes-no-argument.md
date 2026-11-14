@@ -1,0 +1,3 @@
+# A create calls a constructor that takes no argument
+
+The Doctrine persister now builds a new entity through its constructor when the constructor needs no argument, the rule pivot and link rows already follow, so an id it mints or a collection it initialises is there when the entity is hydrated and persisted. This replaces the part of ADR 0082 that kept a resource's own entity on the constructor-less create. An entity whose constructor needs arguments is still built the way Doctrine hydrates one, and `InstantiatesEntityInterface` still lets a resource build it. The in-memory persister was already unaffected, since an application's factory builds its models, and Atomic Operations creates go through the same instantiation.

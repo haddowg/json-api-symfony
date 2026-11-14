@@ -17,6 +17,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\PivotKeys\PkTemplatePlaceholderEn
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Uid\UuidV7;
@@ -486,6 +487,48 @@ final class DoctrinePivotKeysTest extends JsonApiFunctionalTestCase
             PivotKeysTestKernel::$variant = '';
             static::ensureKernelShutdown();
         }
+    }
+
+    #[Test]
+    public function aCreateRunsTheEntitysConstructor(): void
+    {
+        $response = $this->handle('/placeholder-definitions', 'POST', ['data' => [
+            'type' => 'placeholder-definitions',
+            'attributes' => ['name' => 'email'],
+        ]]);
+        self::assertSame(201, $response->getStatusCode(), (string) $response->getContent());
+        $id = $this->dataOf($response)['id'] ?? null;
+        self::assertIsString($id);
+        self::assertInstanceOf(UuidV7::class, Uuid::fromString($id), 'the constructor mints a UUIDv7 id');
+
+        $this->entityManager()->clear();
+        $definition = $this->entityManager()->find(PkDefinitionEntity::class, Uuid::fromString($id));
+        self::assertInstanceOf(PkDefinitionEntity::class, $definition);
+        self::assertSame('email', $definition->name);
+        self::assertCount(0, $definition->usages);
+    }
+
+    #[Test]
+    #[Group('spec:atomic')]
+    public function anAtomicAddRunsTheEntitysConstructor(): void
+    {
+        $kernel = static::$kernel;
+        self::assertNotNull($kernel);
+        $ext = 'application/vnd.api+json; ext="https://jsonapi.org/ext/atomic"';
+        $response = $kernel->handle(Request::create('/operations', 'POST', server: ['CONTENT_TYPE' => $ext, 'HTTP_ACCEPT' => $ext], content: \json_encode(['atomic:operations' => [
+            ['op' => 'add', 'data' => ['type' => 'placeholder-definitions', 'attributes' => ['name' => 'phone']]],
+        ]], \JSON_THROW_ON_ERROR)));
+        $this->restoreHandlers();
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $results = $this->decode($response)['atomic:results'] ?? null;
+        self::assertIsArray($results);
+        $first = $results[0] ?? null;
+        self::assertIsArray($first);
+        $data = $first['data'] ?? null;
+        self::assertIsArray($data);
+        $id = $data['id'] ?? null;
+        self::assertIsString($id);
+        self::assertInstanceOf(UuidV7::class, Uuid::fromString($id));
     }
 
     /**

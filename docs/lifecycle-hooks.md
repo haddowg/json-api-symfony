@@ -248,7 +248,7 @@ interface (or a bare serializer/hydrator pair with no resource) is untouched.
 Two more resource interfaces replace a persister step for one type rather than
 wrapping it. `InstantiatesEntityInterface::instantiate()` builds the model a create
 hydrates, and `DeletesEntityInterface::delete()` deletes in place of the persister.
-See [Constructor-less instantiation](doctrine.md#constructor-less-instantiation) and
+See [Instantiation](doctrine.md#instantiation) and
 [Deleting without the persister](doctrine.md#deleting-without-the-persister).
 
 ## Hooks vs. the other seams

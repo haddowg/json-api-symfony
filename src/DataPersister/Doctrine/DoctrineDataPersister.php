@@ -175,17 +175,15 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
     }
 
     /**
-     * Builds a new entity via Doctrine's constructor-less instantiation
-     * ({@see \Doctrine\ORM\Mapping\ClassMetadata::newInstance()}) — the same
-     * mechanism the ORM uses to hydrate entities on read, so the constructor is
-     * **not** invoked. Entities with required constructor arguments therefore work
-     * under the generic engine; constructor invariants/defaults do not run on
-     * create (consistent with read-hydration). An application that needs them
-     * overrides {@see instantiate()} via a custom {@see DataPersisterInterface}.
+     * Builds a new entity through its constructor when the constructor needs no
+     * argument, so an id it mints or a collection it initialises is there, as for a new
+     * pivot or link row. An entity whose constructor needs arguments is created as
+     * Doctrine hydrates one, without it; its resource can build it instead through
+     * {@see \haddowg\JsonApiBundle\Hook\InstantiatesEntityInterface}.
      */
     public function instantiate(string $type): object
     {
-        return $this->entityManager->getClassMetadata($this->entityClassFor($type))->newInstance();
+        return $this->newRow($this->entityManager->getClassMetadata($this->entityClassFor($type)));
     }
 
     public function create(string $type, object $entity): object
@@ -535,7 +533,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
     }
 
     /**
-     * A new link or pivot row, constructed when its class takes no required argument so
+     * A new entity, link row or pivot row, constructed when its class takes no required argument so
      * whatever its constructor sets applies, such as a minted id or an initialised
      * collection, and otherwise created as Doctrine hydrates one.
      *
