@@ -533,6 +533,7 @@ return static function (ContainerConfigurator $container): void {
                 '$typeMetadata' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(TypeMetadataResolver::class),
                 '$pivotAssociations' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataProvider\Doctrine\PivotAssociationResolver::class),
                 '$serverNames' => '%haddowg_json_api.servers%',
+                '$idEncoders' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(IdEncoderResolver::class),
             ])
             ->tag('kernel.cache_warmer');
     }

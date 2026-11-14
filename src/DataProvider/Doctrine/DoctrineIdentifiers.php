@@ -188,6 +188,49 @@ final class DoctrineIdentifiers
     }
 
     /**
+     * The DQL that matches the single-valued association at `$association`
+     * (`pivot.track`) to the entity `$alias` names: `pivot.track = alias`, or
+     * `IDENTITY(pivot.track) = IDENTITY(alias.field)` when that entity's id is an
+     * association, since DQL compares an association only to an alias or a parameter.
+     *
+     * @param ClassMetadata<object> $metadata the metadata of the entity `$alias` names
+     */
+    public static function joins(string $association, ClassMetadata $metadata, string $alias): string
+    {
+        $entity = self::entity($metadata, $alias);
+
+        return $entity === $alias
+            ? $association . ' = ' . $alias
+            : 'IDENTITY(' . $association . ') = ' . $entity;
+    }
+
+    /**
+     * The single-valued association on `$metadata` whose one foreign-key column is the
+     * column `$field` maps, when `$field` is a field mapped beside it.
+     *
+     * @param ClassMetadata<object> $metadata
+     */
+    public static function foreignKeyAssociation(ClassMetadata $metadata, string $field): ?string
+    {
+        if (!$metadata->hasField($field)) {
+            return null;
+        }
+
+        $column = $metadata->getColumnName($field);
+        foreach ($metadata->getAssociationNames() as $association) {
+            if (!$metadata->isSingleValuedAssociation($association) || $metadata->isAssociationInverseSide($association) || !$metadata->isAssociationWithSingleJoinColumn($association)) {
+                continue;
+            }
+
+            if ($metadata->getSingleAssociationJoinColumnName($association) === $column) {
+                return $association;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Reduces an entity or proxy held by an association id to the target's own id,
      * through as many association ids as the chain has. The UnitOfWork's copy is read
      * first, so a proxy is never initialised.
@@ -264,7 +307,7 @@ final class DoctrineIdentifiers
      *
      * @param ClassMetadata<object> $metadata
      */
-    private function type(ClassMetadata $metadata): ?Type
+    public function type(ClassMetadata $metadata): ?Type
     {
         if ($metadata->isIdentifierComposite) {
             return null;
@@ -290,7 +333,7 @@ final class DoctrineIdentifiers
      *
      * @return ArrayParameterType
      */
-    private static function listType(Type $type): mixed
+    public static function listType(Type $type): mixed
     {
         return match ($type->getBindingType()) {
             ParameterType::INTEGER => ArrayParameterType::INTEGER,

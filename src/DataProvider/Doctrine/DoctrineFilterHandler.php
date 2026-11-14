@@ -4,9 +4,15 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\DataProvider\Doctrine;
 
+use Doctrine\DBAL\ParameterType;
+use Doctrine\DBAL\Types\ConversionException;
+use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\Mapping\ClassMetadata;
 use Doctrine\ORM\Query\Expr\Andx;
 use Doctrine\ORM\QueryBuilder;
+use haddowg\JsonApi\Resource\Field\BelongsToMany;
+use haddowg\JsonApi\Resource\Field\IdEncoderInterface;
+use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\DateRange;
 use haddowg\JsonApi\Resource\Filter\FilterHandlerInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
@@ -27,6 +33,8 @@ use haddowg\JsonApi\Resource\Filter\WhereNull;
 use haddowg\JsonApi\Resource\Filter\WhereThrough;
 use haddowg\JsonApi\Resource\Filter\WhereThroughIn;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\Filter\WhereHasMatching;
+use haddowg\JsonApiBundle\DataProvider\FilterPaths;
+use haddowg\JsonApiBundle\DataProvider\ReadsFilterPathsInterface;
 
 /**
  * Executes core's filter value objects against a Doctrine `QueryBuilder`,
@@ -106,7 +114,7 @@ use haddowg\JsonApiBundle\DataProvider\Doctrine\Filter\WhereHasMatching;
  * @implements FilterHandlerInterface<QueryBuilder>
  * @implements AliasAwareFilterHandler<QueryBuilder>
  */
-final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareFilterHandler
+final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareFilterHandler, ReadsFilterPathsInterface
 {
     /**
      * Data-layer-specific remediation appended to the core {@see UnsupportedFilter}
@@ -125,12 +133,34 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
     private int $subqueries = 0;
 
     /**
-     * @param iterable<DoctrineFilterArmInterface> $arms author arms for custom filter types, consulted in order
+     * The declared relations of the type the filter being applied runs against, from
+     * {@see withPaths()}.
      */
-    public function __construct(iterable $arms = [])
-    {
+    private ?FilterPaths $paths = null;
+
+    /**
+     * @param iterable<DoctrineFilterArmInterface>                                   $arms             author arms for custom filter types, consulted in order
+     * @param (\Closure(BelongsToMany, class-string): ?PivotAssociation)|null $pivotAssociation the association entity behind a pivot `belongsToMany` declared on an entity class, or null when the relation's related type has no entity
+     * @param (\Closure(class-string, list<string>): ?IdEncoderInterface)|null $encoderFor   the id encoder that decodes a wire id compared with the entity class's id, given the types the filter names
+     */
+    public function __construct(
+        iterable $arms = [],
+        private readonly ?\Closure $pivotAssociation = null,
+        private readonly ?\Closure $encoderFor = null,
+    ) {
         $this->arms = \is_array($arms) ? \array_values($arms) : \iterator_to_array($arms, false);
         $this->dates = new NaiveDateTimeStorage();
+    }
+
+    public function withPaths(FilterPaths $paths, \Closure $apply): mixed
+    {
+        $previous = $this->paths;
+        $this->paths = $paths;
+        try {
+            return $apply();
+        } finally {
+            $this->paths = $previous;
+        }
     }
 
     public function apply(FilterInterface $filter, mixed $query, mixed $value): mixed
@@ -166,8 +196,8 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
             $filter instanceof Where => $this->where($filter, $query, $value, $alias),
             $filter instanceof WhereIn => $this->whereIn($query, $this->pivotColumn($filter->column, $alias), $this->members($filter, $value), false, $alias),
             $filter instanceof WhereNotIn => $this->whereIn($query, $this->pivotColumn($filter->column, $alias), $this->members($filter, $value), true, $alias),
-            $filter instanceof WhereIdIn => $this->whereIn($query, $filter->column, $this->members($filter, $value), false, $alias),
-            $filter instanceof WhereIdNotIn => $this->whereIn($query, $filter->column, $this->members($filter, $value), true, $alias),
+            $filter instanceof WhereIdIn => $this->whereIn($query, $filter->column, $this->storageIds($query, $alias, $this->members($filter, $value)), false, $alias),
+            $filter instanceof WhereIdNotIn => $this->whereIn($query, $filter->column, $this->storageIds($query, $alias, $this->members($filter, $value)), true, $alias),
             $filter instanceof WhereNull => $query->andWhere(\sprintf('%s IS NULL', $this->path($this->pivotColumn($filter->column, $alias), $alias))),
             $filter instanceof WhereNotNull => $query->andWhere(\sprintf('%s IS NOT NULL', $this->path($this->pivotColumn($filter->column, $alias), $alias))),
             $filter instanceof WhereThrough => $this->whereThrough($query, $filter, $value, $alias),
@@ -257,16 +287,27 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
                     // the placeholder name and the bound value go on the OUTER $query,
                     // which executes the embedded EXISTS — so a placeholder collision
                     // across several traversal filters on one query cannot happen.
-                    if (!$onRelation) {
+                    // A column that holds an association's foreign key compares like it.
+                    $leafField = $onRelation ? $leafField : DoctrineIdentifiers::foreignKeyAssociation($leafMetadata, $leafField) ?? $leafField;
+                    if (!$onRelation && !$leafMetadata->hasAssociation($leafField)) {
                         $this->applyComparison($query, $sub, $leafAlias . '.' . $leafField, $filter->operator, $expected, $filter->key());
 
                         return;
                     }
 
+                    // A relationship leaf compares the related entity's id, and an
+                    // association leaf the id of the entity it holds.
+                    [$path, $metadata] = $onRelation
+                        ? [DoctrineIdentifiers::path($leafMetadata, $leafAlias), $leafMetadata]
+                        : ['IDENTITY(' . $leafAlias . '.' . $leafField . ')', $query->getEntityManager()->getClassMetadata($leafMetadata->getAssociationTargetClass($leafField))];
+                    // Core decoded a relationship leaf's wire id already; an association
+                    // of an entity no relation names decodes through its class's type.
+                    if (!$onRelation) {
+                        $expected = $this->decodedIds($metadata, $this->paths?->named() ?? [], [$expected])[0];
+                    }
                     $placeholder = $this->placeholder($query);
-                    $operator = \in_array($filter->operator, ['!=', '<>'], true) ? '<>' : '=';
-                    $sub->andWhere(\sprintf('%s %s :%s', DoctrineIdentifiers::path($leafMetadata, $leafAlias), $operator, $placeholder));
-                    (new DoctrineIdentifiers($query->getEntityManager()))->bind($query, $placeholder, $leafMetadata, $expected);
+                    $sub->andWhere(\sprintf('%s %s :%s', $path, $this->idOperator($filter), $placeholder));
+                    (new DoctrineIdentifiers($query->getEntityManager()))->bind($query, $placeholder, $metadata, $expected);
                 },
                 $alias,
                 $onRelation,
@@ -299,15 +340,20 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
                 $segments,
                 function (QueryBuilder $sub, string $leafAlias, string $leafField, ClassMetadata $leafMetadata) use ($query, $values, $onRelation): void {
                     $placeholder = $this->placeholder($query);
-                    if (!$onRelation) {
+                    // A column that holds an association's foreign key compares like it.
+                    $leafField = $onRelation ? $leafField : DoctrineIdentifiers::foreignKeyAssociation($leafMetadata, $leafField) ?? $leafField;
+                    if (!$onRelation && !$leafMetadata->hasAssociation($leafField)) {
                         $sub->andWhere(\sprintf('%s.%s IN (:%s)', $leafAlias, $leafField, $placeholder));
-                        $query->setParameter($placeholder, $values);
+                        $query->setParameter($placeholder, ...$this->listParameter($query, $leafMetadata, $leafField, $values));
 
                         return;
                     }
 
-                    $sub->andWhere(\sprintf('%s IN (:%s)', DoctrineIdentifiers::path($leafMetadata, $leafAlias), $placeholder));
-                    (new DoctrineIdentifiers($query->getEntityManager()))->bindList($query, $placeholder, $leafMetadata, $values);
+                    [$path, $metadata] = $onRelation
+                        ? [DoctrineIdentifiers::path($leafMetadata, $leafAlias), $leafMetadata]
+                        : ['IDENTITY(' . $leafAlias . '.' . $leafField . ')', $query->getEntityManager()->getClassMetadata($leafMetadata->getAssociationTargetClass($leafField))];
+                    $sub->andWhere(\sprintf('%s IN (:%s)', $path, $placeholder));
+                    (new DoctrineIdentifiers($query->getEntityManager()))->bindList($query, $placeholder, $metadata, $onRelation ? $values : $this->decodedIds($metadata, $this->paths?->named() ?? [], $values));
                 },
                 $alias,
                 $onRelation,
@@ -323,6 +369,15 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
     private function endsOnRelation(?ThroughPath $path): bool
     {
         return $path !== null && $path->endsOnRelation();
+    }
+
+    /**
+     * The DQL operator a traversal comparing an id applies: inequality for a negated
+     * operator, equality for any other.
+     */
+    private function idOperator(WhereThrough $filter): string
+    {
+        return \in_array($filter->operator, ['!=', '<>'], true) ? '<>' : '=';
     }
 
     /**
@@ -425,12 +480,20 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         $ownerEntity = $ownerMetadata->getName();
 
         $entityManager = $query->getEntityManager();
+        $relations = $this->paths?->relationsAlong(\implode('.', $segments)) ?? [];
 
         // The first segment is the owning relationship; resolve its target as the
         // RELATED root and split off any remaining intermediate relationships and
-        // the leaf attribute.
-        $firstSegment = $this->assertAssociation($ownerMetadata, $segments[0]);
-        $relatedClass = $ownerMetadata->getAssociationTargetClass($firstSegment);
+        // the leaf attribute. A pivot belongsToMany reaches its target through its
+        // association entity.
+        $pivot = $this->pivotHop($ownerMetadata, $segments[0], $relations[0] ?? null);
+        if ($pivot !== null) {
+            $firstSegment = $segments[0];
+            $relatedClass = $entityManager->getClassMetadata($pivot->entityClass)->getAssociationTargetClass($pivot->farProperty);
+        } else {
+            $firstSegment = $this->assertAssociation($ownerMetadata, $segments[0]);
+            $relatedClass = $ownerMetadata->getAssociationTargetClass($firstSegment);
+        }
 
         $subQuery = $entityManager->createQueryBuilder();
 
@@ -450,13 +513,22 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         // branch): the inner-inner subquery roots on the owner, joins the first hop,
         // selects the related ids, and is correlated to the outer root by alias.
         $relatedMetadata = $entityManager->getClassMetadata($relatedClass);
-        $ownerAlias = $stem . '_owner';
-        $membershipAlias = $stem . '_member';
-        $membership = $entityManager->createQueryBuilder()
-            ->select(DoctrineIdentifiers::path($relatedMetadata, $membershipAlias))
-            ->from($ownerEntity, $ownerAlias)
-            ->innerJoin(\sprintf('%s.%s', $ownerAlias, $firstSegment), $membershipAlias)
-            ->where(\sprintf('%s = %s', DoctrineIdentifiers::entity($ownerMetadata, $ownerAlias), DoctrineIdentifiers::entity($ownerMetadata, $alias)));
+        if ($pivot !== null) {
+            // A pivot's members are the far ids of the owner's association rows.
+            $rowAlias = $stem . '_row';
+            $membership = $entityManager->createQueryBuilder()
+                ->select(\sprintf('IDENTITY(%s.%s)', $rowAlias, $pivot->farProperty))
+                ->from($pivot->entityClass, $rowAlias)
+                ->where(DoctrineIdentifiers::joins($rowAlias . '.' . $pivot->parentProperty, $ownerMetadata, $alias));
+        } else {
+            $ownerAlias = $stem . '_owner';
+            $membershipAlias = $stem . '_member';
+            $membership = $entityManager->createQueryBuilder()
+                ->select(DoctrineIdentifiers::path($relatedMetadata, $membershipAlias))
+                ->from($ownerEntity, $ownerAlias)
+                ->innerJoin(\sprintf('%s.%s', $ownerAlias, $firstSegment), $membershipAlias)
+                ->where(\sprintf('%s = %s', DoctrineIdentifiers::entity($ownerMetadata, $ownerAlias), DoctrineIdentifiers::entity($ownerMetadata, $alias)));
+        }
         $subQuery->andWhere($subQuery->expr()->in(
             DoctrineIdentifiers::path($relatedMetadata, $relatedAlias),
             $membership->getDQL(),
@@ -470,16 +542,25 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         $leafField = '';
 
         $intermediate = $leafIsRelation ? \array_slice($segments, 1) : \array_slice($segments, 1, -1);
-        foreach ($intermediate as $segment) {
-            $association = $this->assertAssociation($currentMetadata, $segment);
+        foreach ($intermediate as $offset => $segment) {
             $nextAlias = $currentAlias . '_' . $segment;
-            $subQuery->innerJoin(\sprintf('%s.%s', $currentAlias, $association), $nextAlias);
-            $currentMetadata = $entityManager->getClassMetadata($currentMetadata->getAssociationTargetClass($association));
+            $pivot = $this->pivotHop($currentMetadata, $segment, $relations[$offset + 1] ?? null);
+            if ($pivot !== null) {
+                $rowAlias = $nextAlias . '_row';
+                $subQuery
+                    ->innerJoin($pivot->entityClass, $rowAlias, 'WITH', DoctrineIdentifiers::joins($rowAlias . '.' . $pivot->parentProperty, $currentMetadata, $currentAlias))
+                    ->innerJoin(\sprintf('%s.%s', $rowAlias, $pivot->farProperty), $nextAlias);
+                $currentMetadata = $entityManager->getClassMetadata($entityManager->getClassMetadata($pivot->entityClass)->getAssociationTargetClass($pivot->farProperty));
+            } else {
+                $association = $this->assertAssociation($currentMetadata, $segment);
+                $subQuery->innerJoin(\sprintf('%s.%s', $currentAlias, $association), $nextAlias);
+                $currentMetadata = $entityManager->getClassMetadata($currentMetadata->getAssociationTargetClass($association));
+            }
             $currentAlias = $nextAlias;
         }
 
         if (!$leafIsRelation && \count($segments) > 1) {
-            $leafField = $this->assertField($currentMetadata, $segments[\count($segments) - 1]);
+            $leafField = $this->assertLeaf($currentMetadata, $segments[\count($segments) - 1]);
         }
 
         if ($applyLeaf !== null) {
@@ -514,32 +595,63 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
     }
 
     /**
-     * Asserts `$segment` names a Doctrine field on `$metadata` and returns it,
-     * validating the identifier first (the leaf attribute of a traversal path).
+     * Asserts `$segment` names what a traversal path may end on, a Doctrine field or a
+     * single-valued association that holds its foreign key, on `$metadata` and returns
+     * it, validating the identifier first. An association leaf compares the id of the
+     * entity it holds.
      *
      * @param ClassMetadata<object> $metadata
      */
-    private function assertField(ClassMetadata $metadata, string $segment): string
+    private function assertLeaf(ClassMetadata $metadata, string $segment): string
     {
         if (\preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $segment) !== 1) {
             throw new \LogicException(\sprintf('"%s" is not a valid Doctrine field name.', $segment));
         }
 
-        if (!$metadata->hasField($segment)) {
-            throw new \LogicException(\sprintf(
-                '"%s" is not a field on "%s"; a traversal path\'s final segment must be an attribute.',
-                $segment,
-                $metadata->getName(),
-            ));
+        if ($metadata->hasField($segment)) {
+            return $segment;
         }
 
-        return $segment;
+        if ($metadata->hasAssociation($segment) && $metadata->isSingleValuedAssociation($segment) && !$metadata->isAssociationInverseSide($segment)) {
+            return $segment;
+        }
+
+        throw new \LogicException(\sprintf(
+            '"%s" is not a field or a foreign-key association on "%s"; a traversal path\'s final segment must be an attribute, or an association whose id it compares.',
+            $segment,
+            $metadata->getName(),
+        ));
+    }
+
+
+    /**
+     * The association entity behind `$segment` on `$metadata` when it names a pivot
+     * `belongsToMany` rather than a Doctrine association, from the declared `$relation`
+     * the path walks there; null for an association, or a segment with no such relation.
+     *
+     * @param ClassMetadata<object> $metadata
+     */
+    private function pivotHop(ClassMetadata $metadata, string $segment, ?RelationInterface $relation): ?PivotAssociation
+    {
+        if ($metadata->hasAssociation($segment) || $this->pivotAssociation === null || !$relation instanceof BelongsToMany || $relation->storedPivotFields() === []) {
+            return null;
+        }
+
+        /** @var class-string $class */
+        $class = $metadata->getName();
+
+        return ($this->pivotAssociation)($relation, $class);
     }
 
     private function where(Where $filter, QueryBuilder $query, mixed $value, string $alias): QueryBuilder
     {
         $expected = $filter->deserialize !== null ? ($filter->deserialize)($value) : $value;
-        $path = $this->path($this->pivotColumn($filter->column, $alias), $alias);
+        $column = $this->pivotColumn($filter->column, $alias);
+        $path = $this->path($column, $alias);
+        $metadata = $alias === 'pivot' ? null : $this->metadataOfAlias($query, $alias);
+        if ($metadata !== null && !$metadata->isIdentifierComposite && $metadata->getSingleIdentifierFieldName() === $column) {
+            $expected = $this->storageIds($query, $alias, [$expected])[0];
+        }
 
         $this->applyComparison($query, $query, $path, $filter->operator, $expected, $filter->key());
 
@@ -698,7 +810,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         $placeholder = $this->placeholder($bindOn);
 
         $predicateOn->andWhere(\sprintf('%s %s :%s', $path, $dqlOperator, $placeholder));
-        $bindOn->setParameter($placeholder, ...$this->dateParameter($predicateOn, $path, $expected));
+        $bindOn->setParameter($placeholder, ...$this->parameter($predicateOn, $path, $expected));
     }
 
     /**
@@ -758,12 +870,12 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
 
         if ($min !== null) {
             $placeholder = $this->placeholder($query);
-            $query->andWhere(\sprintf('%s >= :%s', $path, $placeholder))->setParameter($placeholder, ...$this->dateParameter($query, $path, $min));
+            $query->andWhere(\sprintf('%s >= :%s', $path, $placeholder))->setParameter($placeholder, ...$this->parameter($query, $path, $min));
         }
 
         if ($max !== null) {
             $placeholder = $this->placeholder($query);
-            $query->andWhere(\sprintf('%s <= :%s', $path, $placeholder))->setParameter($placeholder, ...$this->dateParameter($query, $path, $max));
+            $query->andWhere(\sprintf('%s <= :%s', $path, $placeholder))->setParameter($placeholder, ...$this->parameter($query, $path, $max));
         }
 
         return $query;
@@ -817,10 +929,57 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         }
 
         $placeholder = $this->placeholder($query);
+        [$alias, $field] = \explode('.', $path, 2);
 
         return $query
             ->andWhere(\sprintf('%s %s (:%s)', $path, $negate ? 'NOT IN' : 'IN', $placeholder))
-            ->setParameter($placeholder, $values);
+            ->setParameter($placeholder, ...$this->listParameter($query, $this->metadataOfAlias($query, $alias), $field, $values));
+    }
+
+    /**
+     * Wire ids compared with the id of the entity at `$alias`, each decoded through the
+     * id encoder of the type the filters run against, the one its paths name, so an
+     * entity several types serve decodes with the right one. A value the encoder can't
+     * decode, or any value when the type has no encoder, is compared as sent.
+     *
+     * @param list<mixed> $values
+     *
+     * @return list<mixed>
+     */
+    private function storageIds(QueryBuilder $query, string $alias, array $values): array
+    {
+        $metadata = $this->encoderFor !== null ? $this->metadataOfAlias($query, $alias) : null;
+
+        $type = $alias === 'pivot' ? null : $this->paths?->type();
+
+        return $metadata === null ? $values : $this->decodedIds($metadata, $type === null ? [] : [$type], $values);
+    }
+
+    /**
+     * `$values` decoded through the encoder {@see DoctrineTargetEncoders} picks for
+     * `$metadata`'s entity among the `$named` types. A value the encoder can't decode is
+     * compared as sent.
+     *
+     * @param ClassMetadata<object> $metadata
+     * @param list<string>          $named
+     * @param list<mixed>           $values
+     *
+     * @return list<mixed>
+     */
+    private function decodedIds(ClassMetadata $metadata, array $named, array $values): array
+    {
+        if ($this->encoderFor === null) {
+            return $values;
+        }
+
+        /** @var class-string $class */
+        $class = $metadata->getName();
+        $encoder = ($this->encoderFor)($class, $named);
+        if ($encoder === null) {
+            return $values;
+        }
+
+        return \array_map(static fn(mixed $value): mixed => \is_string($value) ? $encoder->decode($value) ?? $value : $value, $values);
     }
 
     /**
@@ -893,26 +1052,125 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
 
     /**
      * The value and DBAL type to bind `$value` with when it is compared against the
-     * column at `$path` (`alias.field`), from {@see NaiveDateTimeStorage::parameter()}.
-     * The column's type comes from the metadata of the entity `alias` names on
-     * `$query`; a value whose column cannot be resolved binds unchanged.
+     * column at `$path` (`alias.field`), read from the metadata of the entity `alias`
+     * names on `$query`: a date-time from {@see NaiveDateTimeStorage::parameter()}, a
+     * value of a binary-bound column (a `uuid` on a platform without a native UUID
+     * type) in its database form, and an association's value as the id of the entity
+     * it holds. Anything else, or a value whose column cannot be resolved, binds
+     * unchanged.
      *
-     * @return array{mixed, ?string}
+     * @return array{mixed, \Doctrine\DBAL\ArrayParameterType|ParameterType|int|string|null}
      */
-    private function dateParameter(QueryBuilder $query, string $path, mixed $value): array
+    private function parameter(QueryBuilder $query, string $path, mixed $value): array
     {
-        if (!$value instanceof \DateTimeInterface) {
-            return [$value, null];
-        }
-
         [$alias, $field] = \explode('.', $path, 2);
         $metadata = $this->metadataOfAlias($query, $alias);
-
-        if ($metadata === null || !$metadata->hasField($field)) {
+        if ($metadata === null) {
             return [$value, null];
         }
 
-        return $this->dates->parameter($value, $metadata->getTypeOfField($field));
+        if ($value instanceof \DateTimeInterface) {
+            return $metadata->hasField($field) ? $this->dates->parameter($value, $metadata->getTypeOfField($field)) : [$value, null];
+        }
+
+        $target = $this->associationTarget($query, $metadata, $field);
+        if ($target !== null) {
+            $ids = new DoctrineIdentifiers($query->getEntityManager());
+            $type = $ids->type($target);
+
+            return [$ids->toDatabase($target, $value), $type?->getBindingType()];
+        }
+
+        $type = $this->binaryType($metadata, $field);
+        if ($type === null) {
+            return [$value, null];
+        }
+
+        try {
+            return [$type->convertToDatabaseValue($value, $query->getEntityManager()->getConnection()->getDatabasePlatform()), $type->getBindingType()];
+        } catch (ConversionException|\InvalidArgumentException|\TypeError|\ValueError) {
+            return [$value, null];
+        }
+    }
+
+    /**
+     * The values and DBAL array type to bind a list compared against `$field` of
+     * `$metadata` with, each converted as {@see parameter()} converts one. A value the
+     * column's type cannot convert is dropped, since it can match no row.
+     *
+     * @param ClassMetadata<object>|null $metadata
+     * @param list<mixed>                $values
+     *
+     * @return array{mixed, \Doctrine\DBAL\ArrayParameterType|ParameterType|int|string|null}
+     */
+    private function listParameter(QueryBuilder $query, ?ClassMetadata $metadata, string $field, array $values): array
+    {
+        if ($metadata === null) {
+            return [$values, null];
+        }
+
+        $ids = new DoctrineIdentifiers($query->getEntityManager());
+        $target = $this->associationTarget($query, $metadata, $field);
+        $type = $target !== null ? $ids->type($target) : $this->binaryType($metadata, $field);
+        if ($type === null) {
+            return [$values, null];
+        }
+
+        $platform = $query->getEntityManager()->getConnection()->getDatabasePlatform();
+        $converted = [];
+        foreach ($values as $value) {
+            if ($target !== null) {
+                $database = $ids->toDatabase($target, $value);
+            } else {
+                try {
+                    $database = $type->convertToDatabaseValue($value, $platform);
+                } catch (ConversionException) {
+                    $database = null;
+                }
+            }
+            if ($database !== null) {
+                $converted[] = $database;
+            }
+        }
+
+        /** @var \Doctrine\DBAL\ArrayParameterType|int $listType */
+        $listType = DoctrineIdentifiers::listType($type);
+
+        return [$converted, $listType];
+    }
+
+    /**
+     * The metadata of the entity a single-valued association `$field` holds, or null
+     * when `$field` is not one.
+     *
+     * @param ClassMetadata<object> $metadata
+     *
+     * @return ClassMetadata<object>|null
+     */
+    private function associationTarget(QueryBuilder $query, ClassMetadata $metadata, string $field): ?ClassMetadata
+    {
+        return $metadata->hasAssociation($field) && $metadata->isSingleValuedAssociation($field)
+            ? $query->getEntityManager()->getClassMetadata($metadata->getAssociationTargetClass($field))
+            : null;
+    }
+
+    /**
+     * The Doctrine type of `$field` when a value compared with it must be converted to
+     * its database form first: a Symfony UID type, which stores a UUID or ULID as bytes
+     * on a platform with no native UUID type, or any type the driver binds as binary.
+     *
+     * @param ClassMetadata<object> $metadata
+     */
+    private function binaryType(ClassMetadata $metadata, string $field): ?Type
+    {
+        $name = $metadata->hasField($field) ? $metadata->getTypeOfField($field) : null;
+        if ($name === null || !Type::hasType($name)) {
+            return null;
+        }
+
+        $type = Type::getType($name);
+
+        return $type instanceof \Symfony\Bridge\Doctrine\Types\AbstractUidType || \in_array($type->getBindingType(), [ParameterType::BINARY, ParameterType::LARGE_OBJECT], true) ? $type : null;
     }
 
     /**

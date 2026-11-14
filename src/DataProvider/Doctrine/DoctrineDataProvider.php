@@ -22,6 +22,7 @@ use haddowg\JsonApi\Pagination\CursorCodec;
 use haddowg\JsonApi\Pagination\CursorWindow;
 use haddowg\JsonApi\Pagination\OffsetWindow;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\IdEncoderInterface;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
@@ -127,6 +128,8 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
     private readonly DoctrineLinkRows $linkRows;
 
+    private readonly DoctrineTargetEncoders $targetEncoders;
+
     /**
      * @param array<string, class-string>            $entityClassByType a `type → entity FQCN` map
      * @param IdEncoderResolver                      $idEncoders        resolves a type's id encoder (route `{id}` decode)
@@ -149,9 +152,16 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         private readonly ?RequestScopedOutputTimezone $outputTimezone = null,
     ) {
         $this->extensions = \is_array($extensions) ? \array_values($extensions) : \iterator_to_array($extensions, false);
+        $this->targetEncoders = new DoctrineTargetEncoders($this->entityManager, $this->entityClassByType, $this->idEncoders);
         $this->applier = new CriteriaApplier();
         $this->windowExecutor = new WindowExecutor();
-        $this->filterHandler = new DoctrineFilterHandler($filterArms);
+        $this->filterHandler = new DoctrineFilterHandler(
+            $filterArms,
+            fn(BelongsToMany $relation, string $ownerClass): ?PivotAssociation => $this->pivotAssociations !== null && isset($this->entityClassByType[$relation->relatedTypes()[0] ?? ''])
+                ? $this->pivotAssociations->discover($relation, $ownerClass, $this->entityClassByType[$relation->relatedTypes()[0]])
+                : null,
+            fn(string $class, array $named): ?IdEncoderInterface => $this->targetEncoders->encoderFor($class, $named),
+        );
         $this->sortHandler = new DoctrineSortHandler($sortArms);
         $this->ids = new DoctrineIdentifiers($this->entityManager);
         $this->linkRows = new DoctrineLinkRows($this->entityManager, $this->filterHandler, $this->sortHandler);
@@ -174,6 +184,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
     {
         return isset($this->entityClassByType[$type]);
     }
+
 
     public function fetchOne(string $type, string $id): ?object
     {
@@ -2358,7 +2369,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
                 $association->entityClass,
                 'pivot',
                 'WITH',
-                \sprintf('pivot.%s = %s', $association->farProperty, self::ROOT_ALIAS),
+                DoctrineIdentifiers::joins('pivot.' . $association->farProperty, $relatedMetadata, self::ROOT_ALIAS),
             )
             ->andWhere(\sprintf('pivot.%s IN (:jsonapi_parents)', $association->parentProperty))
             ->groupBy(BatchScope::PARENT_DISCRIMINATOR_ALIAS)
@@ -2457,7 +2468,8 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
     {
         $relatedClass = $this->entityClassFor($relatedType);
         $association = $this->pivotAssociation($relation, $parent, $relatedClass);
-        $idField = $this->entityManager->getClassMetadata($relatedClass)->getSingleIdentifierFieldName();
+        $relatedMetadata = $this->entityManager->getClassMetadata($relatedClass);
+        $idField = $relatedMetadata->getSingleIdentifierFieldName();
 
         $builder = $this->entityManager
             ->getRepository($relatedClass)
@@ -2466,7 +2478,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
                 $association->entityClass,
                 'pivot',
                 'WITH',
-                \sprintf('pivot.%s = %s', $association->farProperty, self::ROOT_ALIAS),
+                DoctrineIdentifiers::joins('pivot.' . $association->farProperty, $relatedMetadata, self::ROOT_ALIAS),
             )
             ->andWhere(\sprintf('pivot.%s = :jsonapi_parent', $association->parentProperty))
             // One row per distinct far member — see the docblock (duplicate membership).

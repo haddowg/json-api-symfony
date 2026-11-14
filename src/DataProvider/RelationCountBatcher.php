@@ -88,7 +88,7 @@ final class RelationCountBatcher
 
         $counts = [];
         foreach ($relations as $relation) {
-            $criteria = $this->countCriteria($server, $relation, $request);
+            $criteria = $this->countCriteria($server, $type, $relation, $request);
 
             $relationCounts = $this->router->counts($server, $type, $parents, $relation, $criteria, $request);
             foreach ($relationCounts as $wireId => $count) {
@@ -128,7 +128,7 @@ final class RelationCountBatcher
      * BY`), keeping the count crash-free and witness-identical regardless of the related
      * resource's default order.
      */
-    private function countCriteria(Server $server, RelationInterface $relation, JsonApiRequestInterface $request): CollectionCriteria
+    private function countCriteria(Server $server, string $type, RelationInterface $relation, JsonApiRequestInterface $request): CollectionCriteria
     {
         $relatedType = $relation->relatedTypes()[0] ?? null;
         $relatedResource = $relatedType !== null && Polymorphism::isMonomorphic($relation)
@@ -148,9 +148,10 @@ final class RelationCountBatcher
             $relatedResource,
             $relation,
             null,
-            includePivotFields: false,
+            includePivotFields: $this->router->isPivot($relation),
             request: $request,
             resources: $server,
+            parentType: $type,
         );
 
         // Drop the related resource's default order — a count needs none, and on the

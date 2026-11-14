@@ -9,6 +9,7 @@ use haddowg\JsonApi\Resource\Field\BelongsTo;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApi\Resource\Filter\Where;
+use haddowg\JsonApi\Resource\Filter\WhereIdIn;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 
 /**
@@ -57,6 +58,8 @@ final class CogResource extends AbstractResource
     {
         return [
             Where::make('name'),
+            WhereIdIn::make('id', 'id'),
+            Where::make('idIs', 'id'),
         ];
     }
 }

@@ -346,6 +346,21 @@ final class DoctrineAssociationIdTest extends JsonApiFunctionalTestCase
     }
 
     #[Test]
+    public function aConfigNothingHasLoadedIsLinkedByItsCampaignId(): void
+    {
+        $this->entityManager()->clear();
+        $response = $this->handle('/runs/' . $this->runs['third'] . '/relationships/configs', 'POST', ['data' => [$this->config('40')]]);
+        self::assertContains($response->getStatusCode(), [200, 204], (string) $response->getContent());
+
+        $this->entityManager()->clear();
+        $missing = $this->handle('/runs/' . $this->runs['third'] . '/relationships/configs', 'POST', ['data' => [$this->config('99')]]);
+        self::assertSame(404, $missing->getStatusCode(), (string) $missing->getContent());
+
+        $this->entityManager()->clear();
+        self::assertSame([$this->config('40')], $this->linkage($this->dataOf($this->get('/runs/' . $this->runs['third'])), 'configs'));
+    }
+
+    #[Test]
     public function aConfigIsUpdatedAndDeletedByItsCampaignId(): void
     {
         $response = $this->handle('/configs/40', 'PATCH', ['data' => [

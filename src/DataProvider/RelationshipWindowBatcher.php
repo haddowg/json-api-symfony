@@ -220,7 +220,7 @@ final class RelationshipWindowBatcher
         $this->validateUnwindowedRelatedQueryKeys($server, $type, $relations, [], $request);
 
         foreach ($this->toOneFilteredRelations($relations, $request) as $relation) {
-            $criteria = $this->toOneCriteria($server, $relation, $request);
+            $criteria = $this->toOneCriteria($server, $type, $relation, $request);
             if ($criteria !== null) {
                 $filter = $request->getRelatedQuery($relation->name())->filter;
                 FilterMatcher::directives($filter, $criteria->filters, $criteria->request);
@@ -321,11 +321,12 @@ final class RelationshipWindowBatcher
             $relatedResource,
             $relation,
             $window,
-            includePivotFields: false,
+            includePivotFields: $this->router->isPivot($relation),
             wantsCount: $wantsCount,
             request: $request,
             pivotSorts: $this->router->isPivot($relation),
             resources: $server,
+            parentType: $type,
         );
 
         // Validate the relatedQuery filter VALUE against the per-relation merged
@@ -532,10 +533,11 @@ final class RelationshipWindowBatcher
                 $relatedResource,
                 $relation,
                 null,
-                includePivotFields: false,
+                includePivotFields: $this->router->isPivot($relation),
                 request: $request,
                 pivotSorts: $this->router->isPivot($relation),
                 resources: $server,
+                parentType: $type,
             );
 
             $this->assertRelatedQueryKeysRecognised($relatedQuery, $criteria);
@@ -621,7 +623,7 @@ final class RelationshipWindowBatcher
     ): array {
         $excluded = [];
         foreach ($toOneFiltered as $relation) {
-            $criteria = $this->toOneCriteria($server, $relation, $request);
+            $criteria = $this->toOneCriteria($server, $type, $relation, $request);
             if ($criteria === null) {
                 continue;
             }
@@ -650,7 +652,7 @@ final class RelationshipWindowBatcher
      * The criteria a monomorphic to-one's `relatedQuery` filter matches its target by: the
      * related endpoint's merged vocabulary. `null` when no provider serves the related type.
      */
-    private function toOneCriteria(Server $server, RelationInterface $relation, JsonApiRequestInterface $request): ?CollectionCriteria
+    private function toOneCriteria(Server $server, string $type, RelationInterface $relation, JsonApiRequestInterface $request): ?CollectionCriteria
     {
         $relatedType = $relation->relatedTypes()[0] ?? null;
         if ($relatedType === null || !$this->providers->supportsType($relatedType)) {
@@ -671,6 +673,7 @@ final class RelationshipWindowBatcher
             includePivotFields: false,
             request: $request,
             resources: $server,
+            parentType: $type,
         );
     }
 

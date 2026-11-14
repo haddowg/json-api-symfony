@@ -144,13 +144,7 @@ final class CriteriaApplier
             // `parent` root), else to the query root through the unchanged
             // apply() — every non-pivot fetch path and the whole in-memory provider.
             $alias = $criteria->aliasOf[$key] ?? $defaultAlias;
-            if ($alias === null) {
-                $query = $handler->apply($filter, $query, $value);
-
-                continue;
-            }
-
-            if (!$handler instanceof AliasAwareFilterHandler) {
+            if ($alias !== null && !$handler instanceof AliasAwareFilterHandler) {
                 throw new \LogicException(\sprintf(
                     'Filter "%s" is routed to alias "%s", but %s is not alias-aware.',
                     $key,
@@ -159,7 +153,12 @@ final class CriteriaApplier
                 ));
             }
 
-            $query = $handler->applyOn($filter, $query, $value, $alias);
+            $apply = static fn(): mixed => $alias === null || !$handler instanceof AliasAwareFilterHandler
+                ? $handler->apply($filter, $query, $value)
+                : $handler->applyOn($filter, $query, $value, $alias);
+            $query = $handler instanceof ReadsFilterPathsInterface && $criteria->paths !== null
+                ? $handler->withPaths($criteria->paths, $apply)
+                : $apply();
         }
 
         return $query;
