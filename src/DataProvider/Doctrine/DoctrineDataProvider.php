@@ -157,6 +157,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             fn(BelongsToMany $relation, string $ownerClass): ?PivotAssociation => $this->pivotAssociations !== null && isset($this->entityClassByType[$relation->relatedTypes()[0] ?? ''])
                 ? $this->pivotAssociations->discover($relation, $ownerClass, $this->entityClassByType[$relation->relatedTypes()[0]])
                 : null,
+            fn(string $class): ?IdEncoderInterface => $this->encoderForClass($class),
         );
         $this->sortHandler = new DoctrineSortHandler($sortArms);
         $this->ids = new DoctrineIdentifiers($this->entityManager);
@@ -179,6 +180,24 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
     public function supports(string $type): bool
     {
         return isset($this->entityClassByType[$type]);
+    }
+
+    /**
+     * The id encoder of the first type that serves `$class`, so a filter compares an
+     * encoded wire id with the storage key it names.
+     *
+     * @param class-string $class
+     */
+    private function encoderForClass(string $class): ?IdEncoderInterface
+    {
+        $name = $this->entityManager->getClassMetadata($class)->getName();
+        foreach ($this->entityClassByType as $type => $entityClass) {
+            if ($this->entityManager->getClassMetadata($entityClass)->getName() === $name) {
+                return $this->idEncoders->encoderFor($type);
+            }
+        }
+
+        return null;
     }
 
     public function fetchOne(string $type, string $id): ?object

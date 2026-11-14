@@ -288,6 +288,24 @@ final class DoctrineEncodedIdTest extends JsonApiFunctionalTestCase
         self::assertSame($id, $this->dataOf($response)['id'] ?? null);
     }
 
+    #[Test]
+    public function anIdFilterDecodesEncodedWireIds(): void
+    {
+        $ids = function (string $query): array {
+            $response = $this->handle('/cogs?' . $query);
+            self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+            $rows = $this->decode($response)['data'] ?? null;
+            self::assertIsArray($rows);
+
+            return \array_column($rows, 'id');
+        };
+
+        self::assertSame([$this->wireIds[2]], $ids('filter[id]=' . $this->wireIds[2]));
+        self::assertEqualsCanonicalizing([$this->wireIds[1], $this->wireIds[2]], $ids('filter[id]=' . $this->wireIds[1] . ',' . $this->wireIds[2]));
+        self::assertSame([$this->wireIds[1]], $ids('filter[idIs]=' . $this->wireIds[1]));
+        self::assertSame([], $ids('filter[idIs]=cog-ff'));
+    }
+
     protected function afterBoot(): void
     {
         $entityManager = static::getContainer()->get('doctrine.orm.entity_manager');

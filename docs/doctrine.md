@@ -828,7 +828,9 @@ campaign's leads whose brand is Acme, the same total the related endpoint report
   column's Doctrine type first, and a value compared with an association with the
   type of the id it holds. So `filter[id]=<uuid>` matches a `BINARY(16)` id on SQLite
   or MySQL, on a plain column filter, a set filter and a traversal leaf alike. A value
-  the type can't convert matches nothing.
+  the type can't convert matches nothing. `WhereIdIn`, `WhereIdNotIn` and a `Where` on
+  the id column first decode each value through the type's id encoder, so a client
+  filters by the ids it reads; a value the encoder can't decode is compared as sent.
 
 - **`WhereHasMatching`** — the **Doctrine-only escape hatch** for what `WhereThrough`'s
   single dotted comparison cannot express: a multi-column / OR / NOT predicate, or raw

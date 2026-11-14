@@ -11,6 +11,7 @@ use Doctrine\ORM\Mapping\ClassMetadata;
 use Doctrine\ORM\Query\Expr\Andx;
 use Doctrine\ORM\QueryBuilder;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
+use haddowg\JsonApi\Resource\Field\IdEncoderInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\DateRange;
 use haddowg\JsonApi\Resource\Filter\FilterHandlerInterface;
@@ -140,9 +141,13 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
     /**
      * @param iterable<DoctrineFilterArmInterface>                                   $arms             author arms for custom filter types, consulted in order
      * @param (\Closure(BelongsToMany, class-string): ?PivotAssociation)|null $pivotAssociation the association entity behind a pivot `belongsToMany` declared on an entity class, or null when the relation's related type has no entity
+     * @param (\Closure(class-string): ?IdEncoderInterface)|null             $encoderFor       the id encoder of the type an entity class serves, which decodes a wire id compared with its id
      */
-    public function __construct(iterable $arms = [], private readonly ?\Closure $pivotAssociation = null)
-    {
+    public function __construct(
+        iterable $arms = [],
+        private readonly ?\Closure $pivotAssociation = null,
+        private readonly ?\Closure $encoderFor = null,
+    ) {
         $this->arms = \is_array($arms) ? \array_values($arms) : \iterator_to_array($arms, false);
         $this->dates = new NaiveDateTimeStorage();
     }
@@ -191,8 +196,8 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
             $filter instanceof Where => $this->where($filter, $query, $value, $alias),
             $filter instanceof WhereIn => $this->whereIn($query, $this->pivotColumn($filter->column, $alias), $this->members($filter, $value), false, $alias),
             $filter instanceof WhereNotIn => $this->whereIn($query, $this->pivotColumn($filter->column, $alias), $this->members($filter, $value), true, $alias),
-            $filter instanceof WhereIdIn => $this->whereIn($query, $filter->column, $this->members($filter, $value), false, $alias),
-            $filter instanceof WhereIdNotIn => $this->whereIn($query, $filter->column, $this->members($filter, $value), true, $alias),
+            $filter instanceof WhereIdIn => $this->whereIn($query, $filter->column, $this->storageIds($query, $alias, $this->members($filter, $value)), false, $alias),
+            $filter instanceof WhereIdNotIn => $this->whereIn($query, $filter->column, $this->storageIds($query, $alias, $this->members($filter, $value)), true, $alias),
             $filter instanceof WhereNull => $query->andWhere(\sprintf('%s IS NULL', $this->path($this->pivotColumn($filter->column, $alias), $alias))),
             $filter instanceof WhereNotNull => $query->andWhere(\sprintf('%s IS NOT NULL', $this->path($this->pivotColumn($filter->column, $alias), $alias))),
             $filter instanceof WhereThrough => $this->whereThrough($query, $filter, $value, $alias),
@@ -631,7 +636,12 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
     private function where(Where $filter, QueryBuilder $query, mixed $value, string $alias): QueryBuilder
     {
         $expected = $filter->deserialize !== null ? ($filter->deserialize)($value) : $value;
-        $path = $this->path($this->pivotColumn($filter->column, $alias), $alias);
+        $column = $this->pivotColumn($filter->column, $alias);
+        $path = $this->path($column, $alias);
+        $metadata = $alias === 'pivot' ? null : $this->metadataOfAlias($query, $alias);
+        if ($metadata !== null && !$metadata->isIdentifierComposite && $metadata->getSingleIdentifierFieldName() === $column) {
+            $expected = $this->storageIds($query, $alias, [$expected])[0];
+        }
 
         $this->applyComparison($query, $query, $path, $filter->operator, $expected, $filter->key());
 
@@ -914,6 +924,32 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         return $query
             ->andWhere(\sprintf('%s %s (:%s)', $path, $negate ? 'NOT IN' : 'IN', $placeholder))
             ->setParameter($placeholder, ...$this->listParameter($query, $this->metadataOfAlias($query, $alias), $field, $values));
+    }
+
+    /**
+     * Wire ids compared with the id of the entity at `$alias`, each decoded through the
+     * id encoder of the type that entity serves. A value the encoder can't decode, or
+     * any value when the type has no encoder, is compared as sent.
+     *
+     * @param list<mixed> $values
+     *
+     * @return list<mixed>
+     */
+    private function storageIds(QueryBuilder $query, string $alias, array $values): array
+    {
+        $metadata = $this->encoderFor !== null ? $this->metadataOfAlias($query, $alias) : null;
+        if ($metadata === null) {
+            return $values;
+        }
+
+        /** @var class-string $class */
+        $class = $metadata->getName();
+        $encoder = ($this->encoderFor)($class);
+        if ($encoder === null) {
+            return $values;
+        }
+
+        return \array_map(static fn(mixed $value): mixed => \is_string($value) ? $encoder->decode($value) ?? $value : $value, $values);
     }
 
     /**
