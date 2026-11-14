@@ -19,16 +19,21 @@ use haddowg\JsonApi\Resource\Filter\FilterMatcher;
 use haddowg\JsonApi\Resource\Filter\HasDefaultValue;
 use haddowg\JsonApi\Resource\Filter\RelationFilters;
 use haddowg\JsonApi\Resource\Filter\Where;
+use haddowg\JsonApi\Resource\Filter\WhereDoesntHave;
+use haddowg\JsonApi\Resource\Filter\WhereHas;
 use haddowg\JsonApi\Resource\Filter\WhereIn;
 use haddowg\JsonApi\Resource\Filter\WhereNotIn;
 use haddowg\JsonApi\Resource\Filter\WhereNotNull;
 use haddowg\JsonApi\Resource\Filter\WhereNull;
+use haddowg\JsonApi\Resource\Filter\WhereThrough;
+use haddowg\JsonApi\Resource\Filter\WhereThroughIn;
 use haddowg\JsonApi\Resource\SerializerResolverInterface;
 use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApi\Resource\Sort\SortDirective;
 use haddowg\JsonApi\Resource\Sort\SortInterface;
 use haddowg\JsonApi\Resource\Sort\SortMatcher;
 use haddowg\JsonApi\Server\Server;
+use haddowg\JsonApiBundle\DataProvider\Doctrine\Filter\WhereHasMatching;
 
 /**
  * Owns, once, the related-collection query-assembly the related endpoint
@@ -440,12 +445,14 @@ final class RelationCriteriaFactory
     }
 
     /**
-     * The declared `column` of a value-carrying scalar filter (the only filter kinds a
-     * pivot column targets — {@see Where} + operators, {@see WhereIn}/{@see WhereNotIn},
-     * {@see WhereNull}/{@see WhereNotNull}). A filter with no column (a
-     * relationship-existence `WhereHas`/`WhereDoesntHave`, or any custom filter) cannot
-     * target a pivot column, so it is reported as the empty string — never `pivot.`,
-     * so it is never stripped.
+     * What a filter targets, so a `pivot.` prefix routes it to the pivot row: the
+     * declared `column` of a scalar filter ({@see Where} and its operators,
+     * {@see WhereIn}/{@see WhereNotIn}, {@see WhereNull}/{@see WhereNotNull}), the
+     * relationship of an existence filter ({@see WhereHas}/{@see WhereDoesntHave}, the
+     * bundle's {@see WhereHasMatching}), or the path of a traversal
+     * ({@see WhereThrough}/{@see WhereThroughIn}). Any other filter, a custom one or a
+     * group, targets nothing a prefix could mark, so it is reported as the empty
+     * string, never `pivot.`.
      */
     private function columnOf(FilterInterface $filter): string
     {
@@ -455,6 +462,11 @@ final class RelationCriteriaFactory
             $filter instanceof WhereNotIn,
             $filter instanceof WhereNull,
             $filter instanceof WhereNotNull => $filter->column,
+            $filter instanceof WhereHas,
+            $filter instanceof WhereDoesntHave,
+            $filter instanceof WhereHasMatching => $filter->relationship,
+            $filter instanceof WhereThrough,
+            $filter instanceof WhereThroughIn => $filter->path,
             default => '',
         };
     }

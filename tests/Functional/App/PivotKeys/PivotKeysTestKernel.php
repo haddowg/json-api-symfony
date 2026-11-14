@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\PivotKeys;
 use Doctrine\Bundle\DoctrineBundle\DoctrineBundle;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
+use haddowg\JsonApiBundle\Routing\OpenApiRouteLoader;
 use haddowg\JsonApiBundle\Tests\Functional\App\PinnedConfigDefaults;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
@@ -110,6 +111,7 @@ final class PivotKeysTestKernel extends Kernel
         $container->extension('json_api', [
             'base_uri' => 'https://example.test',
             'version' => '1.1',
+            'openapi' => ['expose_in_prod' => true],
         ]);
 
         $services = $container->services()
@@ -133,5 +135,6 @@ final class PivotKeysTestKernel extends Kernel
     protected function configureRoutes(RoutingConfigurator $routes): void
     {
         $routes->import('.', JsonApiRouteLoader::ROUTE_TYPE);
+        $routes->import('.', OpenApiRouteLoader::ROUTE_TYPE);
     }
 }

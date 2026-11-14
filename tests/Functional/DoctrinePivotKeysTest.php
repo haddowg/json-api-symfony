@@ -11,6 +11,7 @@ use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
 use haddowg\JsonApiBundle\Tests\Functional\App\PivotKeys\PivotKeysTestKernel;
 use haddowg\JsonApiBundle\Tests\Functional\App\PivotKeys\PkCampaignEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\PivotKeys\PkDefinitionEntity;
+use haddowg\JsonApiBundle\Tests\Functional\App\PivotKeys\PkPlaceholderTargetEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\PivotKeys\PkTemplateEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\PivotKeys\PkTemplatePlaceholderEntity;
 use PHPUnit\Framework\Attributes\Group;
@@ -40,6 +41,11 @@ final class DoctrinePivotKeysTest extends JsonApiFunctionalTestCase
 
     private const string QUERIES_ACCEPT = 'application/vnd.api+json;profile="' . RelationshipQueriesProfile::URI . '"';
 
+    /**
+     * @var array<string, string> target name => id
+     */
+    private array $targetIds = [];
+
     protected static function getKernelClass(): string
     {
         return PivotKeysTestKernel::class;
@@ -68,10 +74,17 @@ final class DoctrinePivotKeysTest extends JsonApiFunctionalTestCase
             $definitions[$id] = $definition;
         }
 
-        $this->link($templates[10], $definitions[self::FIRST_NAME], 'Ann');
+        $header = new PkPlaceholderTargetEntity('header');
+        $footer = new PkPlaceholderTargetEntity('footer');
+        $entityManager->persist($header);
+        $entityManager->persist($footer);
+        $this->targetIds = ['header' => $header->id->toRfc4122(), 'footer' => $footer->id->toRfc4122()];
+
+        // first-name is shared: targeted on template 10, untargeted on template 20.
+        $this->link($templates[10], $definitions[self::FIRST_NAME], 'Ann', [$header]);
         $this->link($templates[10], $definitions[self::LAST_NAME], null);
         $this->link($templates[20], $definitions[self::FIRST_NAME], 'Bob');
-        $this->link($templates[20], $definitions[self::COMPANY], 'Acme');
+        $this->link($templates[20], $definitions[self::COMPANY], 'Acme', [$footer, $header]);
 
         $entityManager->flush();
         $entityManager->clear();
@@ -363,6 +376,93 @@ final class DoctrinePivotKeysTest extends JsonApiFunctionalTestCase
         }
     }
 
+    #[Test]
+    public function aPivotRowFilterReadsTheRowOfThisTemplate(): void
+    {
+        $related = fn(int $template, string $query): array => \array_column($this->rows($this->decode($this->get('/campaign-templates/' . $template . '/placeholders?sort=name&' . $query))), 'id');
+
+        // first-name is shared: used on template 10, unused on template 20.
+        self::assertSame([self::LAST_NAME], $related(10, 'filter[unused]=1'));
+        self::assertSame([self::FIRST_NAME], $related(20, 'filter[unused]=1'));
+        self::assertSame([self::FIRST_NAME], $related(10, 'filter[used]=1'));
+        self::assertSame([self::COMPANY], $related(20, 'filter[used]=1'));
+        self::assertSame([self::COMPANY], $related(20, 'filter[targetName]=footer'));
+        self::assertSame([self::FIRST_NAME], $related(10, 'filter[target]=' . $this->targetIds['header']));
+        self::assertSame([self::COMPANY], $related(20, 'filter[target]=' . $this->targetIds['header'] . ',' . $this->targetIds['footer']));
+        self::assertSame([self::FIRST_NAME], $related(10, 'filter[targetedAtHeader]=1'));
+        self::assertSame([], $related(20, 'filter[unused]=1&filter[defaultOverride]=Acme'));
+    }
+
+    #[Test]
+    public function aPivotRowFilterAppliesOnTheRelationshipEndpoint(): void
+    {
+        $linkage = fn(int $template, string $query): array => \array_column($this->rows($this->decode($this->get('/campaign-templates/' . $template . '/relationships/placeholders?' . $query))), 'id');
+
+        self::assertSame([self::LAST_NAME], $linkage(10, 'filter[unused]=1'));
+        self::assertSame([self::FIRST_NAME], $linkage(20, 'filter[unused]=1'));
+        self::assertSame([self::COMPANY], $linkage(20, 'filter[targetName]=footer'));
+    }
+
+    #[Test]
+    public function aPivotRowFilterCountsAndPagesThePivotRead(): void
+    {
+        $document = $this->decode($this->get('/campaign-templates/20/placeholders?filter[used]=1&page[size]=1&withCount=_self_', self::COUNTS_ACCEPT));
+
+        self::assertSame([self::COMPANY], \array_column($this->rows($document), 'id'));
+        self::assertSame(1, $this->pageTotal($document));
+    }
+
+    #[Test]
+    public function aPivotRowFilterNarrowsARelatedQueryWindowAndItsCount(): void
+    {
+        $accept = self::QUERIES_ACCEPT . ',' . self::COUNTS_ACCEPT;
+        $linkage = fn(array $rows): array => \array_map(fn(array $row): array => \array_column($this->identifiers($this->linkage($row, 'placeholders')), 'id'), $rows);
+
+        $rows = $this->rows($this->decode($this->get('/campaign-templates?sort=name&include=placeholders&withCount=placeholders&relatedQuery[placeholders][filter][unused]=1', $accept)));
+        self::assertSame([[self::LAST_NAME], [self::FIRST_NAME], []], $linkage($rows));
+        self::assertSame([1, 1, 0], \array_map(fn(array $row): mixed => $this->relationshipMeta($row, 'placeholders')['total'] ?? null, $rows));
+
+        $paged = $this->rows($this->decode($this->get('/campaign-templates?sort=name&include=placeholders&relatedQuery[placeholders][filter][targetName]=header&relatedQuery[placeholders][sort]=-name', $accept)));
+        self::assertSame([[self::FIRST_NAME], [self::COMPANY], []], $linkage($paged));
+
+        $counted = $this->rows($this->decode($this->get('/campaign-templates?sort=name&withCount=placeholders&relatedQuery[placeholders][filter][target]=' . $this->targetIds['header'], $accept)));
+        self::assertSame([1, 1, 0], \array_map(fn(array $row): mixed => $this->relationshipMeta($row, 'placeholders')['total'] ?? null, $counted));
+    }
+
+    #[Test]
+    public function aPivotRowFilterIsUnrecognisedOnTheRelatedTypesOwnCollection(): void
+    {
+        self::assertSame(400, $this->handle('/placeholder-definitions?filter[unused]=1')->getStatusCode());
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    public function theDocumentListsPivotRowFiltersOnlyWherePivotFiltersApply(): void
+    {
+        $document = $this->decode($this->get('/docs.json', 'application/json'));
+        $paths = $document['paths'] ?? null;
+        self::assertIsArray($paths);
+        $filters = function (string $path) use ($paths): array {
+            $item = $paths[$path] ?? null;
+            self::assertIsArray($item, $path);
+            $operation = $item['get'] ?? null;
+            self::assertIsArray($operation, $path);
+            $parameters = $operation['parameters'] ?? [];
+            self::assertIsArray($parameters);
+
+            return \array_values(\array_filter(\array_map(static fn(mixed $parameter): mixed => \is_array($parameter) ? $parameter['name'] ?? null : null, $parameters), static fn(mixed $name): bool => \is_string($name) && \str_starts_with($name, 'filter[')));
+        };
+
+        foreach (['/campaign-templates/{id}/placeholders', '/campaign-templates/{id}/relationships/placeholders'] as $path) {
+            foreach (['filter[unused]', 'filter[used]', 'filter[targetName]', 'filter[target]', 'filter[targetedAtHeader]'] as $name) {
+                self::assertContains($name, $filters($path), $path);
+            }
+        }
+        self::assertNotContains('filter[unused]', $filters('/campaign-templates'));
+        self::assertNotContains('filter[unused]', $filters('/placeholder-definitions'));
+        self::assertNotContains('filter[unused]', $filters('/placeholder-definitions/{id}/templates'));
+    }
+
     /**
      * @return list<PkTemplatePlaceholderEntity>
      */
@@ -376,9 +476,15 @@ final class DoctrinePivotKeysTest extends JsonApiFunctionalTestCase
         return \array_values($template->placeholderRows->toArray());
     }
 
-    private function link(PkTemplateEntity $template, PkDefinitionEntity $definition, ?string $override): void
+    /**
+     * @param list<PkPlaceholderTargetEntity> $targets
+     */
+    private function link(PkTemplateEntity $template, PkDefinitionEntity $definition, ?string $override, array $targets = []): void
     {
         $row = new PkTemplatePlaceholderEntity();
+        foreach ($targets as $target) {
+            $row->targets->add($target);
+        }
         $row->template = $template;
         $row->definition = $definition;
         $row->defaultOverride = $override;

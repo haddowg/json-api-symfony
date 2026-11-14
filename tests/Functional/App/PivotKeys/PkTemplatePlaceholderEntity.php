@@ -47,9 +47,18 @@ class PkTemplatePlaceholderEntity
     #[ORM\JoinColumn(name: 'placeholderId', referencedColumnName: 'id')]
     public Collection $audiences;
 
+    /**
+     * @var Collection<int, PkPlaceholderTargetEntity>
+     */
+    #[ORM\ManyToMany(targetEntity: PkPlaceholderTargetEntity::class)]
+    #[ORM\JoinTable(name: 'pk_placeholder_target_link')]
+    #[ORM\JoinColumn(name: 'placeholderId', referencedColumnName: 'id')]
+    public Collection $targets;
+
     public function __construct()
     {
         $this->id = Uuid::v7();
         $this->audiences = new ArrayCollection();
+        $this->targets = new ArrayCollection();
     }
 }
