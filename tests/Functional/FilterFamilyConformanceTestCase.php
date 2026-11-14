@@ -187,10 +187,26 @@ abstract class FilterFamilyConformanceTestCase extends JsonApiFunctionalTestCase
     #[Group('spec:errors')]
     public function aPivotFilterFromAFamilyIsStrippedWhereTheExactOneIs(): void
     {
-        // An include carries no pivot values, so neither form of the pivot filter is
-        // recognised there, on either store.
+        // A relatedQuery window reads a pivot relation through the pivot query where the
+        // store has one, so both forms of the pivot filter narrow it alike; a store with
+        // no pivot query recognises neither.
         foreach (['rank', 'pin.rank'] as $key) {
             $response = $this->handle('/ffBoards/1?include=pinned&relatedQuery[pinned][filter][' . $key . ']=2', extraServer: $this->profileHeader());
+            if ($this->pivotAware()) {
+                self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+                $data = $this->decode($response)['data'] ?? null;
+                self::assertIsArray($data);
+                $relationships = $data['relationships'] ?? null;
+                self::assertIsArray($relationships);
+                $pinned = $relationships['pinned'] ?? null;
+                self::assertIsArray($pinned);
+                $linkage = $pinned['data'] ?? null;
+                self::assertIsArray($linkage);
+                self::assertSame(['4'], \array_column($linkage, 'id'), $key);
+
+                continue;
+            }
+
             self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
             self::assertSame('FILTERING_UNRECOGNIZED', $this->firstError($response)['code'] ?? null, $key);
         }
