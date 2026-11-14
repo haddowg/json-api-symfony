@@ -851,7 +851,9 @@ BelongsToMany::make('placeholders', 'placeholder-definitions')
 uses whose row on template 7 has no targets. A definition shared with another template
 where it does have targets is still unused here, which a filter on the definition
 itself can't express. A path that ends on one of the row's associations compares the
-id of the entity it reaches, bound with that id's Doctrine type. These filters apply
+id of the entity it reaches, bound with that id's Doctrine type. Its wire ids decode
+with the encoder of the type the relation names for that entity: the related type for
+the row's far side, the parent type for its near side. These filters apply
 where the pivot column filters do, and the in-memory provider, which has no pivot row,
 rejects them with a `400` on every path, as it does the column ones.
 

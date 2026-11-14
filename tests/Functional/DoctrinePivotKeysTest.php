@@ -333,6 +333,11 @@ final class DoctrinePivotKeysTest extends JsonApiFunctionalTestCase
         self::assertSame(['10', '20'], $ids('/campaign-templates?sort=name&filter[definition]=' . self::FIRST_NAME));
         self::assertSame(['def-' . self::COMPANY], $ids('/labelled-definitions?filter[id]=def-' . self::COMPANY));
         self::assertSame([self::COMPANY], $ids('/placeholder-definitions?filter[id]=' . self::COMPANY));
+
+        // A pivot-row filter on the row's association to the related entity is named by
+        // the relation's related type, so the second definition type does not clash.
+        self::assertSame([self::FIRST_NAME], $ids('/campaign-templates/10/placeholders?filter[rowDefinition]=' . self::FIRST_NAME));
+        self::assertSame([self::COMPANY, self::FIRST_NAME], $ids('/campaign-templates/20/placeholders?sort=name&filter[rowTemplate]=20'));
     }
 
     #[Test]

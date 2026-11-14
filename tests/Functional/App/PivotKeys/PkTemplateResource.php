@@ -41,6 +41,9 @@ final class PkTemplateResource extends AbstractResource implements InstantiatesP
                     WhereHas::make('used', 'pivot.targets'),
                     WhereThrough::make('targetName', 'pivot.targets.name'),
                     WhereThroughIn::make('target', 'pivot.targets')->uuid(),
+                    // The row's own ends: named by the related and the parent type.
+                    WhereThroughIn::make('rowDefinition', 'pivot.definition')->uuid(),
+                    WhereThroughIn::make('rowTemplate', 'pivot.template'),
                     WhereHasMatching::criteria('targetedAtHeader', 'pivot.targets', Criteria::create()->where(Criteria::expr()->eq('name', 'header'))),
                 )
                 ->withData()
