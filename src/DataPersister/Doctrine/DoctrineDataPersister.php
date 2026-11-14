@@ -26,6 +26,7 @@ use haddowg\JsonApi\Resource\Field\Positions;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Field\Union;
 use haddowg\JsonApi\Schema\ResourceIdentifier;
+use haddowg\JsonApiBundle\DataPersister\BuildsPivotRowsInterface;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\MovedMember;
 use haddowg\JsonApiBundle\DataPersister\PositionTargets;
@@ -78,11 +79,18 @@ use haddowg\JsonApiBundle\Validation\RelationshipTypeUnacceptable;
  * (`404`), rather than passing the raw wire string to `getReference` (which would
  * build a proxy that errors on initialization, surfacing as a `500`).
  */
-final class DoctrineDataPersister implements DataPersisterInterface, TransactionalDataPersisterInterface, ReportsMovedMembersInterface, StoresDateTimesInterface, WritesLinkRowsInterface, WritesPositionsInterface
+final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivotRowsInterface, TransactionalDataPersisterInterface, ReportsMovedMembersInterface, StoresDateTimesInterface, WritesLinkRowsInterface, WritesPositionsInterface
 {
     private readonly DoctrineIdentifiers $ids;
 
     private readonly NaiveDateTimeStorage $dates;
+
+    /**
+     * Builds the new pivot rows of the write in progress, from {@see withPivotRowFactory()}.
+     *
+     * @var (\Closure(object, object, array<string, mixed>): ?object)|null
+     */
+    private ?\Closure $pivotRowFactory = null;
 
     /**
      * @param array<string, class-string>    $entityClassByType a `type → entity FQCN` map
@@ -153,6 +161,17 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
     public function supports(string $type): bool
     {
         return isset($this->entityClassByType[$type]);
+    }
+
+    public function withPivotRowFactory(\Closure $factory, \Closure $write): mixed
+    {
+        $previous = $this->pivotRowFactory;
+        $this->pivotRowFactory = $factory;
+        try {
+            return $write();
+        } finally {
+            $this->pivotRowFactory = $previous;
+        }
     }
 
     /**
@@ -502,7 +521,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
         }
 
         foreach ($plan->inserts as $insert) {
-            $row = $this->newLinkRow($metadata);
+            $row = $this->newRow($metadata);
             $this->writeRowValues($metadata, $row, $insert->values, $fields->owner, $parent, $unions);
             $rows?->add($row);
             $this->entityManager->persist($row);
@@ -516,12 +535,13 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
     }
 
     /**
-     * A new link row, constructed when its class takes no required argument so its
-     * defaults apply, and otherwise created as Doctrine hydrates one.
+     * A new link or pivot row, constructed when its class takes no required argument so
+     * whatever its constructor sets applies, such as a minted id or an initialised
+     * collection, and otherwise created as Doctrine hydrates one.
      *
      * @param ClassMetadata<object> $metadata
      */
-    private function newLinkRow(ClassMetadata $metadata): object
+    private function newRow(ClassMetadata $metadata): object
     {
         $constructor = $metadata->getReflectionClass()->getConstructor();
 
@@ -758,7 +778,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
 
             // A new association row: parent + far reference + the writable pivot
             // fields (create context); readOnly fields take their server default.
-            $row = $this->newPivotRow($association, $parent, $reference);
+            $row = $this->newPivotRow($association, $parent, $reference, $meta);
             $this->writePivotFields($row, $relation->writablePivotFields(true), $meta);
             $this->attachPivotRow($parent, $association, $row);
             $this->entityManager->persist($row);
@@ -869,7 +889,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
             }
             $this->relatedTypeOf($relation, $identifier);
             $storageKey = $this->decodeLinkageId($relatedType, $identifier->id);
-            $reference = $this->entityManager->getReference($relatedClass, $storageKey);
+            $reference = $this->referenceTo($relatedClass, $storageKey);
             if ($reference === null) {
                 continue;
             }
@@ -953,14 +973,26 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
     }
 
     /**
-     * A new, unpopulated association-entity instance via Doctrine's constructor-less
-     * instantiation, with its parent and far references set. The pivot
-     * fields are written separately; readOnly fields take their server default (the
-     * entity's own column default or a `PrePersist` callback).
+     * A new association entity with its parent and far references set: built by the
+     * write's pivot row factory when it has one that builds it, and otherwise by
+     * {@see newRow()}. The pivot fields are written separately; readOnly fields take
+     * their server default (the entity's own default or a `PrePersist` callback).
+     *
+     * @param array<string, mixed> $pivot the member's `meta.pivot`, as sent
      */
-    private function newPivotRow(PivotAssociation $association, object $parent, object $reference): object
+    private function newPivotRow(PivotAssociation $association, object $parent, object $reference, array $pivot): object
     {
-        $row = $this->entityManager->getClassMetadata($association->entityClass)->newInstance();
+        $metadata = $this->entityManager->getClassMetadata($association->entityClass);
+        $row = $this->pivotRowFactory !== null ? ($this->pivotRowFactory)($parent, $reference, $pivot) : null;
+        if ($row !== null && !$metadata->getReflectionClass()->isInstance($row)) {
+            throw new \LogicException(\sprintf(
+                'The pivot row factory built a %s, but the relation\'s association entity is %s.',
+                $row::class,
+                $metadata->getName(),
+            ));
+        }
+
+        $row ??= $this->newRow($metadata);
         $this->property($row, $association->parentProperty)->setValue($row, $parent);
         $this->property($row, $association->farProperty)->setValue($row, $reference);
 
@@ -1319,7 +1351,26 @@ final class DoctrineDataPersister implements DataPersisterInterface, Transaction
     {
         $type = $this->relatedTypeOf($relation, $identifier);
 
-        return $this->entityManager->getReference($this->entityClassFor($type), $this->decodeLinkageId($type, (string) $identifier->id));
+        return $this->referenceTo($this->entityClassFor($type), $this->decodeLinkageId($type, (string) $identifier->id));
+    }
+
+    /**
+     * A managed reference to the `$class` row keyed `$id`. One whose id is an association
+     * is loaded rather than proxied, since a proxy would hold the scalar id in the
+     * association's property; a missing row is a bad linkage target.
+     *
+     * @param class-string $class
+     *
+     * @throws ResourceNotFound when the id is an association and no row holds it
+     */
+    private function referenceTo(string $class, mixed $id): ?object
+    {
+        $metadata = $this->entityManager->getClassMetadata($class);
+        if (!$metadata->isIdentifierComposite && $metadata->hasAssociation($metadata->getSingleIdentifierFieldName())) {
+            return $this->entityManager->find($class, $id) ?? throw new ResourceNotFound();
+        }
+
+        return $this->entityManager->getReference($class, $id);
     }
 
     /**

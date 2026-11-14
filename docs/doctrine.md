@@ -549,6 +549,34 @@ final class AdvertiserResource extends AbstractResource implements InstantiatesE
 
 A type with no resource implements it on its standalone hydrator instead.
 
+#### Pivot rows
+
+A row the persister adds to a pivot `belongsToMany`'s association entity is built
+through its constructor when the constructor needs no argument, so an id or a
+collection the constructor sets is there when the row is persisted. A constructor
+that needs arguments is skipped, as for a resource. To build those rows, implement
+`InstantiatesPivotInterface` on the resource that declares the relation, or on the
+type's standalone hydrator when it has none. It runs for every new row, whatever
+write adds it, and returns null to leave a relation to the persister:
+
+```php
+use haddowg\JsonApiBundle\Hook\HookContext;
+use haddowg\JsonApiBundle\Hook\InstantiatesPivotInterface;
+
+final class TemplateResource extends AbstractResource implements InstantiatesPivotInterface
+{
+    public function instantiatePivot(HookContext $context, object $parent, object $related, array $pivot): ?object
+    {
+        return $context->relation?->name() === 'pinned'
+            ? new PinnedPlaceholder($parent, $related)
+            : null;
+    }
+}
+```
+
+The persister sets the row's two associations and writes its pivot fields after the
+hook returns. `$pivot` is the member's `meta.pivot` as sent.
+
 ### Deleting without the persister
 
 A type that deletes differently, such as a soft delete through a domain service,
@@ -783,6 +811,24 @@ campaign's leads whose brand is Acme, the same total the related endpoint report
   storage keys, bound with the id's Doctrine type, so a binary `uuid` id matches. See
   [relationships](relationships.md#wherethroughin-and-paths-that-end-on-a-relationship)
   for how paths resolve and validate.
+
+- **Paths through an association entity.** A path's last segment may also be a
+  foreign-key association that isn't a declared relation, such as the far side of a
+  pivot's association entity. `WhereThroughIn::make('definition',
+  'placeholderRows.definition')` walks the template's `OneToMany` to its pivot rows and
+  compares `IDENTITY(row.definition)` with the requested ids, bound with the definition
+  id's Doctrine type. A segment may also name a pivot `belongsToMany` the entity has no
+  Doctrine association for: `WhereThroughIn::make('placeholder', 'placeholders')`,
+  `WhereThrough::make('placeholderName', 'placeholders.name')` and
+  `WhereHas::make('hasPlaceholders', 'placeholders')` join through the relation's
+  association entity, found as its reads find it.
+
+- **Values bound in their database form.** A value compared with a Symfony UID column
+  (`uuid`, `ulid`) or any column the driver binds as binary is converted with the
+  column's Doctrine type first, and a value compared with an association with the
+  type of the id it holds. So `filter[id]=<uuid>` matches a `BINARY(16)` id on SQLite
+  or MySQL, on a plain column filter, a set filter and a traversal leaf alike. A value
+  the type can't convert matches nothing.
 
 - **`WhereHasMatching`** — the **Doctrine-only escape hatch** for what `WhereThrough`'s
   single dotted comparison cannot express: a multi-column / OR / NOT predicate, or raw

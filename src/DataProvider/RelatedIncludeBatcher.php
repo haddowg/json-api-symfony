@@ -521,7 +521,9 @@ final class RelatedIncludeBatcher
         if (!$scoped && !$ordered && $linkageBatch) {
             $entities = \array_values(\array_filter(
                 $entities,
-                fn(object $entity): bool => !$this->isLoadedOnModel($server, $entity, $relation),
+                // A pivot belongsToMany's members sit behind its association entity, so
+                // the model never holds them under the relation's name.
+                fn(object $entity): bool => $this->router->isPivot($relation) || !$this->isLoadedOnModel($server, $entity, $relation),
             ));
             if ($entities === []) {
                 return [];
@@ -933,12 +935,11 @@ final class RelatedIncludeBatcher
 
     /**
      * Whether `$relation`'s linkage alone is worth batching when it is unscoped: a
-     * monomorphic to-many. A to-one renders its identifier without loading its target,
-     * and a pivot `belongsToMany` is read one parent at a time either way.
+     * monomorphic to-many. A to-one renders its identifier without loading its target.
      */
     private function batchesLinkage(RelationInterface $relation): bool
     {
-        return $relation->isToMany() && \count($relation->relatedTypes()) === 1 && !$this->router->isPivot($relation);
+        return $relation->isToMany() && \count($relation->relatedTypes()) === 1;
     }
 
     /**

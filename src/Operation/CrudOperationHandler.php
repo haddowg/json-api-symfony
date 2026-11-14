@@ -77,6 +77,7 @@ use haddowg\JsonApiBundle\Action\ActionInvoker;
 use haddowg\JsonApiBundle\Atomic\AtomicLoopBackend;
 use haddowg\JsonApiBundle\DataPersister\AcceptedForProcessing;
 use haddowg\JsonApiBundle\DataPersister\AsyncWriteNotAllowedInAtomicOperation;
+use haddowg\JsonApiBundle\DataPersister\BuildsPivotRowsInterface;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataPersister\LinkRowPivots;
@@ -124,6 +125,7 @@ use haddowg\JsonApiBundle\Event\BeforeUpdateEvent;
 use haddowg\JsonApiBundle\Hook\DeletesEntityInterface;
 use haddowg\JsonApiBundle\Hook\HookContext;
 use haddowg\JsonApiBundle\Hook\InstantiatesEntityInterface;
+use haddowg\JsonApiBundle\Hook\InstantiatesPivotInterface;
 use haddowg\JsonApiBundle\Serializer\BatchedRelationshipCount;
 use haddowg\JsonApiBundle\Serializer\PivotLinkageParentSerializer;
 use haddowg\JsonApiBundle\Serializer\PivotMetaSerializer;
@@ -2743,6 +2745,58 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * positions too, when the persister writes them.
      */
     private function mutateMembers(
+        Server $server,
+        DataPersisterInterface $persister,
+        string $type,
+        object $entity,
+        RelationInterface $relation,
+        ToOneRelationship|ToManyRelationship $linkage,
+        Mode $mode,
+        JsonApiRequestInterface $request,
+        bool $flush,
+    ): object {
+        $factory = $linkage instanceof ToManyRelationship && $persister instanceof BuildsPivotRowsInterface
+            ? $this->pivotRowFactory($server, $type, $relation, $linkage, $mode, $request)
+            : null;
+        if ($factory !== null) {
+            \assert($persister instanceof BuildsPivotRowsInterface);
+
+            return $persister->withPivotRowFactory($factory, fn(): object => $this->writeMembers($server, $persister, $type, $entity, $relation, $linkage, $mode, $request, $flush));
+        }
+
+        return $this->writeMembers($server, $persister, $type, $entity, $relation, $linkage, $mode, $request, $flush);
+    }
+
+    /**
+     * The factory the type's {@see InstantiatesPivotInterface} gives the persister for
+     * the new rows of a pivot `belongsToMany`, or null when the relation is not one or
+     * the type declares no such hook. The hook lives on the resource, or on the
+     * standalone hydrator of a type with none, as {@see instantiate()}'s does.
+     *
+     * @return (\Closure(object, object, array<string, mixed>): ?object)|null
+     */
+    private function pivotRowFactory(Server $server, string $type, RelationInterface $relation, ToManyRelationship $linkage, Mode $mode, JsonApiRequestInterface $request): ?\Closure
+    {
+        if (!$relation instanceof BelongsToMany || $relation->storedPivotFields() === []) {
+            return null;
+        }
+
+        $resource = $this->types->resourceFor($server, $type);
+        $hook = $resource instanceof InstantiatesPivotInterface ? $resource : null;
+        if ($hook === null && $resource === null && $server->hasHydratorFor($type)) {
+            $hydrator = $server->hydratorFor($type);
+            $hook = $hydrator instanceof InstantiatesPivotInterface ? $hydrator : null;
+        }
+        if ($hook === null) {
+            return null;
+        }
+
+        $context = new HookContext($request, $this->serverName($request), $type, $relation, $linkage, $mode);
+
+        return static fn(object $parent, object $related, array $pivot): ?object => $hook->instantiatePivot($context, $parent, $related, $pivot);
+    }
+
+    private function writeMembers(
         Server $server,
         DataPersisterInterface $persister,
         string $type,
