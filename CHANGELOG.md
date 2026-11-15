@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.18.0](https://github.com/haddowg/json-api-symfony/compare/v2.17.1...v2.18.0) (2026-11-15)
+
+
+### Features
+
+* run callbacks after a write commits ([#388](https://github.com/haddowg/json-api-symfony/issues/388)) ([b1c6583](https://github.com/haddowg/json-api-symfony/commit/b1c6583a690e4aa8fbedf398361b6da39aa66522))
+
 ## [2.17.1](https://github.com/haddowg/json-api-symfony/compare/v2.17.0...v2.17.1) (2026-11-15)
 
 
