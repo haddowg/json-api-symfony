@@ -20,7 +20,10 @@ use haddowg\JsonApi\Response\RawResponse;
 use haddowg\JsonApi\Response\SeeOtherResponse;
 use haddowg\JsonApi\Server\ResolvingServerInterface;
 use haddowg\JsonApi\Server\Server;
+use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
+use haddowg\JsonApiBundle\DataPersister\WriteTransaction;
+use haddowg\JsonApiBundle\DataPersister\WriteTransactionContext;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
 use haddowg\JsonApiBundle\DataProvider\FilterPaths;
@@ -72,6 +75,7 @@ final readonly class ActionInvoker
         private ?ResourceValidator $validator = null,
         private ?EventDispatcherInterface $dispatcher = null,
         private ?FilterValueValidator $filterValues = null,
+        private ?WriteTransactionContext $txContext = null,
     ) {}
 
     public function invoke(CustomActionOperation $operation): DataResponse|MetaResponse|NoContentResponse|AcceptedResponse|SeeOtherResponse|ErrorResponse|RawResponse
@@ -117,12 +121,6 @@ final readonly class ActionInvoker
             ? $this->filteredCollection($operation, $server, $descriptor, $serverName)
             : null;
 
-        // Per-action before-gate: the security expression is evaluated against the
-        // subject (the entity for resource scope, null for collection scope) by the
-        // security subscriber, which throws to deny with a 403; a lifecycle consumer
-        // may also abort here.
-        $this->dispatch(new BeforeActionEvent($type, $descriptor->path, $entity, $descriptor->security));
-
         $context = new ActionContext(
             $server,
             $descriptor,
@@ -133,22 +131,59 @@ final readonly class ActionInvoker
             $filtered,
         );
 
-        $response = $handler->handle($context);
+        // An action called with a writing method runs from its before gate to its after event
+        // in one transaction on its type's persister, so a write it made is undone when
+        // anything up to the response throws.
+        $persister = $this->writes($operation) ? $this->persisterFor($descriptor) : null;
 
-        // A raw body is sent only in the media type the client's Accept picked.
-        if ($response instanceof RawResponse && MediaType::essence($response->contentType()) !== $context->responseMediaType()) {
-            throw new \LogicException(\sprintf(
-                'The action "%s" on type "%s" answered with a raw "%s" body, but the request negotiated "%s". Answer in $context->responseMediaType().',
-                $descriptor->path,
-                $type,
-                $response->contentType(),
-                $context->responseMediaType() ?? 'none',
-            ));
+        return WriteTransaction::run($persister, $this->txContext, function () use ($type, $descriptor, $entity, $handler, $context): DataResponse|MetaResponse|NoContentResponse|AcceptedResponse|SeeOtherResponse|ErrorResponse|RawResponse {
+            // Per-action before-gate: the security expression is evaluated against the
+            // subject (the entity for resource scope, null for collection scope) by the
+            // security subscriber, which throws to deny with a 403; a lifecycle consumer
+            // may also abort here.
+            $this->dispatch(new BeforeActionEvent($type, $descriptor->path, $entity, $descriptor->security));
+
+            $response = $handler->handle($context);
+
+            // A raw body is sent only in the media type the client's Accept picked.
+            if ($response instanceof RawResponse && MediaType::essence($response->contentType()) !== $context->responseMediaType()) {
+                throw new \LogicException(\sprintf(
+                    'The action "%s" on type "%s" answered with a raw "%s" body, but the request negotiated "%s". Answer in $context->responseMediaType().',
+                    $descriptor->path,
+                    $type,
+                    $response->contentType(),
+                    $context->responseMediaType() ?? 'none',
+                ));
+            }
+
+            $this->dispatch(new AfterActionEvent($type, $descriptor->path, $entity));
+
+            return $response;
+        });
+    }
+
+    /**
+     * Whether the action was called with a method that writes: POST, PATCH, PUT or DELETE.
+     */
+    private function writes(CustomActionOperation $operation): bool
+    {
+        return \in_array(\strtoupper($this->request($operation)->getMethod()), ['POST', 'PATCH', 'PUT', 'DELETE'], true);
+    }
+
+    /**
+     * The persister whose transaction a writing action runs in: its mount type's, else, for
+     * a mount type with no persister, the persister of the type its document reads in.
+     * Null when neither has one, and the action runs as it is.
+     */
+    private function persisterFor(ActionDescriptor $descriptor): ?DataPersisterInterface
+    {
+        foreach ([$descriptor->type, $descriptor->inputType] as $type) {
+            if ($type !== '' && $this->persisters->supportsType($type)) {
+                return $this->persisters->forType($type);
+            }
         }
 
-        $this->dispatch(new AfterActionEvent($type, $descriptor->path, $entity));
-
-        return $response;
+        return null;
     }
 
     /**

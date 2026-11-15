@@ -67,6 +67,26 @@ final class InMemorySnapshotCoordinatorTest extends TestCase
         self::assertNotNull($store->find('1'));
         self::assertNull($store->find('2'));
     }
+
+    #[Test]
+    public function anInnerCommitLeavesTheOuterSessionAbleToRollBack(): void
+    {
+        $coordinator = new InMemorySnapshotCoordinator();
+        $identify = static fn(object $item): string => $item instanceof CoordinatorTestItem ? $item->id : '';
+        $store = new InMemoryStore([], $identify, coordinator: $coordinator);
+
+        // The write's transaction, then one a hook opens and commits inside it.
+        $coordinator->open();
+        $coordinator->open();
+        $store->save(new CoordinatorTestItem('1'));
+        $coordinator->commit();
+        self::assertTrue($coordinator->isOpen());
+
+        $coordinator->restore();
+
+        self::assertNull($store->find('1'));
+        self::assertFalse($coordinator->isOpen());
+    }
 }
 
 /**

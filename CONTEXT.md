@@ -42,7 +42,10 @@ The write side of the storage SPI: instantiates, creates, updates and deletes re
 _Avoid_: writer, saver
 
 **Transactional persister**:
-A data persister that also implements `TransactionalDataPersisterInterface`, so it can take part in an Atomic Operations batch.
+A data persister that also implements `TransactionalDataPersisterInterface`, so every single write through it runs in one write transaction and it can take part in an Atomic Operations batch.
+
+**Write transaction**:
+The transaction a single create, update, delete, relationship write, or action called with a writing method runs in, from its first write step and every before hook through the persister's write. A CRUD write's after hooks run once it commits; an action's `AfterActionEvent` runs inside it.
 
 **Reference data layer**:
 The Doctrine ORM provider and persister the bundle ships as the default implementation for entity-mapped types.

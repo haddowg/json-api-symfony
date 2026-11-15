@@ -151,7 +151,9 @@ through a batch.
 ## All or nothing
 
 The whole batch runs inside one transaction opened on every participating
-[persister](data-layer.md). The **first** operation that fails — a validation `422`, an
+[persister](data-layer.md). A write outside a batch runs in a transaction of its own
+(see [lifecycle hooks](lifecycle-hooks.md#hooks-run-inside-the-writes-transaction)); inside
+one, each operation runs in the batch's. The **first** operation that fails — a validation `422`, an
 authorization or mutability `403`, a missing target `404`, a `lid` error `400` — rolls
 back the entire batch and returns a single error document. Each error's `source.pointer`
 is prefixed with the failing operation's index, e.g.

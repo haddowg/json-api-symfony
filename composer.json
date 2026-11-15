@@ -40,7 +40,7 @@
     },
     "require-dev": {
         "doctrine/doctrine-bundle": "^2.12",
-        "doctrine/orm": "^3.0",
+        "doctrine/orm": "^3.2",
         "egulias/email-validator": "^4.0",
         "friendsofphp/php-cs-fixer": "^3.64",
         "opis/json-schema": "^2.6",
@@ -63,10 +63,10 @@
     },
     "conflict": {
         "doctrine/dbal": "<3.6",
-        "doctrine/orm": "<2.20 || >=4.0"
+        "doctrine/orm": "<2.20 || >=3.0,<3.2 || >=4.0"
     },
     "suggest": {
-        "doctrine/orm": "Enables the reference Doctrine data provider/persister for zero-handler CRUD endpoints (^2.20 || ^3.0).",
+        "doctrine/orm": "Enables the reference Doctrine data provider/persister for zero-handler CRUD endpoints (^2.20 || ^3.2).",
         "symfony/validator": "Enables translating JSON:API resource constraints into Symfony Validator rules for create/update validation (^6.4 || ^7.0 || ^8.0).",
         "symfony/security-core": "Required to declare security expressions (on #[AsJsonApiResource], relations or #[AsJsonApiAction]); they are evaluated at the lifecycle hooks via the AuthorizationChecker, and the build fails if one is declared without it (^6.4 || ^7.0 || ^8.0).",
         "symfony/expression-language": "Required to declare security expressions; the build fails if one is declared without it (^6.4 || ^7.0 || ^8.0).",

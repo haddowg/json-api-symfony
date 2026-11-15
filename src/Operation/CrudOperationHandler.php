@@ -84,9 +84,9 @@ use haddowg\JsonApiBundle\DataPersister\LinkRowPivots;
 use haddowg\JsonApiBundle\DataPersister\PositionTargets;
 use haddowg\JsonApiBundle\DataPersister\ReportsMovedMembersInterface;
 use haddowg\JsonApiBundle\DataPersister\StoresDateTimesInterface;
-use haddowg\JsonApiBundle\DataPersister\TransactionalDataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\WritesLinkRowsInterface;
 use haddowg\JsonApiBundle\DataPersister\WritesPositionsInterface;
+use haddowg\JsonApiBundle\DataPersister\WriteTransaction;
 use haddowg\JsonApiBundle\DataPersister\WriteTransactionContext;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\CurrentMembers;
@@ -1686,24 +1686,24 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         $request = $this->jsonApiRequest($operation->context());
 
-        // The before-relationship-mutate gate (a throw aborts before the persister
-        // applies the change), then the storage-correct apply, then the after hook
-        // which may replace the linkage response (post-commit).
-        $this->dispatch(new BeforeRelationshipMutateEvent($type, $request, $parent, $relation, $linkage, $mode, $this->serverName($request)));
-
-        // Linkage naming a resource the related endpoint does not serve is rejected as
-        // missing, and a replace keeps the members the scope hides.
-        $scopedLinkage = $this->linkageGuard?->scope($server, $parent, $relation, $linkage, $mode, $request, atEndpoint: true) ?? $linkage;
-        $this->guardMembership($server, $relation, $scopedLinkage, $mode, $body, $parent);
-
         $persister = $this->persisters->forType($type);
-        $this->guardMovedMembers($persister, $type, $request, $parent, $relation, $scopedLinkage, $mode);
 
-        // Applied and checked again before it commits: the changed parent must still pass
-        // its entity-level constraints, and the update gate judges it too, so a caller
+        // From the before-relationship-mutate gate (a throw aborts before the persister
+        // applies the change) through the storage-correct apply, everything runs in one
+        // transaction; the after hook, which may replace the linkage response, runs
+        // post-commit. The changed parent is checked again before it commits: it must still
+        // pass its entity-level constraints, and the update gate judges it too, so a caller
         // can't hand it to someone the gate would refuse them as. A violation or a refusal
-        // rolls the change back.
-        $parent = $this->withinWrite($persister, function () use ($server, $persister, $type, $parent, $relation, $scopedLinkage, $mode, $request): object {
+        // rolls the change back, with anything a before hook flushed.
+        $parent = WriteTransaction::run($persister, $this->txContext, function () use ($server, $persister, $type, $parent, $relation, $linkage, $mode, $request, $body): object {
+            $this->dispatch(new BeforeRelationshipMutateEvent($type, $request, $parent, $relation, $linkage, $mode, $this->serverName($request)));
+
+            // Linkage naming a resource the related endpoint does not serve is rejected as
+            // missing, and a replace keeps the members the scope hides.
+            $scopedLinkage = $this->linkageGuard?->scope($server, $parent, $relation, $linkage, $mode, $request, atEndpoint: true) ?? $linkage;
+            $this->guardMembership($server, $relation, $scopedLinkage, $mode, $body, $parent);
+            $this->guardMovedMembers($persister, $type, $request, $parent, $relation, $scopedLinkage, $mode);
+
             // A relation that declares fillUsing() owns how it is written: run it, then
             // save the parent, rather than having the persister write its column.
             if (!$this->fillsThroughHook($relation)) {
@@ -2305,34 +2305,11 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         $entity = $this->instantiate($server, $persister, $type, $request);
 
-        // Apply the embedded associations BEFORE core hydrates, so a flattened `on()`
-        // attribute (which hydrates AFTER relationships and reads its owner off the
-        // parent) sees a related model associated in the SAME request body.
-        // Relationships are still stripped from the hydrate body, so core's
-        // hydrateRelationships() stays a no-op (no scalar-id assignment).
-        $entity = $this->applyRelationships($server, $persister, $type, $entity, $relationships, $body, $request, creating: true);
-
-        // As on update: an `on()` attribute writes onto the target its relation's related
-        // endpoint serves, so scope the hops below the relations this body set.
-        if ($this->includeBatcher !== null) {
-            $this->relationshipLinkage?->setIncluded(
-                $this->includeBatcher->scopeEagerLoads($server, $type, $entity, $request, $this->bodyRelationshipNames($body)),
-            );
-        }
-
-        $entity = $server->hydratorFor($type)->hydrate($this->datesForStorage($this->types->resourceFor($server, $type), $persister, $entity, $this->withoutRelationships($body)), $entity);
-        \assert(\is_object($entity));
-
-        $this->validateEntity($server, $type, $entity, creating: true);
-
-        // Before-save then before-create gates: a subscriber/hook may mutate the
-        // entity (persisted by the flush below) or throw to abort (the throw
-        // propagates to the ExceptionListener, so the persister never runs and
-        // nothing commits).
-        $this->dispatch(new BeforeSaveEvent($type, $request, $entity, true, $this->serverName($request)));
-        $this->dispatch(new BeforeCreateEvent($type, $request, $entity, $this->serverName($request)));
-
-        $entity = $persister->create($type, $this->unionsForStorage($this->types->resourceFor($server, $type), $persister, $entity, $body, creating: true));
+        // From the first association applied to the persister's write, everything runs in
+        // one transaction, so a flush a before hook makes is undone when a later step throws.
+        $entity = WriteTransaction::run($persister, $this->txContext, function () use ($server, $persister, $type, $entity, $relationships, $body, $request): object {
+            return $this->createWrite($server, $persister, $type, $entity, $relationships, $body, $request);
+        });
         // The write may have changed whether a related row is readable.
         $this->relationshipLinkage?->forgetReadDecisions();
         $this->readRouter?->forget();
@@ -2393,6 +2370,44 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         }, $response);
     }
 
+    /**
+     * The create's write steps, run in its transaction: the body's relationships, hydration,
+     * entity validation, the before hooks and the persister's create.
+     *
+     * @param list<array{relation: RelationInterface, linkage: ToOneRelationship|ToManyRelationship}> $relationships
+     */
+    private function createWrite(Server $server, DataPersisterInterface $persister, string $type, object $entity, array $relationships, JsonApiRequestInterface $body, JsonApiRequestInterface $request): object
+    {
+        // Apply the embedded associations BEFORE core hydrates, so a flattened `on()`
+        // attribute (which hydrates AFTER relationships and reads its owner off the
+        // parent) sees a related model associated in the SAME request body.
+        // Relationships are still stripped from the hydrate body, so core's
+        // hydrateRelationships() stays a no-op (no scalar-id assignment).
+        $entity = $this->applyRelationships($server, $persister, $type, $entity, $relationships, $body, $request, creating: true);
+
+        // As on update: an `on()` attribute writes onto the target its relation's related
+        // endpoint serves, so scope the hops below the relations this body set.
+        if ($this->includeBatcher !== null) {
+            $this->relationshipLinkage?->setIncluded(
+                $this->includeBatcher->scopeEagerLoads($server, $type, $entity, $request, $this->bodyRelationshipNames($body)),
+            );
+        }
+
+        $entity = $server->hydratorFor($type)->hydrate($this->datesForStorage($this->types->resourceFor($server, $type), $persister, $entity, $this->withoutRelationships($body)), $entity);
+        \assert(\is_object($entity));
+
+        $this->validateEntity($server, $type, $entity, creating: true);
+
+        // Before-save then before-create gates: a subscriber/hook may mutate the
+        // entity (persisted by the flush below) or throw to abort (the throw
+        // propagates to the ExceptionListener, so the persister never runs and
+        // nothing commits).
+        $this->dispatch(new BeforeSaveEvent($type, $request, $entity, true, $this->serverName($request)));
+        $this->dispatch(new BeforeCreateEvent($type, $request, $entity, $this->serverName($request)));
+
+        return $persister->create($type, $this->unionsForStorage($this->types->resourceFor($server, $type), $persister, $entity, $body, creating: true));
+    }
+
     private function update(UpdateResourceOperation $operation): DataResponse|AcceptedResponse|ErrorResponse
     {
         $this->linkageGuard?->forget();
@@ -2408,65 +2423,13 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return ErrorResponse::fromException(new ResourceNotFound());
         }
 
-        // The update gate first judges the resource as stored: once the body is
-        // applied, a caller could pass an ownership check by rewriting the owner.
-        $this->dispatch(new BeforeApplyUpdateEvent($type, $request, $entity, $this->serverName($request)));
-
-        // A shallow clone of the loaded target taken before hydration, so a
-        // before-update hook can diff the incoming change against the prior state.
-        $original = clone $entity;
-
-        // The already-loaded target is passed to the validator so a PATCH
-        // validates the MERGED resource state (stored values overlaid by the
-        // incoming partial), not the partial alone — so a cross-field/conditional
-        // rule that depends on a stored sibling absent from the body evaluates
-        // correctly, and a required-on-update field present in stored state but
-        // not re-sent does not spuriously 422.
-        $this->windowBatcher?->check($server, $type, $request);
-        ReadOnlyAttributeGuard::check($server, $this->types->resourceFor($server, $type), $body, creating: false);
-        $this->validate($server, $type, $body, creating: false, existingObject: $entity);
-
-        $serializer = $server->serializerFor($type);
         $persister = $this->persisters->forType($type);
 
-        // As for create: replace the associations named in `data.relationships`
-        // through the persister seam BEFORE core hydrates, so a flattened
-        // `on()` attribute (hydrated AFTER relationships, reading its owner off the
-        // parent) writes onto a related model switched in the SAME request body — not
-        // the previously-associated owner. Relationships are still stripped
-        // from the hydrate body, so core's hydrateRelationships() stays a no-op.
-        $relationships = $this->extractRelationships($server, $type, $body, creating: false);
-
-        // Everything from here to the save runs in one write, so a refusal or a failure
-        // after the body's relationships are applied leaves nothing behind.
-        $entity = $this->withinWrite($persister, function () use ($server, $persister, $type, $entity, $relationships, $body, $request, $original): object {
-            $entity = $this->applyRelationships($server, $persister, $type, $entity, $relationships, $body, $request, creating: false);
-
-            // An `on()` attribute writes onto the target its relation's related endpoint
-            // serves: scope the hops this body did not just set.
-            if ($this->includeBatcher !== null) {
-                $this->relationshipLinkage?->setIncluded(
-                    $this->includeBatcher->scopeEagerLoads($server, $type, $entity, $request, $this->bodyRelationshipNames($body)),
-                );
-            }
-
-            $entity = $server->hydratorFor($type)->hydrate($this->datesForStorage($this->types->resourceFor($server, $type), $persister, $entity, $this->withoutRelationships($body)), $entity);
-            \assert(\is_object($entity));
-
-            $this->validateEntity($server, $type, $entity, creating: false);
-
-            // Before-save then before-update gates (the entity is mutable, `$original`
-            // is the pre-change snapshot): a throw aborts before the persister commits.
-            $this->dispatch(new BeforeSaveEvent($type, $request, $entity, false, $this->serverName($request)));
-            $this->dispatch(new BeforeUpdateEvent($type, $request, $entity, $original, $this->serverName($request)));
-
-            // Each relationship the body set is checked against the changed resource too,
-            // as at the relationship endpoint.
-            foreach ($relationships as $relationship) {
-                $this->dispatch(new BeforeRelationshipCommitEvent($type, $request, $entity, $relationship['relation'], $relationship['linkage'], Mode::Replace, $this->serverName($request)));
-            }
-
-            return $persister->update($type, $this->unionsForStorage($this->types->resourceFor($server, $type), $persister, $entity, $body, creating: false));
+        // Everything from the first before hook to the save runs in one transaction, so a
+        // refusal or a failure after a hook flushed or the body's relationships were applied
+        // leaves nothing behind.
+        $entity = WriteTransaction::run($persister, $this->txContext, function () use ($server, $persister, $type, $entity, $body, $request): object {
+            return $this->updateWrite($server, $persister, $type, $entity, $body, $request);
         });
         // The write may have changed whether a related row is readable.
         $this->relationshipLinkage?->forgetReadDecisions();
@@ -2478,6 +2441,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         if ($entity instanceof AcceptedForProcessing) {
             return $this->accepted($entity, $server);
         }
+
+        $serializer = $server->serializerFor($type);
 
         // As for create: the PATCH response is the SAME DataResponse::fromResource VO,
         // so it honours the Relationship Queries profile and ?withCount identically —
@@ -2508,33 +2473,65 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
     }
 
     /**
-     * Runs `$write` in the persister's transaction, rolling it back when `$write` throws,
-     * so a write a later check refuses commits nothing. Inside an Atomic Operations batch
-     * the batch owns the transaction, and a persister that can't transact runs it as is.
-     *
-     * @template T
-     *
-     * @param \Closure(): T $write
-     *
-     * @return T
+     * The update's write steps, run in its transaction: the update gate on the stored
+     * resource, validation, the body's relationships, hydration, entity validation, the
+     * before hooks and the persister's update.
      */
-    private function withinWrite(DataPersisterInterface $persister, \Closure $write): mixed
+    private function updateWrite(Server $server, DataPersisterInterface $persister, string $type, object $entity, JsonApiRequestInterface $body, JsonApiRequestInterface $request): object
     {
-        if (!$persister instanceof TransactionalDataPersisterInterface || ($this->txContext?->isActive() ?? false)) {
-            return $write();
+        // The update gate first judges the resource as stored: once the body is
+        // applied, a caller could pass an ownership check by rewriting the owner.
+        $this->dispatch(new BeforeApplyUpdateEvent($type, $request, $entity, $this->serverName($request)));
+
+        // A shallow clone of the loaded target taken before hydration, so a
+        // before-update hook can diff the incoming change against the prior state.
+        $original = clone $entity;
+
+        // The already-loaded target is passed to the validator so a PATCH
+        // validates the MERGED resource state (stored values overlaid by the
+        // incoming partial), not the partial alone — so a cross-field/conditional
+        // rule that depends on a stored sibling absent from the body evaluates
+        // correctly, and a required-on-update field present in stored state but
+        // not re-sent does not spuriously 422.
+        $this->windowBatcher?->check($server, $type, $request);
+        ReadOnlyAttributeGuard::check($server, $this->types->resourceFor($server, $type), $body, creating: false);
+        $this->validate($server, $type, $body, creating: false, existingObject: $entity);
+
+        // As for create: replace the associations named in `data.relationships`
+        // through the persister seam BEFORE core hydrates, so a flattened
+        // `on()` attribute (hydrated AFTER relationships, reading its owner off the
+        // parent) writes onto a related model switched in the SAME request body — not
+        // the previously-associated owner. Relationships are still stripped
+        // from the hydrate body, so core's hydrateRelationships() stays a no-op.
+        $relationships = $this->extractRelationships($server, $type, $body, creating: false);
+
+        $entity = $this->applyRelationships($server, $persister, $type, $entity, $relationships, $body, $request, creating: false);
+
+        // An `on()` attribute writes onto the target its relation's related endpoint
+        // serves: scope the hops this body did not just set.
+        if ($this->includeBatcher !== null) {
+            $this->relationshipLinkage?->setIncluded(
+                $this->includeBatcher->scopeEagerLoads($server, $type, $entity, $request, $this->bodyRelationshipNames($body)),
+            );
         }
 
-        $persister->beginTransaction();
-        try {
-            $result = $write();
-        } catch (\Throwable $throwable) {
-            $persister->rollback();
+        $entity = $server->hydratorFor($type)->hydrate($this->datesForStorage($this->types->resourceFor($server, $type), $persister, $entity, $this->withoutRelationships($body)), $entity);
+        \assert(\is_object($entity));
 
-            throw $throwable;
+        $this->validateEntity($server, $type, $entity, creating: false);
+
+        // Before-save then before-update gates (the entity is mutable, `$original`
+        // is the pre-change snapshot): a throw aborts before the persister commits.
+        $this->dispatch(new BeforeSaveEvent($type, $request, $entity, false, $this->serverName($request)));
+        $this->dispatch(new BeforeUpdateEvent($type, $request, $entity, $original, $this->serverName($request)));
+
+        // Each relationship the body set is checked against the changed resource too,
+        // as at the relationship endpoint.
+        foreach ($relationships as $relationship) {
+            $this->dispatch(new BeforeRelationshipCommitEvent($type, $request, $entity, $relationship['relation'], $relationship['linkage'], Mode::Replace, $this->serverName($request)));
         }
-        $persister->commit();
 
-        return $result;
+        return $persister->update($type, $this->unionsForStorage($this->types->resourceFor($server, $type), $persister, $entity, $body, creating: false));
     }
 
     /**
@@ -3135,15 +3132,19 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         }
 
         // The before-delete gate (a throw aborts before the persister deletes — a
-        // delete guard's natural seam, e.g. a 409 when the resource is referenced).
-        $this->dispatch(new BeforeDeleteEvent($type, $request, $entity, $this->serverName($request)));
-
+        // delete guard's natural seam, e.g. a 409 when the resource is referenced), then
+        // the delete, in one transaction: a write the gate made is undone when the delete fails.
+        $persister = $this->persisters->forType($type);
         $deletes = $this->types->resourceFor($this->server($operation->context()), $type);
-        if ($deletes instanceof DeletesEntityInterface) {
-            $deletes->delete($entity, new HookContext($request, $this->serverName($request), $type));
-        } else {
-            $this->persisters->forType($type)->delete($type, $entity);
-        }
+        WriteTransaction::run($persister, $this->txContext, function () use ($type, $request, $entity, $persister, $deletes): void {
+            $this->dispatch(new BeforeDeleteEvent($type, $request, $entity, $this->serverName($request)));
+
+            if ($deletes instanceof DeletesEntityInterface) {
+                $deletes->delete($entity, new HookContext($request, $this->serverName($request), $type));
+            } else {
+                $persister->delete($type, $entity);
+            }
+        });
 
         $response = NoContentResponse::create();
 
