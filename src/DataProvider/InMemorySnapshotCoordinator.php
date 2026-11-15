@@ -66,6 +66,15 @@ final class InMemorySnapshotCoordinator implements ResetInterface
     private array $capturedNextIds = [];
 
     /**
+     * How many transactions are open. A write opens its own transaction, and a lifecycle
+     * hook may open one inside it, so they nest: only the outermost open captures the
+     * pre-image and only the outermost commit discards it, so an inner commit leaves the
+     * outer one able to roll back. A {@see restore()} unwinds every level at once, as
+     * rolling back an outer database transaction discards its savepoints.
+     */
+    private int $depth = 0;
+
+    /**
      * Registers a store so it participates in coordinated snapshots. Idempotent — a
      * store already registered is not added twice.
      */
@@ -85,6 +94,7 @@ final class InMemorySnapshotCoordinator implements ResetInterface
      */
     public function open(): bool
     {
+        ++$this->depth;
         if ($this->captured !== null) {
             return false;
         }
@@ -111,6 +121,7 @@ final class InMemorySnapshotCoordinator implements ResetInterface
      */
     public function restore(): void
     {
+        $this->depth = 0;
         if ($this->captured === null) {
             return;
         }
@@ -133,6 +144,13 @@ final class InMemorySnapshotCoordinator implements ResetInterface
      */
     public function commit(): void
     {
+        if ($this->depth > 0) {
+            --$this->depth;
+        }
+        if ($this->depth > 0) {
+            return;
+        }
+
         $this->captured = null;
         $this->capturedNextIds = [];
     }
@@ -159,5 +177,6 @@ final class InMemorySnapshotCoordinator implements ResetInterface
     {
         $this->captured = null;
         $this->capturedNextIds = [];
+        $this->depth = 0;
     }
 }

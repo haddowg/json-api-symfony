@@ -241,13 +241,23 @@ it leaves the five write methods abstract and supplies a default
 mutates relationships simply never triggers it; one that exposes a writable
 relationship overrides it.
 
+#### Optional persister capabilities
+
 Two optional interfaces extend a persister. The Doctrine persister implements both,
 the in-memory one only the first:
 
 - [`TransactionalDataPersisterInterface`](../src/DataPersister/TransactionalDataPersisterInterface.php)
-  lets the handler wrap a write in one transaction, so a subscriber that throws after
-  the change is applied rolls it back, and an
-  [Atomic Operations](atomic-operations.md) batch can commit as one.
+  (`beginTransaction()`, `commit()`, `rollback()`) gives every write through the
+  persister one transaction. The handler opens it before a create, update, delete or
+  relationship write's first step, so the body's relationships, hydration, validation and
+  every before hook run in it, and commits it after the persister's write (see
+  [lifecycle hooks](lifecycle-hooks.md#hooks-run-inside-the-writes-transaction)). A
+  [custom action](actions.md#transactions) called with a writing method runs in one too, and an
+  [Atomic Operations](atomic-operations.md) batch runs all its writes in one. A persister
+  that doesn't implement it writes without a transaction, and a batch that touches its
+  type is refused. `rollback()` has to undo everything since the matching
+  `beginTransaction()`, including a transaction a hook opened inside it and left open, and
+  must be safe to call after a failed `commit()`. Both shipped persisters do this.
 - [`ReportsMovedMembersInterface`](../src/DataPersister/ReportsMovedMembersInterface.php)
   (`movedMembers()`) reports each child a to-many add or replace would take from
   another parent, so the handler can dispatch a `BeforeMemberMoveEvent` and the
@@ -707,7 +717,9 @@ example app's `artists` declares a singular `slug` filter; `GET
 ### Writes
 
 Writes share one shape: resolve the persister, drive core's per-type hydrator
-(`Server::hydratorFor()`), commit, render.
+(`Server::hydratorFor()`), commit, render. The steps from the first write step through
+the persister's write run in one transaction when the persister is transactional, and
+the after hooks run once it has committed.
 
 - `create()` validates the body, hydrates a fresh `instantiate()` instance, applies
   any embedded relationships, persists, and renders `201` with a `Location` header.

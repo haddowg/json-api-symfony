@@ -171,6 +171,17 @@ so a polling client sees `202` until the work finishes and then a single `303`.
   batch's all-or-nothing commit — so a persister that returns `AcceptedForProcessing`
   inside a batch fails that sub-operation (`422`) and the batch rolls back. Keep async
   types out of atomic batches.
+- **Transactions.** When the persister is
+  [transactional](data-layer.md#optional-persister-capabilities), the write still runs in
+  its [transaction](lifecycle-hooks.md#hooks-run-inside-the-writes-transaction), and the
+  accept commits it: whatever the before hooks wrote, and anything the persister stored to
+  track the job, is durable when the `202` goes out. The change the client asked for is
+  the job's to make. The Doctrine persister's commit flushes nothing, so the hydrated
+  entity of an accepted update stays unwritten, but it is still managed and dirty, so
+  detach it in your persister if anything else in the request flushes. A message the
+  persister dispatches leaves before the commit, so a worker can start on it first; a
+  transport on the same database connection, such as Messenger's Doctrine transport,
+  only delivers it once the transaction commits. The after hooks don't run for a `202`.
 - **Scope.** The seam covers `create()` and `update()`. `delete()` returns `void`, so
   an async delete is not expressible through it today.
 - **Portability.** `AcceptedResponse`/`SeeOtherResponse` are core, framework-neutral

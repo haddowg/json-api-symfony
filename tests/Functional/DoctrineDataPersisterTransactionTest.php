@@ -17,7 +17,7 @@ use PHPUnit\Framework\Attributes\Test;
  * the seam the Atomic Operations executor drives. begin → per-operation write
  * (its flush is non-durable while the transaction is open, yet materialises the
  * store-generated id immediately) → commit persists durably; begin → write →
- * rollback discards the write entirely AND closes the (now-tainted) EntityManager.
+ * rollback discards the write and leaves the EntityManager open and cleared.
  *
  * Exercised against the real Doctrine + in-memory SQLite functional kernel over
  * the store-provided `AUTO` int-PK {@see TagEntity}, the simple write witness.
@@ -90,6 +90,89 @@ final class DoctrineDataPersisterTransactionTest extends JsonApiFunctionalTestCa
         // The INSERT was NOT durable: a fresh query finds no row.
         $count = $connection->fetchOne('SELECT COUNT(*) FROM tag');
         self::assertSame(0, \is_numeric($count) ? (int) $count : -1);
+    }
+
+    #[Test]
+    public function aRollbackAlsoClosesATransactionAHookOpenedInsideIt(): void
+    {
+        $persister = $this->persister();
+        $connection = $this->entityManager()->getConnection();
+
+        $persister->beginTransaction();
+        // A hook opens its own and throws before it commits.
+        $this->entityManager()->beginTransaction();
+        $persister->create('tags', new TagEntity(name: 'hooked'));
+        self::assertSame(2, $connection->getTransactionNestingLevel());
+
+        $persister->rollback();
+
+        self::assertSame(0, $connection->getTransactionNestingLevel());
+        self::assertSame(0, $this->tagCount());
+    }
+
+    #[Test]
+    public function aCommitLeavesATransactionAHookOpenedForTheHookToCommit(): void
+    {
+        $persister = $this->persister();
+        $connection = $this->entityManager()->getConnection();
+
+        $persister->beginTransaction();
+        $this->entityManager()->beginTransaction();
+        $persister->create('tags', new TagEntity(name: 'hooked'));
+
+        $persister->commit();
+        self::assertSame(1, $connection->getTransactionNestingLevel());
+
+        // The hook's own commit, in an after hook, closes the outermost level.
+        $this->entityManager()->commit();
+        self::assertSame(0, $connection->getTransactionNestingLevel());
+        self::assertSame(1, $this->tagCount());
+    }
+
+    #[Test]
+    public function aRollbackAfterAFailedFlushLeavesNoTransactionOpen(): void
+    {
+        $persister = $this->persister();
+        $connection = $this->entityManager()->getConnection();
+
+        $persister->beginTransaction();
+        // SQLite's DDL is transactional, so the rollback brings the table back.
+        $connection->executeStatement('DROP TABLE tag');
+
+        try {
+            $persister->create('tags', new TagEntity(name: 'lost'));
+            self::fail('The flush should fail.');
+        } catch (\Doctrine\DBAL\Exception) {
+        }
+        self::assertFalse($this->entityManager()->isOpen());
+        self::assertSame(1, $connection->getTransactionNestingLevel());
+
+        $persister->rollback();
+
+        self::assertSame(0, $connection->getTransactionNestingLevel());
+        self::assertSame(0, $this->tagCount());
+    }
+
+    #[Test]
+    public function aResetRollsBackATransactionTheWorkerLeftOpen(): void
+    {
+        $persister = $this->persister();
+        $connection = $this->entityManager()->getConnection();
+
+        $persister->beginTransaction();
+        $persister->create('tags', new TagEntity(name: 'stranded'));
+
+        $persister->reset();
+
+        self::assertSame(0, $connection->getTransactionNestingLevel());
+        self::assertSame(0, $this->tagCount());
+    }
+
+    private function tagCount(): int
+    {
+        $count = $this->entityManager()->getConnection()->fetchOne('SELECT COUNT(*) FROM tag');
+
+        return \is_numeric($count) ? (int) $count : -1;
     }
 
     private function persister(): DoctrineDataPersister&TransactionalDataPersisterInterface

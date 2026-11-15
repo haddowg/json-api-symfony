@@ -42,6 +42,7 @@ use haddowg\JsonApiBundle\DataProvider\Doctrine\PivotAssociation;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\PivotAssociationResolver;
 use haddowg\JsonApiBundle\Server\IdEncoderResolver;
 use haddowg\JsonApiBundle\Validation\RelationshipTypeUnacceptable;
+use Symfony\Contracts\Service\ResetInterface;
 
 /**
  * The reference Doctrine ORM write persister — the write twin of the
@@ -80,7 +81,7 @@ use haddowg\JsonApiBundle\Validation\RelationshipTypeUnacceptable;
  * (`404`), rather than passing the raw wire string to `getReference` (which would
  * build a proxy that errors on initialization, surfacing as a `500`).
  */
-final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivotRowsInterface, TransactionalDataPersisterInterface, ReportsMovedMembersInterface, StoresDateTimesInterface, WritesLinkRowsInterface, WritesPositionsInterface
+final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivotRowsInterface, TransactionalDataPersisterInterface, ReportsMovedMembersInterface, StoresDateTimesInterface, WritesLinkRowsInterface, WritesPositionsInterface, ResetInterface
 {
     private readonly DoctrineIdentifiers $ids;
 
@@ -92,6 +93,14 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
      * @var (\Closure(object, object, array<string, mixed>): ?object)|null
      */
     private ?\Closure $pivotRowFactory = null;
+
+    /**
+     * The connection's nesting level before each transaction this persister opened,
+     * innermost last.
+     *
+     * @var list<int>
+     */
+    private array $openedAt = [];
 
     /**
      * @param array<string, class-string>    $entityClassByType a `type → entity FQCN` map
@@ -115,48 +124,83 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
      * {@see rollback()}), yet still materialise a store-generated id on the entity
      * immediately, so a later operation in the same batch can reference a
      * just-created resource's id (empirically confirmed against Doctrine + sqlite).
+     *
+     * The connection's nesting level before it opens is kept, so {@see rollback()} can
+     * close every level opened inside this one as well.
      */
     public function beginTransaction(): void
     {
+        $level = $this->entityManager->getConnection()->getTransactionNestingLevel();
         $this->entityManager->beginTransaction();
+        $this->openedAt[] = $level;
     }
 
     /**
-     * Flushes any still-pending changes, then commits the transaction — durably
-     * persisting every write the batch made since {@see beginTransaction()}.
+     * Commits the transaction, durably persisting every write flushed since
+     * {@see beginTransaction()}. It flushes nothing itself: each write flushes its own
+     * changes, and an update a persister accepted for asynchronous processing leaves its
+     * hydrated entity unflushed, so the commit must not write it.
+     *
+     * A transaction a lifecycle hook opened inside this one and has not closed yet stays
+     * open: the commit closes one level, and the hook's own commit closes the outermost.
      */
     public function commit(): void
     {
-        $this->entityManager->flush();
+        $this->forgetClosedLevels();
         $this->entityManager->commit();
+        \array_pop($this->openedAt);
     }
 
     /**
-     * Rolls the transaction back (discarding every buffered write) and clears the unit
-     * of work, so the entities the rolled-back batch flushed are detached rather than
-     * lingering in the identity map as phantom managed state. The manager is left
-     * **open and reusable** — the request still has to render the error document, and a
-     * long-running worker reuses the manager on its next message; closing it would
-     * strand both (and forces a fragile reopen that breaks under older Doctrine ORM).
+     * Rolls back every level the connection opened since the matching
+     * {@see beginTransaction()}, including one a hook opened inside it and left open,
+     * then clears the unit of work, so the entities the rolled-back writes flushed are
+     * detached rather than lingering in the identity map as phantom managed state. The
+     * manager is left **open and reusable** — the request still has to render the error
+     * document, and a long-running worker reuses the manager on its next message;
+     * closing it would strand both (and forces a fragile reopen that breaks under older
+     * Doctrine ORM).
      *
-     * GUARDED: a no-op when the manager is already closed or
-     * has no active transaction. The atomic executor's commit-failure path rolls back
-     * AFTER a failed commit (whose flush exception itself rolls back and closes the
-     * manager), so an unconditional `rollback()` here would throw a secondary
-     * `ConnectionException`/`EntityManagerClosed` that masks the original failure. The
-     * guard makes the rollback idempotent so the real error surfaces.
+     * A failed flush has already closed the manager and rolled back its own level by the
+     * time this runs, so the connection is unwound whether or not the manager is open:
+     * otherwise its outer transaction would stay open on the connection a worker's next
+     * request runs on. Safe to call when nothing is open.
      */
     public function rollback(): void
     {
-        if (!$this->entityManager->isOpen()) {
-            return;
+        $this->forgetClosedLevels();
+        $level = \array_pop($this->openedAt) ?? 0;
+        $connection = $this->entityManager->getConnection();
+        while ($connection->getTransactionNestingLevel() > $level) {
+            $connection->rollBack();
         }
 
-        if ($this->entityManager->getConnection()->isTransactionActive()) {
-            $this->entityManager->rollback();
+        if ($this->entityManager->isOpen()) {
+            $this->entityManager->clear();
         }
+    }
 
-        $this->entityManager->clear();
+    /**
+     * Rolls back a transaction this persister opened and never closed, between requests
+     * in a long-running worker, so the next request does not run inside it.
+     */
+    public function reset(): void
+    {
+        while ($this->openedAt !== []) {
+            $this->rollback();
+        }
+    }
+
+    /**
+     * Drops the levels the connection has already closed, when code outside the persister
+     * committed or rolled back the transaction it opened.
+     */
+    private function forgetClosedLevels(): void
+    {
+        $current = $this->entityManager->getConnection()->getTransactionNestingLevel();
+        while ($this->openedAt !== [] && \end($this->openedAt) >= $current) {
+            \array_pop($this->openedAt);
+        }
     }
 
     public function supports(string $type): bool

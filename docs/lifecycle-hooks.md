@@ -103,7 +103,8 @@ to diff against). The other hook methods differ only in what comes before the
   - **Mutate the entity** — a field you set is persisted by the ensuing flush.
   - **Abort** — `throw` a core `JsonApiExceptionInterface`. The route-scoped
     [`ExceptionListener`](errors.md) renders it as the status it carries, and
-    nothing commits. Use a `403` for an authorization/guard failure, `422` for an
+    nothing commits, including anything an earlier before hook wrote (see
+    [hooks run inside the write's transaction](#hooks-run-inside-the-writes-transaction)). Use a `403` for an authorization/guard failure, `422` for an
     imperative-validation failure, `409` for a conflict.
 - An **after** hook (`AfterSave`, `AfterCreate`, `AfterUpdate`, `AfterDelete`,
   `AfterRelationshipMutate`, `AfterFetchOne`, `AfterFetchCollection`) runs
@@ -123,6 +124,46 @@ strategy (`page`, `offset`, `cursor` and so on). It is `null` when no pagination
 ran, either because the resource's `pagination()` returned `null` or because a
 singular filter collapsed the collection. The resource hook method doesn't receive
 it, so subscribe to the event when a response replacement depends on it.
+
+## Hooks run inside the write's transaction
+
+Every create, update, delete and relationship write runs in one transaction on its
+type's persister, when the persister implements
+[`TransactionalDataPersisterInterface`](data-layer.md#optional-persister-capabilities)
+as the Doctrine and in-memory ones do. The transaction opens before the write's first
+step and commits once the persister has written:
+
+| Write | Inside the transaction |
+| --- | --- |
+| create | the body's relationships, hydration, entity validation, `BeforeSave`, `BeforeCreate`, the persister's `create()` |
+| update | `BeforeApplyUpdate`, validation, the body's relationships, hydration, entity validation, `BeforeSave`, `BeforeUpdate`, `BeforeRelationshipCommit`, the persister's `update()` |
+| delete | `BeforeDelete`, then the persister's `delete()` or the resource's [`DeletesEntityInterface::delete()`](doctrine.md#deleting-without-the-persister) |
+| relationship endpoints | `BeforeRelationshipMutate`, the apply, entity validation, `BeforeRelationshipCommit` |
+
+A before hook that writes joins the transaction. A flush it makes on the same connection
+is undone if a later hook, a validation or the persister's own write throws, so a hook
+that has to flush early, for example to give a new row its id, needs no transaction of
+its own to stay undoable. The after hooks run once the transaction has committed: what
+they read is durable, and a throw from one fails the response without undoing the write.
+
+There is no switch to turn this off. Inside an [Atomic Operations](atomic-operations.md)
+batch the batch's transaction covers the write instead, and a persister that can't
+transact runs the write without one. [Custom actions](actions.md#transactions) called
+with `POST`, `PATCH`, `PUT` or `DELETE` run in one too.
+
+A hook may still open its own transaction. It nests inside the write's: on Doctrine it
+becomes a savepoint, and committing it closes that level only. If the write fails, the
+rollback also closes a transaction the hook opened and has not committed, so the
+connection is never left mid-transaction for the next request a worker serves. On
+Doctrine the rollback also clears the `EntityManager`, which detaches every entity the
+request had loaded. When the failure is a flush, Doctrine has already closed the
+manager; Symfony's `kernel.reset` gives the next request a fresh one.
+
+A rollback undoes only what went through the connection. A message dispatched to a
+queue, an email sent or an HTTP call made from a before hook has already happened. Do
+that work in an after hook, or send messages through a transport that writes to the same
+database connection, such as Symfony Messenger's Doctrine transport, so the rollback
+discards them too.
 
 ## Mechanism 1 — an event subscriber (cross-cutting)
 

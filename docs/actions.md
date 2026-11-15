@@ -857,7 +857,41 @@ events](lifecycle-hooks.md), symmetric with the CRUD hooks. `BeforeActionEvent`
 fires after entity resolution and before the handler (it carries the type, the
 action name, the subject, and any `security` expression); `AfterActionEvent` fires
 after the handler returns. Subscribe to them for cross-cutting concerns — an audit
-log, a custom authorization rule, a metric.
+log, a custom authorization rule, a metric. For a writing action both run inside its
+[transaction](#transactions).
+
+## Transactions
+
+An action called with `POST`, `PATCH`, `PUT` or `DELETE` runs in one transaction on a
+persister, when that persister implements
+[`TransactionalDataPersisterInterface`](data-layer.md#optional-persister-capabilities).
+The transaction opens before `BeforeActionEvent` and commits after `AfterActionEvent`, so
+it covers the gate, the handler and everything after it that can still throw before the
+response value object is returned. If any of it throws, everything written through that
+connection is rolled back: a `flush()` in the handler, a write through a persister, a
+change a subscriber made. A `GET` action runs without one. So does an action inside an
+[Atomic Operations](atomic-operations.md) batch, where the batch owns the transaction.
+
+The persister is the mount `type`'s, for collection and resource actions alike. When the
+mount type has none, as a read-only type may not, the `inputType`'s persister is used, and
+with neither the action runs without a transaction. On Doctrine every entity-mapped type shares one `EntityManager`, so whichever
+type's persister it is, the transaction covers every entity the handler writes.
+
+Unlike a CRUD write, whose after hooks run once the write has committed,
+`AfterActionEvent` runs inside the action's transaction, so a subscriber that throws there
+undoes the action. Rendering the response comes after the commit.
+
+A rollback can't take back what left the database. A message dispatched to a queue, an
+email sent or an HTTP call made during the action has already happened when a later step
+throws, and a worker may pick up a dispatched message before the transaction commits.
+Send messages through a transport that writes to the same connection, such as Symfony
+Messenger's Doctrine transport, so the rollback discards them and a worker only sees them
+once they commit, or make the external call the action's last step.
+
+A collection action that works through many rows, like the
+[`archive` example above](#taking-the-types-filters), holds one transaction for all of
+them, along with the row locks it takes. Flushing each batch, as the example does, keeps
+memory down but commits nothing until the action returns.
 
 ## Error responses
 

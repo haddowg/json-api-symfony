@@ -409,12 +409,23 @@ carries each member's pivot values (see
   then breaks the primary key, and the persister answers the same `409` when that
   violation came from its own row's insert and a row with the id is there. If the database
   refuses that second lookup, as PostgreSQL does in a failed transaction, the violation
-  stays a `500`. The
+  stays a `500`. The create runs inside the write's transaction, so on PostgreSQL the
+  lookup works only when Doctrine nests its flush as a savepoint, which DBAL 4 always does
+  and DBAL 3 does with savepoints enabled. The
   in-memory persister refuses a taken id the same way.
 - **`update()`** relies on the target being a *managed* instance the hydrator
   mutated in place — the provider loaded it through this same `EntityManager`, so
   `update()` is just `flush()`. There is no `persist`/`merge`.
 - **`delete()`** is `remove()` + `flush()`.
+- **Every write runs in a transaction.** The handler opens one through the persister
+  before the write's first step (see
+  [lifecycle hooks](lifecycle-hooks.md#hooks-run-inside-the-writes-transaction)), so each
+  flush above, and any flush a before hook makes, is undone if a later step throws.
+  `commit()` commits and flushes nothing itself. `rollback()` rolls the connection back
+  to where the transaction began, closing any transaction a hook opened inside it, and
+  clears the `EntityManager`, leaving it open for the error response and the next
+  request. The persister is reset between requests (`kernel.reset`), so a worker never
+  starts a request inside a transaction an earlier one left open.
 - **Client date-times are written in the storage zone.** A client may send
   `2026-10-01T16:00:00Z` to a naive `datetime` column. Before core hydrates a create or
   update, each `DateTime` attribute the request sends for such a column is moved to the
@@ -592,7 +603,9 @@ A type that deletes differently, such as a soft delete through a domain service,
 implements `DeletesEntityInterface` on its resource. The handler then calls its
 `delete()` in place of the persister's, after the before-delete gates and before the
 after-delete hooks. Every other write still goes through the Doctrine persister, so
-there is no persister to write or decorate. The hook commits its own change:
+there is no persister to write or decorate. The hook makes its own change, inside the
+delete's transaction: its flush commits once it returns, and a throw from it rolls back
+what the before-delete hooks wrote too:
 
 ```php
 use haddowg\JsonApiBundle\Hook\DeletesEntityInterface;
