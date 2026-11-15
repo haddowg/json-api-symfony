@@ -241,7 +241,7 @@ abstract class FillUsingConformanceTestCase extends JsonApiFunctionalTestCase
     }
 
     #[Test]
-    public function theRelationshipEndpointsRefuseAMissingSettingAndRemoveLeavesItAlone(): void
+    public function theRelationshipEndpointsRefuseAMissingSettingOnEveryMode(): void
     {
         $this->assertWritten($this->handle('/fill-files/1/relationships/setting', 'PATCH', ['data' => ['type' => 'fill-settings', 'id' => '1']]));
         $this->assertWritten($this->handle('/fill-files/1/relationships/settings', 'PATCH', ['data' => [['type' => 'fill-settings', 'id' => '1']]]));
@@ -252,8 +252,10 @@ abstract class FillUsingConformanceTestCase extends JsonApiFunctionalTestCase
         self::assertSame('1', $this->storedSetting(1));
         self::assertSame(['1'], $this->storedSettings(1));
 
-        // Removing a member the relationship does not hold changes nothing, as on any relation.
-        $this->assertWritten($this->handle('/fill-files/1/relationships/settings', 'DELETE', ['data' => [['type' => 'fill-settings', 'id' => '9']]]));
+        // Removing an existing setting the relationship does not hold changes nothing, but
+        // one that does not exist is missing, as on any relation.
+        $this->assertNotFound($this->handle('/fill-files/1/relationships/settings', 'DELETE', ['data' => [['type' => 'fill-settings', 'id' => '9']]]));
+        $this->assertWritten($this->handle('/fill-files/1/relationships/settings', 'DELETE', ['data' => [['type' => 'fill-settings', 'id' => '2']]]));
         self::assertSame(['1'], $this->storedSettings(1));
 
         $this->assertWritten($this->handle('/fill-files/1/relationships/settings', 'POST', ['data' => [['type' => 'fill-settings', 'id' => '2']]]));

@@ -303,15 +303,15 @@ abstract class IdentifiedMorphToManyConformanceTestCase extends JsonApiFunctiona
     }
 
     #[Test]
-    public function removingAMissingRowLeavesTheRowsAlone(): void
+    public function removingAMissingRowIsNotFoundAndRemovingANonMemberChangesNothing(): void
     {
         $before = $this->storedCompanies(3);
         foreach (['/users/3/relationships/companies', '/accounts/3/relationships/companies'] as $path) {
-            $response = $this->handle($path, 'DELETE', ['data' => [['type' => 'publishers', 'id' => '99']]]);
-            // A scoped read refuses an id it does not serve on every write, a remove too.
-            if (!$this->hides()) {
-                self::assertSame(200, $response->getStatusCode(), $path . ': ' . $response->getContent());
-            }
+            $missing = $this->handle($path, 'DELETE', ['data' => [['type' => 'publishers', 'id' => '99']]]);
+            self::assertSame(404, $missing->getStatusCode(), $path . ': ' . $missing->getContent());
+
+            $nonMember = $this->handle($path, 'DELETE', ['data' => [['type' => 'advertisers', 'id' => '2']]]);
+            self::assertSame(200, $nonMember->getStatusCode(), $path . ': ' . $nonMember->getContent());
         }
 
         self::assertSame($before, $this->storedCompanies(3));

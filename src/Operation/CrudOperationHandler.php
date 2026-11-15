@@ -39,6 +39,7 @@ use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Request\RelatedQuery;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\DateTimeParser;
+use haddowg\JsonApi\Resource\Field\AbstractFieldValue;
 use haddowg\JsonApi\Resource\Field\Accessor;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\Date;
@@ -84,7 +85,6 @@ use haddowg\JsonApiBundle\DataPersister\PositionTargets;
 use haddowg\JsonApiBundle\DataPersister\ReportsMovedMembersInterface;
 use haddowg\JsonApiBundle\DataPersister\StoresDateTimesInterface;
 use haddowg\JsonApiBundle\DataPersister\TransactionalDataPersisterInterface;
-use haddowg\JsonApiBundle\DataPersister\UnresolvedLinkage;
 use haddowg\JsonApiBundle\DataPersister\WritesLinkRowsInterface;
 use haddowg\JsonApiBundle\DataPersister\WritesPositionsInterface;
 use haddowg\JsonApiBundle\DataPersister\WriteTransactionContext;
@@ -1679,7 +1679,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         };
         // A member the scope hides validates as a new one, as a missing one would.
         if ($existingPivot !== [] && $relation instanceof BelongsToMany && $linkage instanceof ToManyRelationship && $this->linkageGuard !== null) {
-            $existingPivot = $this->linkageGuard->visiblePivot($relation, $existingPivot, $linkage);
+            $existingPivot = $this->linkageGuard->visiblePivot($server, $relation, $existingPivot, $linkage, $this->jsonApiRequest($operation->context()));
         }
         $this->validateLinkage($relation, $linkage, $mode, $existingPivot);
 
@@ -1690,13 +1690,12 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // which may replace the linkage response (post-commit).
         $this->dispatch(new BeforeRelationshipMutateEvent($type, $request, $parent, $relation, $linkage, $mode, $this->serverName($request)));
 
-        $persister = $this->persisters->forType($type);
-
         // Linkage naming a resource the related endpoint does not serve is rejected as
         // missing, and a replace keeps the members the scope hides.
-        $scopedLinkage = $this->linkageGuard?->scope($server, $parent, $relation, $linkage, $mode, $request, atEndpoint: true, unresolved: UnresolvedLinkage::writtenBy($persister, $relation)) ?? $linkage;
+        $scopedLinkage = $this->linkageGuard?->scope($server, $parent, $relation, $linkage, $mode, $request, atEndpoint: true) ?? $linkage;
         $this->guardMembership($server, $relation, $scopedLinkage, $mode, $body, $parent);
 
+        $persister = $this->persisters->forType($type);
         $this->guardMovedMembers($persister, $type, $request, $parent, $relation, $scopedLinkage, $mode);
 
         // Applied and checked again before it commits: the changed parent must still pass
@@ -1706,7 +1705,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $parent = $this->withinWrite($persister, function () use ($server, $persister, $type, $parent, $relation, $scopedLinkage, $mode, $request): object {
             // A relation that declares fillUsing() owns how it is written: run it, then
             // save the parent, rather than having the persister write its column.
-            if (!UnresolvedLinkage::fillsThroughHook($relation)) {
+            if (!$this->fillsThroughHook($relation)) {
                 $parent = $this->mutateMembers($server, $persister, $type, $parent, $relation, $scopedLinkage, $mode, $request, flush: true);
             } else {
                 $parent = $this->fillRelationship($server, $persister, $relation, $parent, $scopedLinkage, $mode, $request, endpoint: true);
@@ -1714,7 +1713,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $this->validateEntity($server, $type, $parent, creating: false);
             $this->dispatch(new BeforeRelationshipCommitEvent($type, $request, $parent, $relation, $scopedLinkage, $mode, $this->serverName($request)));
 
-            return UnresolvedLinkage::fillsThroughHook($relation) ? $persister->update($type, $parent) : $parent;
+            return $this->fillsThroughHook($relation) ? $persister->update($type, $parent) : $parent;
         });
         if ($parent instanceof AcceptedForProcessing) {
             return $this->accepted($parent, $server);
@@ -2708,14 +2707,14 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $this->serverName($request),
             ));
 
-            $linkage = $this->linkageGuard?->scope($server, $entity, $relationship['relation'], $relationship['linkage'], Mode::Replace, $body, $creating, unresolved: UnresolvedLinkage::writtenBy($persister, $relationship['relation']))
+            $linkage = $this->linkageGuard?->scope($server, $entity, $relationship['relation'], $relationship['linkage'], Mode::Replace, $body, $creating)
                 ?? $relationship['linkage'];
             if ($creating === false) {
                 $this->guardMembership($server, $relationship['relation'], $linkage, Mode::Replace, $body, $entity);
             }
             $this->guardMovedMembers($persister, $type, $request, $entity, $relationship['relation'], $linkage, Mode::Replace);
 
-            if (UnresolvedLinkage::fillsThroughHook($relationship['relation'])) {
+            if ($this->fillsThroughHook($relationship['relation'])) {
                 $entity = $this->fillRelationship($server, $persister, $relationship['relation'], $entity, $linkage, Mode::Replace, $body, endpoint: false);
 
                 continue;
@@ -2886,6 +2885,23 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             : RelationSorts::relatedField($relation, $server, $position);
 
         return $field?->column() ?? $position;
+    }
+
+    /**
+     * Whether `$relation` declares a `fillUsing()` hook, which then owns how the
+     * relationship is written.
+     */
+    private function fillsThroughHook(RelationInterface $relation): bool
+    {
+        if (!$relation instanceof AbstractFieldValue) {
+            return false;
+        }
+
+        static $state = null;
+        $state ??= new \ReflectionProperty(AbstractFieldValue::class, 'state');
+        $fieldState = $state->getValue($relation);
+
+        return \is_object($fieldState) && \property_exists($fieldState, 'fillUsing') && $fieldState->fillUsing !== null;
     }
 
     /**
@@ -3201,7 +3217,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
             $pivot = $provider->fetchRelationshipPivot($type, $parent, $relation);
             if ($pivot !== [] && $this->linkageGuard !== null && $body->hasToManyRelationship($name)) {
-                $pivot = $this->linkageGuard->visiblePivot($relation, $pivot, $body->getToManyRelationship($name));
+                $pivot = $this->linkageGuard->visiblePivot($server, $relation, $pivot, $body->getToManyRelationship($name), $body);
             }
             if ($pivot !== []) {
                 $existingPivots[$name] = $pivot;

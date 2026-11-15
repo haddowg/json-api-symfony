@@ -47,12 +47,12 @@ final class DoctrineWriteQueryBudgetTest extends JsonApiFunctionalTestCase
         $logger->reset();
 
         // POST a new article naming both authors as `editors` (a many-to-many the
-        // article owns via the `article_editors` join table). Each id is a
-        // `getReference()` proxy and the join row inserts from its known id, so NO
-        // SELECT against the `author` table runs to resolve the linkage. A find()/load
-        // per id would SELECT the author table twice. The response renders the editors
-        // in the authors' default order, by name, which one batched read of both
-        // authors supplies.
+        // article owns via the `article_editors` join table). Before anything is
+        // stored, one batched read of both authors checks they exist; it leaves them in
+        // the identity map, so the `getReference()` that resolves each id and the join
+        // row insert SELECT nothing more. A find()/load per id would SELECT the author
+        // table twice. The response renders the editors in the authors' default order,
+        // by name, which a second batched read of both authors supplies.
         $response = $this->handle(self::BASE_URI . '/articles', 'POST', [
             'data' => [
                 'type' => 'articles',
@@ -70,10 +70,10 @@ final class DoctrineWriteQueryBudgetTest extends JsonApiFunctionalTestCase
 
         $authorSelects = $this->selectsFrom($logger, 'author');
         self::assertLessThanOrEqual(
-            1,
+            2,
             \count($authorSelects),
             \sprintf(
-                "a many-to-many create must resolve each editor via getReference (no per-id SELECT); the author table was SELECTed %d time(s):\n%s",
+                "a many-to-many create must check its editors in one batched read and resolve each via getReference (no per-id SELECT); the author table was SELECTed %d time(s):\n%s",
                 \count($authorSelects),
                 \implode("\n", $authorSelects),
             ),

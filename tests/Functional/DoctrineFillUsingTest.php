@@ -6,9 +6,12 @@ namespace haddowg\JsonApiBundle\Tests\Functional;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
+use haddowg\JsonApi\Resource\Field\HasMany;
+use haddowg\JsonApiBundle\DataPersister\Doctrine\DoctrineDataPersister;
 use haddowg\JsonApiBundle\Tests\Functional\App\FillUsing\FillFile;
 use haddowg\JsonApiBundle\Tests\Functional\App\FillUsing\FillUsingDoctrineTestKernel;
 use haddowg\JsonApiBundle\Tests\Functional\App\FillUsing\FillUsingFixtures;
+use PHPUnit\Framework\Attributes\Test;
 
 final class DoctrineFillUsingTest extends FillUsingConformanceTestCase
 {
@@ -58,6 +61,19 @@ final class DoctrineFillUsingTest extends FillUsingConformanceTestCase
         $this->entityManager()->clear();
 
         return $this->entityManager()->getRepository(FillFile::class)->count([]);
+    }
+
+    #[Test]
+    public function thePersisterSaysAnInverseToManyOverAStringKeyCanMissItsLinkage(): void
+    {
+        $persister = static::getContainer()->get(DoctrineDataPersister::class);
+        self::assertInstanceOf(DoctrineDataPersister::class, $persister);
+        $slots = HasMany::make('slots', 'fill-slots')->build();
+
+        // A string key converts from any id, so only loading the member to set its owner
+        // can find it missing.
+        self::assertFalse($persister->canMissLinkage($slots));
+        self::assertTrue($persister->canMissLinkage($slots, 'fill-shelves'));
     }
 
     private function file(int $id): ?FillFile

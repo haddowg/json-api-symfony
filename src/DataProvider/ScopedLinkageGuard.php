@@ -17,18 +17,19 @@ use haddowg\JsonApiBundle\Validation\JsonPointerBuilder;
 use haddowg\JsonApiBundle\Validation\RelationshipTypeUnacceptable;
 
 /**
- * Applies the related endpoint's scope to the linkage a write sends,
- * before the persister resolves it.
+ * Checks the linkage a write sends against the related types' providers, before
+ * anything is stored.
  *
  * Each identifier must name one of the relation's related types, whether or not the
- * validator bridge is installed. Each identifier whose type is scoped (the read side's decision, {@see RelatedReadRouter})
- * must be served by that type's provider, as `GET /{type}/{id}` would serve it; one that
- * is not is rejected exactly as a resource that does not exist. A to-many replace on an
- * existing parent keeps the members the scope hides, so it changes only the members the
- * client can see. Identifiers of an unscoped type pass through untouched, unless the
- * write hands them to something that never resolves them, such as a `fillUsing()` hook
- * or a declared relation's link rows: then each must still be a row its type's provider
- * serves, checked in one batch per type where the provider offers one.
+ * validator bridge is installed, and a row its type's provider serves, as
+ * `GET /{type}/{id}` would serve it. One that is not, because no row holds it or because
+ * a scoped type's scope hides it ({@see RelatedReadRouter}), is rejected exactly as a
+ * resource that does not exist, on every mode: a remove may name an existing resource
+ * that is not a member, which changes nothing, but not one that does not exist. A type
+ * no provider serves has nothing to check against. Each type is asked once per write,
+ * through {@see FetchesByIdsInterface} or {@see AdmitsIdsInterface} where its provider
+ * offers either. A to-many replace on an existing parent keeps the members the scope
+ * hides, so it changes only the members the client can see.
  *
  * @internal
  */
@@ -53,13 +54,9 @@ final class ScopedLinkageGuard
      * @param bool $atEndpoint whether the linkage is a relationship endpoint's body
      *                         (pointers at `/data`) rather than a member of a
      *                         resource's `data.relationships`
-     * @param bool $unresolved whether the write stores the identifiers without the
-     *                         persister resolving them, so an unscoped type's must be
-     *                         checked too. A remove never is, as removing a non-member
-     *                         changes nothing.
      *
      * @throws RelationshipTypeUnacceptable when an identifier names a type the relation does not accept
-     * @throws ResourceNotFound             when the linkage names a resource its scoped type does not serve
+     * @throws ResourceNotFound             when the linkage names a resource its type's provider does not serve
      */
     public function scope(
         Server $server,
@@ -70,7 +67,6 @@ final class ScopedLinkageGuard
         JsonApiRequestInterface $request,
         bool $creating = false,
         bool $atEndpoint = false,
-        bool $unresolved = false,
     ): ToOneRelationship|ToManyRelationship {
         $identifiers = $linkage instanceof ToManyRelationship
             ? $linkage->resourceIdentifiers
@@ -79,22 +75,25 @@ final class ScopedLinkageGuard
         $this->assertAcceptedTypes($relation, $linkage, $atEndpoint);
 
         $sent = [];
-        $unchecked = [];
+        $byType = [];
         foreach ($identifiers as $identifier) {
             \assert($identifier instanceof ResourceIdentifier);
             if ($identifier->id === null) {
                 continue;
             }
 
-            if ($unresolved && $mode !== Mode::Remove && !$this->router->isScopedType($identifier->type, $relation) && $this->providers->supportsType($identifier->type)) {
-                $unchecked[$identifier->type][$identifier->id] = $identifier->id;
-            } elseif (!$this->isVisible($identifier->type, $identifier->id, $relation)) {
-                throw new ResourceNotFound();
-            }
+            $byType[$identifier->type][$identifier->id] = $identifier->id;
             $sent[$identifier->type . "\0" . $identifier->id] = true;
         }
-        foreach ($unchecked as $type => $ids) {
-            $this->assertServed($server, $type, \array_values($ids), $request);
+        foreach ($byType as $type => $ids) {
+            if (!$this->providers->supportsType($type)) {
+                continue;
+            }
+
+            $ids = \array_values($ids);
+            if (\count($this->served($server, $type, $ids, $request)) !== \count($ids)) {
+                throw new ResourceNotFound();
+            }
         }
 
         // A new parent holds no members yet, and add and remove name every member they touch.
@@ -102,46 +101,42 @@ final class ScopedLinkageGuard
             return $linkage;
         }
 
-        $hidden = [];
+        $current = [];
         // An identified relation's current members are its stored pairs.
         if (RelatedReadRouter::identifiesMembers($relation)) {
             foreach ($relation->storedIdentifierList($parent, $request) as [$type, $key]) {
-                if (!$server->hasSerializerFor($type)) {
-                    continue;
-                }
-
-                $id = RelatedReadRouter::wireId($server->serializerFor($type), $key);
-                if (!isset($sent[$type . "\0" . $id]) && !$this->isVisible($type, $id, $relation)) {
-                    $hidden[] = new ResourceIdentifier($type, $id);
+                if ($server->hasSerializerFor($type)) {
+                    $current[] = [$type, RelatedReadRouter::wireId($server->serializerFor($type), $key)];
                 }
             }
-
-            return $hidden === [] ? $linkage : new ToManyRelationship([...$linkage->resourceIdentifiers, ...$hidden]);
-        }
-
-        // A pivot's value holds its association rows, so its members are read through them.
-        $pivotIds = CurrentMembers::throughPivot($this->providers, $parent, $relation);
-        if ($pivotIds !== null) {
-            $type = $relation->relatedTypes()[0];
+        } elseif (($pivotIds = CurrentMembers::throughPivot($this->providers, $parent, $relation)) !== null) {
+            // A pivot's value holds its association rows, so its members are read through them.
             foreach ($pivotIds as $id) {
-                if (!isset($sent[$type . "\0" . $id]) && !$this->isVisible($type, $id, $relation)) {
-                    $hidden[] = new ResourceIdentifier($type, $id);
+                $current[] = [$relation->relatedTypes()[0], $id];
+            }
+        } else {
+            foreach ($this->members($relation->readValue($parent, $request)) as $member) {
+                $serializer = $relation->resolveSerializer($member, $server);
+                if ($serializer !== null) {
+                    $current[] = [$serializer->getType($member), $serializer->getId($member)];
                 }
             }
-
-            return $hidden === [] ? $linkage : new ToManyRelationship([...$linkage->resourceIdentifiers, ...$hidden]);
         }
 
-        foreach ($this->members($relation->readValue($parent, $request)) as $member) {
-            $serializer = $relation->resolveSerializer($member, $server);
-            if ($serializer === null) {
-                continue;
+        $candidates = [];
+        foreach ($current as [$type, $id]) {
+            if (!isset($sent[$type . "\0" . $id]) && $this->router->isScopedType($type, $relation)) {
+                $candidates[$type][$id] = $id;
             }
+        }
 
-            $type = $serializer->getType($member);
-            $id = $serializer->getId($member);
-            if (!isset($sent[$type . "\0" . $id]) && !$this->isVisible($type, $id, $relation)) {
-                $hidden[] = new ResourceIdentifier($type, $id);
+        $hidden = [];
+        foreach ($candidates as $type => $ids) {
+            $served = $this->served($server, $type, \array_values($ids), $request);
+            foreach ($ids as $id) {
+                if (!isset($served[$id])) {
+                    $hidden[] = new ResourceIdentifier((string) $type, (string) $id);
+                }
             }
         }
 
@@ -157,8 +152,9 @@ final class ScopedLinkageGuard
      *
      * @return array<string, array<string, mixed>>
      */
-    public function visiblePivot(RelationInterface $relation, array $existingPivot, ToManyRelationship $linkage): array
+    public function visiblePivot(Server $server, RelationInterface $relation, array $existingPivot, ToManyRelationship $linkage, JsonApiRequestInterface $request): array
     {
+        $byType = [];
         foreach ($linkage->resourceIdentifiers as $identifier) {
             \assert($identifier instanceof ResourceIdentifier);
             $id = $identifier->id;
@@ -168,8 +164,19 @@ final class ScopedLinkageGuard
 
             // Pivot rows are keyed by id alone: a member sent under a type the relation
             // does not accept is no existing member (the write is refused later).
-            if (!$this->accepts($relation, $identifier->type) || !$this->isVisible($identifier->type, $id, $relation)) {
+            if (!$this->accepts($relation, $identifier->type)) {
                 unset($existingPivot[$id]);
+            } elseif ($this->router->isScopedType($identifier->type, $relation)) {
+                $byType[$identifier->type][$id] = $id;
+            }
+        }
+
+        foreach ($byType as $type => $ids) {
+            $served = $this->served($server, $type, \array_values($ids), $request);
+            foreach ($ids as $id) {
+                if (!isset($served[$id])) {
+                    unset($existingPivot[$id]);
+                }
             }
         }
 
@@ -240,38 +247,37 @@ final class ScopedLinkageGuard
     }
 
     /**
-     * Throws when a row of `$type` among `$ids` is one its provider does not serve: one
-     * batched read when the provider offers it, with each id the batch left out asked
-     * again through `fetchOne()`, since a batch can leave out a row it cannot key.
+     * The ids among `$ids`, wire ids of `$type`, whose rows its provider serves, as keys:
+     * one batched read when the provider offers it, with each id the batch left out asked
+     * again through `fetchOne()`, since a batch can leave out a row it cannot key. A row
+     * the batch loads stays in the data layer's identity map, so a persister resolving it
+     * afterwards reads no row again.
      *
-     * @param list<string> $ids wire ids
+     * @param list<string> $ids
      *
-     * @throws ResourceNotFound
+     * @return array<string, true>
      */
-    private function assertServed(Server $server, string $type, array $ids, JsonApiRequestInterface $request): void
+    private function served(Server $server, string $type, array $ids, JsonApiRequestInterface $request): array
     {
         $provider = $this->providers->forType($type);
-        $served = match (true) {
-            $provider instanceof AdmitsIdsInterface => $provider->admitIds($type, $ids, $request),
+        $found = match (true) {
             $provider instanceof FetchesByIdsInterface && $server->hasSerializerFor($type) => \array_map(
                 static fn(object $row): string => $server->serializerFor($type)->getId($row),
                 $provider->fetchByIds($type, $ids, $request),
             ),
+            $provider instanceof AdmitsIdsInterface => $provider->admitIds($type, $ids, $request),
             default => [],
         };
-        $served = \array_fill_keys($served, true);
+        $found = \array_fill_keys($found, true);
 
+        $served = [];
         foreach ($ids as $id) {
-            if (!isset($served[$id]) && $provider->fetchOne($type, $id) === null) {
-                throw new ResourceNotFound();
+            if (isset($found[$id]) || $provider->fetchOne($type, $id) !== null) {
+                $served[$id] = true;
             }
         }
-    }
 
-    private function isVisible(string $type, string $id, RelationInterface $relation): bool
-    {
-        return !$this->router->isScopedType($type, $relation)
-            || $this->providers->forType($type)->fetchOne($type, $id) !== null;
+        return $served;
     }
 
     /**
