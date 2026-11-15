@@ -24,6 +24,7 @@ use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataPersister\Doctrine\DoctrineDataPersister;
 use haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister;
+use haddowg\JsonApiBundle\DataPersister\UnresolvedLinkage;
 use haddowg\JsonApiBundle\DataProvider\Polymorphism;
 use haddowg\JsonApiBundle\DataProvider\RelatedReadRouter;
 use haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory;
@@ -604,14 +605,16 @@ final class MetadataSource
 
     /**
      * Linkage to a related type whose provider scopes what the caller sees is checked
-     * against it, and the Doctrine persister refuses an id it cannot convert. The
-     * in-memory persister finds nothing to refuse, and a persister of the application's
-     * own may.
+     * against it, as is linkage a write stores without the persister resolving it, and
+     * the Doctrine persister refuses an id it cannot convert. The in-memory persister
+     * finds nothing to refuse, and a persister of the application's own may.
      */
     private function canMissLinkage(?DataPersisterInterface $persister, RelationInterface $relation): bool
     {
+        $unresolved = UnresolvedLinkage::writtenBy($persister, $relation);
         foreach ($relation->relatedTypes() as $relatedType) {
-            if ($this->relatedReads()?->isScopedType($relatedType, $relation) ?? true) {
+            $reads = $this->relatedReads();
+            if ($reads === null || $reads->isScopedType($relatedType, $relation) || ($unresolved && $reads->servesType($relatedType))) {
                 return true;
             }
         }

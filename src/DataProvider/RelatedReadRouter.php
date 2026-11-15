@@ -385,6 +385,14 @@ final class RelatedReadRouter implements ResetInterface
     }
 
     /**
+     * Whether a provider serves `$type`.
+     */
+    public function servesType(string $type): bool
+    {
+        return $this->providers->supportsType($type);
+    }
+
+    /**
      * Whether `$relation` is a pivot `belongsToMany` its related provider serves through
      * an association entity.
      */

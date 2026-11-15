@@ -29,10 +29,12 @@ final class FillUsingInMemoryTestKernel extends AbstractFillUsingKernel
     {
         $services->set(FillUsingFixtures::class);
 
-        $services->set('test.fill_provider.fill-files', InMemoryDataProvider::class)
-            ->factory([service(FillUsingFixtures::class), 'provider'])
-            ->args(['fill-files'])
-            ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+        foreach (['fill-files', 'fill-notes'] as $type) {
+            $services->set('test.fill_provider.' . $type, InMemoryDataProvider::class)
+                ->factory([service(FillUsingFixtures::class), 'provider'])
+                ->args([$type])
+                ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+        }
 
         foreach (['fill-agencies', 'fill-members'] as $type) {
             $services->set('test.fill_inner_provider.' . $type, InMemoryDataProvider::class)
@@ -45,7 +47,7 @@ final class FillUsingInMemoryTestKernel extends AbstractFillUsingKernel
                 ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
         }
 
-        foreach (['fill-agencies', 'fill-members', 'fill-files'] as $type) {
+        foreach (['fill-agencies', 'fill-members', 'fill-files', 'fill-notes'] as $type) {
             $services->set('test.fill_persister.' . $type, InMemoryDataPersister::class)
                 ->factory([service(FillUsingFixtures::class), 'persister'])
                 ->args([$type])

@@ -25,7 +25,10 @@ use haddowg\JsonApiBundle\Validation\RelationshipTypeUnacceptable;
  * must be served by that type's provider, as `GET /{type}/{id}` would serve it; one that
  * is not is rejected exactly as a resource that does not exist. A to-many replace on an
  * existing parent keeps the members the scope hides, so it changes only the members the
- * client can see. Identifiers of an unscoped type pass through untouched.
+ * client can see. Identifiers of an unscoped type pass through untouched, unless the
+ * write hands them to something that never resolves them, such as a `fillUsing()` hook
+ * or a declared relation's link rows: then each must still be a row its type's provider
+ * serves, checked in one batch per type where the provider offers one.
  *
  * @internal
  */
@@ -50,6 +53,10 @@ final class ScopedLinkageGuard
      * @param bool $atEndpoint whether the linkage is a relationship endpoint's body
      *                         (pointers at `/data`) rather than a member of a
      *                         resource's `data.relationships`
+     * @param bool $unresolved whether the write stores the identifiers without the
+     *                         persister resolving them, so an unscoped type's must be
+     *                         checked too. A remove never is, as removing a non-member
+     *                         changes nothing.
      *
      * @throws RelationshipTypeUnacceptable when an identifier names a type the relation does not accept
      * @throws ResourceNotFound             when the linkage names a resource its scoped type does not serve
@@ -63,6 +70,7 @@ final class ScopedLinkageGuard
         JsonApiRequestInterface $request,
         bool $creating = false,
         bool $atEndpoint = false,
+        bool $unresolved = false,
     ): ToOneRelationship|ToManyRelationship {
         $identifiers = $linkage instanceof ToManyRelationship
             ? $linkage->resourceIdentifiers
@@ -71,16 +79,22 @@ final class ScopedLinkageGuard
         $this->assertAcceptedTypes($relation, $linkage, $atEndpoint);
 
         $sent = [];
+        $unchecked = [];
         foreach ($identifiers as $identifier) {
             \assert($identifier instanceof ResourceIdentifier);
             if ($identifier->id === null) {
                 continue;
             }
 
-            if (!$this->isVisible($identifier->type, $identifier->id, $relation)) {
+            if ($unresolved && $mode !== Mode::Remove && !$this->router->isScopedType($identifier->type, $relation) && $this->providers->supportsType($identifier->type)) {
+                $unchecked[$identifier->type][$identifier->id] = $identifier->id;
+            } elseif (!$this->isVisible($identifier->type, $identifier->id, $relation)) {
                 throw new ResourceNotFound();
             }
             $sent[$identifier->type . "\0" . $identifier->id] = true;
+        }
+        foreach ($unchecked as $type => $ids) {
+            $this->assertServed($server, $type, \array_values($ids), $request);
         }
 
         // A new parent holds no members yet, and add and remove name every member they touch.
@@ -223,6 +237,35 @@ final class ScopedLinkageGuard
     private function accepts(RelationInterface $relation, string $type): bool
     {
         return \in_array($type, $relation->relatedTypes(), true);
+    }
+
+    /**
+     * Throws when a row of `$type` among `$ids` is one its provider does not serve: one
+     * batched read when the provider offers it, with each id the batch left out asked
+     * again through `fetchOne()`, since a batch can leave out a row it cannot key.
+     *
+     * @param list<string> $ids wire ids
+     *
+     * @throws ResourceNotFound
+     */
+    private function assertServed(Server $server, string $type, array $ids, JsonApiRequestInterface $request): void
+    {
+        $provider = $this->providers->forType($type);
+        $served = match (true) {
+            $provider instanceof AdmitsIdsInterface => $provider->admitIds($type, $ids, $request),
+            $provider instanceof FetchesByIdsInterface && $server->hasSerializerFor($type) => \array_map(
+                static fn(object $row): string => $server->serializerFor($type)->getId($row),
+                $provider->fetchByIds($type, $ids, $request),
+            ),
+            default => [],
+        };
+        $served = \array_fill_keys($served, true);
+
+        foreach ($ids as $id) {
+            if (!isset($served[$id]) && $provider->fetchOne($type, $id) === null) {
+                throw new ResourceNotFound();
+            }
+        }
     }
 
     private function isVisible(string $type, string $id, RelationInterface $relation): bool

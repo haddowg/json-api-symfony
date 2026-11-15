@@ -18,7 +18,8 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
 /**
  * Serves `fill-files`, whose relations are written by fillUsing() hooks, over
- * `fill-agencies` and `fill-members`, each with a hidden row.
+ * `fill-agencies` and `fill-members`, each with a hidden row, and the read-only
+ * `fill-settings` a custom provider serves, which `fill-notes` relate to as well.
  */
 abstract class AbstractFillUsingKernel extends Kernel
 {
@@ -63,7 +64,7 @@ abstract class AbstractFillUsingKernel extends Kernel
      */
     protected function resources(): array
     {
-        return [FillAgencyResource::class, FillMemberResource::class, FillFileResource::class];
+        return [FillAgencyResource::class, FillMemberResource::class, FillFileResource::class, FillNoteResource::class, FillSettingResource::class];
     }
 
     abstract protected function configureData(ContainerConfigurator $container, DefaultsConfigurator $services): void;
@@ -97,6 +98,7 @@ abstract class AbstractFillUsingKernel extends Kernel
             $services->set($resource);
         }
         $services->set(RefuseAgencyThreeSubscriber::class);
+        $services->set(FillSettingsProvider::class);
 
         $this->configureData($container, $services);
     }

@@ -282,6 +282,41 @@ abstract class IdentifiedMorphToManyConformanceTestCase extends JsonApiFunctiona
         self::assertSame(['agencies:3', 'publishers:1'], $this->keys($this->at($this->get('/accounts/1/relationships/rankedCompanies'), 'data')));
     }
 
+    #[Test]
+    public function aWriteNamingAMissingRowIsNotFoundAndStoresNothing(): void
+    {
+        $before = ['user' => $this->storedCompanies(1), 'account' => $this->storedCompanies(3)];
+        $writes = [
+            ['/users/1/relationships/companies', 'PATCH', ['data' => [['type' => 'publishers', 'id' => '1'], ['type' => 'publishers', 'id' => '99']]]],
+            ['/users/1/relationships/companies', 'POST', ['data' => [['type' => 'advertisers', 'id' => '99']]]],
+            ['/users/1', 'PATCH', ['data' => ['type' => 'users', 'id' => '1', 'relationships' => ['companies' => ['data' => [['type' => 'publishers', 'id' => '99']]]]]]],
+            ['/accounts/3/relationships/companies', 'PATCH', ['data' => [['type' => 'publishers', 'id' => '1'], ['type' => 'publishers', 'id' => '99']]]],
+            ['/accounts/3/relationships/companies', 'POST', ['data' => [['type' => 'advertisers', 'id' => '99']]]],
+            ['/accounts/3', 'PATCH', ['data' => ['type' => 'accounts', 'id' => '3', 'relationships' => ['companies' => ['data' => [['type' => 'publishers', 'id' => '99']]]]]]],
+        ];
+        foreach ($writes as [$path, $method, $body]) {
+            $response = $this->handle($path, $method, $body);
+            self::assertSame(404, $response->getStatusCode(), $method . ' ' . $path . ': ' . $response->getContent());
+        }
+
+        self::assertSame($before, ['user' => $this->storedCompanies(1), 'account' => $this->storedCompanies(3)]);
+    }
+
+    #[Test]
+    public function removingAMissingRowLeavesTheRowsAlone(): void
+    {
+        $before = $this->storedCompanies(3);
+        foreach (['/users/3/relationships/companies', '/accounts/3/relationships/companies'] as $path) {
+            $response = $this->handle($path, 'DELETE', ['data' => [['type' => 'publishers', 'id' => '99']]]);
+            // A scoped read refuses an id it does not serve on every write, a remove too.
+            if (!$this->hides()) {
+                self::assertSame(200, $response->getStatusCode(), $path . ': ' . $response->getContent());
+            }
+        }
+
+        self::assertSame($before, $this->storedCompanies(3));
+    }
+
     /**
      * @param list<string> $keys
      *

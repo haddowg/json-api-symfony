@@ -22,7 +22,7 @@ final class FillUsingDoctrineTestKernel extends AbstractFillUsingKernel
 
     protected function resources(): array
     {
-        return [DoctrineFillAgencyResource::class, DoctrineFillMemberResource::class, DoctrineFillFileResource::class];
+        return [DoctrineFillAgencyResource::class, DoctrineFillMemberResource::class, DoctrineFillFileResource::class, DoctrineFillNoteResource::class, FillSettingResource::class];
     }
 
     protected function configureData(ContainerConfigurator $container, DefaultsConfigurator $services): void

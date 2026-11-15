@@ -1207,7 +1207,13 @@ Operations, with the arguments core's own hydration passes. A whole-resource wri
 calls it with an empty `$data` array. The relationship endpoints pass a to-many's
 mode as `$data['mode']`, so a `POST` adds and a `DELETE` removes. Everything else
 around the write still applies. The linkage is checked against the related types'
-scope first, so an id the caller can't see is a `404`. The mutability and update
+scope first, so an id the caller can't see is a `404`. The hook gets bare identifiers
+and no persister resolves them, so each id must also be one its type's provider serves,
+whether or not that provider scopes anything. One that isn't is the same `404`, raised
+before the hook runs. A provider that implements `AdmitsIdsInterface` or
+`FetchesByIdsInterface` is asked once per type, any other through `fetchOne()`. A
+`DELETE` isn't checked, since removing a member the relation doesn't hold changes
+nothing, and a type no provider serves has nothing to check against. The mutability and update
 gates run before and after the hook, and the persister then saves the parent, so a
 refusal after the hook rolls the write back.
 
@@ -1791,7 +1797,9 @@ delete, then the rows that move to a temporary position, then the updated rows, 
 new `through()` entity for each added member, its owner set through the association and
 each value converted to its column's form. Doctrine flushes after each pass inside the
 write's transaction. A replace keeps the members the scope hides, after the members the
-client sent, in their current order. A custom persister applies plans by implementing
+client sent, in their current order. Nothing resolves the members a write names before
+their rows are written, so each is checked against its type's provider first, as a
+`fillUsing()` relation's are, and one it doesn't serve is a `404`. A custom persister applies plans by implementing
 `WritesLinkRowsInterface`, and a custom provider serves the key read by implementing
 core's `LinkRowKeysInterface`.
 

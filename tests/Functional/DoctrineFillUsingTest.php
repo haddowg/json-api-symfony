@@ -43,6 +43,16 @@ final class DoctrineFillUsingTest extends FillUsingConformanceTestCase
         return $this->file($file)->watcherIds ?? [];
     }
 
+    protected function storedSetting(int $file): ?string
+    {
+        return $this->file($file)?->settingId;
+    }
+
+    protected function storedSettings(int $file): array
+    {
+        return $this->file($file)->settingIds ?? [];
+    }
+
     protected function storedFileCount(): int
     {
         $this->entityManager()->clear();
