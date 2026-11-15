@@ -14,6 +14,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\WriteTransaction\TxNote;
 use haddowg\JsonApiBundle\Tests\Functional\App\WriteTransaction\TxScenario;
 use haddowg\JsonApiBundle\Tests\Functional\App\WriteTransaction\TxWidget;
 use PHPUnit\Framework\Attributes\Test;
+use Symfony\Contracts\Service\ResetInterface;
 
 /**
  * {@see WriteTransactionConformanceTestCase} on Doctrine over SQLite, where the before hook's
@@ -100,6 +101,26 @@ final class DoctrineWriteTransactionTest extends WriteTransactionConformanceTest
         // out of the transaction, and the hook's note went with it.
         self::assertSame(1, $this->rowCount('tx_note'));
         self::assertSame(2, $this->rowCount('tx_widget'));
+    }
+
+    #[Test]
+    public function aWorkerResetAfterAFailedFlushServesTheNextWrite(): void
+    {
+        TxScenario::$sideWriteOn = BeforeSaveEvent::class;
+        self::assertSame(500, $this->handle('/txWidgets', 'POST', $this->widget('first'))->getStatusCode());
+        self::assertFalse($this->entityManager()->isOpen());
+
+        // What a long-running worker does between requests.
+        $resetter = static::getContainer()->get('services_resetter');
+        self::assertInstanceOf(ResetInterface::class, $resetter);
+        $resetter->reset();
+
+        self::assertTrue($this->entityManager()->isOpen());
+        TxScenario::reset();
+        self::assertSame(201, $this->handle('/txWidgets', 'POST', $this->widget('third'))->getStatusCode());
+        self::assertSame(['seeded'], $this->notes());
+        self::assertSame(['first', 'second', 'third'], $this->widgetNames());
+        $this->assertNoTransactionOpen();
     }
 
     #[Test]

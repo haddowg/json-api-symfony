@@ -12,7 +12,7 @@ rest of the docs assume the steps here are done.
 | Symfony | `^6.4 \|\| ^7.0 \|\| ^8.0` |
 | `symfony/framework-bundle` | required — the bundle relies on its services |
 | `haddowg/json-api` | `^1.21`, installed with the bundle — read the core docs for that release line |
-| `doctrine/orm` | optional, `^2.20 \|\| ^3.0` — Composer refuses any other version (and `doctrine/dbal` below 3.6) |
+| `doctrine/orm` | optional, `^2.20 \|\| ^3.2` — Composer refuses any other version (and `doctrine/dbal` below 3.6) |
 
 The hard runtime dependencies beyond Symfony are the PSR-7 bridge the kernel
 listeners use: `nyholm/psr7` (the PSR-7 implementation) and
@@ -129,7 +129,7 @@ bundle behaves without it) is on
 
 | Package | Enables |
 | --- | --- |
-| `doctrine/orm` (`^2.20 \|\| ^3.0`) | the reference Doctrine data provider / persister ([doctrine](doctrine.md)) |
+| `doctrine/orm` (`^2.20 \|\| ^3.2`) | the reference Doctrine data provider / persister ([doctrine](doctrine.md)) |
 | `symfony/validator` | the constraint bridge that validates writes ([validation](validation.md)) |
 | `symfony/doctrine-bridge` | the `UniqueEntity` entity-level rule ([validation](validation.md)) |
 | `symfony/security-core` + `symfony/expression-language` | `security:` expressions on resources, relations and actions ([authorization](authorization.md)); declaring one without them fails the build |
