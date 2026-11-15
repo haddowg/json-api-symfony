@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.16.0](https://github.com/haddowg/json-api-symfony/compare/v2.15.0...v2.16.0) (2026-11-15)
+
+
+### Bug Fixes
+
+* refuse linkage to a missing resource on every relationship write ([acd637d](https://github.com/haddowg/json-api-symfony/commit/acd637d0ca6eccba14518b6ab05245256d902c31))
+
 ## [2.15.0](https://github.com/haddowg/json-api-symfony/compare/v2.14.1...v2.15.0) (2026-11-14)
 
 
