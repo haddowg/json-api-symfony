@@ -579,7 +579,7 @@ final class MetadataSource
             $ownerServesEndpoints,
             $relatedResource,
             fn(): bool => self::canRefuseDetachment($this->persisterFor($type), $type, $relation),
-            fn(): bool => $this->canMissLinkage($this->persisterFor($type), $relation),
+            fn(): bool => $this->canMissLinkage($this->persisterFor($type), $type, $relation),
         );
     }
 
@@ -609,7 +609,7 @@ final class MetadataSource
      * the Doctrine persister refuses an id it cannot convert. The in-memory persister
      * finds nothing to refuse, and a persister of the application's own may.
      */
-    private function canMissLinkage(?DataPersisterInterface $persister, RelationInterface $relation): bool
+    private function canMissLinkage(?DataPersisterInterface $persister, string $type, RelationInterface $relation): bool
     {
         $unresolved = UnresolvedLinkage::writtenBy($persister, $relation);
         foreach ($relation->relatedTypes() as $relatedType) {
@@ -621,7 +621,7 @@ final class MetadataSource
 
         return match (true) {
             $persister === null, $persister instanceof InMemoryDataPersister => false,
-            $persister instanceof DoctrineDataPersister => $persister->canMissLinkage($relation),
+            $persister instanceof DoctrineDataPersister => $persister->canMissLinkage($relation, $type),
             default => true,
         };
     }

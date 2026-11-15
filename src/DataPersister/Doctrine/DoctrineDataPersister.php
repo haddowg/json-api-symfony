@@ -10,6 +10,7 @@ use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\DBAL\Types\JsonType;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\EntityNotFoundException;
 use Doctrine\ORM\Mapping\ClassMetadata;
 use haddowg\JsonApi\Collection\LinkRows\LinkRowWritePlan;
 use haddowg\JsonApi\Exception\ClientGeneratedIdAlreadyExists;
@@ -309,7 +310,12 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
                 ? $this->reference($relation, $identifier)
                 : null);
         } else {
-            $this->mutateToMany($entity, $property, $relation, $linkage, $mode);
+            try {
+                $this->mutateToMany($entity, $property, $relation, $linkage, $mode);
+            } catch (EntityNotFoundException) {
+                // Setting an inverse member's owner loads its reference, and no row holds a missing one.
+                throw new ResourceNotFound();
+            }
         }
 
         if ($flush) {
@@ -320,13 +326,23 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
     }
 
     /**
-     * Whether linkage naming a related resource can be refused with a `404` by
-     * {@see decodeLinkageId()}: a related type whose ids pass an encoder, or whose
-     * identifier is not a plain string column, can be sent an id that is not one of
-     * its own.
+     * Whether linkage naming a related resource can be refused with a `404`: by
+     * {@see decodeLinkageId()}, for a related type whose ids pass an encoder or whose
+     * identifier is not a plain string column, since it can be sent an id that is not one
+     * of its own; and, given the parent's `$type`, for an inverse to-many, whose members
+     * are loaded to set their owner.
      */
-    public function canMissLinkage(RelationInterface $relation): bool
+    public function canMissLinkage(RelationInterface $relation, ?string $type = null): bool
     {
+        if ($type !== null && $relation->isToMany() && isset($this->entityClassByType[$type])
+            && !($this->pivotAssociations?->isPivotRelation($relation) ?? false)) {
+            $metadata = $this->entityManager->getClassMetadata($this->entityClassByType[$type]);
+            $property = $relation->column() ?? $relation->name();
+            if ($metadata->hasAssociation($property) && $metadata->isAssociationInverseSide($property)) {
+                return true;
+            }
+        }
+
         foreach ($relation->relatedTypes() as $relatedType) {
             if (!isset($this->entityClassByType[$relatedType]) || $this->idEncoders->encoderFor($relatedType) !== null) {
                 return true;
