@@ -13,3 +13,4 @@
 - Scopes nest. An inner write hands its callbacks to the outer one, and only the outermost commit runs them, so a batch's operations wait for the batch.
 - A callback that throws is logged at error level and the rest still run, because the write is already committed. A dispatch that fails there loses the message, so work that must not be lost still belongs on a transport that commits with the write.
 - Registering outside any write runs the callback at once.
+- Only the bundle's own transactions count. A bundle write inside a transaction the application opened itself runs its callbacks when the bundle's write returns, because Doctrine has no hook for the outer commit. The Laravel adapter can wait for that commit through `DB::afterCommit`, so this is one place the two differ.

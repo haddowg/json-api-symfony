@@ -232,6 +232,10 @@ The rules:
 - Registered outside any write, from an after hook or a read, a callback runs at once.
 - A callback that throws is logged at error level through the `logger` service, and the
   rest still run. The write is already committed, so the response goes out as normal.
+- The bundle only knows about the transactions it opens. If your own code opens a Doctrine
+  transaction and runs a bundle write inside it, say from a console command or a test, the
+  callbacks run when the bundle's write returns, before your transaction commits. Doctrine
+  has no hook for the outer commit, so work that has to wait for it is yours to schedule.
 
 A callback runs before the after hooks, so it sees the committed write but not what an
 after hook changes. The service is reset between the requests a worker serves.
