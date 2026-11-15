@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.17.1](https://github.com/haddowg/json-api-symfony/compare/v2.17.0...v2.17.1) (2026-11-15)
+
+
+### Bug Fixes
+
+* keep what was managed before a failed write managed on Doctrine ([#386](https://github.com/haddowg/json-api-symfony/issues/386)) ([59b34dd](https://github.com/haddowg/json-api-symfony/commit/59b34ddf8ca71b2ae8d491e56c268e1293a0c60d))
+
 ## [2.17.0](https://github.com/haddowg/json-api-symfony/compare/v2.16.0...v2.17.0) (2026-11-15)
 
 
