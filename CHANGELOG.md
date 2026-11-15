@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.17.0](https://github.com/haddowg/json-api-symfony/compare/v2.16.0...v2.17.0) (2026-11-15)
+
+
+### Features
+
+* run every single write in one transaction ([#384](https://github.com/haddowg/json-api-symfony/issues/384)) ([67afdeb](https://github.com/haddowg/json-api-symfony/commit/67afdebeee2ae5866cf30354a2c1852182b69fd9))
+
 ## [2.16.0](https://github.com/haddowg/json-api-symfony/compare/v2.15.0...v2.16.0) (2026-11-15)
 
 
