@@ -55,13 +55,14 @@ final class InMemoryStore
     private int $nextId;
 
     /**
-     * The pre-transaction state captured by {@see snapshot()} — a deep clone of
-     * the items map plus the id counter — restored verbatim by {@see restore()}.
-     * `null` when no snapshot is held.
+     * The states captured by {@see snapshot()}, innermost last, each a deep clone of the
+     * items map plus the id counter. A write inside an Atomic Operations batch opens its
+     * own transaction inside the batch's, so they nest: committing the inner one keeps the
+     * outer state, and rolling back the outer one still restores it.
      *
-     * @var array{items: array<string, object>, nextId: int}|null
+     * @var list<array{items: array<string, object>, nextId: int}>
      */
-    private ?array $snapshot = null;
+    private array $snapshots = [];
 
     /**
      * The cross-store snapshot coordinator, when wired: snapshot/restore then run as
@@ -197,13 +198,13 @@ final class InMemoryStore
             $items[$id] = $this->deepClone($item);
         }
 
-        $this->snapshot = ['items' => $items, 'nextId' => $this->nextId];
+        $this->snapshots[] = ['items' => $items, 'nextId' => $this->nextId];
     }
 
     /**
-     * Reinstates the state captured by the last {@see snapshot()} — both the items
+     * Reinstates the state captured by the innermost open {@see snapshot()} — both the items
      * map (each object back to its pre-transaction field values) and the id counter
-     * — discarding every write made since, then clears the snapshot. A no-op when no
+     * — discarding every write made since, then drops that snapshot. A no-op when no
      * snapshot is held. Delegates to the {@see InMemorySnapshotCoordinator} (which
      * restores the whole cross-store graph in one pass) when wired.
      */
@@ -215,13 +216,13 @@ final class InMemoryStore
             return;
         }
 
-        if ($this->snapshot === null) {
+        $snapshot = \array_pop($this->snapshots);
+        if ($snapshot === null) {
             return;
         }
 
-        $this->itemsById = $this->snapshot['items'];
-        $this->nextId = $this->snapshot['nextId'];
-        $this->snapshot = null;
+        $this->itemsById = $snapshot['items'];
+        $this->nextId = $snapshot['nextId'];
     }
 
     /**
@@ -239,7 +240,7 @@ final class InMemoryStore
             return;
         }
 
-        $this->snapshot = null;
+        \array_pop($this->snapshots);
     }
 
     /**
