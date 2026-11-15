@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use Doctrine\ORM\EntityManagerInterface;
 use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\QueryCountingDoctrineKernel;
 use haddowg\JsonApiBundle\Tests\Functional\App\QueryCountingLogger;
 use PHPUnit\Framework\Attributes\Group;
@@ -121,20 +122,41 @@ final class DoctrineWriteQueryBudgetTest extends JsonApiFunctionalTestCase
     #[Group('spec:fetching-relationships')]
     public function anInverseOneToManyReplaceResolvesTheNewLinkageWithoutPerIdSelects(): void
     {
-        self::markTestSkipped(
-            'ACCEPTED limitation, documented not fixed for v1 ('
-            . 'doctrine.md#relationship-write-query-cost): replacing an inverse '
-            . 'one-to-many (FK on the child, e.g. `comments`) sets the owning-side FK on '
-            . 'each incoming member via DoctrineDataPersister::attachOwner() '
-            . '($member->{owningField} = $owner), which initialises the getReference '
-            . 'proxy — one SELECT per incoming id, so the SELECT budget is O(linkage '
-            . 'size). Re-pointing managed children through the ORM inherently costs N '
-            . 'loads; the bulk-UPDATE alternative would bypass the unit of work and '
-            . 'lifecycle events. Many-to-many writes avoid it (proven above). If the '
-            . 'path is ever optimised, this test becomes a non-scaling assertion: a '
-            . '2-id and a 4-id inverse-one-to-many replace would issue the same number '
-            . 'of `comment` SELECTs (resolving incoming ids adds none).',
+        $logger = $this->logger();
+
+        // Replacing an inverse one-to-many (the FK is on the comment) sets each incoming
+        // comment's owner. The existence check loads every incoming comment in one batched
+        // read before the write, and leaves them managed, so setting the owner initialises
+        // no proxy: a 2-id and a 4-id replace read the comment table the same number of
+        // times. Each targets a parent holding no comments, from an empty identity map.
+        $selects = [];
+        foreach (['4' => ['1', '2'], '5' => ['1', '2', '3', '4']] as $article => $ids) {
+            $this->entityManager()->clear();
+            $logger->reset();
+            $response = $this->handle(self::BASE_URI . '/articles/' . $article . '/relationships/comments', 'PATCH', [
+                'data' => \array_map(static fn(string $id): array => ['type' => 'comments', 'id' => $id], $ids),
+            ]);
+            self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+            $selects[] = $this->selectsFrom($logger, 'comment');
+        }
+
+        self::assertSame(
+            \count($selects[0]),
+            \count($selects[1]),
+            \sprintf(
+                "an inverse one-to-many replace must resolve incoming ids without a per-id SELECT; 2 ids ran:\n%s\n4 ids ran:\n%s",
+                \implode("\n", $selects[0]),
+                \implode("\n", $selects[1]),
+            ),
         );
+    }
+
+    private function entityManager(): EntityManagerInterface
+    {
+        $entityManager = static::getContainer()->get('doctrine.orm.entity_manager');
+        self::assertInstanceOf(EntityManagerInterface::class, $entityManager);
+
+        return $entityManager;
     }
 
     /**
