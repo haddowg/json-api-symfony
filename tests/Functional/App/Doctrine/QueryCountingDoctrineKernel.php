@@ -129,6 +129,9 @@ final class QueryCountingDoctrineKernel extends Kernel
         // A second type over the SAME CommentEntity linking each comment to its article,
         // so an `?include=article` reaches the article level's withData() comments.
         $services->set(ArticleCommentResource::class);
+        // The pivot `playlists.tracks`, for the pivot write budget.
+        $services->set(DoctrinePlaylistResource::class);
+        $services->set(DoctrineTrackResource::class);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

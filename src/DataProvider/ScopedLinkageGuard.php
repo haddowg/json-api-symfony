@@ -37,11 +37,28 @@ final class ScopedLinkageGuard
 {
     private readonly JsonPointerBuilder $pointers;
 
+    /**
+     * The rows the current write has found served, as `type\0id` keys, so a pivot's
+     * pre-validation and the write's check share one read.
+     *
+     * @var array<string, true>
+     */
+    private array $found = [];
+
     public function __construct(
         private readonly DataProviderRegistry $providers,
         private readonly RelatedReadRouter $router,
     ) {
         $this->pointers = new JsonPointerBuilder();
+    }
+
+    /**
+     * Starts a write: rows found for an earlier one aren't trusted, since it may have
+     * removed them.
+     */
+    public function forget(): void
+    {
+        $this->found = [];
     }
 
     /**
@@ -158,7 +175,7 @@ final class ScopedLinkageGuard
         foreach ($linkage->resourceIdentifiers as $identifier) {
             \assert($identifier instanceof ResourceIdentifier);
             $id = $identifier->id;
-            if ($id === null || !isset($existingPivot[$id])) {
+            if ($id === null) {
                 continue;
             }
 
@@ -166,13 +183,17 @@ final class ScopedLinkageGuard
             // does not accept is no existing member (the write is refused later).
             if (!$this->accepts($relation, $identifier->type)) {
                 unset($existingPivot[$id]);
-            } elseif ($this->router->isScopedType($identifier->type, $relation)) {
+            } elseif ($this->providers->supportsType($identifier->type)) {
+                // Every member sent is read here, so the write's own check reads nothing more.
                 $byType[$identifier->type][$id] = $id;
             }
         }
 
         foreach ($byType as $type => $ids) {
             $served = $this->served($server, $type, \array_values($ids), $request);
+            if (!$this->router->isScopedType($type, $relation)) {
+                continue;
+            }
             foreach ($ids as $id) {
                 if (!isset($served[$id])) {
                     unset($existingPivot[$id]);
@@ -259,20 +280,29 @@ final class ScopedLinkageGuard
      */
     private function served(Server $server, string $type, array $ids, JsonApiRequestInterface $request): array
     {
-        $provider = $this->providers->forType($type);
-        $found = match (true) {
-            $provider instanceof FetchesByIdsInterface && $server->hasSerializerFor($type) => \array_map(
-                static fn(object $row): string => $server->serializerFor($type)->getId($row),
-                $provider->fetchByIds($type, $ids, $request),
-            ),
-            $provider instanceof AdmitsIdsInterface => $provider->admitIds($type, $ids, $request),
-            default => [],
-        };
-        $found = \array_fill_keys($found, true);
+        $unread = \array_values(\array_filter($ids, fn(string $id): bool => !isset($this->found[$type . "\0" . $id])));
+        if ($unread !== []) {
+            $provider = $this->providers->forType($type);
+            $batch = match (true) {
+                $provider instanceof FetchesByIdsInterface && $server->hasSerializerFor($type) => \array_map(
+                    static fn(object $row): string => $server->serializerFor($type)->getId($row),
+                    $provider->fetchByIds($type, $unread, $request),
+                ),
+                $provider instanceof AdmitsIdsInterface => $provider->admitIds($type, $unread, $request),
+                default => [],
+            };
+            $batch = \array_fill_keys($batch, true);
+
+            foreach ($unread as $id) {
+                if (isset($batch[$id]) || $provider->fetchOne($type, $id) !== null) {
+                    $this->found[$type . "\0" . $id] = true;
+                }
+            }
+        }
 
         $served = [];
         foreach ($ids as $id) {
-            if (isset($found[$id]) || $provider->fetchOne($type, $id) !== null) {
+            if (isset($this->found[$type . "\0" . $id])) {
                 $served[$id] = true;
             }
         }

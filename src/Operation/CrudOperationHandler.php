@@ -1631,6 +1631,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         JsonApiRequestInterface $body,
         Mode $mode,
     ): IdentifierResponse|AcceptedResponse|ErrorResponse {
+        $this->linkageGuard?->forget();
         $server = $this->server($operation->context());
         $target = $operation->target();
         $type = $target->type;
@@ -2280,6 +2281,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
     private function create(CreateResourceOperation $operation): DataResponse|AcceptedResponse
     {
+        $this->linkageGuard?->forget();
         $server = $this->server($operation->context());
         $type = $operation->target()->type;
         $body = $operation->body();
@@ -2393,6 +2395,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
     private function update(UpdateResourceOperation $operation): DataResponse|AcceptedResponse|ErrorResponse
     {
+        $this->linkageGuard?->forget();
         $server = $this->server($operation->context());
         $type = $operation->target()->type;
         $id = $operation->target()->id;

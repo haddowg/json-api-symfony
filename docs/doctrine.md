@@ -455,7 +455,9 @@ so resolving costs no further query:
   events. If you need that, supply a [custom `DataPersister`](custom-data-providers.md)
   that issues the bulk update.
 
-`DoctrineWriteQueryBudgetTest` pins the many-to-many cost.
+`DoctrineWriteQueryBudgetTest` pins both costs, and `DoctrinePivotWriteQueryBudgetTest`
+pins a pivot write to the same single read: the pivot's pre-validation and the existence
+check share it.
 
 ### Owned aggregates: orphan removal on detach
 
