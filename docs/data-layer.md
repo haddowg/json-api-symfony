@@ -257,7 +257,10 @@ the in-memory one only the first:
   that doesn't implement it writes without a transaction, and a batch that touches its
   type is refused. `rollback()` has to undo everything since the matching
   `beginTransaction()`, including a transaction a hook opened inside it and left open, and
-  must be safe to call after a failed `commit()`. Both shipped persisters do this.
+  must be safe to call after a failed `commit()`. Both shipped persisters do this. The
+  Doctrine one also keeps managed what the `EntityManager` held before the transaction
+  and detaches what the rolled-back writes touched, so no later flush writes them (see
+  [doctrine](doctrine.md#what-a-rollback-leaves-managed)).
 - [`ReportsMovedMembersInterface`](../src/DataPersister/ReportsMovedMembersInterface.php)
   (`movedMembers()`) reports each child a to-many add or replace would take from
   another parent, so the handler can dispatch a `BeforeMemberMoveEvent` and the

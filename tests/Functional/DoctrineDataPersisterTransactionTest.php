@@ -17,7 +17,8 @@ use PHPUnit\Framework\Attributes\Test;
  * the seam the Atomic Operations executor drives. begin → per-operation write
  * (its flush is non-durable while the transaction is open, yet materialises the
  * store-generated id immediately) → commit persists durably; begin → write →
- * rollback discards the write and leaves the EntityManager open and cleared.
+ * rollback discards the write and leaves the EntityManager open, holding only what it
+ * managed before the transaction began.
  *
  * Exercised against the real Doctrine + in-memory SQLite functional kernel over
  * the store-provided `AUTO` int-PK {@see TagEntity}, the simple write witness.
@@ -111,6 +112,55 @@ final class DoctrineDataPersisterTransactionTest extends JsonApiFunctionalTestCa
     }
 
     #[Test]
+    public function aNestedRollbackKeepsWhatTheOuterTransactionHeld(): void
+    {
+        $persister = $this->persister();
+        $entityManager = $this->entityManager();
+
+        $persister->beginTransaction();
+        $outer = new TagEntity(name: 'outer');
+        $persister->create('tags', $outer);
+
+        $persister->beginTransaction();
+        $inner = new TagEntity(name: 'inner');
+        $persister->create('tags', $inner);
+        $outer->name = 'renamed';
+        $persister->rollback();
+
+        self::assertTrue($entityManager->contains($outer));
+        self::assertSame('outer', $outer->name, 'The outer row is reloaded as the inner rollback left it.');
+        self::assertFalse($entityManager->contains($inner));
+
+        // Without savepoints DBAL 3 can only roll the outer level back now.
+        $persister->rollback();
+
+        self::assertFalse($entityManager->contains($outer));
+        self::assertSame([], $this->tagNames());
+    }
+
+    #[Test]
+    public function aRollbackDetachesWhatTheWritePersistedWithoutFlushing(): void
+    {
+        $persister = $this->persister();
+        $entityManager = $this->entityManager();
+        $kept = new TagEntity(name: 'kept');
+        $entityManager->persist($kept);
+        $entityManager->flush();
+
+        $persister->beginTransaction();
+        $pending = new TagEntity(name: 'pending');
+        $entityManager->persist($pending);
+        $entityManager->remove($kept);
+        $persister->rollback();
+
+        self::assertFalse($entityManager->contains($pending));
+        self::assertFalse($entityManager->contains($kept), 'An entity the write removed is detached, not deleted later.');
+        $entityManager->flush();
+
+        self::assertSame(['kept'], $this->tagNames());
+    }
+
+    #[Test]
     public function aCommitLeavesATransactionAHookOpenedForTheHookToCommit(): void
     {
         $persister = $this->persister();
@@ -166,6 +216,16 @@ final class DoctrineDataPersisterTransactionTest extends JsonApiFunctionalTestCa
 
         self::assertSame(0, $connection->getTransactionNestingLevel());
         self::assertSame(0, $this->tagCount());
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function tagNames(): array
+    {
+        $names = $this->entityManager()->getConnection()->fetchFirstColumn('SELECT name FROM tag ORDER BY id');
+
+        return \array_values(\array_filter($names, \is_string(...)));
     }
 
     private function tagCount(): int

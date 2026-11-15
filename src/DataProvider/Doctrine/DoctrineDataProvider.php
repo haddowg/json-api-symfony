@@ -374,7 +374,9 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
     /**
      * Keyset batches on the single id field: each batch reads the rows after the last id
      * of the one before, so a handler that changes or removes rows never shifts a later
-     * batch. The EntityManager is cleared before each batch after the first.
+     * batch. Before each batch after the first, the EntityManager lets go of everything the
+     * iteration loaded or persisted, and keeps managed what it managed before the first
+     * ({@see UnitOfWorkSnapshot::letGo()}).
      */
     public function eachFiltered(string $type, CollectionCriteria $criteria, ActionDescriptor $action, int $batch): iterable
     {
@@ -386,6 +388,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $base->orderBy($column, 'ASC');
         $base->setMaxResults($batch);
 
+        $managed = UnitOfWorkSnapshot::beforeBatches($this->entityManager);
         $after = null;
         do {
             $builder = clone $base;
@@ -402,7 +405,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             $more = \count($rows) === $batch;
             if ($more) {
                 $after = $this->ids->valueOf($metadata, $rows[\count($rows) - 1]);
-                $this->entityManager->clear();
+                $managed->letGo();
             }
         } while ($more);
     }

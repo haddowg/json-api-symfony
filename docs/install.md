@@ -153,6 +153,25 @@ A development install such as `dev-main` or a path repository compares the versi
 only, since its commit moves while you work without the container needing a rebuild.
 A release compares the commit too when both sides know it.
 
+### Upgrading to 2.17
+
+Every single create, update, delete and relationship write now runs in one transaction,
+and so does every action called with `POST`, `PATCH`, `PUT` or `DELETE` (see
+[lifecycle hooks](lifecycle-hooks.md#hooks-run-inside-the-writes-transaction)). Anything a
+before hook, a `BeforeActionEvent` subscriber or an action handler writes is rolled back
+when a later step throws, the hook's or action's own throw included.
+
+Code that records a rejection and then throws loses the record. An action that marks a
+file failed, flushes and throws to answer `422` now leaves the file as it was. Return the
+error from the action instead, with `ErrorResponse::fromException()`, which commits what
+the action wrote (see [recording a rejection](actions.md#recording-a-rejection)). A
+before hook can't return a response, so make its record outside the transaction.
+
+On Doctrine, 2.17.0 cleared the whole `EntityManager` after a rollback, which detached
+the security user along with everything else. A listener such as Gedmo's Blameable then
+passed the detached user to the next flush. 2.17.1 detaches only what the failed write
+touched (see [what a rollback leaves managed](doctrine.md#what-a-rollback-leaves-managed)).
+
 ## Next
 
 You are installed and the bundle is registered. Continue with

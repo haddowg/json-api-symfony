@@ -95,6 +95,9 @@ final class TxDoctrineTestKernel extends Kernel
             ->arg('$inner', service(DoctrineDataPersister::class))
             ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
 
+        $services->set(TxBlameListener::class)
+            ->tag('doctrine.event_listener', ['event' => 'prePersist']);
+
         TxKernelConfig::services($services);
     }
 

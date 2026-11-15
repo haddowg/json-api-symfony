@@ -178,7 +178,9 @@ so a polling client sees `202` until the work finishes and then a single `303`.
   track the job, is durable when the `202` goes out. The change the client asked for is
   the job's to make. The Doctrine persister's commit flushes nothing, so the hydrated
   entity of an accepted update stays unwritten, but it is still managed and dirty, so
-  detach it in your persister if anything else in the request flushes. The after hooks
+  refresh it in your persister if anything else in the request flushes. A refresh puts
+  back the stored state; a detach would also cascade along any `cascade: ['detach']`
+  mapping, to the security user for one. The after hooks
   don't run for a `202`, and the bundle has no hook after the commit, so a persister that
   dispatches from inside the write should use its queue's after-commit support: send the
   message through Messenger's Doctrine transport on the same connection, which only

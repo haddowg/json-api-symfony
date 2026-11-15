@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App\WriteTransaction;
 
+use haddowg\JsonApi\Exception\AccessDenied;
 use haddowg\JsonApi\Hydrator\Relationship\ToManyRelationship;
 use haddowg\JsonApi\Hydrator\Relationship\ToOneRelationship;
 use haddowg\JsonApi\Resource\Field\Mode;
@@ -15,7 +16,8 @@ use haddowg\JsonApiBundle\DataPersister\TransactionalDataPersisterInterface;
 /**
  * The `txWidgets` persister: passes every write to the store's own, except that with
  * {@see TxScenario::$accept} set it accepts a create or update for asynchronous processing
- * instead of writing it.
+ * instead of writing it, and with {@see TxScenario::$persisterThrows} set it throws once the
+ * store's write has run.
  */
 final readonly class TxAcceptingPersister implements DataPersisterInterface, TransactionalDataPersisterInterface
 {
@@ -33,22 +35,23 @@ final readonly class TxAcceptingPersister implements DataPersisterInterface, Tra
 
     public function create(string $type, object $entity): object
     {
-        return TxScenario::$accept ? $this->accepted() : $this->inner->create($type, $entity);
+        return TxScenario::$accept ? $this->accepted() : $this->written($this->inner->create($type, $entity));
     }
 
     public function update(string $type, object $entity): object
     {
-        return TxScenario::$accept ? $this->accepted() : $this->inner->update($type, $entity);
+        return TxScenario::$accept ? $this->accepted() : $this->written($this->inner->update($type, $entity));
     }
 
     public function delete(string $type, object $entity): void
     {
         $this->inner->delete($type, $entity);
+        $this->written($entity);
     }
 
     public function mutateRelationship(string $type, object $entity, RelationInterface $relation, ToOneRelationship|ToManyRelationship $linkage, Mode $mode, bool $flush = true): object
     {
-        return $this->inner->mutateRelationship($type, $entity, $relation, $linkage, $mode, $flush);
+        return $this->written($this->inner->mutateRelationship($type, $entity, $relation, $linkage, $mode, $flush));
     }
 
     public function beginTransaction(): void
@@ -64,6 +67,22 @@ final readonly class TxAcceptingPersister implements DataPersisterInterface, Tra
     public function rollback(): void
     {
         $this->inner->rollback();
+    }
+
+    /**
+     * @template T of object
+     *
+     * @param T $entity
+     *
+     * @return T
+     */
+    private function written(object $entity): object
+    {
+        if (TxScenario::$persisterThrows) {
+            throw new AccessDenied('Refused by the test persister.');
+        }
+
+        return $entity;
     }
 
     private function accepted(): AcceptedForProcessing

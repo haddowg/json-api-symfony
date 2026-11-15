@@ -40,6 +40,7 @@ use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineIdentifiers;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\NaiveDateTimeStorage;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\PivotAssociation;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\PivotAssociationResolver;
+use haddowg\JsonApiBundle\DataProvider\Doctrine\UnitOfWorkSnapshot;
 use haddowg\JsonApiBundle\Server\IdEncoderResolver;
 use haddowg\JsonApiBundle\Validation\RelationshipTypeUnacceptable;
 use Symfony\Contracts\Service\ResetInterface;
@@ -95,10 +96,10 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
     private ?\Closure $pivotRowFactory = null;
 
     /**
-     * The connection's nesting level before each transaction this persister opened,
-     * innermost last.
+     * The connection's nesting level before each transaction this persister opened, and the
+     * entities the `EntityManager` managed then, innermost last.
      *
-     * @var list<int>
+     * @var list<array{int, UnitOfWorkSnapshot}>
      */
     private array $openedAt = [];
 
@@ -131,13 +132,15 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
      * just-created resource's id (empirically confirmed against Doctrine + sqlite).
      *
      * The connection's nesting level before it opens is kept, so {@see rollback()} can
-     * close every level opened inside this one as well.
+     * close every level opened inside this one as well, and so are the entities the
+     * `EntityManager` manages, so {@see rollback()} can keep them managed.
      */
     public function beginTransaction(): void
     {
         $level = $this->entityManager->getConnection()->getTransactionNestingLevel();
+        $managed = UnitOfWorkSnapshot::beforeTransaction($this->entityManager);
         $this->entityManager->beginTransaction();
-        $this->openedAt[] = $level;
+        $this->openedAt[] = [$level, $managed];
     }
 
     /**
@@ -158,29 +161,38 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
 
     /**
      * Rolls back every level the connection opened since the matching
-     * {@see beginTransaction()}, including one a hook opened inside it and left open,
-     * then clears the unit of work, so the entities the rolled-back writes flushed are
-     * detached rather than lingering in the identity map as phantom managed state. The
-     * manager is left **open and reusable** — the request still has to render the error
-     * document, and a long-running worker reuses the manager on its next message;
-     * closing it would strand both (and forces a fragile reopen that breaks under older
-     * Doctrine ORM).
+     * {@see beginTransaction()}, including one a hook opened inside it and left open, then
+     * lets go of what the rolled-back writes touched, so no later flush writes any of it
+     * again. Every entity the `EntityManager` managed before the transaction began stays
+     * managed, such as the security user, and one the writes changed is reloaded from the
+     * database. Everything else the transaction loaded, persisted, inserted or deleted is
+     * detached ({@see UnitOfWorkSnapshot}). The manager is left **open and reusable**, since
+     * the request still has to render the error document and a long-running worker reuses
+     * the manager on its next message.
      *
      * A failed flush has already closed the manager and rolled back its own level by the
      * time this runs, so the connection is unwound whether or not the manager is open:
      * otherwise its outer transaction would stay open on the connection a worker's next
-     * request runs on. Safe to call when nothing is open.
+     * request runs on. A closed manager can't detach anything, and `kernel.reset` replaces
+     * it. Should putting the unit of work back fail, the manager is cleared instead, so the
+     * rollback never hides the error that caused it. Safe to call when nothing is open.
      */
     public function rollback(): void
     {
         $this->forgetClosedLevels();
-        $level = \array_pop($this->openedAt) ?? 0;
+        [$level, $managed] = \array_pop($this->openedAt) ?? [0, null];
         $connection = $this->entityManager->getConnection();
         while ($connection->getTransactionNestingLevel() > $level) {
             $connection->rollBack();
         }
 
-        if ($this->entityManager->isOpen()) {
+        if ($managed === null || !$this->entityManager->isOpen()) {
+            return;
+        }
+
+        try {
+            $managed->rolledBack();
+        } catch (\Throwable) {
             $this->entityManager->clear();
         }
     }
@@ -203,7 +215,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
     private function forgetClosedLevels(): void
     {
         $current = $this->entityManager->getConnection()->getTransactionNestingLevel();
-        while ($this->openedAt !== [] && \end($this->openedAt) >= $current) {
+        while ($this->openedAt !== [] && \end($this->openedAt)[0] >= $current) {
             \array_pop($this->openedAt);
         }
     }
