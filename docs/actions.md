@@ -684,11 +684,14 @@ Nothing is read until you call one of its two methods:
   Each batch reads the rows after the last id of the one before rather than using an
   offset, so changing or removing rows as you go never skips one.
 
-The Doctrine provider clears the `EntityManager` between batches so a large set stays
-within memory. Every managed entity is detached at that point, including rows from the
-earlier batch and anything else the request loaded before. Flush a batch's changes
-before the loop asks for the next one, as the example does, and don't keep entities
-from one batch to use in a later one.
+The Doctrine provider lets go of each batch before it reads the next, so a large set
+stays within memory. Every entity the loop loaded or persisted since its first batch is
+detached at that point, along with its unflushed changes. What the `EntityManager`
+managed before the loop began stays managed, such as the security user or the entity a
+resource action runs on, and keeps its unflushed field changes. One of those that points
+at a detached row, or holds an unflushed collection change, is reloaded from the
+database instead. Flush a batch's changes before the loop asks for the next one, as the
+example does, and don't keep entities from one batch to use in a later one.
 
 The Doctrine extensions see these queries as `QueryPurpose::ActionCollection`, with the
 request and the action's `ActionDescriptor` on the context. A scope that hides rows from
@@ -892,6 +895,45 @@ A collection action that works through many rows, like the
 [`archive` example above](#taking-the-types-filters), holds one transaction for all of
 them, along with the row locks it takes. Flushing each batch, as the example does, keeps
 memory down but commits nothing until the action returns.
+
+### Recording a rejection
+
+Since 2.17 everything an action writes before it throws is rolled back, and so is what a
+`BeforeActionEvent` subscriber wrote. An action that records a failure and then throws
+loses the record. Take an action that completes an upload: it marks the file failed when
+the upload doesn't check out, flushes, then throws to answer `422`. Before 2.17 the mark
+stayed in the database. Now the throw rolls it back, and the file looks as though nothing
+happened.
+
+Return the error instead of throwing it. A response value object returned from
+`handle()` commits the transaction, so the mark is kept and the client still gets the
+error document:
+
+```php
+public function handle(ActionContext $context): NoContentResponse|ErrorResponse
+{
+    $file = $context->entity();
+    \assert($file instanceof File);
+
+    try {
+        $this->uploads->complete($file);
+    } catch (UploadRejected $rejected) { // your own JsonApiExceptionInterface
+        $file->status = FileStatus::Failed;
+        $this->entityManager->flush();
+
+        return ErrorResponse::fromException($rejected);
+    }
+
+    return $context->noContent();
+}
+```
+
+Throw only when nothing the action wrote should survive.
+
+On Doctrine a rollback keeps managed what the `EntityManager` managed before the
+transaction began, such as the security user and the entity a resource action runs on,
+and reloads one the action changed. Everything else the action loaded or wrote is
+detached. See [what a rollback leaves managed](doctrine.md#what-a-rollback-leaves-managed).
 
 ## Error responses
 

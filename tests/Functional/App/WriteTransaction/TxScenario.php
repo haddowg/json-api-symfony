@@ -31,6 +31,12 @@ final class TxScenario
     /** Whether the actions' handlers throw once they have written. */
     public static bool $actionThrows = false;
 
+    /** Whether the `txWidgets` persister throws once its write has flushed. */
+    public static bool $persisterThrows = false;
+
+    /** The user the Doctrine kernel's blame listener stamps on what it persists. */
+    public static ?TxUser $user = null;
+
     /** The connection's transaction nesting level the last side write ran at, on Doctrine. */
     public static ?int $levelSeen = null;
 
@@ -43,6 +49,8 @@ final class TxScenario
         self::$unnestOn = null;
         self::$accept = false;
         self::$actionThrows = false;
+        self::$persisterThrows = false;
+        self::$user = null;
         self::$levelSeen = null;
     }
 }

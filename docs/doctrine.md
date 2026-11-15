@@ -140,8 +140,12 @@ A collection action declared with `filters` reads its rows through the same prov
 extensions as `QueryPurpose::ActionCollection`, then the action's filters, with no sort,
 window or count. `FilteredCollection::query()` hands that builder to the handler.
 `each()` reads it in batches keyed on the single id field, `WHERE id > :last ORDER BY id
-LIMIT n`, and calls `EntityManager::clear()` before each batch after the first, so the
-earlier batch's entities are detached by then.
+LIMIT n`. Before each batch after the first it detaches everything the loop loaded or
+persisted since the first batch, the same way a rollback does (see
+[what a rollback leaves managed](#what-a-rollback-leaves-managed)). What the
+`EntityManager` managed before the loop began stays managed and keeps its unflushed field
+changes, unless it points at a detached row or holds an unflushed collection change, when
+it is reloaded.
 
 Source: [`DoctrineDataProvider`](../src/DataProvider/Doctrine/DoctrineDataProvider.php).
 
@@ -425,9 +429,11 @@ carries each member's pivot values (see
   flush above, and any flush a before hook makes, is undone if a later step throws.
   `commit()` commits and flushes nothing itself. `rollback()` rolls the connection back
   to where the transaction began, closing any transaction a hook opened inside it, and
-  clears the `EntityManager`, leaving it open for the error response and the next
-  request. The persister is reset between requests (`kernel.reset`), so a worker never
-  starts a request inside a transaction an earlier one left open.
+  detaches what the write touched while keeping managed what the `EntityManager` held
+  before (see [what a rollback leaves managed](#what-a-rollback-leaves-managed)). The
+  manager stays open for the error response and the rest of the request. The persister is
+  reset between requests (`kernel.reset`), so a worker never starts a request inside a
+  transaction an earlier one left open.
 - **Client date-times are written in the storage zone.** A client may send
   `2026-10-01T16:00:00Z` to a naive `datetime` column. Before core hydrates a create or
   update, each `DateTime` attribute the request sends for such a column is moved to the
@@ -445,6 +451,48 @@ persister must share the `EntityManager` — the reference pair does. If you rep
 [custom-data-providers.md](custom-data-providers.md)).
 
 Source: [`DoctrineDataPersister`](../src/DataPersister/Doctrine/DoctrineDataPersister.php).
+
+### What a rollback leaves managed
+
+A write that fails rolls the database back, but Doctrine's unit of work still holds what
+the write did in memory. If that stayed, a later flush in the same request, or in the same
+test, would write the rejected changes after all. Detaching everything instead, as a plain
+`EntityManager::clear()` does, also detaches entities the request still uses, such as the
+security user. A listener like Gedmo's Blameable then hands the detached user to the next
+flush, which sees it as new and inserts it again.
+
+So when `beginTransaction()` opens a transaction, the persister notes every entity the
+`EntityManager` manages at that moment, and what each holds. After `rollback()` has
+rolled the connection back:
+
+- Every entity managed before the transaction began stays managed with the same object
+  identity, so code holding it carries on.
+- One of those the write changed is reloaded from the database: a field or association
+  the write set, flushed or not, a collection it changed or loaded, or a reference to an
+  entity being detached. Its unflushed changes are dropped, including ones you made
+  before the write and didn't flush.
+- Everything else is detached: whatever the write loaded, persisted or inserted, and
+  every entity it deleted or scheduled for deletion. An entity you persisted before the
+  write and hadn't flushed yet is detached too. Flush your own changes before a write
+  starts if they must survive its failure.
+
+Nested transactions each keep their own list, so rolling back an inner one keeps what the
+outer one had loaded. An Atomic Operations batch rolls back through the same path.
+
+The persister doesn't detach entities one at a time. Detaching cascades along
+`cascade: ['detach']` and `cascade: ['all']` mappings, so detaching a rolled-back row
+could detach the security user it points at. A detach also leaves behind the orphan
+removals and collection deletions the write scheduled, which the next flush would still
+run. Instead it clears the unit of work, registers the kept entities again with the
+identity and original data they had, and reloads the changed ones through their entity
+persister, which doesn't cascade either. Clearing dispatches Doctrine's `onClear` event,
+as the full clear before it did.
+
+When the write fails in a flush, Doctrine closes the `EntityManager` before the rollback
+runs, and a closed manager can't be put back. Every entity loaded from it is unusable for
+writing, the security user included, until `kernel.reset` replaces the manager for the
+next request. Don't hold managed entities across a write whose flush failed; in a test,
+reload them from the new manager.
 
 ### Relationship write query cost
 

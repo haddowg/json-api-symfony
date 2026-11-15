@@ -109,6 +109,39 @@ final class DoctrineActionFilterTest extends ActionFilterConformanceTestCase
         self::assertTrue($firstAttachedInFirstBatch);
     }
 
+    #[Test]
+    public function eachKeepsManagedWhatTheEntityManagerHeldBeforeItsFirstBatch(): void
+    {
+        $provider = static::getContainer()->get(DoctrineDataProvider::class);
+        self::assertInstanceOf(DoctrineDataProvider::class, $provider);
+        $registry = static::getContainer()->get(ActionRegistry::class);
+        self::assertInstanceOf(ActionRegistry::class, $registry);
+        $action = $registry->descriptorFor('default', 'filterCrates', ActionScope::Collection, 'tally');
+        self::assertNotNull($action);
+
+        $entityManager = $this->entityManager();
+        $hidden = $entityManager->find(CrateEntity::class, 7);
+        $first = $entityManager->find(CrateEntity::class, 1);
+        self::assertNotNull($hidden);
+        self::assertNotNull($first);
+        $hidden->name = 'renamed';
+
+        $second = null;
+        foreach ($provider->eachFiltered('filterCrates', new CollectionCriteria(new QueryParameters([], [], [], [], [])), $action, 2) as $crate) {
+            self::assertInstanceOf(CrateEntity::class, $crate);
+            $second ??= $crate->id === 2 ? $crate : null;
+        }
+
+        self::assertTrue($entityManager->contains($hidden));
+        self::assertTrue($entityManager->contains($first));
+        self::assertNotNull($second);
+        self::assertFalse($entityManager->contains($second));
+
+        // The unflushed change to an entity kept managed survives the batches.
+        $entityManager->flush();
+        self::assertSame('renamed', $entityManager->getConnection()->fetchOne('SELECT name FROM filter_crate WHERE id = 7'));
+    }
+
     private function entityManager(): EntityManagerInterface
     {
         $entityManager = static::getContainer()->get('doctrine.orm.entity_manager');

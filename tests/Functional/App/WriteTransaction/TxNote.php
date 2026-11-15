@@ -20,4 +20,11 @@ class TxNote
 
     #[ORM\Column]
     public string $body = '';
+
+    /**
+     * Cascades detach as well, so detaching a note one at a time would detach its user too.
+     */
+    #[ORM\ManyToOne(targetEntity: TxUser::class, cascade: ['persist', 'detach'])]
+    #[ORM\JoinColumn(name: 'created_by_id')]
+    public ?TxUser $createdBy = null;
 }

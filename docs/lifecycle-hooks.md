@@ -159,10 +159,25 @@ becomes a savepoint, and committing it closes that level only. Open it on the
 calls `beginTransaction()` on the persister instance itself must also close it, because the
 persister can't tell that level from the write's own. If the write fails, the
 rollback also closes a transaction the hook opened and has not committed, so the
-connection is never left mid-transaction for the next request a worker serves. On
-Doctrine the rollback also clears the `EntityManager`, which detaches every entity the
-request had loaded. When the failure is a flush, Doctrine has already closed the
-manager; Symfony's `kernel.reset` gives the next request a fresh one.
+connection is never left mid-transaction for the next request a worker serves.
+
+On Doctrine the rollback then lets go of what the write touched. Every entity the
+`EntityManager` managed before the transaction began stays managed, such as the security
+user, and one the write changed is reloaded from the database. Everything the write
+loaded, persisted, inserted or deleted is detached, so no later flush in the same request
+writes any of it again. See
+[what a rollback leaves managed](doctrine.md#what-a-rollback-leaves-managed). When the
+failure is a flush, Doctrine has already closed the manager, so nothing can be detached
+and every entity you hold from it is detached already. Symfony's `kernel.reset` gives the
+next request a fresh manager. Don't keep using managed entities after a write whose flush
+failed.
+
+Since 2.17 a before hook can't keep a write of its own when it throws. Whatever it, or
+any earlier hook, wrote is rolled back with the rest of the write. A hook that rejects a
+write and needs a record of the rejection has to make it outside the transaction: from a
+`kernel.terminate` listener once the response has gone, or through a second DBAL
+connection. An [action](actions.md#recording-a-rejection) can instead return its error
+as a response, which commits.
 
 A rollback undoes only what went through the connection. A message dispatched to a
 queue, an email sent or an HTTP call made from a before hook has already happened. Do
