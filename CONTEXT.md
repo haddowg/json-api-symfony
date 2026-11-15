@@ -47,6 +47,10 @@ A data persister that also implements `TransactionalDataPersisterInterface`, so 
 **Write transaction**:
 The transaction a single create, update, delete, relationship write, or action called with a writing method runs in, from its first write step and every before hook through the persister's write. A CRUD write's after hooks run once it commits; an action's `AfterActionEvent` runs inside it.
 
+**After-commit callback**:
+A callable registered on the `AfterCommit` service that runs once the current write transaction commits, before the after hooks; a rollback drops it, an Atomic Operations batch holds it until the batch commits, and outside any write it runs at once.
+_Avoid_: post-commit hook (the deferred After* hooks of a batch)
+
 **Reference data layer**:
 The Doctrine ORM provider and persister the bundle ships as the default implementation for entity-mapped types.
 

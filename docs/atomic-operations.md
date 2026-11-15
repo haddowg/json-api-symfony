@@ -202,6 +202,12 @@ committed durably by the time the deferred hooks run, so a throwing post-commit 
 does **not** fail the response or roll anything back. A hook with a hard post-commit
 invariant must handle its own errors; it cannot abort a committed batch.
 
+A callback registered on [`AfterCommit`](lifecycle-hooks.md#running-code-after-the-commit)
+during a batch waits for the batch, not for its operation. Every callback the batch's
+operations register runs once the whole batch has committed, in the order they were
+registered and ahead of the deferred `After*` hooks. A batch that rolls back runs none of
+them, including those of the operations that had already succeeded.
+
 ## What the atomic endpoint does *not* do
 
 - **No `?include` / sparse `?fields`.** A result object is `{data, meta}` only — no

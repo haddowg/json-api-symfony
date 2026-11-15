@@ -207,6 +207,17 @@ final class DoctrineWriteTransactionTest extends WriteTransactionConformanceTest
     }
 
     #[Test]
+    public function aFailedFlushRunsNoCallbacks(): void
+    {
+        TxScenario::$afterCommitOn = BeforeSaveEvent::class;
+
+        self::assertSame(500, $this->handle('/txWidgets', 'POST', $this->widget('first'))->getStatusCode());
+
+        self::assertSame(['BeforeSaveEvent', 'BeforeCreateEvent'], TxScenario::$log);
+        self::assertSame([], TxScenario::$callbackLevels);
+    }
+
+    #[Test]
     public function aWorkerResetAfterAFailedFlushServesTheNextWrite(): void
     {
         TxScenario::$sideWriteOn = BeforeSaveEvent::class;
@@ -287,6 +298,11 @@ final class DoctrineWriteTransactionTest extends WriteTransactionConformanceTest
         }
 
         return $rows;
+    }
+
+    protected function assertCallbacksRanCommitted(int $count): void
+    {
+        self::assertSame(\array_fill(0, $count, 0), TxScenario::$callbackLevels, 'Every callback ran outside the transaction.');
     }
 
     protected function assertNoTransactionOpen(): void

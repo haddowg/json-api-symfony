@@ -17,11 +17,15 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiAction;
 #[AsJsonApiAction(type: 'txWidgets', path: 'peek', methods: ['GET'], responds: [new NoContent()])]
 final readonly class PeekTxWidget implements ActionHandlerInterface
 {
-    public function __construct(private TxSideWriter $writer) {}
+    public function __construct(private TxSideWriter $writer, private TxCallbacks $callbacks) {}
 
     public function handle(ActionContext $context): NoContentResponse
     {
         $this->writer->write('peeked');
+
+        if (TxScenario::$actionAfterCommit) {
+            $context->afterCommit($this->callbacks->callback('after commit (peek)'));
+        }
 
         if (TxScenario::$actionThrows) {
             throw new AccessDenied('Refused by the test action.');

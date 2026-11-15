@@ -19,7 +19,8 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Model\ExportJob;
  * {@see AcceptedForProcessing} pointing at a pollable `export-jobs` resource — so the
  * handler renders the `202 Accepted` (`Content-Location` + `Retry-After`) the resource's
  * `create: [new Accepted('export-jobs')]` declaration advertises. A real persister would
- * dispatch a queued job here; this witness just mints the `processing` job. {@see delete()}
+ * queue the job here through {@see \haddowg\JsonApiBundle\DataPersister\AfterCommit}, so a
+ * worker only sees it once the accept commits; this witness just mints the `processing` job. {@see delete()}
  * is a no-op (`204`); this type declares no `update`, so {@see update()} is unreachable.
  */
 final class CatalogExportPersister implements DataPersisterInterface

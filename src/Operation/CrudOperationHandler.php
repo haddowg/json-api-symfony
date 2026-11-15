@@ -76,6 +76,7 @@ use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\Action\ActionInvoker;
 use haddowg\JsonApiBundle\Atomic\AtomicLoopBackend;
 use haddowg\JsonApiBundle\DataPersister\AcceptedForProcessing;
+use haddowg\JsonApiBundle\DataPersister\AfterCommit;
 use haddowg\JsonApiBundle\DataPersister\AsyncWriteNotAllowedInAtomicOperation;
 use haddowg\JsonApiBundle\DataPersister\BuildsPivotRowsInterface;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
@@ -271,6 +272,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // Resolves a type's id encoder from the class the operation's server serves it
         // with; bound per operation.
         private readonly ?IdEncoderResolver $idEncoders = null,
+        // Runs the callbacks registered during a write once it commits.
+        private readonly ?AfterCommit $afterCommit = null,
     ) {}
 
     public function handle(\haddowg\JsonApi\Operation\JsonApiOperationInterface $operation): DataResponse|RelatedResponse|IdentifierResponse|MetaResponse|NoContentResponse|AcceptedResponse|SeeOtherResponse|AtomicResultsResponse|ErrorResponse|RawResponse
@@ -398,6 +401,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $this->types,
             $this->logger,
             $this->descriptors,
+            $this->afterCommit,
         );
 
         return (new AtomicLoop())->run($operation->descriptors(), $backend);
@@ -1695,7 +1699,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // pass its entity-level constraints, and the update gate judges it too, so a caller
         // can't hand it to someone the gate would refuse them as. A violation or a refusal
         // rolls the change back, with anything a before hook flushed.
-        $parent = WriteTransaction::run($persister, $this->txContext, function () use ($server, $persister, $type, $parent, $relation, $linkage, $mode, $request, $body): object {
+        $parent = WriteTransaction::run($persister, $this->txContext, afterCommit: $this->afterCommit, write: function () use ($server, $persister, $type, $parent, $relation, $linkage, $mode, $request, $body): object {
             $this->dispatch(new BeforeRelationshipMutateEvent($type, $request, $parent, $relation, $linkage, $mode, $this->serverName($request)));
 
             // Linkage naming a resource the related endpoint does not serve is rejected as
@@ -2307,7 +2311,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         // From the first association applied to the persister's write, everything runs in
         // one transaction, so a flush a before hook makes is undone when a later step throws.
-        $entity = WriteTransaction::run($persister, $this->txContext, function () use ($server, $persister, $type, $entity, $relationships, $body, $request): object {
+        $entity = WriteTransaction::run($persister, $this->txContext, afterCommit: $this->afterCommit, write: function () use ($server, $persister, $type, $entity, $relationships, $body, $request): object {
             return $this->createWrite($server, $persister, $type, $entity, $relationships, $body, $request);
         });
         // The write may have changed whether a related row is readable.
@@ -2428,7 +2432,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // Everything from the first before hook to the save runs in one transaction, so a
         // refusal or a failure after a hook flushed or the body's relationships were applied
         // leaves nothing behind.
-        $entity = WriteTransaction::run($persister, $this->txContext, function () use ($server, $persister, $type, $entity, $body, $request): object {
+        $entity = WriteTransaction::run($persister, $this->txContext, afterCommit: $this->afterCommit, write: function () use ($server, $persister, $type, $entity, $body, $request): object {
             return $this->updateWrite($server, $persister, $type, $entity, $body, $request);
         });
         // The write may have changed whether a related row is readable.
@@ -3136,7 +3140,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // the delete, in one transaction: a write the gate made is undone when the delete fails.
         $persister = $this->persisters->forType($type);
         $deletes = $this->types->resourceFor($this->server($operation->context()), $type);
-        WriteTransaction::run($persister, $this->txContext, function () use ($type, $request, $entity, $persister, $deletes): void {
+        WriteTransaction::run($persister, $this->txContext, afterCommit: $this->afterCommit, write: function () use ($type, $request, $entity, $persister, $deletes): void {
             $this->dispatch(new BeforeDeleteEvent($type, $request, $entity, $this->serverName($request)));
 
             if ($deletes instanceof DeletesEntityInterface) {

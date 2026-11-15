@@ -26,7 +26,7 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  */
 final readonly class TxHookSubscriber implements EventSubscriberInterface
 {
-    public function __construct(private TxSideWriter $writer) {}
+    public function __construct(private TxSideWriter $writer, private TxCallbacks $callbacks) {}
 
     public static function getSubscribedEvents(): array
     {
@@ -55,11 +55,16 @@ final readonly class TxHookSubscriber implements EventSubscriberInterface
         }
 
         $class = $event::class;
+        $name = (new \ReflectionClass($event))->getShortName();
+        TxScenario::$log[] = $name;
+        if (TxScenario::$afterCommitOn === $class) {
+            $this->callbacks->register('after commit (' . $name . ')');
+        }
         if (TxScenario::$nestOn === $class) {
             $this->writer->begin();
         }
         if (TxScenario::$sideWriteOn === $class) {
-            $this->writer->write('by ' . (new \ReflectionClass($event))->getShortName());
+            $this->writer->write('by ' . $name);
         }
         if (TxScenario::$unnestOn === $class) {
             $this->writer->commit();

@@ -29,6 +29,7 @@ use haddowg\JsonApi\Response\DataResponse;
 use haddowg\JsonApi\Response\NoContentResponse;
 use haddowg\JsonApi\Scope\ScopeEnforcer;
 use haddowg\JsonApi\Server\Server;
+use haddowg\JsonApiBundle\DataPersister\AfterCommit;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataPersister\TransactionalDataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\WriteTransactionContext;
@@ -57,7 +58,8 @@ use Symfony\Component\Routing\RouterInterface;
  * sub-operation) and the per-op After* lifecycle hooks defer to post-commit via the
  * shared {@see WriteTransactionContext}. The whole batch runs inside one transaction
  * opened on every participating persister, committed together on success or rolled
- * back together on the first failure.
+ * back together on the first failure. It also holds one {@see AfterCommit} scope, so the
+ * callbacks the operations register run once the batch commits and not before.
  *
  * **Decoration is batch-scoped.** A handler decorator therefore wraps the batch as a
  * whole (it sees the single {@see \haddowg\JsonApi\Operation\AtomicOperationsOperation}),
@@ -104,6 +106,11 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
      */
     private bool $opened = false;
 
+    /**
+     * Whether the batch's {@see AfterCommit} scope is open, so it is closed exactly once.
+     */
+    private bool $scoped = false;
+
     private readonly LoggerInterface $logger;
 
     /**
@@ -140,6 +147,8 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
         // The per-server operation allow-lists; null in a programmatic wiring, where
         // every registered type and operation is writable.
         private readonly ?RouteDescriptorRegistry $routeDescriptors = null,
+        // Holds the callbacks the batch's writes register until the batch commits.
+        private readonly ?AfterCommit $afterCommit = null,
     ) {
         $this->logger = $logger ?? new NullLogger();
 
@@ -189,6 +198,11 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
         // the batch opened so a later rollback() unwinds it.
         $this->context->activate();
         $this->opened = true;
+
+        // One scope for the whole batch: each operation's own scope nests inside it, so
+        // nothing registered during the batch runs before the batch commits.
+        $this->afterCommit?->open();
+        $this->scoped = $this->afterCommit !== null;
     }
 
     public function executeOne(OperationDescriptor $op, LocalIdRegistry $lids): AtomicResult
@@ -282,14 +296,19 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
             throw $throwable;
         }
 
-        // The data is durable: drain the deferred After* hooks (FIFO). The batch has
-        // ALREADY committed, so a hook that throws must NOT turn a successful, durably
-        // committed batch into a failure (and there is nothing to roll back — the data
+        // The data is durable: run the callbacks the batch's writes registered, then
+        // drain the deferred After* hooks (FIFO). The batch has ALREADY committed, so a
+        // hook that throws must NOT turn a successful, durably committed batch into a failure (and there is nothing to roll back — the data
         // stands). Each hook exception is therefore caught + LOGGED and the remaining
         // hooks still run; the batch's response is unaffected. The context is ALWAYS
         // deactivated, even if a hook threw, so it never stays active for the next
         // request (a finally belt alongside kernel.reset).
         try {
+            if ($this->scoped) {
+                $this->scoped = false;
+                $this->afterCommit?->commit();
+            }
+
             $this->context->drain(function (\Throwable $throwable): void {
                 $this->logger->error(
                     'A deferred After* lifecycle hook threw after an Atomic Operations batch committed; '
@@ -319,6 +338,12 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
         // ALWAYS discard the deferred queue and deactivate, even when nothing was opened —
         // a rolled-back batch fires no After* hooks, and the context must never stay active.
         $this->context->deactivate();
+
+        // Nor does it run the callbacks its writes registered.
+        if ($this->scoped) {
+            $this->scoped = false;
+            $this->afterCommit?->discard();
+        }
     }
 
     /**

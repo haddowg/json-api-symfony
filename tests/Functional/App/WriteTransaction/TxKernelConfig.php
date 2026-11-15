@@ -32,12 +32,13 @@ final class TxKernelConfig
             'atomic_operations' => ['enabled' => true],
         ]);
 
-        $builder->register('logger', \Psr\Log\NullLogger::class);
+        $builder->register('logger', TxLogger::class);
     }
 
     public static function services(DefaultsConfigurator $services): void
     {
         $services->set(TxSideWriter::class);
+        $services->set(TxCallbacks::class);
         $services->set(TxHookSubscriber::class);
         $services->set(StampTxWidget::class);
         $services->set(SweepTxWidgets::class);
