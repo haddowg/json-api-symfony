@@ -178,10 +178,14 @@ so a polling client sees `202` until the work finishes and then a single `303`.
   track the job, is durable when the `202` goes out. The change the client asked for is
   the job's to make. The Doctrine persister's commit flushes nothing, so the hydrated
   entity of an accepted update stays unwritten, but it is still managed and dirty, so
-  detach it in your persister if anything else in the request flushes. A message the
-  persister dispatches leaves before the commit, so a worker can start on it first; a
-  transport on the same database connection, such as Messenger's Doctrine transport,
-  only delivers it once the transaction commits. The after hooks don't run for a `202`.
+  detach it in your persister if anything else in the request flushes. The after hooks
+  don't run for a `202`, and the bundle has no hook after the commit, so a persister that
+  dispatches from inside the write should use its queue's after-commit support: send the
+  message through Messenger's Doctrine transport on the same connection, which only
+  delivers it once the transaction commits and drops it on a rollback, or stamp it with
+  `DispatchAfterCurrentBusStamp` when the write itself runs inside a message handler.
+  Otherwise a worker can start on the message before the write commits, or after it rolled
+  back.
 - **Scope.** The seam covers `create()` and `update()`. `delete()` returns `void`, so
   an async delete is not expressible through it today.
 - **Portability.** `AcceptedResponse`/`SeeOtherResponse` are core, framework-neutral

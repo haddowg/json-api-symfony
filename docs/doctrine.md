@@ -409,9 +409,9 @@ carries each member's pivot values (see
   then breaks the primary key, and the persister answers the same `409` when that
   violation came from its own row's insert and a row with the id is there. If the database
   refuses that second lookup, as PostgreSQL does in a failed transaction, the violation
-  stays a `500`. The create runs inside the write's transaction, so on PostgreSQL the
-  lookup works only when Doctrine nests its flush as a savepoint, which DBAL 4 always does
-  and DBAL 3 does with savepoints enabled. The
+  stays a `500`. The create runs inside the write's transaction, so the persister sets a
+  savepoint before inserting a client id and rolls back to it before the lookup, which keeps
+  PostgreSQL answering it on DBAL 3 with savepoints off as well as on DBAL 4. The
   in-memory persister refuses a taken id the same way.
 - **`update()`** relies on the target being a *managed* instance the hydrator
   mutated in place — the provider loaded it through this same `EntityManager`, so

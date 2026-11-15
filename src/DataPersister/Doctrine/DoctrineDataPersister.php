@@ -103,6 +103,11 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
     private array $openedAt = [];
 
     /**
+     * How many client-id create savepoints this persister has opened, to name the next one.
+     */
+    private int $savepoints = 0;
+
+    /**
      * @param array<string, class-string>    $entityClassByType a `type → entity FQCN` map
      * @param IdEncoderResolver               $idEncoders        resolves a related type's id encoder (linkage decode)
      * @param ?PivotAssociationResolver       $pivotAssociations resolves a belongsToMany pivot relation's association entity (always wired under Doctrine), for the writable-pivot association-entity diff
@@ -243,25 +248,52 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
         }
 
         $this->entityManager->persist($entity);
+        $savepoint = $clientId ? $this->openRaceSavepoint() : null;
         try {
             $this->entityManager->flush();
         } catch (UniqueConstraintViolationException $exception) {
             // A concurrent create can take the id between the lookup above and the insert.
+            if ($savepoint !== null) {
+                $this->entityManager->getConnection()->rollbackSavepoint($savepoint);
+            }
             if ($clientId && $this->lostTheRace($exception, $metadata, $ids)) {
                 throw new ClientGeneratedIdAlreadyExists(self::describeId($ids));
             }
 
             throw $exception;
         }
+        if ($savepoint !== null) {
+            $this->entityManager->getConnection()->releaseSavepoint($savepoint);
+        }
 
         return $entity;
     }
 
     /**
+     * Inside a transaction, a database such as PostgreSQL refuses every statement after a
+     * failed one until it rolls back, so the lookup that tells a lost id race from another
+     * violation would fail. Doctrine nests its flush as a savepoint on DBAL 4, but not on
+     * DBAL 3 with savepoints off, so a client-id create sets its own savepoint to roll back
+     * to. Null outside a transaction, or on a platform without savepoints.
+     */
+    private function openRaceSavepoint(): ?string
+    {
+        $connection = $this->entityManager->getConnection();
+        if (!$connection->isTransactionActive() || !$connection->getDatabasePlatform()->supportsSavepoints()) {
+            return null;
+        }
+
+        $savepoint = 'JSONAPI_CREATE_' . ++$this->savepoints;
+        $connection->createSavepoint($savepoint);
+
+        return $savepoint;
+    }
+
+    /**
      * Whether a unique violation came from inserting the new entity's own row under an id
      * another row now holds. The lookup reads through the connection, since the failed
-     * flush closed the entity manager; a lookup the database refuses, as PostgreSQL does
-     * inside a failed transaction, leaves the violation as it is.
+     * flush closed the entity manager; a lookup the database still refuses leaves the
+     * violation as it is.
      *
      * @param ClassMetadata<object> $metadata
      * @param array<string, mixed>  $ids

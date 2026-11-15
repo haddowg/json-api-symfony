@@ -145,6 +145,8 @@ is undone if a later hook, a validation or the persister's own write throws, so 
 that has to flush early, for example to give a new row its id, needs no transaction of
 its own to stay undoable. The after hooks run once the transaction has committed: what
 they read is durable, and a throw from one fails the response without undoing the write.
+The response is rendered after the commit too, so a failure while serializing it returns an
+error with the write already stored.
 
 There is no switch to turn this off. Inside an [Atomic Operations](atomic-operations.md)
 batch the batch's transaction covers the write instead, and a persister that can't
@@ -152,7 +154,10 @@ transact runs the write without one. [Custom actions](actions.md#transactions) c
 with `POST`, `PATCH`, `PUT` or `DELETE` run in one too.
 
 A hook may still open its own transaction. It nests inside the write's: on Doctrine it
-becomes a savepoint, and committing it closes that level only. If the write fails, the
+becomes a savepoint, and committing it closes that level only. Open it on the
+`EntityManager` or its connection, which the rollback below handles in full; a hook that
+calls `beginTransaction()` on the persister instance itself must also close it, because the
+persister can't tell that level from the write's own. If the write fails, the
 rollback also closes a transaction the hook opened and has not committed, so the
 connection is never left mid-transaction for the next request a worker serves. On
 Doctrine the rollback also clears the `EntityManager`, which detaches every entity the

@@ -31,7 +31,7 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
  * served over the Doctrine `-128` fallback provider/persister from its
  * `#[AsJsonApiResource(entity: …)]` map alone — no per-type engine code.
  */
-final class IdSourceTestKernel extends Kernel
+class IdSourceTestKernel extends Kernel
 {
     use MicroKernelTrait;
 
