@@ -578,7 +578,7 @@ final class MetadataSource
             $ownerServesEndpoints,
             $relatedResource,
             fn(): bool => self::canRefuseDetachment($this->persisterFor($type), $type, $relation),
-            fn(): bool => $this->canMissLinkage($this->persisterFor($type), $relation),
+            fn(): bool => $this->canMissLinkage($this->persisterFor($type), $type, $relation),
         );
     }
 
@@ -603,22 +603,23 @@ final class MetadataSource
     }
 
     /**
-     * Linkage to a related type whose provider scopes what the caller sees is checked
-     * against it, and the Doctrine persister refuses an id it cannot convert. The
-     * in-memory persister finds nothing to refuse, and a persister of the application's
-     * own may.
+     * Linkage to a related type a provider serves is checked against it before the
+     * write, and the Doctrine persister refuses an id it cannot convert or a member it
+     * cannot load. The in-memory persister finds nothing to refuse, and a persister of
+     * the application's own may.
      */
-    private function canMissLinkage(?DataPersisterInterface $persister, RelationInterface $relation): bool
+    private function canMissLinkage(?DataPersisterInterface $persister, string $type, RelationInterface $relation): bool
     {
+        $reads = $this->relatedReads();
         foreach ($relation->relatedTypes() as $relatedType) {
-            if ($this->relatedReads()?->isScopedType($relatedType, $relation) ?? true) {
+            if ($reads === null || $reads->servesType($relatedType)) {
                 return true;
             }
         }
 
         return match (true) {
             $persister === null, $persister instanceof InMemoryDataPersister => false,
-            $persister instanceof DoctrineDataPersister => $persister->canMissLinkage($relation),
+            $persister instanceof DoctrineDataPersister => $persister->canMissLinkage($relation, $type),
             default => true,
         };
     }

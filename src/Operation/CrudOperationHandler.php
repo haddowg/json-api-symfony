@@ -1631,6 +1631,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         JsonApiRequestInterface $body,
         Mode $mode,
     ): IdentifierResponse|AcceptedResponse|ErrorResponse {
+        $this->linkageGuard?->forget();
         $server = $this->server($operation->context());
         $target = $operation->target();
         $type = $target->type;
@@ -1679,7 +1680,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         };
         // A member the scope hides validates as a new one, as a missing one would.
         if ($existingPivot !== [] && $relation instanceof BelongsToMany && $linkage instanceof ToManyRelationship && $this->linkageGuard !== null) {
-            $existingPivot = $this->linkageGuard->visiblePivot($relation, $existingPivot, $linkage);
+            $existingPivot = $this->linkageGuard->visiblePivot($server, $relation, $existingPivot, $linkage, $this->jsonApiRequest($operation->context()));
         }
         $this->validateLinkage($relation, $linkage, $mode, $existingPivot);
 
@@ -2280,6 +2281,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
     private function create(CreateResourceOperation $operation): DataResponse|AcceptedResponse
     {
+        $this->linkageGuard?->forget();
         $server = $this->server($operation->context());
         $type = $operation->target()->type;
         $body = $operation->body();
@@ -2393,6 +2395,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
     private function update(UpdateResourceOperation $operation): DataResponse|AcceptedResponse|ErrorResponse
     {
+        $this->linkageGuard?->forget();
         $server = $this->server($operation->context());
         $type = $operation->target()->type;
         $id = $operation->target()->id;
@@ -3217,7 +3220,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
             $pivot = $provider->fetchRelationshipPivot($type, $parent, $relation);
             if ($pivot !== [] && $this->linkageGuard !== null && $body->hasToManyRelationship($name)) {
-                $pivot = $this->linkageGuard->visiblePivot($relation, $pivot, $body->getToManyRelationship($name));
+                $pivot = $this->linkageGuard->visiblePivot($server, $relation, $pivot, $body->getToManyRelationship($name), $body);
             }
             if ($pivot !== []) {
                 $existingPivots[$name] = $pivot;

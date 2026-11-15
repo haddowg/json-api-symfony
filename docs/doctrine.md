@@ -188,9 +188,8 @@ The entity **always holds the storage key**. The transform runs at two boundarie
   (no row holds that key, so no query runs). Before `getReference()` the Doctrine
   persister `decode()`s each linkage id (keyed by the *related* type's encoder), so a
   relationship write whose `data` carries wire ids resolves the right managed
-  references; a linkage id that `decode()`s to `null` is a bad target and raises a
-  `404` (rather than passing the raw wire string to `getReference`, which would build
-  a proxy that errors on initialization — a `500`).
+  references. The existence check before the write already refuses a linkage id that
+  `decode()`s to `null`, or that no row holds, with a `404`.
 
 So a read round-trips `wire -> (Doctrine decode) -> storageKey -> query -> entity ->
 (core encode) -> wire`, and a create-with-client-id round-trips `wire -> (core decode)
@@ -436,29 +435,29 @@ Source: [`DoctrineDataPersister`](../src/DataPersister/Doctrine/DoctrineDataPers
 
 ### Relationship write query cost
 
-When a write carries a `data.relationships` member, the persister resolves each
-linkage id with `EntityManager::getReference()` — a lazy proxy, **no query** — so how
-the linkage costs depends on the relation's *owning side*:
+Before a write applies any linkage, the handler checks that each id names a row, with
+one batched `SELECT … WHERE id IN (…)` per related type through the provider's
+`fetchByIds()` (see [written linkage](relationships.md#written-linkage-is-checked-against-the-related-types-provider)).
+The rows it loads stay in the identity map. The persister then resolves each linkage id
+with `EntityManager::getReference()`, which returns the managed entity already loaded,
+so resolving costs no further query:
 
-- **A many-to-many the parent owns** (the join-table side, e.g. `editors`) stays
-  **O(1)**: the proxy is added to the owning collection and the join row inserts from
-  its known id, never loading the related entity. Creating or replacing such a
-  relation with 2 ids or 200 issues the same number of `SELECT`s (none for the
-  linkage).
+- **A many-to-many the parent owns** (the join-table side, e.g. `editors`) adds each
+  entity to the owning collection and the join row inserts from its id. Creating or
+  replacing such a relation with 2 ids or 200 issues the same number of `SELECT`s: the
+  one existence check.
 - **An inverse one-to-many** (the foreign key lives on the *child*, e.g. `comments`
-  where `comment.article_id` is the FK) costs **one `SELECT` per incoming id**:
-  re-pointing a child means setting its owning-side association
-  (`$comment->article = $article`), and setting a field on a `getReference()` proxy
-  initialises it. So a create / replace / add / remove of an inverse one-to-many is
-  O(linkage size).
+  where `comment.article_id` is the FK) sets each child's owning-side association
+  (`$comment->article = $article`). The child is already managed, so that loads
+  nothing more either. Re-pointing N children still writes N rows at flush: the unit of
+  work tracks each FK change, and the only alternative, a bulk `UPDATE … WHERE id IN
+  (...)`, would bypass the unit of work and the children's lifecycle and cascade
+  events. If you need that, supply a [custom `DataPersister`](custom-data-providers.md)
+  that issues the bulk update.
 
-This is an **accepted limitation**, not a bug: re-pointing N managed
-children through the ORM inherently needs them managed (the unit of work tracks each
-FK change), and the only O(1) alternative — a bulk `UPDATE … WHERE id IN (...)` —
-bypasses the unit of work and the children's lifecycle/cascade events. It only matters
-for *large* to-many re-points; a handful of ids is negligible. If you need O(1) bulk
-re-pointing, supply a [custom `DataPersister`](custom-data-providers.md) that issues
-the bulk update. `DoctrineWriteQueryBudgetTest` pins both behaviours.
+`DoctrineWriteQueryBudgetTest` pins both costs, and `DoctrinePivotWriteQueryBudgetTest`
+pins a pivot write to the same single read: the pivot's pre-validation and the existence
+check share it.
 
 ### Owned aggregates: orphan removal on detach
 

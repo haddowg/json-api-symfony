@@ -138,4 +138,30 @@ final class InMemoryStoreSnapshotTest extends TestCase
 
         self::assertCount(1, $store->all());
     }
+
+    #[Test]
+    public function anInnerCommitKeepsTheOuterSnapshotForItsRollback(): void
+    {
+        $alpha = new Article(1, 'Alpha');
+        $store = new InMemoryStore(['1' => $alpha], static function (object $item): string {
+            \assert($item instanceof Article);
+
+            return (string) $item->id;
+        });
+
+        // An atomic batch opens the outer transaction, and each write in it an inner one.
+        $store->snapshot();
+        $store->snapshot();
+        $alpha->title = 'Alpha EDITED';
+        $store->save($alpha);
+        $store->discardSnapshot();
+
+        // A later operation fails, so the batch rolls back past the committed inner write.
+        $store->restore();
+
+        $restored = $store->find('1');
+        self::assertInstanceOf(Article::class, $restored);
+        self::assertSame('Alpha', $restored->title);
+    }
+
 }

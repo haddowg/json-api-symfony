@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use haddowg\JsonApiBundle\OpenApi\DocumentFactory;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 
 /**
@@ -13,7 +15,9 @@ use Symfony\Component\HttpKernel\HttpKernelInterface;
  * not by the persister: `fill-files.target` is a MorphTo stored as two columns, and
  * `watchers` a list of ids. The linkage is still resolved through the scope first, so
  * the hidden agency 2 and member 2 are rejected like missing ones, and the update gate
- * still judges the changed file.
+ * still judges the changed file. `setting` and `settings` name rows a custom provider
+ * serves with no scope, so the hook is all that writes them and an id that provider does
+ * not hold must still be refused as missing.
  */
 abstract class FillUsingConformanceTestCase extends JsonApiFunctionalTestCase
 {
@@ -28,6 +32,13 @@ abstract class FillUsingConformanceTestCase extends JsonApiFunctionalTestCase
     abstract protected function storedWatchers(int $file): array;
 
     abstract protected function storedFileCount(): int;
+
+    abstract protected function storedSetting(int $file): ?string;
+
+    /**
+     * @return list<string>
+     */
+    abstract protected function storedSettings(int $file): array;
 
     #[Test]
     public function aCreateWritesTheTargetThroughTheHook(): void
@@ -163,6 +174,187 @@ abstract class FillUsingConformanceTestCase extends JsonApiFunctionalTestCase
         $id = $this->member($this->decode($response), 'atomic:results', 0, 'data', 'id');
         self::assertIsString($id);
         self::assertSame(['fill-agencies', '3'], $this->storedTarget((int) $id));
+    }
+
+    #[Test]
+    public function aCreateNamingASettingTheProviderHoldsWritesItThroughTheHook(): void
+    {
+        $response = $this->handle('/fill-files', 'POST', ['data' => [
+            'type' => 'fill-files',
+            'attributes' => ['name' => 'brief.pdf'],
+            'relationships' => [
+                'setting' => ['data' => ['type' => 'fill-settings', 'id' => '2']],
+                'settings' => ['data' => [['type' => 'fill-settings', 'id' => '1'], ['type' => 'fill-settings', 'id' => '2']]],
+            ],
+        ]]);
+        self::assertSame(201, $response->getStatusCode(), (string) $response->getContent());
+
+        $id = $this->member($this->decode($response), 'data', 'id');
+        self::assertIsString($id);
+        self::assertSame('2', $this->storedSetting((int) $id));
+        self::assertSame(['1', '2'], $this->storedSettings((int) $id));
+    }
+
+    #[Test]
+    public function aCreateNamingAMissingSettingIsNotFoundAndStoresNothing(): void
+    {
+        $relationships = [
+            ['setting' => ['data' => ['type' => 'fill-settings', 'id' => '9']]],
+            ['settings' => ['data' => [['type' => 'fill-settings', 'id' => '1'], ['type' => 'fill-settings', 'id' => '9']]]],
+        ];
+        foreach ($relationships as $relationship) {
+            $response = $this->handle('/fill-files', 'POST', ['data' => [
+                'type' => 'fill-files',
+                'attributes' => ['name' => 'brief.pdf'],
+                'relationships' => $relationship,
+            ]]);
+            $this->assertNotFound($response);
+        }
+
+        self::assertSame(1, $this->storedFileCount());
+    }
+
+    #[Test]
+    public function anUpdateNamingAMissingSettingIsNotFoundAndChangesNothing(): void
+    {
+        $this->assertWritten($this->handle('/fill-files/1/relationships/setting', 'PATCH', ['data' => ['type' => 'fill-settings', 'id' => '1']]));
+        $this->assertWritten($this->handle('/fill-files/1/relationships/settings', 'PATCH', ['data' => [['type' => 'fill-settings', 'id' => '1']]]));
+
+        $relationships = [
+            ['setting' => ['data' => ['type' => 'fill-settings', 'id' => '9']]],
+            ['settings' => ['data' => [['type' => 'fill-settings', 'id' => '2'], ['type' => 'fill-settings', 'id' => '9']]]],
+        ];
+        foreach ($relationships as $relationship) {
+            $response = $this->handle('/fill-files/1', 'PATCH', ['data' => [
+                'type' => 'fill-files',
+                'id' => '1',
+                'attributes' => ['name' => 'renamed.png'],
+                'relationships' => $relationship,
+            ]]);
+            $this->assertNotFound($response);
+        }
+
+        self::assertSame('1', $this->storedSetting(1));
+        self::assertSame(['1'], $this->storedSettings(1));
+        $name = $this->member($this->decode($this->handle('/fill-files/1')), 'data', 'attributes', 'name');
+        self::assertSame('logo.png', $name);
+    }
+
+    #[Test]
+    public function theRelationshipEndpointsRefuseAMissingSettingOnEveryMode(): void
+    {
+        $this->assertWritten($this->handle('/fill-files/1/relationships/setting', 'PATCH', ['data' => ['type' => 'fill-settings', 'id' => '1']]));
+        $this->assertWritten($this->handle('/fill-files/1/relationships/settings', 'PATCH', ['data' => [['type' => 'fill-settings', 'id' => '1']]]));
+
+        $this->assertNotFound($this->handle('/fill-files/1/relationships/setting', 'PATCH', ['data' => ['type' => 'fill-settings', 'id' => '9']]));
+        $this->assertNotFound($this->handle('/fill-files/1/relationships/settings', 'PATCH', ['data' => [['type' => 'fill-settings', 'id' => '9']]]));
+        $this->assertNotFound($this->handle('/fill-files/1/relationships/settings', 'POST', ['data' => [['type' => 'fill-settings', 'id' => '2'], ['type' => 'fill-settings', 'id' => '9']]]));
+        self::assertSame('1', $this->storedSetting(1));
+        self::assertSame(['1'], $this->storedSettings(1));
+
+        // Removing an existing setting the relationship does not hold changes nothing, but
+        // one that does not exist is missing, as on any relation.
+        $this->assertNotFound($this->handle('/fill-files/1/relationships/settings', 'DELETE', ['data' => [['type' => 'fill-settings', 'id' => '9']]]));
+        $this->assertWritten($this->handle('/fill-files/1/relationships/settings', 'DELETE', ['data' => [['type' => 'fill-settings', 'id' => '2']]]));
+        self::assertSame(['1'], $this->storedSettings(1));
+
+        $this->assertWritten($this->handle('/fill-files/1/relationships/settings', 'POST', ['data' => [['type' => 'fill-settings', 'id' => '2']]]));
+        self::assertSame(['1', '2'], $this->storedSettings(1));
+    }
+
+    #[Test]
+    public function aMissingSettingIsTheErrorAMissingScopedRowIs(): void
+    {
+        $missing = $this->decode($this->handle('/fill-files/1/relationships/setting', 'PATCH', ['data' => ['type' => 'fill-settings', 'id' => '9']]));
+        $hidden = $this->decode($this->handle('/fill-files/1/relationships/target', 'PATCH', ['data' => ['type' => 'fill-members', 'id' => '2']]));
+
+        self::assertSame($hidden['errors'] ?? null, $missing['errors'] ?? null);
+    }
+
+    #[Test]
+    public function anAtomicBatchNamingAMissingSettingIsNotFoundAndStoresNothing(): void
+    {
+        $kernel = static::$kernel;
+        self::assertNotNull($kernel);
+
+        $media = 'application/vnd.api+json; ext="https://jsonapi.org/ext/atomic"';
+        $body = \json_encode(['atomic:operations' => [
+            [
+                'op' => 'add',
+                'data' => ['type' => 'fill-files', 'attributes' => ['name' => 'atomic.png']],
+            ],
+            [
+                'op' => 'add',
+                'data' => [
+                    'type' => 'fill-files',
+                    'attributes' => ['name' => 'atomic.png'],
+                    'relationships' => ['settings' => ['data' => [['type' => 'fill-settings', 'id' => '9']]]],
+                ],
+            ],
+        ]], \JSON_THROW_ON_ERROR);
+        $response = $kernel->handle(
+            Request::create('/operations', 'POST', server: ['HTTP_ACCEPT' => $media, 'CONTENT_TYPE' => $media], content: $body),
+            HttpKernelInterface::MAIN_REQUEST,
+            true,
+        );
+        $this->restoreHandlers();
+        self::assertSame(404, $response->getStatusCode(), (string) $response->getContent());
+
+        self::assertSame(1, $this->storedFileCount());
+    }
+
+    #[Test]
+    public function aCreateWhoseOnlyRelationIsAHookChecksTheSettingToo(): void
+    {
+        $missing = $this->handle('/fill-notes', 'POST', ['data' => [
+            'type' => 'fill-notes',
+            'attributes' => ['name' => 'todo'],
+            'relationships' => ['setting' => ['data' => ['type' => 'fill-settings', 'id' => '9']]],
+        ]]);
+        $this->assertNotFound($missing);
+
+        $created = $this->handle('/fill-notes', 'POST', ['data' => [
+            'type' => 'fill-notes',
+            'attributes' => ['name' => 'todo'],
+            'relationships' => ['setting' => ['data' => ['type' => 'fill-settings', 'id' => '1']]],
+        ]]);
+        self::assertSame(201, $created->getStatusCode(), (string) $created->getContent());
+        self::assertSame(['type' => 'fill-settings', 'id' => '1'], $this->member($this->decode($created), 'data', 'relationships', 'setting', 'data'));
+    }
+
+    #[Test]
+    public function theDocumentOffersResourceNotFoundOnEveryWriteThatChecksASetting(): void
+    {
+        $factory = static::getContainer()->get(DocumentFactory::class);
+        self::assertInstanceOf(DocumentFactory::class, $factory);
+        $document = \json_decode((string) \json_encode($factory->forServer()->toArray()), true);
+        self::assertIsArray($document);
+
+        $writes = [
+            ['/fill-notes', 'post'],
+            ['/fill-notes/{id}', 'patch'],
+            ['/fill-files', 'post'],
+            ['/fill-files/{id}', 'patch'],
+            ['/fill-files/{id}/relationships/setting', 'patch'],
+            ['/fill-files/{id}/relationships/settings', 'patch'],
+            ['/fill-files/{id}/relationships/settings', 'post'],
+        ];
+        foreach ($writes as [$path, $method]) {
+            $examples = $this->member($document, 'paths', $path, $method, 'responses', '404', 'content', 'application/vnd.api+json', 'examples');
+            self::assertIsArray($examples, $method . ' ' . $path);
+            self::assertArrayHasKey('RESOURCE_NOT_FOUND', $examples, $method . ' ' . $path);
+        }
+    }
+
+    private function assertNotFound(Response $response): void
+    {
+        self::assertSame(404, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame('404', $this->member($this->decode($response), 'errors', 0, 'status'));
+    }
+
+    private function assertWritten(Response $response): void
+    {
+        self::assertContains($response->getStatusCode(), [200, 204], (string) $response->getContent());
     }
 
     /**

@@ -428,10 +428,11 @@ your provider scopes render only when your `admitRows()` (from `AdmitsRowsInterf
 or your `fetchOne()` returns them. `AbstractDataProvider` implements it
 and returns `false`, so override it there when your reads filter.
 
-The answer governs writes too: linkage naming a scoped type is checked through your
-`fetchOne()` before any persister runs, and an id it returns `null` for is a `404`
-(see [relationships → written linkage is scoped too](relationships.md#written-linkage-is-scoped-too)).
-Make `fetchOne()` apply the same scope as your related reads.
+Writes check linkage through your provider whatever it answers: before any persister
+runs, each id a write names must come back from your `fetchByIds()` or `admitIds()` when
+you implement either, or from `fetchOne()`, and one that doesn't is a `404`
+(see [relationships → written linkage](relationships.md#written-linkage-is-checked-against-the-related-types-provider)).
+Make those reads apply the same scope as your related reads.
 
 ### Loading many rows by id
 

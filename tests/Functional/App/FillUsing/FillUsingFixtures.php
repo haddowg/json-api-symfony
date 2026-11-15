@@ -21,7 +21,7 @@ final class FillUsingFixtures
     private ?array $providers = null;
 
     /**
-     * @return array{fill-agencies: list<FillAgency>, fill-members: list<FillMember>, fill-files: list<FillFile>}
+     * @return array{fill-agencies: list<FillAgency>, fill-members: list<FillMember>, fill-files: list<FillFile>, fill-notes: list<FillNote>}
      */
     public static function graph(): array
     {
@@ -36,6 +36,7 @@ final class FillUsingFixtures
             'fill-agencies' => [new FillAgency(1, 'Agency One'), new FillAgency(2, 'Hidden Agency', hidden: true), new FillAgency(3, 'Agency Three')],
             'fill-members' => [new FillMember(1, 'Member One'), new FillMember(2, 'Hidden Member', hidden: true), new FillMember(3, 'Member Three')],
             'fill-files' => [$file],
+            'fill-notes' => [],
         ];
     }
 
@@ -45,7 +46,7 @@ final class FillUsingFixtures
             $coordinator = new InMemorySnapshotCoordinator();
             $identify = static fn(object $item): string => \property_exists($item, 'id') && \is_int($item->id) ? (string) $item->id : '';
             $assignId = static function (object $item, string $id): void {
-                \assert($item instanceof FillFile);
+                \assert($item instanceof FillFile || $item instanceof FillNote);
                 $item->id = (int) $id;
             };
 
@@ -67,7 +68,7 @@ final class FillUsingFixtures
         return new InMemoryDataPersister(
             $type,
             $this->provider($type)->store(),
-            static fn(): FillFile => new FillFile(),
+            static fn(): object => $type === 'fill-notes' ? new FillNote() : new FillFile(),
             fn(string $relatedType, string $id): ?object => $this->provider($relatedType)->store()->find($id),
         );
     }

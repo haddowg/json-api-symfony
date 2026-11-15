@@ -1206,8 +1206,9 @@ The hook runs on a create, an update, the relationship endpoints and Atomic
 Operations, with the arguments core's own hydration passes. A whole-resource write
 calls it with an empty `$data` array. The relationship endpoints pass a to-many's
 mode as `$data['mode']`, so a `POST` adds and a `DELETE` removes. Everything else
-around the write still applies. The linkage is checked against the related types'
-scope first, so an id the caller can't see is a `404`. The mutability and update
+around the write still applies. The linkage is
+[checked against the related types' providers](#written-linkage-is-checked-against-the-related-types-provider)
+before the hook runs, so an id no row holds or the caller can't see is a `404`. The mutability and update
 gates run before and after the hook, and the persister then saves the parent, so a
 refusal after the hook rolls the write back.
 
@@ -1523,15 +1524,19 @@ A provider tells the bundle whether its related reads are scoped by implementing
 The Doctrine provider reports a relation scoped when any query extension supports one
 of its related types; the in-memory provider never does.
 
-### Written linkage is scoped too
+### Written linkage is checked against the related type's provider
 
-The same scope governs the linkage a write sends: `data.relationships` in a create or
-update, the `…/relationships/{rel}` endpoints, and atomic operations (after their `lid`s
-resolve). Before the persister runs, each identifier of a scoped type is loaded through
-that type's provider `fetchOne()`, as `GET /{type}/{id}` would load it. A `MorphTo` or
-`MorphToMany` identifier is checked against the type it names. An identifier the
-provider does not return gets the response JSON:API prescribes for a related resource
-that does not exist, whether the row is hidden or missing:
+Every relationship write checks its linkage before anything is stored: `data.relationships`
+in a create or update, the `…/relationships/{rel}` endpoints, and atomic operations
+(after their `lid`s resolve). Each identifier must be a row its type's provider serves,
+as `GET /{type}/{id}` would serve it, whichever persister then applies the write. A
+`MorphTo` or `MorphToMany` identifier is checked against the type it names. The check
+asks each type once per write, through `FetchesByIdsInterface` or `AdmitsIdsInterface`
+when the provider implements either, and through `fetchOne()` when it implements
+neither or for an id the batch left out. A type no provider serves has nothing to check
+against. An identifier the provider does not return, because no row holds it or because
+a scoped type's scope hides it, gets the response JSON:API prescribes for a related
+resource that does not exist:
 
 ```json
 {"errors": [{"status": "404", "code": "RESOURCE_NOT_FOUND", "title": "Resource not found"}]}
@@ -1539,7 +1544,8 @@ that does not exist, whether the row is hidden or missing:
 
 That holds for adding, replacing and removing members, for setting a to-one, and for a
 pivot member's `meta.pivot` (a hidden member's pivot also validates as a new member's).
-In an atomic batch the error rolls the whole batch back.
+Removing an existing resource that isn't a member changes nothing. In an atomic batch
+the error rolls the whole batch back.
 
 A to-many replace (a `PATCH` to the relationship endpoint, or the relationship in a
 resource body) changes only the members the client can see. Members the scope hides
@@ -1556,9 +1562,8 @@ holds. A create also scopes the `on()` hops below the relations its body sets, s
 writing a flattened attribute through a hidden target is a `422`
 `RELATED_ATTRIBUTE_OWNER_MISSING`, as on an update.
 
-A relation whose types are unscoped keeps resolving ids straight through the persister,
-unchecked. A polymorphic relation checks each id against its own type's scope, so a hidden
-id is a `404` and a replace keeps the hidden current members attached, as above.
+A polymorphic relation checks each id against its own type's provider, so a hidden or
+missing id is a `404` and a replace keeps the hidden current members attached, as above.
 
 ## Polymorphic relationships
 
@@ -1791,7 +1796,8 @@ delete, then the rows that move to a temporary position, then the updated rows, 
 new `through()` entity for each added member, its owner set through the association and
 each value converted to its column's form. Doctrine flushes after each pass inside the
 write's transaction. A replace keeps the members the scope hides, after the members the
-client sent, in their current order. A custom persister applies plans by implementing
+client sent, in their current order. As on every relation, each member a write names is
+checked against its type's provider first. A custom persister applies plans by implementing
 `WritesLinkRowsInterface`, and a custom provider serves the key read by implementing
 core's `LinkRowKeysInterface`.
 

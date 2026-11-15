@@ -248,6 +248,34 @@ abstract class AtomicOperationsConformanceTestCase extends JsonApiFunctionalTest
 
     #[Test]
     #[Group('spec:atomic')]
+    public function linkageToAMissingResourceIs404AndRollsBackTheWholeBatch(): void
+    {
+        $before = $this->identifierIdsOf('/articles/1/relationships/comments');
+        $batches = [
+            [['op' => 'add', 'ref' => ['type' => 'articles', 'id' => '1', 'relationship' => 'comments'], 'data' => [['type' => 'comments', 'id' => '999']]]],
+            [['op' => 'update', 'ref' => ['type' => 'articles', 'id' => '1', 'relationship' => 'author'], 'data' => ['type' => 'authors', 'id' => '999']]],
+            [['op' => 'add', 'data' => ['type' => 'articles', 'attributes' => ['title' => 'Orphan', 'body' => 'x'], 'relationships' => ['author' => ['data' => ['type' => 'authors', 'id' => '999']]]]]],
+        ];
+        foreach ($batches as $index => $operations) {
+            $response = $this->atomic([
+                [
+                    'op' => 'update',
+                    'ref' => ['type' => 'articles', 'id' => '1'],
+                    'data' => ['type' => 'articles', 'id' => '1', 'attributes' => ['title' => 'Should be rolled back']],
+                ],
+                ...$operations,
+            ]);
+
+            self::assertSame(404, $response->getStatusCode(), $index . ': ' . $response->getContent());
+            self::assertSame('RESOURCE_NOT_FOUND', $this->member($this->errors($response)[0], 'code'), (string) $index);
+        }
+
+        self::assertSame('JSON:API in PHP', $this->attributesOf($this->handle('/articles/1'))['title'] ?? null);
+        self::assertSame($before, $this->identifierIdsOf('/articles/1/relationships/comments'));
+    }
+
+    #[Test]
+    #[Group('spec:atomic')]
     public function aLaterFailureRollsBackTheWholeBatch(): void
     {
         // Op 0 succeeds (a valid update of article 1); op 1 targets a missing article,
