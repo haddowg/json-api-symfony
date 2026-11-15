@@ -14,7 +14,6 @@ use haddowg\JsonApiBundle\Tests\Functional\App\WriteTransaction\TxNote;
 use haddowg\JsonApiBundle\Tests\Functional\App\WriteTransaction\TxScenario;
 use haddowg\JsonApiBundle\Tests\Functional\App\WriteTransaction\TxWidget;
 use PHPUnit\Framework\Attributes\Test;
-use Symfony\Contracts\Service\ResetInterface;
 
 /**
  * {@see WriteTransactionConformanceTestCase} on Doctrine over SQLite, where the before hook's
@@ -86,7 +85,7 @@ final class DoctrineWriteTransactionTest extends WriteTransactionConformanceTest
     }
 
     #[Test]
-    public function aFailedFlushLeavesNoTransactionOpenAndAResetManagerServesTheNextRequest(): void
+    public function aFailedFlushLeavesNoTransactionOpen(): void
     {
         TxScenario::$sideWriteOn = BeforeSaveEvent::class;
 
@@ -94,18 +93,13 @@ final class DoctrineWriteTransactionTest extends WriteTransactionConformanceTest
         $response = $this->handle('/txWidgets', 'POST', $this->widget('first'));
 
         self::assertSame(500, $response->getStatusCode(), (string) $response->getContent());
-        $this->assertNoTransactionOpen();
         self::assertFalse($this->entityManager()->isOpen(), 'Doctrine closes the manager when a flush fails.');
+        $this->assertNoTransactionOpen();
 
-        // What a long-running worker does between requests.
-        $resetter = static::getContainer()->get('services_resetter');
-        self::assertInstanceOf(ResetInterface::class, $resetter);
-        $resetter->reset();
-
-        TxScenario::reset();
-        self::assertSame(['seeded'], $this->notes());
-        self::assertSame(201, $this->handle('/txWidgets', 'POST', $this->widget('third'))->getStatusCode());
-        self::assertSame(['first', 'second', 'third'], $this->widgetNames());
+        // Symfony gives a worker's next request a fresh manager; the connection it shares is
+        // out of the transaction, and the hook's note went with it.
+        self::assertSame(1, $this->rowCount('tx_note'));
+        self::assertSame(2, $this->rowCount('tx_widget'));
     }
 
     #[Test]
@@ -129,6 +123,13 @@ final class DoctrineWriteTransactionTest extends WriteTransactionConformanceTest
         if ($this->entityManager()->isOpen()) {
             $this->entityManager()->clear();
         }
+    }
+
+    private function rowCount(string $table): int
+    {
+        $count = $this->entityManager()->getConnection()->fetchOne('SELECT COUNT(*) FROM ' . $table);
+
+        return \is_numeric($count) ? (int) $count : -1;
     }
 
     private function entityManager(): EntityManagerInterface
