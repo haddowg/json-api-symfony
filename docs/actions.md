@@ -606,6 +606,7 @@ exposes both the resolved request state and pre-wired response factories:
 | `raw($body, $mediaType, $status, $headers)` | a `RawResponse`: a string, stream resource or PSR-7 stream sent as it is, in the negotiated raw type by default |
 | `accepted($url, $job)` | an `AcceptedResponse` (`202`) — an async accept pointing at the poll URL, with the job as `data` when given (chain `->withRetryAfter()`) |
 | `seeOther($url, $expiresAt)` | a `SeeOtherResponse` (`303`): an async-completion redirect, or the URL a download action hands out, with an optional expiry |
+| `afterCommit($callback)` | nothing; runs `$callback` once the action's transaction commits (see [running code after the commit](#running-code-after-the-commit)) |
 
 The `data()` / `meta()` / `noContent()` factories are the ergonomic path; reach for
 the raw response value objects directly only when you need to set a status or
@@ -882,19 +883,69 @@ type's persister it is, the transaction covers every entity the handler writes.
 
 Unlike a CRUD write, whose after hooks run once the write has committed,
 `AfterActionEvent` runs inside the action's transaction, so a subscriber that throws there
-undoes the action. Rendering the response comes after the commit.
+undoes the action. The [after-commit callbacks](#running-code-after-the-commit) run once
+it commits, and rendering the response comes after them.
 
 A rollback can't take back what left the database. A message dispatched to a queue, an
 email sent or an HTTP call made during the action has already happened when a later step
 throws, and a worker may pick up a dispatched message before the transaction commits.
-Send messages through a transport that writes to the same connection, such as Symfony
-Messenger's Doctrine transport, so the rollback discards them and a worker only sees them
-once they commit, or make the external call the action's last step.
+Register that work with [`$context->afterCommit()`](#running-code-after-the-commit) so it
+runs once the action has committed, or send messages through a transport that writes to
+the same connection, such as Symfony Messenger's Doctrine transport, so the rollback
+discards them.
 
 A collection action that works through many rows, like the
 [`archive` example above](#taking-the-types-filters), holds one transaction for all of
 them, along with the row locks it takes. Flushing each batch, as the example does, keeps
 memory down but commits nothing until the action returns.
+
+### Running code after the commit
+
+`$context->afterCommit($callback)` runs the callback once the action's transaction has
+committed, which is after `AfterActionEvent` and before the response is rendered. If the
+action rolls back, the callback never runs. Here an action creates a run and queues it
+for a worker, which must not pick it up before the run is in the database:
+
+```php
+use Doctrine\ORM\EntityManagerInterface;
+use haddowg\JsonApi\OpenApi\Metadata\Accepted;
+use haddowg\JsonApi\Response\AcceptedResponse;
+use haddowg\JsonApiBundle\Action\ActionContext;
+use haddowg\JsonApiBundle\Action\ActionHandlerInterface;
+use haddowg\JsonApiBundle\Attribute\AsJsonApiAction;
+use Symfony\Component\Messenger\MessageBusInterface;
+
+#[AsJsonApiAction(type: 'imports', path: 'retry', responds: [new Accepted('importRuns')])]
+final readonly class RetryImport implements ActionHandlerInterface
+{
+    public function __construct(
+        private EntityManagerInterface $entityManager,
+        private MessageBusInterface $bus,
+    ) {}
+
+    public function handle(ActionContext $context): AcceptedResponse
+    {
+        $import = $context->entity();
+        \assert($import instanceof Import);
+
+        $run = new ImportRun($import);
+        $this->entityManager->persist($run);
+        $this->entityManager->flush();
+
+        $context->afterCommit(fn () => $this->bus->dispatch(new ProcessImportRun($run->id)));
+
+        return $context->accepted('https://example.test/importRuns/' . $run->id);
+    }
+}
+```
+
+A `GET` action, or one with no transactional persister, runs its callbacks once the
+handler returns without throwing. Callbacks run in the order they were registered, and one
+that throws is logged at error level while the rest still run and the response goes out as
+normal. The context delegates to the
+[`AfterCommit`](lifecycle-hooks.md#running-code-after-the-commit) service, which a
+`BeforeActionEvent` subscriber or anything else the handler calls can inject to register
+callbacks of its own.
 
 ### Recording a rejection
 
@@ -907,7 +958,9 @@ happened.
 
 Return the error instead of throwing it. A response value object returned from
 `handle()` commits the transaction, so the mark is kept and the client still gets the
-error document:
+error document. The commit also runs the callbacks the action
+[registered](#running-code-after-the-commit), so one that should only follow a success
+has to be registered on the success path:
 
 ```php
 public function handle(ActionContext $context): NoContentResponse|ErrorResponse

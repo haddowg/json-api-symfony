@@ -14,6 +14,7 @@ use haddowg\JsonApi\Response\RawResponse;
 use haddowg\JsonApi\Response\SeeOtherResponse;
 use haddowg\JsonApi\Serializer\SerializerInterface;
 use haddowg\JsonApi\Server\ResolvingServerInterface;
+use haddowg\JsonApiBundle\DataPersister\AfterCommit;
 
 /**
  * The resolved context handed to an {@see ActionHandlerInterface::handle()}.
@@ -29,7 +30,8 @@ use haddowg\JsonApi\Server\ResolvingServerInterface;
  * so the handler returns a response in one call.
  *
  * {@see filtered()} hands a collection-scope action that takes its type's filters the
- * rows those filters select.
+ * rows those filters select, and {@see afterCommit()} defers work until the action's
+ * writes have committed.
  */
 final readonly class ActionContext
 {
@@ -62,7 +64,28 @@ final readonly class ActionContext
         private JsonApiRequestInterface $request,
         private QueryParameters $queryParameters,
         private ?\Closure $filtered = null,
+        private ?AfterCommit $afterCommit = null,
     ) {}
+
+    /**
+     * Runs the callback once the action's transaction commits, after `AfterActionEvent`;
+     * a rollback drops it. A `GET` action, or one with no transactional persister, runs it
+     * once the handler returns without throwing. Use it to queue work that must only see
+     * what the action committed. See {@see AfterCommit}.
+     *
+     * @param callable(): mixed $callback
+     */
+    public function afterCommit(callable $callback): void
+    {
+        if ($this->afterCommit === null) {
+            // A context built by hand, as in a unit test of the handler, has no write to wait for.
+            $callback();
+
+            return;
+        }
+
+        $this->afterCommit->register($callback);
+    }
 
     /**
      * The rows of the mount type the request's `filter[…]` parameters select, for a

@@ -143,8 +143,9 @@ step and commits once the persister has written:
 A before hook that writes joins the transaction. A flush it makes on the same connection
 is undone if a later hook, a validation or the persister's own write throws, so a hook
 that has to flush early, for example to give a new row its id, needs no transaction of
-its own to stay undoable. The after hooks run once the transaction has committed: what
-they read is durable, and a throw from one fails the response without undoing the write.
+its own to stay undoable. The after hooks run once the transaction has committed, after
+any [after-commit callbacks](#running-code-after-the-commit): what they read is durable,
+and a throw from one fails the response without undoing the write.
 The response is rendered after the commit too, so a failure while serializing it returns an
 error with the write already stored.
 
@@ -180,10 +181,60 @@ connection. An [action](actions.md#recording-a-rejection) can instead return its
 as a response, which commits.
 
 A rollback undoes only what went through the connection. A message dispatched to a
-queue, an email sent or an HTTP call made from a before hook has already happened. Do
-that work in an after hook, or send messages through a transport that writes to the same
-database connection, such as Symfony Messenger's Doctrine transport, so the rollback
-discards them too.
+queue, an email sent or an HTTP call made from a before hook has already happened. Defer
+that work until the write commits with [`AfterCommit`](#running-code-after-the-commit), or
+send messages through a transport that writes to the same database connection, such as
+Symfony Messenger's Doctrine transport, so the rollback discards them too.
+
+## Running code after the commit
+
+`haddowg\JsonApiBundle\DataPersister\AfterCommit` is a service you can inject anywhere a
+write runs: a before hook, a persister, an action handler. `register()` takes a callable
+and runs it once the current write has committed:
+
+```php
+use haddowg\JsonApiBundle\DataPersister\AfterCommit;
+use haddowg\JsonApiBundle\Event\BeforeCreateEvent;
+use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
+use Symfony\Component\Messenger\MessageBusInterface;
+
+final readonly class IndexNewArticles
+{
+    public function __construct(private AfterCommit $afterCommit, private MessageBusInterface $bus) {}
+
+    #[AsEventListener]
+    public function __invoke(BeforeCreateEvent $event): void
+    {
+        if ($event->type !== 'articles') {
+            return;
+        }
+
+        $article = $event->entity;
+        // The id is read when the callback runs, once the persister has stored the article.
+        $this->afterCommit->register(fn () => $this->bus->dispatch(new IndexArticle($article->id)));
+    }
+}
+```
+
+The rules:
+
+- A callback registered during a write runs once that write's transaction commits, after
+  the persister's write and before the after hooks and the response. Callbacks run in the
+  order they were registered.
+- A write that rolls back drops its callbacks. So does a write that throws without a
+  transaction to roll back.
+- A write with no transaction, on a persister that can't transact or a `GET` action,
+  runs its callbacks once it returns.
+- Inside an [Atomic Operations](atomic-operations.md#lifecycle-hooks-under-a-batch) batch,
+  callbacks wait for the batch to commit and are dropped if it rolls back.
+- A write nested in another, such as one a handler starts itself, hands its callbacks to
+  the outer write. Only the outermost commit runs them.
+- Registered outside any write, from an after hook or a read, a callback runs at once.
+- A callback that throws is logged at error level through the `logger` service, and the
+  rest still run. The write is already committed, so the response goes out as normal.
+
+A callback runs before the after hooks, so it sees the committed write but not what an
+after hook changes. The service is reset between the requests a worker serves.
 
 ## Mechanism 1 — an event subscriber (cross-cutting)
 

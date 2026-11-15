@@ -20,6 +20,7 @@ use haddowg\JsonApi\Response\RawResponse;
 use haddowg\JsonApi\Response\SeeOtherResponse;
 use haddowg\JsonApi\Server\ResolvingServerInterface;
 use haddowg\JsonApi\Server\Server;
+use haddowg\JsonApiBundle\DataPersister\AfterCommit;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataPersister\WriteTransaction;
@@ -76,6 +77,7 @@ final readonly class ActionInvoker
         private ?EventDispatcherInterface $dispatcher = null,
         private ?FilterValueValidator $filterValues = null,
         private ?WriteTransactionContext $txContext = null,
+        private ?AfterCommit $afterCommit = null,
     ) {}
 
     public function invoke(CustomActionOperation $operation): DataResponse|MetaResponse|NoContentResponse|AcceptedResponse|SeeOtherResponse|ErrorResponse|RawResponse
@@ -129,14 +131,16 @@ final readonly class ActionInvoker
             $this->request($operation),
             $operation->queryParameters(),
             $filtered,
+            $this->afterCommit,
         );
 
         // An action called with a writing method runs from its before gate to its after event
         // in one transaction on its type's persister, so a write it made is undone when
-        // anything up to the response throws.
+        // anything up to the response throws. Any action, writing or not, runs the callbacks
+        // it registered once it returns.
         $persister = $this->writes($operation) ? $this->persisterFor($descriptor) : null;
 
-        return WriteTransaction::run($persister, $this->txContext, function () use ($type, $descriptor, $entity, $handler, $context): DataResponse|MetaResponse|NoContentResponse|AcceptedResponse|SeeOtherResponse|ErrorResponse|RawResponse {
+        return WriteTransaction::run($persister, $this->txContext, afterCommit: $this->afterCommit, write: function () use ($type, $descriptor, $entity, $handler, $context): DataResponse|MetaResponse|NoContentResponse|AcceptedResponse|SeeOtherResponse|ErrorResponse|RawResponse {
             // Per-action before-gate: the security expression is evaluated against the
             // subject (the entity for resource scope, null for collection scope) by the
             // security subscriber, which throws to deny with a 403; a lifecycle consumer

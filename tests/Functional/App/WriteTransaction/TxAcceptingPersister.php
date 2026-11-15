@@ -16,12 +16,15 @@ use haddowg\JsonApiBundle\DataPersister\TransactionalDataPersisterInterface;
 /**
  * The `txWidgets` persister: passes every write to the store's own, except that with
  * {@see TxScenario::$accept} set it accepts a create or update for asynchronous processing
- * instead of writing it, and with {@see TxScenario::$persisterThrows} set it throws once the
- * store's write has run.
+ * instead of writing it and queues the job once the accept commits, and with
+ * {@see TxScenario::$persisterThrows} set it throws once the store's write has run.
  */
 final readonly class TxAcceptingPersister implements DataPersisterInterface, TransactionalDataPersisterInterface
 {
-    public function __construct(private DataPersisterInterface&TransactionalDataPersisterInterface $inner) {}
+    public function __construct(
+        private DataPersisterInterface&TransactionalDataPersisterInterface $inner,
+        private TxCallbacks $callbacks,
+    ) {}
 
     public function supports(string $type): bool
     {
@@ -87,6 +90,9 @@ final readonly class TxAcceptingPersister implements DataPersisterInterface, Tra
 
     private function accepted(): AcceptedForProcessing
     {
+        // Queue the job only once the accept has committed.
+        $this->callbacks->register('dispatch job');
+
         return AcceptedForProcessing::poll('https://example.test/jobs/1')->withMeta(['status' => 'queued']);
     }
 }

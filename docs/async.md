@@ -181,13 +181,14 @@ so a polling client sees `202` until the work finishes and then a single `303`.
   refresh it in your persister if anything else in the request flushes. A refresh puts
   back the stored state; a detach would also cascade along any `cascade: ['detach']`
   mapping, to the security user for one. The after hooks
-  don't run for a `202`, and the bundle has no hook after the commit, so a persister that
-  dispatches from inside the write should use its queue's after-commit support: send the
-  message through Messenger's Doctrine transport on the same connection, which only
-  delivers it once the transaction commits and drops it on a rollback, or stamp it with
-  `DispatchAfterCurrentBusStamp` when the write itself runs inside a message handler.
-  Otherwise a worker can start on the message before the write commits, or after it rolled
-  back.
+  don't run for a `202`. A message dispatched from inside the write can reach a worker
+  before the write commits, or after it rolled back, so inject
+  [`AfterCommit`](lifecycle-hooks.md#running-code-after-the-commit) into the persister and
+  dispatch from a callback registered on it. The callback runs once the accept has
+  committed, before the `202` is rendered, and never runs if the write rolls back. If the
+  dispatch itself fails, the error is logged and the `202` still goes out, so a job that
+  must never be lost belongs on a transport that writes to the same connection, such as
+  Messenger's Doctrine transport, which commits and rolls back with the write.
 - **Scope.** The seam covers `create()` and `update()`. `delete()` returns `void`, so
   an async delete is not expressible through it today.
 - **Portability.** `AcceptedResponse`/`SeeOtherResponse` are core, framework-neutral

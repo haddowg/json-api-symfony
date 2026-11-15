@@ -178,7 +178,8 @@ return static function (ContainerConfigurator $container): void {
         ->arg('$validator', \Symfony\Component\DependencyInjection\Loader\Configurator\service(ResourceValidator::class)->nullOnInvalid())
         ->arg('$dispatcher', \Symfony\Component\DependencyInjection\Loader\Configurator\service('event_dispatcher')->nullOnInvalid())
         ->arg('$filterValues', \Symfony\Component\DependencyInjection\Loader\Configurator\service(FilterValueValidator::class)->nullOnInvalid())
-        ->arg('$txContext', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataPersister\WriteTransactionContext::class));
+        ->arg('$txContext', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataPersister\WriteTransactionContext::class))
+        ->arg('$afterCommit', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataPersister\AfterCommit::class));
 
     // Exposes an #[AsJsonApiAction(asLink: true)] action, or one a resource links through
     // a declared ActionLink, as a security-aware `links` member on its mount type's
@@ -264,7 +265,9 @@ return static function (ContainerConfigurator $container): void {
         ->arg('$logger', \Symfony\Component\DependencyInjection\Loader\Configurator\service('logger')->nullOnInvalid())
         // The per-operation output timezone holder, set from the
         // operation's Server so pivot meta renders in the server's zone.
-        ->arg('$outputTimezone', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Serializer\RequestScopedOutputTimezone::class));
+        ->arg('$outputTimezone', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Serializer\RequestScopedOutputTimezone::class))
+        // Runs the callbacks registered during a write once it commits.
+        ->arg('$afterCommit', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataPersister\AfterCommit::class));
 
     // The per-request write-transaction context + post-commit-hook queue the Atomic
     // Operations executor drives (the next slice). It is DORMANT on the single-op
@@ -272,6 +275,12 @@ return static function (ContainerConfigurator $container): void {
     // hooks inline — and is reset between requests in a long-lived container
     // (ResetInterface, auto-tagged kernel.reset). Shared (one instance per request).
     $services->set(\haddowg\JsonApiBundle\DataPersister\WriteTransactionContext::class);
+
+    // The callbacks an application registers to run once the current write commits. Each
+    // write opens a scope on it, an Atomic Operations batch one around all of its writes,
+    // and a callback that throws is logged. Reset between requests (kernel.reset).
+    $services->set(\haddowg\JsonApiBundle\DataPersister\AfterCommit::class)
+        ->arg('$logger', \Symfony\Component\DependencyInjection\Loader\Configurator\service('logger')->nullOnInvalid());
 
     // The ?withCount count seam: a stable per-request holder
     // threaded into the memoized Server (in loadExtension) and a batcher that fills
