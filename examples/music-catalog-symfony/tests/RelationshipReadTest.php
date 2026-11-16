@@ -62,6 +62,7 @@ final class RelationshipReadTest extends MusicCatalogKernelTestCase
             [
                 'self' => ['href' => self::BASE_URI . '/tracks/1/relationships/playlists', 'describedby' => '/docs.json#/paths/~1tracks~1%7Bid%7D~1relationships~1playlists/get'],
                 'related' => ['href' => self::BASE_URI . '/tracks/1/playlists', 'describedby' => '/docs.json#/paths/~1tracks~1%7Bid%7D~1playlists/get'],
+                'first' => ['href' => self::BASE_URI . '/tracks/1/relationships/playlists?page%5Bnumber%5D=1&page%5Bsize%5D=15', 'describedby' => '/docs.json#/paths/~1tracks~1%7Bid%7D~1relationships~1playlists/get'],
             ],
             $playlists['links'] ?? null,
         );

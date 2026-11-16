@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\DataProvider;
 
 use haddowg\JsonApi\Collection\CollectionResult;
+use haddowg\JsonApi\Collection\CursorCollectionResult;
 use haddowg\JsonApi\Collection\LinkRows\InMemoryLinkRows;
 use haddowg\JsonApi\Collection\LinkRows\LinkRowKeysInterface;
 use haddowg\JsonApi\Collection\LinkRows\LinkRowQuery;
 use haddowg\JsonApi\Collection\LinkRows\LinkRowQueryInterface;
 use haddowg\JsonApi\Operation\QueryParameters;
+use haddowg\JsonApi\Pagination\OffsetWindow;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\AbstractFieldValue;
@@ -107,6 +109,31 @@ final class RelatedReadRouter implements ResetInterface
      */
     public function identifiedMembers(Server $server, string $type, MorphToMany $relation, array $parents, JsonApiRequestInterface $request, bool $load = false): array
     {
+        return \array_map($this->items(...), $this->identifiedPages($server, $type, $relation, $parents, $request, $load));
+    }
+
+    /**
+     * {@see identifiedMembers()} cut to `$criteria`'s window: each parent's first page of
+     * members, in the related endpoint's order, with the page's count or `hasMore`. With
+     * no criteria every member is kept. An offset window is cut from the rows read for
+     * the whole page at once; any other window pages each parent through
+     * {@see pageIdentified()}, as the related endpoint does.
+     *
+     * @param list<object> $parents
+     *
+     * @return list<CollectionResult<IdentifiedMember>>
+     *
+     * @throws \LogicException when a parent stores a type the relation doesn't declare
+     */
+    public function identifiedPages(Server $server, string $type, MorphToMany $relation, array $parents, JsonApiRequestInterface $request, bool $load = false, ?CollectionCriteria $criteria = null): array
+    {
+        $window = $criteria?->window;
+        if ($window !== null && !$window instanceof OffsetWindow && $criteria !== null) {
+            $pages = \array_map(fn(object $parent): CollectionResult => $this->pageIdentified($server, $type, $parent, $relation, $criteria, $request), $parents);
+
+            return $load ? $this->withTargets($server, $pages, $request) : $pages;
+        }
+
         $provider = $this->providers->supportsType($type) ? $this->providers->forType($type) : null;
         $stored = $provider instanceof ReadsLinkRowsInterface && $relation->linkRowFields() !== null
             ? $provider->linkRowMembers($parents, $relation, $request)
@@ -128,10 +155,10 @@ final class RelatedReadRouter implements ResetInterface
             }
         }
 
-        $base = new LinkRowQuery(RelationSorts::ownDefault($relation), fields: $relation->linkRowFields());
+        $base = new LinkRowQuery(RelationSorts::ownDefault($relation), window: $window, countable: $criteria !== null && $criteria->wantsCount, fields: $relation->linkRowFields());
         $queries = $load ? \array_fill(0, \count($parents), $base) : $this->narrowed($server, $type, $relation, $parents, $base, $request);
 
-        $members = [];
+        $pages = [];
         foreach ($parents as $index => $parent) {
             $kept = [];
             foreach ($stored[$index] ?? [] as $member) {
@@ -146,10 +173,56 @@ final class RelatedReadRouter implements ResetInterface
                     $kept[] = $member->withTarget($row);
                 }
             }
-            $members[] = $this->items((new InMemoryLinkRows())->apply($kept, $queries[$index]));
+            $pages[] = (new InMemoryLinkRows())->apply($kept, $queries[$index]);
         }
 
-        return $members;
+        return $pages;
+    }
+
+    /**
+     * `$pages` with each member's row loaded, one {@see FetchesByIdsInterface::fetchByIds()}
+     * per type across every page. A member whose row doesn't come back is dropped; a type
+     * no provider serves keeps its pairs unloaded.
+     *
+     * @param list<CollectionResult<IdentifiedMember>> $pages
+     *
+     * @return list<CollectionResult<IdentifiedMember>>
+     */
+    private function withTargets(Server $server, array $pages, JsonApiRequestInterface $request): array
+    {
+        $ids = [];
+        foreach ($pages as $page) {
+            foreach ($this->items($page) as $member) {
+                if ($server->hasSerializerFor($member->type) && $this->providers->supportsType($member->type)) {
+                    $ids[$member->type][self::wireId($server->serializerFor($member->type), $member->id)] = true;
+                }
+            }
+        }
+
+        $rows = [];
+        foreach ($ids as $memberType => $set) {
+            $rows[$memberType] = $this->fetchByIds($memberType, $server->serializerFor($memberType), \array_map('strval', \array_keys($set)), $request);
+        }
+
+        return \array_map(function (CollectionResult $page) use ($server, $rows): CollectionResult {
+            $kept = [];
+            foreach ($this->items($page) as $member) {
+                if (!isset($rows[$member->type])) {
+                    $kept[] = $member;
+
+                    continue;
+                }
+
+                $row = $rows[$member->type][self::wireId($server->serializerFor($member->type), $member->id)] ?? null;
+                if ($row !== null) {
+                    $kept[] = $member->withTarget($row);
+                }
+            }
+
+            return $page instanceof CursorCollectionResult
+                ? new CursorCollectionResult($kept, $page->cursorBefore, $page->cursorAfter, $page->hasPrevious, $page->hasMore, $page->total)
+                : new CollectionResult($kept, $page->total, $page->windowed, $page->hasMore);
+        }, $pages);
     }
 
     /**
@@ -959,6 +1032,29 @@ final class RelatedReadRouter implements ResetInterface
         $serializer = $server->serializerFor($type);
 
         return \array_values(\array_filter($rows, static fn(object $row): bool => $provider->fetchOne($type, $serializer->getId($row)) !== null));
+    }
+
+    /**
+     * A to-many's members as each of `$parents` holds them, narrowed per member type to
+     * the rows each scoped type's provider admits, then run through `$criteria`: the page
+     * a polymorphic relation's related endpoint serves, or a relation whose value the
+     * model computes, for every parent.
+     *
+     * @param list<object> $parents
+     *
+     * @return list<CollectionResult<object>>
+     */
+    public function memberPages(Server $server, array $parents, RelationInterface $relation, CollectionCriteria $criteria, JsonApiRequestInterface $request): array
+    {
+        $candidates = [];
+        foreach ($parents as $parent) {
+            $value = $relation->readValue($parent, $request);
+            $candidates[] = \is_iterable($value) ? $this->objects($value) : [];
+        }
+
+        $members = $this->isScoped($relation) ? $this->narrow($server, $candidates, $relation, $request) : $candidates;
+
+        return \array_map(fn(array $narrowed): CollectionResult => $this->queryMembers($relation, $narrowed, $criteria), $members);
     }
 
     /**

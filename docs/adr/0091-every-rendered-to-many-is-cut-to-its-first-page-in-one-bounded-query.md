@@ -1,0 +1,3 @@
+# Every rendered to-many is cut to its first page in one bounded query
+
+A plain include read each parent's whole related set through the `WHERE fk IN (…)` fast path, so one include of a large relation was unbounded. Wherever a to-many's linkage renders, the include walk now reads its first page through the same `fetchRelatedCollectionBatch()` window the Relationship Queries profile uses, at every level, so Doctrine reads one `ROW_NUMBER` query per relation with the related type's query extensions inside it rather than falling back to a query per parent. Relations reading one association with the same page share that query, and only `withoutPagination()` or a relation exposing no endpoint keeps the whole-set read.

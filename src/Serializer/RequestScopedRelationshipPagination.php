@@ -11,37 +11,31 @@ use haddowg\JsonApi\Serializer\RelationshipPaginationInterface;
 use Symfony\Contracts\Service\ResetInterface;
 
 /**
- * A stable, swappable holder for core's {@see RelationshipPaginationInterface}
- * seam under the Relationship Queries profile.
- * Core consults the seam for EVERY rendered to-many relation to learn the page-1
- * pagination state it emits as the relationship object's `first`/`prev`/`next`
- * (+`last`) links — but the actual page is per request (it depends on the
- * profile's per-relationship sort/filter and the fetched parents), so the value
- * behind the seam must be swappable without rebuilding the memoized
- * {@see \haddowg\JsonApi\Server\Server}.
+ * A stable, swappable holder for core's {@see RelationshipPaginationInterface} seam.
+ * Core consults the seam for every rendered to-many relation to learn the first-page
+ * pagination state it emits as the relationship object's `first`/`prev`/`next`/`last`
+ * links, but the page is per request (it depends on the fetched parents and any
+ * Relationship Queries sort/filter), so the value behind the seam must be swappable
+ * without rebuilding the memoized {@see \haddowg\JsonApi\Server\Server}.
  *
- * This holder is that indirection, mirroring {@see RequestScopedRelationshipCount}:
- * the {@see \haddowg\JsonApiBundle\Server\ServerFactory} threads it through core's
- * {@see \haddowg\JsonApi\Server\Server::withRelationshipPagination()} once, and the
- * {@see \haddowg\JsonApiBundle\Operation\CrudOperationHandler} swaps a
- * {@see WindowedRelationshipPagination} backing in on each read whose request
- * negotiated the profile — and clears it (`null`) otherwise — so the render pass
- * that follows {@see \haddowg\JsonApi\Server\Server::dispatch()} reads exactly the
- * page just windowed and never a previous request's. With no backing set it
- * answers `null` for every relation, so core emits no relationship-object
- * pagination links — exactly as before this seam existed (the profile-not-negotiated
- * default).
+ * The {@see \haddowg\JsonApiBundle\Server\ServerFactory} threads it through core's
+ * {@see \haddowg\JsonApi\Server\Server::withRelationshipPagination()} once. The
+ * {@see \haddowg\JsonApiBundle\Operation\CrudOperationHandler} installs two backings on
+ * each read: the Relationship Queries pages of the primary resources ({@see set()},
+ * `null` when the profile was not negotiated) and the first pages the include walk cut
+ * at every level ({@see setIncluded()}). With neither set it answers `null` for every
+ * relation, so core emits no relationship-object pagination links.
  *
- * Like the count holder, the read arms re-set or clear it on every read but a
- * write/linkage arm renders without touching it, so in a long-lived container (a
- * worker reusing the kernel across messages) a prior profile read could leave a
- * backing set and a later render could read a stale page. It therefore implements
- * {@see ResetInterface} (auto-tagged `kernel.reset`): the container resets it
- * between messages, so no request inherits a previous one's windowed pages.
+ * A write or linkage arm can render without re-setting it, so in a long-lived container
+ * a prior read could leave a backing set. It therefore implements
+ * {@see ResetInterface} (auto-tagged `kernel.reset`): the container resets it between
+ * messages, so no request inherits a previous one's pages.
  */
 final class RequestScopedRelationshipPagination implements RelationshipPaginationInterface, ResetInterface
 {
     private ?RelationshipPaginationInterface $delegate = null;
+
+    private ?RelationshipPaginationInterface $included = null;
 
     /**
      * Installs (or clears, with `null`) the windowed page-1 backing for the read
@@ -55,12 +49,24 @@ final class RequestScopedRelationshipPagination implements RelationshipPaginatio
         $this->delegate = $delegate;
     }
 
+    /**
+     * Installs (or clears) the first pages the
+     * {@see \haddowg\JsonApiBundle\DataProvider\RelatedIncludeBatcher} cut for the read
+     * being handled. A page from {@see set()} wins for a relation both supply, since it is
+     * the Relationship Queries page of the same relation.
+     */
+    public function setIncluded(?RelationshipPaginationInterface $included): void
+    {
+        $this->included = $included;
+    }
+
     public function paginateRelationship(
         mixed $model,
         RelationInterface $relation,
         JsonApiRequestInterface $request,
     ): ?RelationshipPagination {
-        return $this->delegate?->paginateRelationship($model, $relation, $request);
+        return $this->delegate?->paginateRelationship($model, $relation, $request)
+            ?? $this->included?->paginateRelationship($model, $relation, $request);
     }
 
     /**
@@ -71,5 +77,6 @@ final class RequestScopedRelationshipPagination implements RelationshipPaginatio
     public function reset(): void
     {
         $this->delegate = null;
+        $this->included = null;
     }
 }

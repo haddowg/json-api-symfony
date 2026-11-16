@@ -389,6 +389,7 @@ final class ReadQueryTest extends MusicCatalogKernelTestCase
                         'links' => [
                             'self' => ['href' => 'https://music.example/tracks/1/relationships/playlists', 'describedby' => '/docs.json#/paths/~1tracks~1%7Bid%7D~1relationships~1playlists/get'],
                             'related' => ['href' => 'https://music.example/tracks/1/playlists', 'describedby' => '/docs.json#/paths/~1tracks~1%7Bid%7D~1playlists/get'],
+                            'first' => ['href' => 'https://music.example/tracks/1/relationships/playlists?page%5Bnumber%5D=1&page%5Bsize%5D=15', 'describedby' => '/docs.json#/paths/~1tracks~1%7Bid%7D~1relationships~1playlists/get'],
                         ],
                         'data' => [['type' => 'playlists', 'id' => SeedManifest::OWNED_PLAYLIST_ID]],
                     ],

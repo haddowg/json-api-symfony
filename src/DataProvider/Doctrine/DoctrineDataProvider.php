@@ -30,6 +30,7 @@ use haddowg\JsonApi\Resource\Filter\FilterDefaults;
 use haddowg\JsonApi\Resource\Filter\WhereDoesntHave;
 use haddowg\JsonApi\Resource\Filter\WhereHas;
 use haddowg\JsonApi\Resource\Sort\SortByField;
+use haddowg\JsonApi\Resource\Sort\SortDirective;
 use haddowg\JsonApi\Resource\Sort\SortMatcher;
 use haddowg\JsonApiBundle\Action\ActionDescriptor;
 use haddowg\JsonApiBundle\DataProvider\AdmitsIdsInterface;
@@ -573,6 +574,14 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
         $relatedClass = $this->entityClassFor($relatedType);
 
+        // With no requested or default order the members come in the order a lazy load of
+        // the collection gives them, as they do in the parent's linkage.
+        $parentMetadata = $this->entityManager->getClassMetadata($parent::class);
+        $property = $relation->column() ?? $relation->name();
+        if ($parentMetadata->hasAssociation($property)) {
+            $criteria = $this->withMappedOrder($criteria, $parentMetadata, $property);
+        }
+
         $builder = $this->entityManager
             ->getRepository($relatedClass)
             ->createQueryBuilder(self::ROOT_ALIAS);
@@ -702,48 +711,37 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             return $this->fetchToOneBatch($parentType, $parents, $relation, $relatedClass, $request);
         }
 
-        // A WINDOWED to-many include (an OffsetWindow, the profile's page-1 slice) is
-        // BOUNDED rather than materialised whole. With window
-        // functions on (the default) and no query extension on the related type, ONE
-        // native ROW_NUMBER/COUNT OVER query fetches only ~limit rows per parent AND the
-        // REAL per-parent total — for a FILTERED include too: the inner scoped+filtered
-        // query is built by the same DQL filter executor the endpoint runs, then wrapped
-        // for the window, so the per-parent fallback no longer serves a
-        // filtered include on the `on` path. Only an extended related type (or window
-        // functions off) routes to the per-parent BOUNDED fallback: a loop over the proven
-        // single-parent fetch, each a real LIMIT push-down. A PLAIN include (no window)
-        // keeps the materialise-and-partition fast path below, UNTOUCHED.
-        // A CURSOR (keyset) windowed include collapses to the SAME single native ROW_NUMBER
-        // window the offset include uses, gated IDENTICALLY: window
-        // functions on AND no query extension on the related type. An include carries no
-        // cursor token (the profile pins the included page to page 1), so the window is
-        // boundaryless — a FIRST cursor page per parent (offset 0, limit N+1 for hasMore under
-        // the keyset sort + id tiebreak) with NO keyset WHERE; a bounded page (an after/before
-        // boundary) keeps the keyset WHERE the per-parent path owns, so it falls back
-        // defensively. When it fires, ONE `ROW_NUMBER() OVER (PARTITION BY <parent FK> ORDER BY
-        // <keyset>)` query bounds every parent's partition, ordered by the resolved keyset
-        // columns (the forced NULL=largest CASE term, the PK tiebreak riding the last active
-        // directive) and minting each parent's forward cursor through the same shared keyset
-        // machinery — byte-identical to the in-memory witness (which windows
-        // each parent per-parent). Otherwise the per-parent keyset loop (the related-endpoint
-        // path, also the non-windowable / window-functions-off fallback).
+        // A WINDOWED to-many (the first page an include or a rendered linkage shows) is
+        // BOUNDED rather than materialised whole. With window functions on (the default),
+        // ONE native ROW_NUMBER/COUNT OVER query fetches only ~limit rows per parent and
+        // the real per-parent total. The inner scoped query carries the criteria filters
+        // through the same DQL filter executor the endpoint runs, and the related type's
+        // query extensions narrow it. Window functions off routes to the per-parent
+        // bounded fallback: a loop over the single-parent fetch, each a real LIMIT. A
+        // PLAIN include (no window, a relation declared withoutPagination()) keeps the
+        // materialise-and-partition fast path below.
+        // A CURSOR window is boundaryless on an include (no cursor token rides one), so
+        // it runs the same single ROW_NUMBER query ordered by the resolved keyset columns
+        // and mints each parent's forward cursor. A bounded cursor page (an after/before
+        // boundary) keeps the per-parent keyset loop the related endpoint runs.
+        // A window with no requested or default order cuts the members in the order a
+        // lazy load of the collection gives them: the association's mapped orderBy.
+        if ($criteria->window !== null) {
+            $criteria = $this->withMappedOrder($criteria, $metadata, $property);
+        }
+
         if ($criteria->window instanceof CursorWindow) {
             $window = $criteria->window;
-            if (
-                $this->windowFunctions
-                && $window->after === null
-                && $window->before === null
-                && $this->isNativelyWindowable($relatedType, $relation, $criteria)
-            ) {
-                return $this->windowedBatch->fetchCursor($parentType, $parents, $relatedType, $relatedClass, $relation, $criteria, $window);
+            if ($this->windowFunctions && $window->after === null && $window->before === null) {
+                return $this->windowedBatch->fetchCursor($parentType, $parents, $relatedType, $relatedClass, $relation, $criteria, $window, $this->relatedExtensions($relatedType, $request));
             }
 
             return $this->fetchWindowedBatchPerParent($parentType, $parents, $relatedType, $relation, $criteria, $request);
         }
 
         if ($criteria->window instanceof OffsetWindow) {
-            if ($this->windowFunctions && $this->isNativelyWindowable($relatedType, $relation, $criteria)) {
-                return $this->windowedBatch->fetch($parentType, $parents, $relatedType, $relatedClass, $relation, $criteria);
+            if ($this->windowFunctions) {
+                return $this->windowedBatch->fetch($parentType, $parents, $relatedType, $relatedClass, $relation, $criteria, $this->relatedExtensions($relatedType, $request));
             }
 
             return $this->fetchWindowedBatchPerParent($parentType, $parents, $relatedType, $relation, $criteria, $request);
@@ -801,38 +799,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
     }
 
     /**
-     * Whether a windowed to-many include can run the native ROW_NUMBER batch
-     * ({@see WindowedRelationBatch}) rather than the per-parent bounded fallback. The native
-     * path now serves a FILTERED and an unfiltered windowed
-     * include alike — the inner scoped query is built by the EXACT same DQL machinery the
-     * related endpoint runs (RelationScope-style parent-scope + the shared
-     * {@see CriteriaApplier} driving the #1 DQL {@see DoctrineFilterHandler}), then wrapped
-     * with the window functions over the generated SQL aliases READ off its
-     * {@see \Doctrine\ORM\Query\ResultSetMapping}; so a filtered windowed include is
-     * witness-equivalent for free (it IS the same executor) and runs in ONE bounded query. The
-     * filter check is therefore RETIRED from this gate.
-     *
-     * It still requires **no query extension** on the related type — a soft-delete /
-     * tenant / published-only extension adds a DQL `WHERE` keyed on the query root that the
-     * batched native shape does not thread, so an extended related type routes to the
-     * per-parent fallback (which applies the extension through the proven DQL path; folding
-     * extensions onto the native path is out of scope of this slice).
-     *
-     * The relation's sort and filters are handled natively; the native builder itself
-     * rejects a shape it cannot express (a polymorphic to-many, a composite-id
-     * parent/related, a computed sort) by throwing, so this gate only screens the
-     * routing-level condition.
-     */
-    private function isNativelyWindowable(string $relatedType, RelationInterface $relation, CollectionCriteria $criteria): bool
-    {
-        // A query extension on the related type still routes to the per-parent fallback —
-        // its DQL WHERE is applied on the related root, which the batched native shape does
-        // not thread (the only routing condition; the filter deviation is removed).
-        return $this->extensionsFor($relatedType) === [];
-    }
-
-    /**
-     * The OFF / EXTENDED fallback for a windowed to-many include:
+     * The window-functions-off fallback for a windowed to-many include:
      * a per-parent BOUNDED loop over the proven single-parent
      * {@see fetchRelatedCollection()}, assembled into a {@see RelatedBatch} keyed by
      * parent wire id. Each call pushes down a REAL `LIMIT`/`OFFSET` (a countable relation
@@ -841,9 +808,8 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
      * the same DQL path the related-collection endpoint runs — so it is witness-correct
      * by construction (it IS the per-parent twin the in-memory witness mirrors) and
      * BOUNDED (M queries, each a LIMIT, never the whole-set materialise the 6a batch ran).
-     * A FILTERED include no longer routes here on the `on` path — the native batch now
-     * serves it in ONE bounded query; this fallback serves only window
-     * functions OFF and an EXTENDED related type.
+     * With window functions on, the native batch serves every windowed include in ONE
+     * bounded query instead.
      *
      * @param list<object> $parents
      */
@@ -1063,6 +1029,44 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         return $order;
     }
 
+    /**
+     * `$criteria` ordered by the association's mapped orderBy when it requests no sort and
+     * has no default order, so a page of the relation holds the members a lazy load of
+     * the collection would list first.
+     *
+     * @param ClassMetadata<object> $metadata the parent's metadata
+     */
+    private function withMappedOrder(CollectionCriteria $criteria, ClassMetadata $metadata, string $property): CollectionCriteria
+    {
+        if ($criteria->queryParameters->sort !== [] || $criteria->defaultSort !== []) {
+            return $criteria;
+        }
+
+        $sorts = [];
+        $directives = [];
+        foreach ($this->mappedOrderBy($metadata, $property) as $field => $direction) {
+            $sort = new SortByField('__jsonapi_mapped_' . $field, $field);
+            $sorts[] = $sort;
+            $directives[] = new SortDirective($sort, $direction === 'DESC');
+        }
+
+        if ($directives === []) {
+            return $criteria;
+        }
+
+        return new CollectionCriteria(
+            $criteria->queryParameters,
+            $criteria->filters,
+            [...$criteria->sorts, ...$sorts],
+            $criteria->window,
+            $directives,
+            $criteria->aliasOf,
+            $criteria->wantsCount,
+            $criteria->request,
+            $criteria->paths,
+        );
+    }
+
     private function mappingOrderBy(mixed $mapping): mixed
     {
         if (\is_array($mapping)) {
@@ -1105,51 +1109,19 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
      */
     private function applyRelatedBatchExtensions(QueryBuilder $builder, BatchScope $scope, string $relatedType, ?JsonApiRequestInterface $request): QueryBuilder
     {
-        $extensions = $this->extensionsFor($relatedType);
-        if ($extensions === []) {
-            return $builder;
-        }
+        return $this->relatedExtensions($relatedType, $request)->scope(
+            $builder,
+            $scope->relatedAlias,
+            $scope->relatedIdField === null ? null : $scope->relatedClass,
+        );
+    }
 
-        $context = new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request);
-
-        // Inverse-FK shape: the related entity is the query root, so the extensions apply
-        // to the builder directly (their getRootAliases()[0] is the related root).
-        if ($scope->relatedClass === null || $scope->relatedIdField === null) {
-            foreach ($extensions as $extension) {
-                $builder = $extension->apply($builder, $context);
-            }
-
-            return $builder;
-        }
-
-        // Pair shape: the query roots on the parent, so build the extension constraints on
-        // a related-ROOTED subquery (its root IS the related entity) and constrain the pair
-        // query's related membership to the extension-narrowed related ids.
-        $subAlias = 'jsonapi_ext_related';
-        $relatedMetadata = $this->entityManager->getClassMetadata($scope->relatedClass);
-        $sub = $this->entityManager
-            ->getRepository($scope->relatedClass)
-            ->createQueryBuilder($subAlias)
-            ->select(DoctrineIdentifiers::path($relatedMetadata, $subAlias));
-
-        foreach ($extensions as $extension) {
-            $sub = $extension->apply($sub, $context);
-        }
-
-        // Fold the subquery's parameters onto the outer (executing) builder — extensions
-        // bind their constraint parameters on the builder they were handed (the subquery),
-        // but only the outer builder executes the merged DQL. Appending the Parameter
-        // objects preserves each one's declared DBAL type.
-        $merged = $builder->getParameters();
-        foreach ($sub->getParameters() as $parameter) {
-            $merged->add($parameter);
-        }
-        $builder->setParameters($merged);
-
-        return $builder->andWhere($builder->expr()->in(
-            DoctrineIdentifiers::path($relatedMetadata, $scope->relatedAlias),
-            $sub->getDQL(),
-        ));
+    /**
+     * The related type's extensions for a batched read made for `$request`.
+     */
+    private function relatedExtensions(string $relatedType, ?JsonApiRequestInterface $request): RelatedExtensions
+    {
+        return new RelatedExtensions($this->entityManager, $this->extensionsFor($relatedType), $relatedType, $request);
     }
 
     /**
@@ -1239,10 +1211,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
                 ->where(DoctrineIdentifiers::path($relatedMetadata, self::ROOT_ALIAS) . ' IN (:jsonapi_related_ids)');
             $this->ids->bindList($loader, 'jsonapi_related_ids', $relatedMetadata, $relatedIds);
 
-            $context = new ExtensionContext($relatedType, QueryPurpose::IncludeHydration, $request);
-            foreach ($this->extensionsFor($relatedType) as $extension) {
-                $loader = $extension->apply($loader, $context);
-            }
+            $loader = $this->relatedExtensions($relatedType, $request)->hydrate($loader);
 
             $loaded = $loader->getQuery()->getResult();
 
@@ -2161,9 +2130,9 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
      *
      * A windowed include (an offset page) wraps the grouped query in a per-parent
      * `ROW_NUMBER` window, and a counted one adds the per-parent total, so each parent
-     * reads at most a page. Window functions turned off, a related type with query
-     * extensions, or a sort that is not a plain column falls back to the single-parent
-     * query per parent, as the other windowed batch arms do. So does a cursor window.
+     * reads at most a page. Window functions turned off, or a sort that is not a plain
+     * column, falls back to the single-parent query per parent, as the other windowed
+     * batch arms do. So does a cursor window.
      *
      * @param list<object> $parents
      */
@@ -2179,7 +2148,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
         if ($window instanceof OffsetWindow) {
             $orderBy = $this->windowSortColumns($criteria, $this->entityManager->getClassMetadata($this->entityClassFor($relatedType)));
-            if ($orderBy !== null && $this->windowFunctions && WindowedRelationBatch::readsQueryInternals() && $this->isNativelyWindowable($relatedType, $relation, $criteria)) {
+            if ($orderBy !== null && $this->windowFunctions && WindowedRelationBatch::readsQueryInternals()) {
                 return $this->fetchWindowedPivotBatch($parentType, $parents, $relatedType, $relation, $criteria, $window, $orderBy, $request);
             }
         }
@@ -2227,6 +2196,9 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         JsonApiRequestInterface $request,
     ): RelatedBatch {
         $builder = $this->pivotBatchQuery($relatedType, $parents, $relation);
+        foreach ($this->extensionsFor($relatedType) as $extension) {
+            $builder = $extension->apply($builder, new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request));
+        }
         $builder = $this->applier->apply($this->filtersOnly($criteria), $builder, $this->filterHandler, $this->sortHandler);
 
         $order = [];

@@ -4,14 +4,18 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Testing;
 
+use haddowg\JsonApi\Request\JsonApiRequest;
 use haddowg\JsonApi\Response\DataResponse;
 use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApi\Testing\JsonApiDocument;
 use haddowg\JsonApi\Testing\JsonApiErrors;
 use haddowg\JsonApi\Testing\ResponseMeta;
+use haddowg\JsonApiBundle\DataProvider\RelatedIncludeBatcher;
 use haddowg\JsonApiBundle\DependencyInjection\Compiler\DoctrineEntityMapPass;
 use haddowg\JsonApiBundle\Operation\TargetResolver;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
+use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipLinkage;
+use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipPagination;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use PHPUnit\Framework\Assert;
 use Symfony\Bridge\PsrHttpMessage\Factory\PsrHttpFactory;
@@ -445,6 +449,9 @@ class JsonApiBrowser extends KernelBrowser
      * `Agency`. A model no resource maps falls back to the first serializer, among
      * the types with no entity mapping, whose `getType()` claims it. Pass `$type` when one class backs several types.
      *
+     * Its relations load as the read endpoint loads them, so a paginated to-many's
+     * linkage is its first page and carries that page's links.
+     *
      * @return array<string, mixed> the expected primary resource object
      */
     public function expectResource(object $entity, ?string $serverName = null, ?string $type = null): array
@@ -479,9 +486,30 @@ class JsonApiBrowser extends KernelBrowser
         \assert($psrHttpFactory instanceof PsrHttpFactory);
         $psrRequest = $psrHttpFactory->createRequest($request);
 
-        $document = (string) DataResponse::fromResource($entity, $serializer)
-            ->toPsrResponse($server, $psrRequest)
-            ->getBody();
+        // Load the entity's rendered relations as the read endpoint does, so its linkage
+        // holds what the endpoint renders: the scoped members, and a paginated to-many's
+        // first page with its links.
+        $batcher = $container->has(RelatedIncludeBatcher::class) ? $container->get(RelatedIncludeBatcher::class) : null;
+        $linkage = $container->has(RequestScopedRelationshipLinkage::class) ? $container->get(RequestScopedRelationshipLinkage::class) : null;
+        $pagination = $container->has(RequestScopedRelationshipPagination::class) ? $container->get(RequestScopedRelationshipPagination::class) : null;
+        $loads = $batcher instanceof RelatedIncludeBatcher && $linkage instanceof RequestScopedRelationshipLinkage && $pagination instanceof RequestScopedRelationshipPagination;
+        if ($loads) {
+            $linkage->set(null);
+            $linkage->setIncluded($batcher->preload([$entity], $type, new JsonApiRequest($psrRequest), $server));
+            $pagination->set(null);
+            $pagination->setIncluded($batcher->pagination());
+        }
+
+        try {
+            $document = (string) DataResponse::fromResource($entity, $serializer)
+                ->toPsrResponse($server, $psrRequest)
+                ->getBody();
+        } finally {
+            if ($loads) {
+                $linkage->setIncluded(null);
+                $pagination->setIncluded(null);
+            }
+        }
 
         $decoded = \json_decode($document, true, 512, \JSON_THROW_ON_ERROR);
         \assert(\is_array($decoded));

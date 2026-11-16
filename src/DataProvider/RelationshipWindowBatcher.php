@@ -5,11 +5,9 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\DataProvider;
 
 use haddowg\JsonApi\Collection\CollectionResult;
-use haddowg\JsonApi\Collection\CursorCollectionResult;
 use haddowg\JsonApi\Exception\QueryParamUnrecognized;
 use haddowg\JsonApi\Operation\QueryParameters;
 use haddowg\JsonApi\Pagination\CursorPaginator;
-use haddowg\JsonApi\Pagination\PaginatorInterface;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Request\RelatedQuery;
 use haddowg\JsonApi\Resource\Field\Accessor;
@@ -40,10 +38,15 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
  * carries from the primary request, addressing the relationship by its include path
  * (its relation name at the top level).
  *
+ * Without the profile a rendered to-many is still cut to its first page, by the
+ * {@see RelatedIncludeBatcher} at every level of the document, through the same
+ * {@see firstPages()} read this window uses.
+ *
  * For each rendered to-many relation it, ONCE over the whole page:
  *  - reads the relation's {@see RelatedQuery} (its sort + filter) from the request;
- *  - resolves the page-1 paginator (relation -> related resource -> server default)
- *    and assembles the page-1 criteria — both independent of the parent;
+ *  - resolves the page-1 paginator ({@see Server::linkagePaginator()}: relation ->
+ *    related resource -> server default) and assembles the page-1 criteria, both
+ *    independent of the parent;
  *  - applies the relatedQuery sort/filter — over the SAME merged vocabulary the
  *    endpoint uses (the related resource's filters/sorts merged with the relation's
  *    own scoped {@see RelationInterface::filters()}/{@see RelationInterface::sorts()},
@@ -82,6 +85,14 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
  */
 final class RelationshipWindowBatcher
 {
+    /**
+     * The first pages read since {@see forget()}, keyed by what they were read with, so
+     * relations over one association that read it the same way share one read.
+     *
+     * @var array<string, list<CollectionResult<object>>>
+     */
+    private array $shared = [];
+
     public function __construct(
         private readonly DataProviderRegistry $providers,
         private readonly TypeMetadataResolver $types,
@@ -242,22 +253,18 @@ final class RelationshipWindowBatcher
     }
 
     /**
-     * Windows ONE relation over the whole page of parents in a single
-     * {@see DataProviderInterface::fetchRelatedCollectionBatch()} round-trip, then per
-     * parent records the page-1 linkage ({@see RelationshipLinkage}, supplied to core
-     * out-of-band so the page is NOT written onto the parent property) and its
-     * {@see RelationshipPagination} — the batched replacement for the retired
-     * per-parent windowing loop.
+     * Windows ONE relation over the whole page of parents through {@see firstPages()},
+     * then per parent records the page-1 linkage ({@see RelationshipLinkage}, supplied to
+     * core out-of-band so the page is NOT written onto the parent property) and its
+     * {@see RelationshipPagination}.
      *
      * Returns a `spl_object_id(parent) => ['page' => ?RelationshipPagination,
      * 'linkage' => RelationshipLinkage]` map of the parents whose relation was windowed;
      * a relation that is not paginated AND not re-ordered/filtered for this request (no
      * relatedQuery and no effective paginator) yields an empty map and renders off its
-     * (untouched) property exactly as before. The criteria, paginator, and synthetic
-     * page-1 request are resolved ONCE for the relation (they do not depend on the
-     * parent), so only the per-parent linkage/pagination assembly runs in the loop.
+     * (untouched) property exactly as before.
      *
-     * @param list<object>                $parents
+     * @param list<object>                     $parents
      * @param array<int, array<string, mixed>> $snapshots `spl_object_id(parent) => [column => original value]`
      *
      * @return array<int, array{page: ?RelationshipPagination, linkage: RelationshipLinkage}>
@@ -270,46 +277,85 @@ final class RelationshipWindowBatcher
         JsonApiRequestInterface $request,
         array $snapshots,
     ): array {
-        $relatedType = $relation->relatedTypes()[0] ?? null;
-        if ($relatedType === null || !$this->providers->supportsType($relatedType)) {
-            return [];
-        }
-
-        $relatedQuery = $request->getRelatedQuery($relation->name());
-
-        $relatedResource = $this->types->resourceFor($server, $relatedType);
-        $paginator = $this->relationCriteria->paginatorFor($relation, $relatedResource, $server);
-
-        // No paginator AND no relatedQuery: the relationship is neither sliced nor
-        // re-ordered/filtered from the primary request, so it renders as its full set
-        // exactly as before the profile (and core emits no pagination links).
-        if ($paginator === null && $relatedQuery->isEmpty()) {
-            return [];
-        }
-
         $column = $relation->column() ?? $relation->name();
 
-        // The page-1 synthetic request and the merged criteria are resolved once for the
-        // relation — they do not vary per parent (page is OUT for includes, fixed at page
-        // 1; the relatedQuery sort/filter ride as the plain `?sort`/`?filter`). The merge
-        // is owned by the shared RelationCriteriaFactory. Includes take no pivot filter,
-        // but a relation the provider reads through its pivot query sorts by its pivot
-        // fields, as its default order may.
-        $pageRequest = $this->page1Request($request, $relatedQuery);
+        $windows = [];
+        foreach ($this->firstPages($server, $type, $parents, $relation, $request, $request->getRelatedQuery($relation->name()), root: true) ?? [] as $objectId => $window) {
+            // Wrapped to the column's container so the serializer reads the same shape it
+            // would off the property.
+            $windows[$objectId] = [
+                'page' => $window['page'],
+                'linkage' => new RelationshipLinkage($this->asContainer($window['items'], $snapshots[$objectId][$column] ?? null)),
+            ];
+        }
+
+        return $windows;
+    }
+
+    /**
+     * The first page of a to-many `$relation` for each of `$parents` (all of `$type`),
+     * read the way its related endpoint reads it: under {@see Server::linkagePaginator()},
+     * in its default order, narrowed by the filter defaults its endpoint folds in, and by
+     * `$relatedQuery` when the request addresses one. A monomorphic relation is read for
+     * the whole page in one {@see DataProviderInterface::fetchRelatedCollectionBatch()}
+     * call, falling back to the related endpoint's per-parent read when the provider
+     * cannot batch it; a polymorphic one is cut from each parent's members, narrowed per
+     * member type as its related endpoint narrows them.
+     *
+     * Each entry is keyed by the parent's object id and holds the page's members and
+     * its {@see RelationshipPagination}, `null` when the relation is not paginated and a
+     * `$relatedQuery` only reorders or narrows it. `$root` marks a relation of the
+     * request's primary resources, the only ones a `?withCount` names.
+     *
+     * Returns `null` when the relation has no page to cut: it is not paginated and no
+     * `$relatedQuery` applies, it is a `MorphToMany` declared with `identifiedBy()` (read
+     * through {@see RelatedReadRouter::identifiedPages()}), or no provider serves its
+     * related type.
+     *
+     * @param list<object> $parents
+     *
+     * @return array<int, array{page: ?RelationshipPagination, items: list<object>}>|null
+     */
+    public function firstPages(
+        Server $server,
+        string $type,
+        array $parents,
+        RelationInterface $relation,
+        JsonApiRequestInterface $request,
+        ?RelatedQuery $relatedQuery = null,
+        bool $root = false,
+    ): ?array {
+        if (!$relation->isToMany() || RelatedReadRouter::identifiesMembers($relation)) {
+            return null;
+        }
+
+        $relatedQuery ??= new RelatedQuery();
+        $polymorphic = Polymorphism::of($relation);
+        $relatedType = $relation->relatedTypes()[0] ?? null;
+        if ($relatedType === null || (!$polymorphic && !$this->providers->supportsType($relatedType))) {
+            return null;
+        }
+
+        $relatedResource = $polymorphic ? null : $this->types->resourceFor($server, $relatedType);
+        $pageRequest = RelationshipPagination::firstPageRequest($request, $relatedQuery);
+        $paginator = $server->linkagePaginator($relation)?->resolve($pageRequest);
+
+        // No paginator and no relatedQuery: the relationship is neither sliced nor
+        // re-ordered or narrowed from the primary request, so it renders its whole set.
+        if ($paginator === null && $relatedQuery->isEmpty()) {
+            return null;
+        }
+
         $window = $paginator?->window($pageRequest);
 
-        // A windowed include is counted only when the pagination itself counts — the
-        // relation's paginator opted in (`withCount()`) or the client named the relation
-        // in `?withCount` (`countable()` is the upstream gate for that). A count-free
-        // paginator default emits `first`/`prev`/`next` with no total/`last`, exactly
-        // like the primary and related-collection endpoints (superseding the
-        // earlier "countable() always counts on include"). The
-        // `?withCount` flag rides the ORIGINAL request, not the synthetic page request.
-        // A cursor window renders no total, and the relation's `meta.total` comes from
-        // the grouped relation count, so a cursor-windowed include never counts here.
+        // A first page is counted only when its paginator counts (`withCount()`) or the
+        // client named the relation in `?withCount`, which names the primary resources'
+        // relations. A cursor page has no total, so it never counts here.
         $wantsCount = !$paginator instanceof CursorPaginator
-            && (($paginator?->wantsCount() ?? false) || $request->countsRelationship($relation->name()));
+            && (($paginator?->wantsCount() ?? false) || ($root && $relation->isCountable() && $request->countsRelationship($relation->name())));
 
+        // A relation the provider reads through its pivot query sorts by its pivot
+        // fields, as its default order may; a first page takes no pivot filter.
         $criteria = $this->relationCriteria->criteriaFor(
             new QueryParameters(
                 fields: [],
@@ -329,81 +375,136 @@ final class RelationshipWindowBatcher
             parentType: $type,
         );
 
-        // Validate the relatedQuery filter VALUE against the per-relation merged
-        // vocabulary before the batched window fetch, so a mistyped value on the
-        // include/linkage path is the endpoint's same 400.
-        // RAW client input only (RelatedQuery::filter); a no-op without the validator.
+        // A mistyped relatedQuery filter value is the endpoint's same 400. Raw client
+        // input only; a no-op without the validator.
         $this->filterValues?->validate($relatedQuery->filter, $criteria->filters, $criteria->request, $criteria->paths);
 
-        // ONE batched fetch for the whole page, driven through the PRIMARY type's
-        // provider — like RelationCountBatcher, and so the provider keys each parent's
-        // page by the parent's own WIRE id (the in-memory witness identifies the parent
-        // through ITS store; the Doctrine reference is one provider for all types). The
-        // per-parent scoping, merged-vocabulary key validation (unknown key -> the
-        // endpoint's 400), and the count-free vs countable distinction are all reused
-        // verbatim from fetchRelatedCollection's tail.
-        $batch = $this->router->batch($server, $type, $parents, $relation, $criteria, $pageRequest);
-
-        $serializer = $server->serializerFor($type);
-
-        $windows = [];
-        foreach ($parents as $parent) {
-            $result = $batch->for($serializer->getId($parent));
-            $windows[\spl_object_id($parent)] = $this->windowFor(
-                $paginator,
-                $pageRequest,
-                $result,
-                $relatedQuery,
-                $snapshots[\spl_object_id($parent)][$column] ?? null,
-                $wantsCount,
-                $server,
-                $relatedType,
-            );
+        // Relations over one association that read it the same way share one read.
+        $shareKey = $relatedQuery->isEmpty() && !$polymorphic && !$this->router->isComputed($relation)
+            && !$this->relationCriteria->hasFilterDefaults($relatedResource, $relation)
+            ? $this->shareKey($type, $relatedType, $parents, $relation, $criteria)
+            : null;
+        $results = $shareKey !== null && isset($this->shared[$shareKey])
+            ? $this->shared[$shareKey]
+            : ($polymorphic
+                ? $this->polymorphicResults($server, $parents, $relation, $criteria, $pageRequest)
+                : $this->batchedResults($server, $type, $parents, $relation, $relatedType, $criteria, $pageRequest));
+        if ($shareKey !== null) {
+            $this->shared[$shareKey] = $results;
         }
 
-        return $windows;
+        $queryString = $relatedQuery->toPlainQueryString();
+        $relatedSerializer = !$polymorphic && $server->hasSerializerFor($relatedType) ? $server->serializerFor($relatedType) : null;
+
+        $pages = [];
+        foreach ($parents as $index => $parent) {
+            $result = $results[$index];
+            $items = \array_values(\array_filter(
+                \is_array($result->items) ? \array_values($result->items) : \iterator_to_array($result->items, false),
+                static fn(mixed $item): bool => \is_object($item),
+            ));
+
+            $page = null;
+            if ($paginator !== null) {
+                $page = RelationshipPagination::firstPage(
+                    $paginator,
+                    $pageRequest,
+                    $items,
+                    $result,
+                    $wantsCount,
+                    $queryString,
+                    $items === [] || $relatedSerializer === null ? null : $relatedSerializer->getId($items[0]),
+                    $items === [] || $relatedSerializer === null ? null : $relatedSerializer->getId($items[\array_key_last($items)]),
+                );
+            }
+
+            $pages[\spl_object_id($parent)] = ['page' => $page, 'items' => $items];
+        }
+
+        return $pages;
     }
 
     /**
-     * Builds one parent's windowed page-1 result: the {@see RelationshipLinkage} core
-     * renders out-of-band (so the page is NOT written onto the parent property, leaving
-     * any column-sharing sibling relation to render its own membership) paired with its {@see
-     * RelationshipPagination} — or a `null` page when the
-     * relation is not sliced (a relatedQuery present but no paginator), in which case the
-     * linkage is re-ordered/filtered but carries no pagination links.
-     *
-     * The page is wrapped to match the column's container (a Doctrine `Collection`
-     * property cannot take a raw array; `$snapshot` carries the container type), so the
-     * linkage the serializer reads is the same shape as the property it replaces.
-     *
-     * @param CollectionResult<object> $result
-     *
-     * @return array{page: ?RelationshipPagination, linkage: RelationshipLinkage}
+     * Forgets the first pages read so far, so a later read loads afresh.
      */
-    private function windowFor(
-        ?PaginatorInterface $paginator,
-        JsonApiRequestInterface $pageRequest,
-        CollectionResult $result,
-        RelatedQuery $relatedQuery,
-        mixed $snapshot,
-        bool $wantsCount,
-        Server $server,
-        string $relatedType,
-    ): array {
-        $items = \is_array($result->items) ? \array_values($result->items) : \iterator_to_array($result->items, false);
+    public function forget(): void
+    {
+        $this->shared = [];
+    }
 
-        // Supply page 1 as the relation's linkage out-of-band — the `sort` selects which
-        // members land on page 1 (page is out for includes). Wrapped to the column's
-        // container so the serializer reads the same shape it would off the property.
-        $linkage = new RelationshipLinkage($this->asContainer($items, $snapshot));
+    /**
+     * What a first page of `$relation` over `$parents` is read with: the association, the
+     * window, the count and the order. A relation narrowed by a filter default or a
+     * `relatedQuery`, a polymorphic one and one whose value its own closure computes are
+     * never shared, so nothing else tells two reads apart.
+     *
+     * @param list<object> $parents
+     */
+    private function shareKey(string $type, string $relatedType, array $parents, RelationInterface $relation, CollectionCriteria $criteria): string
+    {
+        $order = [];
+        foreach ($criteria->defaultSort as $directive) {
+            $sort = $directive->sort;
+            $order[] = [$sort::class, $sort->key(), $sort instanceof \haddowg\JsonApi\Resource\Sort\SortByField ? $sort->column : null, $directive->descending];
+        }
 
-        // No paginator: re-ordered/filtered but not sliced, so there is no page to
-        // navigate and no pagination links to emit — only the linkage override.
-        $page = $paginator === null
-            ? null
-            : $this->paginationFor($paginator, $pageRequest, $items, $result, $relatedQuery, $wantsCount, $server, $relatedType);
+        return \serialize([
+            $type,
+            $relatedType,
+            $relation->column() ?? $relation->name(),
+            $this->router->isPivot($relation),
+            $criteria->window,
+            $criteria->wantsCount,
+            $order,
+            \array_map(\spl_object_id(...), $parents),
+        ]);
+    }
 
-        return ['page' => $page, 'linkage' => $linkage];
+    /**
+     * Each parent's page of a monomorphic relation, in `$parents` order: one batch for
+     * the whole page through the router, else the related endpoint's own per-parent
+     * read when the provider cannot batch it.
+     *
+     * @param list<object> $parents
+     *
+     * @return list<CollectionResult<object>>
+     */
+    private function batchedResults(Server $server, string $type, array $parents, RelationInterface $relation, string $relatedType, CollectionCriteria $criteria, JsonApiRequestInterface $pageRequest): array
+    {
+        $batch = $this->router->batch($server, $type, $parents, $relation, $criteria, $pageRequest);
+        $serializer = $server->serializerFor($type);
+
+        if ($batch->isSupported()) {
+            return \array_map(static fn(object $parent): CollectionResult => $batch->for($serializer->getId($parent)), $parents);
+        }
+
+        // A value the model computes is cut from what each parent holds.
+        if ($batch->isComputed()) {
+            return $this->router->memberPages($server, $parents, $relation, $criteria, $pageRequest);
+        }
+
+        // A relation the provider cannot batch is read per parent exactly as its related
+        // endpoint reads it.
+        $provider = $this->providers->forType($relatedType);
+
+        return \array_map(
+            static fn(object $parent): CollectionResult => $provider instanceof PivotAwareProviderInterface && $provider->supportsPivot($relatedType, $relation)
+                ? $provider->fetchRelatedPivotCollection($relatedType, $parent, $relation, $criteria, $pageRequest)
+                : $provider->fetchRelatedCollection($relatedType, $parent, $relation, $criteria, $pageRequest),
+            $parents,
+        );
+    }
+
+    /**
+     * Each parent's page of a polymorphic relation, in `$parents` order.
+     *
+     * @param list<object> $parents
+     *
+     * @return list<CollectionResult<object>>
+     */
+    private function polymorphicResults(Server $server, array $parents, RelationInterface $relation, CollectionCriteria $criteria, JsonApiRequestInterface $pageRequest): array
+    {
+        return $this->router->memberPages($server, $parents, $relation, $criteria, $pageRequest);
     }
 
     /**
@@ -835,82 +936,6 @@ final class RelationshipWindowBatcher
         }
 
         return $snapshot;
-    }
-
-    /**
-     * Builds the {@see RelationshipPagination} for the windowed page: when the
-     * pagination counts (`$wantsCount` — the paginator's `withCount()` or a client
-     * `?withCount`), it emits the total + `first`/`prev`/`next`/`last`; otherwise it
-     * paginates count-free (no total, no `last`; `next` driven by the `hasMore` probe).
-     * The plain-form query string carries the relatedQuery sort/filter so the links
-     * mirror them.
-     *
-     * @param CollectionResult<object> $result
-     * @param list<object>             $items
-     */
-    private function paginationFor(
-        PaginatorInterface $paginator,
-        JsonApiRequestInterface $pageRequest,
-        array $items,
-        CollectionResult $result,
-        RelatedQuery $relatedQuery,
-        bool $wantsCount,
-        Server $server,
-        string $relatedType,
-    ): RelationshipPagination {
-        $queryString = $relatedQuery->toPlainQueryString();
-
-        // A cursor (keyset) window on an included relation: the provider minted the
-        // per-parent boundary tokens (an include is always a FIRST cursor page — no
-        // cursor token rides an include — so `hasPrevious` is false and `prev` is
-        // omitted), so render through the paginator's cursor path carrying the minted
-        // `next` token + `hasMore`, mirroring the primary/related cursor render. `from`/`to`
-        // are the wire ids of the first/last rendered rows — the
-        // related serializer is resolved only here (a cursor-resolved relation's related
-        // type is always servable), never eagerly for every windowed relation.
-        if ($result instanceof CursorCollectionResult && $paginator instanceof CursorPaginator) {
-            $relatedSerializer = $server->serializerFor($relatedType);
-            $from = $items === [] ? null : $relatedSerializer->getId($items[0]);
-            $to = $items === [] ? null : $relatedSerializer->getId($items[\array_key_last($items)]);
-
-            return new RelationshipPagination(
-                $paginator->fromBoundaries(
-                    $pageRequest,
-                    $items,
-                    $result->cursorBefore ?? '',
-                    $result->cursorAfter ?? '',
-                    $result->hasMore,
-                    $result->hasPrevious,
-                    from: $from,
-                    to: $to,
-                ),
-                $queryString,
-            );
-        }
-
-        if ($wantsCount && $result->total !== null) {
-            return new RelationshipPagination($paginator->paginate($pageRequest, $items, $result->total), $queryString);
-        }
-
-        return new RelationshipPagination(
-            $paginator->paginateWithoutCount($pageRequest, $items, $result->hasMore),
-            $queryString,
-        );
-    }
-
-    /**
-     * A page-1 request the paginator/provider read the window and plain `?sort` /
-     * `?filter` from: the relatedQuery sort/filter projected onto the plain query
-     * params, with `page[number]` pinned to 1 (page is OUT for includes) and
-     * `page[size]` left to the paginator default so the relation default size
-     * applies.
-     */
-    private function page1Request(JsonApiRequestInterface $request, RelatedQuery $relatedQuery): JsonApiRequestInterface
-    {
-        return $request
-            ->withQueryParam('sort', \implode(',', $relatedQuery->sortFields()))
-            ->withQueryParam('filter', $relatedQuery->filter)
-            ->withQueryParam('page', ['number' => '1']);
     }
 
     /**
