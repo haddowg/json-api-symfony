@@ -196,17 +196,17 @@ abstract class WriteConformanceTestCase extends JsonApiFunctionalTestCase
         ]);
         self::assertSame(200, $matching->getStatusCode(), (string) $matching->getContent());
 
-        // An ABSENT body id is "a separate concern the hydrator owns" (core's own words):
-        // the conflict check only fires when a body id is present, so an omitted id is
-        // never a 409 — the update proceeds against the URL-targeted resource as a 200.
+        // An ABSENT body id is not a conflict: the hydrator refuses it, since the spec
+        // requires every update body to name its resource, with a 400 at /data.
         $absent = $this->handle('/articles/1', 'PATCH', [
             'data' => [
                 'type' => 'articles',
                 'attributes' => ['title' => 'An absent id'],
             ],
         ]);
-        self::assertSame(200, $absent->getStatusCode(), (string) $absent->getContent());
-        self::assertSame('1', $this->dataOf($absent)['id'] ?? null);
+        self::assertSame(400, $absent->getStatusCode(), (string) $absent->getContent());
+        self::assertSame(['RESOURCE_ID_MISSING', '/data'], $this->firstError($absent));
+        self::assertSame('A matching id', $this->attributesOf($this->handle('/articles/1'))['title'] ?? null);
     }
 
     #[Test]
