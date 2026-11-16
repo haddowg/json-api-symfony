@@ -251,11 +251,15 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
     public function create(string $type, object $entity): object
     {
         // An id already on the new entity is a client id; one that is taken is a 409
-        // rather than the database's unique-key error at flush.
+        // rather than the database's unique-key error at flush. A before hook may have
+        // persisted the entity, or flushed it to get its id, so a managed entity holds its
+        // own id: its row is not a conflict, and only an insert still to come can lose a race.
         $metadata = $this->entityManager->getClassMetadata($entity::class);
         $ids = $metadata->getIdentifierValues($entity);
-        $clientId = $ids !== [] && !\in_array(null, $ids, true);
-        if ($clientId && $this->entityManager->find($metadata->getName(), $ids) !== null) {
+        $managed = $this->entityManager->contains($entity);
+        $inserts = !$managed || $this->entityManager->getUnitOfWork()->isScheduledForInsert($entity);
+        $clientId = $ids !== [] && !\in_array(null, $ids, true) && $inserts;
+        if ($clientId && !$managed && $this->entityManager->find($metadata->getName(), $ids) !== null) {
             throw new ClientGeneratedIdAlreadyExists(self::describeId($ids));
         }
 

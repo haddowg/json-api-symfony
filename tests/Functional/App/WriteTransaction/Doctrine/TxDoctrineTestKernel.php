@@ -91,6 +91,8 @@ final class TxDoctrineTestKernel extends Kernel
 
         $services->set(TxWidgetResource::class);
         $services->set(TxNoteResource::class);
+        $services->set(TxTagResource::class);
+        $services->set(TxFlushingHook::class);
         $services->set(TxAcceptingPersister::class)
             ->arg('$inner', service(DoctrineDataPersister::class))
             ->tag(JsonApiBundle::DATA_PERSISTER_TAG);

@@ -54,6 +54,15 @@ final class TxScenario
     /** Whether the stamp action returns an error response instead of throwing. */
     public static bool $actionReturnsError = false;
 
+    /** Whether a before-create hook persists the new entity, on Doctrine. */
+    public static bool $persistOnCreate = false;
+
+    /** Whether that hook also flushes. */
+    public static bool $flushOnCreate = false;
+
+    /** Whether that hook throws once it has persisted and flushed. */
+    public static bool $throwAfterFlush = false;
+
     /** @var list<string> the `txWidgets` events and the after-commit callbacks, in the order they ran */
     public static array $log = [];
 
@@ -79,6 +88,9 @@ final class TxScenario
         self::$throwingCallback = false;
         self::$actionAfterCommit = false;
         self::$actionReturnsError = false;
+        self::$persistOnCreate = false;
+        self::$flushOnCreate = false;
+        self::$throwAfterFlush = false;
         self::$log = [];
         self::$callbackLevels = [];
         self::$errors = [];

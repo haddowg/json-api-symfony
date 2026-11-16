@@ -248,6 +248,118 @@ final class DoctrineWriteTransactionTest extends WriteTransactionConformanceTest
         self::assertSame(['first', 'second'], $this->widgetNames());
     }
 
+    #[Test]
+    public function aBeforeCreateHookThatFlushesTheNewWidgetCreatesItOnce(): void
+    {
+        TxScenario::$persistOnCreate = true;
+        TxScenario::$flushOnCreate = true;
+
+        $response = $this->handle('/txWidgets', 'POST', $this->widget('third'));
+
+        self::assertSame(201, $response->getStatusCode(), (string) $response->getContent());
+        $data = $this->decode($response)['data'] ?? null;
+        self::assertIsArray($data);
+        self::assertSame('3', $data['id'] ?? null);
+        self::assertSame([[1, 'first'], [2, 'second'], [3, 'third']], $this->rows('SELECT id, name FROM tx_widget ORDER BY id'));
+        $this->assertNoTransactionOpen();
+    }
+
+    #[Test]
+    public function aBeforeCreateHookThatFlushesANewClientIdCreatesIt(): void
+    {
+        TxScenario::$persistOnCreate = true;
+        TxScenario::$flushOnCreate = true;
+
+        $response = $this->handle('/txTags', 'POST', $this->tag('red'));
+
+        self::assertSame(201, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame([['red', 'Red']], $this->rows('SELECT id, label FROM tx_tag'));
+        $this->assertNoTransactionOpen();
+    }
+
+    #[Test]
+    public function aBeforeCreateHookThatPersistsANewClientIdCreatesIt(): void
+    {
+        TxScenario::$persistOnCreate = true;
+
+        $response = $this->handle('/txTags', 'POST', $this->tag('red'));
+
+        self::assertSame(201, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame([['red', 'Red']], $this->rows('SELECT id, label FROM tx_tag'));
+    }
+
+    #[Test]
+    public function aTakenClientIdIsAConflictWhenAHookPersistedIt(): void
+    {
+        self::assertSame(201, $this->handle('/txTags', 'POST', $this->tag('red'))->getStatusCode());
+        $this->entityManager()->clear();
+        TxScenario::$persistOnCreate = true;
+
+        $response = $this->handle('/txTags', 'POST', $this->tag('red', 'Crimson'));
+
+        self::assertSame(409, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame([['red', 'Red']], $this->rows('SELECT id, label FROM tx_tag'));
+        $this->assertNoTransactionOpen();
+    }
+
+    #[Test]
+    public function aTakenClientIdIsAConflictWhenTheResourceIsAlreadyManaged(): void
+    {
+        self::assertSame(201, $this->handle('/txTags', 'POST', $this->tag('red'))->getStatusCode());
+
+        // The stored tag is still in the identity map, and the new one is another object.
+        $response = $this->handle('/txTags', 'POST', $this->tag('red', 'Crimson'));
+
+        self::assertSame(409, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame([['red', 'Red']], $this->rows('SELECT id, label FROM tx_tag'));
+    }
+
+    #[Test]
+    public function aBeforeCreateHookThatFlushesThenThrowsRollsTheWidgetBack(): void
+    {
+        TxScenario::$persistOnCreate = true;
+        TxScenario::$flushOnCreate = true;
+        TxScenario::$throwAfterFlush = true;
+
+        $response = $this->handle('/txWidgets', 'POST', $this->widget('third'));
+
+        self::assertSame(403, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame([['first'], ['second']], $this->rows('SELECT name FROM tx_widget ORDER BY id'));
+        $this->assertNoTransactionOpen();
+
+        TxScenario::reset();
+        self::assertSame(201, $this->handle('/txWidgets', 'POST', $this->widget('third'))->getStatusCode());
+        self::assertSame([['first'], ['second'], ['third']], $this->rows('SELECT name FROM tx_widget ORDER BY id'));
+    }
+
+    #[Test]
+    public function aBeforeCreateHookThatFlushesANewClientIdThenThrowsRollsTheTagBack(): void
+    {
+        TxScenario::$persistOnCreate = true;
+        TxScenario::$flushOnCreate = true;
+        TxScenario::$throwAfterFlush = true;
+
+        $response = $this->handle('/txTags', 'POST', $this->tag('red'));
+
+        self::assertSame(403, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(0, $this->rowCount('tx_tag'));
+        $this->assertNoTransactionOpen();
+
+        // The id is free again.
+        TxScenario::reset();
+        $response = $this->handle('/txTags', 'POST', $this->tag('red'));
+        self::assertSame(201, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame([['red', 'Red']], $this->rows('SELECT id, label FROM tx_tag'));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function tag(string $id, string $label = 'Red'): array
+    {
+        return ['data' => ['type' => 'txTags', 'id' => $id, 'attributes' => ['label' => $label]]];
+    }
+
     /**
      * Stores a user and keeps it managed, as the firewall does with the security user, for
      * the blame listener to stamp on what is persisted next.
