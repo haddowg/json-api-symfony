@@ -111,6 +111,7 @@ use haddowg\JsonApiBundle\Event\AfterFetchOneEvent;
 use haddowg\JsonApiBundle\Event\AfterRelationshipMutateEvent;
 use haddowg\JsonApiBundle\Event\AfterSaveEvent;
 use haddowg\JsonApiBundle\Event\AfterUpdateEvent;
+use haddowg\JsonApiBundle\Event\BeforeApplyRelationshipEvent;
 use haddowg\JsonApiBundle\Event\BeforeApplyUpdateEvent;
 use haddowg\JsonApiBundle\Event\BeforeCreateEvent;
 use haddowg\JsonApiBundle\Event\BeforeDeleteEvent;
@@ -1699,7 +1700,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         $persister = $this->persisters->forType($type);
 
-        // From the before-relationship-mutate gate (a throw aborts before the persister
+        // From the gate on the stored parent (a throw aborts before the persister
         // applies the change) through the storage-correct apply, everything runs in one
         // transaction; the after hook, which may replace the linkage response, runs
         // post-commit. The changed parent is checked again before it commits: it must still
@@ -1707,6 +1708,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // can't hand it to someone the gate would refuse them as. A violation or a refusal
         // rolls the change back, with anything a before hook flushed.
         $parent = WriteTransaction::run($persister, $this->txContext, afterCommit: $this->afterCommit, write: function () use ($server, $persister, $type, $parent, $relation, $linkage, $mode, $request, $body): object {
+            // The gate on the parent as stored runs before any related id is looked up, so a
+            // refused caller learns nothing about which of them exist.
+            $this->dispatch(new BeforeApplyRelationshipEvent($type, $request, $parent, $relation, $linkage, $mode, $this->serverName($request)));
+
             // Linkage naming a resource the related endpoint does not serve is rejected as
             // missing, and a replace keeps the members the scope hides. The member-move
             // gates run here, ahead of the before hooks.

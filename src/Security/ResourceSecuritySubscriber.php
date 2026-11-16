@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Security;
 
 use haddowg\JsonApiBundle\Event\AfterFetchOneEvent;
 use haddowg\JsonApiBundle\Event\BeforeActionEvent;
+use haddowg\JsonApiBundle\Event\BeforeApplyRelationshipEvent;
 use haddowg\JsonApiBundle\Event\BeforeApplyUpdateEvent;
 use haddowg\JsonApiBundle\Event\BeforeDeleteEvent;
 use haddowg\JsonApiBundle\Event\BeforeEmbeddedRelationshipWriteEvent;
@@ -14,7 +15,6 @@ use haddowg\JsonApiBundle\Event\BeforeFetchRelatedEvent;
 use haddowg\JsonApiBundle\Event\BeforeFetchRelationshipEvent;
 use haddowg\JsonApiBundle\Event\BeforeMemberMoveEvent;
 use haddowg\JsonApiBundle\Event\BeforeRelationshipCommitEvent;
-use haddowg\JsonApiBundle\Event\BeforeRelationshipMutateEvent;
 use haddowg\JsonApiBundle\Event\BeforeSaveEvent;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\ExpressionLanguage\Expression;
@@ -40,7 +40,7 @@ use Symfony\Component\Security\Core\Exception\AccessDeniedException;
  *  - {@see BeforeSaveEvent} on a create   → the hydrated entity (post-denormalization);
  *  - {@see BeforeApplyUpdateEvent}        → the loaded entity, before the body is applied;
  *  - {@see BeforeSaveEvent} on an update  → the loaded, changed entity;
- *  - {@see BeforeRelationshipMutateEvent} → the parent (gated by the relation's mutate
+ *  - {@see BeforeApplyRelationshipEvent}  → the parent as stored (gated by the relation's mutate
  *                                           expression, overriding the type's update);
  *  - {@see BeforeEmbeddedRelationshipWriteEvent}
  *                                         → the parent (gated by the relation's own mutate
@@ -104,7 +104,7 @@ final class ResourceSecuritySubscriber implements EventSubscriberInterface
         return [
             BeforeSaveEvent::class => ['onBeforeSave', self::PRIORITY],
             BeforeApplyUpdateEvent::class => ['onBeforeApplyUpdate', self::PRIORITY],
-            BeforeRelationshipMutateEvent::class => ['onBeforeRelationshipMutate', self::PRIORITY],
+            BeforeApplyRelationshipEvent::class => ['onBeforeApplyRelationship', self::PRIORITY],
             BeforeRelationshipCommitEvent::class => ['onBeforeRelationshipCommit', self::PRIORITY],
             BeforeEmbeddedRelationshipWriteEvent::class => ['onBeforeEmbeddedRelationshipWrite', self::PRIORITY],
             BeforeMemberMoveEvent::class => ['onBeforeMemberMove', self::PRIORITY],
@@ -184,7 +184,7 @@ final class ResourceSecuritySubscriber implements EventSubscriberInterface
         $this->authorize($event->type, $this->registry->securityFor($event->type, $event->serverName)?->forUpdate(), $event->entity);
     }
 
-    public function onBeforeRelationshipMutate(BeforeRelationshipMutateEvent $event): void
+    public function onBeforeApplyRelationship(BeforeApplyRelationshipEvent $event): void
     {
         // The relation's own mutate security OVERRIDES the parent's update gate (it may
         // be more *or* less permissive); a relation declaring none falls back to the
@@ -194,7 +194,7 @@ final class ResourceSecuritySubscriber implements EventSubscriberInterface
     }
 
     /**
-     * Checks the same expression as {@see onBeforeRelationshipMutate()} against the parent
+     * Checks the same expression as {@see onBeforeApplyRelationship()} against the parent
      * after the change is applied and before it commits, so a caller can't change a
      * resource into one the expression would refuse them, such as handing it to another
      * user (ADR 0048).

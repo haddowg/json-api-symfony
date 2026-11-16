@@ -85,6 +85,26 @@ abstract class GateOrderConformanceTestCase extends JsonApiFunctionalTestCase
     }
 
     #[Test]
+    public function aRefusedRelationshipWriteNamingAnUnknownIdIsForbiddenNotMissing(): void
+    {
+        // The gate runs before the related ids are looked up, so a refused caller can't
+        // tell an id that exists from one that doesn't.
+        $missing = ['data' => ['type' => 'gateWidgets', 'id' => '999']];
+        $this->assertRefused($this->as('user', '/gateWidgets/2/relationships/partner', 'PATCH', $missing));
+        $this->assertRefused($this->as('user', '/gateWidgets/1/relationships/lockedPartner', 'PATCH', $missing));
+        $this->assertRefused($this->as('user', '/gateWidgets/2/relationships/children', 'POST', ['data' => [['type' => 'gateWidgets', 'id' => '999']]]));
+    }
+
+    #[Test]
+    public function anAllowedRelationshipWriteNamingAnUnknownIdIsMissing(): void
+    {
+        $response = $this->as('user', '/gateWidgets/1/relationships/partner', 'PATCH', ['data' => ['type' => 'gateWidgets', 'id' => '999']]);
+
+        self::assertSame(404, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['BeforeApplyRelationshipEvent'], GateLog::$entries);
+    }
+
+    #[Test]
     public function aRefusedReadRunsNoHook(): void
     {
         $this->assertRefused($this->as('user', '/gateWidgets/3'));

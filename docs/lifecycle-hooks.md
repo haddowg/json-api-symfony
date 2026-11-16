@@ -39,7 +39,7 @@ create:  serving → BeforeSave → BeforeCreate → [persist] → AfterCreate �
 update:  serving → BeforeApplyUpdate → [apply body] → BeforeRelationshipCommit (per body relationship) → BeforeSave → BeforeUpdate → [commit]  → AfterUpdate → AfterSave
 delete:  serving → BeforeDelete → [delete] → AfterDelete
 PATCH/POST/DELETE …/relationships/{rel}:
-         serving → BeforeMemberMove (per moved member) → BeforeRelationshipMutate → [apply] → BeforeRelationshipCommit → [commit] → AfterRelationshipMutate
+         serving → BeforeApplyRelationship → BeforeMemberMove (per moved member) → BeforeRelationshipMutate → [apply] → BeforeRelationshipCommit → [commit] → AfterRelationshipMutate
 GET /{type}/{id}:  serving → AfterFetchOne
 GET /{type}:       serving → AfterFetchCollection
 ```
@@ -55,6 +55,12 @@ concern that applies to every write lives in one place; the more specific
 update's target is loaded, before validation or any of the body is applied, carrying
 the entity as stored. The bundle's security subscriber evaluates `securityUpdate`
 there as well as at `BeforeSave`.
+
+`BeforeApplyRelationship` is its twin on the relationship endpoints, also an event
+only. It fires once the parent is loaded and the linkage validated, before any related
+id is looked up or anything is applied, carrying the parent as stored. The bundle's
+security subscriber gates the relationship write there, so a caller it refuses learns
+nothing about which related ids exist.
 
 `BeforeRelationshipCommit` is an event only as well. It fires once a relationship
 change has been applied to the parent and before it commits: on the relationship
@@ -83,8 +89,8 @@ of its step:
 | update | `securityUpdate` on the changed entity | `BeforeSave` |
 | update | a body relationship's `mutate` expression | `BeforeEmbeddedRelationshipWrite`, `BeforeRelationshipCommit` |
 | delete | `securityDelete` | `BeforeDelete` |
+| relationship write | the relation's `mutate`, else `securityUpdate`, on the stored parent | `BeforeApplyRelationship` |
 | relationship write | moving a member out of another parent | `BeforeMemberMove` |
-| relationship write | the relation's `mutate`, else `securityUpdate` | `BeforeRelationshipMutate` |
 | single read | `securityRead` | `AfterFetchOne` |
 | related or relationship read | the relation's `read`, else `securityRead` on the parent | `BeforeFetchRelated`, `BeforeFetchRelationship`, else `AfterFetchOne` |
 | collection read | `securityList` | `BeforeFetchCollection` |
@@ -98,7 +104,8 @@ event. At the default `0`, or anywhere below `256`, it runs after the gate and o
 callers the gate let through. Above `256` it runs first and sees every request,
 including ones the gate is about to refuse, so keep anything there free of side effects
 a refused caller shouldn't trigger. A listener on a later event, such as
-`BeforeCreate` or `BeforeUpdate`, runs after the gate whatever its priority.
+`BeforeCreate`, `BeforeUpdate` or `BeforeRelationshipMutate`, runs after the gate whatever
+its priority.
 
 One check has to come after a hook. On a relationship endpoint the changed parent is
 checked again at `BeforeRelationshipCommit`, which needs the change applied, so it runs
@@ -179,7 +186,7 @@ step and commits once the persister has written:
 | create | the body's relationships, hydration, entity validation, `BeforeSave`, `BeforeCreate`, the persister's `create()` |
 | update | `BeforeApplyUpdate`, validation, the body's relationships, hydration, entity validation, `BeforeSave`, `BeforeUpdate`, `BeforeRelationshipCommit`, the persister's `update()` |
 | delete | `BeforeDelete`, then the persister's `delete()` or the resource's [`DeletesEntityInterface::delete()`](doctrine.md#deleting-without-the-persister) |
-| relationship endpoints | `BeforeRelationshipMutate`, the apply, entity validation, `BeforeRelationshipCommit` |
+| relationship endpoints | `BeforeApplyRelationship`, the linkage checks, `BeforeMemberMove`, `BeforeRelationshipMutate`, the apply, entity validation, `BeforeRelationshipCommit` |
 
 A before hook that writes joins the transaction. A flush it makes on the same connection
 is undone if a later hook, a validation or the persister's own write throws, so a hook

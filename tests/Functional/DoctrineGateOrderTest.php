@@ -49,9 +49,9 @@ final class DoctrineGateOrderTest extends GateOrderConformanceTestCase
     #[Test]
     public function aRefusedMemberMoveRunsNoHook(): void
     {
-        // The caller may change widget 1, but widget 4 sits under widget 2, which they
-        // may not change, and is not theirs either.
-        $this->assertRefused($this->as('user', '/gateWidgets/1/relationships/children', 'POST', ['data' => [['type' => 'gateWidgets', 'id' => '4']]]));
+        // The caller may change widget 1, so the gate on it passes, but widget 4 sits under
+        // widget 2, which they may not change, and is not theirs either.
+        $this->assertRefused($this->as('user', '/gateWidgets/1/relationships/children', 'POST', ['data' => [['type' => 'gateWidgets', 'id' => '4']]]), ['BeforeApplyRelationshipEvent']);
     }
 
     private function entityManager(): EntityManagerInterface

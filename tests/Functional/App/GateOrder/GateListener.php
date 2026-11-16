@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\GateOrder;
 
 use haddowg\JsonApiBundle\Event\AfterFetchOneEvent;
 use haddowg\JsonApiBundle\Event\BeforeActionEvent;
+use haddowg\JsonApiBundle\Event\BeforeApplyRelationshipEvent;
 use haddowg\JsonApiBundle\Event\BeforeApplyUpdateEvent;
 use haddowg\JsonApiBundle\Event\BeforeCreateEvent;
 use haddowg\JsonApiBundle\Event\BeforeDeleteEvent;
@@ -31,6 +32,7 @@ final class GateListener implements EventSubscriberInterface
             BeforeSaveEvent::class,
             BeforeCreateEvent::class,
             BeforeApplyUpdateEvent::class,
+            BeforeApplyRelationshipEvent::class,
             BeforeUpdateEvent::class,
             BeforeDeleteEvent::class,
             BeforeRelationshipMutateEvent::class,

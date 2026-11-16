@@ -9,6 +9,7 @@ The security subscriber listens at priority 256 on each event it gates, and each
 
 ## Consequences
 
-- A body relationship's `BeforeRelationshipCommit` now fires before the update's `BeforeSave`, and on a relationship endpoint the member-move gate fires before `BeforeRelationshipMutate`, so neither check follows a hook. The linkage checks on that endpoint run before the parent's gate too, so a missing related id answers 404 ahead of the gate's 403.
+- A body relationship's `BeforeRelationshipCommit` now fires before the update's `BeforeSave`, so it doesn't follow a hook.
+- A relationship endpoint gates the parent at a new event-only `BeforeApplyRelationship`, before the related ids are looked up, and then runs the linkage, membership and member-move checks ahead of `BeforeRelationshipMutate`. The gate and the hooks shared `BeforeRelationshipMutate`, so no priority could put the related-id lookup between them. A refused caller gets the 403 before any lookup and learns nothing about which related ids exist, as on Laravel, which checks the parent first too. A listener that used to throw from `BeforeRelationshipMutate` above the gate's priority to run first now needs `BeforeApplyRelationship`.
 - The changed-entity update gate no longer sees what a `beforeSave` or `beforeUpdate` hook writes. It judges the caller's change, and a hook's own write is the application's.
 - The relationship endpoint's second gate still follows `BeforeRelationshipMutate`, because it judges the applied change. A refusal there rolls back what the hook wrote to the database, and nothing else.
