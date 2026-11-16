@@ -7,7 +7,6 @@ namespace haddowg\JsonApiBundle\Security;
 use haddowg\JsonApiBundle\Event\AfterFetchOneEvent;
 use haddowg\JsonApiBundle\Event\BeforeActionEvent;
 use haddowg\JsonApiBundle\Event\BeforeApplyUpdateEvent;
-use haddowg\JsonApiBundle\Event\BeforeCreateEvent;
 use haddowg\JsonApiBundle\Event\BeforeDeleteEvent;
 use haddowg\JsonApiBundle\Event\BeforeEmbeddedRelationshipWriteEvent;
 use haddowg\JsonApiBundle\Event\BeforeFetchCollectionEvent;
@@ -16,7 +15,7 @@ use haddowg\JsonApiBundle\Event\BeforeFetchRelationshipEvent;
 use haddowg\JsonApiBundle\Event\BeforeMemberMoveEvent;
 use haddowg\JsonApiBundle\Event\BeforeRelationshipCommitEvent;
 use haddowg\JsonApiBundle\Event\BeforeRelationshipMutateEvent;
-use haddowg\JsonApiBundle\Event\BeforeUpdateEvent;
+use haddowg\JsonApiBundle\Event\BeforeSaveEvent;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\ExpressionLanguage\Expression;
 use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
@@ -34,11 +33,13 @@ use Symfony\Component\Security\Core\Exception\AccessDeniedException;
  * is false.
  *
  * It runs at the **before** hooks for writes — so a denial aborts before any
- * persist or side-effect — and at {@see AfterFetchOneEvent} for the single read. The
- * subject `$object` is:
- *  - {@see BeforeCreateEvent}             → the hydrated entity (post-denormalization);
+ * persist or side-effect — and at {@see AfterFetchOneEvent} for the single read. Every
+ * gate listens at {@see self::PRIORITY}, above the default `0`, and each operation's
+ * first gate is on the first event it dispatches, so a refused caller never reaches a
+ * resource's hook methods or a listener at a lower priority. The subject `$object` is:
+ *  - {@see BeforeSaveEvent} on a create   → the hydrated entity (post-denormalization);
  *  - {@see BeforeApplyUpdateEvent}        → the loaded entity, before the body is applied;
- *  - {@see BeforeUpdateEvent}             → the loaded, changed entity;
+ *  - {@see BeforeSaveEvent} on an update  → the loaded, changed entity;
  *  - {@see BeforeRelationshipMutateEvent} → the parent (gated by the relation's mutate
  *                                           expression, overriding the type's update);
  *  - {@see BeforeEmbeddedRelationshipWriteEvent}
@@ -84,30 +85,35 @@ use Symfony\Component\Security\Core\Exception\AccessDeniedException;
  */
 final class ResourceSecuritySubscriber implements EventSubscriberInterface
 {
+    /**
+     * The priority every gate listens at. A listener on the same event above it runs
+     * before the gate, and sees requests the gate goes on to refuse.
+     */
+    public const PRIORITY = 256;
+
     public function __construct(
         private readonly ?AuthorizationCheckerInterface $authorizationChecker,
         private readonly ResourceSecurityRegistry $registry,
     ) {}
 
     /**
-     * @return array<class-string, string>
+     * @return array<class-string, array{string, int}>
      */
     public static function getSubscribedEvents(): array
     {
         return [
-            BeforeCreateEvent::class => 'onBeforeCreate',
-            BeforeApplyUpdateEvent::class => 'onBeforeApplyUpdate',
-            BeforeUpdateEvent::class => 'onBeforeUpdate',
-            BeforeRelationshipMutateEvent::class => 'onBeforeRelationshipMutate',
-            BeforeRelationshipCommitEvent::class => 'onBeforeRelationshipCommit',
-            BeforeEmbeddedRelationshipWriteEvent::class => 'onBeforeEmbeddedRelationshipWrite',
-            BeforeMemberMoveEvent::class => 'onBeforeMemberMove',
-            BeforeDeleteEvent::class => 'onBeforeDelete',
-            AfterFetchOneEvent::class => 'onAfterFetchOne',
-            BeforeFetchCollectionEvent::class => 'onBeforeFetchCollection',
-            BeforeFetchRelatedEvent::class => 'onBeforeFetchRelated',
-            BeforeFetchRelationshipEvent::class => 'onBeforeFetchRelationship',
-            BeforeActionEvent::class => 'onBeforeAction',
+            BeforeSaveEvent::class => ['onBeforeSave', self::PRIORITY],
+            BeforeApplyUpdateEvent::class => ['onBeforeApplyUpdate', self::PRIORITY],
+            BeforeRelationshipMutateEvent::class => ['onBeforeRelationshipMutate', self::PRIORITY],
+            BeforeRelationshipCommitEvent::class => ['onBeforeRelationshipCommit', self::PRIORITY],
+            BeforeEmbeddedRelationshipWriteEvent::class => ['onBeforeEmbeddedRelationshipWrite', self::PRIORITY],
+            BeforeMemberMoveEvent::class => ['onBeforeMemberMove', self::PRIORITY],
+            BeforeDeleteEvent::class => ['onBeforeDelete', self::PRIORITY],
+            AfterFetchOneEvent::class => ['onAfterFetchOne', self::PRIORITY],
+            BeforeFetchCollectionEvent::class => ['onBeforeFetchCollection', self::PRIORITY],
+            BeforeFetchRelatedEvent::class => ['onBeforeFetchRelated', self::PRIORITY],
+            BeforeFetchRelationshipEvent::class => ['onBeforeFetchRelationship', self::PRIORITY],
+            BeforeActionEvent::class => ['onBeforeAction', self::PRIORITY],
         ];
     }
 
@@ -159,17 +165,21 @@ final class ResourceSecuritySubscriber implements EventSubscriberInterface
         }
     }
 
-    public function onBeforeCreate(BeforeCreateEvent $event): void
+    /**
+     * Gates a create with the type's create expression and an update with its update
+     * expression, against the entity the body produced. {@see BeforeSaveEvent} is the
+     * first event either write dispatches after hydration, ahead of
+     * {@see \haddowg\JsonApiBundle\Event\BeforeCreateEvent} and
+     * {@see \haddowg\JsonApiBundle\Event\BeforeUpdateEvent}, so the gate runs before
+     * every before-save, before-create and before-update hook.
+     */
+    public function onBeforeSave(BeforeSaveEvent $event): void
     {
-        $this->authorize($event->type, $this->registry->securityFor($event->type, $event->serverName)?->forCreate(), $event->entity);
+        $security = $this->registry->securityFor($event->type, $event->serverName);
+        $this->authorize($event->type, $event->creating ? $security?->forCreate() : $security?->forUpdate(), $event->entity);
     }
 
     public function onBeforeApplyUpdate(BeforeApplyUpdateEvent $event): void
-    {
-        $this->authorize($event->type, $this->registry->securityFor($event->type, $event->serverName)?->forUpdate(), $event->entity);
-    }
-
-    public function onBeforeUpdate(BeforeUpdateEvent $event): void
     {
         $this->authorize($event->type, $this->registry->securityFor($event->type, $event->serverName)?->forUpdate(), $event->entity);
     }

@@ -1707,13 +1707,14 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // can't hand it to someone the gate would refuse them as. A violation or a refusal
         // rolls the change back, with anything a before hook flushed.
         $parent = WriteTransaction::run($persister, $this->txContext, afterCommit: $this->afterCommit, write: function () use ($server, $persister, $type, $parent, $relation, $linkage, $mode, $request, $body): object {
-            $this->dispatch(new BeforeRelationshipMutateEvent($type, $request, $parent, $relation, $linkage, $mode, $this->serverName($request)));
-
             // Linkage naming a resource the related endpoint does not serve is rejected as
-            // missing, and a replace keeps the members the scope hides.
+            // missing, and a replace keeps the members the scope hides. The member-move
+            // gates run here, ahead of the before hooks.
             $scopedLinkage = $this->linkageGuard?->scope($server, $parent, $relation, $linkage, $mode, $request, atEndpoint: true) ?? $linkage;
             $this->guardMembership($server, $relation, $scopedLinkage, $mode, $body, $parent);
             $this->guardMovedMembers($persister, $type, $request, $parent, $relation, $scopedLinkage, $mode);
+
+            $this->dispatch(new BeforeRelationshipMutateEvent($type, $request, $parent, $relation, $linkage, $mode, $this->serverName($request)));
 
             // A relation that declares fillUsing() owns how it is written: run it, then
             // save the parent, rather than having the persister write its column.
@@ -2409,10 +2410,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         $this->validateEntity($server, $type, $entity, creating: true);
 
-        // Before-save then before-create gates: a subscriber/hook may mutate the
+        // Before-save then before-create hooks: a subscriber/hook may mutate the
         // entity (persisted by the flush below) or throw to abort (the throw
         // propagates to the ExceptionListener, so the persister never runs and
-        // nothing commits).
+        // nothing commits). The create gate runs first, at BeforeSave.
         $this->dispatch(new BeforeSaveEvent($type, $request, $entity, true, $this->serverName($request)));
         $this->dispatch(new BeforeCreateEvent($type, $request, $entity, $this->serverName($request)));
 
@@ -2531,16 +2532,18 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         $this->validateEntity($server, $type, $entity, creating: false);
 
-        // Before-save then before-update gates (the entity is mutable, `$original`
-        // is the pre-change snapshot): a throw aborts before the persister commits.
-        $this->dispatch(new BeforeSaveEvent($type, $request, $entity, false, $this->serverName($request)));
-        $this->dispatch(new BeforeUpdateEvent($type, $request, $entity, $original, $this->serverName($request)));
-
         // Each relationship the body set is checked against the changed resource too,
-        // as at the relationship endpoint.
+        // as at the relationship endpoint. These gates run before the hooks below, so a
+        // refused caller never reaches one.
         foreach ($relationships as $relationship) {
             $this->dispatch(new BeforeRelationshipCommitEvent($type, $request, $entity, $relationship['relation'], $relationship['linkage'], Mode::Replace, $this->serverName($request)));
         }
+
+        // Before-save then before-update hooks (the entity is mutable, `$original`
+        // is the pre-change snapshot): a throw aborts before the persister commits. The
+        // update gate judges the changed entity at BeforeSave, ahead of every hook.
+        $this->dispatch(new BeforeSaveEvent($type, $request, $entity, false, $this->serverName($request)));
+        $this->dispatch(new BeforeUpdateEvent($type, $request, $entity, $original, $this->serverName($request)));
 
         return $persister->update($type, $this->unionsForStorage($this->types->resourceFor($server, $type), $persister, $entity, $body, creating: false));
     }
