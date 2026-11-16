@@ -94,9 +94,11 @@ final class InMemoryDataPersister implements DataPersisterInterface, Transaction
 
     public function create(string $type, object $entity): object
     {
-        // A server-generated create carries no id yet, so only a client id can collide.
+        // A server-generated create carries no id yet, so only a client id can collide. A
+        // before hook that saved the entity already holds its own id.
         $id = $this->store->idOf($entity);
-        if ($id !== null && $this->store->find($id) !== null) {
+        $stored = $id !== null ? $this->store->find($id) : null;
+        if ($id !== null && $stored !== null && $stored !== $entity) {
             throw new ClientGeneratedIdAlreadyExists($id);
         }
 

@@ -143,7 +143,17 @@ step and commits once the persister has written:
 A before hook that writes joins the transaction. A flush it makes on the same connection
 is undone if a later hook, a validation or the persister's own write throws, so a hook
 that has to flush early, for example to give a new row its id, needs no transaction of
-its own to stay undoable. The after hooks run once the transaction has committed, after
+its own to stay undoable.
+
+On Doctrine a `beforeCreate` hook may persist the new entity itself and flush it, to read
+a generated id or to let a derived key be built. The persister sees that the
+`EntityManager` already manages the entity and stores it as usual, rather than
+reading the row the hook flushed as a client id that is taken. A client id another row
+holds is still refused: with a `409` when the persister's flush inserts it, or with the
+database's unique violation, a `500`, when the hook's own flush does, since the
+persister checks the id only after the hooks have run.
+
+The after hooks run once the transaction has committed, after
 any [after-commit callbacks](#running-code-after-the-commit): what they read is durable,
 and a throw from one fails the response without undoing the write.
 The response is rendered after the commit too, so a failure while serializing it returns an

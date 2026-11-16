@@ -419,8 +419,11 @@ carries each member's pivot values (see
   refuses that second lookup, as PostgreSQL does in a failed transaction, the violation
   stays a `500`. The create runs inside the write's transaction, so the persister sets a
   savepoint before inserting a client id and rolls back to it before the lookup, which keeps
-  PostgreSQL answering it on DBAL 3 with savepoints off as well as on DBAL 4. The
-  in-memory persister refuses a taken id the same way.
+  PostgreSQL answering it on DBAL 3 with savepoints off as well as on DBAL 4. An entity
+  the `EntityManager` already manages, because a before hook persisted or flushed it, is
+  not looked up: the row it holds is its own, and an insert still to come is checked by
+  the violation as above. The in-memory persister refuses a taken id the same way, and
+  likewise accepts the entity a hook already saved.
 - **`update()`** relies on the target being a *managed* instance the hydrator
   mutated in place — the provider loaded it through this same `EntityManager`, so
   `update()` is just `flush()`. There is no `persist`/`merge`.
