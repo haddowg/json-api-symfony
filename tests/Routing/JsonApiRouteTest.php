@@ -43,4 +43,26 @@ final class JsonApiRouteTest extends TestCase
     {
         self::assertSame(JsonApiRoute::MARKER, ExceptionListener::ROUTE_MARKER);
     }
+
+    #[Test]
+    public function aSingletonRouteReadsAsASingletonTarget(): void
+    {
+        $request = Request::create('/inbox');
+        $request->attributes->add([
+            JsonApiRoute::MARKER => true,
+            '_jsonapi_server' => 'default',
+            '_jsonapi_type' => 'inboxes',
+            '_jsonapi_singleton' => true,
+        ]);
+
+        $route = JsonApiRoute::of($request);
+
+        self::assertNotNull($route);
+        self::assertTrue($route->singleton);
+        self::assertNull($route->id);
+        $target = $route->target();
+        self::assertNotNull($target);
+        self::assertTrue($target->singleton);
+        self::assertTrue($target->addressesResource());
+    }
 }

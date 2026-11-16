@@ -66,6 +66,49 @@ final class JsonApiRouteLoaderTest extends TestCase
         self::assertNotNull($routes->get('jsonapi.operations.create'));
     }
 
+    #[Test]
+    public function aSingletonIsServedAtItsPathWithNothingElse(): void
+    {
+        $loader = new JsonApiRouteLoader(
+            routeDescriptorsByServer: ['default' => ['inboxes' => [
+                'uriType' => 'inbox',
+                'isResource' => true,
+                'hasHydrator' => true,
+                'hasRelations' => true,
+                // A collection, create or delete is never emitted for a singleton.
+                'operations' => \array_map(static fn(Operation $op): string => $op->value, Operation::cases()),
+                'singleton' => true,
+                'tags' => [],
+                'responses' => [],
+            ]]],
+            actionRouteDescriptorsByServer: ['default' => [
+                ['uriType' => 'inbox', 'type' => 'inboxes', 'path' => 'mark-read', 'methods' => ['POST'], 'scope' => 'Resource', 'name' => '', 'singleton' => true],
+            ]],
+            atomicEnabled: true,
+            atomicPath: '/inbox',
+        );
+
+        $routes = [];
+        foreach ($loader->load('.', JsonApiRouteLoader::ROUTE_TYPE) as $name => $route) {
+            if ($route->getDefault('_jsonapi_type') !== 'inboxes') {
+                continue;
+            }
+            self::assertTrue($route->getDefault('_jsonapi_singleton'), $name);
+            $routes[$name] = \implode(',', $route->getMethods()) . ' ' . $route->getPath();
+        }
+
+        self::assertSame([
+            'jsonapi.inboxes.action.resource.mark-read' => 'POST /inbox/-actions/mark-read',
+            'jsonapi.inboxes.show' => 'GET /inbox',
+            'jsonapi.inboxes.update' => 'PATCH /inbox',
+            'jsonapi.inboxes.relationship.show' => 'GET /inbox/relationships/{relationship}',
+            'jsonapi.inboxes.relationship.update' => 'PATCH /inbox/relationships/{relationship}',
+            'jsonapi.inboxes.relationship.add' => 'POST /inbox/relationships/{relationship}',
+            'jsonapi.inboxes.relationship.remove' => 'DELETE /inbox/relationships/{relationship}',
+            'jsonapi.inboxes.related.show' => 'GET /inbox/{relationship}',
+        ], $routes);
+    }
+
     private function loaderWithType(string $uriType, bool $atomicEnabled, string $atomicPath): JsonApiRouteLoader
     {
         $descriptors = [

@@ -17,6 +17,9 @@ A serializer, hydrator or relations set registered for a type with `#[AsJsonApiS
 The set of CRUD operations a type declares it serves; the route loader emits a route for each one and nothing else.
 _Avoid_: exposed endpoints
 
+**Singleton type**:
+A type with one resource per caller, declared through core's `$singleton` static (or a serializer implementing `SingletonResourceInterface`) and served at `/{uriType}` with no `{id}`. The bundle resolves the caller's id through `resolveSingletonId()` once per request and then runs the ordinary operation on it; the type's data layer must expose only the caller's row.
+
 **Related-only type**:
 A type declared `#[AsJsonApiResource(relatedOnly: true)]`: it serves no endpoint of its own and is reached only as another type's related or included resources, or as a custom action's `inputType`.
 _Avoid_: embedded type, endpointless type

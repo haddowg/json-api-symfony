@@ -316,7 +316,9 @@ final class RouteFirewall
         }
 
         $endpoint = $route->getDefault(TargetResolver::RELATIONSHIP_ENDPOINT_ATTRIBUTE);
-        $hasId = \str_contains($route->getPath(), '{id}');
+        // A singleton's resource route is `/{uriType}`: it addresses the caller's one
+        // resource, never a collection.
+        $hasId = \str_contains($route->getPath(), '{id}') || $route->getDefault(TargetResolver::SINGLETON_ATTRIBUTE) === true;
 
         return match ($operation->kind) {
             OperationKind::FetchCollection, OperationKind::Create => $endpoint === null && !$hasId,

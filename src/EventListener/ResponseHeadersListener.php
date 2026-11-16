@@ -143,7 +143,7 @@ final class ResponseHeadersListener
             return $kind === null ? null : OperationKey::relation($kind, $route->relationship)->name();
         }
 
-        $kind = $route->id !== null
+        $kind = $route->id !== null || $route->singleton
             ? match ($method) {
                 'GET', 'HEAD' => OperationKind::FetchOne,
                 'PATCH' => OperationKind::Update,

@@ -7,10 +7,13 @@ namespace haddowg\JsonApiBundle\Serializer;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\SerializerResolverAwareInterface;
+use haddowg\JsonApi\Resource\SerializerResolverInterface;
 use haddowg\JsonApi\Schema\Link\ResourceLinks;
 use haddowg\JsonApi\Serializer\IncludeControlsInterface;
 use haddowg\JsonApi\Serializer\RendersDeclaredLinksInterface;
 use haddowg\JsonApi\Serializer\SerializerInterface;
+use haddowg\JsonApi\Serializer\UriTypeAwareInterface;
 use haddowg\JsonApiBundle\DataProvider\PivotFields;
 
 /**
@@ -52,7 +55,7 @@ use haddowg\JsonApiBundle\DataProvider\PivotFields;
  * computed fields, evaluated with no stored values, and never a stored field, so a
  * computed field renders the same on every provider.
  */
-final class PivotMetaSerializer implements SerializerInterface, IncludeControlsInterface, RendersDeclaredLinksInterface
+final class PivotMetaSerializer implements SerializerInterface, IncludeControlsInterface, RendersDeclaredLinksInterface, UriTypeAwareInterface, SerializerResolverAwareInterface
 {
     /**
      * @param SerializerInterface                  $inner    the related type's real serializer
@@ -212,5 +215,26 @@ final class PivotMetaSerializer implements SerializerInterface, IncludeControlsI
         return $this->inner instanceof IncludeControlsInterface
             ? $this->inner->getExcludedIncludePaths()
             : [];
+    }
+
+    /**
+     * The related serializer's URI segment, so each member's links use it.
+     */
+    public function uriType(): string
+    {
+        return $this->inner instanceof UriTypeAwareInterface ? $this->inner->uriType() : '';
+    }
+
+    /**
+     * Left to the related serializer, which the server already gave its resolver.
+     */
+    public function setSerializerResolver(SerializerResolverInterface $resolver): void {}
+
+    /**
+     * The related serializer's resolver, so a singleton member's links drop its id.
+     */
+    public function serializerResolver(): ?SerializerResolverInterface
+    {
+        return $this->inner instanceof SerializerResolverAwareInterface ? $this->inner->serializerResolver() : null;
     }
 }

@@ -82,6 +82,11 @@ resource-less type declaring `#[AsJsonApiRelations]`) the loader additionally em
 | Remove from linkage | `DELETE /{seg}/{id}/relationships/{relationship}` | `jsonapi.{type}.relationship.remove` |
 | Related resources | `GET /{seg}/{id}/{relationship}` | `jsonapi.{type}.related.show` |
 
+A [singleton type](resources.md#singleton-types) drops `{id}` from all of these. Its
+`FetchOne` and `Update` routes are `GET` and `PATCH /{seg}`, its relationship and related
+routes `/{seg}/relationships/{relationship}` and `/{seg}/{relationship}`, and its
+actions `/{seg}/-actions/{action}`. It gets no `index`, `create` or `delete` route.
+
 The three linkage mutation routes (`PATCH`/`POST`/`DELETE`) follow `Update`: a type
 whose operations leave out `Update`, such as a `readOnly: true` resource, gets only the
 two read routes, and a relationship write to it is a router-native `405`. A
@@ -235,6 +240,10 @@ path it emitted, and once the router has loaded every route the bundle sets
 `ServerProvider::forRequest()` reads `_jsonapi_mount` to base an empty `base_uri` on
 the origin plus the mount. A hand-written route may set `_jsonapi_mount` itself; without
 it an empty base links from the request origin alone.
+
+Every route of a singleton type also carries `_jsonapi_singleton` (`true`), which
+`TargetResolver` reads to build core's `Target::singleton()` with no id. The
+`RequestListener` then resolves the caller's id before it builds the operation.
 
 Relationship and related routes add one more,
 `_jsonapi_relationship_endpoint` (`true` for the four-segment linkage path, `false`

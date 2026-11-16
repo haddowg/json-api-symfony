@@ -26,6 +26,7 @@ use haddowg\JsonApiBundle\Action\ActionInput;
 use haddowg\JsonApiBundle\Action\ActionRegistry;
 use haddowg\JsonApiBundle\Action\ActionScope;
 use haddowg\JsonApiBundle\OpenApi\Metadata\ActionMetadata;
+use haddowg\JsonApiBundle\Operation\SingletonIdResolver;
 use haddowg\JsonApiBundle\Operation\TargetResolver;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Server\ServerProvider;
@@ -46,10 +47,12 @@ use Symfony\Component\HttpKernel\Event\RequestEvent;
  *  4. runs the negotiation + query-param validation core's middleware would,
  *     by calling {@see RequestValidator} directly (no `Middleware\*` class), plus
  *     body well-formedness + top-level-member checks on a write verb;
- *  5. builds the matching operation via core's
+ *  5. on a singleton route, resolves the caller's id through the
+ *     {@see SingletonIdResolver}, a `404` when the type names none;
+ *  6. builds the matching operation via core's
  *     {@see \haddowg\JsonApi\Operation\OperationFactory} (the same verb × shape
  *     dispatch the PSR-15 adapter uses) and calls `Server::dispatch()`;
- *  6. stashes the returned response value object on the request attributes for
+ *  7. stashes the returned response value object on the request attributes for
  *     the {@see ViewListener} to render — it sets **no** Response, so
  *     `kernel.view` runs next.
  *
@@ -75,6 +78,7 @@ final class RequestListener
         // The atomic endpoint's path in the OpenAPI document, so the result's
         // `describedby` can name its `POST` operation.
         private readonly string $atomicPath = '/operations',
+        private readonly SingletonIdResolver $singletons = new SingletonIdResolver(),
     ) {}
 
     public function onKernelRequest(RequestEvent $event): void
@@ -148,7 +152,7 @@ final class RequestListener
 
             $operation = $this->operationFactory->fromRequest(
                 $jsonApiRequest,
-                $target,
+                $this->singletons->resolve($server, $target, $jsonApiRequest, $request),
                 new OperationContext($server, $jsonApiRequest),
             );
         }
@@ -303,7 +307,9 @@ final class RequestListener
         }
 
         return new CustomActionOperation(
-            $target,
+            // A singleton's action runs on the caller's resource, which the invoker
+            // loads through the type's fetchOne like any resource-scope action's.
+            $this->singletons->resolve($server, $target, $jsonApiRequest, $request),
             QueryParameters::fromRequest($jsonApiRequest),
             new OperationContext($server, $jsonApiRequest),
             $actionName,

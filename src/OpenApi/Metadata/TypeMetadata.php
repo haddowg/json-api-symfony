@@ -20,6 +20,7 @@ use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationScopes;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresRelatedOnly;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresResourceClass;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresResourceLinks;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresSingleton;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresSingularName;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresSortExample;
 use haddowg\JsonApi\OpenApi\Metadata\OperationExample;
@@ -81,11 +82,14 @@ use haddowg\JsonApi\Resource\Sort\SortInterface;
  * resource's `defaultSort()` and `sortExample()`, which the projector turns into the
  * `sort` parameter's example. Both are empty for a standalone type.
  *
+ * And core's opt-in {@see DeclaresSingleton}: whether the type is a singleton, served at
+ * `/{uriType}` for the caller's own resource.
+ *
  * And the facts core's error coverage reads about the type: the include safeguards its
  * serializer applies as a document's root, that no operation refuses `include`, that a
  * taken client id is a `409`, and that a hand-written hydrator never reads linkage.
  */
-final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOperationExtensions, DeclaresNamedOperationExtensions, DeclaresSingularName, DeclaresOperationExamples, DeclaresAlwaysCounted, DeclaresResourceLinks, DeclaresActionLinks, DeclaresOperationScopes, DeclaresResourceClass, DeclaresDeprecation, DeclaresRelatedOnly, DeclaresDefaultSort, DeclaresSortExample, DeclaresIncludeSafeguards, DeclaresInclusionUnsupported, DeclaresClientIdCollisions, DeclaresHydratorCardinality
+final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOperationExtensions, DeclaresNamedOperationExtensions, DeclaresSingularName, DeclaresOperationExamples, DeclaresAlwaysCounted, DeclaresResourceLinks, DeclaresActionLinks, DeclaresOperationScopes, DeclaresResourceClass, DeclaresDeprecation, DeclaresRelatedOnly, DeclaresDefaultSort, DeclaresSortExample, DeclaresIncludeSafeguards, DeclaresInclusionUnsupported, DeclaresClientIdCollisions, DeclaresHydratorCardinality, DeclaresSingleton
 {
     /**
      * @param list<FieldInterface>            $fields
@@ -119,6 +123,7 @@ final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOper
      * @param list<string>|null               $allowedIncludePaths  the root include allow-list the type's serializer declares, or null for none
      * @param list<string>                    $excludedIncludePaths the root include paths the type's serializer refuses
      * @param ?int                            $maxIncludeDepth      the type's own maximum include depth, or null for the server's
+     * @param bool                            $singleton            whether the type is a singleton, served at `/{uriType}`
      */
     public function __construct(
         private string $type,
@@ -161,11 +166,17 @@ final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOper
         private ?array $allowedIncludePaths = null,
         private array $excludedIncludePaths = [],
         private ?int $maxIncludeDepth = null,
+        private bool $singleton = false,
     ) {}
 
     public function isRelatedOnly(): bool
     {
         return $this->relatedOnly;
+    }
+
+    public function isSingleton(): bool
+    {
+        return $this->singleton;
     }
 
     public function type(): string

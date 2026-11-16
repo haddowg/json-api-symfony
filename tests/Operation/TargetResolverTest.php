@@ -97,4 +97,23 @@ final class TargetResolverTest extends TestCase
     {
         self::assertNull((new TargetResolver())->resolveFromRequest(new Request()));
     }
+
+    #[Test]
+    public function aSingletonRouteResolvesASingletonTargetWithoutAnId(): void
+    {
+        $request = new Request();
+        $request->attributes->set(TargetResolver::TYPE_ATTRIBUTE, 'inboxes');
+        $request->attributes->set(TargetResolver::SINGLETON_ATTRIBUTE, true);
+        $request->attributes->set(TargetResolver::RELATIONSHIP_ATTRIBUTE, 'items');
+        $request->attributes->set(TargetResolver::RELATIONSHIP_ENDPOINT_ATTRIBUTE, true);
+
+        $target = (new TargetResolver())->resolveFromRequest($request);
+
+        self::assertNotNull($target);
+        self::assertTrue($target->singleton);
+        self::assertNull($target->id);
+        self::assertTrue($target->addressesResource());
+        self::assertSame('items', $target->relationship);
+        self::assertTrue($target->isRelationshipEndpoint);
+    }
 }

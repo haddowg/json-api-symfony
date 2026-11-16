@@ -317,9 +317,9 @@ final class CustomActionTest extends MusicCatalogKernelTestCase
             self::assertIsArray(self::at($document, 'paths', $path, 'post'), $path);
             self::assertNull(self::at($document, 'paths', $path, 'post', 'x-safety'), $path);
         }
-        // The safety tier sits below the baseline, but the related-only reissues type and
-        // the deprecated devices type each carry a higher tier.
-        self::assertSame(\max(GeneratorContract::BASELINE, GeneratorContract::DEPRECATION, GeneratorContract::RELATED_ONLY), self::at($document, 'info', 'x-generator', 'contract'));
+        // The safety tier sits below the baseline, but the related-only reissues type, the
+        // deprecated devices type and the accounts singleton each carry a higher tier.
+        self::assertSame(\max(GeneratorContract::BASELINE, GeneratorContract::DEPRECATION, GeneratorContract::RELATED_ONLY, GeneratorContract::SINGLETONS), self::at($document, 'info', 'x-generator', 'contract'));
     }
 
     private static function at(mixed $value, string ...$keys): mixed

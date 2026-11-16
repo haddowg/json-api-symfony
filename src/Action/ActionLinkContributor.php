@@ -51,7 +51,7 @@ use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
  * `asLink`, so its condition applies even when the action also sets `asLink`.
  *
  * The href is the action route's path relative to the server, `/{uriType}/{id}/-actions/{path}`,
- * and core prefixes it with the same base as the resource's `self` link: the configured
+ * or `/{uriType}/-actions/{path}` for a singleton, and core prefixes it with the same base as the resource's `self` link: the configured
  * `base_uri`, or the request origin plus the recorded mount when that is empty. Generating it
  * through the router instead would base it on the request
  * host and ignore a configured `base_uri`.
@@ -111,6 +111,9 @@ final readonly class ActionLinkContributor implements ResourceLinkContributorInt
         $uriType = $serializer instanceof UriTypeAwareInterface && $serializer->uriType() !== ''
             ? $serializer->uriType()
             : $type;
+        // A singleton's actions hang off `/{uriType}` with no id.
+        $singleton = $jsonApiServer->isSingleton($type);
+        $resourcePath = $singleton ? '/' . $uriType : '/' . $uriType . '/' . $id;
 
         $scopes = ScopeEnforcer::forServer($jsonApiServer);
         $granted = $scopes?->grantedFor($request);
@@ -130,8 +133,8 @@ final readonly class ActionLinkContributor implements ResourceLinkContributorInt
             }
 
             $links[$descriptor['path']] = new OperationLink(
-                '/' . $uriType . '/' . $id . '/-actions/' . $descriptor['path'],
-                OperationReference::action($uriType, $descriptor['path'], ActionScope::Resource, $method),
+                $resourcePath . '/-actions/' . $descriptor['path'],
+                OperationReference::action($uriType, $descriptor['path'], ActionScope::Resource, $method, $singleton),
             );
         }
 

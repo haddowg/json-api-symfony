@@ -25,6 +25,11 @@ scopes:
 | **Resource** | `POST /{uriType}/{id}/-actions/{action}` | the `{id}` resolved to an entity (via the type's [`DataProvider`](data-layer.md)) before the handler runs |
 | **Collection** | `POST /{uriType}/-actions/{action}` | no entity (`null`) — the action operates on the type as a whole |
 
+A [singleton type](resources.md#singleton-types) serves only resource-scope actions,
+at `POST /{uriType}/-actions/{action}`. The handler gets the caller's resource, loaded
+with the id the type resolves, and a caller with none gets a `404`. Mounting a
+collection-scope action on a singleton fails the container build.
+
 `{action}` is a single path segment naming one action. `-actions` is a safe
 reserved literal: JSON:API member names cannot begin with a dash, so it can never
 collide with a resource id or a relationship name. The [route loader](routing.md)

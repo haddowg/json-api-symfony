@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Serializer;
 
 use haddowg\JsonApi\Resource\DeclaresRelatedOnlyTypesInterface;
+use haddowg\JsonApi\Resource\DeclaresSingletonTypesInterface;
 use haddowg\JsonApi\Resource\ProvidesOutputTimezoneInterface;
 use haddowg\JsonApi\Resource\ProvidesRelationAuthorizerInterface;
 use haddowg\JsonApi\Resource\RejectsReadOnlyAttributesInterface;
 use haddowg\JsonApi\Resource\RelationAuthorizerInterface;
 use haddowg\JsonApi\Resource\SerializerResolverInterface;
+use haddowg\JsonApi\Resource\SingletonContext;
 use haddowg\JsonApi\Serializer\RelationshipCountInterface;
 use haddowg\JsonApi\Serializer\RelationshipLinkageInterface;
 use haddowg\JsonApi\Serializer\RelationshipLoadStateInterface;
@@ -32,11 +34,11 @@ use haddowg\JsonApi\Serializer\SerializerInterface;
  * change.
  *
  * It passes the inner resolver's output timezone, relation authorizer, read-only
- * attribute rejection and related-only types through, so the linkage it builds renders
- * in the server's zone, is withheld from a caller the relation's read expression
- * refuses, and a resource it resolves keeps its server's write rules and links.
+ * attribute rejection, related-only types and singleton types through, so the linkage it
+ * builds renders in the server's zone, is withheld from a caller the relation's read
+ * expression refuses, and a resource it resolves keeps its server's write rules and links.
  */
-final class PivotSubstitutingResolver implements SerializerResolverInterface, ProvidesOutputTimezoneInterface, ProvidesRelationAuthorizerInterface, RejectsReadOnlyAttributesInterface, DeclaresRelatedOnlyTypesInterface
+final class PivotSubstitutingResolver implements SerializerResolverInterface, ProvidesOutputTimezoneInterface, ProvidesRelationAuthorizerInterface, RejectsReadOnlyAttributesInterface, DeclaresRelatedOnlyTypesInterface, DeclaresSingletonTypesInterface
 {
     public function __construct(
         private readonly SerializerResolverInterface $inner,
@@ -97,5 +99,15 @@ final class PivotSubstitutingResolver implements SerializerResolverInterface, Pr
     public function isRelatedOnly(string $type): bool
     {
         return $this->inner instanceof DeclaresRelatedOnlyTypesInterface && $this->inner->isRelatedOnly($type);
+    }
+
+    public function isSingleton(string $type): bool
+    {
+        return $this->inner instanceof DeclaresSingletonTypesInterface && $this->inner->isSingleton($type);
+    }
+
+    public function resolveSingletonId(string $type, SingletonContext $context): ?string
+    {
+        return $this->inner instanceof DeclaresSingletonTypesInterface ? $this->inner->resolveSingletonId($type, $context) : null;
     }
 }

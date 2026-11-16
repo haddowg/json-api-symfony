@@ -349,6 +349,11 @@ return static function (ContainerConfigurator $container): void {
 
     $services->set(TargetResolver::class);
 
+    // Resolves a singleton route's id for the caller, with the signed-in user when
+    // symfony/security-core is installed.
+    $services->set(\haddowg\JsonApiBundle\Operation\SingletonIdResolver::class)
+        ->arg('$tokenStorage', \Symfony\Component\DependencyInjection\Loader\Configurator\service('security.token_storage')->nullOnInvalid());
+
     $services->set(DataProviderRegistry::class)
         ->args([
             '$providers' => \Symfony\Component\DependencyInjection\Loader\Configurator\tagged_iterator(JsonApiBundle::DATA_PROVIDER_TAG),

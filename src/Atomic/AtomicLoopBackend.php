@@ -11,6 +11,7 @@ use haddowg\JsonApi\Atomic\AtomicResult;
 use haddowg\JsonApi\Atomic\LocalIdRegistry;
 use haddowg\JsonApi\Atomic\OperationDescriptor;
 use haddowg\JsonApi\Atomic\Ref;
+use haddowg\JsonApi\Exception\ResourceIdConflict;
 use haddowg\JsonApi\OpenApi\Metadata\OperationKey;
 use haddowg\JsonApi\OpenApi\Metadata\OperationType;
 use haddowg\JsonApi\Operation\AddToRelationshipOperation;
@@ -28,6 +29,7 @@ use haddowg\JsonApi\Resource\Field\AbstractRelationValue;
 use haddowg\JsonApi\Response\DataResponse;
 use haddowg\JsonApi\Response\NoContentResponse;
 use haddowg\JsonApi\Scope\ScopeEnforcer;
+use haddowg\JsonApi\Serializer\UriTypeAwareInterface;
 use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\DataPersister\AfterCommit;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
@@ -35,6 +37,8 @@ use haddowg\JsonApiBundle\DataPersister\TransactionalDataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\WriteTransactionContext;
 use haddowg\JsonApiBundle\Operation\CrudOperationHandler;
 use haddowg\JsonApiBundle\Operation\Operation;
+use haddowg\JsonApiBundle\Operation\SingletonIdResolver;
+use haddowg\JsonApiBundle\Operation\TargetResolver;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Server\RouteDescriptorRegistry;
 use haddowg\JsonApiBundle\Server\ServerProvider;
@@ -129,6 +133,15 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
     private array $hrefTargets = [];
 
     /**
+     * The caller's id for each singleton type an `href` addresses, resolved once per batch.
+     *
+     * @var array<string, Target>
+     */
+    private array $singletonTargets = [];
+
+    private readonly SingletonIdResolver $singletons;
+
+    /**
      * @param list<OperationDescriptor> $descriptors the parsed batch, in request order
      * @param Server                    $server      the resolved server the batch dispatched on
      * @param JsonApiRequestInterface   $request     the batch request, the synthetic per-op requests are derived from
@@ -149,8 +162,11 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
         private readonly ?RouteDescriptorRegistry $routeDescriptors = null,
         // Holds the callbacks the batch's writes register until the batch commits.
         private readonly ?AfterCommit $afterCommit = null,
+        // Resolves the caller's id for an href addressing a singleton type.
+        ?SingletonIdResolver $singletons = null,
     ) {
         $this->logger = $logger ?? new NullLogger();
+        $this->singletons = $singletons ?? new SingletonIdResolver();
 
         // Every href is resolved and shape-checked up front, so a bad one is refused with a
         // pointer to it before anything is written.
@@ -220,7 +236,7 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
         // `data` (before its lids are rewritten) is safe.
         $target = match (true) {
             $ref !== null => $this->targetFromRef($ref),
-            $op->href !== null => $this->hrefTargets[$op->index] ?? $this->targetFromHref($op),
+            $op->href !== null => $this->resolveSingleton($this->hrefTargets[$op->index] ?? $this->targetFromHref($op)),
             default => new Target($this->createTypeFromData($op->data)),
         };
 
@@ -531,6 +547,14 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
             AtomicOperationCode::Update => 'PATCH',
             AtomicOperationCode::Remove => 'DELETE',
         };
+
+        // An update's resource object names the resource it updates, as a PATCH body
+        // does, so an id other than the target's is the same 409 a direct PATCH answers.
+        $bodyId = \is_array($data) ? ($data['id'] ?? null) : null;
+        if ($opCode === AtomicOperationCode::Update && \is_string($bodyId) && $bodyId !== '' && $target->id !== null && $bodyId !== $target->id) {
+            throw new ResourceIdConflict($bodyId, $target->id);
+        }
+
         $body = $this->subRequest($target, $method, $data, $index);
         $context = new OperationContext($this->server, $body);
 
@@ -585,12 +609,17 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
 
     /**
      * The URL path a sub-operation addresses (its self link / route), so the synthetic
-     * request's URI matches the equivalent direct call. Built from the resolved target.
+     * request's URI matches the equivalent direct call. Built from the resolved target,
+     * under the type's URI segment; a singleton's path carries no id, however the
+     * operation named it.
      */
     private function pathFor(Target $target): string
     {
-        $path = '/' . $target->type;
-        if ($target->id !== null) {
+        $serializer = $this->server->hasSerializerFor($target->type) ? $this->server->serializerFor($target->type) : null;
+        $uriType = $serializer instanceof UriTypeAwareInterface && $serializer->uriType() !== '' ? $serializer->uriType() : $target->type;
+
+        $path = '/' . $uriType;
+        if ($target->id !== null && !$target->singleton && !$this->server->isSingleton($target->type)) {
             $path .= '/' . $target->id;
         }
         if ($target->relationship !== null) {
@@ -624,6 +653,10 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
      * {@see \haddowg\JsonApiBundle\Operation\TargetResolver} reads on a direct call. An
      * href matching no JSON:API route is unresolvable; one whose route the operation
      * cannot target is invalid. Both point at the operation's `href`.
+     *
+     * A singleton's route (`/{uriType}` or a relationship under it) builds a
+     * {@see Target::singleton()} without an id; {@see resolveSingleton()} resolves the
+     * caller's when the operation runs, so a caller with none fails it with a `404`.
      */
     private function targetFromHref(OperationDescriptor $op): Target
     {
@@ -649,14 +682,15 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
         $relationship = $match['relationship'] ?? null;
         $relationship = \is_string($relationship) && $relationship !== '' ? $relationship : null;
         $isRelationshipEndpoint = ($match['_jsonapi_relationship_endpoint'] ?? null) === true;
+        $singleton = ($match[TargetResolver::SINGLETON_ATTRIBUTE] ?? null) === true;
 
         if ($relationship !== null && !$isRelationshipEndpoint) {
             throw new AtomicHrefInvalid($href, 'addresses a related resource; a relationship operation targets its /relationships/ URL', $pointer);
         }
-        if ($relationship === null && $id === null && $op->opCode !== AtomicOperationCode::Add) {
+        if ($relationship === null && $id === null && !$singleton && $op->opCode !== AtomicOperationCode::Add) {
             throw new AtomicHrefInvalid($href, \sprintf("addresses a collection; an '%s' targets a single resource or a relationship", $op->opCode->value), $pointer);
         }
-        if ($relationship === null && $id !== null && $op->opCode === AtomicOperationCode::Add) {
+        if ($relationship === null && ($id !== null || $singleton) && $op->opCode === AtomicOperationCode::Add) {
             throw new AtomicHrefInvalid($href, "addresses a single resource; an 'add' targets the collection or a relationship", $pointer);
         }
 
@@ -666,7 +700,28 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
             $relationship = $this->types->relationAtUriSegment($this->server, $type, $relationship)?->name() ?? $relationship;
         }
 
+        if ($singleton) {
+            return Target::singleton($type, relationship: $relationship, isRelationshipEndpoint: $isRelationshipEndpoint);
+        }
+
         return new Target($type, $id, $relationship, isRelationshipEndpoint: $isRelationshipEndpoint);
+    }
+
+    /**
+     * `$target` with the caller's id when it addresses a singleton, resolved once per type
+     * for the batch through the batch request.
+     *
+     * @throws \haddowg\JsonApi\Exception\ResourceNotFound when the type names no resource for the caller
+     */
+    private function resolveSingleton(Target $target): Target
+    {
+        if (!$target->singleton || $target->id !== null) {
+            return $target;
+        }
+
+        $resolved = $this->singletonTargets[$target->type] ??= $this->singletons->resolve($this->server, Target::singleton($target->type), $this->request);
+
+        return $target->withId($resolved->id);
     }
 
     /**

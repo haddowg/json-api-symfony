@@ -85,7 +85,8 @@ final readonly class ActionInvoker
         $server = $operation->context()->server;
         $target = $operation->target();
         $type = $target->type;
-        $scope = $target->hasId() ? ActionScope::Resource : ActionScope::Collection;
+        // A singleton target addresses the caller's resource even before its id is known.
+        $scope = $target->addressesResource() ? ActionScope::Resource : ActionScope::Collection;
 
         $serverName = $this->serverName($operation);
 

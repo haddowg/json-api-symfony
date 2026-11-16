@@ -170,8 +170,8 @@ final class DeclaredLinksTest extends MusicCatalogKernelTestCase
     public function theDocumentIsStampedWithTheDeclaredLinksContract(): void
     {
         // The declared-links tier sits below the baseline, but the related-only reissues
-        // type and the deprecated devices type each carry a higher tier.
-        self::assertSame(\max(GeneratorContract::BASELINE, GeneratorContract::DEPRECATION, GeneratorContract::RELATED_ONLY), $this->nested($this->openApi(), 'info', 'x-generator')['contract'] ?? null);
+        // type, the deprecated devices type and the accounts singleton each carry a higher tier.
+        self::assertSame(\max(GeneratorContract::BASELINE, GeneratorContract::DEPRECATION, GeneratorContract::RELATED_ONLY, GeneratorContract::SINGLETONS), $this->nested($this->openApi(), 'info', 'x-generator')['contract'] ?? null);
     }
 
     #[Test]
