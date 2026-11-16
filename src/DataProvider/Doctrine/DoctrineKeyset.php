@@ -282,6 +282,15 @@ final class DoctrineKeyset
      * The DQL a level orders and compares by: the column's path, or for a custom sort
      * level the expression its keyset arm supplies, asked for once per query.
      */
+    /**
+     * The DQL expression a keyset column orders by on `$builder`, so a caller can select
+     * it and order a window by the same value.
+     */
+    public function selectable(QueryBuilder $builder, KeysetColumn $column): string
+    {
+        return $this->expression($builder, $column);
+    }
+
     private function expression(QueryBuilder $builder, KeysetColumn $column): string
     {
         if ($column->sort === null) {

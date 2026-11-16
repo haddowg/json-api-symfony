@@ -111,7 +111,10 @@ The page is the one the related endpoint serves first: in the relation's default
 narrowed by the filter defaults its endpoint folds in. A page is counted when the
 paginator counts (`withCount()`) or the request names the relation in
 [`?withCount`](relationships.md#counting-relations-countable-and-withcount); a
-`countable()` relation then also carries `meta.total`. Each level of a nested include
+`countable()` relation then also carries `meta.total`. A page counted because the
+request asked for it carries `withCount=_self_` in its links, so the pages they reach
+are counted too. A polymorphic to-many's links address its related endpoint, since its
+relationship endpoint renders the whole linkage. Each level of a nested include
 (`?include=tracks.playlists`) is cut under its own relation's paginator, and so is the
 include of a singleton, of a related collection and of an atomic result. A
 [`relatedQuery`](relationships.md) sort or filter reorders or narrows the same first page.

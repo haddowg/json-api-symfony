@@ -12,6 +12,11 @@ abstract class FpLabelResource extends AbstractResource
 {
     public static string $type = 'fp-labels';
 
+    public function getType(mixed $object): string
+    {
+        return $object instanceof FpLabel ? static::$type : '';
+    }
+
     public function fields(): array
     {
         return [

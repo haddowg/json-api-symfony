@@ -82,7 +82,27 @@ abstract class FirstPageConformanceTestCase extends JsonApiFunctionalTestCase
 
         self::assertSame(['1', '2'], $this->linkageIds($cards));
         self::assertSame(['total' => 5], $cards['meta'] ?? null);
-        self::assertSame(self::BASE_URI . '/fp-boards/1/relationships/cards?page%5Bnumber%5D=3&page%5Bsize%5D=2', $this->links($cards)['last'] ?? null);
+        $links = $this->links($cards);
+        self::assertSame(self::BASE_URI . '/fp-boards/1/relationships/cards?withCount=_self_&page%5Bnumber%5D=3&page%5Bsize%5D=2', $links['last'] ?? null);
+
+        // Following `next` stays counted: the second page links its last page too.
+        $next = $links['next'] ?? null;
+        self::assertIsString($next);
+        $page = $this->fetch(\substr($next, \strlen(self::BASE_URI)), self::COUNTS_ACCEPT);
+        self::assertSame(['3', '4'], $this->ids($page['data'] ?? null));
+        $pageLinks = $this->links($page);
+        self::assertArrayHasKey('last', $pageLinks);
+        self::assertStringContainsString('withCount=_self_', $pageLinks['next'] ?? '');
+    }
+
+    #[Test]
+    public function aCountedRelatedQueryPageKeepsBothInItsLinks(): void
+    {
+        $accept = 'application/vnd.api+json;profile="' . RelationshipQueriesProfile::URI . ' ' . CountableProfile::URI . '"';
+        $cards = $this->relationship($this->fetch('/fp-boards/1?include=cards&withCount=cards&relatedQuery[cards][sort]=-title', $accept)['data'] ?? null, 'cards');
+
+        self::assertSame(['2', '3'], $this->linkageIds($cards));
+        self::assertSame(self::BASE_URI . '/fp-boards/1/relationships/cards?sort=-title&withCount=_self_&page%5Bnumber%5D=2&page%5Bsize%5D=2', $this->links($cards)['next'] ?? null);
     }
 
     #[Test]
@@ -105,6 +125,43 @@ abstract class FirstPageConformanceTestCase extends JsonApiFunctionalTestCase
         self::assertSame(['1', '2'], $this->linkageIds($labels));
         self::assertSame(['fp-labels:1', 'fp-labels:2'], $this->includedKeys($document));
         self::assertArrayHasKey('next', $this->links($labels));
+    }
+
+    #[Test]
+    public function aPolymorphicToManyRendersItsFirstPageAndLinksTheNext(): void
+    {
+        $document = $this->fetch('/fp-boards/1?include=pins');
+        $pins = $this->relationship($document['data'] ?? null, 'pins');
+
+        self::assertSame(['fp-labels:1', 'fp-labels:2'], $this->linkageKeys($pins));
+        self::assertSame(['fp-labels:1', 'fp-labels:2'], $this->includedKeys($document));
+
+        $next = $this->links($pins)['next'] ?? null;
+        self::assertIsString($next);
+        self::assertSame(['fp-labels:3', 'fp-cards:1'], $this->linkageKeys($this->fetch(\substr($next, \strlen(self::BASE_URI)))));
+    }
+
+    #[Test]
+    public function anIdentifiedMorphToManyRendersItsFirstPageAndLinksTheNext(): void
+    {
+        $document = $this->fetch('/fp-boards/1?include=tagged');
+        $tagged = $this->relationship($document['data'] ?? null, 'tagged');
+
+        self::assertSame(['fp-labels:3', 'fp-cards:2'], $this->linkageKeys($tagged));
+        self::assertSame(['fp-cards:2', 'fp-labels:3'], $this->includedKeys($document));
+
+        $next = $this->links($tagged)['next'] ?? null;
+        self::assertIsString($next);
+        self::assertSame(['fp-labels:1', 'fp-cards:5'], $this->linkageKeys($this->fetch(\substr($next, \strlen(self::BASE_URI)))));
+    }
+
+    #[Test]
+    public function anIdentifiedMorphToManysLinkageAloneIsItsFirstPage(): void
+    {
+        $tagged = $this->relationship($this->fetch('/fp-boards/1?fields[fp-boards]=tagged')['data'] ?? null, 'tagged');
+
+        self::assertSame(['fp-labels:3', 'fp-cards:2'], $this->linkageKeys($tagged));
+        self::assertArrayHasKey('next', $this->links($tagged));
     }
 
     #[Test]
@@ -265,6 +322,28 @@ abstract class FirstPageConformanceTestCase extends JsonApiFunctionalTestCase
         self::assertArrayHasKey('data', $relationship);
 
         return $this->ids($relationship['data']);
+    }
+
+    /**
+     * @param array<string, mixed> $document a relationship object or a linkage document
+     *
+     * @return list<string>
+     */
+    private function linkageKeys(array $document): array
+    {
+        $data = $document['data'] ?? null;
+        self::assertIsArray($data);
+        $keys = [];
+        foreach ($data as $identifier) {
+            self::assertIsArray($identifier);
+            $type = $identifier['type'] ?? null;
+            $id = $identifier['id'] ?? null;
+            self::assertIsString($type);
+            self::assertIsString($id);
+            $keys[] = $type . ':' . $id;
+        }
+
+        return $keys;
     }
 
     /**

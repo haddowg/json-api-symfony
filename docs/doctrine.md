@@ -1394,9 +1394,10 @@ and far member, so each parent gets the members, order and `meta.pivot` its own 
 would give, and a track on two playlists keeps each playlist's position. A windowed
 include wraps it in the per-parent `ROW_NUMBER()` window the other to-many includes use
 (see [windowed includes](#windowed-includes-window_functions)), with the per-parent
-total from `COUNT(*) OVER` when the page is counted. A windowed include falls back to one
-pivot query per parent for `window_functions: false`, a cursor page, or a sort written by
-a sort arm.
+total from `COUNT(*) OVER` when the page is counted. A first cursor page, the one an
+include shows, is the same window ordered by the keyset, with each parent's cursor minted
+from its last row. A windowed include falls back to one pivot query per parent for
+`window_functions: false`, a sort written by a sort arm, or a counted cursor page.
 
 A `?sort` mixing a pivot and a related field is applied in the **request's directive
 order** across both aliases, so `?sort=position,title` orders by the pivot key first

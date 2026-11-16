@@ -46,14 +46,13 @@ final class DoctrineFirstPageTest extends FirstPageConformanceTestCase
         self::assertInstanceOf(QueryCountingLogger::class, $logger);
         $logger->reset();
 
-        $this->fetch('/fp-boards?include=cards.comments,labels');
+        $this->fetch('/fp-boards?include=cards.comments,labels&fields[fp-boards]=cards,featured,labels');
 
         // `cards` and `featured` read the same association with the same page, so they
-        // share one bounded read. `pocketCards` exposes no endpoint, so its linkage is the
-        // whole set, read for every board at once.
+        // share one bounded read.
         $cards = $this->selectsFrom($logger, 'fp_card');
-        self::assertCount(1, $this->windowed($cards), \implode("\n", $cards));
-        self::assertCount(2, $cards, \implode("\n", $cards));
+        self::assertCount(1, $cards, \implode("\n", $cards));
+        self::assertCount(1, $this->windowed($cards));
 
         $comments = $this->selectsFrom($logger, 'fp_comment');
         self::assertCount(1, $comments, \implode("\n", $comments));

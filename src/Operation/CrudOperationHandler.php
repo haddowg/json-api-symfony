@@ -1627,10 +1627,11 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return null;
         }
 
+        // A page the client asked to count links to pages that count too.
         $queryString = (new RelatedQuery(
             $request->getSorting() === [] ? null : \implode(',', $request->getSorting()),
             $queryParameters->filter,
-        ))->toPlainQueryString();
+        ))->toPlainQueryString(counted: $wantsCount && !$paginator->wantsCount());
 
         $page = match (true) {
             $result instanceof CursorCollectionResult && $paginator instanceof CursorPaginator => $paginator->fromBoundaries(

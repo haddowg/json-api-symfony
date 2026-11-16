@@ -351,8 +351,9 @@ final class RelationshipWindowBatcher
         // A first page is counted only when its paginator counts (`withCount()`) or the
         // client named the relation in `?withCount`, which names the primary resources'
         // relations. A cursor page has no total, so it never counts here.
+        $countRequested = $root && $relation->isCountable() && $request->countsRelationship($relation->name());
         $wantsCount = !$paginator instanceof CursorPaginator
-            && (($paginator?->wantsCount() ?? false) || ($root && $relation->isCountable() && $request->countsRelationship($relation->name())));
+            && (($paginator?->wantsCount() ?? false) || $countRequested);
 
         // A relation the provider reads through its pivot query sorts by its pivot
         // fields, as its default order may; a first page takes no pivot filter.
@@ -393,7 +394,9 @@ final class RelationshipWindowBatcher
             $this->shared[$shareKey] = $results;
         }
 
-        $queryString = $relatedQuery->toPlainQueryString();
+        // A page the client asked to count links to pages that count too; one the
+        // paginator counts needs no parameter for that.
+        $queryString = $relatedQuery->toPlainQueryString(counted: $wantsCount && !($paginator?->wantsCount() ?? false));
         $relatedSerializer = !$polymorphic && $server->hasSerializerFor($relatedType) ? $server->serializerFor($relatedType) : null;
 
         $pages = [];

@@ -8,6 +8,7 @@ use haddowg\JsonApi\Collection\CollectionResult;
 use haddowg\JsonApi\Operation\QueryParameters;
 use haddowg\JsonApi\Pagination\CursorPaginator;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Request\RelatedQuery;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\Accessor;
 use haddowg\JsonApi\Resource\Field\MorphTo;
@@ -860,6 +861,7 @@ final class RelatedIncludeBatcher
         $paginator = $paginator?->resolve($pageRequest);
         $counted = $paginator !== null && !$paginator instanceof CursorPaginator
             && ($paginator->wantsCount() || ($root && $relation->isCountable() && $request->countsRelationship($relation->name())));
+        $queryString = (new RelatedQuery())->toPlainQueryString(counted: $counted && $paginator !== null && !$paginator->wantsCount());
         $criteria = $paginator === null ? null : new CollectionCriteria(
             new QueryParameters(fields: [], includes: [], sort: [], filter: [], pagination: $pageRequest->getPagination()),
             window: $paginator->window($pageRequest),
@@ -879,7 +881,7 @@ final class RelatedIncludeBatcher
             $objectId = \spl_object_id($entities[$index]);
             $linkages[$objectId][$relation->name()] = new RelationshipLinkage($members);
             if ($paginator !== null) {
-                $this->pages[$objectId][$relation->name()] = RelationshipPagination::firstPage($paginator, $pageRequest, $members, $result, $counted);
+                $this->pages[$objectId][$relation->name()] = RelationshipPagination::firstPage($paginator, $pageRequest, $members, $result, $counted, $queryString);
             }
             foreach ($members as $member) {
                 if ($member->target !== null) {

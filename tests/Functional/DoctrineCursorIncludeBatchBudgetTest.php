@@ -89,6 +89,65 @@ final class DoctrineCursorIncludeBatchBudgetTest extends JsonApiFunctionalTestCa
         );
     }
 
+    #[Test]
+    #[Group('spec:fetching-pagination')]
+    public function aPivotRelationsFirstCursorPagesAreOneBoundedWindow(): void
+    {
+        $statements = $this->captureStatements('/cursorShelves?include=pivotWidgets');
+        $windows = \array_values(\array_filter($statements, static fn(string $s): bool => \stripos($s, 'ROW_NUMBER') !== false));
+
+        self::assertCount(1, $windows, "a pivot relation's first cursor pages are one window, not a query per shelf:\n" . \implode("\n", $statements));
+        self::assertMatchesRegularExpression('/CASE WHEN w\.\w+ IS NULL THEN 1 ELSE 0 END/i', $windows[0]);
+
+        // Each shelf's included page, and the page its `next` link reaches, are the pages
+        // its related endpoint serves.
+        $shelves = $this->decode($this->handle(self::BASE_URI . '/cursorShelves?include=pivotWidgets'))['data'] ?? null;
+        self::assertIsArray($shelves);
+        foreach ($shelves as $shelf) {
+            self::assertIsArray($shelf);
+            $id = $shelf['id'] ?? null;
+            self::assertIsString($id);
+            $relationships = $shelf['relationships'] ?? null;
+            self::assertIsArray($relationships);
+            $relationship = $relationships['pivotWidgets'] ?? null;
+            self::assertIsArray($relationship);
+            $links = $relationship['links'] ?? [];
+            self::assertIsArray($links);
+
+            $related = $this->decode($this->handle(self::BASE_URI . '/cursorShelves/' . $id . '/pivotWidgets'));
+            self::assertSame($this->ids($related['data'] ?? null), $this->ids($relationship['data'] ?? null), 'shelf ' . $id);
+
+            $relatedLinks = $related['links'] ?? [];
+            self::assertIsArray($relatedLinks);
+            $next = $links['next'] ?? null;
+            $relatedNext = $relatedLinks['next'] ?? null;
+            if ($relatedNext === null) {
+                self::assertNull($next, 'shelf ' . $id);
+
+                continue;
+            }
+            $next = \is_array($next) ? ($next['href'] ?? null) : $next;
+            $relatedNext = \is_array($relatedNext) ? ($relatedNext['href'] ?? null) : $relatedNext;
+            self::assertIsString($next);
+            self::assertIsString($relatedNext);
+            self::assertSame(
+                $this->ids($this->decode($this->handle($relatedNext))['data'] ?? null),
+                $this->ids($this->decode($this->handle($next))['data'] ?? null),
+                'shelf ' . $id,
+            );
+        }
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function ids(mixed $data): array
+    {
+        self::assertIsArray($data);
+
+        return \array_values(\array_map(static fn(mixed $item): string => \is_array($item) && \is_string($item['id'] ?? null) ? $item['id'] : '', $data));
+    }
+
     /**
      * Captures the SQL the request at `$path` runs through the {@see QueryCountingLogger}.
      *

@@ -35,4 +35,15 @@ class FpBoard
         $this->cards = new ArrayCollection();
         $this->labels = new ArrayCollection();
     }
+
+    /**
+     * The board's tagged rows as stored `[type, id]` pairs: board 1 tags label 3, card 2,
+     * label 1 and card 5, in that order.
+     *
+     * @return list<array{0: string, 1: int}>
+     */
+    public function taggedPairs(): array
+    {
+        return $this->id === 1 ? [['fp-labels', 3], ['fp-cards', 2], ['fp-labels', 1], ['fp-cards', 5]] : [];
+    }
 }

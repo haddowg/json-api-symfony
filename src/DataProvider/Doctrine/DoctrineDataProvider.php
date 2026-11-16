@@ -1849,21 +1849,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $association = $this->pivotAssociation($relation, $parent, $relatedClass);
         $pivotMetadata = $this->entityManager->getClassMetadata($association->entityClass);
 
-        // Each pivot keyset column's mint source: the `pivot_<field>` scalar riding
-        // the row. A non-hidden pivot field is already selected by pivotQuery(); a
-        // hidden one is not (it never renders), so when the keyset walks it, select
-        // it here purely for the mint.
-        $rowKeyOfColumn = [];
-        foreach (PivotFields::storedFor($relation) as $field) {
-            $column = $field->column() ?? $field->name();
-            if (!isset($aliasOfColumn[$column])) {
-                continue;
-            }
-            $rowKeyOfColumn[$column] = 'pivot_' . $field->name();
-            if ($field->isHidden() && \in_array($column, $keysetNames, true)) {
-                $builder->addSelect(\sprintf('pivot.%s AS pivot_%s', $column, $field->name()));
-            }
-        }
+        $rowKeyOfColumn = $this->pivotKeysetRowKeys($builder, $relation, $aliasOfColumn, $keysetNames);
 
         // page[before] wins over page[after]: a backward page flips every direction
         // (incl. the null bucket) and the after-predicate — see runCursor().
@@ -1914,22 +1900,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             \array_map(static fn(KeysetColumn $c): KeysetColumn => new KeysetColumn($c->column, $c->descending), $columns),
             \array_map(static fn(array $row): \ArrayObject => new \ArrayObject($row), $page),
             $hasSurplus,
-            function (object $row, string $column) use ($metadata, $rowKeyOfColumn, $sortOfColumn): string|int|float|bool|null {
-                \assert($row instanceof \ArrayObject);
-                $rowKey = $rowKeyOfColumn[$column] ?? null;
-                if ($rowKey !== null) {
-                    return CursorTokenMinter::coerce($row[$rowKey] ?? null);
-                }
-
-                $far = $row[0] ?? null;
-                \assert(\is_object($far));
-
-                if (isset($sortOfColumn[$column])) {
-                    return CursorTokenMinter::coerce($sortOfColumn[$column]->keysetValue($far));
-                }
-
-                return CursorTokenMinter::coerce($this->ids->fieldValue($metadata, $far, $column));
-            },
+            $this->pivotKeysetReader($metadata, $rowKeyOfColumn, $sortOfColumn),
         );
 
         // Items + pivot map come from the same sliced rows the tokens were minted
@@ -2130,9 +2101,10 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
      *
      * A windowed include (an offset page) wraps the grouped query in a per-parent
      * `ROW_NUMBER` window, and a counted one adds the per-parent total, so each parent
-     * reads at most a page. Window functions turned off, or a sort that is not a plain
-     * column, falls back to the single-parent query per parent, as the other windowed
-     * batch arms do. So does a cursor window.
+     * reads at most a page. A first cursor page is the same window ordered by the keyset.
+     * Window functions turned off, a sort that is not a plain column, a counted cursor
+     * page or one past a boundary falls back to the single-parent query per parent, as
+     * the other windowed batch arms do.
      *
      * @param list<object> $parents
      */
@@ -2150,6 +2122,18 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             $orderBy = $this->windowSortColumns($criteria, $this->entityManager->getClassMetadata($this->entityClassFor($relatedType)));
             if ($orderBy !== null && $this->windowFunctions && WindowedRelationBatch::readsQueryInternals()) {
                 return $this->fetchWindowedPivotBatch($parentType, $parents, $relatedType, $relation, $criteria, $window, $orderBy, $request);
+            }
+        }
+
+        // A first cursor page, the one an include shows, has no boundary to seek past, so
+        // it is the same per-parent window ordered by the keyset.
+        if (
+            $window instanceof CursorWindow && $window->after === null && $window->before === null
+            && !$criteria->wantsCount && $this->windowFunctions && WindowedRelationBatch::readsQueryInternals()
+        ) {
+            $batch = $this->fetchCursorPivotBatch($parentType, $parents, $relatedType, $relation, $criteria, $window, $request);
+            if ($batch !== null) {
+                return $batch;
             }
         }
 
@@ -2243,6 +2227,141 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         }
 
         return new RelatedBatch($results);
+    }
+
+    /**
+     * The first cursor page of a pivot relation for every parent in one query: the grouped
+     * pivot query with its filters, each keyset column projected as a `jsonapi_sort_<n>`
+     * scalar, wrapped in the per-parent `ROW_NUMBER` window ordered by the keyset (NULL
+     * as the largest value), capped at the page plus one. Each parent's forward cursor is
+     * minted from its page's last row exactly as {@see runPivotCursor()} mints it.
+     * `null` when a keyset column is a custom sort, which the window cannot order by.
+     *
+     * @param list<object> $parents
+     */
+    private function fetchCursorPivotBatch(
+        string $parentType,
+        array $parents,
+        string $relatedType,
+        RelationInterface $relation,
+        CollectionCriteria $criteria,
+        CursorWindow $window,
+        JsonApiRequestInterface $request,
+    ): ?RelatedBatch {
+        $relatedClass = $this->entityClassFor($relatedType);
+        $metadata = $this->entityManager->getClassMetadata($relatedClass);
+
+        $columns = $this->resolveKeysetColumns($criteria, $metadata->getSingleIdentifierFieldName());
+        foreach ($columns as $column) {
+            if ($column->sort !== null) {
+                return null;
+            }
+        }
+
+        $aliasOfColumn = $this->pivotAliasOfColumn($criteria);
+        $association = $this->pivotAssociation($relation, $parents[0], $relatedClass);
+        $keyset = new DoctrineKeyset($metadata, self::ROOT_ALIAS, $aliasOfColumn, ['pivot' => $this->entityManager->getClassMetadata($association->entityClass)], $this->sortHandler, $this->ids);
+
+        $builder = $this->pivotBatchQuery($relatedType, $parents, $relation);
+        foreach ($this->extensionsFor($relatedType) as $extension) {
+            $builder = $extension->apply($builder, new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request));
+        }
+        $builder = $this->applier->apply($this->filtersOnly($criteria), $builder, $this->filterHandler, $this->sortHandler);
+
+        $rowKeyOfColumn = $this->pivotKeysetRowKeys($builder, $relation, $aliasOfColumn, $this->keysetResolver->columnNames($columns));
+
+        $order = [];
+        foreach ($columns as $i => $column) {
+            $alias = \sprintf('jsonapi_sort_%d', $i);
+            $builder->addSelect(\sprintf('%s AS %s', $keyset->selectable($builder, $column), $alias));
+            $order[] = [$alias, $column->descending];
+        }
+
+        $rows = $this->windowedBatch->windowRows($builder, self::ROOT_ALIAS, $order, $window->limit + 1, false, nullsLargest: true);
+        \usort($rows, static fn(array $a, array $b): int => (\is_numeric($a['rn'] ?? null) ? (int) $a['rn'] : 0) <=> (\is_numeric($b['rn'] ?? null) ? (int) $b['rn'] : 0));
+
+        $plain = \array_map(static fn(KeysetColumn $c): KeysetColumn => new KeysetColumn($c->column, $c->descending), $columns);
+        $read = $this->pivotKeysetReader($metadata, $rowKeyOfColumn, []);
+
+        $results = [];
+        foreach ($this->pivotRowsByParent($rows, $parentType, $parents) as $wireId => $parentRows) {
+            $page = \array_slice($parentRows, 0, $window->limit);
+            $minted = $this->minter->mint(
+                $window,
+                $plain,
+                \array_map(static fn(array $row): \ArrayObject => new \ArrayObject($row), $page),
+                \count($parentRows) > $window->limit,
+                $read,
+            );
+            $pivotPage = $this->pivotResult($page, $relatedType, $relation, null);
+            $results[$wireId] = new PivotCursorCollectionResult(
+                $pivotPage->items,
+                $pivotPage->pivotMap,
+                $minted->cursorBefore,
+                $minted->cursorAfter,
+                $minted->hasPrevious,
+                $minted->hasMore,
+            );
+        }
+
+        return new RelatedBatch($results);
+    }
+
+    /**
+     * Each pivot keyset column's mint source: the `pivot_<field>` scalar riding the row. A
+     * non-hidden pivot field is already selected; a hidden one is not (it never renders),
+     * so when the keyset walks it, it is selected on `$builder` purely for the mint.
+     *
+     * @param array<string, string> $aliasOfColumn
+     * @param list<string>          $keysetNames
+     *
+     * @return array<string, string>
+     */
+    private function pivotKeysetRowKeys(QueryBuilder $builder, RelationInterface $relation, array $aliasOfColumn, array $keysetNames): array
+    {
+        $rowKeyOfColumn = [];
+        foreach (PivotFields::storedFor($relation) as $field) {
+            $column = $field->column() ?? $field->name();
+            if (!isset($aliasOfColumn[$column])) {
+                continue;
+            }
+            $rowKeyOfColumn[$column] = 'pivot_' . $field->name();
+            if ($field->isHidden() && \in_array($column, $keysetNames, true)) {
+                $builder->addSelect(\sprintf('pivot.%s AS pivot_%s', $column, $field->name()));
+            }
+        }
+
+        return $rowKeyOfColumn;
+    }
+
+    /**
+     * Reads a keyset column's value off a pivot row for the minter: a pivot column from
+     * its scalar, a custom sort's from the far entity, any other column off the far entity.
+     *
+     * @param ClassMetadata<object>                $metadata
+     * @param array<string, string>                $rowKeyOfColumn
+     * @param array<string, \haddowg\JsonApi\Resource\Sort\KeysetSortInterface> $sortOfColumn
+     *
+     * @return \Closure(object, string): (string|int|float|bool|null)
+     */
+    private function pivotKeysetReader(ClassMetadata $metadata, array $rowKeyOfColumn, array $sortOfColumn): \Closure
+    {
+        return function (object $row, string $column) use ($metadata, $rowKeyOfColumn, $sortOfColumn): string|int|float|bool|null {
+            \assert($row instanceof \ArrayObject);
+            $rowKey = $rowKeyOfColumn[$column] ?? null;
+            if ($rowKey !== null) {
+                return CursorTokenMinter::coerce($row[$rowKey] ?? null);
+            }
+
+            $far = $row[0] ?? null;
+            \assert(\is_object($far));
+
+            if (isset($sortOfColumn[$column])) {
+                return CursorTokenMinter::coerce($sortOfColumn[$column]->keysetValue($far));
+            }
+
+            return CursorTokenMinter::coerce($this->ids->fieldValue($metadata, $far, $column));
+        };
     }
 
     /**

@@ -380,6 +380,7 @@ final class WindowedRelationBatch
      *
      * The pivot batch reads through this. Its terms are bare columns, so NULLs fall where
      * the engine puts them, as they do in the single-parent pivot query this replaces.
+     * `$nullsLargest` orders NULL as the largest value instead, as a keyset does.
      * The `$entityAlias` entity comes back once per parent, as {@see rowsPerParent()}
      * returns it.
      *
@@ -387,7 +388,7 @@ final class WindowedRelationBatch
      *
      * @return list<array<int|string, mixed>>
      */
-    public function windowRows(QueryBuilder $inner, string $entityAlias, array $orderBy, int $rowCap, bool $countable): array
+    public function windowRows(QueryBuilder $inner, string $entityAlias, array $orderBy, int $rowCap, bool $countable, bool $nullsLargest = false): array
     {
         $query = $inner->getQuery();
         $innerSql = $query->getSQL();
@@ -399,7 +400,12 @@ final class WindowedRelationBatch
         $parentAlias = $this->scalarAlias($innerRsm, BatchScope::PARENT_DISCRIMINATOR_ALIAS);
         $terms = [];
         foreach ($orderBy as [$resultAlias, $descending]) {
-            $terms[] = \sprintf('w.%s %s', $this->scalarAlias($innerRsm, $resultAlias), $descending ? 'DESC' : 'ASC');
+            $column = 'w.' . $this->scalarAlias($innerRsm, $resultAlias);
+            // A keyset orders NULL as the largest value, as the cursor it mints expects.
+            if ($nullsLargest) {
+                $terms[] = \sprintf('CASE WHEN %s IS NULL THEN 1 ELSE 0 END %s', $column, $descending ? 'DESC' : 'ASC');
+            }
+            $terms[] = \sprintf('%s %s', $column, $descending ? 'DESC' : 'ASC');
         }
         $terms[] = \sprintf('w.%s ASC', $this->scalarAlias($innerRsm, BatchScope::RELATED_DISCRIMINATOR_ALIAS));
 
