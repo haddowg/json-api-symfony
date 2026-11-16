@@ -94,6 +94,24 @@ final class RouteFirewallTest extends TestCase
     }
 
     #[Test]
+    public function aSingletonsPathServesItsFetchAndUpdate(): void
+    {
+        $access = new AccessMap();
+        $access->add(new ChainRequestMatcher([new PathRequestMatcher('^/admin')]), ['ROLE_ADMIN']);
+        $firewall = new RouteFirewall(self::router(), accessMap: $access);
+
+        self::assertFalse($firewall->restricts('default', 'inboxes', OperationKey::crud(OperationKind::FetchOne)));
+        self::assertFalse($firewall->restricts('default', 'inboxes', OperationKey::crud(OperationKind::Update)));
+        // A singleton has no collection route, so the collection read stays unknown.
+        self::assertTrue($firewall->restricts('default', 'inboxes', OperationKey::crud(OperationKind::FetchCollection)));
+
+        $access->add(new ChainRequestMatcher([new PathRequestMatcher('^/inbox$')]), ['ROLE_USER']);
+        $firewall = new RouteFirewall(self::router(), accessMap: $access);
+
+        self::assertTrue($firewall->restricts('default', 'inboxes', OperationKey::crud(OperationKind::FetchOne)));
+    }
+
+    #[Test]
     public function anOperationWithNoRouteCountsAsRefusable(): void
     {
         $access = new AccessMap();
@@ -121,6 +139,8 @@ final class RouteFirewallTest extends TestCase
     {
         $routes = new RouteCollection();
         $routes->add('jsonapi.articles.show', new Route('/articles/{id}', ['_jsonapi_server' => 'default', '_jsonapi_type' => 'articles'], methods: ['GET']));
+        $routes->add('jsonapi.inboxes.show', new Route('/inbox', ['_jsonapi_server' => 'default', '_jsonapi_type' => 'inboxes', '_jsonapi_singleton' => true], methods: ['GET']));
+        $routes->add('jsonapi.inboxes.update', new Route('/inbox', ['_jsonapi_server' => 'default', '_jsonapi_type' => 'inboxes', '_jsonapi_singleton' => true], methods: ['PATCH']));
 
         return new class ($routes) implements RouterInterface {
             private RequestContext $context;

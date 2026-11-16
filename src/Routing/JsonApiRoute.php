@@ -46,6 +46,8 @@ final readonly class JsonApiRoute
         public ?string $action = null,
         public ?ActionScope $actionScope = null,
         public bool $isAtomic = false,
+        /** `true` on a singleton type's routes, served at `/{uriType}` with no `{id}`. */
+        public bool $singleton = false,
     ) {}
 
     /**
@@ -85,17 +87,23 @@ final readonly class JsonApiRoute
             action: \is_string($action) ? $action : null,
             actionScope: \is_string($scope) ? self::scope($scope) : null,
             isAtomic: $attributes->get(JsonApiRouteLoader::ATOMIC_ATTRIBUTE) === true,
+            singleton: $attributes->get(TargetResolver::SINGLETON_ATTRIBUTE) === true,
         );
     }
 
     /**
      * Core's {@see Target} for the route, as the lifecycle resolves it; `null` on the
-     * atomic endpoint, which addresses no single type.
+     * atomic endpoint, which addresses no single type. A singleton route's target carries
+     * no id, since the URL names none.
      */
     public function target(): ?Target
     {
         if ($this->type === null) {
             return null;
+        }
+
+        if ($this->singleton) {
+            return Target::singleton($this->type, relationship: $this->relationship, isRelationshipEndpoint: $this->isRelationshipEndpoint);
         }
 
         return new Target($this->type, $this->id, $this->relationship, $this->isRelationshipEndpoint);

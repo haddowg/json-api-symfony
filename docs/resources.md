@@ -253,6 +253,124 @@ Declaring `relatedOnly: true` with a non-empty `operations` list or with `readOn
 is a constructor `\LogicException`, and mounting a custom action on a related-only type
 fails the container build. A related-only type needs no provider or persister.
 
+## Singleton types
+
+Some types have one resource per caller: an inbox, a settings record, the signed-in
+user's own account. Declare such a type a singleton with core's `$singleton` static and
+override `resolveSingletonId()` to name the caller's resource. The example app's
+[`AccountResource`](../examples/music-catalog-symfony/src/Resource/AccountResource.php)
+serves the signed-in user's account at `/me`:
+
+```php
+final class AccountResource extends AbstractResource
+{
+    public static string $type = 'accounts';
+    public static string $uriType = 'me';
+    public static bool $singleton = true;
+
+    public function __construct(private readonly EntityManagerInterface $entityManager) {}
+
+    public function resolveSingletonId(SingletonContext $context): ?string
+    {
+        $user = $context->attribute('user');
+        if (!$user instanceof UserInterface) {
+            return null;
+        }
+
+        $account = $this->entityManager->getRepository(User::class)->findOneBy(['email' => $user->getUserIdentifier()]);
+
+        return $account?->id !== null ? (string) $account->id : null;
+    }
+
+    // fields() as usual
+}
+```
+
+The route loader serves it at `/{uriType}` with no `{id}` segment. `GET /me` reads the
+caller's account and `PATCH /me` updates it. Its relationship and related endpoints are
+`/me/relationships/{relationship}` and `/me/{relationship}`, and its custom actions
+`/me/-actions/{name}`. Nothing else is routed for the type: no collection, no create, no
+delete and no `/me/{id}`, so a `POST` or `DELETE` on `/me` is the router's `405`.
+
+The bundle resolves the id once per request, before it builds the operation. The
+`SingletonContext` it passes carries the PSR-7 request and two attributes: `user`, the
+authenticated Symfony user or `null`, and `request`, the HttpFoundation request. `user`
+is always `null` without symfony/security-core. A `null` id answers `404`. Otherwise the
+ordinary fetch, update, relationship or action runs with that id, so the data provider,
+Doctrine extensions, `security` expressions, lifecycle hooks, the write transaction and
+`afterCommit()` callbacks all apply unchanged. A row the provider doesn't find is a
+`404` too. A `PATCH` body still carries the resource's `id`, as the spec requires of
+every update, and a body naming another id is the same `409` any update answers. The
+bundle never fills the id in.
+
+**A singleton's data layer must expose only the caller's row.** Every link into the
+type's own endpoints is `/me`, so a scope that lets one caller read another's row would
+render that row with a `self` link pointing at the reader's own. The example scopes
+`accounts` with a [Doctrine extension](custom-data-providers.md), the same pattern as
+[scoping access per user](authorization.md#scoping-access-per-user):
+
+```php
+final class OwnAccountExtension implements DoctrineExtensionInterface
+{
+    public function __construct(private readonly Security $security) {}
+
+    public function supports(string $type): bool
+    {
+        return $type === 'accounts';
+    }
+
+    public function apply(QueryBuilder $builder, ExtensionContext $context): QueryBuilder
+    {
+        $alias = $builder->getRootAliases()[0];
+        $user = $this->security->getUser();
+        if ($user === null) {
+            return $builder->andWhere('1 = 0');
+        }
+
+        return $builder
+            ->andWhere(\sprintf('%s.email = :own_account_email', $alias))
+            ->setParameter('own_account_email', $user->getUserIdentifier());
+    }
+}
+```
+
+The scope also guards the resolver. If `resolveSingletonId()` ever names someone else's
+row, the fetch finds nothing and the caller gets a `404`.
+
+A singleton keeps its real id. Its resource objects carry it, other types link to it as
+`{"type": "accounts", "id": "1"}` and include it as usual, and another type's related
+endpoint renders it like any other related resource. Only the links into its own
+endpoints drop the id.
+
+A singleton serves `FetchOne` and `Update` by default, and `FetchOne` alone under
+`readOnly: true`. An explicit `operations` list may name only those two. These fail the
+container build:
+
+- an `operations` list naming `FetchCollection`, `Create` or `Delete`, which core's
+  `SingletonMisdeclared` refuses;
+- a collection-scope action mounted on the type, refused the same way;
+- `relatedOnly: true` on a singleton;
+- a singleton resource that doesn't override `resolveSingletonId()`.
+
+When the same rows also need a collection or a create, declare a second type over the
+same entity. The example's `User` entity backs `users`, `public-profiles` and
+`accounts`.
+
+A type composed without a resource declares the singleton on its serializer: a bare
+`#[AsJsonApiSerializer]` class implementing core's `SingletonResourceInterface`, with a
+static `isSingleton()` returning `true` and its own `resolveSingletonId()`. It serves
+`GET /{type}` alone, and `PATCH` too when a hydrator is registered for the type, unless
+its `operations` list says otherwise. `#[AsJsonApiResource]` has no `singleton` flag:
+core reads the declaration from the classes it registers, so a flag only the bundle
+knew would leave the type's links and its OpenAPI paths at `/{uriType}/{id}`.
+
+An Atomic Operations batch reaches a singleton by `ref`, `{type, id}`, or by an `href` of
+`/me` or `/me/relationships/{relationship}`; see
+[Atomic Operations](atomic-operations.md#the-request). The OpenAPI document projects
+the type's paths without `{id}` and names `/me` in the `x-singleton` extension of its
+`AccountsResource` component; see core's
+[singleton types](https://github.com/haddowg/json-api/blob/main/docs/openapi.md#singleton-types-x-singleton).
+
 ## Per-operation response declarations
 
 By default each operation advertises the one success status JSON:API mandates —

@@ -274,6 +274,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         private readonly ?IdEncoderResolver $idEncoders = null,
         // Runs the callbacks registered during a write once it commits.
         private readonly ?AfterCommit $afterCommit = null,
+        // Resolves the caller's id for an atomic href addressing a singleton type.
+        private readonly ?SingletonIdResolver $singletons = null,
     ) {}
 
     public function handle(\haddowg\JsonApi\Operation\JsonApiOperationInterface $operation): DataResponse|RelatedResponse|IdentifierResponse|MetaResponse|NoContentResponse|AcceptedResponse|SeeOtherResponse|AtomicResultsResponse|ErrorResponse|RawResponse
@@ -402,6 +404,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $this->logger,
             $this->descriptors,
             $this->afterCommit,
+            $this->singletons,
         );
 
         return (new AtomicLoop())->run($operation->descriptors(), $backend);
@@ -418,6 +421,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $request = $request instanceof JsonApiRequestInterface ? $request : null;
 
         $id = $operation->target()->id;
+        // A singleton fetch is never a collection: without the caller's id there is nothing to read.
+        if ($id === null && $operation->target()->singleton) {
+            return ErrorResponse::fromException(new ResourceNotFound());
+        }
         if ($id !== null) {
             $model = $provider->fetchOne($type, $id);
             if ($model === null) {

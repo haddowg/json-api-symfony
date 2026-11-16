@@ -15,6 +15,11 @@ use Symfony\Component\HttpFoundation\Request;
  * distinguishes the linkage endpoint (`/relationships/{relationship}`, `true`)
  * from the related-resource endpoint (`/{relationship}`, `false`).
  *
+ * A route carrying the `_jsonapi_singleton` default addresses a singleton type at
+ * `/{uriType}`, so it builds {@see Target::singleton()} with no id. The
+ * {@see \haddowg\JsonApiBundle\EventListener\RequestListener} resolves the caller's id
+ * before it builds the operation.
+ *
  * The {@see \haddowg\JsonApiBundle\EventListener\RequestListener} uses it, and it
  * is the public seam an explicit-route user calls directly — so it is a pure
  * mapper with no container or I/O, trivially unit-testable.
@@ -28,6 +33,12 @@ final class TargetResolver
     public const string RELATIONSHIP_ATTRIBUTE = 'relationship';
 
     public const string RELATIONSHIP_ENDPOINT_ATTRIBUTE = '_jsonapi_relationship_endpoint';
+
+    /**
+     * The route default marking a singleton type's route, served at `/{uriType}` with no
+     * `{id}` segment.
+     */
+    public const string SINGLETON_ATTRIBUTE = '_jsonapi_singleton';
 
     /**
      * Resolves the target from the request's route attributes, or `null` when the
@@ -45,11 +56,17 @@ final class TargetResolver
         $relationship = $request->attributes->get(self::RELATIONSHIP_ATTRIBUTE);
         $relationship = \is_string($relationship) && $relationship !== '' ? $relationship : null;
 
+        $isRelationshipEndpoint = $relationship !== null && $request->attributes->get(self::RELATIONSHIP_ENDPOINT_ATTRIBUTE) === true;
+
+        if ($request->attributes->get(self::SINGLETON_ATTRIBUTE) === true) {
+            return Target::singleton($type, relationship: $relationship, isRelationshipEndpoint: $isRelationshipEndpoint);
+        }
+
         return new Target(
             $type,
             \is_string($id) ? $id : null,
             $relationship,
-            $relationship !== null && $request->attributes->get(self::RELATIONSHIP_ENDPOINT_ATTRIBUTE) === true,
+            $isRelationshipEndpoint,
         );
     }
 }

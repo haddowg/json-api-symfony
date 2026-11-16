@@ -395,6 +395,25 @@ abstract class AtomicOperationsConformanceTestCase extends JsonApiFunctionalTest
 
     #[Test]
     #[Group('spec:atomic')]
+    public function anUpdateNamingAnotherIdThanItsTargetIs409(): void
+    {
+        foreach ([['href' => '/articles/1'], ['ref' => ['type' => 'articles', 'id' => '1']]] as $target) {
+            $response = $this->atomic([
+                ['op' => 'update', ...$target, 'data' => ['type' => 'articles', 'id' => '2', 'attributes' => ['title' => 'Wrong article']]],
+            ]);
+
+            self::assertSame(409, $response->getStatusCode(), (string) $response->getContent());
+            $error = $this->errors($response)[0];
+            self::assertSame('RESOURCE_ID_CONFLICT', $error['code'] ?? null);
+            self::assertSame(['pointer' => '/atomic:operations/0/data/id'], $error['source'] ?? null);
+        }
+
+        self::assertNotSame('Wrong article', $this->attributesOf($this->handle('/articles/1'))['title'] ?? null);
+        self::assertNotSame('Wrong article', $this->attributesOf($this->handle('/articles/2'))['title'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:atomic')]
     public function aRemoveAtAFilteredCollectionHrefIs400(): void
     {
         $this->assertBadHref(['op' => 'remove', 'href' => '/articles?filter[title]=JSON'], 'ATOMIC_HREF_INVALID');

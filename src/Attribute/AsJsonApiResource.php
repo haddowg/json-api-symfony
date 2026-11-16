@@ -49,14 +49,16 @@ use haddowg\JsonApiBundle\Operation\Operation;
  *
  * `operations` is the exposed operation allow-list: the {@see \haddowg\JsonApiBundle\Operation\Operation}
  * cases this type serves, one route emitted per case. An empty
- * array means the default — for a resource, all five operations. A type that serves
+ * array means the default — for a resource, all five operations, and for a singleton
+ * type (core's `$singleton`) fetch and update. A type that serves
  * none declares `relatedOnly` instead.
  *
  * `readOnly` is an intent-named shorthand for the common "suppress every write"
  * case: `readOnly: true` restricts the type to the two fetch operations
  * ({@see \haddowg\JsonApiBundle\Operation\Operation::FetchCollection} and
  * {@see \haddowg\JsonApiBundle\Operation\Operation::FetchOne}) without importing the
- * enum or spelling them out. It is mutually exclusive with a non-empty `operations`
+ * enum or spelling them out; a singleton type, which has no collection, keeps its fetch
+ * alone. It is mutually exclusive with a non-empty `operations`
  * list (the precise escape hatch): declaring both is a constructor `\LogicException`,
  * so an ambiguous declaration never compiles.
  *

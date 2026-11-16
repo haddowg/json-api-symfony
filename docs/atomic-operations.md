@@ -87,6 +87,18 @@ a collection URL on an `update` or `remove`, so `remove` at `/articles?filter[..
 delete a filtered set. These answer `ATOMIC_HREF_INVALID`. An `href` that matches no
 JSON:API route answers `ATOMIC_HREF_UNRESOLVABLE`.
 
+A [singleton type](resources.md#singleton-types)'s `href` carries no id: `/me` for the
+resource and `/me/relationships/{relationship}` for its linkage. The executor resolves
+the caller's id once per batch, as the route does, from the batch request. A caller the
+type names no resource for fails that operation with a `404` pointed at it, and an
+`add` aimed at `/me` is `ATOMIC_HREF_INVALID`, since a singleton has no create. A `ref`
+of `{type, id}` reaches a singleton like any other type, and its data layer's scope
+decides whether the row is there.
+
+An `update` whose resource object names another `id` than the one its `ref` or `href`
+addresses is a `409` `RESOURCE_ID_CONFLICT`, pointed at that operation's `data/id`, as
+the same `PATCH` would be.
+
 ### Local ids (`lid`)
 
 A create may carry a `lid` — a client-assigned handle for the not-yet-created

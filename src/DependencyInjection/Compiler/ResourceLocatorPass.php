@@ -6,7 +6,10 @@ namespace haddowg\JsonApiBundle\DependencyInjection\Compiler;
 
 use haddowg\JsonApi\Hydrator\HydratorInterface;
 use haddowg\JsonApi\OpenApi\Metadata\ActionDeclarations;
+use haddowg\JsonApi\OpenApi\Metadata\OperationType;
 use haddowg\JsonApi\Resource\AbstractResource;
+use haddowg\JsonApi\Resource\SingletonMisdeclared;
+use haddowg\JsonApi\Resource\SingletonResourceInterface;
 use haddowg\JsonApi\Response\MetaResponse;
 use haddowg\JsonApi\Response\NoContentResponse;
 use haddowg\JsonApi\Serializer\SerializerInterface;
@@ -123,7 +126,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
         $standaloneSerializersByServer = [];
         /** @var array<string, array<string, string>> $standaloneHydratorsByServer */
         $standaloneHydratorsByServer = [];
-        /** @var array<string, array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, relatedOnly?: bool, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string, raw?: array<string, mixed>, description?: string, mediaType?: string}>>}>> $descriptorsByServer */
+        /** @var array<string, array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, relatedOnly?: bool, singleton?: bool, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string, raw?: array<string, mixed>, description?: string, mediaType?: string}>>}>> $descriptorsByServer */
         $descriptorsByServer = [];
 
         // Standalone relations providers, keyed by server and type: the registry
@@ -224,8 +227,8 @@ final class ResourceLocatorPass implements CompilerPassInterface
             // The type/uriType are read statically from an AbstractResource (no
             // instantiation); a bare #[AsJsonApiResource] on a non-resource class
             // carries no statics, so its uriType falls back to the type. A resource
-            // exposes all five operations by default; an explicit operations string
-            // on any tag is the allow-list.
+            // exposes all five operations by default, a singleton fetch and update; an
+            // explicit operations string on any tag is the allow-list.
             $uriType = \is_a($class, AbstractResource::class, true) && $class::$uriType !== ''
                 ? $class::$uriType
                 : $type;
@@ -233,13 +236,22 @@ final class ResourceLocatorPass implements CompilerPassInterface
             // A related-only type serves no endpoint of its own, so it has no operations.
             $relatedOnly = $this->relatedOnlyFromTags($tags);
 
+            // Core reads a singleton from the resource class, or from the serializer
+            // that renders it, without building either; so does the build.
+            $singleton = self::declaresSingleton($class) || ($serializerOverride !== null && self::declaresSingleton($serializerOverride));
+            if ($singleton) {
+                self::guardSingletonResolves($class, $type, $relatedOnly);
+            }
+
             $descriptor = [
                 'uriType' => $uriType,
                 'isResource' => true,
                 'hasHydrator' => true,
                 'hasRelations' => true,
-                'operations' => $relatedOnly ? [] : ($this->operationsFromTags($tags) ?? self::allOperations()),
+                'operations' => $relatedOnly ? [] : ($this->operationsFromTags($tags) ?? self::defaultOperations($singleton, $this->readOnlyFromTags($tags))),
                 'relatedOnly' => $relatedOnly,
+                // Served at `/{uriType}` for the caller's own resource, with no `{id}`.
+                'singleton' => $singleton,
                 // The OpenAPI tag refs; empty = the humanized-type
                 // default the MetadataSource resolves. Read across all tags so the
                 // empty autoconfig tag does not erase the attribute's value.
@@ -292,12 +304,19 @@ final class ResourceLocatorPass implements CompilerPassInterface
         foreach ($standaloneSerializers as $server => $types) {
             foreach ($types as $type => $standalone) {
                 $standaloneSerializersByServer[$server][$type] = $standalone['class'];
+                $hasHydrator = isset($standaloneHydratorsByServer[$server][$type]);
+                // A singleton serializer serves its fetch, and its update when a hydrator
+                // is registered, unless its operations allow-list says otherwise.
+                $singleton = self::declaresSingleton($standalone['class']);
                 $descriptorsByServer[$server][$type] ??= [
                     'uriType' => $type,
                     'isResource' => false,
-                    'hasHydrator' => isset($standaloneHydratorsByServer[$server][$type]),
+                    'hasHydrator' => $hasHydrator,
                     'hasRelations' => isset($standaloneRelationsByServer[$server][$type]),
-                    'operations' => $standalone['operations'],
+                    'operations' => $singleton && $standalone['operations'] === []
+                        ? self::defaultOperations(true, !$hasHydrator)
+                        : $standalone['operations'],
+                    'singleton' => $singleton,
                     // The standalone-type OpenAPI tag refs; empty = the
                     // humanized-type default the MetadataSource resolves.
                     'tags' => $standalone['tags'],
@@ -310,6 +329,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
 
         foreach ($descriptorsByServer as $serverDescriptors) {
             $this->validateWriteCapability($serverDescriptors);
+            self::validateSingletons($serverDescriptors);
         }
 
         $locator = ServiceLocatorTagPass::register($container, $references);
@@ -399,7 +419,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
      * them `null`.
      *
      * @param list<string>                                                                                                                             $declaredServers
-     * @param array<string, array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, relatedOnly?: bool, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string, raw?: array<string, mixed>, description?: string, mediaType?: string}>>}>> $descriptorsByServer the resource/standalone descriptors per server, read for each mount type's uriType and tags
+     * @param array<string, array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, relatedOnly?: bool, singleton?: bool, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string, raw?: array<string, mixed>, description?: string, mediaType?: string}>>}>> $descriptorsByServer the resource/standalone descriptors per server, read for each mount type's uriType and tags
      */
     private function collectActions(ContainerBuilder $container, array $declaredServers, array $descriptorsByServer): void
     {
@@ -413,7 +433,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
         // The handler class behind each descriptor key, so a declaration error can name it.
         /** @var array<string, string> $actionClasses */
         $actionClasses = [];
-        /** @var array<string, list<array{uriType: string, type: string, path: string, methods: list<string>, scope: string, name: string}>> $routeDescriptorsByServer */
+        /** @var array<string, list<array{uriType: string, type: string, path: string, methods: list<string>, scope: string, name: string, singleton: bool}>> $routeDescriptorsByServer */
         $routeDescriptorsByServer = [];
         // The resource-scope actions the ActionLinkContributor may render as links, keyed
         // by server then by mount type: each is the link key (the action path), the
@@ -579,6 +599,13 @@ final class ResourceLocatorPass implements CompilerPassInterface
                         ));
                     }
 
+                    // Every action on a singleton is resource-scoped and runs on the
+                    // caller's resource.
+                    $singleton = $descriptorsByServer[$server][$type]['singleton'] ?? false;
+                    if ($singleton && $scope === ActionScope::Collection) {
+                        SingletonMisdeclared::assertExclusive($type, [], [$path]);
+                    }
+
                     $actionTags = $explicitTags !== [] ? $explicitTags : ($descriptorsByServer[$server][$type]['tags'] ?? []);
                     // The mount type's URI segment on this server: its descriptor's
                     // uriType when registered there (docs/routing.md), else the type itself.
@@ -642,6 +669,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
                         'methods' => $methods,
                         'scope' => $scope->name,
                         'name' => $name ?? '',
+                        'singleton' => $singleton,
                     ];
 
                     // A resource-scope action may contribute a security-aware link on
@@ -1073,6 +1101,97 @@ final class ResourceLocatorPass implements CompilerPassInterface
     }
 
     /**
+     * Whether any of a resource's tags carries the `readOnly` shorthand.
+     *
+     * @param array<array<string, mixed>> $tags
+     */
+    private function readOnlyFromTags(array $tags): bool
+    {
+        foreach ($tags as $tag) {
+            if (($tag['read_only'] ?? false) === true) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether `$class` declares its type a singleton through core's
+     * {@see SingletonResourceInterface}, read statically.
+     */
+    private static function declaresSingleton(string $class): bool
+    {
+        return \is_a($class, SingletonResourceInterface::class, true) && $class::isSingleton();
+    }
+
+    /**
+     * The operations a type serves when it declares no allow-list: every operation, or
+     * the two fetches when read-only; for a singleton, fetch and update, or fetch alone
+     * when read-only.
+     *
+     * @return list<string>
+     */
+    private static function defaultOperations(bool $singleton, bool $readOnly): array
+    {
+        $operations = match (true) {
+            $singleton && $readOnly => [Operation::FetchOne],
+            $singleton => [Operation::FetchOne, Operation::Update],
+            $readOnly => [Operation::FetchCollection, Operation::FetchOne],
+            default => Operation::cases(),
+        };
+
+        return \array_map(static fn(Operation $op): string => $op->value, $operations);
+    }
+
+    /**
+     * Refuses a singleton that can never serve a request: one that is also related-only,
+     * or a resource class that doesn't override `resolveSingletonId()`, which core would
+     * refuse anyway the first time it registers the type.
+     *
+     * @throws \LogicException
+     */
+    private static function guardSingletonResolves(string $class, string $type, bool $relatedOnly): void
+    {
+        if ($relatedOnly) {
+            throw new \LogicException(\sprintf(
+                'The JSON:API type "%s" is a singleton and related-only; a singleton is served at its own path, so drop one.',
+                $type,
+            ));
+        }
+
+        if (\is_a($class, AbstractResource::class, true) && $class::isSingleton()
+            && (new \ReflectionMethod($class, 'resolveSingletonId'))->getDeclaringClass()->getName() === AbstractResource::class) {
+            throw new \LogicException(\sprintf(
+                'Resource "%s" is a singleton, so it must override resolveSingletonId() to name the caller\'s resource.',
+                $class,
+            ));
+        }
+    }
+
+    /**
+     * Refuses a singleton type that declares a collection fetch, a create or a delete,
+     * none of which it serves, with core's {@see SingletonMisdeclared}.
+     *
+     * @param array<string, array{operations: list<string>, singleton?: bool, ...}> $descriptors
+     *
+     * @throws SingletonMisdeclared
+     */
+    private static function validateSingletons(array $descriptors): void
+    {
+        foreach ($descriptors as $type => $descriptor) {
+            if (!($descriptor['singleton'] ?? false)) {
+                continue;
+            }
+
+            SingletonMisdeclared::assertExclusive(
+                (string) $type,
+                \array_values(\array_filter(\array_map(OperationType::tryFrom(...), $descriptor['operations']))),
+            );
+        }
+    }
+
+    /**
      * Whether any of a resource's tags declares it related-only.
      *
      * @param array<array<string, mixed>> $tags
@@ -1307,14 +1426,6 @@ final class ResourceLocatorPass implements CompilerPassInterface
     }
 
     /**
-     * @return list<string>
-     */
-    private static function allOperations(): array
-    {
-        return \array_map(static fn(Operation $op): string => $op->value, Operation::cases());
-    }
-
-    /**
      * Parses the comma-joined operations tag string into a list of valid
      * {@see Operation} case values; anything unrecognised is dropped.
      *
@@ -1341,7 +1452,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
      * Compile-time guard: a type cannot expose a write operation (`Create` /
      * `Update`) without a hydrator to populate the entity.
      *
-     * @param array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, relatedOnly?: bool, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string, raw?: array<string, mixed>, description?: string, mediaType?: string}>>}> $descriptors
+     * @param array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, relatedOnly?: bool, singleton?: bool, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string, raw?: array<string, mixed>, description?: string, mediaType?: string}>>}> $descriptors
      */
     private function validateWriteCapability(array $descriptors): void
     {

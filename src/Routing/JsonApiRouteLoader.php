@@ -55,6 +55,13 @@ use Symfony\Component\Routing\RouteCollection;
  * the application's routing config (Symfony applies the import's `prefix()` to the
  * emitted paths). An unknown or empty server emits nothing.
  *
+ * A singleton type is served at `/{uriType}` with no `{id}` segment: `GET` and, when it
+ * exposes Update, `PATCH /{uriType}`, its relationship and related routes at
+ * `/{uriType}/relationships/{relationship}` and `/{uriType}/{relationship}`, and its
+ * actions at `/{uriType}/-actions/{name}`. Each of its routes carries the
+ * `_jsonapi_singleton` default ({@see TargetResolver::SINGLETON_ATTRIBUTE}). Nothing else
+ * is emitted for it: no collection, create, delete or `/{uriType}/{id}`.
+ *
  * The relationship routes additionally carry `_jsonapi_relationship_endpoint`
  * (`true` for the `/relationships/{relationship}` linkage path, `false` for the
  * `/{relationship}` related path) which the {@see TargetResolver} reads to build
@@ -129,8 +136,8 @@ final class JsonApiRouteLoader extends Loader
     private const string RESERVED_ACTIONS_SEGMENT = '-actions';
 
     /**
-     * @param array<string, array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, relatedOnly?: bool, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string, raw?: array<string, mixed>, description?: string, mediaType?: string}>>}>> $routeDescriptorsByServer       keyed by server name, then by JSON:API type
-     * @param array<string, list<array{uriType: string, type: string, path: string, methods: list<string>, scope: string, name: string}>>            $actionRouteDescriptorsByServer keyed by server name; the custom-action routes to emit before the generic routes
+     * @param array<string, array<string, array{uriType: string, isResource: bool, hasHydrator: bool, hasRelations: bool, operations: list<string>, relatedOnly?: bool, singleton?: bool, tags: list<string>, responses: array<string, list<array{status: int, jobType?: string, raw?: array<string, mixed>, description?: string, mediaType?: string}>>}>> $routeDescriptorsByServer       keyed by server name, then by JSON:API type
+     * @param array<string, list<array{uriType: string, type: string, path: string, methods: list<string>, scope: string, name: string, singleton?: bool}>> $actionRouteDescriptorsByServer keyed by server name; the custom-action routes to emit before the generic routes
      * @param ?IdEncoderResolver                                                                                                                          $idEncoders                     resolves each type's route `{id}` pattern (null in a bare scalar-only test wiring)
      */
     public function __construct(
@@ -193,6 +200,7 @@ final class JsonApiRouteLoader extends Loader
 
             $uriType = $descriptor['uriType'];
             $operations = $descriptor['operations'];
+            $singleton = $descriptor['singleton'] ?? false;
 
             $defaults = [
                 '_controller' => JsonApiController::class,
@@ -200,6 +208,9 @@ final class JsonApiRouteLoader extends Loader
                 '_jsonapi_server' => $server,
                 JsonApiRoute::MARKER => true,
             ];
+            if ($singleton) {
+                $defaults[TargetResolver::SINGLETON_ATTRIBUTE] = true;
+            }
 
             // The default server keeps the existing unprefixed route names; a named
             // server namespaces them so a type exposed on two servers never collides.
@@ -207,8 +218,9 @@ final class JsonApiRouteLoader extends Loader
                 ? 'jsonapi.'
                 : \sprintf('jsonapi.%s.', $server);
 
+            // A singleton's one resource is the caller's, at `/{uriType}` with no id.
             $collectionPath = '/' . $uriType;
-            $resourcePath = $collectionPath . '/{id}';
+            $resourcePath = $singleton ? $collectionPath : $collectionPath . '/{id}';
             $relationshipPath = $resourcePath . '/relationships/{relationship}';
             $relatedPath = $resourcePath . '/{relationship}';
 
@@ -218,19 +230,19 @@ final class JsonApiRouteLoader extends Loader
             // routing before any handler runs. The requirement always excludes the
             // reserved `-actions` segment (see {@see idRequirement()}) so an action
             // path is never shadowed by a generic {id} route on a non-action method.
-            $idRequirements = ['id' => $this->idRequirement($resourceType, $server)];
+            $idRequirements = $singleton ? [] : ['id' => $this->idRequirement($resourceType, $server)];
 
             // One route per declared operation: a type that omits an operation
             // never gets its route, so unexposed verbs are unrouted (the router
             // 404s/405s natively) rather than reaching a handler that refuses.
-            if (\in_array(Operation::FetchCollection->value, $operations, true)) {
+            if (!$singleton && \in_array(Operation::FetchCollection->value, $operations, true)) {
                 $routes->add(
                     \sprintf('%s%s.index', $namePrefix, $resourceType),
                     new Route($collectionPath, $defaults, methods: ['GET']),
                 );
             }
 
-            if (\in_array(Operation::Create->value, $operations, true)) {
+            if (!$singleton && \in_array(Operation::Create->value, $operations, true)) {
                 $routes->add(
                     \sprintf('%s%s.create', $namePrefix, $resourceType),
                     new Route($collectionPath, $defaults, methods: ['POST']),
@@ -251,7 +263,7 @@ final class JsonApiRouteLoader extends Loader
                 );
             }
 
-            if (\in_array(Operation::Delete->value, $operations, true)) {
+            if (!$singleton && \in_array(Operation::Delete->value, $operations, true)) {
                 $routes->add(
                     \sprintf('%s%s.delete', $namePrefix, $resourceType),
                     new Route($resourcePath, $defaults, $idRequirements, methods: ['DELETE']),
@@ -369,7 +381,8 @@ final class JsonApiRouteLoader extends Loader
         }
 
         foreach ($this->routeDescriptorsByServer[$server] ?? [] as $resourceType => $descriptor) {
-            if ($resourceType === '') {
+            // A singleton serves no POST at its path, so the atomic route shadows nothing.
+            if ($resourceType === '' || ($descriptor['singleton'] ?? false)) {
                 continue;
             }
 
@@ -401,7 +414,9 @@ final class JsonApiRouteLoader extends Loader
      *  - resource scope: `/{uriType}/{id}/-actions/{name}` (4 segments) — the `{id}`
      *    is resolved to an entity before the handler runs; it carries the type's
      *    route `{id}` pattern when one is declared;
-     *  - collection scope: `/{uriType}/-actions/{name}` (3 segments) — no id.
+     *  - collection scope: `/{uriType}/-actions/{name}` (3 segments) — no id;
+     *  - a singleton's resource scope: `/{uriType}/-actions/{name}`, carrying the
+     *    `_jsonapi_singleton` default, the caller's id resolved before the handler runs.
      *
      * Each route carries the standard JSON:API defaults plus `_jsonapi_action` (the
      * action name) and `_jsonapi_action_scope` (the scope case name) the request
@@ -435,7 +450,10 @@ final class JsonApiRouteLoader extends Loader
 
             $requirements = [];
 
-            if ($resourceScope) {
+            if ($resourceScope && ($action['singleton'] ?? false)) {
+                $defaults[TargetResolver::SINGLETON_ATTRIBUTE] = true;
+                $actionPath = \sprintf('/%s/-actions/%s', $uriType, $path);
+            } elseif ($resourceScope) {
                 $actionPath = \sprintf('/%s/{id}/-actions/%s', $uriType, $path);
 
                 // Constrain {id} with the type's declared id pattern so a

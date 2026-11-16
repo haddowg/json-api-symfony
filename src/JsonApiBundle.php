@@ -973,10 +973,11 @@ final class JsonApiBundle extends AbstractBundle
                     'serializer' => $attribute->serializer,
                     'hydrator' => $attribute->hydrator,
                     // The exposed operation allow-list: an explicit `operations` list,
-                    // or the `readOnly` shorthand restricting the type to the two fetch
-                    // operations. The attribute constructor forbids declaring both, so
-                    // at most one of these branches contributes a non-null value.
+                    // or the `readOnly` shorthand, which the ResourceLocatorPass turns
+                    // into the two fetch operations, or the fetch alone for a singleton.
+                    // The attribute constructor forbids declaring both.
                     'operations' => self::operationsTag($attribute),
+                    'read_only' => $attribute->readOnly ? true : null,
                     // A related-only type serves no endpoint of its own; the
                     // ResourceLocatorPass gives it no operations and refuses an action
                     // mounted on it.
@@ -1666,18 +1667,14 @@ final class JsonApiBundle extends AbstractBundle
 
     /**
      * The comma-joined operation allow-list for the `operations` tag attribute: the
-     * resource's explicit `operations` list, or — when `readOnly` is set — the two
-     * fetch operations ({@see Operation::FetchCollection}, {@see Operation::FetchOne}).
-     * Returns `null` when neither is declared (so the tag attribute is filtered out and
-     * the per-capability default — all five for a resource — applies). The attribute
-     * constructor forbids declaring both, so this never has to reconcile a conflict.
+     * resource's explicit `operations` list. Returns `null` when none is declared, so the
+     * tag attribute is filtered out and the ResourceLocatorPass applies the default: all
+     * five for a resource, fetch and update for a singleton, or the fetches alone under
+     * `readOnly`.
      */
     private static function operationsTag(AsJsonApiResource $attribute): ?string
     {
         $operations = $attribute->operations;
-        if ($operations === [] && $attribute->readOnly) {
-            $operations = [Operation::FetchCollection, Operation::FetchOne];
-        }
 
         return $operations === []
             ? null
