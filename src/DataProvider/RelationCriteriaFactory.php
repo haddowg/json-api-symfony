@@ -25,6 +25,7 @@ use haddowg\JsonApi\Resource\Filter\WhereIn;
 use haddowg\JsonApi\Resource\Filter\WhereNotIn;
 use haddowg\JsonApi\Resource\Filter\WhereNotNull;
 use haddowg\JsonApi\Resource\Filter\WhereNull;
+use haddowg\JsonApi\Resource\Filter\WhereSet;
 use haddowg\JsonApi\Resource\Filter\WhereThrough;
 use haddowg\JsonApi\Resource\Filter\WhereThroughIn;
 use haddowg\JsonApi\Resource\SerializerResolverInterface;
@@ -466,7 +467,7 @@ final class RelationCriteriaFactory
     /**
      * What a filter targets, so a `pivot.` prefix routes it to the pivot row: the
      * declared `column` of a scalar filter ({@see Where} and its operators,
-     * {@see WhereIn}/{@see WhereNotIn}, {@see WhereNull}/{@see WhereNotNull}), the
+     * {@see WhereIn}/{@see WhereNotIn}, {@see WhereNull}/{@see WhereNotNull}, {@see WhereSet}), the
      * relationship of an existence filter ({@see WhereHas}/{@see WhereDoesntHave}, the
      * bundle's {@see WhereHasMatching}), or the path of a traversal
      * ({@see WhereThrough}/{@see WhereThroughIn}). Any other filter, a custom one or a
@@ -480,7 +481,8 @@ final class RelationCriteriaFactory
             $filter instanceof WhereIn,
             $filter instanceof WhereNotIn,
             $filter instanceof WhereNull,
-            $filter instanceof WhereNotNull => $filter->column,
+            $filter instanceof WhereNotNull,
+            $filter instanceof WhereSet => $filter->column,
             $filter instanceof WhereHas,
             $filter instanceof WhereDoesntHave,
             $filter instanceof WhereHasMatching => $filter->relationship,

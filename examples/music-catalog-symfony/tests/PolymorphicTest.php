@@ -72,6 +72,27 @@ final class PolymorphicTest extends MusicCatalogKernelTestCase
     }
 
     #[Test]
+    #[Group('spec:fetching-filtering')]
+    public function favoritesFilterByTheirStoredTarget(): void
+    {
+        self::assertSame(['2'], $this->favoriteIds('filter[favoritable][type]=albums'));
+        self::assertSame(['3'], $this->favoriteIds('filter[favoritable][type]=artists&filter[favoritable][id]=2'));
+        self::assertSame([], $this->favoriteIds('filter[favoritable][type]=artists&filter[favoritable][id][]=1'));
+
+        $response = $this->handle('/favorites?filter[favoritable][type]=playlists');
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    public function undatedFavoritesAreLeftOutUnlessAskedFor(): void
+    {
+        self::assertSame(['1', '2', '3'], $this->favoriteIds(''));
+        self::assertSame([], $this->favoriteIds('filter[dated]=false'));
+        self::assertSame(['1', '2', '3'], $this->favoriteIds('filter[dated]=true,false'));
+    }
+
+    #[Test]
     public function anUnpublishedAlbumInALibraryIsLeftOutOfItsItemsEverywhere(): void
     {
         // Library 1 also holds album 3, which the published-albums extension hides; the
@@ -147,6 +168,27 @@ final class PolymorphicTest extends MusicCatalogKernelTestCase
         self::assertContains('tracks:1', $byKey);
         self::assertContains('albums:2', $byKey);
         self::assertContains('artists:1', $byKey);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function favoriteIds(string $query): array
+    {
+        $response = $this->handle('/favorites' . ($query === '' ? '' : '?' . $query));
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $data = $this->decode($response)['data'] ?? null;
+        self::assertIsArray($data);
+
+        $ids = [];
+        foreach ($data as $favorite) {
+            self::assertIsArray($favorite);
+            self::assertIsString($favorite['id'] ?? null);
+            $ids[] = $favorite['id'];
+        }
+        \sort($ids);
+
+        return $ids;
     }
 
     /**

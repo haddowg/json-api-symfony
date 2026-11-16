@@ -517,6 +517,30 @@ description, and a `Range`/`DateRange` renders as an OAS `deepObject` parameter
 (`style: deepObject, explode: true`) with a `{min, max}` object value schema —
 documenting the nested wire shape precisely.
 
+### Whether a column is set: `WhereSet`
+
+Read or archived state kept as a nullable timestamp filters with core's
+[`WhereSet`](https://github.com/haddowg/json-api/blob/main/docs/filters.md#whether-a-column-is-set-whereset):
+`true` matches the rows whose column IS NOT NULL and `false` the rows where it IS NULL.
+Its value is always a list of booleans, so a client sends `true,false`, or the array
+form, to ask for both, which is how it overrides a default:
+
+```php
+use haddowg\JsonApi\Resource\Filter\WhereSet;
+
+WhereSet::make('archived', 'archivedTs')->default(false), // GET /inbox-items leaves archived items out
+WhereSet::make('read', 'readTs'),
+```
+
+`GET /inbox-items?filter[archived]=true` asks for archived items only, and
+`filter[archived]=true,false` for every item. A member that isn't a boolean is a `400`
+`FILTER_VALUE_INVALID`, with or without `symfony/validator`, since the filter reads its
+own value. On Doctrine it is `IS NULL` or `IS NOT NULL` on the main query, and both
+values add no predicate. A relation keeps the related type's default unless it declares
+[`withoutFilterDefaults()`](relationships.md), and it works in `relatedQuery[<path>][filter]`
+and as a [collection action's filter](actions.md). `WhereNull` and `WhereNotNull` are
+unchanged: they apply when the key is present and ignore its value.
+
 ### Validating filter values
 
 A filter is metadata: a key, a target column, an operator. By default any value a

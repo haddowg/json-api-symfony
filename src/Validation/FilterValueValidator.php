@@ -9,6 +9,7 @@ use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Filter\AcceptsList;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\FilterMatcher;
+use haddowg\JsonApi\Resource\Filter\WhereMorph;
 use haddowg\JsonApiBundle\DataProvider\FilterPaths;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
@@ -90,6 +91,12 @@ final class FilterValueValidator
             }
             $filter = $paths?->resolve($filter) ?? $filter;
 
+            if ($filter instanceof WhereMorph && $filter->resolvedTarget() !== null) {
+                $this->validateMorph($filter, $value);
+
+                continue;
+            }
+
             $list = $filter instanceof AcceptsList ? $filter->listValue() : null;
             $members = $list?->values($key, $value);
 
@@ -116,6 +123,39 @@ final class FilterValueValidator
             if ($messages !== []) {
                 throw new FilterValueInvalid($key, $messages);
             }
+        }
+    }
+
+    /**
+     * A {@see WhereMorph}'s value: its shape and type through the filter itself, then each
+     * id against the id format of the type the request names, which only the request can
+     * tell.
+     *
+     * @throws FilterValueInvalid
+     */
+    private function validateMorph(WhereMorph $filter, mixed $value): void
+    {
+        ['type' => $type, 'ids' => $ids] = $filter->requested($value);
+
+        $constraints = [];
+        foreach ($filter->idConstraints($type) as $constraint) {
+            foreach ($this->translator->translate($constraint) as $symfonyConstraint) {
+                $constraints[] = $symfonyConstraint;
+            }
+        }
+        if ($constraints === []) {
+            return;
+        }
+
+        $messages = [];
+        foreach ($ids ?? [] as $id) {
+            foreach ($this->validator->validate($id, $constraints) as $violation) {
+                $messages[] = (string) $violation->getMessage();
+            }
+        }
+
+        if ($messages !== []) {
+            throw new FilterValueInvalid($filter->key() . '][id', $messages);
         }
     }
 

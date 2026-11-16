@@ -681,6 +681,43 @@ at the leaf, never one `EXISTS` per value, and an empty list matches nothing wit
 `IN ()`. See [doctrine](doctrine.md#relationship-existence-filtering-wherehas-wherethrough-wherehasmatching)
 for the SQL.
 
+### Filtering by a polymorphic relation: `WhereMorph`
+
+Core's [`WhereMorph`](https://github.com/haddowg/json-api/blob/main/docs/filters.md#filtering-by-a-polymorphic-relation-wheremorph)
+filters by what a `MorphTo` or `MorphToMany` stores, sent as a resource identifier:
+
+```php
+use haddowg\JsonApi\Resource\Filter\WhereMorph;
+
+public function filters(): array
+{
+    return [
+        WhereMorph::make('subject')->describedAs('Items about this resource.'), // filter[subject][type]=rfps&filter[subject][id]=812,813
+    ];
+}
+```
+
+`type` is required and must be one of the relation's types, and `id`, comma-separated or
+`filter[subject][id][]=…`, is optional. Each id is checked against its type's id format
+and decoded through its encoder, so `filter[subject][type]=rfps&filter[subject][id]=abc`
+against a `numeric()` id is a `400` `FILTER_VALUE_INVALID` at `filter[subject][id]`. An
+undeclared type is the same `400` at `filter[subject][type]`, and a value that isn't an
+object, or carries another member, is one at `filter[subject]`.
+
+It reads only the stored identifier, so it works on a linkage-only `MorphTo` declared
+`cannotBeIncluded()` and `withoutRelatedEndpoint()`. The relation must say where that
+identifier lives. A `MorphTo` declares
+[`identifiedByColumns()`](#a-morphto-stored-as-a-type-and-id-pair), and the Doctrine
+provider compares those two columns on the main query. A `MorphToMany` declares
+[`identifiedByRows()`](#declaring-the-link-rows-with-identifiedbyrows), and the filter is one
+correlated `EXISTS` over its `through()` entity. The in-memory provider compares the same
+fields through core's `ArrayFilterHandler`. A `WhereMorph` over a `MorphTo` identified only
+by an `identifiedBy()` closure fails `cache:warmup` on Doctrine, since a closure can't be
+compared in a query.
+
+It works wherever a filter key does: a related endpoint, `relatedQuery[<path>][filter]`
+and a collection action's filters.
+
 ### `WhereHasMatching` — the Doctrine escape hatch (not portable)
 
 When the inner predicate is more than a single column comparison — a multi-column /
@@ -1599,10 +1636,13 @@ declares `favoritable` over three types:
 
 ```php
 MorphTo::make('favoritable', ['tracks', 'albums', 'artists'])
+    ->identifiedByColumns(type: 'targetType', id: 'targetId')
     ->extractUsing(static fn(mixed $favorite): ?object => $favorite instanceof Favorite ? $favorite->favoritable : null),
 ```
 
-The handler resolves the to-one serializer from the **actual** related object, so
+The linkage renders from the stored `targetType`/`targetId` pair, as described
+[below](#a-morphto-stored-as-a-type-and-id-pair), and the related object is read through
+`extractUsing()` when the target itself renders. The handler resolves the to-one serializer from the **actual** related object, so
 the same relation renders an `albums` resource for one favorite and an `artists`
 resource for another, and an empty target renders `data: null`. Because the
 target spans entity classes, the Doctrine read leaves the non-mapped property
@@ -1656,6 +1696,22 @@ beneath the target, such as `target.region`, follow the usual walk.
 `GET /campaigns/{id}/target` loads the one target and renders `data: null` when it is
 hidden or missing. A stored type the relation doesn't declare throws a `\LogicException`,
 which renders as a `500`.
+
+When the pair lives in two fields of the entity, as here, name them instead of writing a
+closure, and the linkage renders from them the same way:
+
+```php
+MorphTo::make('target', ['advertisers', 'agencies'])
+    ->identifiedByColumns(type: 'targetType', id: 'targetId'),
+```
+
+A `typeMap` maps stored values to types when the column holds something other than the
+JSON:API type, as `identifiedByRows()` does. Declared this way the columns can be compared
+in a query, which a [`WhereMorph`](#filtering-by-a-polymorphic-relation-wheremorph)
+filter needs. The example's
+[`FavoriteResource`](../examples/music-catalog-symfony/src/Resource/FavoriteResource.php)
+declares its `favoritable` relation this way and filters by it with
+`filter[favoritable][type]=albums&filter[favoritable][id]=1`.
 
 A loaded target renders under the pair's type. Each declared type's resource still
 discriminates by class in `getType()`, as the build check requires for any `MorphTo`. A
