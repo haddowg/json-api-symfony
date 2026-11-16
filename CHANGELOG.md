@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.20.0](https://github.com/haddowg/json-api-symfony/compare/v2.19.0...v2.20.0) (2026-11-16)
+
+
+### Bug Fixes
+
+* render an included to-many's first page ([a9084f1](https://github.com/haddowg/json-api-symfony/commit/a9084f18f20a8bd23bdd79413c2af30e79f5a138))
+
 ## [2.19.0](https://github.com/haddowg/json-api-symfony/compare/v2.18.0...v2.19.0) (2026-11-16)
 
 
