@@ -6,6 +6,8 @@ namespace haddowg\JsonApiBundle\Serializer;
 
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\SerializerResolverAwareInterface;
+use haddowg\JsonApi\Resource\SerializerResolverInterface;
 use haddowg\JsonApi\Schema\Link\ResourceLinks;
 use haddowg\JsonApi\Serializer\CountableControlsInterface;
 use haddowg\JsonApi\Serializer\CountableSelfInterface;
@@ -16,6 +18,7 @@ use haddowg\JsonApi\Serializer\IncludeControlsInterface;
 use haddowg\JsonApi\Serializer\RendersDeclaredLinksInterface;
 use haddowg\JsonApi\Serializer\SelfLinkAwareInterface;
 use haddowg\JsonApi\Serializer\SerializerInterface;
+use haddowg\JsonApi\Serializer\UriTypeAwareInterface;
 
 /**
  * The shared base for the two pivot parent-serializer decorators
@@ -46,7 +49,9 @@ abstract class AbstractPivotParentSerializer implements
     DeclaresEagerLoadsInterface,
     DeclaresRelationsInterface,
     SelfLinkAwareInterface,
-    RendersDeclaredLinksInterface
+    RendersDeclaredLinksInterface,
+    UriTypeAwareInterface,
+    SerializerResolverAwareInterface
 {
     use RebindsPivotLinkage;
 
@@ -177,5 +182,31 @@ abstract class AbstractPivotParentSerializer implements
         // The base resource emits a self link by default; absent the interface a
         // serializer keeps that default rather than suppressing the link.
         return !$inner instanceof SelfLinkAwareInterface || $inner->emitsSelfLink();
+    }
+
+    /**
+     * The inner serializer's URI segment, so the parent's relationship links use it
+     * rather than the JSON:API type.
+     */
+    public function uriType(): string
+    {
+        $inner = $this->inner();
+
+        return $inner instanceof UriTypeAwareInterface ? $inner->uriType() : '';
+    }
+
+    /**
+     * Left to the inner serializer, which the server already gave its resolver.
+     */
+    public function setSerializerResolver(SerializerResolverInterface $resolver): void {}
+
+    /**
+     * The inner serializer's resolver, so a singleton parent's links drop its id.
+     */
+    public function serializerResolver(): ?SerializerResolverInterface
+    {
+        $inner = $this->inner();
+
+        return $inner instanceof SerializerResolverAwareInterface ? $inner->serializerResolver() : null;
     }
 }
