@@ -339,6 +339,25 @@ abstract class AtomicOperationsConformanceTestCase extends JsonApiFunctionalTest
 
     #[Test]
     #[Group('spec:atomic')]
+    public function anUpdateWhoseResourceObjectNamesNoIdIs400AtItsData(): void
+    {
+        $response = $this->atomic([
+            ['op' => 'update', 'ref' => ['type' => 'articles', 'id' => '1'], 'data' => ['type' => 'articles', 'id' => '1', 'attributes' => ['title' => 'First']]],
+            ['op' => 'update', 'ref' => ['type' => 'articles', 'id' => '1'], 'data' => ['type' => 'articles', 'attributes' => ['title' => 'Second']]],
+        ]);
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+
+        $errors = $this->errors($response);
+        self::assertSame('RESOURCE_ID_MISSING', $errors[0]['code'] ?? null);
+        self::assertSame('/atomic:operations/1/data', $this->member($errors[0], 'source', 'pointer'));
+
+        // The batch rolled back, the first update included.
+        self::assertNotSame('First', $this->attributesOf($this->handle('/articles/1'))['title'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:atomic')]
     public function aDuplicateLidIs400(): void
     {
         $response = $this->atomic([
