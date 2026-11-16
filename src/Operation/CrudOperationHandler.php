@@ -239,6 +239,14 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      */
     private array $preloaded = [];
 
+    /**
+     * The profiles the first pages the include walk cut activated, such as the cursor
+     * pagination profile of a cursor-paginated include, surfaced on the response.
+     *
+     * @var array<string, \haddowg\JsonApi\Schema\Profile\ProfileInterface>
+     */
+    private array $includeProfiles = [];
+
     public function __construct(
         private readonly DataProviderRegistry $providers,
         private readonly DataPersisterRegistry $persisters,
@@ -282,12 +290,15 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
     public function handle(\haddowg\JsonApi\Operation\JsonApiOperationInterface $operation): DataResponse|RelatedResponse|IdentifierResponse|MetaResponse|NoContentResponse|AcceptedResponse|SeeOtherResponse|AtomicResultsResponse|ErrorResponse|RawResponse
     {
         $server = $operation->context()->server;
-        // Each operation installs its own linkage; never render another's.
+        // Each operation installs its own linkage and pages; never render another's.
         $this->relationshipLinkage?->set(null);
         $this->relationshipLinkage?->setIncluded(null);
+        $this->relationshipPagination?->set(null);
+        $this->relationshipPagination?->setIncluded(null);
         // Nor another operation's counts.
         $this->relationshipCount?->set(null);
         $this->preloaded = [];
+        $this->includeProfiles = [];
         // Related rows are judged against their own read gate afresh per operation.
         $serverName = $this->contextServerName($operation->context());
         $this->relationshipLinkage?->bind($server instanceof Server ? $server : null, $serverName);
@@ -316,9 +327,35 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         $request = $operation->context()->httpRequest();
 
-        return $response instanceof DataResponse && $server instanceof Server && $request instanceof JsonApiRequestInterface
-            ? $this->loadRendered($server, $response, $request)
-            : $response;
+        if ($response instanceof DataResponse && $server instanceof Server && $request instanceof JsonApiRequestInterface) {
+            $response = $this->loadRendered($server, $response, $request);
+        }
+
+        return $this->withIncludeProfiles($response);
+    }
+
+    /**
+     * Adds the profiles the include walk's first pages activated to a response that
+     * renders them.
+     *
+     * @template TResponse of object
+     *
+     * @param TResponse $response
+     *
+     * @return TResponse
+     */
+    private function withIncludeProfiles(object $response): object
+    {
+        if ($this->includeProfiles === [] || (!$response instanceof DataResponse && !$response instanceof RelatedResponse)) {
+            return $response;
+        }
+
+        $profiles = [];
+        foreach ([...$response->activatedProfiles(), ...\array_values($this->includeProfiles)] as $profile) {
+            $profiles[$profile->uri()] ??= $profile;
+        }
+
+        return $response->withActivatedProfiles(...\array_values($profiles));
     }
 
     /**
@@ -1590,10 +1627,11 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return null;
         }
 
+        // A page the client asked to count links to pages that count too.
         $queryString = (new RelatedQuery(
             $request->getSorting() === [] ? null : \implode(',', $request->getSorting()),
             $queryParameters->filter,
-        ))->toPlainQueryString();
+        ))->toPlainQueryString(counted: $wantsCount && !$paginator->wantsCount());
 
         $page = match (true) {
             $result instanceof CursorCollectionResult && $paginator instanceof CursorPaginator => $paginator->fromBoundaries(
@@ -1879,13 +1917,29 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         // The windowed pages installed just before are what renders for those relations,
         // so the walk descends into them.
+        $this->relationshipLinkage?->setIncluded(null);
         $linkage = $this->includeBatcher->preload($entities, $type, $request, $server, $this->relationshipLinkage);
 
+        $this->installIncluded($linkage);
+    }
+
+    /**
+     * Installs the linkage and first pages the include walk just loaded, and records the
+     * profiles those pages activate.
+     */
+    private function installIncluded(?WindowedRelationshipLinkage $linkage): void
+    {
         if ($linkage !== null && $this->relationshipLinkage === null) {
             throw new \LogicException('The scoped include linkage cannot be rendered: no RequestScopedRelationshipLinkage is wired into the CrudOperationHandler.');
         }
 
         $this->relationshipLinkage?->setIncluded($linkage);
+
+        $pagination = $this->includeBatcher?->pagination();
+        $this->relationshipPagination?->setIncluded($pagination);
+        foreach ($pagination?->activatedProfiles() ?? [] as $profile) {
+            $this->includeProfiles[$profile->uri()] = $profile;
+        }
     }
 
     /**
@@ -1970,13 +2024,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return;
         }
 
+        $this->relationshipLinkage?->setIncluded(null);
         $linkage = $this->includeBatcher->preloadGrouped($groups, $request, $server);
 
-        if ($linkage !== null && $this->relationshipLinkage === null) {
-            throw new \LogicException('The scoped include linkage cannot be rendered: no RequestScopedRelationshipLinkage is wired into the CrudOperationHandler.');
-        }
-
-        $this->relationshipLinkage?->setIncluded($linkage);
+        $this->installIncluded($linkage);
     }
 
     /**

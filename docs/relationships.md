@@ -91,7 +91,16 @@ loaded", so the rendered relationship carries `links` but omits the `data` membe
 [`AlbumResource`](../examples/music-catalog-symfony/src/Resource/AlbumResource.php)'s
 `HasMany::make('tracks')` keeps the lazy default, and `GET /albums/1` renders
 `tracks` with links and no `data`, while the explicit
-`GET /albums/1/relationships/tracks` materialises the full identifier list.
+`GET /albums/1/relationships/tracks` serves its first page of identifiers.
+
+### Rendered to-manys show their first page
+
+Wherever a to-many's `data` renders, included or declared `withData()`, it is the
+[first page](pagination.md#included-relationships-show-their-first-page) its related
+endpoint serves under the relation's paginator, and its `links` carry `first`, `next`
+and, for a counted page, `last`. `included` holds the same members. A paginated to-many
+the model happens to hold loaded still renders only its first page. Declare
+`withoutPagination()` on a relation whose whole set should render.
 
 ## Queryable, paginated related collections
 
@@ -544,8 +553,8 @@ leaves nothing stored.
   the same `400`.
 - **`page` is out** for the profile: an addressed relationship always renders **page
   1** (the relation's default size), navigated via its own relationship-object
-  pagination links. So a rendered to-many under the profile carries
-  `first`/`prev`/`next` (+`last` only when the relation is `countable()`) in its
+  pagination links, as every rendered to-many does without the profile too. So it
+  carries `first`/`prev`/`next` (+`last` only when the page is counted) in its
   `links` object — in the spec's **plain form** against the relationship-linkage
   endpoint (`/albums/1/relationships/tracks?sort=-duration&page[number]=2`), never the
   `relatedQuery[…]` form (which only addresses a relationship from a *parent* request).
@@ -571,10 +580,9 @@ window).
 
 Under `?include`, the included resources reflect exactly that page-1 set — the `sort`
 selects the page. On a **collection** include (`GET /albums?include=tracks`) each
-parent's relationship is windowed to its own page 1 independently. Each to-many maps
-to a distinct association, so this is unambiguous; if two relations alias one storage
-column with different pagination, the rendered linkage is last-writer-wins on that
-column.
+parent's relationship is windowed to its own page 1 independently. Two relations over
+one storage column each render their own page, since a page reaches the document beside
+the model rather than written onto it.
 
 Includes are **batch-loaded built in** — no extra dependency. The effective include
 tree is loaded one query per relation per level (no `1 + N`) on both providers,

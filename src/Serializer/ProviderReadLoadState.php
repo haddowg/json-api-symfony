@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Serializer;
 
+use haddowg\JsonApi\Pagination\PaginatorInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Serializer\RelationshipLoadStateInterface;
@@ -12,8 +13,9 @@ use haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory;
 
 /**
  * The load state a server renders with. A to-many whose members come from its
- * provider's read, because the provider scopes it, a filter default narrows it or it
- * has a default read order, never counts as loaded here. Core asks only when no
+ * provider's read, because the provider scopes it, a filter default narrows it, it
+ * has a default read order or its linkage is cut to a first page, never counts as
+ * loaded here. Core asks only when no
  * linkage was supplied for the relation, so its data is then left out rather than
  * read off the model, where a collection something else initialised after the
  * {@see \haddowg\JsonApiBundle\DataProvider\RelatedIncludeBatcher} ran still holds
@@ -25,13 +27,15 @@ use haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory;
 final class ProviderReadLoadState implements RelationshipLoadStateInterface
 {
     /**
-     * @param \Closure(string): ?AbstractResource $resourceFor the server's resource for a type
+     * @param \Closure(string): ?AbstractResource                       $resourceFor       the server's resource for a type
+     * @param (\Closure(RelationInterface): ?PaginatorInterface)|null $linkagePaginator the paginator the server cuts a relation's rendered linkage to
      */
     public function __construct(
         private readonly RelationshipLoadStateInterface $inner,
         private readonly RelatedReadRouter $router,
         private readonly \Closure $resourceFor,
         private readonly RelationCriteriaFactory $relationCriteria = new RelationCriteriaFactory(),
+        private readonly ?\Closure $linkagePaginator = null,
     ) {}
 
     public function isRelationshipLoaded(mixed $model, RelationInterface $relation): bool
@@ -54,6 +58,11 @@ final class ProviderReadLoadState implements RelationshipLoadStateInterface
     private function readsThroughProvider(RelationInterface $relation): bool
     {
         if ($this->router->isScoped($relation)) {
+            return true;
+        }
+
+        // Its rendered linkage is a first page, never the whole set the model holds.
+        if ($this->linkagePaginator !== null && ($this->linkagePaginator)($relation) !== null) {
             return true;
         }
 

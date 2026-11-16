@@ -89,9 +89,10 @@ use haddowg\JsonApiBundle\Server\IdEncoderResolver;
  * so the two are provably identical on ties. NULL ordering reuses the keyset path's
  * portable `CASE WHEN c IS NULL` term so a nullable sort matches PHP's `null <=> value`.
  *
- * The native path now serves a FILTERED and an unfiltered windowed include alike. Only an
- * extended related type, a polymorphic/composite shape, or
- * `window_functions: off` route to the per-parent bounded fallback in the provider.
+ * The native path serves a filtered and an unfiltered windowed include alike, with the
+ * related type's query extensions applied to the inner query ({@see RelatedExtensions}).
+ * Only a polymorphic or composite shape, or `window_functions: off`, routes to the
+ * per-parent bounded fallback in the provider.
  */
 final class WindowedRelationBatch
 {
@@ -125,6 +126,7 @@ final class WindowedRelationBatch
         string $relatedClass,
         RelationInterface $relation,
         CollectionCriteria $criteria,
+        ?RelatedExtensions $extensions = null,
     ): RelatedBatch {
         $window = $criteria->window;
         \assert($window instanceof \haddowg\JsonApi\Pagination\OffsetWindow);
@@ -158,7 +160,7 @@ final class WindowedRelationBatch
         // parent-scope predicate, plus the shared CriteriaApplier driving the #1 DQL
         // filter executor. Apply ONLY the filters (a sort-stripped criteria), so the
         // inner query carries no ORDER BY to strip.
-        $builder = $this->innerQuery($shape, $relatedClass, $parentMetadata, $parentIds, $sortDirectives, $criteria);
+        $builder = $this->innerQuery($shape, $relatedClass, $parentMetadata, $parentIds, $sortDirectives, $criteria, $extensions);
         $query = $builder->getQuery();
         $innerSql = $query->getSQL();
         \assert(\is_string($innerSql));
@@ -203,7 +205,7 @@ final class WindowedRelationBatch
         // The join-table shape's rows carry the related id scalar, not the entity — load
         // the distinct related entities by id in ONE further query and re-associate per row.
         $relatedById = $shape->isJoinTable()
-            ? $this->loadRelatedById($relatedClass, $relatedMetadata, $rows)
+            ? $this->loadRelatedById($relatedClass, $relatedMetadata, $rows, $extensions)
             : [];
 
         return $this->partition($rows, $parentType, $parentMetadata, $window, $countable, $shape->isJoinTable(), $relatedById, $relatedMetadata);
@@ -239,6 +241,7 @@ final class WindowedRelationBatch
         RelationInterface $relation,
         CollectionCriteria $criteria,
         CursorWindow $window,
+        ?RelatedExtensions $extensions = null,
     ): RelatedBatch {
         $relatedMetadata = $this->entityManager->getClassMetadata($relatedClass);
         $parentMetadata = $this->entityManager->getClassMetadata($parents[0]::class);
@@ -266,7 +269,7 @@ final class WindowedRelationBatch
         $shape = $this->resolveShape($parentMetadata, $relatedMetadata, $relation, $parentClass);
         $parentIds = $this->parentStorageIds($parents, $parentMetadata);
 
-        $builder = $this->innerQuery($shape, $relatedClass, $parentMetadata, $parentIds, $directives, $criteria);
+        $builder = $this->innerQuery($shape, $relatedClass, $parentMetadata, $parentIds, $directives, $criteria, $extensions);
         $query = $builder->getQuery();
         $innerSql = $query->getSQL();
         \assert(\is_string($innerSql));
@@ -299,7 +302,7 @@ final class WindowedRelationBatch
         $rows = $this->runOrThrow($native);
 
         $relatedById = $shape->isJoinTable()
-            ? $this->loadRelatedById($relatedClass, $relatedMetadata, $rows)
+            ? $this->loadRelatedById($relatedClass, $relatedMetadata, $rows, $extensions)
             : [];
 
         return $this->partitionCursor($rows, $parentType, $parentMetadata, $window, $shape->isJoinTable(), $relatedById, $relatedMetadata, $columns);
@@ -377,6 +380,7 @@ final class WindowedRelationBatch
      *
      * The pivot batch reads through this. Its terms are bare columns, so NULLs fall where
      * the engine puts them, as they do in the single-parent pivot query this replaces.
+     * `$nullsLargest` orders NULL as the largest value instead, as a keyset does.
      * The `$entityAlias` entity comes back once per parent, as {@see rowsPerParent()}
      * returns it.
      *
@@ -384,7 +388,7 @@ final class WindowedRelationBatch
      *
      * @return list<array<int|string, mixed>>
      */
-    public function windowRows(QueryBuilder $inner, string $entityAlias, array $orderBy, int $rowCap, bool $countable): array
+    public function windowRows(QueryBuilder $inner, string $entityAlias, array $orderBy, int $rowCap, bool $countable, bool $nullsLargest = false): array
     {
         $query = $inner->getQuery();
         $innerSql = $query->getSQL();
@@ -396,7 +400,12 @@ final class WindowedRelationBatch
         $parentAlias = $this->scalarAlias($innerRsm, BatchScope::PARENT_DISCRIMINATOR_ALIAS);
         $terms = [];
         foreach ($orderBy as [$resultAlias, $descending]) {
-            $terms[] = \sprintf('w.%s %s', $this->scalarAlias($innerRsm, $resultAlias), $descending ? 'DESC' : 'ASC');
+            $column = 'w.' . $this->scalarAlias($innerRsm, $resultAlias);
+            // A keyset orders NULL as the largest value, as the cursor it mints expects.
+            if ($nullsLargest) {
+                $terms[] = \sprintf('CASE WHEN %s IS NULL THEN 1 ELSE 0 END %s', $column, $descending ? 'DESC' : 'ASC');
+            }
+            $terms[] = \sprintf('%s %s', $column, $descending ? 'DESC' : 'ASC');
         }
         $terms[] = \sprintf('w.%s ASC', $this->scalarAlias($innerRsm, BatchScope::RELATED_DISCRIMINATOR_ALIAS));
 
@@ -613,6 +622,7 @@ final class WindowedRelationBatch
         array $parentIds,
         array $sortDirectives,
         CollectionCriteria $criteria,
+        ?RelatedExtensions $extensions = null,
     ): QueryBuilder {
         if (!$shape->isJoinTable()) {
             $owningField = $shape->owningField;
@@ -624,6 +634,7 @@ final class WindowedRelationBatch
                 ->addSelect(\sprintf('IDENTITY(related.%s) AS %s', $owningField, BatchScope::PARENT_DISCRIMINATOR_ALIAS))
                 ->andWhere(\sprintf('IDENTITY(related.%s) IN (:jsonapi_parent_ids)', $owningField));
             $this->ids->bindList($builder, 'jsonapi_parent_ids', $parentMetadata, $parentIds);
+            $builder = $extensions?->scope($builder, 'related') ?? $builder;
 
             return $this->applier->apply($this->filtersOnly($criteria), $builder, $this->filterHandler, $this->sortHandler, 'related');
         }
@@ -654,6 +665,7 @@ final class WindowedRelationBatch
                 : 'related.' . $sort->column;
             $builder->addSelect(\sprintf('%s AS jsonapi_sort_%d', $column, $i));
         }
+        $builder = $extensions?->scope($builder, 'related', $relatedClass) ?? $builder;
 
         return $this->applier->apply($this->filtersOnly($criteria), $builder, $this->filterHandler, $this->sortHandler, 'related');
     }
@@ -914,7 +926,7 @@ final class WindowedRelationBatch
      *
      * @return array<string, object> `relatedStorageId => entity`
      */
-    private function loadRelatedById(string $relatedClass, ClassMetadata $relatedMetadata, array $rows): array
+    private function loadRelatedById(string $relatedClass, ClassMetadata $relatedMetadata, array $rows, ?RelatedExtensions $extensions = null): array
     {
         $ids = [];
         foreach ($rows as $row) {
@@ -931,7 +943,8 @@ final class WindowedRelationBatch
         $builder = $this->entityManager->getRepository($relatedClass)
             ->createQueryBuilder('related')
             ->where(DoctrineIdentifiers::path($relatedMetadata, 'related') . ' IN (:ids)');
-        $loaded = $this->ids->bindList($builder, 'ids', $relatedMetadata, $ids)
+        $builder = $this->ids->bindList($builder, 'ids', $relatedMetadata, $ids);
+        $loaded = ($extensions?->hydrate($builder) ?? $builder)
             ->getQuery()
             ->getResult();
         \assert(\is_array($loaded));

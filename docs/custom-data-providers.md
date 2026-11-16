@@ -344,7 +344,11 @@ A custom provider participates in the same automatic batching by implementing
 `RelatedIncludeBatcher` orchestrates the include tree level by level and calls that
 seam per included relation over the level's parents. It also calls it for a to-many
 that renders linkage `data` without an include, over the parents whose collection
-the server's relationship load state reports unloaded. With no load state wired every
+the server's relationship load state reports unloaded. A paginated to-many is asked for
+its [first page](pagination.md#included-relationships-show-their-first-page): the
+criteria carry the paginator's window, and the result's `total` or `hasMore` drives the
+page's links. Answer `RelatedBatch::unsupported()` and that page is read one parent at a
+time through `fetchRelatedCollection()`, as the related endpoint reads it. With no load state wired every
 relation counts as loaded, so a store whose models hold their relations in memory is
 read off the model as before. Return
 `RelatedBatch::unsupported()` for a relation you cannot batch, and

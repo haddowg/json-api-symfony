@@ -286,10 +286,17 @@ target is refused with a `500` instead. An
 the model's own value. The relation's storage column drives the batch
 (`column() ?? name()`), so a `storedAs()` rename is honoured.
 
+A paginated to-many renders its
+[first page](pagination.md#included-relationships-show-their-first-page), read for the
+whole level in one bounded query per relation (see
+[windowed includes](#windowed-includes-window_functions)). The rest of this section
+describes a relation that keeps its whole set: one declared `withoutPagination()`, or
+one exposing no endpoint.
+
 Linkage that renders without an include goes through the same batch. A `withData()`
 to-many, or any to-many whose linkage `data` renders on a page of parents, loads in one
-`IN (…)` query per relation per level, at the top level and below an include, instead
-of initialising each parent's collection on its own. A collection the unit of work has
+query per relation per level, at the top level and below an include, instead of
+initialising each parent's collection on its own. A collection the unit of work has
 already initialised is read as it is, and relations stored on the same association
 share one load. A pivot `belongsToMany` loads through its pivot query run once for the
 whole page (see [`belongsToMany` pivot data](#belongstomany-pivot-data)), and a to-one
@@ -353,15 +360,16 @@ never auto-instantiates a missing related model.
 
 ### Windowed includes (`window_functions`)
 
-A *plain* include loads the whole related set (the fast-path above). Under the
-[Relationship Queries profile](relationships.md) a request can instead **window** each
-parent's included to-many relation to page 1 (e.g. the 5 newest comments per post). The
-provider runs that as ONE bounded native `ROW_NUMBER() OVER (PARTITION BY parent
-ORDER BY …)` query per relation — fetching only ~one page **per parent** plus the
-**real** per-parent total (`COUNT(*) OVER`), never the parent's whole set. The result
-is bounded even though the engine scans the partition, and the total
-is the true cardinality — so the relationship-pagination total (and any `?withCount`
-overlap) is correct, not the page size.
+A to-many whose linkage renders, included or declared `withData()`, renders its
+[first page](pagination.md#included-relationships-show-their-first-page). The provider
+reads every parent's first page as ONE bounded native `ROW_NUMBER() OVER (PARTITION BY
+parent ORDER BY …)` query per relation, fetching only ~one page **per parent** plus,
+when the page is counted, the **real** per-parent total (`COUNT(*) OVER`), never the
+parent's whole set. The related type's query extensions narrow the inner query, so a
+soft-deleted or other-tenant row never takes a place on the page. A relation with no
+default order is cut in its association's mapped `#[ORM\OrderBy]`, the order a lazy load
+gives it, and the related endpoint serves the same order. A relation declared
+`withoutPagination()` keeps the whole-set fast path above.
 
 > [!IMPORTANT]
 > `json_api.doctrine.window_functions` defaults to `true` and needs SQL window
@@ -391,8 +399,9 @@ A **filtered** windowed include (`relatedQuery[<rel>][filter][…]`) runs as ONE
 native query too: the inner scoped query carries the relatedQuery filter through the same
 DQL filter executor the related-collection endpoint runs, then is wrapped with the window
 functions — so a filtered windowed include is also one bounded query on `on`, with the
-**filtered** per-parent total. Only a related type with a **query
-extension** (or `window_functions: false`) takes the per-parent bounded fallback. A pivot
+**filtered** per-parent total. Only `window_functions: false` takes the per-parent
+bounded fallback. The join-table shape's id load runs the related type's extensions
+under `IncludeHydration`, as the whole-set pair query's does. A pivot
 `belongsToMany` windows its grouped pivot query the same way, in one statement that
 carries each member's pivot values (see
 [`belongsToMany` pivot data](#belongstomany-pivot-data)). See
@@ -1385,9 +1394,10 @@ and far member, so each parent gets the members, order and `meta.pivot` its own 
 would give, and a track on two playlists keeps each playlist's position. A windowed
 include wraps it in the per-parent `ROW_NUMBER()` window the other to-many includes use
 (see [windowed includes](#windowed-includes-window_functions)), with the per-parent
-total from `COUNT(*) OVER` when the page is counted. A windowed include falls back to one
-pivot query per parent where the other windowed includes do: a related type with a query
-extension, `window_functions: false`, a cursor page, or a sort written by a sort arm.
+total from `COUNT(*) OVER` when the page is counted. A first cursor page, the one an
+include shows, is the same window ordered by the keyset, with each parent's cursor minted
+from its last row. A windowed include falls back to one pivot query per parent for
+`window_functions: false`, a sort written by a sort arm, or a counted cursor page.
 
 A `?sort` mixing a pivot and a related field is applied in the **request's directive
 order** across both aliases, so `?sort=position,title` orders by the pivot key first

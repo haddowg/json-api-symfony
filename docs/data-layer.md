@@ -109,7 +109,9 @@ interface DataProviderInterface
   ([doctrine → eager-loading includes](doctrine.md#eager-loading-includes-no-n1)). A
   relation a provider cannot batch returns **`RelatedBatch::unsupported()`**, and the
   caller renders that relation's includes lazily — which is also the
-  `AbstractDataProvider` default. An empty `new RelatedBatch([])` instead says every
+  `AbstractDataProvider` default. A paginated to-many's include or linkage is its first
+  page, so for one the caller falls back to `fetchRelatedCollection()` per parent
+  instead. An empty `new RelatedBatch([])` instead says every
   parent has no members (see
   [custom data providers](custom-data-providers.md#eager-loading-include-is-automatic-no-extension-no-extra-dependency)).
   It is also called on the provider of a relation's related type, when that provider

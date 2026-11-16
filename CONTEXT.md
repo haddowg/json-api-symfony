@@ -90,7 +90,7 @@ The Doctrine entity that models a `belongsToMany` join so it can carry pivot fie
 _Avoid_: join table (when it has columns)
 
 **Windowed include**:
-An included to-many rendered as one page per parent, under the Relationship Queries profile or a relation's own pagination.
+A to-many whose linkage renders, included or `withData()`, cut to its first page per parent under its effective paginator, and reordered or narrowed by a Relationship Queries `relatedQuery`.
 
 ### Lifecycle and authorization
 

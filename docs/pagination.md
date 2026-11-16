@@ -85,14 +85,55 @@ push-down, so they are not re-documented here.
 > total/`last` for a non-countable relation. See
 > [relationships → counting relations](relationships.md#counting-relations-countable-and-withcount).
 
-## Windowed includes are bounded (`window_functions`)
+## Included relationships show their first page
 
-Under the [Relationship Queries profile](relationships.md), a collection request can
-window **each parent's** included to-many relation to page 1 (e.g. the 5 newest
-comments per post). The Doctrine provider runs this as ONE bounded native
-`ROW_NUMBER() OVER (PARTITION BY parent …)` query per relation — fetching only ~one
-page **per parent** and the **real** per-parent total (not the page size), instead of
-loading every parent's whole related set and slicing in PHP.
+Every to-many whose linkage renders, because it is included or declared `withData()`,
+renders the **first page** of its members under its effective paginator: the relation's
+own `paginate()`, else its related resource's `pagination()`, else the server default.
+The relationship object carries the page's links against the relationship endpoint
+(`first`, `next` and, when the page is counted, `last`), and `included` holds exactly the
+members its linkage lists. `GET /albums/1?include=tracks` renders the album's first two
+tracks, not its whole tracklist:
+
+```json
+"tracks": {
+  "links": {
+    "self": "…/albums/1/relationships/tracks",
+    "related": "…/albums/1/tracks",
+    "first": "…/albums/1/relationships/tracks?page%5Bnumber%5D=1&page%5Bsize%5D=2",
+    "next": "…/albums/1/relationships/tracks?page%5Bnumber%5D=2&page%5Bsize%5D=2"
+  },
+  "data": [ { "type": "tracks", "id": "1" }, { "type": "tracks", "id": "3" } ]
+}
+```
+
+The page is the one the related endpoint serves first: in the relation's default order,
+narrowed by the filter defaults its endpoint folds in. A page is counted when the
+paginator counts (`withCount()`) or the request names the relation in
+[`?withCount`](relationships.md#counting-relations-countable-and-withcount); a
+`countable()` relation then also carries `meta.total`. A page counted because the
+request asked for it carries `withCount=_self_` in its links, so the pages they reach
+are counted too. A polymorphic to-many's links address its related endpoint, since its
+relationship endpoint renders the whole linkage. Each level of a nested include
+(`?include=tracks.playlists`) is cut under its own relation's paginator, and so is the
+include of a singleton, of a related collection and of an atomic result. A
+[`relatedQuery`](relationships.md) sort or filter reorders or narrows the same first page.
+
+A relation keeps its whole set when it is declared `withoutPagination()`, or when it
+exposes neither its relationship nor its related endpoint, which leaves its pages
+nothing to link to:
+
+```php
+HasMany::make('tags', 'tags')->withoutPagination(),
+```
+
+### Windowed includes are bounded (`window_functions`)
+
+The Doctrine provider reads a relation's first pages for the whole page of parents in ONE
+bounded native `ROW_NUMBER() OVER (PARTITION BY parent …)` query per relation, fetching
+only about one page **per parent** and, when counted, the **real** per-parent total. The
+related type's query extensions run inside that query, and a relation with no default
+order is cut in its association's mapped `#[ORM\OrderBy]`, as a lazy load lists it.
 
 > [!IMPORTANT]
 > The default (`json_api.doctrine.window_functions: true`) requires SQL window
@@ -112,12 +153,11 @@ loading every parent's whole related set and slicing in PHP.
 > function) and renders byte-identical documents. There is no auto-detection — the
 > switch is explicit.
 
-A **filtered** windowed include (`relatedQuery[<rel>][filter][…]`) runs as ONE bounded
-native query as well, carrying the relatedQuery filter through the same DQL filter
-executor the related endpoint uses. Only a related type with a query
-extension (soft-delete / tenant / published-only) — or `window_functions: false` — takes
-the per-parent bounded fallback. Either way the fetch is bounded; plain (un-windowed)
-includes use the `WHERE fk IN (…)` fast-path and are unaffected. See
+A [filtered](relationships.md) first page (`relatedQuery[<rel>][filter][…]`) is one bounded
+native query as well, carrying the filter through the same DQL filter executor the
+related endpoint uses. Relations over one association read with the same page, order and
+count share one query. Only a relation declared `withoutPagination()` uses the
+unbounded `WHERE fk IN (…)` read. See
 [the Doctrine eager-loading section](doctrine.md#eager-loading-includes-no-n1). A pivot
 `belongsToMany` include is one bounded query per relation too, carrying each member's
 pivot values (see [doctrine → `belongsToMany` pivot data](doctrine.md#belongstomany-pivot-data)).
@@ -422,9 +462,9 @@ cursor render paths behave exactly as they do for a single strategy — the Open
 document projects the menu as a single `page` deepObject whose schema is a `oneOf`
 discriminated by `kind`.
 
-Included relations are pinned to page-1 (the Relationship Queries profile). A cursor
-strategy works there too: an include carries no cursor token, so a cursor-resolved
-include renders the **first** cursor page per parent (`next` carries the minted
+An included relation renders its first page. A cursor strategy works there too: an
+include carries no cursor token, so a cursor-resolved include renders the **first**
+cursor page per parent (`next` carries the minted
 `page[after]`, no `prev`/`last`), minted through the same per-parent keyset fetch the
 related endpoint runs — and the document advertises the cursor-pagination profile even
 when the primary collection is page-based.

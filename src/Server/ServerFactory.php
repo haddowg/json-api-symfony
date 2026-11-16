@@ -11,6 +11,7 @@ use haddowg\JsonApi\Pagination\PagePaginator;
 use haddowg\JsonApi\Pagination\PaginatorInterface;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
+use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Schema\Error\ErrorMessageResolverInterface;
 use haddowg\JsonApi\Schema\Profile\CountableProfile;
 use haddowg\JsonApi\Schema\Profile\ProfileInterface;
@@ -327,6 +328,7 @@ final class ServerFactory
                     return null;
                 }
             },
+            linkagePaginator: fn(RelationInterface $relation): ?PaginatorInterface => $this->server?->linkagePaginator($relation),
         );
     }
 

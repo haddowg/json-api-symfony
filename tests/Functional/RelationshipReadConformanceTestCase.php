@@ -78,10 +78,13 @@ abstract class RelationshipReadConformanceTestCase extends JsonApiFunctionalTest
 
         $comments = $relationships['comments'] ?? null;
         self::assertIsArray($comments);
+        // Its linkage renders, so it is the first page under the server default, which
+        // holds every comment: `first` and no `next`.
         self::assertSame(
             [
                 'self' => ['href' => self::BASE_URI . '/articles/1/relationships/comments'],
                 'related' => ['href' => self::BASE_URI . '/articles/1/comments'],
+                'first' => ['href' => self::BASE_URI . '/articles/1/relationships/comments?page%5Bnumber%5D=1&page%5Bsize%5D=15'],
             ],
             $comments['links'] ?? null,
         );
