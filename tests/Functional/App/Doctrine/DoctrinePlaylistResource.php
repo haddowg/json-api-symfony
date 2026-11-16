@@ -18,6 +18,7 @@ use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApi\Resource\Field\Union;
 use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Filter\WhereIn;
+use haddowg\JsonApi\Resource\Filter\WhereSet;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 
 /**
@@ -94,6 +95,8 @@ final class DoctrinePlaylistResource extends AbstractResource
                     // queryable via the `pivot.` prefix (the filter reads the column on the
                     // `pivot` alias, not the rendered scalar) even though it never renders.
                     Where::make('noteIs', 'pivot.note'),
+                    // Whether the hidden pivot `note` holds a value, on the pivot row.
+                    WhereSet::make('noted', 'pivot.note'),
                 )
                 ->extractUsing($this->extractTracks())
                 ->paginate(PagePaginator::make())

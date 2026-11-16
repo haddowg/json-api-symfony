@@ -9,6 +9,8 @@ use haddowg\JsonApi\Resource\Field\BelongsTo;
 use haddowg\JsonApi\Resource\Field\DateTime;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\MorphTo;
+use haddowg\JsonApi\Resource\Filter\WhereMorph;
+use haddowg\JsonApi\Resource\Filter\WhereSet;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Favorite;
 
@@ -59,9 +61,30 @@ final class FavoriteResource extends AbstractResource
             // vocabulary, so a client reaches it through the related/relationship
             // endpoints (`/favorites/{id}/favoritable`) rather than `?include`. Its
             // linkage and endpoints still render; only `?include=favoritable` is a 400.
+            //
+            // identifiedByColumns() names the two columns holding the stored pair, so the
+            // linkage renders from them and the `favoritable` filter below can compare
+            // them in a query.
             MorphTo::make('favoritable', ['tracks', 'albums', 'artists'])
+                ->identifiedByColumns(type: 'targetType', id: 'targetId')
                 ->extractUsing(static fn(mixed $favorite): ?object => $favorite instanceof Favorite ? $favorite->favoritable : null)
                 ->cannotBeIncluded(),
+        ];
+    }
+
+    public function filters(): array
+    {
+        return [
+            // filter[favoritable][type]=albums&filter[favoritable][id]=1: favorites of
+            // that album, compared on the stored pair without loading the target.
+            WhereMorph::make('favoritable')
+                ->describedAs('Favorites of this resource, or of any resource of the type when no id is sent.')
+                ->example(['type' => 'albums', 'id' => ['1']]),
+            // An undated favorite is left out unless the client asks for it, with
+            // filter[dated]=false, or for both, with filter[dated]=true,false.
+            WhereSet::make('dated', 'favoritedAt')
+                ->default(true)
+                ->describedAs('Whether the favorite records when it was made. Undated favorites are left out unless asked for.'),
         ];
     }
 }

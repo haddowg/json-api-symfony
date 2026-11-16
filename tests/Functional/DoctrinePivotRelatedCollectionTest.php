@@ -421,6 +421,31 @@ final class DoctrinePivotRelatedCollectionTest extends JsonApiFunctionalTestCase
 
     #[Test]
     #[Group('spec:fetching-filtering')]
+    public function aPivotPrefixedWhereSetComparesThePivotRowsColumn(): void
+    {
+        // Playlist 1's rows all carry a note; playlists 2 and 3 carry none.
+        self::assertSame(['1', '2', '3'], $this->sortedIds($this->fetchDocument('/playlists/1/tracks?filter[noted]=true')));
+        self::assertSame([], $this->ids($this->fetchDocument('/playlists/1/tracks?filter[noted]=false')));
+        self::assertSame([], $this->ids($this->fetchDocument('/playlists/2/tracks?filter[noted]=true')));
+        self::assertSame(['1'], $this->ids($this->fetchDocument('/playlists/2/tracks?filter[noted]=false')));
+        self::assertSame(['1'], $this->ids($this->fetchDocument('/playlists/2/tracks?filter[noted]=true,false')));
+    }
+
+    /**
+     * @param array<string, mixed> $document
+     *
+     * @return list<string>
+     */
+    private function sortedIds(array $document): array
+    {
+        $ids = $this->ids($document);
+        \sort($ids);
+
+        return $ids;
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
     public function aHiddenPivotFieldFiltersButIsNotRendered(): void
     {
         // `note` is a HIDDEN pivot field (core hidden() gates rendering only, never

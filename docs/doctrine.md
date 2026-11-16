@@ -92,6 +92,8 @@ declaration that would only break at request time fails the build instead:
 |---|---|
 | A `sortable()` / `filterable` column does not resolve to a real field/association (commonly a `computed()` field marked sortable, whose sort column defaults to the field name) | *The sort/filter "…" on JSON:API type "…" targets column "…", which is not a field or association on …* |
 | A pivot `belongsToMany` declaring a stored pivot field whose association entity cannot be discovered (one whose pivot fields are all computed needs none) | *Could not auto-detect a Doctrine association entity for the pivot relation "…" … Declare it explicitly with ->through(PivotEntity::class).* |
+| A `WhereMorph` over a `MorphTo` identified only by a closure, or not at all, or over a `MorphToMany` without `identifiedByRows()` | *The filter "…" on JSON:API type "…" is a WhereMorph over the relation "…", which the Doctrine provider cannot query: declare the MorphTo with identifiedByColumns(type: ..., id: ...)…* |
+| A `WhereMorph` whose `MorphTo` names a column that is not a mapped field of the entity | *… whose identifiedByColumns() names "…", which is not a mapped field of …* |
 
 The sort check validates the **resolved** column, so a `computed()` field marked
 `sortable()` that ALSO has a matching [`sorts()`](resources.md) override supplying a real
@@ -693,6 +695,9 @@ so the same spec test passes on both providers.
 | `WhereIn` / `WhereIdIn` | `col IN (:list)` |
 | `WhereNotIn` / `WhereIdNotIn` | `col NOT IN (:list)` |
 | `WhereNull` / `WhereNotNull` | `col IS NULL` / `col IS NOT NULL` (request value ignored) |
+| `WhereSet` | `col IS NOT NULL` for `true`, `col IS NULL` for `false`, no predicate for both |
+| `WhereMorph` over a `MorphTo` | `typeCol IN (:types)` and, when ids are sent, `idCol IN (:ids)` on the columns `identifiedByColumns()` names |
+| `WhereMorph` over a `MorphToMany` | a correlated `EXISTS` over the `through()` entity `identifiedByRows()` names, its owner the outer row, its type and id compared as for a `MorphTo` |
 | `WhereHas` / `WhereDoesntHave` | correlated `EXISTS` / `NOT EXISTS` subquery |
 | `WhereThrough` | dotted-traversal correlated `EXISTS` (the related entity narrowed by the leaf comparison) |
 | `WhereThroughIn` | the same correlated `EXISTS` with `IN (:list)` at the leaf; an empty list is `1 = 0` |
@@ -729,6 +734,12 @@ A few translations carry nuance:
 - **Empty-list semantics.** `WhereIn`/`WhereIdIn` with an empty list match nothing
   (`IN ()` is not valid SQL, so the handler emits `1 = 0`); the negated variants
   then match everything (a no-op).
+- **`WhereMorph` compares declared fields.** A `MorphTo` it filters must declare
+  [`identifiedByColumns()`](relationships.md#a-morphto-stored-as-a-type-and-id-pair) and a
+  `MorphToMany` must declare `identifiedByRows()`, since a closure from `identifiedBy()`
+  can't be compared in a query. The stored type values come from the declared `typeMap`,
+  or are the JSON:API type itself, and each id is decoded through its type's encoder
+  before it is bound. A filter over a relation declaring neither fails `cache:warmup`.
 - **`WhereAll`/`WhereAny` recombine their children with `andX()`/`orX()`.** A
   [server-composed group](https://github.com/haddowg/json-api/blob/main/docs/filters.md#filter-groups-whereall--whereany) is applied by
   running each child through the **same** dispatch a top-level filter uses — fanning

@@ -8,6 +8,8 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Mapping\ClassMetadata;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
+use haddowg\JsonApi\Resource\Field\MorphTo;
+use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\Range;
@@ -15,9 +17,11 @@ use haddowg\JsonApi\Resource\Filter\TraversesPath;
 use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Filter\WhereGroup;
 use haddowg\JsonApi\Resource\Filter\WhereIn;
+use haddowg\JsonApi\Resource\Filter\WhereMorph;
 use haddowg\JsonApi\Resource\Filter\WhereNotIn;
 use haddowg\JsonApi\Resource\Filter\WhereNotNull;
 use haddowg\JsonApi\Resource\Filter\WhereNull;
+use haddowg\JsonApi\Resource\Filter\WhereSet;
 use haddowg\JsonApi\Resource\Filter\WhereThrough;
 use haddowg\JsonApi\Resource\Filter\WhereThroughIn;
 use haddowg\JsonApi\Resource\Sort\SortByField;
@@ -116,6 +120,7 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
                     $this->guardSorts($type, $resource->allSorts(), $metadata);
                     $this->guardFilters($type, $resource->allFilters(), $metadata);
                     $this->guardTargetEncoders($serverName, $type, $resource, $metadata);
+                    $this->guardMorphFilters($serverName, $type, $resource, $metadata);
                 }
 
                 $this->guardPivots($serverName, $type, $metadata);
@@ -214,8 +219,86 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
             $filter instanceof WhereNotIn => $filter->column,
             $filter instanceof WhereNull => $filter->column,
             $filter instanceof WhereNotNull => $filter->column,
+            $filter instanceof WhereSet => $filter->column,
             default => null,
         };
+    }
+
+    /**
+     * Refuses a {@see WhereMorph} the Doctrine provider cannot query: one over a `MorphTo`
+     * that doesn't declare `identifiedByColumns()`, or whose fields aren't fields of the
+     * entity, and one over a `MorphToMany` that doesn't declare `identifiedByRows()`. The
+     * type's own filters are checked, and each relation's against the related type.
+     *
+     * @param ClassMetadata<object> $metadata
+     */
+    private function guardMorphFilters(string $serverName, string $type, AbstractResource $resource, ClassMetadata $metadata): void
+    {
+        $server = $this->servers->get($serverName);
+        $this->guardMorphFiltersOf($type, $resource->allFilters(), $metadata, FilterPaths::of($server, $resource));
+
+        foreach ($resource->allFields() as $relation) {
+            if (!$relation instanceof RelationInterface || \count($relation->relatedTypes()) !== 1) {
+                continue;
+            }
+            $relatedType = $relation->relatedTypes()[0];
+            $related = $this->typeMetadata->resourceFor($server, $relatedType);
+            if ($related === null || !isset($this->entityClassByType[$relatedType])) {
+                continue;
+            }
+
+            $this->guardMorphFiltersOf($relatedType, $relation->allFilters(), $this->entityManager->getClassMetadata($this->entityClassByType[$relatedType]), FilterPaths::of($server, $related, $type));
+        }
+    }
+
+    /**
+     * @param list<FilterInterface> $filters
+     * @param ClassMetadata<object> $metadata the entity the filters run against
+     */
+    private function guardMorphFiltersOf(string $type, array $filters, ClassMetadata $metadata, ?FilterPaths $paths): void
+    {
+        foreach ($filters as $filter) {
+            if ($filter instanceof WhereGroup) {
+                $this->guardMorphFiltersOf($type, $filter->children, $metadata, $paths);
+
+                continue;
+            }
+            if (!$filter instanceof WhereMorph || $paths === null) {
+                continue;
+            }
+
+            $resolved = $paths->resolve($filter);
+            $relation = $resolved instanceof WhereMorph ? $resolved->resolvedTarget()?->relation : null;
+            if ($relation instanceof MorphToMany && $relation->linkRowFields() !== null) {
+                continue;
+            }
+
+            $columns = $relation instanceof MorphTo ? $relation->identifierColumns() : null;
+            if ($columns === null) {
+                throw new \LogicException(\sprintf(
+                    'The filter "%s" on JSON:API type "%s" is a WhereMorph over the relation "%s", which the Doctrine provider cannot query: %s',
+                    $filter->key(),
+                    $type,
+                    $filter->relation,
+                    $relation instanceof MorphToMany
+                        ? 'declare the MorphToMany with through() and identifiedByRows(), naming its link rows\' owner, type and id fields.'
+                        : 'declare the MorphTo with identifiedByColumns(type: ..., id: ...), naming the entity fields that hold its stored type and id. A closure from identifiedBy() can\'t be compared in a query.',
+                ));
+            }
+
+            foreach ([$columns->type, $columns->id] as $field) {
+                if (!$metadata->hasField($field)) {
+                    throw new \LogicException(\sprintf(
+                        'The filter "%s" on JSON:API type "%s" is a WhereMorph over the relation "%s", whose identifiedByColumns() names "%s", which is not a mapped field of %s.',
+                        $filter->key(),
+                        $type,
+                        $filter->relation,
+                        $field,
+                        $metadata->getName(),
+                    ));
+                }
+            }
+        }
     }
 
     /**

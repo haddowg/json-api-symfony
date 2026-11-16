@@ -12,6 +12,8 @@ use Doctrine\ORM\Query\Expr\Andx;
 use Doctrine\ORM\QueryBuilder;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\IdEncoderInterface;
+use haddowg\JsonApi\Resource\Field\MorphTo;
+use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\DateRange;
 use haddowg\JsonApi\Resource\Filter\FilterHandlerInterface;
@@ -27,9 +29,12 @@ use haddowg\JsonApi\Resource\Filter\WhereHas;
 use haddowg\JsonApi\Resource\Filter\WhereIdIn;
 use haddowg\JsonApi\Resource\Filter\WhereIdNotIn;
 use haddowg\JsonApi\Resource\Filter\WhereIn;
+use haddowg\JsonApi\Resource\Filter\WhereMorph;
 use haddowg\JsonApi\Resource\Filter\WhereNotIn;
 use haddowg\JsonApi\Resource\Filter\WhereNotNull;
 use haddowg\JsonApi\Resource\Filter\WhereNull;
+use haddowg\JsonApi\Resource\Filter\WhereSet;
+use haddowg\JsonApi\Resource\Filter\WhereSetMatch;
 use haddowg\JsonApi\Resource\Filter\WhereThrough;
 use haddowg\JsonApi\Resource\Filter\WhereThroughIn;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\Filter\WhereHasMatching;
@@ -200,6 +205,8 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
             $filter instanceof WhereIdNotIn => $this->whereIn($query, $filter->column, $this->storageIds($query, $alias, $this->members($filter, $value)), true, $alias),
             $filter instanceof WhereNull => $query->andWhere(\sprintf('%s IS NULL', $this->path($this->pivotColumn($filter->column, $alias), $alias))),
             $filter instanceof WhereNotNull => $query->andWhere(\sprintf('%s IS NOT NULL', $this->path($this->pivotColumn($filter->column, $alias), $alias))),
+            $filter instanceof WhereSet => $this->whereSet($query, $filter, $value, $alias),
+            $filter instanceof WhereMorph => $this->whereMorph($query, $filter, $value, $alias),
             $filter instanceof WhereThrough => $this->whereThrough($query, $filter, $value, $alias),
             $filter instanceof WhereThroughIn => $this->whereThroughIn($query, $filter, $value, $alias),
             $filter instanceof WhereHas => $this->whereHas($query, $this->pivotColumn($filter->relationship, $alias), false, $alias),
@@ -272,6 +279,81 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
      * A path resolved to a relationship leaf compares the related entity's id with
      * the decoded storage key, bound through the id's Doctrine type.
      */
+    private function whereSet(QueryBuilder $query, WhereSet $filter, mixed $value, string $alias): QueryBuilder
+    {
+        $path = $this->path($this->pivotColumn($filter->column, $alias), $alias);
+
+        return match ($filter->match($value)) {
+            WhereSetMatch::Set => $query->andWhere(\sprintf('%s IS NOT NULL', $path)),
+            WhereSetMatch::NotSet => $query->andWhere(\sprintf('%s IS NULL', $path)),
+            WhereSetMatch::Either => $query,
+            WhereSetMatch::Neither => $query->andWhere('1 = 0'),
+        };
+    }
+
+    /**
+     * A {@see WhereMorph} compares the fields a relation declares for its stored
+     * identifier: a `MorphTo`'s `identifiedByColumns()` on the row itself, and a
+     * `MorphToMany`'s `identifiedByRows()` as one correlated `EXISTS` over its link rows.
+     * Warm-up refuses a relation declaring neither, so the throw here is a backstop.
+     */
+    private function whereMorph(QueryBuilder $query, WhereMorph $filter, mixed $value, string $alias): QueryBuilder
+    {
+        $selection = $filter->selection($value);
+        $relation = $filter->resolvedTarget()?->relation;
+
+        if ($relation instanceof MorphTo && ($columns = $relation->identifierColumns()) !== null) {
+            return $this->morphPredicate($query, $query, $alias, $columns->type, $columns->storedValues($selection->type), $columns->id, $selection->ids);
+        }
+
+        if ($relation instanceof MorphToMany && ($rows = $relation->linkRowFields()) !== null) {
+            if (!\class_exists($rows->through)) {
+                throw new \LogicException(\sprintf('MorphToMany relation "%s" names the link-row class "%s" with through(), which does not exist.', $relation->name(), $rows->through));
+            }
+            $rowAlias = 'jsonapi_morph_' . ++$this->subqueries;
+            $sub = $query->getEntityManager()->createQueryBuilder()
+                ->select('1')
+                ->from($rows->through, $rowAlias)
+                ->where(\sprintf('%s.%s = %s', $rowAlias, $rows->owner, $alias));
+            $this->morphPredicate($query, $sub, $rowAlias, $rows->type, $rows->storedValues($selection->type), $rows->id, $selection->ids);
+
+            return $query->andWhere($query->expr()->exists($sub->getDQL()));
+        }
+
+        throw new \LogicException(\sprintf(
+            'WhereMorph filter "%s" compares the relation "%s", which declares no fields the Doctrine provider can query. Declare the MorphTo with identifiedByColumns(), or the MorphToMany with identifiedByRows().',
+            $filter->key,
+            $filter->relation,
+        ));
+    }
+
+    /**
+     * `$typeField` among `$stored` and, when the request names ids, `$idField` among
+     * them, as predicates on `$predicateOn` whose parameters bind on `$bindOn`.
+     *
+     * @param list<string>     $stored
+     * @param list<mixed>|null $ids
+     */
+    private function morphPredicate(QueryBuilder $bindOn, QueryBuilder $predicateOn, string $alias, string $typeField, array $stored, string $idField, ?array $ids): QueryBuilder
+    {
+        if ($stored === [] || $ids === []) {
+            return $predicateOn->andWhere('1 = 0');
+        }
+
+        $types = $this->placeholder($bindOn);
+        $bindOn->setParameter($types, $stored);
+        $predicateOn->andWhere(\sprintf('%s IN (:%s)', $this->path($typeField, $alias), $types));
+        if ($ids === null) {
+            return $predicateOn;
+        }
+
+        $placeholder = $this->placeholder($bindOn);
+        $metadata = $this->metadataOfAlias($predicateOn, $alias);
+        $bindOn->setParameter($placeholder, ...$this->listParameter($bindOn, $metadata, $idField, $ids));
+
+        return $predicateOn->andWhere(\sprintf('%s IN (:%s)', $this->path($idField, $alias), $placeholder));
+    }
+
     private function whereThrough(QueryBuilder $query, WhereThrough $filter, mixed $value, string $alias): QueryBuilder
     {
         // A pivot row's path walks its entity's associations, which the related type's
