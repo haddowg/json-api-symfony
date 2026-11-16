@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.19.0](https://github.com/haddowg/json-api-symfony/compare/v2.18.0...v2.19.0) (2026-11-16)
+
+
+### Features
+
+* run the WhereMorph and WhereSet filters ([#391](https://github.com/haddowg/json-api-symfony/issues/391)) ([f1caedd](https://github.com/haddowg/json-api-symfony/commit/f1caeddf8f2c11667b5cd666881f97038bbd742f))
+* serve singleton resources at their type's path ([#392](https://github.com/haddowg/json-api-symfony/issues/392)) ([3deae6c](https://github.com/haddowg/json-api-symfony/commit/3deae6cc9f49033a4e29071ff8395804acafa6c8))
+
+
+### Bug Fixes
+
+* accept a new entity a before hook already flushed ([#397](https://github.com/haddowg/json-api-symfony/issues/397)) ([f8be1cd](https://github.com/haddowg/json-api-symfony/commit/f8be1cd048c4d91ab6bce541ee746b854bf06c48))
+* link a pivot relation under its parent's URI segment ([915e43f](https://github.com/haddowg/json-api-symfony/commit/915e43fef01d4ce4ff9f17e785bbcdc2bfd1e1b7))
+* resolve an atomic update's own lid to its id ([#393](https://github.com/haddowg/json-api-symfony/issues/393)) ([588f020](https://github.com/haddowg/json-api-symfony/commit/588f02015931d264ccd815e3a81ee0ed1ed5b447))
+* run the security gates before every lifecycle hook ([915e43f](https://github.com/haddowg/json-api-symfony/commit/915e43fef01d4ce4ff9f17e785bbcdc2bfd1e1b7))
+
 ## [2.18.0](https://github.com/haddowg/json-api-symfony/compare/v2.17.1...v2.18.0) (2026-11-15)
 
 
