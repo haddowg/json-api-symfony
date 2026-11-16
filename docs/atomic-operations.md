@@ -92,7 +92,8 @@ JSON:API route answers `ATOMIC_HREF_UNRESOLVABLE`.
 A create may carry a `lid` — a client-assigned handle for the not-yet-created
 resource. A later operation references it (in a `ref`, in relationship linkage, or in a
 resource object's `relationships`); the executor resolves it to the real, store-assigned
-id after the create runs. References are **backward only**: an operation that references
+id after the create runs. An `update` of that resource names it by the same `lid` in its
+resource object, which must carry an `id` or a `lid` as every update body does. References are **backward only**: an operation that references
 a `lid` no earlier operation registered is a `400` `LOCAL_ID_NOT_FOUND`, and a duplicate
 `lid` is a `400` `LOCAL_ID_CONFLICT` — each located at the failing operation's pointer.
 

@@ -91,7 +91,7 @@ abstract class AtomicOperationsConformanceTestCase extends JsonApiFunctionalTest
     public function aBatchReferencesACreatedResourceByLidInARef(): void
     {
         // Op 0: create an article with lid "draft".
-        // Op 1: update that article BY its lid in the `ref`.
+        // Op 1: update that article BY its lid, in the `ref` and its resource object.
         $response = $this->atomic([
             [
                 'op' => 'add',
@@ -106,6 +106,7 @@ abstract class AtomicOperationsConformanceTestCase extends JsonApiFunctionalTest
                 'ref' => ['type' => 'articles', 'lid' => 'draft'],
                 'data' => [
                     'type' => 'articles',
+                    'lid' => 'draft',
                     'attributes' => ['title' => 'Final title'],
                 ],
             ],

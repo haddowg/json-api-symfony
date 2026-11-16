@@ -84,7 +84,7 @@ final class InMemoryAtomicOperationsTest extends AtomicOperationsConformanceTest
             [
                 'op' => 'update',
                 'ref' => ['type' => 'authors', 'lid' => 'blank'],
-                'data' => ['type' => 'authors', 'attributes' => ['name' => 'Filled in later']],
+                'data' => ['type' => 'authors', 'lid' => 'blank', 'attributes' => ['name' => 'Filled in later']],
             ],
         ]);
 
