@@ -39,7 +39,9 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  * for a bare serializer/hydrator pair (no resource). A before-hook method that
  * throws a {@see \haddowg\JsonApi\Exception\JsonApiExceptionInterface} propagates
  * (aborting the operation); an after-hook method that returns a response replaces
- * the event's response (which the handler reads back). The `ServingEvent` is
+ * the event's response (which the handler reads back). It listens at the default
+ * priority, below {@see \haddowg\JsonApiBundle\Security\ResourceSecuritySubscriber::PRIORITY},
+ * so a caller the security gates refuse never reaches a hook method. The `ServingEvent` is
  * **not** handled here — it is a server-level (not per-type) seam with no resource
  * to route to.
  */

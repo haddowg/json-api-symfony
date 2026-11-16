@@ -107,6 +107,9 @@ how you carve out the public ones (`securityRead: false` for the single read,
 - **Writes are gated at the *before* hook**, so a denial throws before the persister
   runs: no row is created, updated, or deleted, and no relationship is mutated. The
   store is left exactly as it was.
+- **The gates run before your hooks.** A caller the gate refuses reaches no resource
+  hook method and no listener at the default priority, so nothing a hook reads, writes
+  or throws happens for them. See [hooks run after the security gates](lifecycle-hooks.md#hooks-run-after-the-security-gates).
 - **A single read (`GET /{type}/{id}`) is gated** at `AfterFetchOne`, against the
   loaded entity — so `is_granted('VIEW', object)` can hide an individual resource.
 - **The collection read (`GET /{type}`) is gated** by `securityList`, **before** the
@@ -560,7 +563,8 @@ This declarative layer is sugar over the [lifecycle hooks](lifecycle-hooks.md). 
 authorization that an expression can't express — multi-entity rules, data-dependent
 checks, throwing a `409` instead of a `403` — write a `beforeCreate`/`beforeUpdate`/…
 hook (or an event subscriber) and throw a `JsonApiExceptionInterface` yourself. The
-two compose: a resource can carry a `security` expression *and* a hook method.
+two compose: a resource can carry a `security` expression *and* a hook method, and the
+expression is checked first.
 
 ## Enabling the layer
 

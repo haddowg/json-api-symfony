@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\Tests\Security;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApiBundle\Event\BeforeActionEvent;
 use haddowg\JsonApiBundle\Event\BeforeDeleteEvent;
+use haddowg\JsonApiBundle\EventListener\ResourceHookSubscriber;
 use haddowg\JsonApiBundle\Security\ResourceSecurityRegistry;
 use haddowg\JsonApiBundle\Security\ResourceSecuritySubscriber;
 use PHPUnit\Framework\Attributes\Test;
@@ -15,10 +16,25 @@ use PHPUnit\Framework\TestCase;
 /**
  * Without an authorization checker the subscriber refuses an operation gated by an
  * expression instead of letting it through. The build normally
- * stops this case first; this is the runtime fallback.
+ * stops this case first; this is the runtime fallback. Every gate listens above the
+ * priority the resource hook methods run at.
  */
 final class ResourceSecuritySubscriberTest extends TestCase
 {
+    #[Test]
+    public function everyGateListensAboveTheHooks(): void
+    {
+        self::assertGreaterThan(0, ResourceSecuritySubscriber::PRIORITY);
+
+        $hooks = ResourceHookSubscriber::getSubscribedEvents();
+        foreach (ResourceSecuritySubscriber::getSubscribedEvents() as $event => [, $priority]) {
+            self::assertSame(ResourceSecuritySubscriber::PRIORITY, $priority, $event);
+        }
+        foreach ($hooks as $event => $listener) {
+            self::assertIsString($listener, $event);
+        }
+    }
+
     #[Test]
     public function aResourceExpressionWithoutACheckerIsRefused(): void
     {
