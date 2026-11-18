@@ -488,7 +488,7 @@ public function filters(): array
 
         // Structured ranges — min/max in ONE key, either bound optional.
         Range::make('rating', 'averageRating'),   // ?filter[rating][min]=9&filter[rating][max]=10
-        DateRange::make('published', 'published_at'), // ?filter[published][min]=1995-01-01
+        DateRange::make('published', 'published_at'), // ?filter[published][min]=1995-01-01T00:00:00Z
     ];
 }
 ```
@@ -509,8 +509,9 @@ either bound optional so an open-ended range works (`min` alone is a `>=`, `max`
 a `<=`, both absent a no-op). A **blank** bound (`filter[rating][max]=`) is treated as
 absent, so it is not a `400`. On Doctrine a `Range` is **two push-down `>=`/`<=`
 predicates on one query** — no subquery, no fetch, no N+1. `DateRange` coerces each
-bound ISO-8601 → `\DateTimeImmutable`, so the comparison is temporal not lexical, and
-a malformed bound is a clean `400` (see below). All keep the usual `Where` ergonomics
+bound, an RFC 3339 date-time with an offset, to a `\DateTimeImmutable`, so the
+comparison is temporal not lexical, and a malformed bound, a bare date or one with no
+offset is a clean `400` (see below). All keep the usual `Where` ergonomics
 (an optional second arg is the backing column, plus `->describedAs()` / `->example()` /
 relation-scoped use).
 
@@ -639,12 +640,12 @@ Mechanics, all decided in the handler before the `CollectionCriteria` is built:
   related-resource constrained filter (see [relationships](relationships.md))
   validates its value the same way on `GET /{type}/{id}/{rel}`;
 - the [convenience filters](#convenience-filters) **preset** their constraint, so a
-  `Numeric`/`Range` rejects a non-numeric value and a `DateRange` a non-ISO-8601 bound
+  `Numeric`/`Range` rejects a non-numeric value and a `DateRange` a bound that is not an RFC 3339 date-time
   out of the box — for `Range`/`DateRange` each **present, non-blank** bound is
   validated individually (an open `filter[<key>][max]=` is never validated, so it does
   not `400`). A `DateRange` bound is additionally checked for **temporal validity**: a
-  value that is shape-valid ISO-8601 but not a real date (`1997-13-99` — month 13, day
-  99 — which a regex cannot reject) is a clean `400`, so a calendar-invalid bound never
+  value that is shape-valid RFC 3339 but not a real date (`1997-13-99T00:00:00Z`, month
+  13 and day 99, which a regex cannot reject) is a clean `400`, so a calendar-invalid bound never
   reaches the data layer where it would compare divergently across providers.
 
 See core's filter docs for the full decision.

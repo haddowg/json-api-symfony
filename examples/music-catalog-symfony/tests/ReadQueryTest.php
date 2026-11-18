@@ -142,12 +142,12 @@ final class ReadQueryTest extends MusicCatalogKernelTestCase
     #[Group('spec:fetching-filtering')]
     public function aDateRangeFilterAppliesAnInclusiveTemporalMinAndMax(): void
     {
-        // `DateRange::make('releasedAt')`: ISO-8601 bounds coerced to \DateTimeImmutable.
+        // `DateRange::make('releasedAt')`: RFC 3339 date-time bounds coerced to \DateTimeImmutable.
         // OK Computer 1997-05-21, Dummy 1994-08-22.
-        self::assertSame(['1'], $this->albumIds($this->fetch('/albums?filter[releasedAt][min]=1995-01-01')));
-        self::assertSame(['2'], $this->albumIds($this->fetch('/albums?filter[releasedAt][min]=1994-01-01&filter[releasedAt][max]=1995-01-01')));
+        self::assertSame(['1'], $this->albumIds($this->fetch('/albums?filter[releasedAt][min]=1995-01-01T00:00:00Z')));
+        self::assertSame(['2'], $this->albumIds($this->fetch('/albums?filter[releasedAt][min]=1994-01-01T00:00:00Z&filter[releasedAt][max]=1995-01-01T00:00:00Z')));
         // An open upper bound keeps both released albums (default releasedAt-desc order).
-        self::assertSame(['1', '2'], $this->albumIds($this->fetch('/albums?filter[releasedAt][min]=1990-01-01')));
+        self::assertSame(['1', '2'], $this->albumIds($this->fetch('/albums?filter[releasedAt][min]=1990-01-01T00:00:00Z')));
     }
 
     #[Test]
@@ -155,7 +155,7 @@ final class ReadQueryTest extends MusicCatalogKernelTestCase
     #[Group('spec:errors')]
     public function aDateRangeFilterRejectsAMalformedIso8601Bound(): void
     {
-        // A malformed ISO-8601 bound is a clean 400 (the preset ISO-8601 constraint).
+        // A malformed bound is a clean 400 (the preset RFC 3339 date-time pattern).
         $response = $this->handle('/albums?filter[releasedAt][min]=not-a-date');
 
         self::assertSame(400, $response->getStatusCode());
@@ -170,12 +170,12 @@ final class ReadQueryTest extends MusicCatalogKernelTestCase
     #[Group('spec:errors')]
     public function aDateRangeFilterRejectsACalendarInvalidBound(): void
     {
-        // `1997-13-99` (month 13, day 99) passes the deliberately-lenient ISO-8601
+        // `1997-13-99T00:00:00Z` (month 13, day 99) passes the RFC 3339 date-time
         // SHAPE pattern but is not a real date, so it does not coerce to a
         // \DateTimeImmutable. The filter-value validator's temporal-validity check
         // rejects it as a clean 400 BEFORE the data layer — so the bound never reaches
         // the query as a raw string (which would compare divergently across providers).
-        $response = $this->handle('/albums?filter[releasedAt][min]=1997-13-99');
+        $response = $this->handle('/albums?filter[releasedAt][min]=1997-13-99T00:00:00Z');
 
         self::assertSame(400, $response->getStatusCode());
         $error = $this->firstError($response);

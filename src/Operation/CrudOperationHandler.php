@@ -38,7 +38,6 @@ use haddowg\JsonApi\Pagination\PaginatorInterface;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Request\RelatedQuery;
 use haddowg\JsonApi\Resource\AbstractResource;
-use haddowg\JsonApi\Resource\DateTimeParser;
 use haddowg\JsonApi\Resource\Field\AbstractFieldValue;
 use haddowg\JsonApi\Resource\Field\Accessor;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
@@ -3088,8 +3087,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * The body with each `DateTime` attribute it sends put in the form the persister
      * stores, when the persister asks for one. Doctrine drops the offset of a naive
      * `datetime` column, so a value sent in `Z` arrives as the same instant in the zone
-     * the column is stored in. Only attributes the request wrote are touched; a value
-     * that does not parse is left for core's cast to reject.
+     * the column is stored in. Only attributes the request wrote are touched, and only
+     * on a field documented as an RFC 3339 date-time, the shape the converted value is
+     * written back in. A value not in that shape is left for core's cast to reject.
      */
     private function datesForStorage(?AbstractResource $resource, DataPersisterInterface $persister, object $entity, JsonApiRequestInterface $body): JsonApiRequestInterface
     {
@@ -3107,11 +3107,11 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         $changed = false;
         foreach ($resource->allFields() as $field) {
-            if (!$field instanceof DateTime || $field instanceof Date || $field instanceof Time) {
+            if (!$field instanceof DateTime || $field instanceof Date || $field instanceof Time || $field->schemaFormat() !== 'date-time') {
                 continue;
             }
 
-            $value = DateTimeParser::tryParse($attributes[$field->name()] ?? null);
+            $value = $field->tryParseWire($attributes[$field->name()] ?? null);
             if ($value === null) {
                 continue;
             }
