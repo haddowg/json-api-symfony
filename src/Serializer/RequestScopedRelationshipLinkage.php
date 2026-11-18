@@ -45,7 +45,8 @@ use Symfony\Contracts\Service\ResetInterface;
  * `included`. To-many linkage is never filtered here: a list holds what its query
  * returned. When nothing is refused it answers as it would without the check. A
  * `MorphTo` declared with `identifiedBy()` is checked only when its target was loaded:
- * the batcher loads every guarded type's targets, and the rest render their pairs.
+ * the batcher loads every guarded type's targets, and the rest render their pairs. A
+ * loaded target is checked against its pair's type's gate.
  */
 final class RequestScopedRelationshipLinkage implements ToOneRelationshipLinkageInterface, ResetInterface
 {
@@ -84,8 +85,9 @@ final class RequestScopedRelationshipLinkage implements ToOneRelationshipLinkage
 
     /**
      * A related endpoint's to-one target, or `null` when the caller may not read it.
+     * `$type` is the type the target renders as when the relation stores it.
      */
-    public function readableTarget(mixed $target, RelationInterface $relation): mixed
+    public function readableTarget(mixed $target, RelationInterface $relation, ?string $type = null): mixed
     {
         // The endpoint has already enforced a permission the relation declares, which
         // replaces the target type's per-row gate.
@@ -93,7 +95,7 @@ final class RequestScopedRelationshipLinkage implements ToOneRelationshipLinkage
             return $target;
         }
 
-        return \is_object($target) && $this->rows !== null && !$this->rows->allows($target, $relation) ? null : $target;
+        return \is_object($target) && $this->rows !== null && !$this->rows->allows($target, $relation, null, $type) ? null : $target;
     }
 
     /**
@@ -163,14 +165,20 @@ final class RequestScopedRelationshipLinkage implements ToOneRelationshipLinkage
         }
 
         // An identified MorphTo's pair renders without its target. The batcher loads the
-        // targets of every guarded type, so one it didn't load needs no check.
-        if ($linkage === null && $relation instanceof MorphTo && $relation->storesIdentifiers()) {
-            return null;
+        // targets of every guarded type, so one it didn't load needs no check. One it
+        // loaded is gated as its pair's type.
+        $storedType = null;
+        if ($relation instanceof MorphTo && $relation->storesIdentifiers()) {
+            if ($linkage === null) {
+                return null;
+            }
+
+            $storedType = $relation->storedIdentifier($model, $request)[0] ?? null;
         }
 
         $target = $linkage !== null ? $linkage->target : $relation->readValue($model, $request);
 
-        return \is_object($target) && !$this->rows->allows($target, $relation, $serverName) ? ToOneRelationshipLinkage::none() : $linkage;
+        return \is_object($target) && !$this->rows->allows($target, $relation, $serverName, $storedType) ? ToOneRelationshipLinkage::none() : $linkage;
     }
 
     /**

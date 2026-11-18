@@ -121,8 +121,9 @@ final class RelatedIncludeBatcher
     private array $toOne = [];
 
     /**
-     * The type each member an identified `MorphToMany` loaded renders as, keyed by object
-     * id, since one class may serve several of its types.
+     * The type each target of an identified `MorphTo` or `MorphToMany` renders as, keyed
+     * by object id: its stored pair's type, since one class may serve several types and a
+     * candidate's getType() need not tell them apart.
      *
      * @var array<int, string>
      */
@@ -812,7 +813,11 @@ final class RelatedIncludeBatcher
 
             if (!$identified['loaded']) {
                 if ($types === null) {
-                    $unloaded[] = $entities[$index];
+                    $target = $relation->readValue($entities[$index], $request);
+                    if (\is_object($target)) {
+                        $unloaded[] = $target;
+                        $this->typeOf[\spl_object_id($target)] = $identified['type'];
+                    }
                 }
 
                 continue;
@@ -824,10 +829,11 @@ final class RelatedIncludeBatcher
                 : ToOneRelationshipLinkage::none();
             if ($target !== null) {
                 $targets[] = $target;
+                $this->typeOf[\spl_object_id($target)] = $identified['type'];
             }
         }
 
-        $targets = $this->unique([...$targets, ...($unloaded !== [] ? $this->readTargets($unloaded, $relation, $request) : [])]);
+        $targets = $this->unique([...$targets, ...$unloaded]);
         $this->remember($targets);
 
         return $targets;
