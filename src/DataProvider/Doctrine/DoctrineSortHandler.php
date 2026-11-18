@@ -142,6 +142,25 @@ final class DoctrineSortHandler implements SortHandlerInterface, AliasAwareSortH
     }
 
     /**
+     * Whether a cursor page can order by `$sort`: a field sort always, a custom sort
+     * when the first arm supporting it implements {@see DoctrineKeysetSortArmInterface}.
+     */
+    public function keysCursorSort(SortInterface $sort): bool
+    {
+        if ($sort instanceof SortByField) {
+            return true;
+        }
+
+        foreach ($this->arms as $arm) {
+            if ($arm->supports($sort)) {
+                return $arm instanceof DoctrineKeysetSortArmInterface;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * The DQL path for a declared sort column on `$alias` (the query root by
      * default, the join alias on the pivot path), validated as an identifier path
      * (dots allowed for embedded fields).

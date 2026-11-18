@@ -113,6 +113,69 @@ final class DoctrineKeysetCustomSortTest extends TestCase
     }
 
     #[Test]
+    public function anExpressionOtherThanAPathIsOrderedBySelectedResultVariables(): void
+    {
+        $builder = $this->builder();
+        $this->keyset(new KeysetExpression('COALESCE(v.bonus, v.base)'))->orderBy($builder, [
+            new KeysetColumn('value.cap', true, $this->sort()),
+            new KeysetColumn('id', true),
+        ]);
+
+        self::assertSame(
+            ['jsonapi_keyset_0_null DESC', 'jsonapi_keyset_0 DESC', 'CASE WHEN resource.id IS NULL THEN 1 ELSE 0 END DESC', 'resource.id DESC'],
+            $this->orderBy($builder),
+        );
+        self::assertSame(
+            ['COALESCE(v.bonus, v.base) AS HIDDEN jsonapi_keyset_0', 'CASE WHEN COALESCE(v.bonus, v.base) = COALESCE(v.bonus, v.base) THEN 0 ELSE 1 END AS HIDDEN jsonapi_keyset_0_null'],
+            $this->selects($builder),
+        );
+    }
+
+    #[Test]
+    public function anExpressionOtherThanAPathTestsForNullByComparingWithItself(): void
+    {
+        $ascending = [new KeysetColumn('value.cap', false, $this->sort()), new KeysetColumn('id', false)];
+        $builder = $this->builder();
+        $this->keyset(new KeysetExpression('CASE WHEN v.base > 9 THEN 2 ELSE 1 END'))
+            ->applyAfter($builder, $this->boundary(['value.cap' => 1, 'id' => 3], $ascending), $ascending);
+
+        self::assertSame(
+            '((CASE WHEN v.base > 9 THEN 2 ELSE 1 END > :jsonapi_cursor_0 OR CASE WHEN CASE WHEN v.base > 9 THEN 2 ELSE 1 END = CASE WHEN v.base > 9 THEN 2 ELSE 1 END THEN 0 ELSE 1 END = 1)) '
+            . 'OR (CASE WHEN v.base > 9 THEN 2 ELSE 1 END = :jsonapi_cursor_2 AND ((resource.id > :jsonapi_cursor_1 OR resource.id IS NULL)))',
+            $this->where($builder),
+        );
+
+        $descending = [new KeysetColumn('value.cap', true, $this->sort()), new KeysetColumn('id', true)];
+        $builder = $this->builder();
+        $this->keyset(new KeysetExpression('v.base + 1'))
+            ->applyAfter($builder, $this->boundary(['value.cap' => null, 'id' => 6], $descending), $descending);
+
+        self::assertSame(
+            'v.base + 1 = v.base + 1 OR (CASE WHEN v.base + 1 = v.base + 1 THEN 0 ELSE 1 END = 1 AND resource.id < :jsonapi_cursor_0)',
+            $this->where($builder),
+        );
+    }
+
+    #[Test]
+    public function aRepeatableExpressionIsBuiltWithAFreshSuffixForEveryUse(): void
+    {
+        $columns = [new KeysetColumn('value.cap', true, $this->sort()), new KeysetColumn('id', true)];
+        $builder = $this->builder();
+        $keyset = $this->keyset(KeysetExpression::repeatable(static fn(string $suffix): string => \sprintf('(SELECT MAX(m%1$s.score) FROM Member m%1$s)', $suffix)));
+        $keyset->applyAfter($builder, $this->boundary(['value.cap' => 9, 'id' => 4], $columns), $columns);
+        $keyset->orderBy($builder, $columns);
+
+        self::assertSame(
+            '(SELECT MAX(m_0.score) FROM Member m_0) < :jsonapi_cursor_0 OR ((SELECT MAX(m_1.score) FROM Member m_1) = :jsonapi_cursor_2 AND resource.id < :jsonapi_cursor_1)',
+            $this->where($builder),
+        );
+        self::assertSame(
+            ['(SELECT MAX(m_2.score) FROM Member m_2) AS HIDDEN jsonapi_keyset_0', 'CASE WHEN (SELECT MAX(m_3.score) FROM Member m_3) = (SELECT MAX(m_4.score) FROM Member m_4) THEN 0 ELSE 1 END AS HIDDEN jsonapi_keyset_0_null'],
+            $this->selects($builder),
+        );
+    }
+
+    #[Test]
     public function aNaiveDateTimeTypeBindsTheBoundaryInTheDefaultTimezone(): void
     {
         $bound = $this->boundValue(Types::DATETIME_IMMUTABLE, '2026-10-01T16:00:00.000000+00:00');
@@ -239,6 +302,22 @@ final class DoctrineKeysetCustomSortTest extends TestCase
         self::assertIsArray($parts);
 
         return \array_values(\array_map(static fn(mixed $part): string => $part instanceof \Stringable ? (string) $part : '', $parts));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function selects(QueryBuilder $builder): array
+    {
+        $selects = [];
+        foreach ((array) $builder->getDQLPart('select') as $select) {
+            self::assertInstanceOf(Expr\Select::class, $select);
+            foreach ($select->getParts() as $part) {
+                $selects[] = (string) $part;
+            }
+        }
+
+        return $selects;
     }
 
     private function where(QueryBuilder $builder): string

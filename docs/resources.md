@@ -774,11 +774,12 @@ resource declaration:
 | Unresolvable traversal path | a `WhereThrough` or `WhereThroughIn` path, on the resource or a relation, ends on a polymorphic relation, or a relationship-ending `WhereThrough` declares a non-equality operator or `deserializeUsing()` | End the path on a monomorphic relation or a field, or compare by `=` / `!=` only. |
 | Clashing document meta | a resource's `documentMeta()` declares a member twice, a [`FetchCollection` member](openapi.md#typed-document-meta) named `page` or `total`, which the bundle writes into every collection, or an action's members both on its response and in its handler's `documentMeta()` | Rename the member, or declare it in one place. |
 | Unresolvable morph filter | a `WhereMorph` names a relation the type doesn't declare, or one that isn't a `MorphTo` or `MorphToMany` | Name the polymorphic relation by its storage name, or use `WhereThrough` for a relation over one type. |
+| Unkeyable cursor sort | a collection that may page by cursor, the type's own or a to-many's related collection, declares a custom sort that does not implement core's `KeysetSortInterface`, or on Doctrine whose arm does not implement `DoctrineKeysetSortArmInterface` | Implement both halves ([custom sorts under a cursor](doctrine.md#custom-sorts-under-a-cursor)), or page the collection by number or offset. |
 
 The write-without-hydrator guard lives in `ResourceLocatorPass::validateWriteCapability()`;
-the override and server guards alongside it in the same pass. The last five run at
-**cache warm-up** in the non-optional `ServableResourceWarmer` (the provider/persister/Id,
-polymorphic-discrimination, traversal-path and document-meta checks). Doctrine adds its own warm-up guards — sortable /
+the override and server guards alongside it in the same pass. The provider/persister/Id,
+polymorphic-discrimination, traversal-path, document-meta and cursor-sort checks run at
+**cache warm-up** in the non-optional `ServableResourceWarmer`. Doctrine adds its own warm-up guards — sortable /
 filterable columns must resolve to a real field/association, and a pivot `belongsToMany`
 must resolve its association entity (see [doctrine § Build-time faults](doctrine.md#build-time-faults)).
 Because they all run at build time, CI catches them before deployment.

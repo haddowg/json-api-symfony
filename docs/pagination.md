@@ -339,8 +339,9 @@ custom sort, or any custom sort, orders a cursor page only when the sort impleme
 core's `KeysetSortInterface` and, on Doctrine, its arm implements
 `DoctrineKeysetSortArmInterface`; see
 [custom sorts under a cursor](doctrine.md#custom-sorts-under-a-cursor). The level then
-follows the same NULL=largest order as a nullable column. Without both it is a `500`
-`UnsupportedSort`, as before.
+follows the same NULL=largest order as a nullable column. A declared sort without both
+fails `cache:warmup`. A family resolves its sorts per request, so one that resolves to
+such a sort is a `500` `UnsupportedSort` when a request uses it.
 
 ### The cursor token is opaque
 

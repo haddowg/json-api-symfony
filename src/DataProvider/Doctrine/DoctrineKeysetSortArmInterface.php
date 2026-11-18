@@ -16,8 +16,9 @@ use haddowg\JsonApi\Resource\Sort\SortInterface;
  * the keyset `WHERE` from it exactly as it does for a column.
  *
  * Registered like any sort arm (autoconfigured through the parent interface). On a
- * cursor page {@see keysetExpression()} runs instead of {@see apply()}; a custom sort
- * level whose arm does not implement this interface is a `500`
+ * cursor page {@see keysetExpression()} runs instead of {@see apply()}. A cursor-paged
+ * collection declaring a custom sort whose arm does not implement this interface fails
+ * `cache:warmup`; one a sort family resolves per request is a `500`
  * {@see \haddowg\JsonApi\Resource\Sort\UnsupportedSort}.
  *
  * ```php

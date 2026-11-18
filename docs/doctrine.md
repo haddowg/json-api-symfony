@@ -1079,13 +1079,15 @@ final class OrderByRelationCountArm implements DoctrineSortArmInterface
 }
 ```
 
-> **A custom sort arm orders the primary collection and a non-windowed related
-> collection, but NOT a natively-windowed/paginated related to-many.** That path
-> (`GET /{type}/{id}/{rel}` with the default window-function batch) can only window a
-> `SortByField` — a custom sort there raises a `LogicException`. If a relation must be
-> ordered by a custom sort, set `json_api.doctrine.window_functions: false` (the
-> per-parent bounded fallback) or supply a custom provider. A custom **filter** arm
-> has no such limit — it composes on every path.
+> **A custom sort arm orders every read, including a windowed to-many.** The first page
+> of a to-many that renders with its parent, through `?include` or `withData()`, is cut
+> for a whole page of parents in one window-function query. A cursor-paged relation
+> ordered by a custom sort runs that query too: the sort's keyset expression is selected
+> for the window to order by, with nulls largest, and each parent's cursor is minted as
+> the relation's own endpoint mints it, `valueFromQuery` included. A numbered or offset
+> window has no expression to order by, so a custom sort there is read with one bounded
+> query per parent, as `window_functions: false` reads every relation, and so is a keyset
+> expression the window query can't take. A custom **filter** arm composes on every path.
 
 For a **portable** custom filter/sort that must also run on the in-memory provider
 (the conformance witness), ship the in-memory twin too — an
@@ -1114,12 +1116,11 @@ public function keysetExpression(SortInterface $sort, QueryBuilder $query, strin
 It returns a [`KeysetExpression`](../src/DataProvider/Doctrine/KeysetExpression.php):
 the DQL the level orders and compares by, and the DBAL type the boundary value binds
 with. The arm may add joins and parameters to `$query` first. The provider asks once
-per query and builds the level exactly as it builds a column's: a leading
-`CASE WHEN <expr> IS NULL THEN 1 ELSE 0 END` term so a null sorts as the largest
-value, the expression in the level's direction, and the same null-aware keyset
-`WHERE`. On a cursor page `keysetExpression()` replaces `apply()`; on every other
-page `apply()` runs as before. The arm is registered like any sort arm, since the
-interface extends `DoctrineSortArmInterface`.
+per query and builds the level the way it builds a column's: a null flag ordered
+first so a null sorts as the largest value, the expression in the level's direction,
+and the same null-aware keyset `WHERE`. On a cursor page `keysetExpression()` replaces
+`apply()`; on every other page `apply()` runs as before. The arm is registered like
+any sort arm, since the interface extends `DoctrineSortArmInterface`.
 
 Here campaigns are sorted by a placeholder value kept as text in an EAV table, so
 `?sort=value.cap` has to cast it to compare numerically:
@@ -1192,27 +1193,62 @@ its place in the page.
 
 The rules for the expression and its type:
 
-- The expression appears inside `CASE WHEN … IS NULL`, in `ORDER BY` and on the left
-  of `=`, `<` and `>`, so it must be something DQL accepts in all of them: a field path
-  (`placeholder_cap.amount`), a DQL function call, or `COALESCE`/`NULLIF`. Arithmetic
-  is not accepted in `IS NULL`.
-- It must order the same rows the same way `keysetValue()` reports them, because the
-  token carries `keysetValue()` and the next page compares the expression against it.
-  The value arrives in its token form: a `DateTimeInterface` as an RFC 3339 string with
-  microseconds, a `Stringable` as its string, a backed enum as its value.
-- `$type` null binds that token value as is. A date or date-time type parses it back
-  to the PHP date class the type converts. A naive `datetime` or `datetime_immutable`
-  type also moves it into PHP's default timezone, the zone Doctrine stores and reads
-  those columns in, since `keysetValue()` may report a date-time in any offset. A
-  `datetimetz` or `date` type keeps the value's own offset or day. Any other type binds
-  the value with that type.
+- The expression is any scalar DQL: a field path (`placeholder_cap.amount`), a DQL
+  function call, `CASE`, `COALESCE`, `NULLIF`, arithmetic, or a subquery in parentheses.
+  A field path is ordered and tested for null in place, like a column. Anything else is
+  selected `AS HIDDEN` with its null flag and ordered by those result variables, and the
+  keyset tests it for null by comparing it with itself, since DQL takes `IS NULL` after
+  little more than a path or a function. The expression also sits in `WHERE`, so it
+  can't be an aggregate over the query's own rows; a subquery that aggregates is fine.
+- The keyset writes the expression in several places, and DQL refuses an identification
+  variable declared twice in one query. An expression that declares its own, such as a
+  subquery's `FROM Member m`, is built with `KeysetExpression::repeatable()`, whose
+  closure takes a suffix to add to each variable it declares. A join the arm adds to
+  `$query` is declared once, so an expression over it needs no suffix.
+- By default the cursor token carries `keysetValue()`, and the next page compares the
+  expression against it, so the two must agree. Pass `valueFromQuery: true` and the
+  provider selects the expression and writes the boundary row's selected value into
+  the token instead, for a value PHP can't compute from the entity, such as a count
+  from a subquery. `keysetValue()` still orders the sort on the in-memory provider.
+- The value arrives back in its token form: a `DateTimeInterface` as an RFC 3339 string
+  with microseconds, a `Stringable` as its string, a backed enum as its value. `$type`
+  null binds that token value as is. A date or date-time type parses it back to the PHP
+  date class the type converts. A naive `datetime` or `datetime_immutable` type also
+  moves it into PHP's default timezone, the zone Doctrine stores and reads those columns
+  in, since `keysetValue()` may report a date-time in any offset. A `datetimetz` or
+  `date` type keeps the value's own offset or day. Any other type binds the value with
+  that type. A value read from the query is converted with `$type` before it goes into
+  the token.
 
-A custom sort level whose arm does not implement `DoctrineKeysetSortArmInterface`, or
-whose sort does not implement `KeysetSortInterface`, is a `500` `UnsupportedSort` on a
-cursor page. The windowed include limit above applies here too: a cursor-paginated
-include under the default window-function batch can only order by fields, so a custom
-sort there needs `window_functions: false`. The in-memory provider needs no arm for the
-cursor itself; it orders a cursor page by `keysetValue()` directly.
+Here teams sort by their best member's score, which only the member table knows:
+
+```php
+public function keysetExpression(SortInterface $sort, QueryBuilder $query, string $alias): KeysetExpression
+{
+    return KeysetExpression::repeatable(
+        static fn(string $suffix): string => \sprintf(
+            '(SELECT MAX(member%1$s.score) FROM %2$s member%1$s WHERE member%1$s.team = %3$s)',
+            $suffix,
+            Member::class,
+            $alias,
+        ),
+        Types::INTEGER,
+        valueFromQuery: true,
+    );
+}
+```
+
+A cursor-paged collection checks its declared sorts at `cache:warmup`. A custom sort
+that does not implement `KeysetSortInterface`, or whose Doctrine arm does not implement
+`DoctrineKeysetSortArmInterface`, fails the build with a message naming the type, the
+sort and the fix. That covers the type's own collection and every to-many whose related
+collection pages by cursor. A [sort family](pagination.md#sort-families-and-custom-sorts)
+resolves its sorts per request, so a family that resolves to such a sort is still a
+`500` `UnsupportedSort` when a request uses it. A cursor-paginated include or `withData()`
+linkage ordered by a custom sort cuts its first page in the shared window query, as
+described above, and its next link pages on through the relation's endpoint. The
+in-memory provider needs no arm for the cursor itself; it orders a cursor page by
+`keysetValue()` directly.
 
 ### Self-applying filters: no arm to register
 
