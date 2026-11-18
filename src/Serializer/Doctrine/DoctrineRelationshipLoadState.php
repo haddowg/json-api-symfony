@@ -103,7 +103,8 @@ final class DoctrineRelationshipLoadState implements RelationshipLoadStateInterf
     {
         try {
             return $this->entityManager->getClassMetadata($model::class);
-        } catch (PersistenceMappingException) {
+        } catch (\Doctrine\ORM\Mapping\MappingException|PersistenceMappingException) {
+            // ORM 2 throws its own MappingException for an unmapped class, ORM 3 the persistence one.
             return null;
         }
     }
