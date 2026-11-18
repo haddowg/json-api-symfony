@@ -9,6 +9,8 @@ use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\DoctrineFkItemResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\DoctrineFkProfileResource;
+use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\DoctrineFkSecretResource;
+use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\FkSecretExtension;
 use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\FkUserProvider;
 use haddowg\JsonApiBundle\Tests\Functional\App\PinnedConfigDefaults;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
@@ -21,7 +23,8 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
 /**
  * Boots `fk-users`, served by {@see FkUserProvider}, declared by {@see $subjectResource},
- * beside the Doctrine `fk-items` and `fk-profiles`, so warm-up checks how the subject's
+ * beside the Doctrine `fk-items`, `fk-profiles` and `fk-secrets`, the last scoped by
+ * {@see FkSecretExtension}, so warm-up checks how the subject's
  * relations reach their rows.
  */
 final class ForeignKeyGuardKernel extends Kernel
@@ -109,6 +112,8 @@ final class ForeignKeyGuardKernel extends Kernel
         $services->set(static::$subjectResource);
         $services->set(DoctrineFkItemResource::class);
         $services->set(DoctrineFkProfileResource::class);
+        $services->set(DoctrineFkSecretResource::class);
+        $services->set(FkSecretExtension::class);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

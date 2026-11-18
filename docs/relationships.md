@@ -127,17 +127,43 @@ type, which on Doctrine is a single-valued association to the parent's entity. W
 checks it, and checks that the related type's provider reads through foreign keys
 (`ReadsByForeignKeyInterface`, which the Doctrine and in-memory providers implement).
 
-A relation of a type no entity maps can't reach Doctrine rows any other way, so warm-up
-refuses a `HasMany`, `BelongsToMany` or `HasOne` from such a type into a Doctrine type
-unless it declares a foreign key or `extractUsing()`, or the parent type's provider
-overrides `fetchRelatedCollectionBatch()` to batch its own related reads. The message
-names the foreign key argument and `extractUsing()`.
+A relation with no foreign key on a type no entity maps can't be scoped by Doctrine, so
+it reads what the parent model holds. A to-many's pages, counts and related endpoint are
+cut in memory from the model's value, unless the parent type's provider batches the
+relation itself, and a `HasOne` reads its target off the model. When the related type is
+scoped by a query extension that read can't be scoped to the parent, so warm-up refuses
+a to-many into it unless it declares a foreign key or `extractUsing()`, and the message
+names both. A `belongsToMany` with stored pivot fields reads its association entity
+through the parent's mapping, so warm-up refuses it on such a type.
 
-Relationship writes still go through the parent type's persister, which sets the
-members the way it always has: a Doctrine parent with a mapped inverse association
-updates the related rows' owning side, and a custom persister decides for its own types.
-A foreign key doesn't change how a relationship is written, so declare one the parent's
-persister can't write, such as a Doctrine relation with no inverse mapping, `readOnly()`.
+#### Writing through a foreign key
+
+A relationship write of a relation declared with a foreign key never reaches the parent
+type's persister. The related type's persister sets the foreign key on the rows the
+linkage names and clears it on the rows that leave:
+
+- a replace points the linked rows at the parent and clears the members it leaves out;
+- an add points the linked rows at the parent, taking each from any parent it had;
+- a remove clears the linked rows that are members, and leaves any other row alone.
+
+A field takes the parent's id as storage holds it, and a to-one relation takes the parent
+itself. The members are the ones the relation's reads serve, so a replace leaves alone a
+row the related type's scope hides. A write that would clear a foreign key storage
+requires, a NOT NULL column on Doctrine, is refused with the `403` of the mutation that
+drops the member, linkage naming a row the related type doesn't serve is a `404`, and a
+row taken from another parent is authorized as a [member move](doctrine.md#moving-a-child-between-parents).
+`readOnly()`, `cannotReplace()` and the other gates and `cannotChangeMembership()` work as
+on any relation. It runs in the parent write's transaction, with the related persister's
+own transaction joined to it, inside an Atomic Operations batch as well, and the before
+and after relationship hooks, `afterCommit` callbacks and scopes all apply as usual. A
+foreign-key relation in a create body is written once the parent exists, since its id
+is what the rows hold.
+
+The Doctrine and in-memory persisters write foreign keys through
+[`WritesForeignKeysInterface`](../src/DataPersister/WritesForeignKeysInterface.php); a
+related type whose persister doesn't implement it can't be written this way. A Doctrine
+parent with no inverse mapping to its members, which used to fail on a relationship
+write, now writes through its foreign key.
 
 ### Rendered to-manys show their first page
 

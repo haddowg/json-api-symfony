@@ -10,7 +10,6 @@ use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\ForeignKey;
 use haddowg\JsonApi\Resource\Field\HasMany;
-use haddowg\JsonApi\Resource\Field\HasOne;
 use haddowg\JsonApi\Resource\Field\MorphTo;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
@@ -29,11 +28,11 @@ use haddowg\JsonApi\Resource\Filter\WhereThrough;
 use haddowg\JsonApi\Resource\Filter\WhereThroughIn;
 use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApi\Resource\Sort\SortInterface;
-use haddowg\JsonApiBundle\DataProvider\AbstractDataProvider;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
 use haddowg\JsonApiBundle\DataProvider\FilterPaths;
 use haddowg\JsonApiBundle\DataProvider\RelatedReadRouter;
 use haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory;
+use haddowg\JsonApiBundle\DataProvider\ScopesRelatedReadsInterface;
 use haddowg\JsonApiBundle\Server\IdEncoderResolver;
 use haddowg\JsonApiBundle\Server\RouteDescriptorRegistry;
 use haddowg\JsonApiBundle\Server\ServerProvider;
@@ -78,11 +77,14 @@ use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
  *    with a foreign key into an entity-mapped type reads through a field or a
  *    single-valued association of that entity, and an association must reference the
  *    parent's own entity.
- *  - **A relation of a parent that is no entity names how to reach its rows.** A
- *    `HasMany`, `BelongsToMany` or `HasOne` into an entity-mapped type, declared on a
- *    type no entity maps, has no association to scope the related rows by. It must
- *    declare a foreign key or `extractUsing()`, or the parent type's provider must batch
- *    its own related reads.
+ *  - **A to-many of a parent that is no entity can reach its rows.** A type no entity
+ *    maps has no association to scope related rows by. Its to-many into an entity-mapped
+ *    type is read off the parent model, unless the related type is scoped by a query
+ *    extension: those reads go through the Doctrine provider, which can't scope them to
+ *    the parent, so the relation must declare a foreign key or `extractUsing()`. A
+ *    `belongsToMany` with stored pivot fields reads its association entity through the
+ *    parent's mapping, so it can't be declared on such a type at all. A to-one is read off
+ *    the model and narrowed by the related scope, so it passes.
  */
 final class DoctrineServableWarmer implements CacheWarmerInterface
 {
@@ -152,9 +154,9 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
     }
 
     /**
-     * Asserts each relation of `$type` into an entity-mapped type has a way to its rows:
-     * a foreign key the related entity maps, an association of the parent's entity, an
-     * `extractUsing()` closure, or a parent provider that batches its own related reads.
+     * Asserts each relation of `$type` into an entity-mapped type has a way to its rows: a
+     * foreign key the related entity maps, or, on a type no entity maps, a to-many read off
+     * the parent model that no query extension scopes, or an `extractUsing()` closure.
      */
     private function guardForeignKeyReads(string $serverName, string $type): void
     {
@@ -183,23 +185,35 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
                 continue;
             }
 
-            if ($parentClass !== null || !($relation instanceof HasMany || $relation instanceof HasOne)
-                || RelatedReadRouter::extractsValue($relation) || $this->parentBatches($type)) {
+            if ($parentClass !== null || !$relation instanceof HasMany) {
+                continue;
+            }
+
+            if ($relation instanceof BelongsToMany && $relation->storedPivotFields() !== []) {
+                throw new \LogicException(\sprintf(
+                    'Relation "%s" on resource type "%s" is a BelongsToMany with stored pivot fields, which reads its association entity through the parent\'s mapping, but "%s" is not a Doctrine entity. Serve "%s" from an entity, or declare the relation as a HasMany with a foreign key.',
+                    $relation->name(),
+                    $type,
+                    $type,
+                    $type,
+                ));
+            }
+
+            if (RelatedReadRouter::extractsValue($relation) || !$this->scopesRelatedReads($relatedType, $relation)) {
                 continue;
             }
 
             throw new \LogicException(\sprintf(
-                'Relation "%s" on resource type "%s" reads type "%s", which Doctrine serves, but "%s" is not a Doctrine entity, so no association reaches its related rows. %s',
+                'Relation "%s" on resource type "%s" reads type "%s", which a Doctrine query extension scopes, but "%s" is not a Doctrine entity, so no association scopes those reads to the parent. %s',
                 $relation->name(),
                 $type,
                 $relatedType,
                 $type,
                 $relation instanceof BelongsToMany
-                    ? 'Compute its members with extractUsing(), or have the provider serving "' . $type . '" batch its related reads.'
+                    ? 'Compute its members with extractUsing().'
                     : \sprintf(
-                        'Name the field or to-one relation of "%s" holding the parent\'s id as the foreign key argument, %s::make(\'%s\', \'%s\', \'<foreign key>\'), or compute it with extractUsing().',
+                        'Name the field or to-one relation of "%s" holding the parent\'s id as the foreign key argument, HasMany::make(\'%s\', \'%s\', \'<foreign key>\'), or compute it with extractUsing().',
                         $relatedType,
-                        $relation instanceof HasOne ? 'HasOne' : 'HasMany',
                         $relation->name(),
                         $relatedType,
                     ),
@@ -250,21 +264,18 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
     }
 
     /**
-     * Whether the provider serving `$type` batches its own related reads, which it does
-     * unless it keeps {@see AbstractDataProvider}'s unsupported default.
+     * Whether the provider serving `$relatedType` scopes its reads of `$relation`, as the
+     * related read router decides.
      */
-    private function parentBatches(string $type): bool
+    private function scopesRelatedReads(string $relatedType, RelationInterface $relation): bool
     {
-        if ($this->providers === null || !$this->providers->supportsType($type)) {
+        if ($this->providers === null || !$this->providers->supportsType($relatedType)) {
             return false;
         }
 
-        $provider = $this->providers->forType($type);
-        if (!$provider instanceof AbstractDataProvider) {
-            return true;
-        }
+        $provider = $this->providers->forType($relatedType);
 
-        return (new \ReflectionMethod($provider, 'fetchRelatedCollectionBatch'))->getDeclaringClass()->getName() !== AbstractDataProvider::class;
+        return !$provider instanceof ScopesRelatedReadsInterface || $provider->scopesRelatedReads($relation);
     }
 
     /**

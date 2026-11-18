@@ -50,6 +50,7 @@ use haddowg\JsonApiBundle\DataProvider\ReadsByForeignKeyInterface;
 use haddowg\JsonApiBundle\DataProvider\ReadsLinkRowsInterface;
 use haddowg\JsonApiBundle\DataProvider\RelatedBatch;
 use haddowg\JsonApiBundle\DataProvider\ScopesRelatedReadsInterface;
+use haddowg\JsonApiBundle\DataProvider\ScopesToParentsInterface;
 use haddowg\JsonApiBundle\Serializer\RequestScopedOutputTimezone;
 use haddowg\JsonApiBundle\Server\IdEncoderResolver;
 
@@ -99,7 +100,7 @@ use haddowg\JsonApiBundle\Server\IdEncoderResolver;
  * @implements DataProviderInterface<object>
  * @implements PivotAwareProviderInterface<object>
  */
-final class DoctrineDataProvider implements DataProviderInterface, PivotAwareProviderInterface, ScopesRelatedReadsInterface, AdmitsRowsInterface, FetchesByIdsInterface, AdmitsIdsInterface, QueriesFilteredCollectionInterface, LinkRowQueryInterface, LinkRowKeysInterface, ReadsLinkRowsInterface, ReadsByForeignKeyInterface
+final class DoctrineDataProvider implements DataProviderInterface, PivotAwareProviderInterface, ScopesRelatedReadsInterface, AdmitsRowsInterface, FetchesByIdsInterface, AdmitsIdsInterface, QueriesFilteredCollectionInterface, LinkRowQueryInterface, LinkRowKeysInterface, ReadsLinkRowsInterface, ReadsByForeignKeyInterface, ScopesToParentsInterface
 {
     /**
      * The root alias every generated QueryBuilder uses; handlers re-read it
@@ -3030,6 +3031,15 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             $relation->name(),
             $relation->relatedTypes()[0] ?? '',
         ));
+    }
+
+    /**
+     * A related query is scoped by the parent's mapping, so only parents of a type an
+     * entity maps.
+     */
+    public function scopesToParentsOf(string $parentType): bool
+    {
+        return isset($this->entityClassByType[$parentType]);
     }
 
     /**

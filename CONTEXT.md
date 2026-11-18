@@ -90,7 +90,7 @@ The Doctrine entity that models a `belongsToMany` join so it can carry pivot fie
 _Avoid_: join table (when it has columns)
 
 **Foreign-key read**:
-How a relation declared with a foreign key (core's term) is read: always by the related type's provider, through `ReadsByForeignKeyInterface`, as the rows whose foreign key holds one of a page of parents' keys, whatever provider serves the parents. The parent model never holds the relation.
+How a relation declared with a foreign key (core's term) is read: always by the related type's provider, through `ReadsByForeignKeyInterface`, as the rows whose foreign key holds one of a page of parents' keys, whatever provider serves the parents. The parent model never holds the relation, and a write of it sets or clears the foreign key on the related rows through the related type's persister (`WritesForeignKeysInterface`).
 _Avoid_: inverse read, reverse lookup
 
 **Windowed include**:

@@ -423,6 +423,12 @@ key is a to-one relation (`$foreignKey->isRelation()`), the column holds a refer
 the parent, so compare the id it references. The parents may come from any provider, so
 read their keys from `ForeignKeyParents` rather than from your own storage.
 
+A provider that can only scope its related reads to parents of some types implements
+[`ScopesToParentsInterface`](../src/DataProvider/ScopesToParentsInterface.php). The Doctrine
+provider answers `true` only for the types its entities map, and for any other parent
+type a to-many with no foreign key reads what the parent model holds, its pages cut in
+memory.
+
 ### Saying whether related reads are scoped
 
 Included and linkage data always match the related endpoint (see

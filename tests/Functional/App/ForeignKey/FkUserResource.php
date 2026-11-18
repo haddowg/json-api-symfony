@@ -12,15 +12,19 @@ use haddowg\JsonApi\Resource\Field\HasOne;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
+use haddowg\JsonApiBundle\Operation\Operation;
 
 /**
  * `fk-users`, served by {@see FkUserProvider}, whose relations each read through a
  * foreign key on the related type: `items` two a page and countable, `cursorItems` the
  * same items two a cursor page, `featuredItems` the same items rendered `withData()`,
  * `notes`, whose type hides archived notes by a filter default, `secrets`, whose type a
- * Doctrine extension scopes, and the `profile` to-one.
+ * Doctrine extension scopes, and the `profile` to-one. `pinned` and `favourite` declare
+ * no foreign key, so they read what the model holds. `lockedItems` can't change its members
+ * and `readOnlyItems` can't be written at all. A user is updated only through its
+ * relationships.
  */
-#[AsJsonApiResource(readOnly: true)]
+#[AsJsonApiResource(operations: [Operation::FetchCollection, Operation::FetchOne, Operation::Update])]
 final class FkUserResource extends AbstractResource
 {
     public static string $type = 'fk-users';
@@ -36,6 +40,10 @@ final class FkUserResource extends AbstractResource
             HasMany::make('notes', 'fk-notes', foreignKey: 'owner')->withoutPagination()->countable(),
             HasMany::make('secrets', 'fk-secrets', 'owner')->withoutPagination()->countable(),
             HasOne::make('profile', 'fk-profiles', 'owner'),
+            HasMany::make('lockedItems', 'fk-items', 'owner')->cannotChangeMembership(),
+            HasMany::make('readOnlyItems', 'fk-items', 'owner')->readOnly(),
+            HasMany::make('pinned', 'fk-items')->paginate(PagePaginator::make()->withDefaultPerPage(2)),
+            HasOne::make('favourite', 'fk-items'),
         ];
     }
 }

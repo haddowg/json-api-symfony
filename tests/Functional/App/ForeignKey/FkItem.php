@@ -16,7 +16,7 @@ class FkItem
         public ?int $id = null,
         #[ORM\Column(type: 'string')]
         public string $title = '',
-        #[ORM\Column(name: 'owner_key', type: 'string')]
-        public string $ownerKey = '',
+        #[ORM\Column(name: 'owner_key', type: 'string', nullable: true)]
+        public ?string $ownerKey = null,
     ) {}
 }

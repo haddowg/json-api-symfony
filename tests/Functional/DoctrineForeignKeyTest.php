@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
 use haddowg\JsonApi\Schema\Profile\CountableProfile;
+use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\FkSecret;
 use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\ForeignKeyDoctrineTestKernel;
 use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\ForeignKeySeed;
 use haddowg\JsonApiBundle\Tests\Functional\App\QueryCountingLogger;
@@ -51,6 +52,32 @@ final class DoctrineForeignKeyTest extends ForeignKeyConformanceTestCase
     }
 
     #[Test]
+    public function clearingAForeignKeyStorageRequiresIsRefused(): void
+    {
+        self::assertSame(403, $this->handle('/fk-users/ada/relationships/notes', 'PATCH', ['data' => []])->getStatusCode());
+        self::assertSame(403, $this->handle('/fk-users/ada/relationships/notes', 'DELETE', ['data' => [['type' => 'fk-notes', 'id' => '1']]])->getStatusCode());
+        self::assertSame(['1'], $this->ids($this->fetch('/fk-users/ada/notes')['data'] ?? null));
+
+        // Joining a row to the parent clears nothing, so it is allowed.
+        self::assertSame(200, $this->handle('/fk-users/ada/relationships/notes', 'POST', ['data' => [['type' => 'fk-notes', 'id' => '3']]])->getStatusCode());
+        self::assertSame(['1', '3'], $this->ids($this->fetch('/fk-users/ada/notes')['data'] ?? null));
+    }
+
+    #[Test]
+    public function aReplaceLeavesTheRowsTheScopeHides(): void
+    {
+        self::assertSame(200, $this->handle('/fk-users/ada/relationships/secrets', 'PATCH', ['data' => []])->getStatusCode());
+        self::assertSame([], $this->ids($this->fetch('/fk-users/ada/secrets')['data'] ?? null));
+
+        $entityManager = static::getContainer()->get('doctrine.orm.entity_manager');
+        \assert($entityManager instanceof EntityManagerInterface);
+        $entityManager->clear();
+        $hidden = $entityManager->find(FkSecret::class, 2);
+        self::assertInstanceOf(FkSecret::class, $hidden);
+        self::assertSame('ada', $hidden->owner);
+    }
+
+    #[Test]
     public function aScopedRelatedTypeServesOnlyTheRowsItsExtensionAdmits(): void
     {
         self::assertSame(['1'], $this->ids($this->fetch('/fk-users/ada/secrets')['data'] ?? null));
@@ -72,7 +99,8 @@ final class DoctrineForeignKeyTest extends ForeignKeyConformanceTestCase
 
         $this->fetch('/fk-users?include=items,cursorItems');
 
-        $items = $this->selectsFrom($logger, 'fk_item');
+        // The provider loads Ada's pinned and favourite items by id; the rest read through the foreign key.
+        $items = \array_values(\array_filter($this->selectsFrom($logger, 'fk_item'), static fn(string $sql): bool => !\str_contains($sql, '.id = ?')));
         self::assertCount(2, $items, \implode("\n", $items));
         self::assertCount(2, \array_filter($items, static fn(string $sql): bool => \str_contains($sql, 'ROW_NUMBER() OVER')));
     }

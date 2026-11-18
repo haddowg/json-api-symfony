@@ -95,6 +95,7 @@ class ForeignKeyDoctrineTestKernel extends Kernel
         $config = [
             'base_uri' => 'https://example.test',
             'version' => '1.1',
+            'atomic_operations' => ['enabled' => true],
         ];
         if ($this->doctrine()) {
             $config['doctrine'] = ['window_functions' => $this->windowFunctions()];
@@ -108,6 +109,7 @@ class ForeignKeyDoctrineTestKernel extends Kernel
 
         $services->set('logger', \Psr\Log\NullLogger::class);
         $services->set(FkUserProvider::class);
+        $services->set(FkUserPersister::class);
         $services->set(FkUserResource::class);
         $services->set(FkInboxResource::class);
 

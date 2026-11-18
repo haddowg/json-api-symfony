@@ -511,6 +511,27 @@ final class RelatedReadRouter implements ResetInterface
     }
 
     /**
+     * Whether `$relation` is a to-many read off its parent model because its related
+     * type's provider can't scope rows to parents of `$type`
+     * ({@see ScopesToParentsInterface}) and nothing else reaches them: no foreign key,
+     * no pivot and no scope on the related type. Its pages are cut in memory from what
+     * the model holds, as an `extractUsing()` relation's are.
+     */
+    public function readsOffModel(string $type, RelationInterface $relation): bool
+    {
+        $relatedType = $relation->relatedTypes()[0] ?? null;
+        if ($relatedType === null || !$relation->isToMany() || \count($relation->relatedTypes()) !== 1
+            || ForeignKey::nameOf($relation) !== null || !$this->providers->supportsType($relatedType)
+            || $this->isPivot($relation) || $this->isScoped($relation)) {
+            return false;
+        }
+
+        $provider = $this->providers->forType($relatedType);
+
+        return $provider instanceof ScopesToParentsInterface && !$provider->scopesToParentsOf($type);
+    }
+
+    /**
      * Whether `$relation` declares a foreign key and a provider serves its related type,
      * so every read of it goes through {@see foreignKeyBatch()}.
      */
@@ -642,8 +663,11 @@ final class RelatedReadRouter implements ResetInterface
         if (!$this->readsThroughRelatedProvider($type, $relation)) {
             $relatedType = $relation->relatedTypes()[0] ?? $type;
 
-            return $this->providers->forType($this->providers->supportsType($type) ? $type : $relatedType)
+            $batch = $this->providers->forType($this->providers->supportsType($type) ? $type : $relatedType)
                 ->fetchRelatedCollectionBatch($type, $parents, $relation, $criteria, $request);
+
+            // Members the related provider can't scope to these parents are the model's own.
+            return !$batch->isSupported() && $this->readsOffModel($type, $relation) ? RelatedBatch::computed() : $batch;
         }
 
         $batch = $this->relatedProviderBatch($type, $parents, $relation, $criteria, $request, $server);
@@ -937,7 +961,18 @@ final class RelatedReadRouter implements ResetInterface
         }
 
         if (!$this->readsThroughRelatedProvider($type, $relation)) {
-            return $this->providers->forType($type)->countRelated($type, $parents, $relation, $criteria, $request);
+            $counts = $this->providers->forType($type)->countRelated($type, $parents, $relation, $criteria, $request);
+            if ($counts !== [] || !$this->readsOffModel($type, $relation)) {
+                return $counts;
+            }
+
+            // Counted over what each parent's model holds, as its pages are cut.
+            $serializer = $server->serializerFor($type);
+            foreach ($this->memberPages($server, $parents, $relation, $criteria, $request) as $index => $page) {
+                $counts[$serializer->getId($parents[$index])] = \is_array($page->items) ? \count($page->items) : \iterator_count($page->items);
+            }
+
+            return $counts;
         }
 
         $relatedType = $relation->relatedTypes()[0] ?? $type;

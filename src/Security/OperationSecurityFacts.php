@@ -9,6 +9,7 @@ use haddowg\JsonApi\OpenApi\Metadata\OperationKey;
 use haddowg\JsonApi\OpenApi\Metadata\OperationKind;
 use haddowg\JsonApi\OpenApi\Metadata\RelationMetadataInterface;
 use haddowg\JsonApi\OpenApi\Metadata\TypeMetadataInterface;
+use haddowg\JsonApi\Resource\Field\ForeignKey;
 use haddowg\JsonApiBundle\Action\ActionRegistry;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataPersister\Doctrine\DoctrineDataPersister;
@@ -137,9 +138,11 @@ final class OperationSecurityFacts
         if (!$relation->isToMany() || !$this->persisters?->supportsType($type->type())) {
             return false;
         }
+        // A write through a foreign key can point any related row at the parent.
+        $throughForeignKey = $relation instanceof RelationMetadata && ForeignKey::nameOf($relation->relation()) !== null;
         $persister = $this->persisters->forType($type->type());
-        if (!$persister instanceof ReportsMovedMembersInterface
-            || ($persister instanceof DoctrineDataPersister && $relation instanceof RelationMetadata && !$persister->canMoveMembers($type->type(), $relation->relation()))) {
+        if (!$throughForeignKey && (!$persister instanceof ReportsMovedMembersInterface
+            || ($persister instanceof DoctrineDataPersister && $relation instanceof RelationMetadata && !$persister->canMoveMembers($type->type(), $relation->relation())))) {
             return false;
         }
 

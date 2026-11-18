@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey;
 
+use haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
+use haddowg\JsonApiBundle\DataProvider\InMemorySnapshotCoordinator;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\DependencyInjection\Loader\Configurator\DefaultsConfigurator;
@@ -45,6 +47,7 @@ final class ForeignKeyInMemoryTestKernel extends ForeignKeyDoctrineTestKernel
     {
         $seed = ForeignKeySeed::build();
         $identify = static fn(object $row): string => \property_exists($row, 'id') && \is_int($row->id) ? (string) $row->id : '';
+        $coordinator = new InMemorySnapshotCoordinator();
 
         self::$providers = [];
         foreach (self::TYPES as $type => $key) {
@@ -52,7 +55,7 @@ final class ForeignKeyInMemoryTestKernel extends ForeignKeyDoctrineTestKernel
             foreach ($seed[$key] as $row) {
                 $rows[(string) $row->id] = $row;
             }
-            self::$providers[$type] = new InMemoryDataProvider($type, $rows, $identify);
+            self::$providers[$type] = new InMemoryDataProvider($type, $rows, $identify, coordinator: $coordinator);
         }
     }
 
@@ -64,6 +67,16 @@ final class ForeignKeyInMemoryTestKernel extends ForeignKeyDoctrineTestKernel
         \assert(self::$providers !== null);
 
         return self::$providers[$type];
+    }
+
+    public static function persister(string $type): InMemoryDataPersister
+    {
+        return new InMemoryDataPersister(
+            $type,
+            self::provider($type)->store(),
+            static fn(): object => throw new \LogicException('No ' . $type . ' is created here.'),
+            static fn(string $relatedType, string $id): ?object => isset(self::TYPES[$relatedType]) ? self::provider($relatedType)->fetchOne($relatedType, $id) : null,
+        );
     }
 
     protected function configureData(ContainerConfigurator $container, DefaultsConfigurator $services): void
@@ -80,6 +93,10 @@ final class ForeignKeyInMemoryTestKernel extends ForeignKeyDoctrineTestKernel
                 ->factory([self::class, 'provider'])
                 ->args([$type])
                 ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+            $services->set('test.persister.' . $type, InMemoryDataPersister::class)
+                ->factory([self::class, 'persister'])
+                ->args([$type])
+                ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
         }
     }
 }

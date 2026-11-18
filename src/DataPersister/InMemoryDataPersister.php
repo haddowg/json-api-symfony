@@ -12,6 +12,7 @@ use haddowg\JsonApi\Exception\ClientGeneratedIdAlreadyExists;
 use haddowg\JsonApi\Hydrator\Relationship\ToManyRelationship;
 use haddowg\JsonApi\Hydrator\Relationship\ToOneRelationship;
 use haddowg\JsonApi\Resource\Field\Accessor;
+use haddowg\JsonApi\Resource\Field\ForeignKey;
 use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\PivotRelationInterface;
@@ -38,7 +39,7 @@ use haddowg\JsonApiBundle\Validation\RelationshipTypeUnacceptable;
  * association property to that object (or list of objects). A persister with no
  * resolver supports only whole-resource writes.
  */
-final class InMemoryDataPersister implements DataPersisterInterface, TransactionalDataPersisterInterface, WritesLinkRowsInterface, WritesPositionsInterface
+final class InMemoryDataPersister implements DataPersisterInterface, TransactionalDataPersisterInterface, WritesLinkRowsInterface, WritesPositionsInterface, WritesForeignKeysInterface
 {
     /**
      * @param InMemoryStore                          $store           the store shared with the read provider
@@ -117,6 +118,26 @@ final class InMemoryDataPersister implements DataPersisterInterface, Transaction
     public function delete(string $type, object $entity): void
     {
         $this->store->remove($entity);
+    }
+
+    /**
+     * The in-memory store holds no column constraints, so a foreign key may always be cleared.
+     */
+    public function requiresForeignKey(string $relatedType, ForeignKey $foreignKey): bool
+    {
+        return false;
+    }
+
+    public function writeForeignKey(string $relatedType, ForeignKey $foreignKey, object $parent, mixed $parentKey, array $attach, array $detach, bool $flush = true): void
+    {
+        foreach ($detach as $row) {
+            Accessor::set($row, $foreignKey->column, null);
+            $this->store->save($row);
+        }
+        foreach ($attach as $row) {
+            Accessor::set($row, $foreignKey->column, $foreignKey->isRelation() ? $parent : $parentKey);
+            $this->store->save($row);
+        }
     }
 
     public function mutateRelationship(

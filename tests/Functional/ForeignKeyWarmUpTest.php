@@ -5,18 +5,21 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
 use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\Guard\ComputedItemsUserResource;
+use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\Guard\ComputedSecretsUserResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\Guard\ForeignKeyGuardKernel;
 use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\Guard\KeyedItemsUserResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\Guard\MisnamedKeyUserResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\Guard\UnkeyedItemsUserResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\Guard\UnkeyedProfileUserResource;
+use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\Guard\UnkeyedSecretsUserResource;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 /**
- * A relation from a type no entity maps into a Doctrine type has no association to read,
- * so warm-up refuses one that names no foreign key and isn't computed, and checks a
- * foreign key it does name.
+ * A to-many from a type no entity maps into a Doctrine type a query extension scopes has
+ * no way to scope those reads to its parent, so warm-up refuses one that names no foreign
+ * key and isn't computed. Into an unscoped type, and for a to-one, the model's value is
+ * read, so it boots. A foreign key that is named is checked.
  */
 final class ForeignKeyWarmUpTest extends KernelTestCase
 {
@@ -45,21 +48,33 @@ final class ForeignKeyWarmUpTest extends KernelTestCase
     }
 
     #[Test]
-    public function aToManyWithNoForeignKeyFailsWarmUp(): void
+    public function aToManyIntoAScopedTypeWithNoForeignKeyFailsWarmUp(): void
     {
         $this->expectException(\LogicException::class);
-        $this->expectExceptionMessageMatches('/Relation "items" on resource type "fk-users".*not a Doctrine entity.*foreign key argument, HasMany::make\(\'items\', \'fk-items\', \'<foreign key>\'\), or compute it with extractUsing\(\)/s');
+        $this->expectExceptionMessageMatches('/Relation "secrets" on resource type "fk-users" reads type "fk-secrets", which a Doctrine query extension scopes.*foreign key argument, HasMany::make\\(\'secrets\', \'fk-secrets\', \'<foreign key>\'\\), or compute it with extractUsing\\(\\)/s');
 
-        $this->bootWithSubject(UnkeyedItemsUserResource::class);
+        $this->bootWithSubject(UnkeyedSecretsUserResource::class);
     }
 
     #[Test]
-    public function aHasOneWithNoForeignKeyFailsWarmUp(): void
+    public function aToManyIntoAnUnscopedTypeWithNoForeignKeyBootsClean(): void
     {
-        $this->expectException(\LogicException::class);
-        $this->expectExceptionMessageMatches('/Relation "profile".*HasOne::make\(\'profile\', \'fk-profiles\', \'<foreign key>\'\)/s');
+        $this->bootWithSubject(UnkeyedItemsUserResource::class);
+        self::assertNotNull(static::$kernel);
+    }
 
+    #[Test]
+    public function aHasOneWithNoForeignKeyBootsClean(): void
+    {
         $this->bootWithSubject(UnkeyedProfileUserResource::class);
+        self::assertNotNull(static::$kernel);
+    }
+
+    #[Test]
+    public function aComputedRelationIntoAScopedTypeBootsClean(): void
+    {
+        $this->bootWithSubject(ComputedSecretsUserResource::class);
+        self::assertNotNull(static::$kernel);
     }
 
     #[Test]

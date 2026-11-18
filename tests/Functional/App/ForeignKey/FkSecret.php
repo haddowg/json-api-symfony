@@ -16,8 +16,8 @@ class FkSecret
         public ?int $id = null,
         #[ORM\Column(type: 'string')]
         public string $label = '',
-        #[ORM\Column(type: 'string')]
-        public string $owner = '',
+        #[ORM\Column(type: 'string', nullable: true)]
+        public ?string $owner = null,
         #[ORM\Column(type: 'boolean')]
         public bool $hidden = false,
     ) {}

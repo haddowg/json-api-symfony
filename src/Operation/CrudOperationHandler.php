@@ -45,6 +45,7 @@ use haddowg\JsonApi\Resource\Field\Accessor;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\Date;
 use haddowg\JsonApi\Resource\Field\DateTime;
+use haddowg\JsonApi\Resource\Field\ForeignKey;
 use haddowg\JsonApi\Resource\Field\GuardsMembershipInterface;
 use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\MorphTo;
@@ -87,6 +88,7 @@ use haddowg\JsonApiBundle\DataPersister\LinkRowPivots;
 use haddowg\JsonApiBundle\DataPersister\PositionTargets;
 use haddowg\JsonApiBundle\DataPersister\ReportsMovedMembersInterface;
 use haddowg\JsonApiBundle\DataPersister\StoresDateTimesInterface;
+use haddowg\JsonApiBundle\DataPersister\WritesForeignKeysInterface;
 use haddowg\JsonApiBundle\DataPersister\WritesLinkRowsInterface;
 use haddowg\JsonApiBundle\DataPersister\WritesPositionsInterface;
 use haddowg\JsonApiBundle\DataPersister\WriteTransaction;
@@ -95,6 +97,7 @@ use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\CurrentMembers;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
+use haddowg\JsonApiBundle\DataProvider\FetchesByIdsInterface;
 use haddowg\JsonApiBundle\DataProvider\FilterPaths;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 use haddowg\JsonApiBundle\DataProvider\PivotAwareProviderInterface;
@@ -1017,6 +1020,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $result = match (true) {
                     $this->readRouter?->readsByForeignKey($relation) === true => $this->readRouter->foreignKeyPage($server, $type, $parent, $relation, $criteria, $request),
                     $this->readRouter?->isComputed($relation) === true => $this->readRouter->fetchComputed($server, $parent, $relation, $criteria, $request),
+                    $this->readRouter?->readsOffModel($type, $relation) === true => $this->readRouter->fetchComputed($server, $parent, $relation, $criteria, $request),
                     // A to-many over several types reaching a scoped type serves its members
                     // narrowed per member type.
                     \count($relatedTypes) > 1 && $this->readRouter?->isScoped($relation) === true => $this->readRouter->fetchPolymorphic($server, $parent, $relation, $criteria, $request),
@@ -1556,6 +1560,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $result = match (true) {
                 $this->readRouter?->readsByForeignKey($relation) === true => $this->readRouter->foreignKeyPage($server, $type, $parent, $relation, $criteria, $request),
                 $this->readRouter?->isComputed($relation) === true => $this->readRouter->fetchComputed($server, $parent, $relation, $criteria, $request),
+                $this->readRouter?->readsOffModel($type, $relation) === true => $this->readRouter->fetchComputed($server, $parent, $relation, $criteria, $request),
                 default => $relatedProvider->fetchRelatedCollection($relatedType, $parent, $relation, $criteria, $request),
             };
             $items = \is_array($result->items) ? \array_values($result->items) : \iterator_to_array($result->items, false);
@@ -1785,7 +1790,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // pass its entity-level constraints, and the update gate judges it too, so a caller
         // can't hand it to someone the gate would refuse them as. A violation or a refusal
         // rolls the change back, with anything a before hook flushed.
-        $parent = WriteTransaction::run($persister, $this->txContext, afterCommit: $this->afterCommit, write: function () use ($server, $persister, $type, $parent, $relation, $linkage, $mode, $request, $body): object {
+        $parent = WriteTransaction::run($persister, $this->txContext, afterCommit: $this->afterCommit, write: $this->withForeignKeyTransactions($server, $persister, [$relation], function () use ($server, $persister, $type, $parent, $relation, $linkage, $mode, $request, $body): object {
             // The gate on the parent as stored runs before any related id is looked up, so a
             // refused caller learns nothing about which of them exist.
             $this->dispatch(new BeforeApplyRelationshipEvent($type, $request, $parent, $relation, $linkage, $mode, $this->serverName($request)));
@@ -1794,8 +1799,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // missing, and a replace keeps the members the scope hides. The member-move
             // gates run here, ahead of the before hooks.
             $scopedLinkage = $this->linkageGuard?->scope($server, $parent, $relation, $linkage, $mode, $request, atEndpoint: true) ?? $linkage;
-            $this->guardMembership($server, $relation, $scopedLinkage, $mode, $body, $parent);
-            $this->guardMovedMembers($persister, $type, $request, $parent, $relation, $scopedLinkage, $mode);
+            $this->guardMembership($server, $relation, $scopedLinkage, $mode, $body, $parent, $type);
+            $this->guardMovedMembers($server, $persister, $type, $request, $parent, $relation, $scopedLinkage, $mode);
 
             $this->dispatch(new BeforeRelationshipMutateEvent($type, $request, $parent, $relation, $linkage, $mode, $this->serverName($request)));
 
@@ -1810,7 +1815,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $this->dispatch(new BeforeRelationshipCommitEvent($type, $request, $parent, $relation, $scopedLinkage, $mode, $this->serverName($request)));
 
             return $this->fillsThroughHook($relation) ? $persister->update($type, $parent) : $parent;
-        });
+        }));
         if ($parent instanceof AcceptedForProcessing) {
             return $this->accepted($parent, $server);
         }
@@ -1920,6 +1925,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         Mode $mode,
         JsonApiRequestInterface $body,
         object $parent,
+        ?string $type = null,
     ): void {
         if ($mode !== Mode::Replace
             || !$linkage instanceof ToManyRelationship
@@ -1928,7 +1934,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return;
         }
 
-        $relation->assertMembershipUnchanged($body, $parent, CurrentMembers::of($server, $this->providers, $parent, $relation, $body), $linkage);
+        $current = $type !== null && $this->readRouter?->readsByForeignKey($relation) === true
+            ? $this->foreignKeyMembers($server, $type, $parent, $relation, $body)
+            : CurrentMembers::of($server, $this->providers, $parent, $relation, $body);
+        $relation->assertMembershipUnchanged($body, $parent, $current, $linkage);
     }
 
     /**
@@ -2415,9 +2424,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         // From the first association applied to the persister's write, everything runs in
         // one transaction, so a flush a before hook makes is undone when a later step throws.
-        $entity = WriteTransaction::run($persister, $this->txContext, afterCommit: $this->afterCommit, write: function () use ($server, $persister, $type, $entity, $relationships, $body, $request): object {
+        $entity = WriteTransaction::run($persister, $this->txContext, afterCommit: $this->afterCommit, write: $this->withForeignKeyTransactions($server, $persister, \array_column($relationships, 'relation'), function () use ($server, $persister, $type, $entity, $relationships, $body, $request): object {
             return $this->createWrite($server, $persister, $type, $entity, $relationships, $body, $request);
-        });
+        }));
         // The write may have changed whether a related row is readable.
         $this->relationshipLinkage?->forgetReadDecisions();
         $this->readRouter?->forget();
@@ -2491,6 +2500,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // parent) sees a related model associated in the SAME request body.
         // Relationships are still stripped from the hydrate body, so core's
         // hydrateRelationships() stays a no-op (no scalar-id assignment).
+        // A foreign key holds the parent's id, which a new parent has only once it is
+        // created, so those relations are written after it.
+        $deferred = \array_values(\array_filter($relationships, fn(array $relationship): bool => $this->readRouter?->readsByForeignKey($relationship['relation']) === true));
+        $relationships = \array_values(\array_filter($relationships, fn(array $relationship): bool => $this->readRouter?->readsByForeignKey($relationship['relation']) !== true));
         $entity = $this->applyRelationships($server, $persister, $type, $entity, $relationships, $body, $request, creating: true);
 
         // As on update: an `on()` attribute writes onto the target its relation's related
@@ -2513,7 +2526,11 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $this->dispatch(new BeforeSaveEvent($type, $request, $entity, true, $this->serverName($request)));
         $this->dispatch(new BeforeCreateEvent($type, $request, $entity, $this->serverName($request)));
 
-        return $persister->create($type, $this->unionsForStorage($this->types->resourceFor($server, $type), $persister, $entity, $body, creating: true));
+        $entity = $persister->create($type, $this->unionsForStorage($this->types->resourceFor($server, $type), $persister, $entity, $body, creating: true));
+
+        return $deferred === [] || $entity instanceof AcceptedForProcessing
+            ? $entity
+            : $this->applyRelationships($server, $persister, $type, $entity, $deferred, $body, $request, creating: true);
     }
 
     private function update(UpdateResourceOperation $operation): DataResponse|AcceptedResponse|ErrorResponse
@@ -2536,9 +2553,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // Everything from the first before hook to the save runs in one transaction, so a
         // refusal or a failure after a hook flushed or the body's relationships were applied
         // leaves nothing behind.
-        $entity = WriteTransaction::run($persister, $this->txContext, afterCommit: $this->afterCommit, write: function () use ($server, $persister, $type, $entity, $body, $request): object {
+        $entity = WriteTransaction::run($persister, $this->txContext, afterCommit: $this->afterCommit, write: $this->withForeignKeyTransactions($server, $persister, $this->types->relationsFor($server, $type), function () use ($server, $persister, $type, $entity, $body, $request): object {
             return $this->updateWrite($server, $persister, $type, $entity, $body, $request);
-        });
+        }));
         // The write may have changed whether a related row is readable.
         $this->relationshipLinkage?->forgetReadDecisions();
         $this->readRouter?->forget();
@@ -2820,9 +2837,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $linkage = $this->linkageGuard?->scope($server, $entity, $relationship['relation'], $relationship['linkage'], Mode::Replace, $body, $creating)
                 ?? $relationship['linkage'];
             if ($creating === false) {
-                $this->guardMembership($server, $relationship['relation'], $linkage, Mode::Replace, $body, $entity);
+                $this->guardMembership($server, $relationship['relation'], $linkage, Mode::Replace, $body, $entity, $type);
             }
-            $this->guardMovedMembers($persister, $type, $request, $entity, $relationship['relation'], $linkage, Mode::Replace);
+            $this->guardMovedMembers($server, $persister, $type, $request, $entity, $relationship['relation'], $linkage, Mode::Replace);
 
             if ($this->fillsThroughHook($relationship['relation'])) {
                 $entity = $this->fillRelationship($server, $persister, $relationship['relation'], $entity, $linkage, Mode::Replace, $body, endpoint: false);
@@ -2923,6 +2940,14 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         JsonApiRequestInterface $request,
         bool $flush,
     ): object {
+        // A foreign key is written on the related rows by their own persister.
+        if ($this->readRouter?->readsByForeignKey($relation) === true) {
+            $plan = $this->foreignKeyPlan($server, $type, $entity, $relation, $linkage, $mode, $request);
+            $plan['writer']->writeForeignKey($relation->relatedTypes()[0], $plan['foreignKey'], $entity, $plan['parentKey'], $plan['attach'], $plan['detach']);
+
+            return $entity;
+        }
+
         if ($relation instanceof MorphToMany && $relation->linkRowFields() !== null && $linkage instanceof ToManyRelationship && $persister instanceof WritesLinkRowsInterface) {
             return $persister->writeLinkRows($entity, $relation, $this->linkRowPlan($server, $type, $relation, $entity, $linkage, $mode, $request), $flush);
         }
@@ -3060,11 +3085,193 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
     }
 
     /**
+     * `$write` run inside a transaction on the persister of each related type a relation
+     * among `$relations` writes through its foreign key, when that isn't `$persister`, so
+     * the rows it writes commit or roll back with the parent's write.
+     *
+     * @template T
+     *
+     * @param iterable<RelationInterface> $relations
+     * @param \Closure(): T               $write
+     *
+     * @return \Closure(): T
+     */
+    private function withForeignKeyTransactions(Server $server, DataPersisterInterface $persister, iterable $relations, \Closure $write): \Closure
+    {
+        $related = [];
+        foreach ($relations as $relation) {
+            $relatedType = $relation->relatedTypes()[0] ?? null;
+            if ($relatedType === null || $this->readRouter?->readsByForeignKey($relation) !== true || !$this->persisters->supportsType($relatedType)) {
+                continue;
+            }
+
+            $writer = $this->persisters->forType($relatedType);
+            if ($writer !== $persister) {
+                $related[\spl_object_id($writer)] = $writer;
+            }
+        }
+
+        foreach ($related as $writer) {
+            $inner = $write;
+            $write = fn(): mixed => WriteTransaction::run($writer, $this->txContext, $inner);
+        }
+
+        return $write;
+    }
+
+    /**
+     * The rows a write of `$linkage` moves through `$relation`'s foreign key: the linked
+     * rows not yet members join the parent, and on a replace the members the linkage
+     * leaves out, on a remove the linked members, leave it. The members are the ones the
+     * relation's reads serve, so a row the related type's scope hides is never touched.
+     * A leaving row whose foreign key storage can't clear refuses the write with the 403
+     * of the mutation that drops it.
+     *
+     * @return array{writer: WritesForeignKeysInterface, foreignKey: ForeignKey, parentKey: mixed, attach: list<object>, detach: list<object>}
+     *
+     * @throws RemovalProhibited|FullReplacementProhibited when a leaving row's foreign key can't be cleared
+     */
+    private function foreignKeyPlan(Server $server, string $type, object $parent, RelationInterface $relation, ToOneRelationship|ToManyRelationship $linkage, Mode $mode, JsonApiRequestInterface $request): array
+    {
+        $relatedType = $relation->relatedTypes()[0] ?? '';
+        $foreignKey = ForeignKey::of($relation, $server)
+            ?? throw new \LogicException(\sprintf('Relation "%s" on resource type "%s" writes through the foreign key "%s", which is no stored field or to-one relation of type "%s".', $relation->name(), $type, (string) ForeignKey::nameOf($relation), $relatedType));
+        $writer = $this->persisters->supportsType($relatedType) ? $this->persisters->forType($relatedType) : null;
+        if (!$writer instanceof WritesForeignKeysInterface) {
+            throw new \LogicException(\sprintf(
+                'Relation "%s" on resource type "%s" writes through the foreign key "%s", but no persister serving type "%s" writes one. Implement %s on it.',
+                $relation->name(),
+                $type,
+                $foreignKey->name,
+                $relatedType,
+                WritesForeignKeysInterface::class,
+            ));
+        }
+
+        $relatedSerializer = $server->serializerFor($relatedType);
+        $current = [];
+        foreach ($this->foreignKeyRows($server, $type, $parent, $relation, $request) as $row) {
+            $current[$relatedSerializer->getId($row)] = $row;
+        }
+
+        $ids = [];
+        $identifiers = $linkage instanceof ToManyRelationship ? $linkage->resourceIdentifiers : \array_filter([$linkage->resourceIdentifier]);
+        foreach ($identifiers as $identifier) {
+            if ($identifier->id !== null && $identifier->type === $relatedType) {
+                $ids[$identifier->id] = $identifier->id;
+            }
+        }
+
+        $attach = [];
+        if ($mode !== Mode::Remove) {
+            $missing = \array_values(\array_diff_key($ids, $current));
+            foreach ($this->rowsById($relatedType, $missing, $request) as $row) {
+                $attach[] = $row;
+            }
+        }
+
+        $detach = $mode === Mode::Remove
+            ? \array_values(\array_intersect_key($current, $ids))
+            : ($mode === Mode::Replace ? \array_values(\array_diff_key($current, $ids)) : []);
+
+        if ($detach !== [] && $writer->requiresForeignKey($relatedType, $foreignKey)) {
+            throw $mode === Mode::Remove || ($linkage instanceof ToOneRelationship && $linkage->isEmpty())
+                ? new RemovalProhibited($relation->name())
+                : new FullReplacementProhibited($relation->name());
+        }
+
+        return [
+            'writer' => $writer,
+            'foreignKey' => $foreignKey,
+            'parentKey' => ForeignKey::parentKey($server->serializerFor($type), $parent),
+            'attach' => $attach,
+            'detach' => $detach,
+        ];
+    }
+
+    /**
+     * The rows `$relation` reads through its foreign key for `$parent`, unpaged and
+     * unfiltered, under the related type's scope.
+     *
+     * @return list<object>
+     */
+    private function foreignKeyRows(Server $server, string $type, object $parent, RelationInterface $relation, JsonApiRequestInterface $request): array
+    {
+        if ($this->readRouter === null) {
+            return [];
+        }
+
+        $criteria = new CollectionCriteria(new QueryParameters(fields: [], includes: [], sort: [], filter: [], pagination: []), request: $request);
+        $items = $this->readRouter->foreignKeyPage($server, $type, $parent, $relation, $criteria, $request)->items;
+
+        return \array_values(\array_filter(\is_array($items) ? $items : \iterator_to_array($items, false), \is_object(...)));
+    }
+
+    /**
+     * `$relation`'s members through its foreign key, as `[type, wire id]` pairs.
+     *
+     * @return list<array{0: string, 1: string}>
+     */
+    private function foreignKeyMembers(Server $server, string $type, object $parent, RelationInterface $relation, JsonApiRequestInterface $request): array
+    {
+        $relatedType = $relation->relatedTypes()[0] ?? '';
+        $serializer = $server->serializerFor($relatedType);
+
+        return \array_map(static fn(object $row): array => [$relatedType, $serializer->getId($row)], $this->foreignKeyRows($server, $type, $parent, $relation, $request));
+    }
+
+    /**
+     * The rows of `$type` among `$ids`, as its provider serves them.
+     *
+     * @param list<string> $ids
+     *
+     * @return list<object>
+     */
+    private function rowsById(string $type, array $ids, JsonApiRequestInterface $request): array
+    {
+        if ($ids === [] || !$this->providers->supportsType($type)) {
+            return [];
+        }
+
+        $provider = $this->providers->forType($type);
+        if ($provider instanceof FetchesByIdsInterface) {
+            return $provider->fetchByIds($type, $ids, $request);
+        }
+
+        return \array_values(\array_filter(\array_map(static fn(string $id): ?object => $provider->fetchOne($type, $id), $ids)));
+    }
+
+    /**
+     * Dispatches a member move for each row a write through `$relation`'s foreign key
+     * points at `$parent` from another parent, or from none, so the move is authorized
+     * before any hook runs. The parent a row leaves is its to-one target, or for a field
+     * the row of `$type` its key names.
+     */
+    private function guardForeignKeyMoves(Server $server, JsonApiRequestInterface $request, string $type, object $parent, RelationInterface $relation, ToOneRelationship|ToManyRelationship $linkage, Mode $mode): void
+    {
+        if ($mode === Mode::Remove) {
+            return;
+        }
+
+        $plan = $this->foreignKeyPlan($server, $type, $parent, $relation, $linkage, $mode, $request);
+        foreach ($plan['attach'] as $row) {
+            $from = Accessor::get($row, $plan['foreignKey']->column);
+            if (!\is_object($from) && $from !== null) {
+                $wireId = $this->idEncoders?->encoderFor($type)?->encode($from) ?? (\is_scalar($from) ? (string) $from : null);
+                $from = $wireId !== null && $this->providers->supportsType($type) ? $this->providers->forType($type)->fetchOne($type, $wireId) : null;
+            }
+
+            $this->dispatch(new BeforeMemberMoveEvent($type, $request, $parent, $relation, $row, \is_object($from) ? $from : null, $this->serverName($request)));
+        }
+    }
+
+    /**
      * Dispatches {@see BeforeMemberMoveEvent} for each member a to-many add or replace
      * would take from another parent (or attach from none), when the persister reports
      * such moves, so the move can be refused before the persister applies it.
      */
     private function guardMovedMembers(
+        Server $server,
         DataPersisterInterface $persister,
         string $type,
         JsonApiRequestInterface $request,
@@ -3073,6 +3280,12 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         ToOneRelationship|ToManyRelationship $linkage,
         Mode $mode,
     ): void {
+        if ($this->readRouter?->readsByForeignKey($relation) === true) {
+            $this->guardForeignKeyMoves($server, $request, $type, $parent, $relation, $linkage, $mode);
+
+            return;
+        }
+
         if (!$persister instanceof ReportsMovedMembersInterface || !$linkage instanceof ToManyRelationship) {
             return;
         }

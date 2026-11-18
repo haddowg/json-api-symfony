@@ -220,6 +220,143 @@ abstract class ForeignKeyConformanceTestCase extends JsonApiFunctionalTestCase
         self::assertSame(['fk-members:1', 'fk-members:2', 'fk-members:4'], $this->includedKeys($document));
     }
 
+    #[Test]
+    public function aToManyWithNoForeignKeyIsReadOffTheModelAndCutInMemory(): void
+    {
+        self::assertSame(['5', '4'], $this->ids($this->fetch('/fk-users/ada/pinned')['data'] ?? null));
+        self::assertSame(['3'], $this->ids($this->fetch('/fk-users/ada/pinned?page[number]=2&page[size]=2')['data'] ?? null));
+        self::assertSame(['5', '4'], $this->ids($this->fetch('/fk-users/ada/relationships/pinned')['data'] ?? null));
+
+        $document = $this->fetch('/fk-users?include=pinned');
+        $users = $document['data'] ?? null;
+        self::assertIsArray($users);
+        self::assertSame(['5', '4'], $this->ids($this->relationship($users[0] ?? null, 'pinned')['data'] ?? null));
+        self::assertSame([], $this->ids($this->relationship($users[1] ?? null, 'pinned')['data'] ?? null));
+        self::assertSame(['fk-items:4', 'fk-items:5'], $this->includedKeys($document));
+    }
+
+    #[Test]
+    public function aHasOneWithNoForeignKeyReadsTheModelsTarget(): void
+    {
+        $favourite = $this->fetch('/fk-users/ada/favourite');
+        self::assertSame('2', \is_array($favourite['data'] ?? null) ? ($favourite['data']['id'] ?? null) : null);
+
+        $included = $this->fetch('/fk-users/ada?include=favourite');
+        self::assertSame(['type' => 'fk-items', 'id' => '2'], $this->relationship($included['data'] ?? null, 'favourite')['data'] ?? null);
+        self::assertSame(['fk-items:2'], $this->includedKeys($included));
+    }
+
+    #[Test]
+    #[Group('spec:crud-updating-relationships')]
+    public function aReplaceSetsTheForeignKeyOnTheLinkedRowsAndClearsItOnTheRest(): void
+    {
+        $response = $this->handle('/fk-users/ada/relationships/items', 'PATCH', ['data' => [['type' => 'fk-items', 'id' => '1'], ['type' => 'fk-items', 'id' => '7']]]);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['1', '7'], $this->ids($this->decode($response)['data'] ?? null));
+
+        self::assertSame(['1', '7'], $this->ids($this->fetch('/fk-users/ada/items?page[size]=10')['data'] ?? null));
+        self::assertNull($this->attribute($this->fetch('/fk-items/2')['data'] ?? null, 'owner'));
+        self::assertSame('ada', $this->attribute($this->fetch('/fk-items/7')['data'] ?? null, 'owner'));
+    }
+
+    #[Test]
+    #[Group('spec:crud-updating-relationships')]
+    public function anAddMovesARowFromAnotherParentAndARemoveClearsOnlyMembers(): void
+    {
+        self::assertSame(200, $this->handle('/fk-users/ada/relationships/items', 'POST', ['data' => [['type' => 'fk-items', 'id' => '6']]])->getStatusCode());
+        self::assertSame(['1', '2', '3', '4', '5', '6'], $this->ids($this->fetch('/fk-users/ada/items?page[size]=10')['data'] ?? null));
+        self::assertSame([], $this->ids($this->fetch('/fk-users/bob/items')['data'] ?? null));
+
+        $removed = $this->handle('/fk-users/ada/relationships/items', 'DELETE', ['data' => [['type' => 'fk-items', 'id' => '1'], ['type' => 'fk-items', 'id' => '7']]]);
+        self::assertSame(200, $removed->getStatusCode(), (string) $removed->getContent());
+        self::assertSame(['2', '3', '4', '5', '6'], $this->ids($this->fetch('/fk-users/ada/items?page[size]=10')['data'] ?? null));
+        self::assertNull($this->attribute($this->fetch('/fk-items/7')['data'] ?? null, 'owner'));
+    }
+
+    #[Test]
+    #[Group('spec:crud-updating-relationships')]
+    public function aHasOneReplaceMovesTheForeignKeyToTheNewTarget(): void
+    {
+        self::assertSame(200, $this->handle('/fk-users/bob/relationships/profile', 'PATCH', ['data' => ['type' => 'fk-profiles', 'id' => '2']])->getStatusCode());
+        self::assertSame(['type' => 'fk-profiles', 'id' => '2'], $this->fetch('/fk-users/bob/relationships/profile')['data'] ?? null);
+
+        self::assertSame(200, $this->handle('/fk-users/ada/relationships/profile', 'PATCH', ['data' => null])->getStatusCode());
+        $none = $this->fetch('/fk-users/ada/relationships/profile');
+        self::assertArrayHasKey('data', $none);
+        self::assertNull($none['data']);
+    }
+
+    #[Test]
+    #[Group('spec:crud-updating-relationships')]
+    public function anEntityParentWithNoInverseMappingWritesThroughTheForeignKey(): void
+    {
+        $response = $this->handle('/fk-teams/2/relationships/members', 'PATCH', ['data' => [['type' => 'fk-members', 'id' => '4'], ['type' => 'fk-members', 'id' => '3']]]);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['3', '4'], $this->ids($this->fetch('/fk-teams/2/relationships/members')['data'] ?? null));
+        self::assertSame(['1', '2'], $this->ids($this->fetch('/fk-teams/1/relationships/members')['data'] ?? null));
+
+        $update = $this->handle('/fk-teams/2', 'PATCH', ['data' => ['type' => 'fk-teams', 'id' => '2', 'relationships' => ['members' => ['data' => [['type' => 'fk-members', 'id' => '1']]]]]]);
+        self::assertSame(200, $update->getStatusCode(), (string) $update->getContent());
+        self::assertSame(['1'], $this->ids($this->fetch('/fk-teams/2/relationships/members')['data'] ?? null));
+        self::assertSame(['2'], $this->ids($this->fetch('/fk-teams/1/relationships/members')['data'] ?? null));
+    }
+
+    #[Test]
+    #[Group('spec:crud-updating-relationships')]
+    public function linkageTheCallerCantReachIsNotFoundAndChangesNothing(): void
+    {
+        self::assertSame(404, $this->handle('/fk-users/ada/relationships/items', 'PATCH', ['data' => [['type' => 'fk-items', 'id' => '1'], ['type' => 'fk-items', 'id' => '99']]])->getStatusCode());
+        self::assertSame(['1', '2', '3', '4', '5'], $this->ids($this->fetch('/fk-users/ada/items?page[size]=10')['data'] ?? null));
+    }
+
+    #[Test]
+    #[Group('spec:crud-updating-relationships')]
+    public function readOnlyAndFixedMembershipStillRefuseTheWrite(): void
+    {
+        self::assertSame(403, $this->handle('/fk-users/ada/relationships/readOnlyItems', 'PATCH', ['data' => []])->getStatusCode());
+
+        $same = [];
+        foreach (['1', '2', '3', '4', '5'] as $id) {
+            $same[] = ['type' => 'fk-items', 'id' => $id];
+        }
+        self::assertSame(200, $this->handle('/fk-users/ada/relationships/lockedItems', 'PATCH', ['data' => $same])->getStatusCode());
+        self::assertSame(403, $this->handle('/fk-users/ada/relationships/lockedItems', 'PATCH', ['data' => [['type' => 'fk-items', 'id' => '1']]])->getStatusCode());
+        self::assertSame(['1', '2', '3', '4', '5'], $this->ids($this->fetch('/fk-users/ada/items?page[size]=10')['data'] ?? null));
+    }
+
+    #[Test]
+    #[Group('ext:atomic')]
+    public function anAtomicBatchWritesTheForeignKeyAndRollsItBackOnFailure(): void
+    {
+        $failed = $this->atomic([
+            ['op' => 'update', 'ref' => ['type' => 'fk-teams', 'id' => '2', 'relationship' => 'members'], 'data' => [['type' => 'fk-members', 'id' => '1']]],
+            ['op' => 'update', 'ref' => ['type' => 'fk-teams', 'id' => '1', 'relationship' => 'members'], 'data' => [['type' => 'fk-members', 'id' => '99']]],
+        ]);
+        self::assertSame(404, $failed->getStatusCode(), (string) $failed->getContent());
+        self::assertSame(['4'], $this->ids($this->fetch('/fk-teams/2/relationships/members')['data'] ?? null));
+
+        $committed = $this->atomic([
+            ['op' => 'update', 'ref' => ['type' => 'fk-teams', 'id' => '2', 'relationship' => 'members'], 'data' => [['type' => 'fk-members', 'id' => '1']]],
+        ]);
+        self::assertContains($committed->getStatusCode(), [200, 204], (string) $committed->getContent());
+        self::assertSame(['1'], $this->ids($this->fetch('/fk-teams/2/relationships/members')['data'] ?? null));
+    }
+
+    /**
+     * @param list<array<string, mixed>> $operations
+     */
+    private function atomic(array $operations): \Symfony\Component\HttpFoundation\Response
+    {
+        $kernel = static::$kernel;
+        self::assertNotNull($kernel);
+        $ext = 'application/vnd.api+json; ext="https://jsonapi.org/ext/atomic"';
+        $request = \Symfony\Component\HttpFoundation\Request::create('/operations', 'POST', server: ['CONTENT_TYPE' => $ext, 'HTTP_ACCEPT' => $ext], content: \json_encode(['atomic:operations' => $operations], \JSON_THROW_ON_ERROR));
+        $response = $kernel->handle($request, \Symfony\Component\HttpKernel\HttpKernelInterface::MAIN_REQUEST, true);
+        $this->restoreHandlers();
+
+        return $response;
+    }
+
     /**
      * @return array<string, mixed>
      */

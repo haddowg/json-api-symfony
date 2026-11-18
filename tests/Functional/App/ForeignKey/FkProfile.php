@@ -16,7 +16,7 @@ class FkProfile
         public ?int $id = null,
         #[ORM\Column(type: 'string')]
         public string $bio = '',
-        #[ORM\Column(type: 'string')]
-        public string $owner = '',
+        #[ORM\Column(type: 'string', nullable: true)]
+        public ?string $owner = null,
     ) {}
 }
