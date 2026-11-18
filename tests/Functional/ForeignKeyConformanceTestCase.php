@@ -28,6 +28,17 @@ abstract class ForeignKeyConformanceTestCase extends JsonApiFunctionalTestCase
     private const string QUERIES_ACCEPT = 'application/vnd.api+json;profile="' . RelationshipQueriesProfile::URI . '"';
 
     #[Test]
+    public function anActionTakesARelatedOnlyInputWhoseToManyNoRequestReads(): void
+    {
+        $response = $this->handle('/fk-users/ada/-actions/import', 'POST', [
+            'data' => ['type' => 'fk-imports', 'relationships' => ['secrets' => ['data' => [['type' => 'fk-secrets', 'id' => '1']]]]],
+        ]);
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame('Ada', $this->attribute($this->decode($response)['data'] ?? null, 'name'));
+    }
+
+    #[Test]
     public function aPlainReadOfAProviderBackedParentRenders(): void
     {
         $document = $this->fetch('/fk-users/ada');

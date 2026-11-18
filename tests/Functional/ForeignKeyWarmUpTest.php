@@ -4,14 +4,20 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\FkImportResource;
+use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\FkUserPersister;
 use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\Guard\ComputedItemsUserResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\Guard\ComputedSecretsUserResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\Guard\ForeignKeyGuardKernel;
+use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\Guard\ImportsUserResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\Guard\KeyedItemsUserResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\Guard\MisnamedKeyUserResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\Guard\UnkeyedItemsUserResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\Guard\UnkeyedProfileUserResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\Guard\UnkeyedSecretsUserResource;
+use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\Guard\UpdatableWriteOnlySecretsUserResource;
+use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\Guard\WriteOnlySecretsUserResource;
+use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\ImportSecrets;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
@@ -51,9 +57,41 @@ final class ForeignKeyWarmUpTest extends KernelTestCase
     public function aToManyIntoAScopedTypeWithNoForeignKeyFailsWarmUp(): void
     {
         $this->expectException(\LogicException::class);
-        $this->expectExceptionMessageMatches('/Relation "secrets" on resource type "fk-users" reads type "fk-secrets", which a Doctrine query extension scopes.*foreign key argument, HasMany::make\\(\'secrets\', \'fk-secrets\', \'<foreign key>\'\\), or compute it with extractUsing\\(\\)/s');
+        $this->expectExceptionMessageMatches('/Relation "secrets" on resource type "fk-users" reads type "fk-secrets", which a Doctrine query extension scopes.*foreign key argument, HasMany::make\\(\'secrets\', \'fk-secrets\', \'<foreign key>\'\\), or compute it with extractUsing\\(\\)\\. If only a request document ever sets it, mark it writeOnly\\(\\) and leave Update out of the operations of "fk-users"\\. A type that only an action takes as input needs none of these once it is declared relatedOnly/s');
 
         $this->bootWithSubject(UnkeyedSecretsUserResource::class);
+    }
+
+    #[Test]
+    public function aWriteOnlyToManyOfATypeThatTakesNoUpdateBootsClean(): void
+    {
+        $this->bootWithSubject(WriteOnlySecretsUserResource::class);
+        self::assertNotNull(static::$kernel);
+    }
+
+    #[Test]
+    public function aWriteOnlyToManyOfATypeThatTakesAnUpdateFailsWarmUp(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('Relation "secrets" on resource type "fk-users" reads type "fk-secrets", which a Doctrine query extension scopes');
+
+        $this->bootWithSubject(UpdatableWriteOnlySecretsUserResource::class, [FkUserPersister::class]);
+    }
+
+    #[Test]
+    public function aToManyOfARelatedOnlyActionInputTypeBootsClean(): void
+    {
+        $this->bootWithSubject(KeyedItemsUserResource::class, [FkImportResource::class, ImportSecrets::class]);
+        self::assertNotNull(static::$kernel);
+    }
+
+    #[Test]
+    public function aToManyOfARelatedOnlyTypeARelationReachesFailsWarmUp(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('Relation "secrets" on resource type "fk-imports" reads type "fk-secrets", which a Doctrine query extension scopes');
+
+        $this->bootWithSubject(ImportsUserResource::class, [FkImportResource::class, ImportSecrets::class]);
     }
 
     #[Test]
@@ -101,12 +139,14 @@ final class ForeignKeyWarmUpTest extends KernelTestCase
     }
 
     /**
-     * @param class-string $subject
+     * @param class-string       $subject
+     * @param list<class-string> $extraServices
      */
-    private function bootWithSubject(string $subject): void
+    private function bootWithSubject(string $subject, array $extraServices = []): void
     {
         static::ensureKernelShutdown();
         ForeignKeyGuardKernel::$subjectResource = $subject;
+        ForeignKeyGuardKernel::$extraServices = $extraServices;
         static::bootKernel(['debug' => false]);
     }
 

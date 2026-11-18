@@ -556,6 +556,7 @@ return static function (ContainerConfigurator $container): void {
                 '$serverNames' => '%haddowg_json_api.servers%',
                 '$idEncoders' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(IdEncoderResolver::class),
                 '$providers' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataProvider\DataProviderRegistry::class),
+                '$actions' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Action\ActionRegistry::class)->nullOnInvalid(),
             ])
             ->tag('kernel.cache_warmer');
     }
