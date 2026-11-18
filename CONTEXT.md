@@ -89,6 +89,10 @@ A value stored on the join of a `belongsToMany`, rendered and written at each li
 The Doctrine entity that models a `belongsToMany` join so it can carry pivot fields.
 _Avoid_: join table (when it has columns)
 
+**Foreign-key read**:
+How a relation declared with a foreign key (core's term) is read: always by the related type's provider, through `ReadsByForeignKeyInterface`, as the rows whose foreign key holds one of a page of parents' keys, whatever provider serves the parents. The parent model never holds the relation.
+_Avoid_: inverse read, reverse lookup
+
 **Windowed include**:
 A to-many whose linkage renders, included or `withData()`, cut to its first page per parent under its effective paginator, and reordered or narrowed by a Relationship Queries `relatedQuery`.
 

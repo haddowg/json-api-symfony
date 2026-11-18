@@ -197,9 +197,11 @@ final class IdEncoderResolver
      * whose static `$type` matches (read without instantiating), else the first such
      * class on any server, resolved to its service instance through the locator.
      * `null` when no resource declares the type (e.g. a bare serializer/hydrator pair).
+     * With no `$server`, the server the current operation bound answers.
      */
-    private function resourceFor(string $type, string $server): ?AbstractResource
+    public function resourceFor(string $type, ?string $server = null): ?AbstractResource
     {
+        $server ??= $this->boundServer;
         foreach ([$this->classesByServer[$server] ?? [], $this->resources->classes()] as $classes) {
             foreach ($classes as $class) {
                 if (!\is_a($class, AbstractResource::class, true) || $class::$type !== $type) {

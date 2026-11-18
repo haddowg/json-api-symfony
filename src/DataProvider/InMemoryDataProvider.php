@@ -21,6 +21,7 @@ use haddowg\JsonApi\Pagination\CursorWindow;
 use haddowg\JsonApi\Pagination\OffsetWindow;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\Accessor;
+use haddowg\JsonApi\Resource\Field\ForeignKey;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Field\StoresIdentifiersInterface;
@@ -53,7 +54,7 @@ use haddowg\JsonApiBundle\Action\ActionDescriptor;
  *
  * @implements DataProviderInterface<object>
  */
-final class InMemoryDataProvider implements DataProviderInterface, ScopesRelatedReadsInterface, FetchesByIdsInterface, AdmitsIdsInterface, QueriesFilteredCollectionInterface, LinkRowQueryInterface, LinkRowKeysInterface
+final class InMemoryDataProvider implements DataProviderInterface, ScopesRelatedReadsInterface, FetchesByIdsInterface, AdmitsIdsInterface, QueriesFilteredCollectionInterface, LinkRowQueryInterface, LinkRowKeysInterface, ReadsByForeignKeyInterface
 {
     private readonly InMemoryStore $store;
 
@@ -326,6 +327,75 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
         }
 
         return new RelatedBatch($results);
+    }
+
+    /**
+     * Each parent's page of the stored rows whose foreign key holds its key: a field's
+     * value compared with the parent's key as strings, or a to-one's value, the parent
+     * object itself or its key. Each parent's rows then run the criteria pipeline
+     * {@see fetchRelatedCollection()} runs, with the PK tiebreak a windowed batch appends.
+     */
+    public function fetchByForeignKey(
+        string $relatedType,
+        RelationInterface $relation,
+        ForeignKey $foreignKey,
+        ForeignKeyParents $parents,
+        CollectionCriteria $criteria,
+        JsonApiRequestInterface $request,
+    ): RelatedBatch {
+        $results = [];
+        foreach ($this->rowsByForeignKey($foreignKey, $parents) as $wireId => $rows) {
+            $results[$wireId] = match (true) {
+                $criteria->window instanceof CursorWindow => $this->runCursor($criteria, $rows),
+                $criteria->window instanceof OffsetWindow => $this->applyAndWindow($this->withPkTiebreak($criteria), $rows, $criteria->wantsCount),
+                default => $this->applyAndWindow($criteria, $rows, $criteria->wantsCount),
+            };
+        }
+
+        return new RelatedBatch($results);
+    }
+
+    public function countByForeignKey(
+        string $relatedType,
+        RelationInterface $relation,
+        ForeignKey $foreignKey,
+        ForeignKeyParents $parents,
+        CollectionCriteria $criteria,
+        JsonApiRequestInterface $request,
+    ): array {
+        $counts = [];
+        foreach ($this->rowsByForeignKey($foreignKey, $parents) as $wireId => $rows) {
+            $counts[$wireId] = \count($this->applier->apply($criteria, $rows, $this->filterHandler, $this->sortHandler));
+        }
+
+        return $counts;
+    }
+
+    /**
+     * The stored rows grouped by the parent their foreign key holds, every parent
+     * present, in store order.
+     *
+     * @return array<string, list<object>>
+     */
+    private function rowsByForeignKey(ForeignKey $foreignKey, ForeignKeyParents $parents): array
+    {
+        $byObject = [];
+        foreach ($parents->parents as $wireId => $parent) {
+            $byObject[\spl_object_id($parent)] = (string) $wireId;
+        }
+
+        $grouped = \array_fill_keys(\array_map('strval', \array_keys($parents->keys)), []);
+        foreach ($this->store->all() as $row) {
+            $value = Accessor::get($row, $foreignKey->column);
+            $wireId = \is_object($value) && isset($byObject[\spl_object_id($value)])
+                ? $byObject[\spl_object_id($value)]
+                : $parents->wireIdOf($value);
+            if ($wireId !== null) {
+                $grouped[$wireId][] = $row;
+            }
+        }
+
+        return $grouped;
     }
 
     /**

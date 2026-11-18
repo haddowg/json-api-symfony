@@ -1015,6 +1015,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $result = $this->readRouter->fetchIdentified($server, $type, $parent, $relation, $criteria, $request, $identifiedTypes, $identifiedPivots);
             } else {
                 $result = match (true) {
+                    $this->readRouter?->readsByForeignKey($relation) === true => $this->readRouter->foreignKeyPage($server, $type, $parent, $relation, $criteria, $request),
                     $this->readRouter?->isComputed($relation) === true => $this->readRouter->fetchComputed($server, $parent, $relation, $criteria, $request),
                     // A to-many over several types reaching a scoped type serves its members
                     // narrowed per member type.
@@ -1552,9 +1553,11 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             );
             $this->validateFilterValues($operation->queryParameters()->filter, $criteria->filters, $criteria->request, $criteria->paths);
 
-            $result = $this->readRouter?->isComputed($relation) === true
-                ? $this->readRouter->fetchComputed($server, $parent, $relation, $criteria, $request)
-                : $relatedProvider->fetchRelatedCollection($relatedType, $parent, $relation, $criteria, $request);
+            $result = match (true) {
+                $this->readRouter?->readsByForeignKey($relation) === true => $this->readRouter->foreignKeyPage($server, $type, $parent, $relation, $criteria, $request),
+                $this->readRouter?->isComputed($relation) === true => $this->readRouter->fetchComputed($server, $parent, $relation, $criteria, $request),
+                default => $relatedProvider->fetchRelatedCollection($relatedType, $parent, $relation, $criteria, $request),
+            };
             $items = \is_array($result->items) ? \array_values($result->items) : \iterator_to_array($result->items, false);
 
             // A relationship endpoint renders linkage only — an IdentifierResponse never
@@ -1818,7 +1821,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // Render the linkage `GET` on the relationship endpoint serves (unpaginated), not
         // the model's members, which still include the ones the scope hides.
         $this->relationshipLinkage?->set(null);
-        $members = $this->linkageGuard?->scopedMembers($server, $parent, $relation, $request);
+        $members = $this->linkageGuard?->scopedMembers($server, $parent, $relation, $request, $type);
         $this->relationshipLinkage?->setIncluded(match (true) {
             $members !== null => new WindowedRelationshipLinkage([\spl_object_id($parent) => [$relationshipName => new RelationshipLinkage($members)]]),
             !$relation->isToMany() || Polymorphism::of($relation) => $this->includeBatcher?->scopeRelationship($server, $type, $parent, $relation, $request),

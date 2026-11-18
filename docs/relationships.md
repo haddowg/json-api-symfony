@@ -93,6 +93,52 @@ loaded", so the rendered relationship carries `links` but omits the `data` membe
 `tracks` with links and no `data`, while the explicit
 `GET /albums/1/relationships/tracks` serves its first page of identifiers.
 
+### Relations read through a foreign key
+
+A `HasMany` or `HasOne` declared with a foreign key, its third argument, is read through
+the related type's field or to-one relation that holds the parent's id, never off the
+parent model. The music catalog's `stations` are served by
+[`StationProvider`](../examples/music-catalog-symfony/src/Provider/StationProvider.php)
+from a fixed list, with no database behind them, and their plays live in Doctrine:
+
+```php
+// src/Resource/StationResource.php
+HasMany::make('plays', 'plays', 'station'),
+```
+
+`GET /stations/kexp/plays`, `GET /stations/kexp/relationships/plays`,
+`GET /stations?include=plays`, `withData()` linkage, `?withCount=plays`, offset and
+cursor pages, a `relatedQuery` and the related type's filter defaults are all the plays
+whose `station` is the station's id, as the `plays` type's provider scopes them. Each
+read covers the whole page of parents: the reference Doctrine provider runs it as one
+`WHERE station IN (:keys)` query with the related type's
+[query extensions](custom-data-providers.md#doctrineextensioninterface--scoping-the-doctrine-queries)
+applied, windowed per parent like any rendered first page, and one grouped query for a
+count. The in-memory provider matches its stored rows the same way.
+
+Use it wherever the parent can't hold the relation: a singleton or computed type served
+by a [custom provider](custom-data-providers.md), or an entity with no inverse mapping to
+the rows that point at it. Once declared, the foreign key decides every read of the
+relation even when the parent's entity maps an association for it.
+
+The foreign key names a stored field of the related type holding the parent's id, the
+parent's wire id decoded through its id encoder, or a to-one relation to the parent's
+type, which on Doctrine is a single-valued association to the parent's entity. Warm-up
+checks it, and checks that the related type's provider reads through foreign keys
+(`ReadsByForeignKeyInterface`, which the Doctrine and in-memory providers implement).
+
+A relation of a type no entity maps can't reach Doctrine rows any other way, so warm-up
+refuses a `HasMany`, `BelongsToMany` or `HasOne` from such a type into a Doctrine type
+unless it declares a foreign key or `extractUsing()`, or the parent type's provider
+overrides `fetchRelatedCollectionBatch()` to batch its own related reads. The message
+names the foreign key argument and `extractUsing()`.
+
+Relationship writes still go through the parent type's persister, which sets the
+members the way it always has: a Doctrine parent with a mapped inverse association
+updates the related rows' owning side, and a custom persister decides for its own types.
+A foreign key doesn't change how a relationship is written, so declare one the parent's
+persister can't write, such as a Doctrine relation with no inverse mapping, `readOnly()`.
+
 ### Rendered to-manys show their first page
 
 Wherever a to-many's `data` renders, included or declared `withData()`, it is the

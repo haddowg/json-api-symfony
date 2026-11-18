@@ -57,6 +57,15 @@ final class RelationScope
     ): void {
         $property = $relation->column() ?? $relation->name();
 
+        $parentClass = $parent instanceof \Doctrine\Persistence\Proxy ? \get_parent_class($parent) : $parent::class;
+        if (!\is_string($parentClass) || $this->entityManager->getMetadataFactory()->isTransient($parentClass)) {
+            throw new \LogicException(\sprintf(
+                'Relationship "%s" has a %s parent, which is not a Doctrine entity, so no association scopes its related rows. Declare the relation with a foreign key, or compute it with extractUsing().',
+                $relation->name(),
+                $parent::class,
+            ));
+        }
+
         $owningField = $this->inverseOwningField($parent, $property);
         $relatedMetadata = $this->entityManager->getClassMetadata($relatedClass);
 

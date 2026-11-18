@@ -23,6 +23,7 @@ use haddowg\JsonApi\Pagination\CursorWindow;
 use haddowg\JsonApi\Pagination\OffsetWindow;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
+use haddowg\JsonApi\Resource\Field\ForeignKey;
 use haddowg\JsonApi\Resource\Field\IdEncoderInterface;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
@@ -39,11 +40,13 @@ use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\CriteriaApplier;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\FetchesByIdsInterface;
+use haddowg\JsonApiBundle\DataProvider\ForeignKeyParents;
 use haddowg\JsonApiBundle\DataProvider\PivotAwareProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\PivotCollectionResult;
 use haddowg\JsonApiBundle\DataProvider\PivotCursorCollectionResult;
 use haddowg\JsonApiBundle\DataProvider\PivotFields;
 use haddowg\JsonApiBundle\DataProvider\QueriesFilteredCollectionInterface;
+use haddowg\JsonApiBundle\DataProvider\ReadsByForeignKeyInterface;
 use haddowg\JsonApiBundle\DataProvider\ReadsLinkRowsInterface;
 use haddowg\JsonApiBundle\DataProvider\RelatedBatch;
 use haddowg\JsonApiBundle\DataProvider\ScopesRelatedReadsInterface;
@@ -96,7 +99,7 @@ use haddowg\JsonApiBundle\Server\IdEncoderResolver;
  * @implements DataProviderInterface<object>
  * @implements PivotAwareProviderInterface<object>
  */
-final class DoctrineDataProvider implements DataProviderInterface, PivotAwareProviderInterface, ScopesRelatedReadsInterface, AdmitsRowsInterface, FetchesByIdsInterface, AdmitsIdsInterface, QueriesFilteredCollectionInterface, LinkRowQueryInterface, LinkRowKeysInterface, ReadsLinkRowsInterface
+final class DoctrineDataProvider implements DataProviderInterface, PivotAwareProviderInterface, ScopesRelatedReadsInterface, AdmitsRowsInterface, FetchesByIdsInterface, AdmitsIdsInterface, QueriesFilteredCollectionInterface, LinkRowQueryInterface, LinkRowKeysInterface, ReadsLinkRowsInterface, ReadsByForeignKeyInterface
 {
     /**
      * The root alias every generated QueryBuilder uses; handlers re-read it
@@ -574,6 +577,15 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
         $relatedClass = $this->entityClassFor($relatedType);
 
+        // A foreign key decides the read; a parent another provider serves has no mapping
+        // to scope by without one.
+        if (ForeignKey::nameOf($relation) !== null) {
+            return $this->fetchRelatedByForeignKey($relatedType, $parent, $relation, $criteria, $request);
+        }
+        if (!$this->isEntity($parent)) {
+            throw $this->unmappedParent($parent, $relation);
+        }
+
         // With no requested or default order the members come in the order a lazy load of
         // the collection gives them, as they do in the parent's linkage.
         $parentMetadata = $this->entityManager->getClassMetadata($parent::class);
@@ -595,6 +607,20 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             $builder = $extension->apply($builder, new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request));
         }
 
+        return $this->relatedPage($relatedType, $relatedClass, $builder, $criteria);
+    }
+
+    /**
+     * Runs a related query already scoped to its parent through the related endpoint's
+     * tail: a cursor window as a keyset page, else the criteria and the window, counted
+     * only when the criteria asks.
+     *
+     * @param class-string $relatedClass
+     *
+     * @return CollectionResult<object>
+     */
+    private function relatedPage(string $relatedType, string $relatedClass, QueryBuilder $builder, CollectionCriteria $criteria): CollectionResult
+    {
         // A cursor (keyset) window on the related endpoint runs the SAME keyset
         // push-down as the primary collection: the builder is already scoped to
         // the parent above, so the parent-membership predicate simply rides the
@@ -669,6 +695,15 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
         if ($parents === []) {
             return new RelatedBatch([]);
+        }
+
+        // A foreign key decides the read, whatever serves the parents.
+        $foreignKey = $this->foreignKeyOf($relation);
+        if ($foreignKey !== null) {
+            $keyed = $this->foreignKeyParents($parentType, $parents);
+            if ($keyed !== null) {
+                return $this->fetchByForeignKey($relation->relatedTypes()[0] ?? $parentType, $relation, $foreignKey, $keyed, $criteria, $request);
+            }
         }
 
         // Parents another provider serves need not be entities at all.
@@ -1302,6 +1337,12 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
         if ($parents === []) {
             return [];
+        }
+
+        $foreignKey = $this->foreignKeyOf($relation);
+        $keyed = $foreignKey !== null ? $this->foreignKeyParents($type, $parents) : null;
+        if ($foreignKey !== null && $keyed !== null) {
+            return $this->countByForeignKey($relation->relatedTypes()[0] ?? $type, $relation, $foreignKey, $keyed, $criteria, $request);
         }
 
         $parentClass = $this->entityClassFor($type);
@@ -2756,6 +2797,239 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
             return $key !== null && isset($admitted[$key]);
         }));
+    }
+
+    /**
+     * Reads the related rows whose foreign key holds one of the parents' keys, with the
+     * related type's query extensions applied. A windowed read is bounded per parent in
+     * one `ROW_NUMBER` query, as a mapped to-many's first pages are, unless window
+     * functions are off or a cursor page carries a boundary, when each parent's page is
+     * its own bounded query. An unwindowed read is one query partitioned by foreign key.
+     */
+    public function fetchByForeignKey(
+        string $relatedType,
+        RelationInterface $relation,
+        ForeignKey $foreignKey,
+        ForeignKeyParents $parents,
+        CollectionCriteria $criteria,
+        JsonApiRequestInterface $request,
+    ): RelatedBatch {
+        if ($parents->isEmpty()) {
+            return new RelatedBatch([]);
+        }
+
+        $relatedClass = $this->entityClassFor($relatedType);
+        $scope = ForeignKeyScope::of($this->entityManager, $this->ids, $this->entityManager->getClassMetadata($relatedClass), $foreignKey, $parents);
+        $window = $criteria->window;
+
+        if ($window instanceof CursorWindow) {
+            if ($this->windowFunctions && $window->after === null && $window->before === null) {
+                return $this->windowedBatch->fetchCursor($parents->type, \array_values($parents->parents), $relatedType, $relatedClass, $relation, $criteria, $window, $this->relatedExtensions($relatedType, $request), $scope);
+            }
+
+            return $this->foreignKeyPages($relatedType, $relatedClass, $scope, $criteria, $request);
+        }
+
+        if ($window instanceof OffsetWindow) {
+            if ($this->windowFunctions) {
+                return $this->windowedBatch->fetch($parents->type, \array_values($parents->parents), $relatedType, $relatedClass, $relation, $criteria, $this->relatedExtensions($relatedType, $request), $scope);
+            }
+
+            return $this->foreignKeyPages($relatedType, $relatedClass, $scope, $criteria, $request);
+        }
+
+        $builder = $scope->scope($this->entityManager->getRepository($relatedClass)->createQueryBuilder('related'), 'related', select: true);
+        $builder = $this->relatedExtensions($relatedType, $request)->scope($builder, 'related');
+        $builder = $this->applier->apply($criteria, $builder, $this->filterHandler, $this->sortHandler, 'related');
+
+        /** @var list<array<int|string, mixed>> $rows */
+        $rows = $builder->getQuery()->getResult();
+        $partitions = [];
+        foreach ($rows as $row) {
+            $related = $row[0] ?? null;
+            $wireId = $scope->wireIdOf($row[BatchScope::PARENT_DISCRIMINATOR_ALIAS] ?? null);
+            if (\is_object($related) && $wireId !== null) {
+                $partitions[$wireId][] = $related;
+            }
+        }
+
+        $results = [];
+        foreach ($partitions as $wireId => $members) {
+            $results[$wireId] = $this->windowExecutor->run(
+                null,
+                countable: $criteria->wantsCount,
+                all: static fn(): array => $members,
+                count: static fn(): int => \count($members),
+                page: static fn(int $offset, int $limit): array => \array_slice($members, $offset, $limit),
+                probe: static fn(int $offset, int $limit): array => \array_slice($members, $offset, $limit),
+            );
+        }
+
+        return new RelatedBatch($results);
+    }
+
+    /**
+     * Counts each parent's related rows whose foreign key holds its key, over
+     * `$criteria`'s filters and the related type's query extensions, in one grouped
+     * query. A parent with no rows counts `0`.
+     */
+    public function countByForeignKey(
+        string $relatedType,
+        RelationInterface $relation,
+        ForeignKey $foreignKey,
+        ForeignKeyParents $parents,
+        CollectionCriteria $criteria,
+        JsonApiRequestInterface $request,
+    ): array {
+        $counts = \array_fill_keys(\array_map('strval', \array_keys($parents->keys)), 0);
+        if ($parents->isEmpty()) {
+            return $counts;
+        }
+
+        $relatedClass = $this->entityClassFor($relatedType);
+        $relatedMetadata = $this->entityManager->getClassMetadata($relatedClass);
+        $scope = ForeignKeyScope::of($this->entityManager, $this->ids, $relatedMetadata, $foreignKey, $parents);
+
+        $builder = $scope->scope($this->entityManager->getRepository($relatedClass)->createQueryBuilder('related'), 'related');
+        $builder = $this->relatedExtensions($relatedType, $request)->scope($builder, 'related');
+        $builder = $this->applier->apply($this->filtersOnly($criteria), $builder, $this->filterHandler, $this->sortHandler, 'related');
+        $builder
+            ->select(\sprintf('%s AS %s', $scope->expression('related'), BatchScope::PARENT_DISCRIMINATOR_ALIAS))
+            ->addSelect(\sprintf('COUNT(DISTINCT %s) AS jsonapi_count', DoctrineIdentifiers::path($relatedMetadata, 'related')))
+            ->groupBy(BatchScope::PARENT_DISCRIMINATOR_ALIAS);
+
+        /** @var list<array<string, mixed>> $rows */
+        $rows = $builder->getQuery()->getResult();
+        foreach ($rows as $row) {
+            $wireId = $scope->wireIdOf($row[BatchScope::PARENT_DISCRIMINATOR_ALIAS] ?? null);
+            $count = $row['jsonapi_count'] ?? 0;
+            if ($wireId !== null) {
+                $counts[$wireId] = \is_numeric($count) ? (int) $count : 0;
+            }
+        }
+
+        return $counts;
+    }
+
+    /**
+     * Each parent's page read on its own: one bounded query per parent, scoped by the
+     * foreign key, for a cursor page with a boundary or with window functions off.
+     *
+     * @param class-string $relatedClass
+     */
+    private function foreignKeyPages(string $relatedType, string $relatedClass, ForeignKeyScope $scope, CollectionCriteria $criteria, JsonApiRequestInterface $request): RelatedBatch
+    {
+        $results = [];
+        foreach (\array_keys($scope->parents()->keys) as $wireId) {
+            $builder = $scope->only((string) $wireId)->scope(
+                $this->entityManager->getRepository($relatedClass)->createQueryBuilder(self::ROOT_ALIAS),
+                self::ROOT_ALIAS,
+            );
+            foreach ($this->extensionsFor($relatedType) as $extension) {
+                $builder = $extension->apply($builder, new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request));
+            }
+
+            $results[(string) $wireId] = $this->relatedPage($relatedType, $relatedClass, $builder, $criteria);
+        }
+
+        return new RelatedBatch($results);
+    }
+
+    /**
+     * A single parent's related page read through the relation's foreign key, for a
+     * caller that names no parent type. The parent must then be an entity, whose own id
+     * is the key; {@see \haddowg\JsonApiBundle\DataProvider\RelatedReadRouter} reads
+     * any other parent through {@see fetchByForeignKey()}.
+     *
+     * @return CollectionResult<object>
+     */
+    private function fetchRelatedByForeignKey(string $relatedType, object $parent, RelationInterface $relation, CollectionCriteria $criteria, JsonApiRequestInterface $request): CollectionResult
+    {
+        $foreignKey = $this->foreignKeyOf($relation);
+        if ($foreignKey === null) {
+            throw new \LogicException(\sprintf('Relation "%s" reads through the foreign key "%s", which is no stored field or to-one relation of type "%s".', $relation->name(), (string) ForeignKey::nameOf($relation), $relatedType));
+        }
+        if (!$this->isEntity($parent)) {
+            throw new \LogicException(\sprintf(
+                'Relation "%s" reads through a foreign key, and its %s parent is not an entity, so its key is read through its type\'s serializer. Read it through the RelatedReadRouter, or call fetchByForeignKey().',
+                $relation->name(),
+                $parent::class,
+            ));
+        }
+
+        $metadata = $this->entityManager->getClassMetadata($parent::class);
+        $key = $this->ids->valueOf($metadata, $parent);
+        $parents = new ForeignKeyParents($parent::class, ['0' => $parent], ['0' => $key]);
+
+        return $this->fetchByForeignKey($relatedType, $relation, $foreignKey, $parents, $criteria, $request)->for('0');
+    }
+
+    /**
+     * `$relation`'s foreign key resolved against its related type's resource, or `null`
+     * when it declares none.
+     */
+    private function foreignKeyOf(RelationInterface $relation): ?ForeignKey
+    {
+        $name = ForeignKey::nameOf($relation);
+        $relatedType = $relation->relatedTypes()[0] ?? null;
+        if ($name === null || $relatedType === null) {
+            return null;
+        }
+
+        $resource = $this->idEncoders->resourceFor($relatedType);
+
+        return $resource === null ? null : ForeignKey::in($name, $resource);
+    }
+
+    /**
+     * The parents keyed by wire id with their stored keys, read through the resource
+     * serving `$parentType`, or `null` when no resource serves it.
+     *
+     * @param list<object> $parents
+     */
+    private function foreignKeyParents(string $parentType, array $parents): ?ForeignKeyParents
+    {
+        $resource = $this->idEncoders->resourceFor($parentType);
+        if ($resource === null) {
+            return null;
+        }
+
+        $objects = [];
+        $keys = [];
+        foreach ($parents as $parent) {
+            $wireId = $resource->getId($parent);
+            $objects[$wireId] = $parent;
+            $keys[$wireId] = ForeignKey::parentKey($resource, $parent);
+        }
+
+        return new ForeignKeyParents($parentType, $objects, $keys);
+    }
+
+    /**
+     * Whether Doctrine maps `$object`'s class, read without loading metadata for a class
+     * it doesn't map.
+     */
+    private function isEntity(object $object): bool
+    {
+        $class = $object instanceof \Doctrine\Persistence\Proxy ? \get_parent_class($object) : $object::class;
+
+        return \is_string($class) && !$this->entityManager->getMetadataFactory()->isTransient($class);
+    }
+
+    /**
+     * The refusal of a related read whose parent is no entity and whose relation names no
+     * foreign key, so nothing scopes the related rows to it.
+     */
+    private function unmappedParent(object $parent, RelationInterface $relation): \LogicException
+    {
+        return new \LogicException(\sprintf(
+            'The %s cannot read relationship "%s" for its %s parent: the parent is not a Doctrine entity, so it has no association to scope the related rows by. Name the related type\'s field or to-one relation holding the parent\'s id as the foreign key argument, HasMany::make(\'%s\', \'%s\', \'<foreign key>\'), or compute the members with extractUsing().',
+            self::class,
+            $relation->name(),
+            $parent::class,
+            $relation->name(),
+            $relation->relatedTypes()[0] ?? '',
+        ));
     }
 
     /**

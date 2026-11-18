@@ -119,6 +119,11 @@ relationship endpoint renders the whole linkage. Each level of a nested include
 include of a singleton, of a related collection and of an atomic result. A
 [`relatedQuery`](relationships.md) sort or filter reorders or narrows the same first page.
 
+Every rendered to-many gets its first page whatever serves its parent. A relation the
+parent model can't hold, such as one on a singleton a custom provider serves, declares
+a [foreign key](relationships.md#relations-read-through-a-foreign-key), and the related
+type's provider cuts every parent's first page from one query.
+
 A relation keeps its whole set when it is declared `withoutPagination()`, or when it
 exposes neither its relationship nor its related endpoint, which leaves its pages
 nothing to link to:

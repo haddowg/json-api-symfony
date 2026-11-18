@@ -8,6 +8,9 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Mapping\ClassMetadata;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
+use haddowg\JsonApi\Resource\Field\ForeignKey;
+use haddowg\JsonApi\Resource\Field\HasMany;
+use haddowg\JsonApi\Resource\Field\HasOne;
 use haddowg\JsonApi\Resource\Field\MorphTo;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
@@ -26,7 +29,10 @@ use haddowg\JsonApi\Resource\Filter\WhereThrough;
 use haddowg\JsonApi\Resource\Filter\WhereThroughIn;
 use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApi\Resource\Sort\SortInterface;
+use haddowg\JsonApiBundle\DataProvider\AbstractDataProvider;
+use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
 use haddowg\JsonApiBundle\DataProvider\FilterPaths;
+use haddowg\JsonApiBundle\DataProvider\RelatedReadRouter;
 use haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory;
 use haddowg\JsonApiBundle\Server\IdEncoderResolver;
 use haddowg\JsonApiBundle\Server\RouteDescriptorRegistry;
@@ -68,6 +74,15 @@ use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
  *    {@see PivotAssociationResolver} already fails loudly, but lazily on the first
  *    write. Running the discovery here moves only the TIMING — the same
  *    `\LogicException` fires at `cache:warmup`.
+ *  - **A foreign key is a mapped column of the related entity.** A relation declared
+ *    with a foreign key into an entity-mapped type reads through a field or a
+ *    single-valued association of that entity, and an association must reference the
+ *    parent's own entity.
+ *  - **A relation of a parent that is no entity names how to reach its rows.** A
+ *    `HasMany`, `BelongsToMany` or `HasOne` into an entity-mapped type, declared on a
+ *    type no entity maps, has no association to scope the related rows by. It must
+ *    declare a foreign key or `extractUsing()`, or the parent type's provider must batch
+ *    its own related reads.
  */
 final class DoctrineServableWarmer implements CacheWarmerInterface
 {
@@ -84,6 +99,7 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
         private readonly PivotAssociationResolver $pivotAssociations,
         private readonly array $serverNames,
         private readonly ?IdEncoderResolver $idEncoders = null,
+        private readonly ?DataProviderRegistry $providers = null,
     ) {}
 
     /**
@@ -109,6 +125,10 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
             $server = $this->servers->get($serverName);
 
             foreach (\array_keys($this->descriptors->forServer($serverName)) as $type) {
+                if ($type !== '') {
+                    $this->guardForeignKeyReads($serverName, $type);
+                }
+
                 if ($type === '' || !isset($this->entityClassByType[$type])) {
                     continue; // only entity-mapped types reach the Doctrine adapter
                 }
@@ -129,6 +149,122 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
 
         // No preloadable class files: a pure build-time guard.
         return [];
+    }
+
+    /**
+     * Asserts each relation of `$type` into an entity-mapped type has a way to its rows:
+     * a foreign key the related entity maps, an association of the parent's entity, an
+     * `extractUsing()` closure, or a parent provider that batches its own related reads.
+     */
+    private function guardForeignKeyReads(string $serverName, string $type): void
+    {
+        $server = $this->servers->get($serverName);
+        $resource = $this->typeMetadata->resourceFor($server, $type);
+        if ($resource === null) {
+            return;
+        }
+
+        $parentClass = $this->entityClassByType[$type] ?? null;
+        foreach ($resource->allFields() as $relation) {
+            if (!$relation instanceof RelationInterface || \count($relation->relatedTypes()) !== 1) {
+                continue;
+            }
+
+            $relatedType = $relation->relatedTypes()[0];
+            $relatedClass = $this->entityClassByType[$relatedType] ?? null;
+            if ($relatedClass === null) {
+                continue;
+            }
+
+            $name = ForeignKey::nameOf($relation);
+            if ($name !== null) {
+                $this->guardForeignKeyColumn($server, $type, $parentClass, $relation, $relatedType, $relatedClass, $name);
+
+                continue;
+            }
+
+            if ($parentClass !== null || !($relation instanceof HasMany || $relation instanceof HasOne)
+                || RelatedReadRouter::extractsValue($relation) || $this->parentBatches($type)) {
+                continue;
+            }
+
+            throw new \LogicException(\sprintf(
+                'Relation "%s" on resource type "%s" reads type "%s", which Doctrine serves, but "%s" is not a Doctrine entity, so no association reaches its related rows. %s',
+                $relation->name(),
+                $type,
+                $relatedType,
+                $type,
+                $relation instanceof BelongsToMany
+                    ? 'Compute its members with extractUsing(), or have the provider serving "' . $type . '" batch its related reads.'
+                    : \sprintf(
+                        'Name the field or to-one relation of "%s" holding the parent\'s id as the foreign key argument, %s::make(\'%s\', \'%s\', \'<foreign key>\'), or compute it with extractUsing().',
+                        $relatedType,
+                        $relation instanceof HasOne ? 'HasOne' : 'HasMany',
+                        $relation->name(),
+                        $relatedType,
+                    ),
+            ));
+        }
+    }
+
+    /**
+     * Asserts the foreign key `$name` is stored in a field or single-valued association
+     * of the related entity, and that an association references the parent's entity.
+     *
+     * @param class-string|null $parentClass
+     * @param class-string      $relatedClass
+     */
+    private function guardForeignKeyColumn(\haddowg\JsonApi\Server\Server $server, string $type, ?string $parentClass, RelationInterface $relation, string $relatedType, string $relatedClass, string $name): void
+    {
+        $foreignKey = ForeignKey::of($relation, $server);
+        if ($foreignKey === null) {
+            return; // core's RelationForeignKeyValidator names what is wrong with it
+        }
+
+        $metadata = $this->entityManager->getClassMetadata($relatedClass);
+        $column = $foreignKey->column;
+        $problem = null;
+        if ($metadata->hasAssociation($column)) {
+            $target = $metadata->getAssociationTargetClass($column);
+            $problem = match (true) {
+                !$metadata->isSingleValuedAssociation($column) => 'a collection association',
+                $parentClass === null => \sprintf('an association to %s, which can\'t reference "%s", a type no entity maps; store its id in a field instead', $target, $type),
+                !\is_a($parentClass, $target, true) && !\is_a($target, $parentClass, true) => \sprintf('an association to %s, not to %s', $target, $parentClass),
+                default => null,
+            };
+        } elseif (!$metadata->hasField($column)) {
+            $problem = 'neither a mapped field nor an association';
+        }
+
+        if ($problem !== null) {
+            throw new \LogicException(\sprintf(
+                'Relation "%s" on resource type "%s" reads through the foreign key "%s", stored in "%s", which %s maps as %s.',
+                $relation->name(),
+                $type,
+                $name,
+                $column,
+                $relatedClass,
+                $problem,
+            ));
+        }
+    }
+
+    /**
+     * Whether the provider serving `$type` batches its own related reads, which it does
+     * unless it keeps {@see AbstractDataProvider}'s unsupported default.
+     */
+    private function parentBatches(string $type): bool
+    {
+        if ($this->providers === null || !$this->providers->supportsType($type)) {
+            return false;
+        }
+
+        $provider = $this->providers->forType($type);
+        if (!$provider instanceof AbstractDataProvider) {
+            return true;
+        }
+
+        return (new \ReflectionMethod($provider, 'fetchRelatedCollectionBatch'))->getDeclaringClass()->getName() !== AbstractDataProvider::class;
     }
 
     /**

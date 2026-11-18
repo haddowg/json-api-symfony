@@ -20,6 +20,9 @@ namespace haddowg\JsonApiBundle\DataProvider\Doctrine;
  *    as a scalar (the ORM object hydrator dedups a member shared across parents and would
  *    lose a partition). The provider id-loads the distinct related entities by id in ONE
  *    further query — two statements, still bounded and O(1) per relation.
+ *  - **foreign key** ({@see foreignKey()}) — a relation declared with a foreign key. The
+ *    related entity is the inner DQL root, scoped and partitioned by the foreign key the
+ *    {@see ForeignKeyScope} names, so the parents need not be entities at all.
  */
 final readonly class WindowShape
 {
@@ -29,6 +32,7 @@ final readonly class WindowShape
      * @param ?class-string $parentClass    the join-table shape's parent entity class (the inner DQL root)
      * @param ?string       $parentIdField  the join-table shape's parent single id field
      * @param ?string       $relatedIdField the join-table shape's related single id field (the id-load + pk tiebreak)
+     * @param ?ForeignKeyScope $foreignKey  the foreign-key shape's scope
      */
     private function __construct(
         public bool $joinTable,
@@ -37,7 +41,17 @@ final readonly class WindowShape
         public ?string $parentClass = null,
         public ?string $parentIdField = null,
         public ?string $relatedIdField = null,
+        public ?ForeignKeyScope $foreignKey = null,
     ) {}
+
+    /**
+     * The foreign-key shape: the related entity is the inner DQL root, scoped by the
+     * foreign key `$scope` names.
+     */
+    public static function foreignKey(ForeignKeyScope $scope): self
+    {
+        return new self(joinTable: false, foreignKey: $scope);
+    }
 
     /**
      * The inverse-FK shape: the related entity is the inner DQL root, scoped by

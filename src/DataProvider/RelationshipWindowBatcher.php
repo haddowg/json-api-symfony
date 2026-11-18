@@ -11,6 +11,7 @@ use haddowg\JsonApi\Pagination\CursorPaginator;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Request\RelatedQuery;
 use haddowg\JsonApi\Resource\Field\Accessor;
+use haddowg\JsonApi\Resource\Field\ForeignKey;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\FilterMatcher;
 use haddowg\JsonApi\Resource\Sort\SortMatcher;
@@ -436,8 +437,8 @@ final class RelationshipWindowBatcher
     }
 
     /**
-     * What a first page of `$relation` over `$parents` is read with: the association, the
-     * window, the count and the order. A relation narrowed by a filter default or a
+     * What a first page of `$relation` over `$parents` is read with: the association or
+     * foreign key, the window, the count and the order. A relation narrowed by a filter default or a
      * `relatedQuery`, a polymorphic one and one whose value its own closure computes are
      * never shared, so nothing else tells two reads apart.
      *
@@ -454,7 +455,8 @@ final class RelationshipWindowBatcher
         return \serialize([
             $type,
             $relatedType,
-            $relation->column() ?? $relation->name(),
+            // Relations through one foreign key read the same rows, whatever their names.
+            ForeignKey::nameOf($relation) !== null ? "\0fk\0" . ForeignKey::nameOf($relation) : ($relation->column() ?? $relation->name()),
             $this->router->isPivot($relation),
             $criteria->window,
             $criteria->wantsCount,
