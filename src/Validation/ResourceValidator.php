@@ -22,6 +22,7 @@ use haddowg\JsonApi\Resource\Constraint\Shape;
 use haddowg\JsonApi\Resource\Constraint\When;
 use haddowg\JsonApi\Resource\DateTimeParser;
 use haddowg\JsonApi\Resource\Field\ArrayList;
+use haddowg\JsonApi\Resource\Field\DateTime;
 use haddowg\JsonApi\Resource\Field\FieldInterface;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Map;
@@ -1571,7 +1572,31 @@ final class ResourceValidator
             }
         }
 
-        return $constraints;
+        return $field instanceof DateTime ? self::onlyForWireDates($field, $constraints) : $constraints;
+    }
+
+    /**
+     * Applies a date field's rules only to a value in the shape the field documents. A
+     * string the field refuses is left for core's cast to answer with its own
+     * ATTRIBUTE_VALUE_INVALID, so a bound never judges `next year` first.
+     *
+     * @param list<\Symfony\Component\Validator\Constraint> $constraints
+     *
+     * @return list<\Symfony\Component\Validator\Constraint>
+     */
+    private static function onlyForWireDates(DateTime $field, array $constraints): array
+    {
+        if ($constraints === []) {
+            return [];
+        }
+
+        return [new Callback(callback: static function (mixed $value, ExecutionContextInterface $context) use ($field, $constraints): void {
+            if (\is_string($value) && $value !== '' && $field->tryParseWire($value) === null) {
+                return;
+            }
+
+            $context->getValidator()->inContext($context)->validate($value, $constraints);
+        })];
     }
 
     /**

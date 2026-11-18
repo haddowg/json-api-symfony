@@ -109,13 +109,13 @@ abstract class ConvenienceFilterConformanceTestCase extends JsonApiFunctionalTes
     #[Group('spec:fetching-filtering')]
     public function aDateRangeFilterWithACalendarValidBoundSelectsIdentically(): void
     {
-        // A calendar-valid ISO-8601 bound coerces to \DateTimeImmutable and compares
+        // A calendar-valid RFC 3339 bound coerces to \DateTimeImmutable and compares
         // temporally on BOTH providers. The `articles` fixtures leave `publishedAt`
         // null, so a `min` bound excludes every row identically (in-memory
         // `null >= $min` is false; Doctrine excludes NULL on `>=`) — the parity that
         // matters here is "same result on both", not the specific membership. The
         // point is the valid coercion path never 500s or diverges.
-        self::assertSame([], $this->sortedIds('/articles?filter[publishedRange][min]=2000-01-01'));
+        self::assertSame([], $this->sortedIds('/articles?filter[publishedRange][min]=2000-01-01T00:00:00Z'));
         self::assertSame([], $this->sortedIds('/articles?filter[publishedRange][min]=1997-05-21T12:30:00Z'));
     }
 
@@ -124,15 +124,15 @@ abstract class ConvenienceFilterConformanceTestCase extends JsonApiFunctionalTes
     #[Group('spec:errors')]
     public function aDateRangeFilterRejectsACalendarInvalidBoundIdenticallyOnBothProviders(): void
     {
-        // The headline DateRange parity case: `1997-13-99` (month 13, day 99) passes
-        // the deliberately-lenient shape Pattern but is not a real date, so it does
+        // The headline DateRange parity case: `1997-13-99T00:00:00Z` (month 13, day 99)
+        // passes the shape Pattern but is not a real date, so it does
         // not coerce to \DateTimeImmutable. Without the temporal-validity check it
         // would reach the data layer as a raw string and select DIVERGENTLY — the
         // in-memory handler comparing a \DateTimeImmutable column lexically (all rows)
         // vs Doctrine binding a non-date string (no rows on SQLite, a driver 500 on a
         // strict driver). Instead it is a clean, identical 400 on both providers,
         // before the provider runs.
-        $response = $this->handle('/articles?filter[publishedRange][min]=1997-13-99');
+        $response = $this->handle('/articles?filter[publishedRange][min]=1997-13-99T00:00:00Z');
 
         self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
         self::assertSame('application/vnd.api+json', $response->headers->get('Content-Type'));
@@ -184,11 +184,11 @@ abstract class ConvenienceFilterConformanceTestCase extends JsonApiFunctionalTes
 
         // A max-only bound: pre-fix the in-memory witness returned all five (null coerced
         // to 0 <= max); the fix excludes every null row on both providers.
-        self::assertSame([], $this->sortedIds('/articles?filter[publishedRange][max]=2999-12-31'));
+        self::assertSame([], $this->sortedIds('/articles?filter[publishedRange][max]=2999-12-31T23:59:59Z'));
         // A min-only bound is UNKNOWN against null too (null >= min never holds).
-        self::assertSame([], $this->sortedIds('/articles?filter[publishedRange][min]=1900-01-01'));
+        self::assertSame([], $this->sortedIds('/articles?filter[publishedRange][min]=1900-01-01T00:00:00Z'));
         // And a two-sided bound spanning any plausible instant still excludes every null row.
-        self::assertSame([], $this->sortedIds('/articles?filter[publishedRange][min]=1900-01-01&filter[publishedRange][max]=2999-12-31'));
+        self::assertSame([], $this->sortedIds('/articles?filter[publishedRange][min]=1900-01-01T00:00:00Z&filter[publishedRange][max]=2999-12-31T23:59:59Z'));
     }
 
     /**

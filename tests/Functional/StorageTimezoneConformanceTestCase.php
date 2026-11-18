@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional;
 use haddowg\JsonApiBundle\Tests\Functional\App\StorageTimezone\ShiftFixtures;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Date bounds and date writes against shifts stored as local New York time, with
@@ -57,9 +58,18 @@ abstract class StorageTimezoneConformanceTestCase extends JsonApiFunctionalTestC
 
     #[Test]
     #[Group('spec:fetching-filtering')]
-    public function aBoundWithoutAnOffsetIsReadAsLocalTime(): void
+    #[Group('spec:errors')]
+    public function aBoundWithoutAnOffsetIsRefused(): void
     {
-        self::assertSame(['1', '3'], $this->sortedIds('/shifts?filter[startsRange][min]=2026-10-01T11:00:00'));
+        // A bound is documented as an RFC 3339 date-time, which always names its offset.
+        foreach (['2026-10-01T11:00:00', '2026-10-01 11:00', '2026-10-01'] as $bound) {
+            $response = $this->handle('/shifts?filter[startsRange][min]=' . \rawurlencode($bound));
+            self::assertSame(400, $response->getStatusCode(), $bound . ': ' . $response->getContent());
+
+            $error = $this->firstError($this->decode($response));
+            self::assertSame('FILTER_VALUE_INVALID', $error['code'] ?? null);
+            self::assertSame(['parameter' => 'filter[startsRange]'], $error['source'] ?? null);
+        }
     }
 
     #[Test]
@@ -74,11 +84,28 @@ abstract class StorageTimezoneConformanceTestCase extends JsonApiFunctionalTestC
     #[Group('spec:fetching-filtering')]
     public function aDateColumnComparesTheDayTheClientWrote(): void
     {
-        // Moving midnight UTC into New York would make it 30 September and pull in
-        // shift 2, so a date column keeps the bound's own calendar day.
+        // A bound over a Date column is a full date, and every provider compares the
+        // calendar day it names, so no zone can move it to 30 September and pull in
+        // shift 2.
         self::assertSame(['1', '3'], $this->sortedIds('/shifts?filter[dayRange][min]=2026-10-01'));
-        self::assertSame(['1', '3'], $this->sortedIds('/shifts?filter[dayRange][min]=2026-10-01T00:00:00Z'));
         self::assertSame(['1', '2'], $this->sortedIds('/shifts?filter[dayRange][max]=2026-10-01'));
+        self::assertSame(['1'], $this->sortedIds('/shifts?filter[dayRange][min]=2026-10-01&filter[dayRange][max]=2026-10-01'));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    #[Group('spec:errors')]
+    public function aDateColumnBoundTakesOnlyAFullDate(): void
+    {
+        // The range is documented as format date, as the Date field it compares is.
+        foreach (['2026-10-01T00:00:00Z', '2026-10-01 00:00', 'yesterday'] as $bound) {
+            $response = $this->handle('/shifts?filter[dayRange][min]=' . \rawurlencode($bound));
+            self::assertSame(400, $response->getStatusCode(), $bound . ': ' . $response->getContent());
+
+            $error = $this->firstError($this->decode($response));
+            self::assertSame('FILTER_VALUE_INVALID', $error['code'] ?? null);
+            self::assertSame(['parameter' => 'filter[dayRange]'], $error['source'] ?? null);
+        }
     }
 
     #[Test]
@@ -150,6 +177,82 @@ abstract class StorageTimezoneConformanceTestCase extends JsonApiFunctionalTestC
         $error = $this->firstError($this->decode($response));
         self::assertSame('ATTRIBUTE_VALUE_INVALID', $error['code'] ?? null);
         self::assertSame(['pointer' => '/data/attributes/startsAt'], $error['source'] ?? null);
+    }
+
+    #[Test]
+    #[Group('crud:create')]
+    #[Group('spec:errors')]
+    public function aDateThatIsNotRfc3339IsA422AtTheAttribute(): void
+    {
+        foreach (self::refusedDates() as [$field, $value]) {
+            $response = $this->handle('/shifts', 'POST', ['data' => [
+                'type' => 'shifts',
+                'attributes' => [$field => $value],
+            ]]);
+
+            $this->assertRefusedAt($response, $field, $value);
+        }
+    }
+
+    #[Test]
+    #[Group('crud:update')]
+    #[Group('spec:errors')]
+    public function anUpdateWithADateThatIsNotRfc3339IsA422AtTheAttribute(): void
+    {
+        foreach (self::refusedDates() as [$field, $value]) {
+            $response = $this->handle('/shifts/2', 'PATCH', ['data' => [
+                'type' => 'shifts',
+                'id' => '2',
+                'attributes' => [$field => $value],
+            ]]);
+
+            $this->assertRefusedAt($response, $field, $value);
+        }
+
+        $fetched = $this->handle('/shifts/2');
+        self::assertSame('2026-10-01T14:00:00+00:00', $this->attributesOf($this->decode($fetched))['startsAt'] ?? null);
+    }
+
+    #[Test]
+    #[Group('crud:create')]
+    public function anRfc3339DateReachesTheFillUsingHook(): void
+    {
+        $created = $this->handle('/shifts', 'POST', ['data' => [
+            'type' => 'shifts',
+            'attributes' => ['rescheduledTo' => '2026-10-03T16:00:00Z'],
+        ]]);
+        self::assertSame(201, $created->getStatusCode(), (string) $created->getContent());
+
+        $fetched = $this->handle('/shifts/' . $this->idOf($this->decode($created)));
+        self::assertSame('2026-10-03T16:00:00+00:00', $this->attributesOf($this->decode($fetched))['startsAt'] ?? null);
+    }
+
+    /**
+     * A relative date and a date-time with no offset, through a plain field and through
+     * one whose fillUsing() hook receives the raw string.
+     *
+     * @return list<array{string, string}>
+     */
+    private static function refusedDates(): array
+    {
+        $dates = [];
+        foreach (['startsAt', 'rescheduledTo'] as $field) {
+            foreach (['last year', '2026-10-03T16:00:00', '2026-10-03 16:00'] as $value) {
+                $dates[] = [$field, $value];
+            }
+        }
+
+        return $dates;
+    }
+
+    private function assertRefusedAt(Response $response, string $field, string $value): void
+    {
+        $message = $field . ' = ' . $value . ': ' . $response->getContent();
+        self::assertSame(422, $response->getStatusCode(), $message);
+
+        $error = $this->firstError($this->decode($response));
+        self::assertSame('ATTRIBUTE_VALUE_INVALID', $error['code'] ?? null, $message);
+        self::assertSame(['pointer' => '/data/attributes/' . $field], $error['source'] ?? null, $message);
     }
 
     /**

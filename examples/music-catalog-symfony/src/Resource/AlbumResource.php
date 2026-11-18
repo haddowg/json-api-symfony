@@ -221,9 +221,9 @@ final class AlbumResource extends AbstractResource
             // no subquery, no N+1. Renders as an OpenAPI `deepObject` parameter.
             Range::make('rating', 'averageRating'),
             // DateRange('releasedAt'): a structured date-time range over `releasedAt` —
-            // `filter[releasedAt][min]=1995-01-01` keeps OK Computer (1997),
-            // `filter[releasedAt][min]=1994-01-01&filter[releasedAt][max]=1995-01-01`
-            // keeps Dummy (1994). Each bound is coerced ISO-8601 → `\DateTimeImmutable`
+            // `filter[releasedAt][min]=1995-01-01T00:00:00Z` keeps OK Computer (1997),
+            // `filter[releasedAt][min]=1994-01-01T00:00:00Z&filter[releasedAt][max]=1995-01-01T00:00:00Z`
+            // keeps Dummy (1994). Each bound is an RFC 3339 date-time coerced to `\DateTimeImmutable`
             // so the comparison is temporal, a malformed bound is a clean 400, and the
             // bounds project as `string`/`date-time` in the deepObject value schema.
             DateRange::make('releasedAt'),
