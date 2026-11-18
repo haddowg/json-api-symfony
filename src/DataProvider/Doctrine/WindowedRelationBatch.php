@@ -9,6 +9,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Mapping\ClassMetadata;
 use Doctrine\ORM\Query;
 use Doctrine\ORM\Query\ParserResult;
+use Doctrine\ORM\Query\QueryException;
 use Doctrine\ORM\Query\ResultSetMapping;
 use Doctrine\ORM\QueryBuilder;
 use haddowg\JsonApi\Collection\CollectionResult;
@@ -91,8 +92,11 @@ use haddowg\JsonApiBundle\Server\IdEncoderResolver;
  *
  * The native path serves a filtered and an unfiltered windowed include alike, with the
  * related type's query extensions applied to the inner query ({@see RelatedExtensions}).
- * Only a polymorphic or composite shape, or `window_functions: off`, routes to the
- * per-parent bounded fallback in the provider.
+ * A cursor window ordered by a custom keyset sort selects the sort's expression into the
+ * inner query as that level's scalar and orders by it like a column. Only a polymorphic or
+ * composite shape, `window_functions: off`, a custom sort on a numbered window, or an
+ * expression the inner query can't take routes to the per-parent bounded fallback in the
+ * provider.
  */
 final class WindowedRelationBatch
 {
@@ -115,6 +119,8 @@ final class WindowedRelationBatch
      * @param list<object> $parents     the page of parents (non-empty)
      * @param class-string $relatedClass
      *
+     * @return ?RelatedBatch null when a directive is a custom sort, which the caller reads per parent
+     *
      * @throws \RuntimeException when the native query fails (an engine without window
      *                           functions on the default `on` setting — set
      *                           `json_api.doctrine.window_functions: false`)
@@ -128,9 +134,18 @@ final class WindowedRelationBatch
         CollectionCriteria $criteria,
         ?RelatedExtensions $extensions = null,
         ?ForeignKeyScope $foreignKey = null,
-    ): RelatedBatch {
+    ): ?RelatedBatch {
         $window = $criteria->window;
         \assert($window instanceof \haddowg\JsonApi\Pagination\OffsetWindow);
+
+        // The sort directives the window ORDER BY emits — resolved (and validated) once,
+        // exactly as the per-parent path resolves them, so the native path selects the
+        // SAME members as the witness. A custom sort has no column the window can read, so
+        // the caller reads it per parent.
+        $sortDirectives = $this->sortDirectives($criteria);
+        if ($sortDirectives === null) {
+            return null;
+        }
 
         $relatedMetadata = $this->entityManager->getClassMetadata($relatedClass);
         // A foreign key scopes the related rows itself, so the parents need not be entities.
@@ -150,12 +165,8 @@ final class WindowedRelationBatch
         $shape = $this->shapeFor($foreignKey, $parentMetadata, $relatedMetadata, $relation);
         $parentIds = $parentMetadata === null ? [] : $this->parentStorageIds($parents, $parentMetadata);
 
-        // The sort directives the window ORDER BY emits — resolved (and validated) once,
-        // exactly as the per-parent path resolves them, so the native path selects the
-        // SAME members as the witness. The sort is NOT applied to the inner DQL (the
-        // outer window re-orders); the window ORDER BY references the read aliases.
-        $sortDirectives = $this->sortDirectives($criteria);
-
+        // The sort is NOT applied to the inner DQL (the outer window re-orders); the window
+        // ORDER BY references the read aliases.
         // Build the inner scoped + FILTERED DQL query with the EXISTING machinery: the
         // parent-scope predicate, plus the shared CriteriaApplier driving the #1 DQL
         // filter executor. Apply ONLY the filters (a sort-stripped criteria), so the
@@ -231,6 +242,8 @@ final class WindowedRelationBatch
      * @param list<object> $parents      the page of parents (non-empty)
      * @param class-string $relatedClass
      *
+     * @return ?RelatedBatch null when a custom level's expression is one the inner query can't take, which the caller reads per parent
+     *
      * @throws \RuntimeException when the native query fails (an engine without window functions)
      */
     public function fetchCursor(
@@ -243,7 +256,7 @@ final class WindowedRelationBatch
         CursorWindow $window,
         ?RelatedExtensions $extensions = null,
         ?ForeignKeyScope $foreignKey = null,
-    ): RelatedBatch {
+    ): ?RelatedBatch {
         $relatedMetadata = $this->entityManager->getClassMetadata($relatedClass);
         $parentMetadata = $foreignKey === null ? $this->entityManager->getClassMetadata($parents[0]::class) : null;
 
@@ -269,8 +282,29 @@ final class WindowedRelationBatch
         $parentIds = $parentMetadata === null ? [] : $this->parentStorageIds($parents, $parentMetadata);
 
         $builder = $this->innerQuery($shape, $relatedClass, $parentMetadata, $parentIds, $directives, $criteria, $extensions);
+
+        // A custom level has no column on the related entity, so its expression is
+        // selected as the level's scalar for the window to order by.
+        $keyset = new DoctrineKeyset($relatedMetadata, 'related', sorts: $this->sortHandler, ids: $this->ids);
+        $custom = false;
+        foreach ($columns as $i => $column) {
+            if ($column->sort !== null) {
+                $keyset->selectAs($builder, $column, \sprintf('jsonapi_sort_%d', $i));
+                $custom = true;
+            }
+        }
+
         $query = $builder->getQuery();
-        $innerSql = $query->getSQL();
+        try {
+            $innerSql = $query->getSQL();
+        } catch (QueryException $e) {
+            // An expression the inner query can't take is read per parent instead.
+            if ($custom) {
+                return null;
+            }
+
+            throw $e;
+        }
         \assert(\is_string($innerSql));
 
         $innerRsm = $this->reflectResultSetMapping($query);
@@ -304,7 +338,7 @@ final class WindowedRelationBatch
             ? $this->loadRelatedById($relatedClass, $relatedMetadata, $rows, $extensions)
             : [];
 
-        return $this->partitionCursor($rows, $this->wireIdReader($foreignKey, $parentType, $parentMetadata), $window, $shape->isJoinTable(), $relatedById, $relatedMetadata, $columns);
+        return $this->partitionCursor($rows, $this->wireIdReader($foreignKey, $parentType, $parentMetadata), $window, $shape->isJoinTable(), $relatedById, $relatedMetadata, $columns, $keyset);
     }
 
     /**
@@ -428,25 +462,25 @@ final class WindowedRelationBatch
     }
 
     /**
-     * The keyset columns as {@see SortByField} directives, so the shared {@see innerQuery()}
-     * projection (the join-table shape's `jsonapi_sort_%d` scalars) and {@see orderByKeyset()}
-     * index the SAME positions. The PK tiebreak is one of the columns (never a hardcoded
-     * append), so it projects and orders like any other keyset column.
+     * The keyset's column levels as {@see SortByField} directives keyed by their position,
+     * so the shared {@see innerQuery()} projection (the join-table shape's `jsonapi_sort_%d`
+     * scalars) and {@see orderByKeyset()} index the SAME positions. A custom level is left
+     * out; {@see fetchCursor()} selects its expression at its position itself. The PK
+     * tiebreak is one of the columns (never a hardcoded append), so it projects and orders
+     * like any other keyset column.
      *
      * @param list<KeysetColumn> $columns
      *
-     * @return list<SortDirective>
+     * @return array<int, SortDirective>
      */
     private function keysetSortDirectives(array $columns): array
     {
-        $directives = \array_map(
-            static fn(KeysetColumn $column): SortDirective => new SortDirective(
-                $column->sort ?? SortByField::make($column->column, $column->column),
-                $column->descending,
-            ),
-            $columns,
-        );
-        $this->assertFieldSorts($directives);
+        $directives = [];
+        foreach ($columns as $i => $column) {
+            if ($column->sort === null) {
+                $directives[$i] = new SortDirective(SortByField::make($column->column, $column->column), $column->descending);
+            }
+        }
 
         return $directives;
     }
@@ -471,7 +505,7 @@ final class WindowedRelationBatch
             // Read the generated SQL alias: the projected scalar for the join-table shape, the
             // entity field on the `related` alias for the inverse-FK shape.
             $alias = match (true) {
-                $shape->isJoinTable() => 'w.' . $this->scalarAlias($innerRsm, \sprintf('jsonapi_sort_%d', $i)),
+                $shape->isJoinTable() || $column->sort !== null => 'w.' . $this->scalarAlias($innerRsm, \sprintf('jsonapi_sort_%d', $i)),
                 $column->column === $relatedMetadata->getSingleIdentifierFieldName() => 'w.' . $this->idAlias($innerRsm, $relatedMetadata),
                 default => 'w.' . $this->fieldAlias($innerRsm, 'related', $column->column),
             };
@@ -498,6 +532,7 @@ final class WindowedRelationBatch
      * @param array<string, object>          $relatedById     the join-table shape's id-loaded related entities (empty for inverse-FK)
      * @param ClassMetadata<object>          $relatedMetadata
      * @param list<KeysetColumn>             $columns
+     * @param DoctrineKeyset                 $keyset          reads a custom level whose value the query selected off its row
      */
     private function partitionCursor(
         array $rows,
@@ -507,12 +542,15 @@ final class WindowedRelationBatch
         array $relatedById,
         ClassMetadata $relatedMetadata,
         array $columns,
+        DoctrineKeyset $keyset,
     ): RelatedBatch {
         // Collect each partition as `(rn => entity)` so the items re-order by the ROW_NUMBER
         // even though the OUTER derived-table SELECT carries no ORDER BY (its row order is
         // engine-dependent; the rn IS the within-partition keyset order).
         /** @var array<string, array<int, object>> $partitionByRn */
         $partitionByRn = [];
+        /** @var array<string, array<int, array<int|string, mixed>>> $rowsByRn */
+        $rowsByRn = [];
 
         foreach ($rows as $row) {
             // The inverse-FK shape carries the hydrated entity at index 0; the join-table shape
@@ -530,13 +568,13 @@ final class WindowedRelationBatch
             }
 
             $partitionByRn[$wireId][(int) $rn] = $related;
+            $rowsByRn[$wireId][(int) $rn] = $row;
         }
 
-        // The SAME row -> keyset-value reader the per-parent path (runCursor) mints with: read
-        // each keyset column off the hydrated entity via the ORM accessor, JSON-coerced.
-        $readValue = fn(object $entity, string $column): string|int|float|bool|null => CursorTokenMinter::coerce(
-            $this->ids->fieldValue($relatedMetadata, $entity, $column),
-        );
+        // A level whose value the query selects is minted as a column read off its row; a
+        // custom level otherwise mints its sort's keysetValue(), as the per-parent path does.
+        $selected = $keyset->selectedValues();
+        $columns = \array_map(static fn(KeysetColumn $c): KeysetColumn => isset($selected[$c->column]) ? new KeysetColumn($c->column, $c->descending) : $c, $columns);
 
         $results = [];
         foreach ($partitionByRn as $wireId => $byRn) {
@@ -547,6 +585,17 @@ final class WindowedRelationBatch
             // exactly as runCursor's over-fetch does before minting.
             $hasSurplus = \count($items) > $window->limit;
             $page = $hasSurplus ? \array_slice($items, 0, $window->limit) : $items;
+
+            $rowOf = [];
+            foreach ($rowsByRn[$wireId] ?? [] as $rn => $row) {
+                $rowOf[\spl_object_id($byRn[$rn])] = $row;
+            }
+
+            // The SAME row -> keyset-value reader the per-parent path (runCursor) mints with: read
+            // each keyset column off the hydrated entity via the ORM accessor, JSON-coerced.
+            $readValue = fn(object $entity, string $column): string|int|float|bool|null => isset($selected[$column])
+                ? $keyset->readSelected($rowOf[\spl_object_id($entity)] ?? [], $column)
+                : CursorTokenMinter::coerce($this->ids->fieldValue($relatedMetadata, $entity, $column));
 
             $results[$wireId] = $this->minter->mint($window, $columns, $page, $hasSurplus, $readValue);
         }
@@ -650,7 +699,7 @@ final class WindowedRelationBatch
      * @param class-string               $relatedClass
      * @param ClassMetadata<object>|null $parentMetadata `null` for the foreign-key shape
      * @param list<mixed>                $parentIds
-     * @param list<SortDirective>   $sortDirectives
+     * @param array<int, SortDirective> $sortDirectives
      */
     private function innerQuery(
         WindowShape $shape,
@@ -1103,44 +1152,38 @@ final class WindowedRelationBatch
      * resource's default sort. Mirrors {@see \haddowg\JsonApiBundle\DataProvider\CriteriaApplier}'s
      * resolution so the native ORDER BY selects the SAME members as the witness.
      *
-     * @return list<SortDirective>
+     * @return ?list<SortDirective> null when a directive is a custom sort the window can't read
      */
-    private function sortDirectives(CollectionCriteria $criteria): array
+    private function sortDirectives(CollectionCriteria $criteria): ?array
     {
         $requested = $criteria->queryParameters->sort;
         if ($requested === []) {
-            $this->assertFieldSorts($criteria->defaultSort);
-
-            return $criteria->defaultSort;
+            return $this->fieldSortsOnly($criteria->defaultSort);
         }
 
         // Validate the requested sort against the declared vocabulary EXACTLY as
         // CriteriaApplier::applySorts does, so an unknown/unsupported sort is the
         // endpoint's same 400 on the native path (not a silently-dropped directive).
-        $directives = SortMatcher::directives($requested, $criteria->sorts, $criteria->request);
-
-        $this->assertFieldSorts($directives);
-
-        return $directives;
+        return $this->fieldSortsOnly(SortMatcher::directives($requested, $criteria->sorts, $criteria->request));
     }
 
     /**
-     * Asserts every directive sorts by a {@see SortByField} (a column + direction the
-     * native window can express); a computed sort cannot be windowed natively.
+     * `$directives` when every one sorts by a {@see SortByField} (a column + direction the
+     * native window can express), else null: a custom sort is read per parent.
      *
      * @param list<SortDirective> $directives
+     *
+     * @return ?list<SortDirective>
      */
-    private function assertFieldSorts(array $directives): void
+    private function fieldSortsOnly(array $directives): ?array
     {
         foreach ($directives as $directive) {
             if (!$directive->sort instanceof SortByField) {
-                throw new \LogicException(\sprintf(
-                    'The %s can only natively window a SortByField order; got %s. A custom sort arm (DoctrineSortArmInterface) is NOT consulted on the windowed related-collection path. Supply a custom DataProvider or set json_api.doctrine.window_functions: false.',
-                    self::class,
-                    $directive->sort::class,
-                ));
+                return null;
             }
         }
+
+        return $directives;
     }
 
     /**

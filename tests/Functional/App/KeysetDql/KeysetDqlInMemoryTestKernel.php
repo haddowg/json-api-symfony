@@ -68,6 +68,15 @@ final class KeysetDqlInMemoryTestKernel extends Kernel
             ->autoconfigure();
 
         $services->set(TeamResource::class);
+        $services->set(LeagueResource::class);
+        $services->set(DivisionResource::class);
+
+        foreach (['leagues', 'divisions'] as $type) {
+            $services->set('test.' . $type . '_provider', InMemoryDataProvider::class)
+                ->factory([TeamProviderFactory::class, 'group'])
+                ->args([$type])
+                ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+        }
 
         $services->set('test.teams_provider', InMemoryDataProvider::class)
             ->factory([TeamProviderFactory::class, 'create'])

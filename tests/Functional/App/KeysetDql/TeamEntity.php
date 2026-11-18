@@ -25,6 +25,8 @@ class TeamEntity implements ScoredTeam
         public ?int $base = null,
         #[ORM\Column(nullable: true)]
         public ?int $bonus = null,
+        #[ORM\ManyToOne(targetEntity: DivisionEntity::class, inversedBy: 'teams')]
+        public ?DivisionEntity $division = null,
     ) {}
 
     public function base(): ?int

@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\DataProvider\Doctrine;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Mapping\ClassMetadata;
+use Doctrine\ORM\Query\QueryException;
 use Doctrine\ORM\QueryBuilder;
 use haddowg\JsonApi\Collection\CollectionResult;
 use haddowg\JsonApi\Collection\CursorCollectionResult;
@@ -788,8 +789,12 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
         if ($criteria->window instanceof CursorWindow) {
             $window = $criteria->window;
+            // A window that can't order by a custom sort's expression reads per parent.
             if ($this->windowFunctions && $window->after === null && $window->before === null) {
-                return $this->windowedBatch->fetchCursor($parentType, $parents, $relatedType, $relatedClass, $relation, $criteria, $window, $this->relatedExtensions($relatedType, $request));
+                $batch = $this->windowedBatch->fetchCursor($parentType, $parents, $relatedType, $relatedClass, $relation, $criteria, $window, $this->relatedExtensions($relatedType, $request));
+                if ($batch !== null) {
+                    return $batch;
+                }
             }
 
             return $this->fetchWindowedBatchPerParent($parentType, $parents, $relatedType, $relation, $criteria, $request);
@@ -797,7 +802,10 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
         if ($criteria->window instanceof OffsetWindow) {
             if ($this->windowFunctions) {
-                return $this->windowedBatch->fetch($parentType, $parents, $relatedType, $relatedClass, $relation, $criteria, $this->relatedExtensions($relatedType, $request));
+                $batch = $this->windowedBatch->fetch($parentType, $parents, $relatedType, $relatedClass, $relation, $criteria, $this->relatedExtensions($relatedType, $request));
+                if ($batch !== null) {
+                    return $batch;
+                }
             }
 
             return $this->fetchWindowedBatchPerParent($parentType, $parents, $relatedType, $relation, $criteria, $request);
@@ -2315,11 +2323,6 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $metadata = $this->entityManager->getClassMetadata($relatedClass);
 
         $columns = $this->resolveKeysetColumns($criteria, $metadata->getSingleIdentifierFieldName());
-        foreach ($columns as $column) {
-            if ($column->sort !== null) {
-                return null;
-            }
-        }
 
         $aliasOfColumn = $this->pivotAliasOfColumn($criteria);
         $association = $this->pivotAssociation($relation, $parents[0], $relatedClass);
@@ -2336,15 +2339,31 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $order = [];
         foreach ($columns as $i => $column) {
             $alias = \sprintf('jsonapi_sort_%d', $i);
-            $builder->addSelect(\sprintf('%s AS %s', $keyset->selectable($builder, $column), $alias));
+            $keyset->selectAs($builder, $column, $alias);
             $order[] = [$alias, $column->descending];
         }
 
-        $rows = $this->windowedBatch->windowRows($builder, self::ROOT_ALIAS, $order, $window->limit + 1, false, nullsLargest: true);
+        try {
+            $rows = $this->windowedBatch->windowRows($builder, self::ROOT_ALIAS, $order, $window->limit + 1, false, nullsLargest: true);
+        } catch (QueryException $e) {
+            // A custom sort's expression the window query can't take is read per parent.
+            if (\array_filter($columns, static fn(KeysetColumn $c): bool => $c->sort !== null) === []) {
+                throw $e;
+            }
+
+            return null;
+        }
         \usort($rows, static fn(array $a, array $b): int => (\is_numeric($a['rn'] ?? null) ? (int) $a['rn'] : 0) <=> (\is_numeric($b['rn'] ?? null) ? (int) $b['rn'] : 0));
 
         $plain = \array_map(static fn(KeysetColumn $c): KeysetColumn => new KeysetColumn($c->column, $c->descending), $columns);
-        $read = $this->pivotKeysetReader($metadata, $rowKeyOfColumn, []);
+        $selected = $keyset->selectedValues();
+        $sortOfColumn = [];
+        foreach ($columns as $column) {
+            if ($column->sort !== null && !isset($selected[$column->column])) {
+                $sortOfColumn[$column->column] = $column->sort;
+            }
+        }
+        $read = $this->pivotKeysetReader($metadata, $rowKeyOfColumn, $sortOfColumn, $keyset);
 
         $results = [];
         foreach ($this->pivotRowsByParent($rows, $parentType, $parents) as $wireId => $parentRows) {
@@ -2871,7 +2890,10 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
         if ($window instanceof CursorWindow) {
             if ($this->windowFunctions && $window->after === null && $window->before === null) {
-                return $this->windowedBatch->fetchCursor($parents->type, \array_values($parents->parents), $relatedType, $relatedClass, $relation, $criteria, $window, $this->relatedExtensions($relatedType, $request), $scope);
+                $batch = $this->windowedBatch->fetchCursor($parents->type, \array_values($parents->parents), $relatedType, $relatedClass, $relation, $criteria, $window, $this->relatedExtensions($relatedType, $request), $scope);
+                if ($batch !== null) {
+                    return $batch;
+                }
             }
 
             return $this->foreignKeyPages($relatedType, $relatedClass, $scope, $criteria, $request);
@@ -2879,7 +2901,10 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
         if ($window instanceof OffsetWindow) {
             if ($this->windowFunctions) {
-                return $this->windowedBatch->fetch($parents->type, \array_values($parents->parents), $relatedType, $relatedClass, $relation, $criteria, $this->relatedExtensions($relatedType, $request), $scope);
+                $batch = $this->windowedBatch->fetch($parents->type, \array_values($parents->parents), $relatedType, $relatedClass, $relation, $criteria, $this->relatedExtensions($relatedType, $request), $scope);
+                if ($batch !== null) {
+                    return $batch;
+                }
             }
 
             return $this->foreignKeyPages($relatedType, $relatedClass, $scope, $criteria, $request);

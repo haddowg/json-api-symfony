@@ -1079,13 +1079,15 @@ final class OrderByRelationCountArm implements DoctrineSortArmInterface
 }
 ```
 
-> **A custom sort arm orders the primary collection and a non-windowed related
-> collection, but NOT a natively-windowed/paginated related to-many.** That path
-> (`GET /{type}/{id}/{rel}` with the default window-function batch) can only window a
-> `SortByField` — a custom sort there raises a `LogicException`. If a relation must be
-> ordered by a custom sort, set `json_api.doctrine.window_functions: false` (the
-> per-parent bounded fallback) or supply a custom provider. A custom **filter** arm
-> has no such limit — it composes on every path.
+> **A custom sort arm orders every read, including a windowed to-many.** The first page
+> of a to-many that renders with its parent, through `?include` or `withData()`, is cut
+> for a whole page of parents in one window-function query. A cursor-paged relation
+> ordered by a custom sort runs that query too: the sort's keyset expression is selected
+> for the window to order by, with nulls largest, and each parent's cursor is minted as
+> the relation's own endpoint mints it, `valueFromQuery` included. A numbered or offset
+> window has no expression to order by, so a custom sort there is read with one bounded
+> query per parent, as `window_functions: false` reads every relation, and so is a keyset
+> expression the window query can't take. A custom **filter** arm composes on every path.
 
 For a **portable** custom filter/sort that must also run on the in-memory provider
 (the conformance witness), ship the in-memory twin too — an
@@ -1242,11 +1244,11 @@ that does not implement `KeysetSortInterface`, or whose Doctrine arm does not im
 sort and the fix. That covers the type's own collection and every to-many whose related
 collection pages by cursor. A [sort family](pagination.md#sort-families-and-custom-sorts)
 resolves its sorts per request, so a family that resolves to such a sort is still a
-`500` `UnsupportedSort` when a request uses it. The windowed include limit above applies
-here too: a cursor-paginated include under the default window-function batch can only
-order by fields, so a custom sort there needs `window_functions: false`. The in-memory
-provider needs no arm for the cursor itself; it orders a cursor page by `keysetValue()`
-directly.
+`500` `UnsupportedSort` when a request uses it. A cursor-paginated include or `withData()`
+linkage ordered by a custom sort cuts its first page in the shared window query, as
+described above, and its next link pages on through the relation's endpoint. The
+in-memory provider needs no arm for the cursor itself; it orders a cursor page by
+`keysetValue()` directly.
 
 ### Self-applying filters: no arm to register
 

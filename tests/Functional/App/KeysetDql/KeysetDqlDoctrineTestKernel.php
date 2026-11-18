@@ -100,7 +100,8 @@ final class KeysetDqlDoctrineTestKernel extends Kernel
             ->defaults()
             ->autowire()
             ->autoconfigure()
-            ->set(LeagueResource::class)
+            ->set(DoctrineLeagueResource::class)
+            ->set(DoctrineDivisionResource::class)
             ->set(static::$variant === 'unkeyable' ? UnkeyableSortTeamResource::class : DoctrineTeamResource::class)
             ->set(static::$variant === 'orderOnly' ? OrderOnlyTeamSortArm::class : DoctrineTeamSortArm::class);
     }

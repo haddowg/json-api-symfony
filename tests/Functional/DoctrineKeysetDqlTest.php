@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
+use haddowg\JsonApiBundle\Tests\Functional\App\KeysetDql\DivisionEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\KeysetDql\KeysetDqlDoctrineTestKernel;
 use haddowg\JsonApiBundle\Tests\Functional\App\KeysetDql\LeagueEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\KeysetDql\LeagueTeamEntity;
@@ -28,8 +29,10 @@ final class DoctrineKeysetDqlTest extends KeysetDqlConformanceTestCase
 
         $league = new LeagueEntity();
         $entityManager->persist($league);
+        $division = new DivisionEntity();
+        $entityManager->persist($division);
         foreach (TeamFixtures::data() as $id => $row) {
-            $team = new TeamEntity(name: $row['name'], base: $row['base'], bonus: $row['bonus']);
+            $team = new TeamEntity(name: $row['name'], base: $row['base'], bonus: $row['bonus'], division: $division);
             $entityManager->persist($team);
             $league->teams->add($team);
             $entityManager->persist(new LeagueTeamEntity(league: $league, team: $team, slot: $id));
@@ -39,10 +42,5 @@ final class DoctrineKeysetDqlTest extends KeysetDqlConformanceTestCase
         }
         $entityManager->flush();
         $entityManager->clear();
-    }
-
-    protected function collectionPaths(): array
-    {
-        return [...parent::collectionPaths(), '/leagues/1/teams'];
     }
 }

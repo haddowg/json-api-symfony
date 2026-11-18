@@ -391,17 +391,23 @@ final class DoctrineKeyset
     }
 
     /**
+     * Selects the value a keyset column orders by on `$builder` as `$alias`, so a window
+     * can order by the same value. A custom level that reads its cursor value from the
+     * query is then read off each row by {@see readSelected()}.
+     */
+    public function selectAs(QueryBuilder $builder, KeysetColumn $column, string $alias): void
+    {
+        $builder->addSelect(\sprintf('%s AS %s', $this->use($builder, $column), $alias));
+        if ($column->sort !== null) {
+            $this->entityManager ??= $builder->getEntityManager();
+            $this->selects[$column->column] = [$alias, ''];
+        }
+    }
+
+    /**
      * The DQL a level orders and compares by: the column's path, or for a custom sort
      * level the expression its keyset arm supplies, asked for once per query.
      */
-    /**
-     * The DQL expression a keyset column orders by on `$builder`, so a caller can select
-     * it and order a window by the same value.
-     */
-    public function selectable(QueryBuilder $builder, KeysetColumn $column): string
-    {
-        return $this->expression($builder, $column);
-    }
 
     private function expression(QueryBuilder $builder, KeysetColumn $column): string
     {
