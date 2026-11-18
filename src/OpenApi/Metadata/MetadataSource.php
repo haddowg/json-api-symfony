@@ -13,6 +13,7 @@ use haddowg\JsonApi\OpenApi\Tag;
 use haddowg\JsonApi\Pagination\CursorPaginator;
 use haddowg\JsonApi\Pagination\PaginatorInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
+use haddowg\JsonApi\Resource\Field\ForeignKey;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Scope\ScopeCatalogInterface;
 use haddowg\JsonApi\Scope\ScopeTable;
@@ -25,6 +26,7 @@ use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataPersister\Doctrine\DoctrineDataPersister;
 use haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister;
+use haddowg\JsonApiBundle\DataPersister\WritesForeignKeysInterface;
 use haddowg\JsonApiBundle\DataProvider\Polymorphism;
 use haddowg\JsonApiBundle\DataProvider\RelatedReadRouter;
 use haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory;
@@ -589,7 +591,7 @@ final class MetadataSource
             self::alwaysCounts($paginator),
             $ownerServesEndpoints,
             $relatedResource,
-            fn(): bool => self::canRefuseDetachment($this->persisterFor($type), $type, $relation),
+            fn(): bool => $this->refusesForeignKeyDetachment($server, $relation) ?? self::canRefuseDetachment($this->persisterFor($type), $type, $relation),
             fn(): bool => $this->canMissLinkage($this->persisterFor($type), $type, $relation),
         );
     }
@@ -599,6 +601,24 @@ final class MetadataSource
         $persisters = $this->persisters();
 
         return $persisters?->supportsType($type) === true ? $persisters->forType($type) : null;
+    }
+
+    /**
+     * Whether a write through `$relation`'s foreign key can be refused for clearing a key
+     * storage requires, as the related type's persister reports it, or `null` when the
+     * relation declares no foreign key.
+     */
+    private function refusesForeignKeyDetachment(Server $server, RelationInterface $relation): ?bool
+    {
+        if (ForeignKey::nameOf($relation) === null) {
+            return null;
+        }
+
+        $foreignKey = ForeignKey::of($relation, $server);
+        $relatedType = $relation->relatedTypes()[0] ?? '';
+        $writer = $this->persisterFor($relatedType);
+
+        return $foreignKey === null || !$writer instanceof WritesForeignKeysInterface || $writer->requiresForeignKey($relatedType, $foreignKey);
     }
 
     /**

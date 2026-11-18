@@ -15,6 +15,7 @@ use haddowg\JsonApi\Pagination\OffsetWindow;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\AbstractFieldValue;
+use haddowg\JsonApi\Resource\Field\ForeignKey;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\MorphTo;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
@@ -38,6 +39,10 @@ use Symfony\Contracts\Service\ResetInterface;
  * at once when its {@see DataProviderInterface::fetchRelatedCollectionBatch()} answers
  * for parents of another type, else per parent, as the endpoint does. Otherwise the
  * parent type's provider batches the whole page.
+ *
+ * A relation declared with a foreign key is always read through its related type's
+ * provider ({@see ReadsByForeignKeyInterface}), for the whole page of parents at once,
+ * whatever provider serves them and whatever the parent model holds.
  *
  * A to-one the related provider batches takes its target from the batch on every read
  * path, so the model needs no getter for it. The batch is read once per parent page
@@ -433,6 +438,10 @@ final class RelatedReadRouter implements ResetInterface
      */
     public function isScoped(RelationInterface $relation): bool
     {
+        if ($this->readsByForeignKey($relation)) {
+            return true;
+        }
+
         foreach ($relation->relatedTypes() as $relatedType) {
             if ($this->isScopedType($relatedType, $relation)) {
                 return true;
@@ -487,6 +496,10 @@ final class RelatedReadRouter implements ResetInterface
      */
     public function readsThroughRelatedProvider(string $type, RelationInterface $relation): bool
     {
+        if ($this->readsByForeignKey($relation)) {
+            return true;
+        }
+
         $relatedType = $relation->relatedTypes()[0] ?? null;
         if ($relatedType === null || !$this->providers->supportsType($relatedType) || !$this->isScoped($relation)) {
             return false;
@@ -498,12 +511,145 @@ final class RelatedReadRouter implements ResetInterface
     }
 
     /**
+     * Whether `$relation` is a to-many read off its parent model because its related
+     * type's provider can't scope rows to parents of `$type`
+     * ({@see ScopesToParentsInterface}) and nothing else reaches them: no foreign key,
+     * no pivot and no scope on the related type. Its pages are cut in memory from what
+     * the model holds, as an `extractUsing()` relation's are.
+     */
+    public function readsOffModel(string $type, RelationInterface $relation): bool
+    {
+        $relatedType = $relation->relatedTypes()[0] ?? null;
+        if ($relatedType === null || !$relation->isToMany() || \count($relation->relatedTypes()) !== 1
+            || ForeignKey::nameOf($relation) !== null || !$this->providers->supportsType($relatedType)
+            || $this->isPivot($relation) || $this->isScoped($relation)) {
+            return false;
+        }
+
+        $provider = $this->providers->forType($relatedType);
+
+        return $provider instanceof ScopesToParentsInterface && !$provider->scopesToParentsOf($type);
+    }
+
+    /**
+     * Whether `$relation` declares a foreign key and a provider serves its related type,
+     * so every read of it goes through {@see foreignKeyBatch()}.
+     */
+    public function readsByForeignKey(RelationInterface $relation): bool
+    {
+        $relatedType = $relation->relatedTypes()[0] ?? null;
+
+        return ForeignKey::nameOf($relation) !== null
+            && $relatedType !== null
+            && \count($relation->relatedTypes()) === 1
+            && $this->providers->supportsType($relatedType);
+    }
+
+    /**
+     * Each parent's page of `$relation` read through its foreign key by the related
+     * type's provider, keyed by parent wire id: the rows whose foreign key holds the
+     * parent's key, under the provider's scope, per `$criteria`.
+     *
+     * @param list<object> $parents
+     *
+     * @throws \LogicException when the foreign key doesn't resolve or the related type's
+     *                         provider can't read through one; warm-up refuses both
+     */
+    public function foreignKeyBatch(Server $server, string $type, array $parents, RelationInterface $relation, CollectionCriteria $criteria, JsonApiRequestInterface $request): RelatedBatch
+    {
+        [$relatedType, $provider, $foreignKey] = $this->foreignKeyReader($server, $type, $relation);
+        $keyed = $this->foreignKeyParents($server, $type, $parents);
+        if ($keyed->isEmpty()) {
+            return new RelatedBatch([]);
+        }
+
+        return $provider->fetchByForeignKey($relatedType, $relation, $foreignKey, $keyed, $criteria, $request);
+    }
+
+    /**
+     * `$parent`'s page of `$relation` read through its foreign key, as its related and
+     * relationship endpoints serve it.
+     *
+     * @return CollectionResult<object>
+     */
+    public function foreignKeyPage(Server $server, string $type, object $parent, RelationInterface $relation, CollectionCriteria $criteria, JsonApiRequestInterface $request): CollectionResult
+    {
+        return $this->foreignKeyBatch($server, $type, [$parent], $relation, $criteria, $request)
+            ->for($server->serializerFor($type)->getId($parent));
+    }
+
+    /**
+     * The parents keyed by wire id, each with the key its related rows' foreign key
+     * holds. A parent with no id is left out.
+     *
+     * @param list<object> $parents
+     */
+    public function foreignKeyParents(Server $server, string $type, array $parents): ForeignKeyParents
+    {
+        $serializer = $server->serializerFor($type);
+        $objects = [];
+        $keys = [];
+        foreach ($parents as $parent) {
+            $wireId = $serializer->getId($parent);
+            if ($wireId === '') {
+                continue;
+            }
+            $objects[$wireId] = $parent;
+            $keys[$wireId] = ForeignKey::parentKey($serializer, $parent);
+        }
+
+        return new ForeignKeyParents($type, $objects, $keys);
+    }
+
+    /**
+     * The related type, its provider and the resolved foreign key `$relation` reads
+     * through.
+     *
+     * @return array{0: string, 1: ReadsByForeignKeyInterface, 2: ForeignKey}
+     *
+     * @throws \LogicException when the foreign key doesn't resolve or the provider can't read through one
+     */
+    private function foreignKeyReader(Server $server, string $type, RelationInterface $relation): array
+    {
+        $relatedType = $relation->relatedTypes()[0] ?? '';
+        $foreignKey = ForeignKey::of($relation, $server);
+        if ($foreignKey === null) {
+            throw new \LogicException(\sprintf(
+                'Relation "%s" on resource type "%s" reads through the foreign key "%s", which is no stored field or to-one relation of the resource serving type "%s".',
+                $relation->name(),
+                $type,
+                (string) ForeignKey::nameOf($relation),
+                $relatedType,
+            ));
+        }
+
+        $provider = $this->providers->forType($relatedType);
+        if (!$provider instanceof ReadsByForeignKeyInterface) {
+            throw new \LogicException(\sprintf(
+                'Relation "%s" on resource type "%s" reads through the foreign key "%s", but the %s serving type "%s" can\'t read through one. Implement %s on it.',
+                $relation->name(),
+                $type,
+                $foreignKey->name,
+                $provider::class,
+                $relatedType,
+                ReadsByForeignKeyInterface::class,
+            ));
+        }
+
+        return [$relatedType, $provider, $foreignKey];
+    }
+
+    /**
      * Loads `$relation` for every parent per `$criteria`, keyed by parent wire id.
      *
      * @param list<object> $parents
      */
     public function batch(Server $server, string $type, array $parents, RelationInterface $relation, CollectionCriteria $criteria, JsonApiRequestInterface $request): RelatedBatch
     {
+        if ($this->readsByForeignKey($relation)) {
+            return $this->foreignKeyBatch($server, $type, $parents, $relation, $criteria, $request);
+        }
+
         if ($this->isComputed($relation)) {
             $serializer = $server->serializerFor($type);
             $results = [];
@@ -517,11 +663,14 @@ final class RelatedReadRouter implements ResetInterface
         if (!$this->readsThroughRelatedProvider($type, $relation)) {
             $relatedType = $relation->relatedTypes()[0] ?? $type;
 
-            return $this->providers->forType($this->providers->supportsType($type) ? $type : $relatedType)
+            $batch = $this->providers->forType($this->providers->supportsType($type) ? $type : $relatedType)
                 ->fetchRelatedCollectionBatch($type, $parents, $relation, $criteria, $request);
+
+            // Members the related provider can't scope to these parents are the model's own.
+            return !$batch->isSupported() && $this->readsOffModel($type, $relation) ? RelatedBatch::computed() : $batch;
         }
 
-        $batch = $this->relatedProviderBatch($type, $parents, $relation, $criteria, $request);
+        $batch = $this->relatedProviderBatch($type, $parents, $relation, $criteria, $request, $server);
         if ($batch !== null) {
             return $batch;
         }
@@ -568,7 +717,7 @@ final class RelatedReadRouter implements ResetInterface
      *
      * @param list<object> $parents
      */
-    public function relatedProviderBatch(string $type, array $parents, RelationInterface $relation, CollectionCriteria $criteria, JsonApiRequestInterface $request): ?RelatedBatch
+    public function relatedProviderBatch(string $type, array $parents, RelationInterface $relation, CollectionCriteria $criteria, JsonApiRequestInterface $request, ?Server $server = null): ?RelatedBatch
     {
         if (\count($relation->relatedTypes()) !== 1 || $this->isPivot($relation) || !$this->readsThroughRelatedProvider($type, $relation)) {
             return null;
@@ -591,7 +740,9 @@ final class RelatedReadRouter implements ResetInterface
         }
 
         $relatedType = $relation->relatedTypes()[0];
-        $batch = $this->providers->forType($relatedType)->fetchRelatedCollectionBatch($type, $parents, $relation, $criteria, $request);
+        $batch = $this->readsByForeignKey($relation) && $server !== null
+            ? $this->foreignKeyBatch($server, $type, $parents, $relation, $criteria, $request)
+            : $this->providers->forType($relatedType)->fetchRelatedCollectionBatch($type, $parents, $relation, $criteria, $request);
 
         if (!$batch->isSupported()) {
             $known[$relationKey] = false;
@@ -623,7 +774,7 @@ final class RelatedReadRouter implements ResetInterface
             return null;
         }
 
-        $batch = $this->relatedProviderBatch($type, $parents, $relation, self::plainCriteria($request), $request);
+        $batch = $this->relatedProviderBatch($type, $parents, $relation, self::plainCriteria($request), $request, $server);
         if ($batch === null) {
             return null;
         }
@@ -762,6 +913,18 @@ final class RelatedReadRouter implements ResetInterface
      */
     public function counts(Server $server, string $type, array $parents, RelationInterface $relation, CollectionCriteria $criteria, JsonApiRequestInterface $request): array
     {
+        // Counted by the related type's provider over the rows whose foreign key holds
+        // each parent's key, every parent present.
+        if ($this->readsByForeignKey($relation)) {
+            [$relatedType, $provider, $foreignKey] = $this->foreignKeyReader($server, $type, $relation);
+            $keyed = $this->foreignKeyParents($server, $type, $parents);
+            if ($keyed->isEmpty()) {
+                return [];
+            }
+
+            return $provider->countByForeignKey($relatedType, $relation, $foreignKey, $keyed, $criteria, $request) + \array_fill_keys(\array_map('strval', \array_keys($keyed->keys)), 0);
+        }
+
         // The pairs each guarded type's provider admits, before any page.
         if (self::identifiesMembers($relation)) {
             $serializer = $server->serializerFor($type);
@@ -798,7 +961,18 @@ final class RelatedReadRouter implements ResetInterface
         }
 
         if (!$this->readsThroughRelatedProvider($type, $relation)) {
-            return $this->providers->forType($type)->countRelated($type, $parents, $relation, $criteria, $request);
+            $counts = $this->providers->forType($type)->countRelated($type, $parents, $relation, $criteria, $request);
+            if ($counts !== [] || !$this->readsOffModel($type, $relation)) {
+                return $counts;
+            }
+
+            // Counted over what each parent's model holds, as its pages are cut.
+            $serializer = $server->serializerFor($type);
+            foreach ($this->memberPages($server, $parents, $relation, $criteria, $request) as $index => $page) {
+                $counts[$serializer->getId($parents[$index])] = \is_array($page->items) ? \count($page->items) : \iterator_count($page->items);
+            }
+
+            return $counts;
         }
 
         $relatedType = $relation->relatedTypes()[0] ?? $type;
@@ -811,7 +985,7 @@ final class RelatedReadRouter implements ResetInterface
 
         // A batching related provider counts the page in one call, over the same filtered
         // set with no window.
-        $batch = $pivot || !$relation->isToMany() ? null : $this->relatedProviderBatch($type, $parents, $relation, $criteria, $request);
+        $batch = $pivot || !$relation->isToMany() ? null : $this->relatedProviderBatch($type, $parents, $relation, $criteria, $request, $server);
 
         $counts = [];
         foreach ($parents as $parent) {
@@ -871,7 +1045,8 @@ final class RelatedReadRouter implements ResetInterface
      * Whether `$relation`'s value comes from an `extractUsing()` closure. Core keeps the
      * closure on the field's protected state, so this reads it by reflection. A pivot
      * `belongsToMany` is not counted: its closure only feeds core's model read, and the
-     * provider's pivot query is what its related endpoint serves.
+     * provider's pivot query is what its related endpoint serves. Nor is a relation
+     * declared with a foreign key, which decides its reads.
      *
      * A computed relation's endpoints, counts and windows always read the closure's
      * value, narrowed to the rows any scoped type admits, since its storage need not be
@@ -879,7 +1054,20 @@ final class RelatedReadRouter implements ResetInterface
      */
     public function isComputed(RelationInterface $relation): bool
     {
-        if (!$relation instanceof AbstractFieldValue || $this->isPivot($relation)) {
+        if (!$relation instanceof AbstractFieldValue || $this->isPivot($relation) || $this->readsByForeignKey($relation)) {
+            return false;
+        }
+
+        return self::extractsValue($relation);
+    }
+
+    /**
+     * Whether `$relation` declares an `extractUsing()` closure. Core keeps the closure on
+     * the field's protected state, so this reads it by reflection.
+     */
+    public static function extractsValue(RelationInterface $relation): bool
+    {
+        if (!$relation instanceof AbstractFieldValue) {
             return false;
         }
 

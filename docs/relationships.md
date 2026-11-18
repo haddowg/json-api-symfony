@@ -93,6 +93,78 @@ loaded", so the rendered relationship carries `links` but omits the `data` membe
 `tracks` with links and no `data`, while the explicit
 `GET /albums/1/relationships/tracks` serves its first page of identifiers.
 
+### Relations read through a foreign key
+
+A `HasMany` or `HasOne` declared with a foreign key, its third argument, is read through
+the related type's field or to-one relation that holds the parent's id, never off the
+parent model. The music catalog's `stations` are served by
+[`StationProvider`](../examples/music-catalog-symfony/src/Provider/StationProvider.php)
+from a fixed list, with no database behind them, and their plays live in Doctrine:
+
+```php
+// src/Resource/StationResource.php
+HasMany::make('plays', 'plays', 'station'),
+```
+
+`GET /stations/kexp/plays`, `GET /stations/kexp/relationships/plays`,
+`GET /stations?include=plays`, `withData()` linkage, `?withCount=plays`, offset and
+cursor pages, a `relatedQuery` and the related type's filter defaults are all the plays
+whose `station` is the station's id, as the `plays` type's provider scopes them. Each
+read covers the whole page of parents: the reference Doctrine provider runs it as one
+`WHERE station IN (:keys)` query with the related type's
+[query extensions](custom-data-providers.md#doctrineextensioninterface--scoping-the-doctrine-queries)
+applied, windowed per parent like any rendered first page, and one grouped query for a
+count. The in-memory provider matches its stored rows the same way.
+
+Use it wherever the parent can't hold the relation: a singleton or computed type served
+by a [custom provider](custom-data-providers.md), or an entity with no inverse mapping to
+the rows that point at it. Once declared, the foreign key decides every read of the
+relation even when the parent's entity maps an association for it.
+
+The foreign key names a stored field of the related type holding the parent's id, the
+parent's wire id decoded through its id encoder, or a to-one relation to the parent's
+type, which on Doctrine is a single-valued association to the parent's entity. Warm-up
+checks it, and checks that the related type's provider reads through foreign keys
+(`ReadsByForeignKeyInterface`, which the Doctrine and in-memory providers implement).
+
+A relation with no foreign key on a type no entity maps can't be scoped by Doctrine, so
+it reads what the parent model holds. A to-many's pages, counts and related endpoint are
+cut in memory from the model's value, unless the parent type's provider batches the
+relation itself, and a `HasOne` reads its target off the model. When the related type is
+scoped by a query extension that read can't be scoped to the parent, so warm-up refuses
+a to-many into it unless it declares a foreign key or `extractUsing()`, and the message
+names both. A `belongsToMany` with stored pivot fields reads its association entity
+through the parent's mapping, so warm-up refuses it on such a type.
+
+#### Writing through a foreign key
+
+A relationship write of a relation declared with a foreign key never reaches the parent
+type's persister. The related type's persister sets the foreign key on the rows the
+linkage names and clears it on the rows that leave:
+
+- a replace points the linked rows at the parent and clears the members it leaves out;
+- an add points the linked rows at the parent, taking each from any parent it had;
+- a remove clears the linked rows that are members, and leaves any other row alone.
+
+A field takes the parent's id as storage holds it, and a to-one relation takes the parent
+itself. The members are the ones the relation's reads serve, so a replace leaves alone a
+row the related type's scope hides. A write that would clear a foreign key storage
+requires, a NOT NULL column on Doctrine, is refused with the `403` of the mutation that
+drops the member, linkage naming a row the related type doesn't serve is a `404`, and a
+row taken from another parent is authorized as a [member move](doctrine.md#moving-a-child-between-parents).
+`readOnly()`, `cannotReplace()` and the other gates and `cannotChangeMembership()` work as
+on any relation. It runs in the parent write's transaction, with the related persister's
+own transaction joined to it, inside an Atomic Operations batch as well, and the before
+and after relationship hooks, `afterCommit` callbacks and scopes all apply as usual. A
+foreign-key relation in a create body is written once the parent exists, since its id
+is what the rows hold.
+
+The Doctrine and in-memory persisters write foreign keys through
+[`WritesForeignKeysInterface`](../src/DataPersister/WritesForeignKeysInterface.php); a
+related type whose persister doesn't implement it can't be written this way. A Doctrine
+parent with no inverse mapping to its members, which used to fail on a relationship
+write, now writes through its foreign key.
+
 ### Rendered to-manys show their first page
 
 Wherever a to-many's `data` renders, included or declared `withData()`, it is the

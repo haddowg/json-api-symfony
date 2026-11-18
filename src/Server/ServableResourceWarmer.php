@@ -12,6 +12,7 @@ use haddowg\JsonApi\OpenApi\RelatedTypeNotRegistered;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\DocumentMetaMisdeclared;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
+use haddowg\JsonApi\Resource\Field\ForeignKey;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
@@ -21,6 +22,7 @@ use haddowg\JsonApi\Resource\Filter\ThroughPathResolver;
 use haddowg\JsonApi\Resource\Sort\RelationSorts;
 use haddowg\JsonApi\Resource\Sort\SortMatcher;
 use haddowg\JsonApi\Serializer\RelationFilterDefaultsValidator;
+use haddowg\JsonApi\Serializer\RelationForeignKeyValidator;
 use haddowg\JsonApi\Serializer\RelationOrderValidator;
 use haddowg\JsonApiBundle\Action\ActionDescriptor;
 use haddowg\JsonApiBundle\Action\ActionRegistry;
@@ -29,6 +31,7 @@ use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
 use haddowg\JsonApiBundle\DataProvider\PivotAwareProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\PivotFields;
+use haddowg\JsonApiBundle\DataProvider\ReadsByForeignKeyInterface;
 use haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory;
 use haddowg\JsonApiBundle\OpenApi\Metadata\ActionMetadata;
 use haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource;
@@ -95,6 +98,11 @@ use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
  *    declared with a list of `filters` takes those keys from its mount type. The type's
  *    filters are built by the resource, which the container build cannot construct, so
  *    the keys are checked here, naming the action's handler class.
+ *  - **A relation's foreign key must hold the parent's id, and be readable.** A `HasMany`
+ *    or `HasOne` declared with a foreign key names a stored field or a to-one relation
+ *    to the parent's type on its related type, which core's
+ *    {@see RelationForeignKeyValidator} checks, and the provider serving the related
+ *    type must read through one ({@see ReadsByForeignKeyInterface}).
  *  - **A traversal filter's path must resolve.** Each declared filter, the relation-scoped
  *    ones included, resolves through core's {@see ThroughPathResolver} against the type it
  *    runs against, so a path ending on a polymorphic relation fails here. A filter family
@@ -145,6 +153,7 @@ final class ServableResourceWarmer implements CacheWarmerInterface
      * @throws UnenforceableSecurityException when a relation declares a security expression the app cannot evaluate
      * @throws \LogicException                 when a to-many's default read order names a sort it does not accept
      * @throws \LogicException                 when a relation drops the default of a filter its related type doesn't default, or can't drop
+     * @throws \LogicException                 when a relation's foreign key holds no parent id, or its related type's provider can't read through one
      */
     public function warmUp(string $cacheDir, ?string $buildDir = null): array
     {
@@ -263,7 +272,9 @@ final class ServableResourceWarmer implements CacheWarmerInterface
      * {@see RelationOrderValidator}, and that a key only a `belongsToMany` pivot field
      * answers is read by a provider that sorts its pivot rows. An identified
      * `MorphToMany` sorts its link rows on every provider. The in-memory provider holds no pivot
-     * data, so a pivot order would otherwise fail every read of the relation.
+     * data, so a pivot order would otherwise fail every read of the relation. Each foreign
+     * key is checked here too, through core's {@see RelationForeignKeyValidator}, beside
+     * the provider that reads through it.
      */
     private function guardRelationOrder(string $serverName, string $type): void
     {
@@ -275,8 +286,30 @@ final class ServableResourceWarmer implements CacheWarmerInterface
         $serializer = $server->serializerFor($type);
         (new RelationOrderValidator($server))->validate($type, $serializer);
         (new RelationFilterDefaultsValidator($server))->validate($type, $serializer);
+        (new RelationForeignKeyValidator($server))->validate($type, $serializer);
         if (!$serializer instanceof AbstractResource) {
             return;
+        }
+
+        foreach ($serializer->allFields() as $relation) {
+            $foreignKey = $relation instanceof RelationInterface ? ForeignKey::nameOf($relation) : null;
+            $relatedType = $relation instanceof RelationInterface ? ($relation->relatedTypes()[0] ?? null) : null;
+            if ($foreignKey === null || $relatedType === null || !$this->providers->supportsType($relatedType)) {
+                continue;
+            }
+
+            $provider = $this->providers->forType($relatedType);
+            if (!$provider instanceof ReadsByForeignKeyInterface) {
+                throw new \LogicException(\sprintf(
+                    'Relation "%s" on resource type "%s" reads through the foreign key "%s", but the %s serving type "%s" can\'t read through one. Implement %s on it.',
+                    $relation->name(),
+                    $type,
+                    $foreignKey,
+                    $provider::class,
+                    $relatedType,
+                    ReadsByForeignKeyInterface::class,
+                ));
+            }
         }
 
         foreach ($serializer->allFields() as $relation) {

@@ -21,6 +21,7 @@ use haddowg\JsonApi\Hydrator\Relationship\ToManyRelationship;
 use haddowg\JsonApi\Hydrator\Relationship\ToOneRelationship;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\FieldInterface;
+use haddowg\JsonApi\Resource\Field\ForeignKey;
 use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\Positions;
@@ -34,6 +35,7 @@ use haddowg\JsonApiBundle\DataPersister\PositionTargets;
 use haddowg\JsonApiBundle\DataPersister\ReportsMovedMembersInterface;
 use haddowg\JsonApiBundle\DataPersister\StoresDateTimesInterface;
 use haddowg\JsonApiBundle\DataPersister\TransactionalDataPersisterInterface;
+use haddowg\JsonApiBundle\DataPersister\WritesForeignKeysInterface;
 use haddowg\JsonApiBundle\DataPersister\WritesLinkRowsInterface;
 use haddowg\JsonApiBundle\DataPersister\WritesPositionsInterface;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineIdentifiers;
@@ -82,7 +84,7 @@ use Symfony\Contracts\Service\ResetInterface;
  * (`404`), rather than passing the raw wire string to `getReference` (which would
  * build a proxy that errors on initialization, surfacing as a `500`).
  */
-final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivotRowsInterface, TransactionalDataPersisterInterface, ReportsMovedMembersInterface, StoresDateTimesInterface, WritesLinkRowsInterface, WritesPositionsInterface, ResetInterface
+final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivotRowsInterface, TransactionalDataPersisterInterface, ReportsMovedMembersInterface, StoresDateTimesInterface, WritesLinkRowsInterface, WritesPositionsInterface, WritesForeignKeysInterface, ResetInterface
 {
     private readonly DoctrineIdentifiers $ids;
 
@@ -415,6 +417,48 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
         }
 
         return $entity;
+    }
+
+    /**
+     * A foreign key is required when its column is NOT NULL: a field mapped without
+     * `nullable`, or an association whose join column is.
+     */
+    public function requiresForeignKey(string $relatedType, ForeignKey $foreignKey): bool
+    {
+        $metadata = $this->entityManager->getClassMetadata($this->entityClassFor($relatedType));
+        if ($metadata->hasAssociation($foreignKey->column)) {
+            return $this->requiresParentOf($metadata, $foreignKey->column);
+        }
+
+        return $metadata->hasField($foreignKey->column) && !$metadata->isNullable($foreignKey->column);
+    }
+
+    /**
+     * Sets the foreign key on each joining row and clears it on each leaving one: the
+     * parent's reference for an association, its key in the field's PHP type for a field.
+     */
+    public function writeForeignKey(string $relatedType, ForeignKey $foreignKey, object $parent, mixed $parentKey, array $attach, array $detach, bool $flush = true): void
+    {
+        $metadata = $this->entityManager->getClassMetadata($this->entityClassFor($relatedType));
+        $column = $foreignKey->column;
+        $value = $parent;
+        if (!$metadata->hasAssociation($column)) {
+            $typeName = $metadata->getTypeOfField($column);
+            $value = \is_string($typeName) && $parentKey !== null
+                ? Type::getType($typeName)->convertToPHPValue($parentKey, $this->entityManager->getConnection()->getDatabasePlatform())
+                : $parentKey;
+        }
+
+        foreach ($detach as $row) {
+            $metadata->setFieldValue($row, $column, null);
+        }
+        foreach ($attach as $row) {
+            $metadata->setFieldValue($row, $column, $value);
+        }
+
+        if ($flush) {
+            $this->entityManager->flush();
+        }
     }
 
     /**

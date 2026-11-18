@@ -8,6 +8,8 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Mapping\ClassMetadata;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
+use haddowg\JsonApi\Resource\Field\ForeignKey;
+use haddowg\JsonApi\Resource\Field\HasMany;
 use haddowg\JsonApi\Resource\Field\MorphTo;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
@@ -26,8 +28,11 @@ use haddowg\JsonApi\Resource\Filter\WhereThrough;
 use haddowg\JsonApi\Resource\Filter\WhereThroughIn;
 use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApi\Resource\Sort\SortInterface;
+use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
 use haddowg\JsonApiBundle\DataProvider\FilterPaths;
+use haddowg\JsonApiBundle\DataProvider\RelatedReadRouter;
 use haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory;
+use haddowg\JsonApiBundle\DataProvider\ScopesRelatedReadsInterface;
 use haddowg\JsonApiBundle\Server\IdEncoderResolver;
 use haddowg\JsonApiBundle\Server\RouteDescriptorRegistry;
 use haddowg\JsonApiBundle\Server\ServerProvider;
@@ -68,6 +73,18 @@ use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
  *    {@see PivotAssociationResolver} already fails loudly, but lazily on the first
  *    write. Running the discovery here moves only the TIMING — the same
  *    `\LogicException` fires at `cache:warmup`.
+ *  - **A foreign key is a mapped column of the related entity.** A relation declared
+ *    with a foreign key into an entity-mapped type reads through a field or a
+ *    single-valued association of that entity, and an association must reference the
+ *    parent's own entity.
+ *  - **A to-many of a parent that is no entity can reach its rows.** A type no entity
+ *    maps has no association to scope related rows by. Its to-many into an entity-mapped
+ *    type is read off the parent model, unless the related type is scoped by a query
+ *    extension: those reads go through the Doctrine provider, which can't scope them to
+ *    the parent, so the relation must declare a foreign key or `extractUsing()`. A
+ *    `belongsToMany` with stored pivot fields reads its association entity through the
+ *    parent's mapping, so it can't be declared on such a type at all. A to-one is read off
+ *    the model and narrowed by the related scope, so it passes.
  */
 final class DoctrineServableWarmer implements CacheWarmerInterface
 {
@@ -84,6 +101,7 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
         private readonly PivotAssociationResolver $pivotAssociations,
         private readonly array $serverNames,
         private readonly ?IdEncoderResolver $idEncoders = null,
+        private readonly ?DataProviderRegistry $providers = null,
     ) {}
 
     /**
@@ -109,6 +127,10 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
             $server = $this->servers->get($serverName);
 
             foreach (\array_keys($this->descriptors->forServer($serverName)) as $type) {
+                if ($type !== '') {
+                    $this->guardForeignKeyReads($serverName, $type);
+                }
+
                 if ($type === '' || !isset($this->entityClassByType[$type])) {
                     continue; // only entity-mapped types reach the Doctrine adapter
                 }
@@ -129,6 +151,131 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
 
         // No preloadable class files: a pure build-time guard.
         return [];
+    }
+
+    /**
+     * Asserts each relation of `$type` into an entity-mapped type has a way to its rows: a
+     * foreign key the related entity maps, or, on a type no entity maps, a to-many read off
+     * the parent model that no query extension scopes, or an `extractUsing()` closure.
+     */
+    private function guardForeignKeyReads(string $serverName, string $type): void
+    {
+        $server = $this->servers->get($serverName);
+        $resource = $this->typeMetadata->resourceFor($server, $type);
+        if ($resource === null) {
+            return;
+        }
+
+        $parentClass = $this->entityClassByType[$type] ?? null;
+        foreach ($resource->allFields() as $relation) {
+            if (!$relation instanceof RelationInterface || \count($relation->relatedTypes()) !== 1) {
+                continue;
+            }
+
+            $relatedType = $relation->relatedTypes()[0];
+            $relatedClass = $this->entityClassByType[$relatedType] ?? null;
+            if ($relatedClass === null) {
+                continue;
+            }
+
+            $name = ForeignKey::nameOf($relation);
+            if ($name !== null) {
+                $this->guardForeignKeyColumn($server, $type, $parentClass, $relation, $relatedType, $relatedClass, $name);
+
+                continue;
+            }
+
+            if ($parentClass !== null || !$relation instanceof HasMany) {
+                continue;
+            }
+
+            if ($relation instanceof BelongsToMany && $relation->storedPivotFields() !== []) {
+                throw new \LogicException(\sprintf(
+                    'Relation "%s" on resource type "%s" is a BelongsToMany with stored pivot fields, which reads its association entity through the parent\'s mapping, but "%s" is not a Doctrine entity. Serve "%s" from an entity, or declare the relation as a HasMany with a foreign key.',
+                    $relation->name(),
+                    $type,
+                    $type,
+                    $type,
+                ));
+            }
+
+            if (RelatedReadRouter::extractsValue($relation) || !$this->scopesRelatedReads($relatedType, $relation)) {
+                continue;
+            }
+
+            throw new \LogicException(\sprintf(
+                'Relation "%s" on resource type "%s" reads type "%s", which a Doctrine query extension scopes, but "%s" is not a Doctrine entity, so no association scopes those reads to the parent. %s',
+                $relation->name(),
+                $type,
+                $relatedType,
+                $type,
+                $relation instanceof BelongsToMany
+                    ? 'Compute its members with extractUsing().'
+                    : \sprintf(
+                        'Name the field or to-one relation of "%s" holding the parent\'s id as the foreign key argument, HasMany::make(\'%s\', \'%s\', \'<foreign key>\'), or compute it with extractUsing().',
+                        $relatedType,
+                        $relation->name(),
+                        $relatedType,
+                    ),
+            ));
+        }
+    }
+
+    /**
+     * Asserts the foreign key `$name` is stored in a field or single-valued association
+     * of the related entity, and that an association references the parent's entity.
+     *
+     * @param class-string|null $parentClass
+     * @param class-string      $relatedClass
+     */
+    private function guardForeignKeyColumn(\haddowg\JsonApi\Server\Server $server, string $type, ?string $parentClass, RelationInterface $relation, string $relatedType, string $relatedClass, string $name): void
+    {
+        $foreignKey = ForeignKey::of($relation, $server);
+        if ($foreignKey === null) {
+            return; // core's RelationForeignKeyValidator names what is wrong with it
+        }
+
+        $metadata = $this->entityManager->getClassMetadata($relatedClass);
+        $column = $foreignKey->column;
+        $problem = null;
+        if ($metadata->hasAssociation($column)) {
+            $target = $metadata->getAssociationTargetClass($column);
+            $problem = match (true) {
+                !$metadata->isSingleValuedAssociation($column) => 'a collection association',
+                $parentClass === null => \sprintf('an association to %s, which can\'t reference "%s", a type no entity maps; store its id in a field instead', $target, $type),
+                !\is_a($parentClass, $target, true) && !\is_a($target, $parentClass, true) => \sprintf('an association to %s, not to %s', $target, $parentClass),
+                default => null,
+            };
+        } elseif (!$metadata->hasField($column)) {
+            $problem = 'neither a mapped field nor an association';
+        }
+
+        if ($problem !== null) {
+            throw new \LogicException(\sprintf(
+                'Relation "%s" on resource type "%s" reads through the foreign key "%s", stored in "%s", which %s maps as %s.',
+                $relation->name(),
+                $type,
+                $name,
+                $column,
+                $relatedClass,
+                $problem,
+            ));
+        }
+    }
+
+    /**
+     * Whether the provider serving `$relatedType` scopes its reads of `$relation`, as the
+     * related read router decides.
+     */
+    private function scopesRelatedReads(string $relatedType, RelationInterface $relation): bool
+    {
+        if ($this->providers === null || !$this->providers->supportsType($relatedType)) {
+            return false;
+        }
+
+        $provider = $this->providers->forType($relatedType);
+
+        return !$provider instanceof ScopesRelatedReadsInterface || $provider->scopesRelatedReads($relation);
     }
 
     /**

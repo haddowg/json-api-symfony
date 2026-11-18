@@ -207,11 +207,12 @@ final class ScopedLinkageGuard
     /**
      * The members `$parent`'s relationship endpoint serves for a scoped monomorphic
      * to-many, unpaginated, read through the related provider as `GET` on it reads them;
-     * `null` for any other relation.
+     * `null` for any other relation. `$type`, the parent's type, lets a relation declared
+     * with a foreign key read through it.
      *
      * @return list<object>|null
      */
-    public function scopedMembers(Server $server, object $parent, RelationInterface $relation, JsonApiRequestInterface $request): ?array
+    public function scopedMembers(Server $server, object $parent, RelationInterface $relation, JsonApiRequestInterface $request, ?string $type = null): ?array
     {
         $relatedType = $relation->relatedTypes()[0] ?? null;
         if ($relatedType === null || !$relation->isToMany() || !Polymorphism::isMonomorphic($relation) || !$this->router->isScoped($relation)) {
@@ -219,6 +220,11 @@ final class ScopedLinkageGuard
         }
 
         $criteria = new CollectionCriteria(new QueryParameters(fields: [], includes: [], sort: [], filter: [], pagination: []));
+        // A relation declared with a foreign key reads its members through it.
+        if ($type !== null && $this->router->readsByForeignKey($relation)) {
+            return $this->members($this->router->foreignKeyPage($server, $type, $parent, $relation, $criteria, $request)->items);
+        }
+
         // A computed relation's members are its closure's value, narrowed as GET narrows them.
         if ($this->router->isComputed($relation)) {
             return $this->members($this->router->fetchComputed($server, $parent, $relation, $criteria, $request)->items);

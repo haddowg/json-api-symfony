@@ -586,7 +586,7 @@ final class RelatedIncludeBatcher
         if ($scoped && !$relation->isToMany()) {
             // A related provider that batches the page is the source of every target,
             // so it is asked for all of them, whatever the model holds.
-            $batch = $this->router->relatedProviderBatch($type, $entities, $relation, $this->includeCriteria($server, $relation, $request), $request);
+            $batch = $this->router->relatedProviderBatch($type, $entities, $relation, $this->includeCriteria($server, $relation, $request), $request, $server);
             if ($batch !== null) {
                 return $this->fill($server, $type, $entities, $relation, true, [], $batch, $linkages);
             }
@@ -1070,6 +1070,13 @@ final class RelatedIncludeBatcher
     private function isLoadedOnModel(Server $server, object $entity, RelationInterface $relation): bool
     {
         $loadState = $server->relationshipLoadState();
+
+        // The model never holds a relation read through a foreign key, so it renders lazily
+        // wherever a load state reports what storage loaded.
+        if ($loadState !== null && $this->router->readsByForeignKey($relation)) {
+            return false;
+        }
+
         if ($loadState instanceof ProviderReadLoadState) {
             return $loadState->isLoadedOnModel($entity, $relation);
         }

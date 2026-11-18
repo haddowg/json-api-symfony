@@ -265,6 +265,11 @@ the in-memory one only the first:
   [doctrine](doctrine.md#what-a-rollback-leaves-managed)). A persister that has to queue
   work only once the write is durable registers it on
   [`AfterCommit`](lifecycle-hooks.md#running-code-after-the-commit).
+- [`WritesForeignKeysInterface`](../src/DataPersister/WritesForeignKeysInterface.php)
+  (`writeForeignKey()`, `requiresForeignKey()`) writes the foreign key a relation declared
+  with one reads through, on the rows of the related type it serves: the handler hands it
+  the rows joining the parent and the rows leaving it (see
+  [relationships → writing through a foreign key](relationships.md#writing-through-a-foreign-key)).
 - [`ReportsMovedMembersInterface`](../src/DataPersister/ReportsMovedMembersInterface.php)
   (`movedMembers()`) reports each child a to-many add or replace would take from
   another parent, so the handler can dispatch a `BeforeMemberMoveEvent` and the

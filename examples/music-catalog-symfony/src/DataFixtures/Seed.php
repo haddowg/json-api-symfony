@@ -9,6 +9,7 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Album;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Artist;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Favorite;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Library;
+use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Play;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Playlist;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\PlaylistEntry;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Release;
@@ -240,6 +241,14 @@ final class Seed
             album: $okComputer,
         );
 
+        // --- Plays (ids 1 to 4): KEXP played three tracks, NTS one, FIP none ---
+        $plays = [
+            new Play('kexp', new \DateTimeImmutable('2026-01-01T08:00:00+00:00'), $airbag),
+            new Play('kexp', new \DateTimeImmutable('2026-01-01T08:05:00+00:00'), $paranoidAndroid),
+            new Play('kexp', new \DateTimeImmutable('2026-01-01T08:12:00+00:00'), $exitMusic),
+            new Play('nts', new \DateTimeImmutable('2026-01-01T09:00:00+00:00'), $mysterons),
+        ];
+
         // --- Persist (order so FK-bearing rows follow their targets) ----------
         foreach ([$library, $radiohead, $portishead] as $row) {
             $entityManager->persist($row);
@@ -259,6 +268,9 @@ final class Seed
             $entityManager->persist($row);
         }
         foreach ([$vinylRelease, $digitalRelease] as $row) {
+            $entityManager->persist($row);
+        }
+        foreach ($plays as $row) {
             $entityManager->persist($row);
         }
 

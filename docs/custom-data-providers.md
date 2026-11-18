@@ -397,6 +397,38 @@ way, since the related type's scope still applies to what the model holds. A piv
 `belongsToMany` is always read per parent through its pivot query, and a polymorphic
 relation is never batched this way.
 
+### Reading a relation through a foreign key
+
+A relation declared with a foreign key
+([relationships → relations read through a foreign key](relationships.md#relations-read-through-a-foreign-key))
+is read by its related type's provider through
+[`ReadsByForeignKeyInterface`](../src/DataProvider/ReadsByForeignKeyInterface.php), on
+every path and whatever provider serves the parents. Implement it on a provider whose
+type is the target of such a relation; warm-up refuses one that doesn't.
+
+```php
+public function fetchByForeignKey(string $relatedType, RelationInterface $relation, ForeignKey $foreignKey, ForeignKeyParents $parents, CollectionCriteria $criteria, JsonApiRequestInterface $request): RelatedBatch
+{
+    // $foreignKey->column is the member's storage name; $parents->keys maps each
+    // parent's wire id to the key the column holds.
+    $rows = $this->notes->whereIn($foreignKey->column, \array_values($parents->keys)); // one query
+    // ...partition the rows by $parents->wireIdOf($row->{$foreignKey->column}), then cut
+    // each partition to $criteria's window as fetchRelatedCollection() would.
+}
+```
+
+`countByForeignKey()` counts each parent's rows over the criteria's filters, `0` for a
+parent with none. A to-one's page holds its target as the first row. When the foreign
+key is a to-one relation (`$foreignKey->isRelation()`), the column holds a reference to
+the parent, so compare the id it references. The parents may come from any provider, so
+read their keys from `ForeignKeyParents` rather than from your own storage.
+
+A provider that can only scope its related reads to parents of some types implements
+[`ScopesToParentsInterface`](../src/DataProvider/ScopesToParentsInterface.php). The Doctrine
+provider answers `true` only for the types its entities map, and for any other parent
+type a to-many with no foreign key reads what the parent model holds, its pages cut in
+memory.
+
 ### Saying whether related reads are scoped
 
 Included and linkage data always match the related endpoint (see
@@ -419,7 +451,8 @@ final class TenantAgencyProvider implements DataProviderInterface, ScopesRelated
 ```
 
 Return `false` only when your related reads return exactly what the parent model
-holds. A to-many with a
+holds. A relation declared with a foreign key always reads through the related type's
+provider, whatever it answers. A to-many with a
 [default read order](relationships.md#a-relations-default-read-order) loads through
 your `fetchRelatedCollectionBatch()` whatever you answer, with the order in the
 criteria's `defaultSort`, since the model's own order isn't the one its endpoints

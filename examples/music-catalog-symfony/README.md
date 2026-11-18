@@ -39,6 +39,8 @@ reference-data type sourced from `symfony/intl`.
 | `products` | `Product` entity | **encoded store-provided id** (`encodeUsing` over a DB-assigned int), self-referential `parent` |
 | `charts` | store-backed | standalone serializer, read-only (no entity, no resource) |
 | `countries` | `symfony/intl` | reference-data provider, read-only (ISO alpha-2 id) |
+| `stations` | custom provider | read-only, served from a fixed list with no database; its `plays` read through their `station` **foreign key** (`HasMany::make('plays', 'plays', 'station')`) |
+| `plays` | `Play` entity | read-only; `station` holds the id of the station that played it |
 
 `albums` is served on both the `default` and `admin` servers, and a related endpoint returns
 its target as primary data — so every type an album's (or a user's) related endpoints reach

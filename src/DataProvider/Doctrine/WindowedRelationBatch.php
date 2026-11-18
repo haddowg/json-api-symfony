@@ -127,14 +127,14 @@ final class WindowedRelationBatch
         RelationInterface $relation,
         CollectionCriteria $criteria,
         ?RelatedExtensions $extensions = null,
+        ?ForeignKeyScope $foreignKey = null,
     ): RelatedBatch {
         $window = $criteria->window;
         \assert($window instanceof \haddowg\JsonApi\Pagination\OffsetWindow);
 
         $relatedMetadata = $this->entityManager->getClassMetadata($relatedClass);
-        $parentMetadata = $this->entityManager->getClassMetadata($parents[0]::class);
-        /** @var class-string $parentClass */
-        $parentClass = $parentMetadata->getName();
+        // A foreign key scopes the related rows itself, so the parents need not be entities.
+        $parentMetadata = $foreignKey === null ? $this->entityManager->getClassMetadata($parents[0]::class) : null;
 
         // The include path's count opt-in rides the criteria (the RelationshipWindowBatcher
         // sets `wantsCount: $relation->isCountable()`), so the
@@ -147,8 +147,8 @@ final class WindowedRelationBatch
 
         // The inner RSM types the jsonapi_parent_id scalar from the IDENTITY / field
         // projection itself, so the batch never re-declares the parent id type here.
-        $shape = $this->resolveShape($parentMetadata, $relatedMetadata, $relation, $parentClass);
-        $parentIds = $this->parentStorageIds($parents, $parentMetadata);
+        $shape = $this->shapeFor($foreignKey, $parentMetadata, $relatedMetadata, $relation);
+        $parentIds = $parentMetadata === null ? [] : $this->parentStorageIds($parents, $parentMetadata);
 
         // The sort directives the window ORDER BY emits — resolved (and validated) once,
         // exactly as the per-parent path resolves them, so the native path selects the
@@ -208,7 +208,7 @@ final class WindowedRelationBatch
             ? $this->loadRelatedById($relatedClass, $relatedMetadata, $rows, $extensions)
             : [];
 
-        return $this->partition($rows, $parentType, $parentMetadata, $window, $countable, $shape->isJoinTable(), $relatedById, $relatedMetadata);
+        return $this->partition($rows, $this->wireIdReader($foreignKey, $parentType, $parentMetadata), $window, $countable, $shape->isJoinTable(), $relatedById, $relatedMetadata);
     }
 
     /**
@@ -242,11 +242,10 @@ final class WindowedRelationBatch
         CollectionCriteria $criteria,
         CursorWindow $window,
         ?RelatedExtensions $extensions = null,
+        ?ForeignKeyScope $foreignKey = null,
     ): RelatedBatch {
         $relatedMetadata = $this->entityManager->getClassMetadata($relatedClass);
-        $parentMetadata = $this->entityManager->getClassMetadata($parents[0]::class);
-        /** @var class-string $parentClass */
-        $parentClass = $parentMetadata->getName();
+        $parentMetadata = $foreignKey === null ? $this->entityManager->getClassMetadata($parents[0]::class) : null;
 
         // The keyset columns (active sort + the deduped PK tiebreak) from the ONE core
         // resolver the per-parent keyset path (runCursor) and the in-memory witness use, so
@@ -266,8 +265,8 @@ final class WindowedRelationBatch
         // is one of the columns, so it projects and orders like any other keyset column.
         $directives = $this->keysetSortDirectives($columns);
 
-        $shape = $this->resolveShape($parentMetadata, $relatedMetadata, $relation, $parentClass);
-        $parentIds = $this->parentStorageIds($parents, $parentMetadata);
+        $shape = $this->shapeFor($foreignKey, $parentMetadata, $relatedMetadata, $relation);
+        $parentIds = $parentMetadata === null ? [] : $this->parentStorageIds($parents, $parentMetadata);
 
         $builder = $this->innerQuery($shape, $relatedClass, $parentMetadata, $parentIds, $directives, $criteria, $extensions);
         $query = $builder->getQuery();
@@ -305,7 +304,7 @@ final class WindowedRelationBatch
             ? $this->loadRelatedById($relatedClass, $relatedMetadata, $rows, $extensions)
             : [];
 
-        return $this->partitionCursor($rows, $parentType, $parentMetadata, $window, $shape->isJoinTable(), $relatedById, $relatedMetadata, $columns);
+        return $this->partitionCursor($rows, $this->wireIdReader($foreignKey, $parentType, $parentMetadata), $window, $shape->isJoinTable(), $relatedById, $relatedMetadata, $columns);
     }
 
     /**
@@ -495,15 +494,14 @@ final class WindowedRelationBatch
      * minting.
      *
      * @param list<array<int|string, mixed>> $rows
-     * @param ClassMetadata<object>          $parentMetadata
+     * @param \Closure(mixed): ?string       $wireIdOf        the wire id of the parent a row's discriminator names
      * @param array<string, object>          $relatedById     the join-table shape's id-loaded related entities (empty for inverse-FK)
      * @param ClassMetadata<object>          $relatedMetadata
      * @param list<KeysetColumn>             $columns
      */
     private function partitionCursor(
         array $rows,
-        string $parentType,
-        ClassMetadata $parentMetadata,
+        \Closure $wireIdOf,
         CursorWindow $window,
         bool $joinTable,
         array $relatedById,
@@ -525,7 +523,7 @@ final class WindowedRelationBatch
             } else {
                 $related = $row[0] ?? null;
             }
-            $wireId = $this->wireId($row[BatchScope::PARENT_DISCRIMINATOR_ALIAS] ?? null, $parentType, $parentMetadata);
+            $wireId = $wireIdOf($row[BatchScope::PARENT_DISCRIMINATOR_ALIAS] ?? null);
             $rn = $row['rn'] ?? null;
             if (!\is_object($related) || $wireId === null || !\is_numeric($rn)) {
                 continue;
@@ -554,6 +552,45 @@ final class WindowedRelationBatch
         }
 
         return new RelatedBatch($results);
+    }
+
+    /**
+     * The foreign-key shape when the relation reads through one, else the shape its
+     * parent's mapping gives it ({@see resolveShape()}).
+     *
+     * @param ClassMetadata<object>|null $parentMetadata
+     * @param ClassMetadata<object>      $relatedMetadata
+     */
+    private function shapeFor(?ForeignKeyScope $foreignKey, ?ClassMetadata $parentMetadata, ClassMetadata $relatedMetadata, RelationInterface $relation): WindowShape
+    {
+        if ($foreignKey !== null) {
+            return WindowShape::foreignKey($foreignKey);
+        }
+
+        \assert($parentMetadata !== null);
+        /** @var class-string $parentClass */
+        $parentClass = $parentMetadata->getName();
+
+        return $this->resolveShape($parentMetadata, $relatedMetadata, $relation, $parentClass);
+    }
+
+    /**
+     * Reads a row's parent discriminator as the parent's wire id: through the foreign
+     * key's parents, or the parent entity's id and its type's encoder.
+     *
+     * @param ClassMetadata<object>|null $parentMetadata
+     *
+     * @return \Closure(mixed): ?string
+     */
+    private function wireIdReader(?ForeignKeyScope $foreignKey, string $parentType, ?ClassMetadata $parentMetadata): \Closure
+    {
+        if ($foreignKey !== null) {
+            return $foreignKey->wireIdOf(...);
+        }
+
+        \assert($parentMetadata !== null);
+
+        return fn(mixed $raw): ?string => $this->wireId($raw, $parentType, $parentMetadata);
     }
 
     /**
@@ -610,20 +647,31 @@ final class WindowedRelationBatch
      * scalars. Either way the shared {@see CriteriaApplier} pushes the criteria FILTERS
      * down on the related alias through the #1 DQL filter executor (sort stripped).
      *
-     * @param class-string          $relatedClass
-     * @param ClassMetadata<object> $parentMetadata
-     * @param list<mixed>           $parentIds
+     * @param class-string               $relatedClass
+     * @param ClassMetadata<object>|null $parentMetadata `null` for the foreign-key shape
+     * @param list<mixed>                $parentIds
      * @param list<SortDirective>   $sortDirectives
      */
     private function innerQuery(
         WindowShape $shape,
         string $relatedClass,
-        ClassMetadata $parentMetadata,
+        ?ClassMetadata $parentMetadata,
         array $parentIds,
         array $sortDirectives,
         CollectionCriteria $criteria,
         ?RelatedExtensions $extensions = null,
     ): QueryBuilder {
+        if ($shape->foreignKey !== null) {
+            $builder = $this->entityManager
+                ->getRepository($relatedClass)
+                ->createQueryBuilder('related');
+            $shape->foreignKey->scope($builder, 'related', select: true);
+            $builder = $extensions?->scope($builder, 'related') ?? $builder;
+
+            return $this->applier->apply($this->filtersOnly($criteria), $builder, $this->filterHandler, $this->sortHandler, 'related');
+        }
+
+        \assert($parentMetadata !== null);
         if (!$shape->isJoinTable()) {
             $owningField = $shape->owningField;
             \assert($owningField !== null);
@@ -971,14 +1019,13 @@ final class WindowedRelationBatch
      * `hasMore` from the surplus probe row (non-countable).
      *
      * @param list<array<int|string, mixed>> $rows
-     * @param ClassMetadata<object>          $parentMetadata
+     * @param \Closure(mixed): ?string       $wireIdOf        the wire id of the parent a row's discriminator names
      * @param array<string, object>          $relatedById     the join-table shape's id-loaded related entities (empty for inverse-FK)
      * @param ClassMetadata<object>          $relatedMetadata
      */
     private function partition(
         array $rows,
-        string $parentType,
-        ClassMetadata $parentMetadata,
+        \Closure $wireIdOf,
         \haddowg\JsonApi\Pagination\OffsetWindow $window,
         bool $countable,
         bool $joinTable,
@@ -1003,7 +1050,7 @@ final class WindowedRelationBatch
             } else {
                 $related = $row[0] ?? null;
             }
-            $wireId = $this->wireId($row[BatchScope::PARENT_DISCRIMINATOR_ALIAS] ?? null, $parentType, $parentMetadata);
+            $wireId = $wireIdOf($row[BatchScope::PARENT_DISCRIMINATOR_ALIAS] ?? null);
             $rn = $row['rn'] ?? null;
             if (!\is_object($related) || $wireId === null || !\is_numeric($rn)) {
                 continue;

@@ -40,7 +40,7 @@ final class ProviderReadLoadState implements RelationshipLoadStateInterface
 
     public function isRelationshipLoaded(mixed $model, RelationInterface $relation): bool
     {
-        if (!$this->inner->isRelationshipLoaded($model, $relation)) {
+        if ($this->router->readsByForeignKey($relation) || !$this->inner->isRelationshipLoaded($model, $relation)) {
             return false;
         }
 
@@ -48,11 +48,12 @@ final class ProviderReadLoadState implements RelationshipLoadStateInterface
     }
 
     /**
-     * Whether the model already holds the relation's value, as storage reports it.
+     * Whether the model already holds the relation's value, as storage reports it. It
+     * never holds a relation read through a foreign key.
      */
     public function isLoadedOnModel(mixed $model, RelationInterface $relation): bool
     {
-        return $this->inner->isRelationshipLoaded($model, $relation);
+        return !$this->router->readsByForeignKey($relation) && $this->inner->isRelationshipLoaded($model, $relation);
     }
 
     private function readsThroughProvider(RelationInterface $relation): bool
