@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.21.1](https://github.com/haddowg/json-api-symfony/compare/v2.21.0...v2.21.1) (2026-11-18)
+
+
+### Bug Fixes
+
+* let warm-up pass a to-many no request reads ([#407](https://github.com/haddowg/json-api-symfony/issues/407)) ([6de5878](https://github.com/haddowg/json-api-symfony/commit/6de58787892e393905ab3d88cfa42942570b2a76))
+
 ## [2.21.0](https://github.com/haddowg/json-api-symfony/compare/v2.20.0...v2.21.0) (2026-11-18)
 
 
