@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.21.0](https://github.com/haddowg/json-api-symfony/compare/v2.20.0...v2.21.0) (2026-11-18)
+
+
+### Features
+
+* fill and check typed top-level document meta ([#403](https://github.com/haddowg/json-api-symfony/issues/403)) ([a943933](https://github.com/haddowg/json-api-symfony/commit/a943933821ba28ed9fb2f4e5a1fc9a77f4254af1))
+* read relations declared with a foreign key on any parent ([#404](https://github.com/haddowg/json-api-symfony/issues/404)) ([341ef28](https://github.com/haddowg/json-api-symfony/commit/341ef28f6edd713864c0abe2b7a43fc81c391eee))
+
+
+### Bug Fixes
+
+* hold client dates to the RFC 3339 shape core accepts ([#402](https://github.com/haddowg/json-api-symfony/issues/402)) ([8e2105e](https://github.com/haddowg/json-api-symfony/commit/8e2105eafb4e7e7242634dc9a10ea236422d7a96))
+* order a cursor page by any custom sort expression ([#406](https://github.com/haddowg/json-api-symfony/issues/406)) ([8ed8125](https://github.com/haddowg/json-api-symfony/commit/8ed812596d016ecb237891518d1ffa864d220de8))
+* type an identified MorphTo's targets by their stored pair ([#400](https://github.com/haddowg/json-api-symfony/issues/400)) ([d999efe](https://github.com/haddowg/json-api-symfony/commit/d999efe0a9fd457e4e92a44277fffb010d6975e8))
+
 ## [2.20.0](https://github.com/haddowg/json-api-symfony/compare/v2.19.0...v2.20.0) (2026-11-16)
 
 
