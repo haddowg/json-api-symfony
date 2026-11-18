@@ -8,7 +8,7 @@ use Doctrine\DBAL\Platforms\AbstractPlatform;
 use Doctrine\DBAL\Types\DateTimeType;
 
 /**
- * A `datetime` column an application keeps in UTC, like the types convertr registers
+ * A `datetime` column an application keeps in UTC, like the types an application registers
  * under `doctrine.dbal.types`. It writes every value as UTC digits and reads them back
  * as UTC, whatever PHP's default timezone is.
  */
