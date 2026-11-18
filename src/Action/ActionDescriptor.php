@@ -56,6 +56,7 @@ final readonly class ActionDescriptor
      * @param list<string>|null                                         $scopes   the OAuth scopes the action needs, overriding the scope resolver; null asks it
      * @param bool                                                      $deprecated whether the action is declared deprecated
      * @param bool|list<string>                                         $filters  the mount type's filters the action takes
+     * @param class-string|null                                         $handlerClass the handler's class, so its declarations are read without building it when it declares none
      */
     public function __construct(
         public string $type,
@@ -82,6 +83,7 @@ final readonly class ActionDescriptor
         public ?array $scopes = null,
         public bool $deprecated = false,
         public bool|array $filters = false,
+        public ?string $handlerClass = null,
     ) {}
 
     /**

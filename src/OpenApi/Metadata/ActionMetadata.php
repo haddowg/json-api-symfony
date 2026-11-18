@@ -10,6 +10,7 @@ use haddowg\JsonApi\OpenApi\Metadata\ActionInputMode;
 use haddowg\JsonApi\OpenApi\Metadata\ActionMetadataInterface;
 use haddowg\JsonApi\OpenApi\Metadata\ActionResource;
 use haddowg\JsonApi\OpenApi\Metadata\ActionResponse;
+use haddowg\JsonApi\OpenApi\Metadata\ActionResponses;
 use haddowg\JsonApi\OpenApi\Metadata\ActionScope;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresAcceptedBodies;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresActionDeprecation;
@@ -23,6 +24,7 @@ use haddowg\JsonApi\OpenApi\Metadata\MetaResult;
 use haddowg\JsonApi\OpenApi\Metadata\NoContent;
 use haddowg\JsonApi\OpenApi\Metadata\OperationExample;
 use haddowg\JsonApi\OpenApi\Metadata\SeeOther;
+use haddowg\JsonApi\Resource\DeclaresActionDocumentMetaInterface;
 use haddowg\JsonApiBundle\Action\AcceptedMediaTypes;
 use haddowg\JsonApiBundle\Action\ActionDescriptor;
 use haddowg\JsonApiBundle\Action\RawResults;
@@ -46,7 +48,11 @@ use haddowg\JsonApiBundle\Action\RawResults;
  */
 final readonly class ActionMetadata implements DeclaresActionLink, DeclaresAcceptedBodies, DeclaresActionExample, DeclaresActionSafety, DeclaresActionExtensions, DeclaresActionScopes, DeclaresActionDeprecation, DeclaresActionFilters
 {
-    public function __construct(private ActionDescriptor $descriptor) {}
+    public function __construct(
+        private ActionDescriptor $descriptor,
+        // The handler, when it declares its response documents' meta per status.
+        private ?DeclaresActionDocumentMetaInterface $documentMeta = null,
+    ) {}
 
     public function path(): string
     {
@@ -100,10 +106,10 @@ final readonly class ActionMetadata implements DeclaresActionLink, DeclaresAccep
         // The compiler pass always resolves a non-empty set (defaulting to a mount-type
         // resource document); guard defensively so the contract's non-empty promise holds.
         if ($responses === []) {
-            return [new ActionResource($this->descriptor->outputType !== '' ? $this->descriptor->outputType : $this->descriptor->type)];
+            $responses = [new ActionResource($this->descriptor->outputType !== '' ? $this->descriptor->outputType : $this->descriptor->type)];
         }
 
-        return $responses;
+        return $this->documentMeta === null ? $responses : ActionResponses::withDocumentMeta($responses, $this->documentMeta);
     }
 
     public function isSecured(): bool

@@ -40,7 +40,25 @@ abstract class TypedDocumentMetaConformanceTestCase extends JsonApiFunctionalTes
     {
         self::assertSame(['etag' => 'card-2-1'], $this->metaOf($this->handle('/tm-cards/2'), 200));
         self::assertSame(['etag' => 'card-1-0'], $this->metaOf($this->handle('/tm-cards/1', 'PATCH', ['data' => ['type' => 'tm-cards', 'id' => '1', 'attributes' => ['title' => 'Plan again']]]), 200));
-        self::assertSame(['fresh' => true], $this->metaOf($this->handle('/tm-cards', 'POST', ['data' => ['type' => 'tm-cards', 'attributes' => ['title' => 'Review', 'done' => false]]]), 201));
+        self::assertSame(['fresh' => true, 'rank' => 1], $this->metaOf($this->handle('/tm-cards', 'POST', ['data' => ['type' => 'tm-cards', 'attributes' => ['title' => 'Review', 'done' => false]]]), 201));
+    }
+
+    #[Test]
+    public function aDeleteAnswersItsMetaOnlyDocument(): void
+    {
+        $response = $this->handle('/tm-cards/2', 'DELETE');
+
+        self::assertSame(['removed' => 'Build'], $this->metaOf($response, 200));
+        self::assertArrayNotHasKey('data', $this->decode($response));
+    }
+
+    #[Test]
+    public function anActionsHandlerDeclaresItsMeta(): void
+    {
+        $meta = $this->metaOf($this->handle('/tm-cards/1/-actions/pin', 'POST'), 200);
+        \ksort($meta);
+
+        self::assertSame(['pinned' => 1, 'title' => 'Plan'], $meta);
     }
 
     #[Test]
@@ -79,7 +97,7 @@ abstract class TypedDocumentMetaConformanceTestCase extends JsonApiFunctionalTes
         $results = $this->decode($response)['atomic:results'] ?? null;
         self::assertIsArray($results);
         self::assertIsArray($results[0] ?? null);
-        self::assertSame(['fresh' => true], $results[0]['meta'] ?? null);
+        self::assertSame(['fresh' => true, 'rank' => 1], $results[0]['meta'] ?? null);
     }
 
     #[Test]
@@ -100,6 +118,8 @@ abstract class TypedDocumentMetaConformanceTestCase extends JsonApiFunctionalTes
             ['/tm-boards/{id}/cards', 'get', '200', 'TmBoardsCardsFetchRelatedDocument'],
             ['/tm-boards/{id}/pinned', 'get', '200', 'TmBoardsPinnedFetchRelatedDocument'],
             ['/tm-labels', 'get', '200', 'TmLabelsFetchCollectionDocument'],
+            ['/tm-cards/{id}', 'delete', '200', 'TmCardsDeleteDocument'],
+            ['/tm-cards/{id}/-actions/pin', 'post', '200', 'TmCardsPinActionDocument'],
             ['/tm-boards', 'get', '200', 'TmBoardsCollection'],
             ['/tm-boards/{id}', 'get', '200', 'TmBoardsDocument'],
         ] as [$path, $method, $status, $component]) {
@@ -125,6 +145,7 @@ abstract class TypedDocumentMetaConformanceTestCase extends JsonApiFunctionalTes
     #[Test]
     public function productionChecksNothing(): void
     {
+        self::assertSame(['wrong'], $this->metaOf($this->handle('/tm-cards', 'POST', ['data' => ['type' => 'tm-cards', 'attributes' => ['title' => 'Broken', 'done' => false]]]), 201)['rank'] ?? null);
         self::assertSame('two', $this->metaOf($this->handle('/tm-cards', extraServer: ['HTTP_X_WRONG_TYPE' => '1']), 200)['open'] ?? null);
         self::assertTrue($this->metaOf($this->handle('/tm-cards', extraServer: ['HTTP_X_BOGUS_META' => '1']), 200)['bogus'] ?? null);
     }
@@ -144,6 +165,28 @@ abstract class TypedDocumentMetaConformanceTestCase extends JsonApiFunctionalTes
         $undeclared = $this->handle('/tm-cards', extraServer: ['HTTP_X_BOGUS_META' => '1']);
         self::assertSame(500, $undeclared->getStatusCode());
         self::assertStringContainsString('the member \"bogus\" is not declared', (string) $undeclared->getContent());
+
+        $action = $this->handle('/tm-cards/1/-actions/pin', 'POST', extraServer: ['HTTP_X_BOGUS_META' => '1']);
+        self::assertSame(500, $action->getStatusCode());
+        self::assertStringContainsString('The top-level meta of the \"pin\" action of type \"tm-cards\" does not match its declaration: the member \"bogus\" is not declared.', (string) $action->getContent());
+
+        self::assertSame(['removed' => 'Build'], $this->metaOf($this->handle('/tm-cards/2', 'DELETE'), 200));
+    }
+
+    #[Test]
+    public function debugChecksEachAtomicResult(): void
+    {
+        $this->bootInDebug();
+        $atomic = 'application/vnd.api+json; ext="https://jsonapi.org/ext/atomic"';
+        $batch = static fn(string $title): string => \json_encode(['atomic:operations' => [
+            ['op' => 'add', 'data' => ['type' => 'tm-cards', 'attributes' => ['title' => $title, 'done' => false]]],
+        ]], \JSON_THROW_ON_ERROR);
+
+        self::assertSame(200, $this->handleRaw('/operations', $batch('Fine'), $atomic, extraServer: ['HTTP_ACCEPT' => $atomic])->getStatusCode());
+
+        $broken = $this->handleRaw('/operations', $batch('Broken'), $atomic, extraServer: ['HTTP_ACCEPT' => $atomic]);
+        self::assertSame(500, $broken->getStatusCode());
+        self::assertStringContainsString('the member \"rank\" is array, not integer', (string) $broken->getContent());
     }
 
     abstract protected function bootInDebug(): void;

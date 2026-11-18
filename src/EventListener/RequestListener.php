@@ -281,7 +281,7 @@ final class RequestListener
         $scope = $this->actionScope($request);
         $descriptor = $this->actionDescriptor($request, $target->type, $scope, $actionName);
 
-        $responds = $descriptor !== null ? (new ActionMetadata($descriptor))->responds() : [new ActionResource($target->type)];
+        $responds = $descriptor !== null ? (new ActionMetadata($descriptor, $this->actions?->documentMetaFor($descriptor)))->responds() : [new ActionResource($target->type)];
 
         // The response media type comes first: an Accept that picks a raw result names no
         // JSON:API type, so the JSON:API Accept rules then run as if it had asked for one.

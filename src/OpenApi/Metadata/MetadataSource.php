@@ -428,7 +428,7 @@ final class MetadataSource
 
         $actions = [];
         foreach ($this->actions->forServerType($serverName, $type) as $action) {
-            $actions[] = new ActionMetadata($this->withResolvedTags($action, $descriptor['tags'], $type));
+            $actions[] = new ActionMetadata($this->withResolvedTags($action, $descriptor['tags'], $type), $this->actions->documentMetaFor($action));
         }
 
         // The resolved paginator self-describes its `page[…]` object schema (a `oneOf`

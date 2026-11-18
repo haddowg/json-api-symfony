@@ -296,8 +296,8 @@ final class AlbumResource extends AbstractResource
                 Integer::make('explicitCount')->required()->min(0)
                     ->describedAs('How many of the albums on this page are marked explicit.')
                     ->example(1)
-                    ->extractUsing(static fn(mixed $albums): int => \count(\array_filter(
-                        \is_array($albums) ? $albums : [],
+                    ->extractUsing(static fn(array $albums): int => \count(\array_filter(
+                        $albums,
                         static fn(mixed $album): bool => $album instanceof Album && $album->explicit,
                     ))),
             ],

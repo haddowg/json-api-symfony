@@ -173,8 +173,9 @@ final class ServableResourceWarmer implements CacheWarmerInterface
     }
 
     /**
-     * Reads every top-level document meta the type declares, so a member declared twice,
-     * or a collection member named after one core writes, fails the build.
+     * Reads every top-level document meta the type and its actions' handlers declare, so a
+     * member declared twice, a collection member named after one core writes, or members
+     * declared in two places, fails the build.
      *
      * @throws DocumentMetaMisdeclared
      */
@@ -187,6 +188,14 @@ final class ServableResourceWarmer implements CacheWarmerInterface
         $server = $this->servers->get($serverName);
         foreach ([OperationType::FetchCollection, OperationType::FetchOne, OperationType::Create, OperationType::Update] as $operation) {
             $this->documentMeta->forType($server, $type, $operation);
+        }
+        $this->documentMeta->forDelete($server, $serverName, $type);
+
+        // An action's handler declaring members for a response that declares its own fails here.
+        $actions = $this->actions;
+        foreach ($actions?->forServerType($serverName, $type) ?? [] as $action) {
+            \assert($actions !== null);
+            (new ActionMetadata($action, $actions->documentMetaFor($action)))->responds();
         }
     }
 

@@ -60,6 +60,11 @@ final class CustomActionTest extends MusicCatalogKernelTestCase
         self::assertSame('albums', $data['type'] ?? null);
         self::assertSame('1', $data['id'] ?? null);
 
+        // The document's typed meta carries the release date the album had before.
+        $meta = $this->decode($response)['meta'] ?? null;
+        self::assertIsArray($meta);
+        self::assertArrayHasKey('previousReleasedAt', $meta);
+
         // The new release date is persisted: a follow-up read reflects it.
         $fetched = $this->attributesOf($this->action('/albums/1', 'GET', user: 'admin'));
         $releasedAt = $fetched['releasedAt'] ?? null;

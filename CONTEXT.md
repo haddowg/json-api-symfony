@@ -108,7 +108,7 @@ A `true` or `false` in place of a security expression: it marks the operation se
 A relation's own `security(read:)` declaration, deciding whether a caller sees that relation's data at all, independently of scope.
 
 **Typed document meta**:
-The top-level `meta` members a type's `documentMeta()` declares for one operation's document, which the CRUD handler fills from their `extractUsing()` hooks and, in debug mode, the view listener checks.
+The top-level `meta` members a type's `documentMeta()` declares for one operation's document, or an action handler's `documentMeta()` for one response status, which the CRUD handler fills from their `extractUsing()` hooks and, in debug mode, the view listener and the atomic loop check.
 _Avoid_: response meta
 
 **Exception mapper**:

@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\EventListener;
 
+use haddowg\JsonApi\Operation\DeleteResourceOperation;
 use haddowg\JsonApi\Operation\JsonApiOperationInterface;
 use haddowg\JsonApi\Resource\DocumentMeta;
 use haddowg\JsonApi\Response\AbstractResponse;
+use haddowg\JsonApi\Response\MetaResponse;
 use haddowg\JsonApi\Response\RawResponse;
 use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\Operation\DocumentMetaResolver;
@@ -63,7 +65,9 @@ final class ViewListener
         $psrResponse = $response->toPsrResponse($server, $psrRequest);
 
         $operation = $request->attributes->get(RequestListener::OPERATION_ATTRIBUTE);
-        if ($this->debug && $this->documentMeta !== null && $operation instanceof JsonApiOperationInterface) {
+        // A delete's declared meta is its meta-only document's, not a resource an After hook rendered.
+        if ($this->debug && $this->documentMeta !== null && $operation instanceof JsonApiOperationInterface
+            && !($operation instanceof DeleteResourceOperation && !$response instanceof MetaResponse)) {
             $this->checkDocumentMeta($this->documentMeta->forOperation($server, $operation, $psrResponse->getStatusCode()), $psrResponse);
         }
 
@@ -82,7 +86,11 @@ final class ViewListener
         }
 
         $body = $response->getBody();
-        $document = \json_decode((string) $body, true, flags: \JSON_THROW_ON_ERROR);
+        $content = (string) $body;
+        if ($content === '') {
+            return;
+        }
+        $document = \json_decode($content, true, flags: \JSON_THROW_ON_ERROR);
         if ($body->isSeekable()) {
             $body->rewind();
         }

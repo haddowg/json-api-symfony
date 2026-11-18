@@ -27,6 +27,7 @@ use haddowg\JsonApi\Operation\UpdateResourceOperation;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\AbstractRelationValue;
 use haddowg\JsonApi\Response\DataResponse;
+use haddowg\JsonApi\Response\MetaResponse;
 use haddowg\JsonApi\Response\NoContentResponse;
 use haddowg\JsonApi\Scope\ScopeEnforcer;
 use haddowg\JsonApi\Serializer\UriTypeAwareInterface;
@@ -36,6 +37,7 @@ use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataPersister\TransactionalDataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\WriteTransactionContext;
 use haddowg\JsonApiBundle\Operation\CrudOperationHandler;
+use haddowg\JsonApiBundle\Operation\DocumentMetaResolver;
 use haddowg\JsonApiBundle\Operation\Operation;
 use haddowg\JsonApiBundle\Operation\SingletonIdResolver;
 use haddowg\JsonApiBundle\Operation\TargetResolver;
@@ -164,6 +166,8 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
         private readonly ?AfterCommit $afterCommit = null,
         // Resolves the caller's id for an href addressing a singleton type.
         ?SingletonIdResolver $singletons = null,
+        // Set in debug mode only: checks each result's meta against its declaration.
+        private readonly ?DocumentMetaResolver $documentMeta = null,
     ) {
         $this->logger = $logger ?? new NullLogger();
         $this->singletons = $singletons ?? new SingletonIdResolver();
@@ -279,7 +283,7 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
         if ($response instanceof NoContentResponse) {
             return AtomicResult::empty();
         }
-        $fragment = $this->fragmentOf($response);
+        $fragment = $this->fragmentOf($response, $operation);
 
         // (e) after an add that created a resource, register (type, lid) → assigned id so
         // a later operation can reference it (a duplicate (type, lid) throws LocalIdConflict).
@@ -903,7 +907,7 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
      *
      * @return array<string, mixed>
      */
-    private function fragmentOf(object $response): array
+    private function fragmentOf(object $response, JsonApiOperationInterface $operation): array
     {
         \assert($response instanceof \haddowg\JsonApi\Response\AbstractResponse);
 
@@ -911,6 +915,14 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
         $body = (string) $psr->getBody();
         if ($body === '') {
             return [];
+        }
+
+        if ($this->documentMeta !== null && !($operation instanceof DeleteResourceOperation && !$response instanceof MetaResponse)) {
+            $declared = $this->documentMeta->forOperation($this->server, $operation, $psr->getStatusCode());
+            $document = $declared->isEmpty() ? null : \json_decode($body, true, 512, \JSON_THROW_ON_ERROR);
+            if (\is_array($document)) {
+                $declared->assertSatisfiedBy(\is_array($document['meta'] ?? null) ? $document['meta'] : []);
+            }
         }
 
         $decoded = \json_decode($body, false, 512, \JSON_THROW_ON_ERROR);

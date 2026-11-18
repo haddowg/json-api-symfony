@@ -222,6 +222,7 @@ return static function (ContainerConfigurator $container): void {
 
     $services->set(CrudOperationHandler::class)
         ->arg('$documentMeta', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Operation\DocumentMetaResolver::class))
+        ->arg('$debug', '%kernel.debug%')
         ->arg('$validator', \Symfony\Component\DependencyInjection\Loader\Configurator\service(ResourceValidator::class)->nullOnInvalid())
         ->arg('$dispatcher', \Symfony\Component\DependencyInjection\Loader\Configurator\service('event_dispatcher')->nullOnInvalid())
         // Optional too: resolves to the FilterValueValidator only when the Symfony

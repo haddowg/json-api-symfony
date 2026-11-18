@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Hook;
 
 use haddowg\JsonApi\Response\DataResponse;
 use haddowg\JsonApi\Response\IdentifierResponse;
+use haddowg\JsonApi\Response\MetaResponse;
 use haddowg\JsonApi\Response\NoContentResponse;
 
 /**
@@ -88,7 +89,7 @@ interface ResourceLifecycleHooksInterface
     /**
      * After a delete commits; may replace the `204` response.
      */
-    public function afterDelete(object $entity, HookContext $context): DataResponse|NoContentResponse|null;
+    public function afterDelete(object $entity, HookContext $context): DataResponse|MetaResponse|NoContentResponse|null;
 
     /**
      * Before a relationship-endpoint mutation applies; the parent is mutable and a

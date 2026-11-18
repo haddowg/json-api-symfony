@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Event;
 
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Response\DataResponse;
+use haddowg\JsonApi\Response\MetaResponse;
 use haddowg\JsonApi\Response\NoContentResponse;
 
 /**
@@ -16,7 +17,7 @@ use haddowg\JsonApi\Response\NoContentResponse;
  */
 final class AfterDeleteEvent
 {
-    private DataResponse|NoContentResponse|null $response = null;
+    private DataResponse|MetaResponse|NoContentResponse|null $response = null;
 
     public function __construct(
         public readonly string $type,
@@ -25,12 +26,12 @@ final class AfterDeleteEvent
         public readonly string $serverName,
     ) {}
 
-    public function setResponse(DataResponse|NoContentResponse|null $response): void
+    public function setResponse(DataResponse|MetaResponse|NoContentResponse|null $response): void
     {
         $this->response = $response;
     }
 
-    public function response(): DataResponse|NoContentResponse|null
+    public function response(): DataResponse|MetaResponse|NoContentResponse|null
     {
         return $this->response;
     }

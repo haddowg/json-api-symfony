@@ -428,7 +428,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
         }
 
         $handlerReferences = [];
-        /** @var array<string, array{type: string, path: string, methods: list<string>, scope: string, input: string, inputType: string, outputType: string, responds: list<array{kind: string, type?: string, jobType?: string, raw?: array<string, mixed>, description?: string, mediaType?: string}>, security: ?string, handlerServiceId: string, server: string, tags: string, asLink: bool, summary: ?string, description: ?string, accepts: list<array{mediaType: string, input: string, schema: array<string, mixed>|string|null, binary: bool}>, example: array{request: mixed, responses: array<int|string, mixed>}|false|null, readOnly: ?bool, destructive: ?bool, idempotent: ?bool, extensions: array<string, mixed>, scopes: list<string>|null, deprecated: bool}> $actionDescriptors */
+        /** @var array<string, array{type: string, path: string, methods: list<string>, scope: string, input: string, inputType: string, outputType: string, responds: list<array{kind: string, type?: string, jobType?: string, raw?: array<string, mixed>, description?: string, mediaType?: string}>, security: ?string, handlerServiceId: string, server: string, tags: string, asLink: bool, summary: ?string, description: ?string, accepts: list<array{mediaType: string, input: string, schema: array<string, mixed>|string|null, binary: bool}>, example: array{request: mixed, responses: array<int|string, mixed>}|false|null, readOnly: ?bool, destructive: ?bool, idempotent: ?bool, extensions: array<string, mixed>, scopes: list<string>|null, deprecated: bool, handlerClass?: class-string}> $actionDescriptors */
         $actionDescriptors = [];
         // The handler class behind each descriptor key, so a declaration error can name it.
         /** @var array<string, string> $actionClasses */
@@ -659,6 +659,7 @@ final class ResourceLocatorPass implements CompilerPassInterface
                         'scopes' => OperationScopeOverrides::decodeList($tag['scopes'] ?? null),
                         'deprecated' => ($tag['deprecated'] ?? false) === true,
                         'filters' => $this->parseActionFilters($tag['filters'] ?? null, $id),
+                        'handlerClass' => $class,
                     ];
                     $actionClasses[$key] = $class;
 

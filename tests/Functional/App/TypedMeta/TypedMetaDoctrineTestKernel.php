@@ -91,6 +91,7 @@ class TypedMetaDoctrineTestKernel extends Kernel
         $services->set(TmLabelSerializer::class);
         $services->set(TmLabelsProvider::class);
         $services->set(TmMetaSubscriber::class);
+        $services->set(PinCard::class);
 
         $this->configureData($container, $services);
     }

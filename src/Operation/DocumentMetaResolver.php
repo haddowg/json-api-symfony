@@ -4,12 +4,10 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Operation;
 
-use haddowg\JsonApi\OpenApi\Metadata\ActionCreated;
-use haddowg\JsonApi\OpenApi\Metadata\ActionResource;
-use haddowg\JsonApi\OpenApi\Metadata\MetaResult;
 use haddowg\JsonApi\OpenApi\Metadata\OperationType;
 use haddowg\JsonApi\Operation\CreateResourceOperation;
 use haddowg\JsonApi\Operation\CustomActionOperation;
+use haddowg\JsonApi\Operation\DeleteResourceOperation;
 use haddowg\JsonApi\Operation\FetchRelatedOperation;
 use haddowg\JsonApi\Operation\FetchResourceOperation;
 use haddowg\JsonApi\Operation\JsonApiOperationInterface;
@@ -18,6 +16,9 @@ use haddowg\JsonApi\Resource\DocumentMeta;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\DataProvider\Polymorphism;
+use haddowg\JsonApiBundle\OpenApi\Metadata\DeclaredOperationResponse;
+use haddowg\JsonApiBundle\Server\RouteDescriptorRegistry;
+use haddowg\JsonApiBundle\Server\ServerName;
 use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
 
 /**
@@ -37,13 +38,17 @@ final class DocumentMetaResolver
     /** @var array<string, DocumentMeta> */
     private array $declared = [];
 
-    public function __construct(private readonly TypeMetadataResolver $types) {}
+    public function __construct(
+        private readonly TypeMetadataResolver $types,
+        // The declared success responses, which say whether a delete answers a meta-only 200.
+        private readonly ?RouteDescriptorRegistry $descriptors = null,
+    ) {}
 
     /**
      * The members of the document `$operation` answers with. Given the response's
      * `$status`, a status that does not carry that document, such as a create's `202`, has
-     * none, and an action's `201` is its {@see ActionCreated} while any other status is its
-     * {@see ActionResource} or {@see MetaResult}.
+     * none, and an action's `201` is its {@see \haddowg\JsonApi\OpenApi\Metadata\ActionCreated} while any other status is its
+     * {@see \haddowg\JsonApi\OpenApi\Metadata\ActionResource} or {@see \haddowg\JsonApi\OpenApi\Metadata\MetaResult}.
      */
     public function forOperation(Server $server, JsonApiOperationInterface $operation, ?int $status = null): DocumentMeta
     {
@@ -54,7 +59,7 @@ final class DocumentMetaResolver
             $operation instanceof UpdateResourceOperation => [$target, OperationType::Update, 200],
             default => [null, null, 200],
         };
-        if ($status !== null && $status !== $documentStatus && !$operation instanceof CustomActionOperation) {
+        if ($status !== null && $status !== $documentStatus && !$operation instanceof CustomActionOperation && !$operation instanceof DeleteResourceOperation) {
             return new DocumentMeta();
         }
 
@@ -64,7 +69,14 @@ final class DocumentMetaResolver
                 $server,
                 $this->types->relationNamed($server, $operation->target()->type, (string) $operation->target()->relationship),
             ),
-            $operation instanceof CustomActionOperation => $this->forAction($operation, $status ?? 200),
+            $operation instanceof CustomActionOperation => DocumentMeta::forActionStatus(
+                $operation->responds(),
+                $status ?? 200,
+                \sprintf('the "%s" action of type "%s"', $operation->action(), $operation->target()->type),
+            ),
+            $operation instanceof DeleteResourceOperation => $status !== null && $status !== 200
+                ? new DocumentMeta()
+                : $this->forDelete($server, self::serverName($operation), $operation->target()->type),
             default => new DocumentMeta(),
         };
     }
@@ -109,18 +121,29 @@ final class DocumentMetaResolver
         return $this->forType($server, $relation->relatedTypes()[0], $relation->isToMany() ? OperationType::FetchCollection : OperationType::FetchOne);
     }
 
-    private function forAction(CustomActionOperation $operation, int $status): DocumentMeta
+    /**
+     * The members of the meta-only `200` a delete of `$type` answers with: none unless the
+     * type declares that status, else its `Delete` members.
+     */
+    public function forDelete(Server $server, string $serverName, string $type): DocumentMeta
     {
-        $owner = \sprintf('the "%s" action of type "%s"', $operation->action(), $operation->target()->type);
-        foreach ($operation->responds() as $response) {
-            $matches = $status === 201
-                ? $response instanceof ActionCreated
-                : $response instanceof ActionResource || $response instanceof MetaResult;
-            if ($matches) {
-                return DocumentMeta::forResponse($response, $owner);
+        $key = \spl_object_id($server) . "\0" . $serverName . "\0" . $type . "\0delete";
+        if (!isset($this->declared[$key])) {
+            $responses = [];
+            foreach ($this->descriptors?->forType($serverName, $type)['responses'][OperationType::Delete->value] ?? [] as $entry) {
+                $responses[] = new DeclaredOperationResponse($entry['status'], $entry['jobType'] ?? null);
             }
+            $this->declared[$key] = DocumentMeta::forDelete($this->forType($server, $type, OperationType::Delete), $responses, $type);
         }
 
-        return new DocumentMeta([], false, $owner);
+        return $this->declared[$key];
     }
+
+    private static function serverName(JsonApiOperationInterface $operation): string
+    {
+        $name = $operation->context()->httpRequest()?->getAttribute('_jsonapi_server');
+
+        return \is_string($name) && $name !== '' ? $name : ServerName::of($operation->context()->server);
+    }
+
 }
