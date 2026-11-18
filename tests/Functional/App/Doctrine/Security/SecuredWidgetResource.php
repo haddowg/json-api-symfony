@@ -76,9 +76,13 @@ final class SecuredWidgetResource extends AbstractResource
             BelongsToMany::make('adminTags', 'openWidgets')
                 ->through(SecuredWidgetTagEntity::class)
                 ->fields(Integer::make('position')->build())
-                ->extractUsing(static fn(mixed $widget): array => $widget instanceof SecuredWidgetEntity
-                    ? \array_values(\array_filter(\array_map(static fn(SecuredWidgetTagEntity $row): ?OpenWidgetEntity => $row->tag, ($widget->widgetTags?->toArray() ?? []))))
-                    : [])
+                ->extractUsing(static function (mixed $widget): array {
+                    if (!$widget instanceof SecuredWidgetEntity || $widget->widgetTags === null) {
+                        return [];
+                    }
+
+                    return \array_values(\array_filter(\array_map(static fn(SecuredWidgetTagEntity $row): ?OpenWidgetEntity => $row->tag, $widget->widgetTags->toArray())));
+                })
                 ->withData()
                 ->security(read: "is_granted('ROLE_ADMIN')"),
         ];
