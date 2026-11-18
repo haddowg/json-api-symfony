@@ -32,6 +32,7 @@ use haddowg\JsonApi\Resource\Filter\WhereDoesntHave;
 use haddowg\JsonApi\Resource\Filter\WhereHas;
 use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApi\Resource\Sort\SortDirective;
+use haddowg\JsonApi\Resource\Sort\SortInterface;
 use haddowg\JsonApi\Resource\Sort\SortMatcher;
 use haddowg\JsonApiBundle\Action\ActionDescriptor;
 use haddowg\JsonApiBundle\DataProvider\AdmitsIdsInterface;
@@ -41,6 +42,7 @@ use haddowg\JsonApiBundle\DataProvider\CriteriaApplier;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\FetchesByIdsInterface;
 use haddowg\JsonApiBundle\DataProvider\ForeignKeyParents;
+use haddowg\JsonApiBundle\DataProvider\KeysCursorSortsInterface;
 use haddowg\JsonApiBundle\DataProvider\PivotAwareProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\PivotCollectionResult;
 use haddowg\JsonApiBundle\DataProvider\PivotCursorCollectionResult;
@@ -100,7 +102,7 @@ use haddowg\JsonApiBundle\Server\IdEncoderResolver;
  * @implements DataProviderInterface<object>
  * @implements PivotAwareProviderInterface<object>
  */
-final class DoctrineDataProvider implements DataProviderInterface, PivotAwareProviderInterface, ScopesRelatedReadsInterface, AdmitsRowsInterface, FetchesByIdsInterface, AdmitsIdsInterface, QueriesFilteredCollectionInterface, LinkRowQueryInterface, LinkRowKeysInterface, ReadsLinkRowsInterface, ReadsByForeignKeyInterface, ScopesToParentsInterface
+final class DoctrineDataProvider implements DataProviderInterface, PivotAwareProviderInterface, ScopesRelatedReadsInterface, AdmitsRowsInterface, FetchesByIdsInterface, AdmitsIdsInterface, QueriesFilteredCollectionInterface, LinkRowQueryInterface, LinkRowKeysInterface, ReadsLinkRowsInterface, ReadsByForeignKeyInterface, ScopesToParentsInterface, KeysCursorSortsInterface
 {
     /**
      * The root alias every generated QueryBuilder uses; handlers re-read it
@@ -476,32 +478,50 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             $keyset->applyAfter($builder, $boundary, $orderColumns);
         }
         $keyset->orderBy($builder, $orderColumns);
+        $selected = $keyset->selectedValues();
 
         return $this->windowExecutor->runCursor(
             $window,
             // Over-fetch limit+1 in the (possibly flipped) order. For a backward
             // page the surplus is dropped by runCursor BEFORE this closure mints,
             // so reverse here only after the slice — done in the cursors closure.
-            probe: fn(CursorWindow $w): array => $this->items(
-                (clone $builder)->setMaxResults($w->limit + 1),
-            ),
-            cursors: function (array $rows, bool $hasMore, ?int $total) use ($window, $columns, $backward, $metadata): CursorCollectionResult {
+            probe: fn(CursorWindow $w): array => $this->keysetRows((clone $builder)->setMaxResults($w->limit + 1), $selected !== []),
+            cursors: function (array $rows, bool $hasMore, ?int $total) use ($window, $columns, $backward, $metadata, $keyset, $selected): CursorCollectionResult {
                 // Re-orient a backward page to natural forward order for rendering.
-                $page = $backward ? \array_reverse($rows) : $rows;
+                $page = \array_values($backward ? \array_reverse($rows) : $rows);
+
+                // A level whose value the query selects comes back in a mixed row
+                // beside the entity, so it is minted as a column and read from that row.
+                $selectedRows = [];
+                if ($selected !== []) {
+                    $columns = \array_map(static fn(KeysetColumn $c): KeysetColumn => isset($selected[$c->column]) ? new KeysetColumn($c->column, $c->descending) : $c, $columns);
+                    $entities = [];
+                    foreach ($page as $row) {
+                        \assert($row instanceof \ArrayObject && \is_object($row[0] ?? null));
+                        $selectedRows[\spl_object_id($row[0])] = $row;
+                        $entities[] = $row[0];
+                    }
+                    $page = $entities;
+                }
 
                 return $this->minter->mint(
                     $window,
                     $columns,
-                    \array_values($page),
+                    $page,
                     $hasMore,
-                    fn(object $row, string $column): string|int|float|bool|null => CursorTokenMinter::coerce(
-                        $this->ids->fieldValue($metadata, $row, $column),
-                    ),
+                    fn(object $row, string $column): string|int|float|bool|null => isset($selected[$column])
+                        ? $keyset->readSelected($selectedRows[\spl_object_id($row)], $column)
+                        : CursorTokenMinter::coerce($this->ids->fieldValue($metadata, $row, $column)),
                     $total,
                 );
             },
             count: $counter === null ? null : fn(): int => $this->count($counter),
         );
+    }
+
+    public function keysCursorSort(string $type, SortInterface $sort): bool
+    {
+        return $this->sortHandler->keysCursorSort($sort);
     }
 
     /**
@@ -1914,6 +1934,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             $keyset->applyAfter($builder, $boundary, $orderColumns);
         }
         $keyset->orderBy($builder, $orderColumns);
+        $selected = $keyset->selectedValues();
 
         // Over-fetch limit+1 in the (possibly flipped) order: the surplus row proves
         // a further page. Slice, then re-orient a backward page to natural forward
@@ -1933,7 +1954,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         // minted as plain columns and read here.
         $sortOfColumn = [];
         foreach ($columns as $column) {
-            if ($column->sort !== null) {
+            if ($column->sort !== null && !isset($selected[$column->column])) {
                 $sortOfColumn[$column->column] = $column->sort;
             }
         }
@@ -1942,7 +1963,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             \array_map(static fn(KeysetColumn $c): KeysetColumn => new KeysetColumn($c->column, $c->descending), $columns),
             \array_map(static fn(array $row): \ArrayObject => new \ArrayObject($row), $page),
             $hasSurplus,
-            $this->pivotKeysetReader($metadata, $rowKeyOfColumn, $sortOfColumn),
+            $this->pivotKeysetReader($metadata, $rowKeyOfColumn, $sortOfColumn, $keyset),
         );
 
         // Items + pivot map come from the same sliced rows the tokens were minted
@@ -2378,7 +2399,8 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
     /**
      * Reads a keyset column's value off a pivot row for the minter: a pivot column from
-     * its scalar, a custom sort's from the far entity, any other column off the far entity.
+     * its scalar, a custom sort's from the far entity unless `$keyset` selected it, any
+     * other column off the far entity.
      *
      * @param ClassMetadata<object>                $metadata
      * @param array<string, string>                $rowKeyOfColumn
@@ -2386,10 +2408,16 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
      *
      * @return \Closure(object, string): (string|int|float|bool|null)
      */
-    private function pivotKeysetReader(ClassMetadata $metadata, array $rowKeyOfColumn, array $sortOfColumn): \Closure
+    private function pivotKeysetReader(ClassMetadata $metadata, array $rowKeyOfColumn, array $sortOfColumn, ?DoctrineKeyset $keyset = null): \Closure
     {
-        return function (object $row, string $column) use ($metadata, $rowKeyOfColumn, $sortOfColumn): string|int|float|bool|null {
+        $selected = $keyset?->selectedValues() ?? [];
+
+        return function (object $row, string $column) use ($metadata, $rowKeyOfColumn, $sortOfColumn, $keyset, $selected): string|int|float|bool|null {
             \assert($row instanceof \ArrayObject);
+            if ($keyset !== null && isset($selected[$column])) {
+                return $keyset->readSelected($row, $column);
+            }
+
             $rowKey = $rowKeyOfColumn[$column] ?? null;
             if ($rowKey !== null) {
                 return CursorTokenMinter::coerce($row[$rowKey] ?? null);
@@ -2717,6 +2745,24 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         \assert($this->pivotAssociations !== null);
 
         return $this->pivotAssociations->resolve($relation, $parent, $relatedClass);
+    }
+
+    /**
+     * A cursor page's rows: the entities, or with `$mixed` each mixed row of entity and
+     * selected values wrapped as an object.
+     *
+     * @return list<object>
+     */
+    private function keysetRows(QueryBuilder $builder, bool $mixed): array
+    {
+        if (!$mixed) {
+            return $this->items($builder);
+        }
+
+        /** @var list<array<int|string, mixed>> $rows */
+        $rows = $builder->getQuery()->getResult();
+
+        return \array_map(static fn(array $row): \ArrayObject => new \ArrayObject($row), $rows);
     }
 
     /**

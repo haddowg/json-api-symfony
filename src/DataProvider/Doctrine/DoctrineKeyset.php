@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\DataProvider\Doctrine;
 
+use Doctrine\DBAL\Types\Type;
+use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Mapping\ClassMetadata;
 use Doctrine\ORM\QueryBuilder;
+use haddowg\JsonApi\Collection\Keyset\CursorTokenMinter;
 use haddowg\JsonApi\Collection\Keyset\KeysetColumn;
 use haddowg\JsonApi\Pagination\CursorBoundary;
 use haddowg\JsonApi\Resource\DateTimeParser;
@@ -50,15 +53,33 @@ use haddowg\JsonApi\Resource\Sort\UnsupportedSort;
  * {@see DoctrineKeysetSortArmInterface} through `$sorts`, and the level is
  * otherwise built exactly as a column's: the same NULL=largest terms, the same four
  * AFTER cases and the same equality prefix.
+ *
+ * Only a field path can sit everywhere a column does in DQL. Any other expression, such
+ * as a subquery, `CASE`, `COALESCE` or arithmetic, is selected `AS HIDDEN` with its null
+ * flag and ordered by those result variables, and its null tests compare it with itself,
+ * which only a null fails, since DQL accepts `IS NULL` after little more than a path or a
+ * function call. An expression that reads its cursor value from the query is selected
+ * as a visible column, which {@see readSelected()} reads off each row.
  */
 final class DoctrineKeyset
 {
+    private const string PATH = '/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/';
+
     private int $bindCount = 0;
+
+    private int $uses = 0;
 
     /**
      * @var array<string, KeysetExpression> each custom sort level's expression, by sort key
      */
     private array $expressions = [];
+
+    /**
+     * @var array<string, array{string, string}> each selected custom level's value and null-flag result variables, by sort key
+     */
+    private array $selects = [];
+
+    private ?EntityManagerInterface $entityManager = null;
 
     private readonly NaiveDateTimeStorage $dates;
 
@@ -93,9 +114,102 @@ final class DoctrineKeyset
         foreach ($columns as $column) {
             $direction = $column->descending ? 'DESC' : 'ASC';
             $path = $this->expression($builder, $column);
+            if ($column->sort !== null && (!self::isPath($path) || $this->expressions[$column->column]->valueFromQuery)) {
+                [$value, $null] = $this->select($builder, $column);
+                $builder->addOrderBy($null, $direction);
+                $builder->addOrderBy($value, $direction);
+
+                continue;
+            }
+
             $builder->addOrderBy(\sprintf('CASE WHEN %s IS NULL THEN 1 ELSE 0 END', $path), $direction);
             $builder->addOrderBy($path, $direction);
         }
+    }
+
+    /**
+     * The result variable each custom level reading its cursor value from the query is
+     * selected under, by sort key, once {@see orderBy()} has run. A query with any
+     * returns mixed rows, the entity at index 0.
+     *
+     * @return array<string, string>
+     */
+    public function selectedValues(): array
+    {
+        $selected = [];
+        foreach ($this->selects as $column => [$value]) {
+            if ($this->expressions[$column]->valueFromQuery) {
+                $selected[$column] = $value;
+            }
+        }
+
+        return $selected;
+    }
+
+    /**
+     * The cursor value of the custom level `$column` in a mixed result `$row`, converted
+     * with the expression's DBAL type when it declares one.
+     *
+     * @param array<mixed>|\ArrayAccess<mixed, mixed> $row
+     */
+    public function readSelected(array|\ArrayAccess $row, string $column): string|int|float|bool|null
+    {
+        $alias = $this->selectedValues()[$column] ?? throw new \LogicException(\sprintf('The keyset level "%s" does not select its value.', $column));
+        $value = $row[$alias] ?? null;
+        $type = $this->expressions[$column]->type;
+        if ($type !== null && $value !== null && !\is_object($value) && $this->entityManager !== null && Type::hasType($type)) {
+            $value = Type::getType($type)->convertToPHPValue($value, $this->entityManager->getConnection()->getDatabasePlatform());
+        }
+
+        return CursorTokenMinter::coerce($value);
+    }
+
+    /**
+     * Selects a custom level's expression and its null flag, once per query, and returns
+     * their result variables. The value is hidden unless the cursor reads it.
+     *
+     * @return array{string, string}
+     */
+    private function select(QueryBuilder $builder, KeysetColumn $column): array
+    {
+        if (isset($this->selects[$column->column])) {
+            return $this->selects[$column->column];
+        }
+
+        $value = 'jsonapi_keyset_' . \count($this->selects);
+        $null = $value . '_null';
+        $this->entityManager ??= $builder->getEntityManager();
+        $builder->addSelect(\sprintf('%s AS %s%s', $this->use($builder, $column), $this->expressions[$column->column]->valueFromQuery ? '' : 'HIDDEN ', $value));
+        $builder->addSelect(\sprintf('CASE WHEN %s THEN 0 ELSE 1 END AS HIDDEN %s', $this->isNotNull($builder, $column), $null));
+
+        return $this->selects[$column->column] = [$value, $null];
+    }
+
+    private static function isPath(string $dql): bool
+    {
+        return \preg_match(self::PATH, $dql) === 1;
+    }
+
+    /**
+     * A test that a level's value is null DQL accepts for any scalar expression: a
+     * non-path expression equals itself unless it is null.
+     */
+    private function isNull(QueryBuilder $builder, KeysetColumn $column): string
+    {
+        $dql = $this->expression($builder, $column);
+
+        return self::isPath($dql)
+            ? \sprintf('%s IS NULL', $dql)
+            : \sprintf('CASE WHEN %s = %s THEN 0 ELSE 1 END = 1', $this->use($builder, $column), $this->use($builder, $column));
+    }
+
+    private function isNotNull(QueryBuilder $builder, KeysetColumn $column): string
+    {
+        $dql = $this->expression($builder, $column);
+
+        return self::isPath($dql)
+            ? \sprintf('%s IS NOT NULL', $dql)
+            : \sprintf('%s = %s', $this->use($builder, $column), $this->use($builder, $column));
     }
 
     /**
@@ -155,14 +269,13 @@ final class DoctrineKeyset
      */
     private function equals(QueryBuilder $builder, KeysetColumn $column, mixed $value): string
     {
-        $path = $this->expression($builder, $column);
         if ($value === null) {
-            return \sprintf('%s IS NULL', $path);
+            return $this->isNull($builder, $column);
         }
 
         $placeholder = $this->bind($builder, $column, $value);
 
-        return \sprintf('%s = :%s', $path, $placeholder);
+        return \sprintf('%s = :%s', $this->use($builder, $column), $placeholder);
     }
 
     /**
@@ -173,8 +286,6 @@ final class DoctrineKeyset
      */
     private function after(QueryBuilder $builder, KeysetColumn $column, mixed $value): ?string
     {
-        $path = $this->expression($builder, $column);
-
         if (!$column->descending) {
             if ($value === null) {
                 // A null is the maximal asc element: nothing is strictly after it
@@ -186,18 +297,18 @@ final class DoctrineKeyset
             // Non-nulls greater than the boundary, plus ALL nulls (nulls follow).
             $placeholder = $this->bind($builder, $column, $value);
 
-            return \sprintf('(%s > :%s OR %s IS NULL)', $path, $placeholder, $path);
+            return \sprintf('(%s > :%s OR %s)', $this->use($builder, $column), $placeholder, $this->isNull($builder, $column));
         }
 
         if ($value === null) {
             // A null is first in desc; after it come ALL non-nulls.
-            return \sprintf('%s IS NOT NULL', $path);
+            return $this->isNotNull($builder, $column);
         }
 
         // Only smaller non-nulls follow (nulls are first in desc, already before).
         $placeholder = $this->bind($builder, $column, $value);
 
-        return \sprintf('%s < :%s', $path, $placeholder);
+        return \sprintf('%s < :%s', $this->use($builder, $column), $placeholder);
     }
 
     /**
@@ -223,6 +334,7 @@ final class DoctrineKeyset
         $placeholder = 'jsonapi_cursor_' . $this->bindCount++;
 
         if ($column->sort !== null) {
+            $this->expression($builder, $column);
             $type = $this->expressions[$column->column]->type ?? null;
             if ($type !== null) {
                 $value = $this->dates->toStorage($this->toPhpValue($value, $type), $type);
@@ -304,9 +416,20 @@ final class DoctrineKeyset
         return ($this->expressions[$column->column] ??= $this->sorts->keysetExpression($column->sort, $builder, $this->rootAlias))->dql;
     }
 
+    /**
+     * The level's expression for one more place in the query, built afresh when it
+     * declares its own identification variables.
+     */
+    private function use(QueryBuilder $builder, KeysetColumn $column): string
+    {
+        $dql = $this->expression($builder, $column);
+
+        return $column->sort !== null ? $this->expressions[$column->column]->dqlFor($this->uses++) : $dql;
+    }
+
     private function path(string $column): string
     {
-        if (\preg_match('/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/', $column) !== 1) {
+        if (!self::isPath($column)) {
             throw new \LogicException(\sprintf('"%s" is not a valid Doctrine field path.', $column));
         }
 
