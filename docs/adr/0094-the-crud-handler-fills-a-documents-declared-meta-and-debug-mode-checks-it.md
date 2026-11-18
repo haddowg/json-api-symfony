@@ -1,0 +1,3 @@
+# The CRUD handler fills a document's declared meta, and debug mode checks it
+
+Core lets a type declare each operation's top-level meta and types it in the generated document. The handler fills the members their extractUsing() hooks supply after its After hooks have run, so a value a hook sets with withMeta() wins, and only debug mode checks the rendered meta, in the view listener and for each atomic result, so a mismatch fails loudly in development and costs nothing in production. An action's handler declares its members per status through core's DeclaresActionDocumentMetaInterface, read from the handler service at warm-up, because #[AsJsonApiAction] arguments cannot hold field builders.

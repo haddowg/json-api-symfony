@@ -714,6 +714,86 @@ linkage identifier's `meta` at it. On a `belongsToMany` the declared members and
 sit together in that `meta`. See
 [parent-aware identifier meta](relationships.md#parent-aware-identifier-meta).
 
+### Typed document meta
+
+A resource's `documentMeta()` declares the members of each operation's top-level `meta`,
+with the field builders an attribute takes (see
+[core's typed document meta](https://github.com/haddowg/json-api/blob/main/docs/links-and-meta.md#typed-document-meta)).
+The music catalog's albums count the explicit albums on each page:
+
+```php
+use haddowg\JsonApi\OpenApi\Metadata\OperationType;
+use haddowg\JsonApi\Resource\Field\Integer;
+
+public function documentMeta(OperationType $operation): iterable
+{
+    return match ($operation) {
+        OperationType::FetchCollection => [
+            Integer::make('explicitCount')->required()->min(0)
+                ->describedAs('How many of the albums on this page are marked explicit.')
+                ->example(1)
+                ->extractUsing(static fn (array $albums): int => \count(\array_filter(
+                    $albums,
+                    static fn (mixed $album): bool => $album instanceof Album && $album->explicit,
+                ))),
+        ],
+        default => [],
+    };
+}
+```
+
+The document then answers `GET /albums` with an `AlbumsFetchCollectionDocument` and
+`GET /artists/{id}/albums` with an `ArtistsAlbumsFetchRelatedDocument`, each narrowing the
+shared document's `meta` to a closed object marked `x-document-meta`. A type composed
+without a resource declares the same method by implementing
+`haddowg\JsonApi\Serializer\DeclaresDocumentMetaInterface` on its standalone serializer.
+
+An action's handler declares its response documents' members per status by implementing
+`haddowg\JsonApi\Resource\DeclaresActionDocumentMetaInterface`, since an
+`#[AsJsonApiAction]` argument cannot hold field builders. The `responds` list stays as it
+is, and the bundle reads the handler service, without a request, when it builds the action's
+metadata. The music catalog's reissue action reports the album's previous release date:
+
+```php
+public function documentMeta(int $status): iterable
+{
+    return match ($status) {
+        200 => [DateTime::make('previousReleasedAt')->required()->nullable()->example('1997-05-21T00:00:00+00:00')],
+        default => [],
+    };
+}
+
+public function handle(ActionContext $context): DataResponse
+{
+    // …
+    return $context->data($album)->withMeta(['previousReleasedAt' => $previous?->format(\DATE_ATOM)]);
+}
+```
+
+A delete's `documentMeta(OperationType::Delete)` members apply when the type declares a
+meta-only `200` with `delete: [new MetaResult()]`. The delete then answers that document with
+the members filled, their hooks receiving the resource it removed. An After hook may still
+answer otherwise, and a resource document a soft-delete hook renders is not checked against
+them.
+
+At runtime the CRUD handler fills each member whose `extractUsing()` hook supplies it once
+the handler and its After hooks have built the response. The hook receives the page of
+resources as a list for a collection, the one resource otherwise, and the request, and may
+type its first parameter accordingly. A collection a singular filter answers with one resource
+hands its hooks that resource, and a to-one related endpoint with nothing related hands them
+`null`. A value a hook or the handler sets with `withMeta()` wins, and a member without a hook
+is left to them. The same members reach a related endpoint serving the type, its
+`FetchCollection` ones for a to-many and its `FetchOne` ones for a to-one, and each result of
+an [atomic batch](atomic-operations.md). A relationship endpoint serves linkage only and
+carries none. A collection keeps the `page` and `total` members the bundle writes there.
+
+With `kernel.debug` on, the view listener checks each declaring response's top-level `meta`,
+and the atomic loop checks each result that renders a document. Either throws
+`DocumentMetaMismatch`, rendered as a `500`, for a missing required member, an undeclared
+member or a value of the wrong JSON type. Production checks nothing. A collection member
+named `page` or `total`, a member declared twice, or an action's members declared both on
+its response and by its handler fails the cache warm-up.
+
 ### Vendor extensions
 
 `#[AsJsonApiResource(extensions: […], operationExtensions: […])]` adds OpenAPI `x-`

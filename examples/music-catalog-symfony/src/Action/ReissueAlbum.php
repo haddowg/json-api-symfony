@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Action;
 
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Resource\DeclaresActionDocumentMetaInterface;
+use haddowg\JsonApi\Resource\Field\DateTime;
 use haddowg\JsonApi\Response\DataResponse;
 use haddowg\JsonApiBundle\Action\ActionContext;
 use haddowg\JsonApiBundle\Action\ActionHandlerInterface;
@@ -29,7 +31,8 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Model\Reissue;
  * change is persisted through the storage-agnostic {@see DataPersisterRegistry}
  * (handlers own their side-effects), then the updated album is rendered through the
  * default (mount) `albums` serializer. `asLink` publishes it as the album's `reissue`
- * link, shown only to a caller who passes that same gate.
+ * link, shown only to a caller who passes that same gate. Its document's top-level meta
+ * declares the release date the album had before, which the handler sets.
  */
 #[AsJsonApiAction(
     type: 'albums',
@@ -39,9 +42,21 @@ use haddowg\JsonApiBundle\Examples\MusicCatalog\Model\Reissue;
     security: "is_granted('ROLE_ADMIN')",
     asLink: true,
 )]
-final class ReissueAlbum implements ActionHandlerInterface, ActionInputFactoryInterface
+final class ReissueAlbum implements ActionHandlerInterface, ActionInputFactoryInterface, DeclaresActionDocumentMetaInterface
 {
     public function __construct(private readonly DataPersisterRegistry $persisters) {}
+
+    public function documentMeta(int $status): iterable
+    {
+        return match ($status) {
+            200 => [
+                DateTime::make('previousReleasedAt')->required()->nullable()
+                    ->describedAs('The release date the album had before this reissue.')
+                    ->example('1997-05-21T00:00:00+00:00'),
+            ],
+            default => [],
+        };
+    }
 
     public function newInput(JsonApiRequestInterface $body): object
     {
@@ -58,10 +73,11 @@ final class ReissueAlbum implements ActionHandlerInterface, ActionInputFactoryIn
         $input = $context->input();
         \assert($input instanceof Reissue);
 
+        $previous = $album->releasedAt;
         $album->releasedAt = $input->releasedAt;
 
         $this->persisters->forType('albums')->update('albums', $album);
 
-        return $context->data($album);
+        return $context->data($album)->withMeta(['previousReleasedAt' => $previous?->format(\DATE_ATOM)]);
     }
 }

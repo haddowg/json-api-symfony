@@ -16,6 +16,7 @@ use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Scope\ScopeCatalogInterface;
 use haddowg\JsonApi\Scope\ScopeTable;
+use haddowg\JsonApi\Serializer\DeclaresDocumentMetaInterface;
 use haddowg\JsonApi\Serializer\IncludeControlsInterface;
 use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\Action\ActionDescriptor;
@@ -427,7 +428,7 @@ final class MetadataSource
 
         $actions = [];
         foreach ($this->actions->forServerType($serverName, $type) as $action) {
-            $actions[] = new ActionMetadata($this->withResolvedTags($action, $descriptor['tags'], $type));
+            $actions[] = new ActionMetadata($this->withResolvedTags($action, $descriptor['tags'], $type), $this->actions->documentMetaFor($action));
         }
 
         // The resolved paginator self-describes its `page[…]` object schema (a `oneOf`
@@ -510,7 +511,17 @@ final class MetadataSource
             excludedIncludePaths: $includeControls?->getExcludedIncludePaths() ?? [],
             maxIncludeDepth: $includeControls?->maxIncludeDepth(),
             singleton: $descriptor['singleton'] ?? false,
+            documentMeta: self::documentMetaDeclarer($resource ?? ($server->hasSerializerFor($type) ? $server->serializerFor($type) : null)),
         );
+    }
+
+    /**
+     * The resource, or a composed type's serializer, when it declares its top-level
+     * document meta.
+     */
+    private static function documentMetaDeclarer(?object $declarer): ?DeclaresDocumentMetaInterface
+    {
+        return $declarer instanceof DeclaresDocumentMetaInterface ? $declarer : null;
     }
 
     /**

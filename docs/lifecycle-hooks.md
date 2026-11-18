@@ -161,6 +161,8 @@ to diff against). The other hook methods differ only in what comes before the
   the replacement (or `null` to keep the handler's response). A replacement
   `DataResponse` that renders other resources has their relations loaded through
   their providers as a read would, so its linkage and `included` are scoped the same.
+  `AfterDelete` may also answer a meta-only `MetaResponse`, which is filled with the
+  [delete's typed meta](openapi.md#typed-document-meta).
 
 `serving` is before-only — it carries no response. Request-wide response shaping
 belongs to the per-operation after hooks.

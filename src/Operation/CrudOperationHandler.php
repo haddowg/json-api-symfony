@@ -19,6 +19,7 @@ use haddowg\JsonApi\Exception\RequestBodyInvalidJsonApi;
 use haddowg\JsonApi\Exception\ResourceNotFound;
 use haddowg\JsonApi\Hydrator\Relationship\ToManyRelationship;
 use haddowg\JsonApi\Hydrator\Relationship\ToOneRelationship;
+use haddowg\JsonApi\OpenApi\Metadata\ActionResponses;
 use haddowg\JsonApi\Operation\AddToRelationshipOperation;
 use haddowg\JsonApi\Operation\AtomicOperationsOperation;
 use haddowg\JsonApi\Operation\CreateResourceOperation;
@@ -38,6 +39,7 @@ use haddowg\JsonApi\Pagination\PaginatorInterface;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Request\RelatedQuery;
 use haddowg\JsonApi\Resource\AbstractResource;
+use haddowg\JsonApi\Resource\DocumentMeta;
 use haddowg\JsonApi\Resource\Field\AbstractFieldValue;
 use haddowg\JsonApi\Resource\Field\Accessor;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
@@ -285,6 +287,11 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         private readonly ?AfterCommit $afterCommit = null,
         // Resolves the caller's id for an atomic href addressing a singleton type.
         private readonly ?SingletonIdResolver $singletons = null,
+        // The top-level meta each operation's document declares, whose extractUsing()
+        // members are filled once the handler and its After hooks built the response.
+        private readonly ?DocumentMetaResolver $documentMeta = null,
+        // In debug mode each atomic result's declared meta is checked as it renders.
+        private readonly bool $debug = false,
     ) {}
 
     public function handle(\haddowg\JsonApi\Operation\JsonApiOperationInterface $operation): DataResponse|RelatedResponse|IdentifierResponse|MetaResponse|NoContentResponse|AcceptedResponse|SeeOtherResponse|AtomicResultsResponse|ErrorResponse|RawResponse
@@ -326,6 +333,24 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         };
 
         $request = $operation->context()->httpRequest();
+
+        // A delete fills its meta-only document itself, with the resource it removed, and an
+        // action below by the status its handler chose.
+        if (($response instanceof DataResponse || $response instanceof RelatedResponse)
+            && !$operation instanceof CustomActionOperation && !$operation instanceof DeleteResourceOperation
+            && $this->documentMeta !== null && $server instanceof Server && $request instanceof JsonApiRequestInterface) {
+            $response = $this->documentMeta->forOperation($server, $operation)->applyTo($response, $request);
+        }
+
+        // An action's members are the ones its declared response carries for the status the
+        // handler chose, else the one the server will render it with.
+        if ($operation instanceof CustomActionOperation && ($response instanceof DataResponse || $response instanceof MetaResponse)
+            && $request instanceof JsonApiRequestInterface) {
+            $status = $response->explicitStatus()
+                ?? ($response instanceof DataResponse ? ActionResponses::dataStatus($operation->responds()) : null)
+                ?? 200;
+            $response = DocumentMeta::forActionStatus($operation->responds(), $status)->applyTo($response, $request);
+        }
 
         if ($response instanceof DataResponse && $server instanceof Server && $request instanceof JsonApiRequestInterface) {
             $response = $this->loadRendered($server, $response, $request);
@@ -443,6 +468,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $this->descriptors,
             $this->afterCommit,
             $this->singletons,
+            $this->debug ? $this->documentMeta : null,
         );
 
         return (new AtomicLoop())->run($operation->descriptors(), $backend);
@@ -3202,7 +3228,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         return $stripped;
     }
 
-    private function delete(DeleteResourceOperation $operation): DataResponse|NoContentResponse|ErrorResponse
+    private function delete(DeleteResourceOperation $operation): DataResponse|MetaResponse|NoContentResponse|ErrorResponse
     {
         $type = $operation->target()->type;
         $id = $operation->target()->id;
@@ -3228,18 +3254,23 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             }
         });
 
-        $response = NoContentResponse::create();
+        // A type that declares a meta-only 200 and its members answers with them, else 204.
+        $server = $this->server($operation->context());
+        $meta = $this->documentMeta?->forDelete($server, $this->contextServerName($operation->context()), $type);
+        $response = $meta !== null && !$meta->isEmpty() ? MetaResponse::fromMeta([]) : NoContentResponse::create();
 
-        // The after-delete hook (post-commit) may replace the 204 — e.g. a
+        // The after-delete hook (post-commit) may replace the response — e.g. a
         // soft-delete that renders the now-flagged resource instead. Deferred to
         // post-commit under an active Atomic Operations batch (replacement inert);
         // fired inline on the single-op path, unchanged.
-        return $this->deferOrFire(function () use ($type, $request, $entity, $response): DataResponse|NoContentResponse {
+        $response = $this->deferOrFire(function () use ($type, $request, $entity, $response): DataResponse|MetaResponse|NoContentResponse {
             $afterDelete = new AfterDeleteEvent($type, $request, $entity, $this->serverName($request));
             $this->dispatch($afterDelete);
 
             return $afterDelete->response() ?? $response;
         }, $response);
+
+        return $response instanceof MetaResponse && $meta !== null ? $meta->applyTo($response, $request, $entity) : $response;
     }
 
     /**

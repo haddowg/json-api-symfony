@@ -218,7 +218,11 @@ return static function (ContainerConfigurator $container): void {
     // dispatcher fires the per-operation lifecycle events; it is
     // optional too, so the handler is a no-op for hooks when symfony/event-dispatcher
     // is absent.
+    $services->set(\haddowg\JsonApiBundle\Operation\DocumentMetaResolver::class);
+
     $services->set(CrudOperationHandler::class)
+        ->arg('$documentMeta', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Operation\DocumentMetaResolver::class))
+        ->arg('$debug', '%kernel.debug%')
         ->arg('$validator', \Symfony\Component\DependencyInjection\Loader\Configurator\service(ResourceValidator::class)->nullOnInvalid())
         ->arg('$dispatcher', \Symfony\Component\DependencyInjection\Loader\Configurator\service('event_dispatcher')->nullOnInvalid())
         // Optional too: resolves to the FilterValueValidator only when the Symfony
@@ -410,6 +414,8 @@ return static function (ContainerConfigurator $container): void {
         ->tag('kernel.event_listener', ['event' => 'kernel.request', 'method' => 'onKernelRequest', 'priority' => 31]);
 
     $services->set(ViewListener::class)
+        ->arg('$documentMeta', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Operation\DocumentMetaResolver::class))
+        ->arg('$debug', '%kernel.debug%')
         ->tag('kernel.event_listener', ['event' => 'kernel.view', 'method' => 'onKernelView']);
 
     // The route-scoped kernel.response listener that emits the declarative cache

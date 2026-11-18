@@ -66,6 +66,12 @@ final class RequestListener
 
     public const string PSR_REQUEST_ATTRIBUTE = '_jsonapi_psr_request';
 
+    /**
+     * The request attribute holding the dispatched operation, which the {@see ViewListener}
+     * checks the declared document meta of in debug mode.
+     */
+    public const string OPERATION_ATTRIBUTE = '_jsonapi_operation';
+
     private const string JSON_API_MEDIA_TYPE = 'application/vnd.api+json';
 
     public function __construct(
@@ -162,6 +168,7 @@ final class RequestListener
         $request->attributes->set(self::RESPONSE_ATTRIBUTE, $response);
         $request->attributes->set(self::SERVER_ATTRIBUTE, $server);
         $request->attributes->set(self::PSR_REQUEST_ATTRIBUTE, $jsonApiRequest);
+        $request->attributes->set(self::OPERATION_ATTRIBUTE, $operation);
     }
 
     /**
@@ -274,7 +281,7 @@ final class RequestListener
         $scope = $this->actionScope($request);
         $descriptor = $this->actionDescriptor($request, $target->type, $scope, $actionName);
 
-        $responds = $descriptor !== null ? (new ActionMetadata($descriptor))->responds() : [new ActionResource($target->type)];
+        $responds = $descriptor !== null ? (new ActionMetadata($descriptor, $this->actions?->documentMetaFor($descriptor)))->responds() : [new ActionResource($target->type)];
 
         // The response media type comes first: an Accept that picks a raw result names no
         // JSON:API type, so the JSON:API Accept rules then run as if it had asked for one.

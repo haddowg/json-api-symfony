@@ -10,6 +10,7 @@ use haddowg\JsonApi\OpenApi\Metadata\DeclaresAlwaysCounted;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresClientIdCollisions;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresDefaultSort;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresDeprecation;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresDocumentMeta;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresHydratorCardinality;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresIncludeSafeguards;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresInclusionUnsupported;
@@ -37,6 +38,7 @@ use haddowg\JsonApi\Resource\Link\ActionLink;
 use haddowg\JsonApi\Resource\Link\DeclaredLink;
 use haddowg\JsonApi\Resource\Sort\SortDirective;
 use haddowg\JsonApi\Resource\Sort\SortInterface;
+use haddowg\JsonApi\Serializer\DeclaresDocumentMetaInterface;
 
 /**
  * One JSON:API type's OpenAPI metadata, assembled by the {@see MetadataSource} from
@@ -89,7 +91,7 @@ use haddowg\JsonApi\Resource\Sort\SortInterface;
  * serializer applies as a document's root, that no operation refuses `include`, that a
  * taken client id is a `409`, and that a hand-written hydrator never reads linkage.
  */
-final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOperationExtensions, DeclaresNamedOperationExtensions, DeclaresSingularName, DeclaresOperationExamples, DeclaresAlwaysCounted, DeclaresResourceLinks, DeclaresActionLinks, DeclaresOperationScopes, DeclaresResourceClass, DeclaresDeprecation, DeclaresRelatedOnly, DeclaresDefaultSort, DeclaresSortExample, DeclaresIncludeSafeguards, DeclaresInclusionUnsupported, DeclaresClientIdCollisions, DeclaresHydratorCardinality, DeclaresSingleton
+final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOperationExtensions, DeclaresNamedOperationExtensions, DeclaresSingularName, DeclaresOperationExamples, DeclaresAlwaysCounted, DeclaresResourceLinks, DeclaresActionLinks, DeclaresOperationScopes, DeclaresResourceClass, DeclaresDeprecation, DeclaresRelatedOnly, DeclaresDefaultSort, DeclaresSortExample, DeclaresIncludeSafeguards, DeclaresInclusionUnsupported, DeclaresClientIdCollisions, DeclaresHydratorCardinality, DeclaresSingleton, DeclaresDocumentMeta
 {
     /**
      * @param list<FieldInterface>            $fields
@@ -124,6 +126,7 @@ final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOper
      * @param list<string>                    $excludedIncludePaths the root include paths the type's serializer refuses
      * @param ?int                            $maxIncludeDepth      the type's own maximum include depth, or null for the server's
      * @param bool                            $singleton            whether the type is a singleton, served at `/{uriType}`
+     * @param DeclaresDocumentMetaInterface|null $documentMeta      the resource or serializer declaring the type's top-level document meta, if any
      */
     public function __construct(
         private string $type,
@@ -167,7 +170,13 @@ final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOper
         private array $excludedIncludePaths = [],
         private ?int $maxIncludeDepth = null,
         private bool $singleton = false,
+        private ?DeclaresDocumentMetaInterface $documentMeta = null,
     ) {}
+
+    public function documentMeta(OperationType $operation): iterable
+    {
+        return $this->documentMeta?->documentMeta($operation) ?? [];
+    }
 
     public function isRelatedOnly(): bool
     {

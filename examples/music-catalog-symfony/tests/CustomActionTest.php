@@ -60,6 +60,11 @@ final class CustomActionTest extends MusicCatalogKernelTestCase
         self::assertSame('albums', $data['type'] ?? null);
         self::assertSame('1', $data['id'] ?? null);
 
+        // The document's typed meta carries the release date the album had before.
+        $meta = $this->decode($response)['meta'] ?? null;
+        self::assertIsArray($meta);
+        self::assertArrayHasKey('previousReleasedAt', $meta);
+
         // The new release date is persisted: a follow-up read reflects it.
         $fetched = $this->attributesOf($this->action('/albums/1', 'GET', user: 'admin'));
         $releasedAt = $fetched['releasedAt'] ?? null;
@@ -318,8 +323,9 @@ final class CustomActionTest extends MusicCatalogKernelTestCase
             self::assertNull(self::at($document, 'paths', $path, 'post', 'x-safety'), $path);
         }
         // The safety tier sits below the baseline, but the related-only reissues type, the
-        // deprecated devices type and the accounts singleton each carry a higher tier.
-        self::assertSame(\max(GeneratorContract::BASELINE, GeneratorContract::DEPRECATION, GeneratorContract::RELATED_ONLY, GeneratorContract::SINGLETONS), self::at($document, 'info', 'x-generator', 'contract'));
+        // deprecated devices type, the accounts singleton and the albums collection's typed
+        // meta each carry a higher tier.
+        self::assertSame(\max(GeneratorContract::BASELINE, GeneratorContract::DEPRECATION, GeneratorContract::RELATED_ONLY, GeneratorContract::SINGLETONS, GeneratorContract::TYPED_DOCUMENT_META), self::at($document, 'info', 'x-generator', 'contract'));
     }
 
     private static function at(mixed $value, string ...$keys): mixed
