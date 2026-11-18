@@ -46,6 +46,7 @@ use haddowg\JsonApi\Resource\Field\Date;
 use haddowg\JsonApi\Resource\Field\DateTime;
 use haddowg\JsonApi\Resource\Field\GuardsMembershipInterface;
 use haddowg\JsonApi\Resource\Field\Mode;
+use haddowg\JsonApi\Resource\Field\MorphTo;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\PivotRelationInterface;
 use haddowg\JsonApi\Resource\Field\PositionedRelationInterface;
@@ -1143,12 +1144,23 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             }
         }
 
-        // A target the caller may not read through its own type reads as absent.
-        if ($this->relationshipLinkage !== null) {
-            $related = $this->relationshipLinkage->readableTarget($related, $relation);
+        // An identified MorphTo's target renders as its stored pair's type, which its
+        // candidates' getType() need not tell apart.
+        $storedType = \is_object($related) && $relation instanceof MorphTo && $relation->storesIdentifiers()
+            ? $relation->storedIdentifier($parent, $request)[0] ?? null
+            : null;
+        if ($storedType !== null && !$server->hasSerializerFor($storedType)) {
+            $storedType = null;
         }
 
-        $serializer = $relation->resolveSerializer($related, $server) ?? $server->serializerFor($relatedType);
+        // A target the caller may not read through its own type reads as absent.
+        if ($this->relationshipLinkage !== null) {
+            $related = $this->relationshipLinkage->readableTarget($related, $relation, $storedType);
+        }
+
+        $serializer = $storedType !== null && \is_object($related)
+            ? $server->serializerFor($storedType)
+            : $relation->resolveSerializer($related, $server) ?? $server->serializerFor($relatedType);
 
         // Load the related resource's own rendered relations (a single related object
         // as a one-element list) so its includes and linkage are scoped and do not
@@ -1158,14 +1170,14 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $this->windowRelatedItems($server, $relatedType, \is_object($related) ? [$related] : [], $request);
         }
         if (\is_object($related)) {
-            $this->preloadPolymorphic($relation, [$related], $request, $server);
+            $this->preloadPolymorphic($relation, [$related], $request, $server, $storedType !== null ? [\spl_object_id($related) => $storedType] : []);
         }
 
         // ?withCount counts the related resource's own countable relations, keyed by
         // the object's own type so a MorphTo target counts as itself.
         $this->applyRelationshipCounts(
             $server,
-            \is_object($related) ? $serializer->getType($related) : $relatedType,
+            \is_object($related) ? $storedType ?? $serializer->getType($related) : $relatedType,
             \is_object($related) ? [$related] : [],
             $request,
         );

@@ -1721,10 +1721,12 @@ filter needs. The example's
 declares its `favoritable` relation this way and filters by it with
 `filter[favoritable][type]=albums&filter[favoritable][id]=1`.
 
-A loaded target renders under the pair's type. Each declared type's resource still
-discriminates by class in `getType()`, as the build check requires for any `MorphTo`. A
-provider that loads the targets for you implements `FetchesByIdsInterface`
-(see [custom providers → loading many rows by id](custom-data-providers.md#loading-many-rows-by-id)).
+A loaded target renders under the pair's type, and the read gate, the related endpoint
+and the include walk all treat it as that type. The declared types' resources don't need
+to override `getType()`, so one entity class can back several of them. The build check
+that requires a class-discriminating `getType()` applies only to a `MorphTo` without a
+stored pair. A provider that loads the targets for you implements
+`FetchesByIdsInterface` (see [custom providers → loading many rows by id](custom-data-providers.md#loading-many-rows-by-id)).
 Writes still go through `fillUsing()`, shown below in
 [relations written by `fillUsing()`](#relations-written-by-fillusing).
 

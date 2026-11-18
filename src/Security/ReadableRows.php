@@ -124,11 +124,14 @@ final class ReadableRows
 
     /**
      * Whether the caller may see the single row `$row`, reached through `$relation`.
+     * `$type` is the type the row renders as when the relation stores it, as an
+     * identified `MorphTo` does, and otherwise the declared type whose serializer claims
+     * the row decides.
      */
-    public function allows(object $row, RelationInterface $relation, ?string $serverName = null): bool
+    public function allows(object $row, RelationInterface $relation, ?string $serverName = null, ?string $type = null): bool
     {
         $serverName ??= $this->serverName;
-        $type = $this->typeOf($row, $relation);
+        $type = $type !== null && \in_array($type, $relation->relatedTypes(), true) ? $type : $this->typeOf($row, $relation);
         $expression = $type !== null ? $this->registry->securityFor($type, $serverName)?->forRead() : null;
         if ($type === null || !\is_string($expression)) {
             return true;

@@ -13,6 +13,7 @@ use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\Field\StoresIdentifiersInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\ThroughPathResolver;
 use haddowg\JsonApi\Resource\Sort\RelationSorts;
@@ -464,7 +465,9 @@ final class ServableResourceWarmer implements CacheWarmerInterface
      *
      * Only polymorphic relations are checked: a monomorphic relation
      * (`relatedTypes()` of one) short-circuits in `resolveSerializer()` and never
-     * compares `getType()`, so a non-overriding `getType()` is harmless there. A
+     * compares `getType()`, so a non-overriding `getType()` is harmless there. Nor is a
+     * relation that stores its targets' identifiers (an identified `MorphTo` or
+     * `MorphToMany`), whose stored pair names each target's type. A
      * non-`AbstractResource` (custom) candidate owns its own `getType` and is skipped.
      */
     private function guardPolymorphicDiscrimination(string $serverName, string $type): void
@@ -477,8 +480,9 @@ final class ServableResourceWarmer implements CacheWarmerInterface
                 continue; // a monomorphic relation never compares getType()
             }
 
-            // An identified MorphToMany renders each member as its stored pair's type.
-            if (\haddowg\JsonApiBundle\DataProvider\RelatedReadRouter::identifiesMembers($relation)) {
+            // An identified MorphTo or MorphToMany renders and gates each target as its
+            // stored pair's type, so it never compares getType().
+            if ($relation instanceof StoresIdentifiersInterface && $relation->storesIdentifiers()) {
                 continue;
             }
 
