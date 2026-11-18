@@ -28,11 +28,13 @@ use haddowg\JsonApi\Resource\Filter\WhereThrough;
 use haddowg\JsonApi\Resource\Filter\WhereThroughIn;
 use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApi\Resource\Sort\SortInterface;
+use haddowg\JsonApiBundle\Action\ActionRegistry;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
 use haddowg\JsonApiBundle\DataProvider\FilterPaths;
 use haddowg\JsonApiBundle\DataProvider\RelatedReadRouter;
 use haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory;
 use haddowg\JsonApiBundle\DataProvider\ScopesRelatedReadsInterface;
+use haddowg\JsonApiBundle\Operation\Operation;
 use haddowg\JsonApiBundle\Server\IdEncoderResolver;
 use haddowg\JsonApiBundle\Server\RouteDescriptorRegistry;
 use haddowg\JsonApiBundle\Server\ServerProvider;
@@ -81,7 +83,10 @@ use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
  *    maps has no association to scope related rows by. Its to-many into an entity-mapped
  *    type is read off the parent model, unless the related type is scoped by a query
  *    extension: those reads go through the Doctrine provider, which can't scope them to
- *    the parent, so the relation must declare a foreign key or `extractUsing()`. A
+ *    the parent, so the relation must declare a foreign key or `extractUsing()`, unless
+ *    no request reads it. A `writeOnly()` relation of a type that takes no update is only
+ *    ever set by a create, and a `relatedOnly` type that no relation and no action response
+ *    reaches, such as one only an action takes as input, is never rendered at all. A
  *    `belongsToMany` with stored pivot fields reads its association entity through the
  *    parent's mapping, so it can't be declared on such a type at all. A to-one is read off
  *    the model and narrowed by the related scope, so it passes.
@@ -102,7 +107,15 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
         private readonly array $serverNames,
         private readonly ?IdEncoderResolver $idEncoders = null,
         private readonly ?DataProviderRegistry $providers = null,
+        private readonly ?ActionRegistry $actions = null,
     ) {}
+
+    /**
+     * The types per server that no request renders, filled on first use.
+     *
+     * @var array<string, list<string>>
+     */
+    private array $unrendered = [];
 
     /**
      * Not optional: an unexecutable sort / filter column or an unresolvable pivot
@@ -199,12 +212,12 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
                 ));
             }
 
-            if (RelatedReadRouter::extractsValue($relation) || !$this->scopesRelatedReads($relatedType, $relation)) {
+            if (RelatedReadRouter::extractsValue($relation) || !$this->scopesRelatedReads($relatedType, $relation) || $this->neverRead($serverName, $type, $relation)) {
                 continue;
             }
 
             throw new \LogicException(\sprintf(
-                'Relation "%s" on resource type "%s" reads type "%s", which a Doctrine query extension scopes, but "%s" is not a Doctrine entity, so no association scopes those reads to the parent. %s',
+                'Relation "%s" on resource type "%s" reads type "%s", which a Doctrine query extension scopes, but "%s" is not a Doctrine entity, so no association scopes those reads to the parent. %s If only a request document ever sets it, mark it writeOnly() and leave Update out of the operations of "%s". A type that only an action takes as input needs none of these once it is declared relatedOnly and no relation or action response reaches it.',
                 $relation->name(),
                 $type,
                 $relatedType,
@@ -217,8 +230,77 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
                         $relation->name(),
                         $relatedType,
                     ),
+                $type,
             ));
         }
+    }
+
+    /**
+     * Whether no request reads the members of `$relation` on `$type`. A write-only relation
+     * renders nowhere, and with no Update on its type only a create sets it, which reads no
+     * current members. A type no request renders has no reads of any relation.
+     */
+    private function neverRead(string $serverName, string $type, RelationInterface $relation): bool
+    {
+        $operations = $this->descriptors->forServer($serverName)[$type]['operations'] ?? [Operation::Update->value];
+        if ($relation->isWriteOnly() && !\in_array(Operation::Update->value, $operations, true)) {
+            return true;
+        }
+
+        return \in_array($type, $this->unrendered[$serverName] ??= $this->unrenderedTypes($serverName), true);
+    }
+
+    /**
+     * The `relatedOnly` types of `$serverName` that no relation targets and no action
+     * answers with. Such a type serves no endpoint, is never related or included, and
+     * appears in no response, so it is only ever hydrated, as an action's input.
+     *
+     * @return list<string>
+     */
+    private function unrenderedTypes(string $serverName): array
+    {
+        if ($this->actions === null) {
+            return [];
+        }
+
+        $server = $this->servers->get($serverName);
+        $descriptors = $this->descriptors->forServer($serverName);
+        $reached = [];
+        foreach (\array_keys($descriptors) as $type) {
+            if ($type === '') {
+                continue;
+            }
+
+            $resource = $this->typeMetadata->resourceFor($server, $type);
+            $relations = $resource !== null ? $resource->allFields() : $this->typeMetadata->relationsFor($server, $type);
+            foreach ($relations as $relation) {
+                if ($relation instanceof RelationInterface) {
+                    foreach ($relation->relatedTypes() as $relatedType) {
+                        $reached[$relatedType] = true;
+                    }
+                }
+            }
+
+            foreach ($this->actions->forServerType($serverName, $type) as $action) {
+                $reached[$action->outputType] = true;
+                foreach ($action->responds as $response) {
+                    foreach ([$response['type'] ?? null, $response['jobType'] ?? null] as $named) {
+                        if ($named !== null) {
+                            $reached[$named] = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        $unrendered = [];
+        foreach ($descriptors as $type => $descriptor) {
+            if ($type !== '' && ($descriptor['relatedOnly'] ?? false) && !isset($reached[$type])) {
+                $unrendered[] = $type;
+            }
+        }
+
+        return $unrendered;
     }
 
     /**

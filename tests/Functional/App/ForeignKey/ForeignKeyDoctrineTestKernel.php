@@ -112,6 +112,8 @@ class ForeignKeyDoctrineTestKernel extends Kernel
         $services->set(FkUserPersister::class);
         $services->set(FkUserResource::class);
         $services->set(FkInboxResource::class);
+        $services->set(FkImportResource::class);
+        $services->set(ImportSecrets::class);
 
         $this->configureData($container, $services);
     }

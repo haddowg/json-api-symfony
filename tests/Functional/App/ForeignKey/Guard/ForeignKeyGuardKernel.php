@@ -36,6 +36,13 @@ final class ForeignKeyGuardKernel extends Kernel
      */
     public static string $subjectResource = KeyedItemsUserResource::class;
 
+    /**
+     * Further services the subject needs, such as an action and its input type.
+     *
+     * @var list<class-string>
+     */
+    public static array $extraServices = [];
+
     public function registerBundles(): iterable
     {
         yield new FrameworkBundle();
@@ -57,7 +64,9 @@ final class ForeignKeyGuardKernel extends Kernel
     {
         $parts = \explode('\\', static::$subjectResource);
 
-        return \sys_get_temp_dir() . '/json-api-symfony-tests/foreign-key-guard-cache/' . \end($parts) . '/' . $this->environment;
+        $extras = static::$extraServices === [] ? '' : '-' . \md5(\implode(',', static::$extraServices));
+
+        return \sys_get_temp_dir() . '/json-api-symfony-tests/foreign-key-guard-cache/' . \end($parts) . $extras . '/' . $this->environment;
     }
 
     public function getLogDir(): string
@@ -114,6 +123,9 @@ final class ForeignKeyGuardKernel extends Kernel
         $services->set(DoctrineFkProfileResource::class);
         $services->set(DoctrineFkSecretResource::class);
         $services->set(FkSecretExtension::class);
+        foreach (static::$extraServices as $service) {
+            $services->set($service);
+        }
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

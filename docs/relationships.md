@@ -132,9 +132,19 @@ it reads what the parent model holds. A to-many's pages, counts and related endp
 cut in memory from the model's value, unless the parent type's provider batches the
 relation itself, and a `HasOne` reads its target off the model. When the related type is
 scoped by a query extension that read can't be scoped to the parent, so warm-up refuses
-a to-many into it unless it declares a foreign key or `extractUsing()`, and the message
-names both. A `belongsToMany` with stored pivot fields reads its association entity
-through the parent's mapping, so warm-up refuses it on such a type.
+a to-many into it unless it declares a foreign key or `extractUsing()`. The exception
+is a to-many that no request reads, which needs neither:
+
+- A `writeOnly()` relation on a type whose operations leave out `Update` is set only by
+  a create, and nothing renders it. With `Update`, replacing its members reads the
+  current ones, so it is still refused.
+- Every relation of a `relatedOnly` type that no relation targets and no action answers
+  with is never read. Such a type is only ever an action's `inputType`, hydrated from
+  the request document.
+
+The warm-up message names the foreign key, `extractUsing()` and `writeOnly()`. A
+`belongsToMany` with stored pivot fields reads its association entity through the
+parent's mapping, so warm-up refuses it on such a type.
 
 #### Writing through a foreign key
 
