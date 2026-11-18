@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\EventListener;
 
+use haddowg\JsonApi\Operation\JsonApiOperationInterface;
+use haddowg\JsonApi\Resource\DocumentMeta;
 use haddowg\JsonApi\Response\AbstractResponse;
 use haddowg\JsonApi\Response\RawResponse;
 use haddowg\JsonApi\Server\Server;
+use haddowg\JsonApiBundle\Operation\DocumentMetaResolver;
+use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Message\StreamInterface;
 use Symfony\Bridge\PsrHttpMessage\Factory\HttpFoundationFactory;
@@ -27,7 +31,13 @@ use Symfony\Component\HttpKernel\Event\ViewEvent;
  */
 final class ViewListener
 {
-    public function __construct(private readonly HttpFoundationFactory $httpFoundationFactory) {}
+    public function __construct(
+        private readonly HttpFoundationFactory $httpFoundationFactory,
+        // In debug mode a declaring operation's top-level meta is checked against its
+        // declaration; production checks nothing.
+        private readonly ?DocumentMetaResolver $documentMeta = null,
+        private readonly bool $debug = false,
+    ) {}
 
     public function onKernelView(ViewEvent $event): void
     {
@@ -52,7 +62,33 @@ final class ViewListener
 
         $psrResponse = $response->toPsrResponse($server, $psrRequest);
 
+        $operation = $request->attributes->get(RequestListener::OPERATION_ATTRIBUTE);
+        if ($this->debug && $this->documentMeta !== null && $operation instanceof JsonApiOperationInterface) {
+            $this->checkDocumentMeta($this->documentMeta->forOperation($server, $operation, $psrResponse->getStatusCode()), $psrResponse);
+        }
+
         $event->setResponse($this->httpFoundationFactory->createResponse($psrResponse));
+    }
+
+    /**
+     * Refuses a success document whose top-level meta does not match its declaration.
+     *
+     * @throws \haddowg\JsonApi\Resource\DocumentMetaMismatch
+     */
+    private function checkDocumentMeta(DocumentMeta $declared, ResponseInterface $response): void
+    {
+        if ($declared->isEmpty() || $response->getStatusCode() >= 300) {
+            return;
+        }
+
+        $body = $response->getBody();
+        $document = \json_decode((string) $body, true, flags: \JSON_THROW_ON_ERROR);
+        if ($body->isSeekable()) {
+            $body->rewind();
+        }
+        $meta = \is_array($document) ? ($document['meta'] ?? []) : [];
+
+        $declared->assertSatisfiedBy(\is_array($meta) ? $meta : []);
     }
 
     /**

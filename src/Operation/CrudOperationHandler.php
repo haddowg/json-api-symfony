@@ -285,6 +285,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         private readonly ?AfterCommit $afterCommit = null,
         // Resolves the caller's id for an atomic href addressing a singleton type.
         private readonly ?SingletonIdResolver $singletons = null,
+        // The top-level meta each operation's document declares, whose extractUsing()
+        // members are filled once the handler and its After hooks built the response.
+        private readonly ?DocumentMetaResolver $documentMeta = null,
     ) {}
 
     public function handle(\haddowg\JsonApi\Operation\JsonApiOperationInterface $operation): DataResponse|RelatedResponse|IdentifierResponse|MetaResponse|NoContentResponse|AcceptedResponse|SeeOtherResponse|AtomicResultsResponse|ErrorResponse|RawResponse
@@ -326,6 +329,13 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         };
 
         $request = $operation->context()->httpRequest();
+
+        // An action's handler sets its declared meta itself.
+        if (($response instanceof DataResponse || $response instanceof RelatedResponse)
+            && !$operation instanceof CustomActionOperation
+            && $this->documentMeta !== null && $server instanceof Server && $request instanceof JsonApiRequestInterface) {
+            $response = $this->documentMeta->forOperation($server, $operation)->applyTo($response, $request);
+        }
 
         if ($response instanceof DataResponse && $server instanceof Server && $request instanceof JsonApiRequestInterface) {
             $response = $this->loadRendered($server, $response, $request);

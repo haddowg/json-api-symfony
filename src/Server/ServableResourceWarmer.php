@@ -6,9 +6,11 @@ namespace haddowg\JsonApiBundle\Server;
 
 use haddowg\JsonApi\Collection\LinkRows\LinkRowQuery;
 use haddowg\JsonApi\OpenApi\Metadata\ActionDeclarations;
+use haddowg\JsonApi\OpenApi\Metadata\OperationType;
 use haddowg\JsonApi\OpenApi\ProjectedTypes;
 use haddowg\JsonApi\OpenApi\RelatedTypeNotRegistered;
 use haddowg\JsonApi\Resource\AbstractResource;
+use haddowg\JsonApi\Resource\DocumentMetaMisdeclared;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
@@ -30,6 +32,7 @@ use haddowg\JsonApiBundle\DataProvider\PivotFields;
 use haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory;
 use haddowg\JsonApiBundle\OpenApi\Metadata\ActionMetadata;
 use haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource;
+use haddowg\JsonApiBundle\Operation\DocumentMetaResolver;
 use haddowg\JsonApiBundle\Operation\Operation;
 use haddowg\JsonApiBundle\Security\UnenforceableSecurityException;
 use Psr\Log\LoggerInterface;
@@ -118,6 +121,7 @@ final class ServableResourceWarmer implements CacheWarmerInterface
         private readonly array $unenforceableSecurity = [],
         private readonly ?ActionRegistry $actions = null,
         private readonly ?LoggerInterface $logger = null,
+        private readonly ?DocumentMetaResolver $documentMeta = null,
     ) {}
 
     /**
@@ -158,6 +162,7 @@ final class ServableResourceWarmer implements CacheWarmerInterface
                 $this->guardActionFilters($serverName, $type);
                 $this->guardRelationOrder($serverName, $type);
                 $this->guardFilterPaths($serverName, $type);
+                $this->guardDocumentMeta($serverName, $type);
             }
 
             $this->guardRelatedEndpointTargets($serverName);
@@ -165,6 +170,24 @@ final class ServableResourceWarmer implements CacheWarmerInterface
 
         // No preloadable class files: a pure build-time guard.
         return [];
+    }
+
+    /**
+     * Reads every top-level document meta the type declares, so a member declared twice,
+     * or a collection member named after one core writes, fails the build.
+     *
+     * @throws DocumentMetaMisdeclared
+     */
+    private function guardDocumentMeta(string $serverName, string $type): void
+    {
+        if ($this->documentMeta === null) {
+            return;
+        }
+
+        $server = $this->servers->get($serverName);
+        foreach ([OperationType::FetchCollection, OperationType::FetchOne, OperationType::Create, OperationType::Update] as $operation) {
+            $this->documentMeta->forType($server, $type, $operation);
+        }
     }
 
     /**

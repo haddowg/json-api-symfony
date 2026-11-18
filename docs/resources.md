@@ -772,12 +772,13 @@ resource declaration:
 | Missing/duplicate Id | a resource does not declare exactly one `Id` field | Add `Id::make()` (or remove the duplicate). |
 | Non-discriminating polymorphic candidate | a polymorphic relation lists a candidate resource that does not override `getType()` (so it would silently claim siblings' members). A relation declared with `identifiedBy()`, `identifiedByColumns()` or `identifiedByRows()` is exempt, since its stored pair names each target's type | Override `getType()` on that resource to discriminate the member by class (e.g. with `instanceof`). |
 | Unresolvable traversal path | a `WhereThrough` or `WhereThroughIn` path, on the resource or a relation, ends on a polymorphic relation, or a relationship-ending `WhereThrough` declares a non-equality operator or `deserializeUsing()` | End the path on a monomorphic relation or a field, or compare by `=` / `!=` only. |
+| Clashing document meta | a resource's `documentMeta()` declares a member twice, or a [`FetchCollection` member](openapi.md#typed-document-meta) named `page` or `total`, which the bundle writes into every collection | Rename the member. |
 | Unresolvable morph filter | a `WhereMorph` names a relation the type doesn't declare, or one that isn't a `MorphTo` or `MorphToMany` | Name the polymorphic relation by its storage name, or use `WhereThrough` for a relation over one type. |
 
 The write-without-hydrator guard lives in `ResourceLocatorPass::validateWriteCapability()`;
-the override and server guards alongside it in the same pass. The last four run at
+the override and server guards alongside it in the same pass. The last five run at
 **cache warm-up** in the non-optional `ServableResourceWarmer` (the provider/persister/Id,
-polymorphic-discrimination and traversal-path checks). Doctrine adds its own warm-up guards — sortable /
+polymorphic-discrimination, traversal-path and document-meta checks). Doctrine adds its own warm-up guards — sortable /
 filterable columns must resolve to a real field/association, and a pivot `belongsToMany`
 must resolve its association entity (see [doctrine § Build-time faults](doctrine.md#build-time-faults)).
 Because they all run at build time, CI catches them before deployment.
