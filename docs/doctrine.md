@@ -456,6 +456,10 @@ carries each member's pivot values (see
   under `America/New_York` it would read back four hours late. Only values the request
   wrote are converted. A date-time your own code sets on the entity, in a hook or a
   setter, is persisted exactly as given. Reads render through the usual `output_timezone`.
+  Only a field documented as an RFC 3339 `date-time` is converted, since the moved value is
+  written back in that shape. A field with a custom `format()` is hydrated as sent, so if
+  that format carries an offset, such as `D, d M Y H:i:s O`, its column stores the wall
+  clock of the offset the client wrote.
 
 The managed-update coupling is the one constraint a custom data layer must respect:
 a provider that returns a **detached** entity from `fetchOne` would silently break
@@ -840,9 +844,10 @@ from the value, so a bound against a `datetimetz` column would be formatted with
 offset. With it, a `datetimetz` bound keeps its offset and is not converted.
 
 A `date` column is not converted either, because moving a midnight bound into another
-zone can change its day: `2026-10-01T00:00:00Z` is still 30 September in New York. It
-binds with the column's own `date` type, so it compares as the calendar day the client
-wrote, in the bound's own offset.
+zone can change its day. A `DateRange` over a column a `Date` field backs takes a full
+date for each bound, `filter[day][min]=2026-10-01`, documented as `format: date`. It binds
+with the column's own `date` type, so it compares as the calendar day the client wrote, as
+the in-memory provider does.
 
 Cursor pagination keys are not converted. A cursor carries the row's value as the
 provider read it, so its wall-clock time already matches the stored column.

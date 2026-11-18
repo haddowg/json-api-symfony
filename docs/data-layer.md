@@ -511,7 +511,10 @@ absent, so it is not a `400`. On Doctrine a `Range` is **two push-down `>=`/`<=`
 predicates on one query** — no subquery, no fetch, no N+1. `DateRange` coerces each
 bound, an RFC 3339 date-time with an offset, to a `\DateTimeImmutable`, so the
 comparison is temporal not lexical, and a malformed bound, a bare date or one with no
-offset is a clean `400` (see below). All keep the usual `Where` ergonomics
+offset is a clean `400` (see below). Over a column a `Date` field backs, a `DateRange`
+compares calendar days instead: each bound is a full date such as `2026-10-01`,
+documented as `format: date`, and a date-time bound is the `400`. Declare
+`->calendarDays()` yourself for a date column no field of the type backs. All keep the usual `Where` ergonomics
 (an optional second arg is the backing column, plus `->describedAs()` / `->example()` /
 relation-scoped use).
 
