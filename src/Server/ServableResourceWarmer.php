@@ -15,6 +15,8 @@ use haddowg\JsonApi\Pagination\PaginatorInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\DocumentMetaMisdeclared;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
+use haddowg\JsonApi\Resource\Field\DefaultSortedRelationInterface;
+use haddowg\JsonApi\Resource\Field\FieldInterface;
 use haddowg\JsonApi\Resource\Field\ForeignKey;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Mode;
@@ -29,6 +31,7 @@ use haddowg\JsonApi\Resource\RequestMetaContext;
 use haddowg\JsonApi\Resource\Sort\KeysetSortInterface;
 use haddowg\JsonApi\Resource\Sort\RelationSorts;
 use haddowg\JsonApi\Resource\Sort\SortByField;
+use haddowg\JsonApi\Resource\Sort\SortDirective;
 use haddowg\JsonApi\Resource\Sort\SortFamilyInterface;
 use haddowg\JsonApi\Resource\Sort\SortInterface;
 use haddowg\JsonApi\Resource\Sort\SortMatcher;
@@ -608,6 +611,37 @@ final class ServableResourceWarmer implements CacheWarmerInterface
             }
         } catch (\LogicException $e) {
             throw new \LogicException(\sprintf('The JSON:API resource for type "%s" on server "%s" declares a filter that cannot run: %s', $type, $serverName, $e->getMessage()), 0, $e);
+        }
+
+        try {
+            self::resolveSorts($paths, [...$resource->allSorts(), ...\array_map(static fn(SortDirective $directive): SortInterface => $directive->sort, $resource->defaultSort())], $resource->allFields());
+            foreach ($resource->allFields() as $relation) {
+                if (!$relation instanceof RelationInterface || \count($relation->relatedTypes()) !== 1) {
+                    continue;
+                }
+
+                $related = $this->typeMetadata->resourceFor($server, $relation->relatedTypes()[0]);
+                if ($related !== null) {
+                    self::resolveSorts($paths, [...$relation->sorts(), ...\array_map(static fn(SortDirective $directive): SortInterface => $directive->sort, $relation instanceof DefaultSortedRelationInterface ? $relation->defaultSort() : [])], $related->allFields());
+                }
+            }
+        } catch (\LogicException $e) {
+            throw new \LogicException(\sprintf('The JSON:API resource for type "%s" on server "%s" declares a sort that cannot run: %s', $type, $serverName, $e->getMessage()), 0, $e);
+        }
+    }
+
+    /**
+     * Resolves every sort reaching through relations, so a path naming no relation,
+     * crossing a to-many or reaching no stored field fails the build. A sort family's
+     * sorts resolve per request.
+     *
+     * @param list<SortInterface>      $sorts
+     * @param iterable<FieldInterface> $fields
+     */
+    private static function resolveSorts(ThroughPathResolver $paths, array $sorts, iterable $fields): void
+    {
+        foreach ($sorts as $sort) {
+            $paths->resolveSort($sort, $fields);
         }
     }
 

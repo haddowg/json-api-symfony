@@ -10,6 +10,8 @@ use haddowg\JsonApi\Resource\Field\BelongsTo;
 use haddowg\JsonApi\Resource\Field\HasMany;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Str;
+use haddowg\JsonApi\Resource\Filter\Where;
+use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 
 /**
@@ -77,6 +79,28 @@ final class InMemorySecuredWidgetResource extends AbstractResource
             BelongsTo::make('staffPartner', 'securedWidgets')->storedAs('partner')->hidden(
                 static fn(mixed $model, JsonApiRequestInterface $request): bool => $request->getHeaderLine('Authorization') !== 'Bearer admin',
             ),
+        ];
+    }
+
+    /**
+     * Filters and sorts reaching through the partner relations, each gated as the
+     * relation it walks: the related type's collection gate, or the relation's own read
+     * permission.
+     */
+    public function filters(): array
+    {
+        return [
+            Where::make('viaPartner', 'name')->through('partner'),
+            Where::make('viaAdminPartner', 'name')->through('adminPartner'),
+            Where::make('viaExposedPartner', 'name')->through('exposedPartner'),
+            Where::make('viaPublicPartner', 'name')->through('publicPartner'),
+        ];
+    }
+
+    public function sorts(): array
+    {
+        return [
+            SortByField::make('byAdminPartner', 'name')->through('adminPartner'),
         ];
     }
 }

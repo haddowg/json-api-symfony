@@ -264,13 +264,13 @@ final class WindowedRelationBatch
         // resolver the per-parent keyset path (runCursor) and the in-memory witness use, so
         // the single window orders byte-identically. The PK tiebreak direction rides the last
         // active directive, never a hardcoded id ASC (unlike the offset path's tiebreak).
-        $columns = $this->keysetResolver->resolve(
+        [$columns] = $this->applier->keysetColumns($criteria, $this->keysetResolver->resolve(
             $criteria->queryParameters->sort,
             $criteria->sorts,
             $criteria->defaultSort,
             $relatedMetadata->getSingleIdentifierFieldName(),
             request: $criteria->request,
-        );
+        ));
 
         // Feed the keyset columns to the SAME inner-query projection the offset path uses (the
         // join-table shape projects each as a `jsonapi_sort_%d` scalar the window ORDER BY

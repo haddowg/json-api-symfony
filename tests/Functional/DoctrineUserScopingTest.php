@@ -49,6 +49,15 @@ class DoctrineUserScopingTest extends JsonApiFunctionalTestCase
     }
 
     #[Test]
+    public function a_filter_through_a_relation_matches_only_the_rows_the_scope_admits(): void
+    {
+        // Folder 1 holds grace's note 2, which ada's scope hides.
+        self::assertSame([], $this->scopedIds($this->scopedDocument('ada', '/ownedFolders?filter[noteOwner]=grace')['data'] ?? null));
+        self::assertSame(['1'], $this->scopedIds($this->scopedDocument('ada', '/ownedFolders?filter[noteOwner]=ada')['data'] ?? null));
+        self::assertSame(['1'], $this->scopedIds($this->scopedDocument('grace', '/ownedFolders?filter[noteOwner]=grace')['data'] ?? null));
+    }
+
+    #[Test]
     public function the_extension_limits_the_collection_and_its_total(): void
     {
         $document = $this->scopedDocument('ada', '/ownedNotes?page[number]=1&page[size]=10&withCount=_self_');

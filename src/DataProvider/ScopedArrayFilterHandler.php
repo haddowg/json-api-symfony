@@ -37,28 +37,8 @@ final class ScopedArrayFilterHandler implements FilterHandlerInterface, ReadsFil
     public function withPaths(FilterPaths $paths, \Closure $apply): mixed
     {
         $previous = $this->current;
-        $this->current = $this->handler->withRowAdmission(static function (string $path, array $reached) use ($paths): array {
-            $relation = $paths->relationAt($path);
-            if ($relation === null) {
-                return $reached;
-            }
-
-            if ($paths->refuses($relation)) {
-                return [];
-            }
-
-            // Only an object row has a provider to ask; an array row stays as it is.
-            $objects = \array_values(\array_filter($reached, \is_object(...)));
-            if ($objects === []) {
-                return $reached;
-            }
-            $admitted = [];
-            foreach ($paths->admit($relation, $objects) as $row) {
-                $admitted[\spl_object_id($row)] = true;
-            }
-
-            return \array_values(\array_filter($reached, static fn(mixed $row): bool => !\is_object($row) || isset($admitted[\spl_object_id($row)])));
-        })->withMorphAdmission(static fn(RelationInterface $relation, string $type, array $keys): array => $paths->admitMorphTargets($relation, $type, $keys));
+        $this->current = $this->handler->withRowAdmission($paths->rowAdmission())
+            ->withMorphAdmission(static fn(RelationInterface $relation, string $type, array $keys): array => $paths->admitMorphTargets($relation, $type, $keys));
 
         try {
             return $apply();

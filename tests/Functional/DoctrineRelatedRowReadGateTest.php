@@ -15,6 +15,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\Security\SecurityTestKer
 class DoctrineRelatedRowReadGateTest extends JsonApiFunctionalTestCase
 {
     use RelatedRowReadGateConformance;
+    use ThroughReadGateConformance;
 
     protected static function getKernelClass(): string
     {

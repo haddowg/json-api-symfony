@@ -42,6 +42,7 @@ use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\CriteriaApplier;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\FetchesByIdsInterface;
+use haddowg\JsonApiBundle\DataProvider\FilterPaths;
 use haddowg\JsonApiBundle\DataProvider\ForeignKeyParents;
 use haddowg\JsonApiBundle\DataProvider\KeysCursorSortsInterface;
 use haddowg\JsonApiBundle\DataProvider\PivotAwareProviderInterface;
@@ -172,7 +173,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             $this->extensionsFor(...),
             fn(string $type): ?string => $this->entityClassByType[$type] ?? null,
         );
-        $this->sortHandler = new DoctrineSortHandler($sortArms);
+        $this->sortHandler = new DoctrineSortHandler($sortArms, $this->extensionsFor(...));
         $this->ids = new DoctrineIdentifiers($this->entityManager);
         $this->linkRows = new DoctrineLinkRows($this->entityManager, $this->filterHandler, $this->sortHandler);
         $this->relationScope = new RelationScope($this->entityManager, $this->ids);
@@ -447,7 +448,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $metadata = $this->entityManager->getClassMetadata($entityClass);
         $pkColumn = $metadata->getSingleIdentifierFieldName();
 
-        $columns = $this->resolveKeysetColumns($criteria, $pkColumn);
+        $columns = $this->resolveKeysetColumns($criteria, $pkColumn, $paths);
 
         // Apply the FILTERS only (the keyset owns the order). A sort-stripped,
         // window-less criteria reuses the shared applier so the filter semantics
@@ -477,10 +478,14 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $counter = $criteria->wantsCount ? clone $builder : null;
 
         $keyset = new DoctrineKeyset($metadata, self::ROOT_ALIAS, sorts: $this->sortHandler, ids: $this->ids);
-        if ($boundary !== null) {
-            $keyset->applyAfter($builder, $boundary, $orderColumns);
-        }
-        $keyset->orderBy($builder, $orderColumns);
+        $order = static function () use ($keyset, $builder, $boundary, $orderColumns): void {
+            if ($boundary !== null) {
+                $keyset->applyAfter($builder, $boundary, $orderColumns);
+            }
+            $keyset->orderBy($builder, $orderColumns);
+        };
+        // A level reaching through relations scopes its joins for the request.
+        $paths !== null ? $this->sortHandler->withPaths($paths, $order) : $order();
         $selected = $keyset->selectedValues();
 
         return $this->windowExecutor->runCursor(
@@ -528,23 +533,23 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
     }
 
     /**
-     * Resolves the keyset columns for `$criteria` through the core
-     * {@see KeysetResolver}, feeding it the criteria's sort
-     * inputs — the requested `?sort`, the declared vocabulary and the resource
-     * default — so the cursor path's sort validation stays byte-identical to the
-     * plain (offset) path's.
+     * The keyset columns a cursor page of `$criteria` walks, each sort reaching through
+     * relations resolved and checked as an offset page's is, and in `$paths` the paths its
+     * joins read them with.
      *
      * @return list<KeysetColumn>
      */
-    private function resolveKeysetColumns(CollectionCriteria $criteria, string $pkColumn): array
+    private function resolveKeysetColumns(CollectionCriteria $criteria, string $pkColumn, ?FilterPaths &$paths = null): array
     {
-        return $this->keysetResolver->resolve(
+        [$columns, $paths] = $this->applier->keysetColumns($criteria, $this->keysetResolver->resolve(
             $criteria->queryParameters->sort,
             $criteria->sorts,
             $criteria->defaultSort,
             $pkColumn,
             request: $criteria->request,
-        );
+        ));
+
+        return $columns;
     }
 
     /**

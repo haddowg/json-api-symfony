@@ -8,6 +8,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Mapping\ClassMetadata;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
+use haddowg\JsonApi\Resource\Field\DefaultSortedRelationInterface;
 use haddowg\JsonApi\Resource\Field\ForeignKey;
 use haddowg\JsonApi\Resource\Field\HasMany;
 use haddowg\JsonApi\Resource\Field\MorphTo;
@@ -18,6 +19,8 @@ use haddowg\JsonApi\Resource\Filter\Range;
 use haddowg\JsonApi\Resource\Filter\TraversesPath;
 use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Filter\WhereGroup;
+use haddowg\JsonApi\Resource\Filter\WhereIdIn;
+use haddowg\JsonApi\Resource\Filter\WhereIdNotIn;
 use haddowg\JsonApi\Resource\Filter\WhereIn;
 use haddowg\JsonApi\Resource\Filter\WhereMorph;
 use haddowg\JsonApi\Resource\Filter\WhereNotIn;
@@ -27,7 +30,9 @@ use haddowg\JsonApi\Resource\Filter\WhereSet;
 use haddowg\JsonApi\Resource\Filter\WhereThrough;
 use haddowg\JsonApi\Resource\Filter\WhereThroughIn;
 use haddowg\JsonApi\Resource\Sort\SortByField;
+use haddowg\JsonApi\Resource\Sort\SortDirective;
 use haddowg\JsonApi\Resource\Sort\SortInterface;
+use haddowg\JsonApi\Resource\Through\ReachesThrough;
 use haddowg\JsonApiBundle\Action\ActionRegistry;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
 use haddowg\JsonApiBundle\DataProvider\FilterPaths;
@@ -156,6 +161,7 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
                     $this->guardFilters($type, $resource->allFilters(), $metadata);
                     $this->guardTargetEncoders($serverName, $type, $resource, $metadata);
                     $this->guardMorphFilters($serverName, $type, $resource, $metadata);
+                    $this->guardThroughPaths($serverName, $type, $resource, $metadata);
                 }
 
                 $this->guardPivots($serverName, $type, $metadata);
@@ -361,6 +367,110 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
     }
 
     /**
+     * Refuses a filter or sort reaching through relations that the Doctrine provider
+     * cannot run: a hop that is not an association of the entity it starts from, or that
+     * reaches a type no entity maps or whose provider scopes it outside Doctrine, so no
+     * query extension can hide its rows, and a leaf that is not a field of the reached
+     * entity. The type's own filters and sorts are checked, and each relation's against
+     * the related type.
+     *
+     * @param ClassMetadata<object> $metadata
+     */
+    private function guardThroughPaths(string $serverName, string $type, AbstractResource $resource, ClassMetadata $metadata): void
+    {
+        $server = $this->servers->get($serverName);
+        $paths = FilterPaths::of($server, $resource);
+        $this->guardThroughOf($type, null, [...$resource->allFilters(), ...$resource->allSorts(), ...\array_map(static fn(SortDirective $d): SortInterface => $d->sort, $resource->defaultSort())], $metadata, $paths);
+
+        foreach ($resource->allFields() as $relation) {
+            if (!$relation instanceof RelationInterface || \count($relation->relatedTypes()) !== 1) {
+                continue;
+            }
+            $relatedType = $relation->relatedTypes()[0];
+            $related = $this->typeMetadata->resourceFor($server, $relatedType);
+            if ($related === null || !isset($this->entityClassByType[$relatedType])) {
+                continue;
+            }
+
+            $declared = [...$relation->allFilters(), ...$relation->sorts(), ...\array_map(static fn(SortDirective $d): SortInterface => $d->sort, $relation instanceof DefaultSortedRelationInterface ? $relation->defaultSort() : [])];
+            $this->guardThroughOf($type, $relation, $declared, $this->entityManager->getClassMetadata($this->entityClassByType[$relatedType]), FilterPaths::of($server, $related, $type));
+        }
+    }
+
+    /**
+     * @param list<FilterInterface|SortInterface> $declared
+     * @param ClassMetadata<object>               $metadata the entity the filters and sorts run against
+     */
+    private function guardThroughOf(string $type, ?RelationInterface $owner, array $declared, ClassMetadata $metadata, ?FilterPaths $paths): void
+    {
+        foreach ($declared as $item) {
+            if ($item instanceof WhereGroup) {
+                $this->guardThroughOf($type, $owner, $item->children, $metadata, $paths);
+
+                continue;
+            }
+            // An id filter keyed by a relation reaches through it once resolved.
+            if (!$item instanceof ReachesThrough || $paths === null || ($item->throughRelations() === null && !$item instanceof WhereIdIn && !$item instanceof WhereIdNotIn)) {
+                continue;
+            }
+
+            try {
+                $resolved = $item instanceof SortInterface ? $paths->resolveSort($item) : ($item instanceof FilterInterface ? $paths->resolve($item) : $item);
+            } catch (\LogicException $e) {
+                throw new \LogicException(\sprintf('The JSON:API resource for type "%s" declares %s that cannot run: %s', $type, $item instanceof SortInterface ? 'a sort' : 'a filter', $e->getMessage()), 0, $e);
+            }
+            if (!$resolved instanceof ReachesThrough || $resolved->throughRelations() === null || ($path = $resolved->resolvedThrough()) === null) {
+                continue;
+            }
+
+            $refuse = fn(string $why): \LogicException => new \LogicException(\sprintf(
+                'The JSON:API resource for type "%s" declares %s "%s"%s reaching through "%s", which the Doctrine provider cannot run: %s',
+                $type,
+                $item instanceof SortInterface ? 'the sort' : 'the filter',
+                $item instanceof SortInterface ? $item->key() : ($item instanceof FilterInterface ? $item->key() : ''),
+                $owner !== null ? \sprintf(' of relation "%s"', $owner->name()) : '',
+                $path->path,
+                $why,
+            ));
+
+            $current = $metadata;
+            foreach ($path->hops as $hop) {
+                $relatedType = $hop->relatedType();
+                if (!isset($this->entityClassByType[$relatedType])) {
+                    throw $refuse(\sprintf('the relation "%s" reaches the type "%s", which no Doctrine entity maps.', $hop->relation->name(), $relatedType));
+                }
+                $isPivot = $hop->relation instanceof \haddowg\JsonApi\Resource\Field\BelongsToMany && $hop->relation->storedPivotFields() !== [];
+                if (!$current->hasAssociation($hop->storage()) && !$isPivot) {
+                    throw $refuse(\sprintf('"%s" is not an association of %s.', $hop->storage(), $current->getName()));
+                }
+                if ($this->scopesOutsideDoctrine($relatedType, $hop->relation)) {
+                    throw $refuse(\sprintf('the type "%s" is scoped by a provider other than Doctrine, whose scope a Doctrine query cannot apply to the rows it reaches.', $relatedType));
+                }
+                $current = $this->entityManager->getClassMetadata($this->entityClassByType[$relatedType]);
+            }
+
+            $leafRelation = $path->leafRelation();
+            $leafColumn = $leafRelation !== null ? ($leafRelation->column() ?? $leafRelation->name()) : $path->leafColumn();
+            if (!\str_contains($leafColumn, '.') && !$current->hasField($leafColumn) && !$current->hasAssociation($leafColumn)) {
+                throw $refuse(\sprintf('"%s" is not a field or association of %s.', $leafColumn, $current->getName()));
+            }
+        }
+    }
+
+    /**
+     * Whether `$relatedType` is served by a provider other than this Doctrine one that
+     * scopes its reads of `$relation`.
+     */
+    private function scopesOutsideDoctrine(string $relatedType, RelationInterface $relation): bool
+    {
+        if ($this->providers === null || !$this->providers->supportsType($relatedType)) {
+            return false;
+        }
+
+        return !$this->providers->forType($relatedType) instanceof DoctrineDataProvider && $this->scopesRelatedReads($relatedType, $relation);
+    }
+
+    /**
      * Asserts every field-derived / declared sort whose target is a simple column
      * resolves to a real field or association on the entity. A custom
      * {@see SortInterface} that carries no column (a relation-count / computed sort
@@ -373,8 +483,8 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
     private function guardSorts(string $type, array $sorts, ClassMetadata $metadata): void
     {
         foreach ($sorts as $sort) {
-            if (!$sort instanceof SortByField) {
-                continue; // a custom sort owns its own column resolution (an author arm)
+            if (!$sort instanceof SortByField || $sort->through !== null) {
+                continue; // a custom sort owns its own column resolution (an author arm); a through sort is checked on its path
             }
 
             $column = $sort->column;
@@ -413,7 +523,7 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
     private function guardFilters(string $type, array $filters, ClassMetadata $metadata): void
     {
         foreach ($filters as $filter) {
-            $column = $this->filterColumn($filter);
+            $column = $filter instanceof ReachesThrough && $filter->throughRelations() !== null ? null : $this->filterColumn($filter);
             if ($column === null || \str_contains($column, '.')) {
                 continue; // a relationship/custom filter, or a pivot-routed / embedded column
             }

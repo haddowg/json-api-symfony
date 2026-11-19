@@ -72,7 +72,7 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
 
     private readonly ScopedArrayFilterHandler $filterHandler;
 
-    private readonly ArraySortHandler $sortHandler;
+    private readonly ScopedArraySortHandler $sortHandler;
 
     private readonly KeysetResolver $keysetResolver;
 
@@ -110,7 +110,7 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
         $this->applier = new CriteriaApplier();
         $this->windowExecutor = new WindowExecutor();
         $this->filterHandler = new ScopedArrayFilterHandler(new ArrayFilterHandler($filterArms));
-        $this->sortHandler = new ArraySortHandler($sortArms);
+        $this->sortHandler = new ScopedArraySortHandler(new ArraySortHandler($sortArms));
         $this->keysetResolver = new KeysetResolver();
         $this->keyset = new InMemoryKeyset();
         $this->minter = new CursorTokenMinter(new CursorCodec());
@@ -679,13 +679,13 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
         // `?sort` validates against the vocabulary exactly as the plain path does.
         // The PK direction for a PK-only keyset follows the resource
         // default-sort-on-PK; with none it is ascending (the resolver's default).
-        $columns = $this->keysetResolver->resolve(
+        [$columns] = $this->applier->keysetColumns($criteria, $this->keysetResolver->resolve(
             $criteria->queryParameters->sort,
             $criteria->sorts,
             $criteria->defaultSort,
             $this->idColumn,
             request: $criteria->request,
-        );
+        ), admitting: true);
 
         // Apply the FILTERS only — the keyset owns the order, so the plain sort is
         // never applied (a sort-stripped criteria leaves the filter application

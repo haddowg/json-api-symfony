@@ -1,0 +1,3 @@
+# A sort through relations reads only what the caller may read
+
+A sort declared with `->through()` reveals the order of the rows its path reaches as a filter reveals their values, so it follows the rules ADR 0096 sets for filters: each to-one join keeps only the rows the reached type's query extensions admit, so a hidden row sorts as a missing relation does, a sort the client names is refused with the related endpoint's `403` when a hop is one the caller may not read, and a default order reads `null` through such a hop rather than refusing a request the client didn't shape. Filters declared with `->through()` reuse ADR 0096's hops, scopes and gate unchanged, so there is one implementation of the through-read rules.

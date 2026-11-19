@@ -19,6 +19,7 @@ use haddowg\JsonApi\Resource\Filter\DateRange;
 use haddowg\JsonApi\Resource\Filter\FilterHandlerInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\Range;
+use haddowg\JsonApi\Resource\Filter\RelationHop;
 use haddowg\JsonApi\Resource\Filter\ThroughPath;
 use haddowg\JsonApi\Resource\Filter\UnsupportedFilter;
 use haddowg\JsonApi\Resource\Filter\Where;
@@ -37,6 +38,7 @@ use haddowg\JsonApi\Resource\Filter\WhereSet;
 use haddowg\JsonApi\Resource\Filter\WhereSetMatch;
 use haddowg\JsonApi\Resource\Filter\WhereThrough;
 use haddowg\JsonApi\Resource\Filter\WhereThroughIn;
+use haddowg\JsonApi\Resource\Through\FiltersThrough;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\Filter\WhereHasMatching;
 use haddowg\JsonApiBundle\DataProvider\FilterPaths;
 use haddowg\JsonApiBundle\DataProvider\ReadsFilterPathsInterface;
@@ -138,6 +140,18 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
     private int $subqueries = 0;
 
     /**
+     * Whether the filter being applied is the leaf of a `->through()` path, whose ids
+     * core has decoded through the reached type's encoder already.
+     */
+    private bool $decodedLeaf = false;
+
+    /**
+     * The stem of the next parameter placeholder, distinct inside a `->through()` leaf so
+     * the leaf's parameters can move onto the outer query.
+     */
+    private string $placeholderStem = 'jsonapi_filter_';
+
+    /**
      * The declared relations of the type the filter being applied runs against, from
      * {@see withPaths()}.
      */
@@ -195,6 +209,10 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
                 QueryBuilder::class,
                 \get_debug_type($query),
             ));
+        }
+
+        if ($filter instanceof FiltersThrough && $filter->throughRelations() !== null) {
+            return $this->through($query, $filter, $value, $alias);
         }
 
         return match (true) {
@@ -526,6 +544,57 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
     }
 
     /**
+     * A filter reaching through relations ({@see FiltersThrough}): one correlated `EXISTS`
+     * joining every relation of the path, each scoped by {@see scopeHop()} as a traversal's
+     * are, with the filter applied at the entity the last join reaches through its own
+     * arm. The leaf's parameters move onto the outer query, which executes the `EXISTS`. A
+     * relation that holds nothing gives the `EXISTS` no row, so it never matches. An
+     * existence filter at the end of the path tests the relation the reached row holds, as
+     * one more scoped hop.
+     */
+    private function through(QueryBuilder $query, FiltersThrough $filter, mixed $value, string $alias): QueryBuilder
+    {
+        $leafFilter = $filter->atLeaf();
+        $path = $filter->resolvedThrough();
+        \assert($path !== null);
+        $leafValue = $filter->leafValue($value);
+        $stem = 'jsonapi_through_' . ++$this->subqueries . '_';
+
+        $sub = $this->existsSubquery(
+            $query,
+            $path->storageSegments(),
+            function (QueryBuilder $sub, string $leafAlias) use ($query, $leafFilter, $leafValue, $path, $stem): void {
+                [$decoded, $placeholders] = [$this->decodedLeaf, $this->placeholderStem];
+                $this->decodedLeaf = true;
+                $this->placeholderStem = $stem;
+                try {
+                    $leafRelation = $path->leafRelation();
+                    if ($leafRelation !== null && ($leafFilter instanceof WhereHas || $leafFilter instanceof WhereDoesntHave)) {
+                        $exists = $sub->expr()->exists($this->existsSubquery($sub, [$leafRelation->column() ?? $leafRelation->name()], null, $leafAlias, false, [$leafRelation])->getDQL());
+                        $sub->andWhere($leafFilter instanceof WhereDoesntHave ? $sub->expr()->not($exists) : $exists);
+                    } else {
+                        $this->applyOn($leafFilter, $sub, $leafValue, $leafAlias);
+                    }
+                } finally {
+                    [$this->decodedLeaf, $this->placeholderStem] = [$decoded, $placeholders];
+                }
+                // The leaf bound on the subquery; the outer query executes it. A name the
+                // outer query binds already is an extension's, bound to the same value.
+                foreach ($sub->getParameters() as $parameter) {
+                    if ($query->getParameter($parameter->getName()) === null) {
+                        $query->getParameters()->add($parameter);
+                    }
+                }
+            },
+            $alias,
+            true,
+            \array_map(static fn(RelationHop $hop): RelationInterface => $hop->relation, $path->hops),
+        );
+
+        return $query->andWhere($query->expr()->exists($sub->getDQL()));
+    }
+
+    /**
      * Author-supplied relationship-existence predicate ({@see WhereHasMatching}):
      * a single relationship hop whose related root is narrowed by a {@see \Doctrine\Common\Collections\Criteria}
      * (applied with `addCriteria` on the related root) or a raw-subquery closure.
@@ -594,10 +663,14 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
      * With `$leafIsRelation` every segment is a relationship, the last one included, so
      * each is joined and `leafAlias` is the related entity whose id the leaf compares.
      *
+     * With `$relations` the declared relation each segment walks is given rather than read
+     * off the paths, as a `->through()` path's resolution names them.
+     *
      * @param list<string>                                                      $segments  the dotted path's segments (≥ 1)
      * @param \Closure(QueryBuilder, string, string, ClassMetadata<object>): void|null $applyLeaf
+     * @param list<RelationInterface>|null                                       $relations
      */
-    private function existsSubquery(QueryBuilder $query, array $segments, ?\Closure $applyLeaf, string $alias, bool $leafIsRelation = false): QueryBuilder
+    private function existsSubquery(QueryBuilder $query, array $segments, ?\Closure $applyLeaf, string $alias, bool $leafIsRelation = false, ?array $relations = null): QueryBuilder
     {
         $ownerMetadata = $this->metadataOfAlias($query, $alias)
             ?? throw new \LogicException(\sprintf('The QueryBuilder has no entity at alias "%s" to filter on.', $alias));
@@ -605,7 +678,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
 
         $entityManager = $query->getEntityManager();
         // A pivot row's own paths are its entity's associations, not the related type's relations.
-        $relations = $alias === 'pivot' ? [] : $this->paths?->relationsAlong(\implode('.', $segments)) ?? [];
+        $relations ??= $alias === 'pivot' ? [] : $this->paths?->relationsAlong(\implode('.', $segments)) ?? [];
 
         // The first segment is the owning relationship; resolve its target as the
         // RELATED root and split off any remaining intermediate relationships and
@@ -723,18 +796,10 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
             return;
         }
 
-        $scopeAlias = $alias . '_scope';
-        $scope = $subQuery->getEntityManager()->createQueryBuilder()
-            ->select(DoctrineIdentifiers::path($metadata, $scopeAlias))
-            ->from($metadata->getName(), $scopeAlias);
-        $context = new ExtensionContext($types[0], QueryPurpose::FetchRelatedCollection, $paths->request());
-        foreach ($extensions as $extension) {
-            $scope = $extension->apply($scope, $context);
+        $condition = ExtensionScope::condition($query, $alias, $metadata, $types[0], $extensions, $paths->request());
+        if ($condition !== null) {
+            $subQuery->andWhere($condition);
         }
-
-        $this->adoptParameters($query, $scope);
-
-        $subQuery->andWhere($subQuery->expr()->in(DoctrineIdentifiers::path($metadata, $alias), $scope->getDQL()));
     }
 
     /**
@@ -845,7 +910,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         $column = $this->pivotColumn($filter->column, $alias);
         $path = $this->path($column, $alias);
         $metadata = $alias === 'pivot' ? null : $this->metadataOfAlias($query, $alias);
-        if ($metadata !== null && !$metadata->isIdentifierComposite && $metadata->getSingleIdentifierFieldName() === $column) {
+        if (!$this->decodedLeaf && $metadata !== null && !$metadata->isIdentifierComposite && $metadata->getSingleIdentifierFieldName() === $column) {
             $expected = $this->storageIds($query, $alias, [$expected])[0];
         }
 
@@ -1144,6 +1209,10 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
      */
     private function storageIds(QueryBuilder $query, string $alias, array $values): array
     {
+        if ($this->decodedLeaf) {
+            return $values;
+        }
+
         $metadata = $this->encoderFor !== null ? $this->metadataOfAlias($query, $alias) : null;
 
         $type = $alias === 'pivot' ? null : $this->paths?->type();
@@ -1424,6 +1493,6 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
      */
     private function placeholder(QueryBuilder $query): string
     {
-        return 'jsonapi_filter_' . \count($query->getParameters());
+        return $this->placeholderStem . \count($query->getParameters());
     }
 }

@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\DataProvider\Doctrine;
 
+use Doctrine\ORM\Mapping\ClassMetadata;
 use Doctrine\ORM\QueryBuilder;
 use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApi\Resource\Sort\SortHandlerInterface;
 use haddowg\JsonApi\Resource\Sort\SortInterface;
 use haddowg\JsonApi\Resource\Sort\UnsupportedSort;
+use haddowg\JsonApiBundle\DataProvider\FilterPaths;
+use haddowg\JsonApiBundle\DataProvider\ReadsFilterPathsInterface;
 
 /**
  * Executes a requested sort order against a Doctrine `QueryBuilder`: the
@@ -32,10 +35,17 @@ use haddowg\JsonApi\Resource\Sort\UnsupportedSort;
  * {@see UnsupportedSort} is raised — the Doctrine half of the framework's
  * extensible-handler seam.
  *
+ * A {@see SortByField} declared with `->through()` left-joins each to-one relation of its
+ * path, every join narrowed to the rows the reached type's query extensions admit, none
+ * through a relation a default order may not read, and
+ * orders by the leaf column of the entity the last join reaches. A relation that holds
+ * nothing, or a row a scope hides, leaves the join null, so the row sorts as a null
+ * column does. On a cursor page the level reads its boundary value from the query.
+ *
  * @implements SortHandlerInterface<QueryBuilder>
  * @implements AliasAwareSortHandler<QueryBuilder>
  */
-final class DoctrineSortHandler implements SortHandlerInterface, AliasAwareSortHandler
+final class DoctrineSortHandler implements SortHandlerInterface, AliasAwareSortHandler, ReadsFilterPathsInterface
 {
     /**
      * Data-layer-specific remediation appended to the core {@see UnsupportedSort}
@@ -53,12 +63,26 @@ final class DoctrineSortHandler implements SortHandlerInterface, AliasAwareSortH
      */
     private readonly array $arms;
 
+    private ?FilterPaths $paths = null;
+
     /**
-     * @param iterable<DoctrineSortArmInterface> $arms author arms for custom sort types, consulted in order
+     * @param iterable<DoctrineSortArmInterface>                         $arms          author arms for custom sort types, consulted in order
+     * @param (\Closure(string): list<DoctrineExtensionInterface>)|null $extensionsFor the query extensions scoping a type, applied to every row a `->through()` sort reaches
      */
-    public function __construct(iterable $arms = [])
+    public function __construct(iterable $arms = [], private readonly ?\Closure $extensionsFor = null)
     {
         $this->arms = \is_array($arms) ? \array_values($arms) : \iterator_to_array($arms, false);
+    }
+
+    public function withPaths(FilterPaths $paths, \Closure $apply): mixed
+    {
+        $previous = $this->paths;
+        $this->paths = $paths;
+        try {
+            return $apply();
+        } finally {
+            $this->paths = $previous;
+        }
     }
 
     public function apply(array $sorts, mixed $query): mixed
@@ -88,6 +112,12 @@ final class DoctrineSortHandler implements SortHandlerInterface, AliasAwareSortH
 
         foreach ($directives as $directive) {
             $sort = $directive->sort;
+            if ($sort instanceof SortByField && $sort->through !== null) {
+                $query->addOrderBy($this->throughColumn($sort, $query, $alias)[0], $directive->descending ? 'DESC' : 'ASC');
+
+                continue;
+            }
+
             if ($sort instanceof SortByField) {
                 $query->addOrderBy($this->path($sort->column, $alias), $directive->descending ? 'DESC' : 'ASC');
 
@@ -126,6 +156,14 @@ final class DoctrineSortHandler implements SortHandlerInterface, AliasAwareSortH
      */
     public function keysetExpression(SortInterface $sort, QueryBuilder $query, string $alias): KeysetExpression
     {
+        if ($sort instanceof SortByField && $sort->through !== null) {
+            [$column, $metadata, $field] = $this->throughColumn($sort, $query, $alias);
+
+            // The boundary row's value is the one the scoped joins reached, so the cursor
+            // reads it from the query rather than walking the entity's relations.
+            return new KeysetExpression($column, $metadata->hasField($field) ? $metadata->getTypeOfField($field) : null, valueFromQuery: true);
+        }
+
         foreach ($this->arms as $arm) {
             if (!$arm->supports($sort)) {
                 continue;
@@ -158,6 +196,120 @@ final class DoctrineSortHandler implements SortHandlerInterface, AliasAwareSortH
         }
 
         return false;
+    }
+
+    /**
+     * Left-joins each relation of `$sort`'s resolved path off `$alias`, once per query,
+     * and returns the leaf column's DQL path, the metadata of the entity it is on and the
+     * field it names.
+     *
+     * @return array{string, ClassMetadata<object>, string}
+     */
+    private function throughColumn(SortByField $sort, QueryBuilder $query, string $alias): array
+    {
+        $leaf = $sort->atLeaf();
+        $path = $sort->resolvedThrough();
+        \assert($path !== null);
+
+        $entityManager = $query->getEntityManager();
+        $metadata = $this->metadataOfAlias($query, $alias)
+            ?? throw new \LogicException(\sprintf('The QueryBuilder has no entity at alias "%s" to sort on.', $alias));
+        $current = $alias;
+        $joined = self::joinedAliases($query);
+        foreach ($path->hops as $index => $hop) {
+            $association = $hop->storage();
+            if (!$metadata->hasAssociation($association) || !$metadata->isSingleValuedAssociation($association)) {
+                throw new \LogicException(\sprintf('Sort "%s" reaches through "%s", but "%s" is not a to-one association on "%s".', $sort->key(), $path->path, $association, $metadata->getName()));
+            }
+            $next = 'jsonapi_through_' . \substr(\md5($alias . '|' . \implode('.', \array_slice($path->storageSegments(), 0, $index + 1))), 0, 12);
+            $target = $entityManager->getClassMetadata($metadata->getAssociationTargetClass($association));
+            if (!isset($joined[$next])) {
+                $condition = $this->scopeCondition($query, $next, $target, $hop->relatedType(), $hop->relation);
+                $condition === null
+                    ? $query->leftJoin($current . '.' . $association, $next)
+                    : $query->leftJoin($current . '.' . $association, $next, 'WITH', $condition);
+                $joined[$next] = true;
+            }
+            $current = $next;
+            $metadata = $target;
+        }
+
+        return [$this->path($leaf->column, $current), $metadata, $leaf->column];
+    }
+
+    /**
+     * The join condition keeping only the rows the caller may read through `$relation`:
+     * none through a relation a default order may not read, else the rows `$type`'s query
+     * extensions admit ({@see ExtensionScope}), or null when nothing narrows them.
+     *
+     * @param ClassMetadata<object> $metadata
+     */
+    private function scopeCondition(QueryBuilder $query, string $alias, ClassMetadata $metadata, string $type, \haddowg\JsonApi\Resource\Field\RelationInterface $relation): ?string
+    {
+        if ($this->paths?->refuses($relation) === true) {
+            return '1 = 0';
+        }
+
+        $extensions = $this->extensionsFor !== null ? ($this->extensionsFor)($type) : [];
+
+        return ExtensionScope::condition($query, $alias, $metadata, $type, $extensions, $this->paths?->request());
+    }
+
+    /**
+     * @return array<string, true>
+     */
+    private static function joinedAliases(QueryBuilder $query): array
+    {
+        $aliases = [];
+        /** @var array<string, list<\Doctrine\ORM\Query\Expr\Join>> $joins */
+        $joins = $query->getDQLPart('join');
+        foreach ($joins as $list) {
+            foreach ($list as $join) {
+                $aliases[(string) $join->getAlias()] = true;
+            }
+        }
+
+        return $aliases;
+    }
+
+    /**
+     * The metadata of the entity `$alias` names on `$query`: a `FROM` root or an entity
+     * joined off another alias.
+     *
+     * @return ClassMetadata<object>|null
+     */
+    private function metadataOfAlias(QueryBuilder $query, string $alias): ?ClassMetadata
+    {
+        $entityManager = $query->getEntityManager();
+        /** @var list<\Doctrine\ORM\Query\Expr\From> $froms */
+        $froms = $query->getDQLPart('from');
+        foreach ($froms as $from) {
+            if ($from->getAlias() === $alias) {
+                return $entityManager->getClassMetadata($from->getFrom());
+            }
+        }
+
+        /** @var array<string, list<\Doctrine\ORM\Query\Expr\Join>> $joins */
+        $joins = $query->getDQLPart('join');
+        foreach ($joins as $list) {
+            foreach ($list as $join) {
+                if ($join->getAlias() !== $alias) {
+                    continue;
+                }
+                $target = $join->getJoin();
+                if (!\str_contains($target, '.')) {
+                    return \class_exists($target) ? $entityManager->getClassMetadata($target) : null;
+                }
+                [$parentAlias, $association] = \explode('.', $target, 2);
+                $parent = $parentAlias === $alias ? null : $this->metadataOfAlias($query, $parentAlias);
+
+                return $parent !== null && $parent->hasAssociation($association)
+                    ? $entityManager->getClassMetadata($parent->getAssociationTargetClass($association))
+                    : null;
+            }
+        }
+
+        return null;
     }
 
     /**

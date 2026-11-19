@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\DataProvider;
 
+use haddowg\JsonApi\Collection\Keyset\KeysetColumn;
 use haddowg\JsonApi\Exception\AccessDenied;
 use haddowg\JsonApi\Exception\FilterParamUnrecognized;
 use haddowg\JsonApi\Exception\FilterValueInvalid;
@@ -15,6 +16,7 @@ use haddowg\JsonApi\Resource\Filter\FilterHandlerInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\FilterMatcher;
 use haddowg\JsonApi\Resource\Filter\RelationHop;
+use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApi\Resource\Sort\SortDirective;
 use haddowg\JsonApi\Resource\Sort\SortHandlerInterface;
 use haddowg\JsonApi\Resource\Sort\SortMatcher;
@@ -218,7 +220,7 @@ final class CriteriaApplier
         // and no default order, so this returns the query untouched on that path.
         if ($requested === []) {
             $directives = \array_map(
-                static fn(SortDirective $directive): array => [$directive->sort->key(), $directive],
+                static fn(SortDirective $directive): array => [$directive->sort->key(), self::resolvedDirective($criteria, $directive)],
                 $this->defaultDirectives($criteria),
             );
             if ($directives === []) {
@@ -233,7 +235,7 @@ final class CriteriaApplier
         // map, defaulting to the root for every related/non-pivot key. A sort family
         // resolves to a sort keyed by the full requested key, so the key routes as is.
         $directives = \array_map(
-            static fn(SortDirective $directive): array => [$directive->sort->key(), $directive],
+            static fn(SortDirective $directive): array => [$directive->sort->key(), self::resolvedDirective($criteria, $directive)],
             SortMatcher::directives($requested, $criteria->sorts, $criteria->request),
         );
 
@@ -258,6 +260,28 @@ final class CriteriaApplier
         // directive first. Sorts do not compose commutatively, so the handler owns the
         // combination; the in-memory handler does its one stable
         // multi-key sort here.
+        $paths = $criteria->paths === null ? null : $this->readableSortPaths($criteria, $criteria->paths, \array_map(static fn(array $pair): SortDirective => $pair[1], $directives));
+        if ($paths !== null && $handler instanceof ReadsFilterPathsInterface) {
+            return $handler->withPaths($paths, fn(): mixed => $this->sortWith($criteria, $directives, $query, $handler, $defaultAlias));
+        }
+
+        return $this->sortWith($criteria, $directives, $query, $handler, $defaultAlias);
+    }
+
+    /**
+     * Applies resolved directives, each paired with its key, most significant first, with
+     * the handler's path context already in place.
+     *
+     * @template TQuery
+     *
+     * @param list<array{0: string, 1: SortDirective}>   $directives
+     * @param TQuery                                     $query
+     * @param SortHandlerInterface<contravariant TQuery> $handler
+     *
+     * @return TQuery
+     */
+    private function sortWith(CollectionCriteria $criteria, array $directives, mixed $query, SortHandlerInterface $handler, ?string $defaultAlias): mixed
+    {
         if ($criteria->aliasOf === [] && $defaultAlias === null) {
             return $handler->apply(\array_map(static fn(array $pair): SortDirective => $pair[1], $directives), $query);
         }
@@ -281,6 +305,91 @@ final class CriteriaApplier
         }
 
         return $query;
+    }
+
+    /**
+     * The paths sorts reaching through relations run with, as {@see readablePaths()}
+     * decides for a filter: a sort the client asked for through a relation the caller may
+     * not read is refused with the `403` a related read of the relation gets, and a default
+     * order reads `null` through such a relation, as if every row there were hidden.
+     *
+     * @param list<SortDirective> $directives
+     *
+     * @throws \Symfony\Component\Security\Core\Exception\AccessDeniedException when the client's sort reaches through a relation the caller may not read
+     */
+    private function readableSortPaths(CollectionCriteria $criteria, FilterPaths $paths, array $directives): FilterPaths
+    {
+        $request = $criteria->request;
+        $requested = $criteria->queryParameters->sort !== [];
+        $refused = [];
+        foreach ($directives as $directive) {
+            $hops = $request === null ? [] : $paths->refusedHops($paths->hopsOfSort($directive->sort), $request);
+            if ($hops !== [] && $requested) {
+                $message = \sprintf('Access denied to the relation "%s" the sort "%s" reaches through.', $hops[0]->relation->name(), $directive->sort->key());
+
+                throw \class_exists(\Symfony\Component\Security\Core\Exception\AccessDeniedException::class)
+                    ? new \Symfony\Component\Security\Core\Exception\AccessDeniedException($message)
+                    : new AccessDenied();
+            }
+            foreach ($hops as $hop) {
+                $refused[] = $hop->relation;
+            }
+        }
+
+        return $paths->scoped($request, $refused);
+    }
+
+    /**
+     * The keyset columns of a cursor page with each sort reaching through relations
+     * resolved against the type the criteria run against, and the paths its levels read
+     * them with, decided as {@see readableSortPaths()} decides them for an offset page.
+     * With `$admitting`, each such level reads its value through the rows the reached
+     * types' providers admit, so a row a scope hides sorts as null.
+     *
+     * @param list<KeysetColumn> $columns
+     *
+     * @return array{list<KeysetColumn>, FilterPaths|null}
+     */
+    public function keysetColumns(CollectionCriteria $criteria, array $columns, bool $admitting = false): array
+    {
+        $paths = $criteria->paths;
+        if ($paths === null) {
+            return [$columns, null];
+        }
+
+        $resolved = [];
+        $directives = [];
+        foreach ($columns as $column) {
+            $sort = $column->sort;
+            if ($sort instanceof SortByField && $sort->through !== null) {
+                $sort = $paths->resolveSort($sort);
+                \assert($sort instanceof SortByField);
+                $directives[] = new SortDirective($sort, $column->descending);
+            }
+            $resolved[] = [$column, $sort];
+        }
+        $readable = $this->readableSortPaths($criteria, $paths, $directives);
+        $admit = $admitting ? $readable->rowAdmission() : null;
+
+        return [\array_map(static function (array $pair) use ($admit): KeysetColumn {
+            [$column, $sort] = $pair;
+            if (!$sort instanceof SortByField || $sort->through === null) {
+                return $column;
+            }
+
+            return new KeysetColumn($column->column, $column->descending, $admit !== null ? new AdmittedKeysetSort($sort, $admit) : $sort);
+        }, $resolved), $readable];
+    }
+
+    /**
+     * `$directive` with a sort reaching through relations resolved against the type the
+     * criteria run against.
+     */
+    private static function resolvedDirective(CollectionCriteria $criteria, SortDirective $directive): SortDirective
+    {
+        $sort = $criteria->paths?->resolveSort($directive->sort) ?? $directive->sort;
+
+        return $sort === $directive->sort ? $directive : new SortDirective($sort, $directive->descending);
     }
 
     /**
