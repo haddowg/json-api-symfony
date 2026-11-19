@@ -286,8 +286,10 @@ final class ServableResourceWarmer implements CacheWarmerInterface
         }
 
         $actions = $this->actions;
-        foreach ($actions?->forServerType($serverName, $type) ?? [] as $action) {
-            \assert($actions !== null);
+        if ($actions === null) {
+            return;
+        }
+        foreach ($actions->forServerType($serverName, $type) as $action) {
             $handler = $actions->requestMetaFor($action);
             if ($handler === null) {
                 continue;
