@@ -10,6 +10,7 @@ use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Tests\Functional\App\PinnedConfigDefaults;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
+use Symfony\Bundle\SecurityBundle\SecurityBundle;
 use Symfony\Component\Config\Loader\LoaderInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
@@ -28,6 +29,7 @@ class TypedRequestMetaDoctrineTestKernel extends Kernel
     public function registerBundles(): iterable
     {
         yield new FrameworkBundle();
+        yield new SecurityBundle();
         if ($this->doctrine()) {
             yield new DoctrineBundle();
         }
@@ -74,6 +76,11 @@ class TypedRequestMetaDoctrineTestKernel extends Kernel
             'router' => ['utf8' => true],
         ]);
         PinnedConfigDefaults::apply($container, $builder);
+
+        // A note's update is gated by a security expression.
+        $container->extension('security', [
+            'firewalls' => ['main' => ['security' => false]],
+        ]);
 
         $container->extension('json_api', [
             'base_uri' => 'https://example.test',

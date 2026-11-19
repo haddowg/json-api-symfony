@@ -6,5 +6,5 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\TypedRequestMeta;
 
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 
-#[AsJsonApiResource]
+#[AsJsonApiResource(securityUpdate: "object.title != 'Broken'")]
 final class InMemoryTrNoteResource extends TrNoteResource {}

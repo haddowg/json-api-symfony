@@ -178,6 +178,45 @@ abstract class TypedRequestMetaConformanceTestCase extends JsonApiFunctionalTest
     }
 
     #[Test]
+    public function anAtomicOperationsDataMetaFillsThroughTheAtomicDeclaration(): void
+    {
+        $ok = $this->atomic(['atomic:operations' => [
+            ['op' => 'add', 'data' => ['type' => 'tr-notes', 'attributes' => ['title' => 'Batch'], 'meta' => ['batchSource' => 'feed']], 'meta' => ['idempotencyKey' => 'k', 'batchTag' => 'b']],
+        ]]);
+        self::assertSame(200, $ok->getStatusCode(), (string) $ok->getContent());
+        $id = self::at($this->decode($ok), 'atomic:results', 0, 'data', 'id');
+        self::assertIsString($id);
+        self::assertSame('feed', $this->sourceOf($id), 'the atomic declaration\'s fill hook stored it');
+
+        // The standalone member is not part of the atomic shape.
+        self::assertSame(['/atomic:operations/0/data/meta/source' => 'The member "source" is not declared.'], $this->violations($this->atomic(['atomic:operations' => [
+            ['op' => 'add', 'data' => ['type' => 'tr-notes', 'attributes' => ['title' => 'Batch'], 'meta' => ['source' => 'feed']], 'meta' => ['idempotencyKey' => 'k', 'batchTag' => 'b']],
+        ]])));
+        // And the atomic member is not part of the standalone one.
+        self::assertSame(['/data/meta/batchSource' => 'The member "batchSource" is not declared.'], $this->violations($this->handle('/tr-notes', 'POST', [
+            'data' => ['type' => 'tr-notes', 'attributes' => ['title' => 'Draft'], 'meta' => ['batchSource' => 'feed']],
+            'meta' => ['idempotencyKey' => 'k'],
+        ])));
+    }
+
+    #[Test]
+    public function aForbiddenUpdateIsRefusedBeforeItsMetaIsValidated(): void
+    {
+        $invalid = static fn(string $id): array => ['data' => ['type' => 'tr-notes', 'id' => $id, 'attributes' => ['title' => 'Again'], 'meta' => ['bogus' => 1]], 'meta' => ['reason' => 5]];
+
+        // A signed-in caller, so a refusal is a 403 rather than a 401.
+        $tokens = static::getContainer()->get('security.token_storage');
+        self::assertInstanceOf(\Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInterface::class, $tokens);
+        $tokens->setToken(new \Symfony\Component\Security\Core\Authentication\Token\UsernamePasswordToken(new \Symfony\Component\Security\Core\User\InMemoryUser('ada', null, ['ROLE_USER']), 'main', ['ROLE_USER']));
+
+        // Note 2's security expression refuses its update, before its meta is validated.
+        $denied = $this->handle('/tr-notes/2', 'PATCH', $invalid('2'));
+        self::assertSame(403, $denied->getStatusCode(), (string) $denied->getContent());
+
+        self::assertSame(['/meta/reason', '/data/meta/bogus'], \array_keys($this->violations($this->handle('/tr-notes/1', 'PATCH', $invalid('1')))));
+    }
+
+    #[Test]
     public function aWritesAcceptedJobDocumentCarriesItsDeclaredMeta(): void
     {
         $export = $this->handle('/tr-exports', 'POST', ['data' => ['type' => 'tr-exports', 'attributes' => ['name' => 'All']]]);
