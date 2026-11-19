@@ -49,22 +49,25 @@ final class RequestMetaResolver
     public function forWrite(Server $server, string $type, RequestMetaContext $context): MetaShape
     {
         $key = \spl_object_id($server) . "\0" . $type . "\0request\0" . $context->describe();
+
         return $this->declared[$key] ??= RequestMeta::forOperation($this->hydrator($server, $type) ?? new \stdClass(), $context, $type);
     }
 
     /**
      * The members `$type` declares for its resource objects' `meta` in `$context`'s
-     * direction: read from the serializer for a read, from the hydrator for a write, the
-     * resource serving both when the type has one.
+     * direction: read from the serializer, or for a write from the hydrator when it declares
+     * them, the resource serving both when the type has one.
      */
     public function forResource(Server $server, string $type, MetaContext $context): MetaShape
     {
         $direction = $context->isRead() ? 'read' : ($context->creating() ? 'create' : 'update') . ($context->isAtomic() ? ':atomic' : '');
         $key = \spl_object_id($server) . "\0" . $type . "\0resource\0" . $direction;
         if (!isset($this->declared[$key])) {
-            $declarer = $context->isRead() ? $this->serializer($server, $type) : ($this->hydrator($server, $type) ?? $this->serializer($server, $type));
+            $hydrator = $this->hydrator($server, $type);
+            $declarer = $context->isWrite() && $hydrator instanceof \haddowg\JsonApi\Serializer\DeclaresResourceMetaInterface ? $hydrator : $this->serializer($server, $type);
             $this->declared[$key] = ResourceMeta::forType($declarer ?? new \stdClass(), $context, $type);
         }
+
         return $this->declared[$key];
     }
 
@@ -75,6 +78,7 @@ final class RequestMetaResolver
     public function forAction(object $handler, string $method, string $owner): MetaShape
     {
         $key = \spl_object_id($handler) . "\0action\0" . \strtoupper($method);
+
         return $this->declared[$key] ??= RequestMeta::forAction($handler, new ActionRequestMetaContext($method), $owner);
     }
 
