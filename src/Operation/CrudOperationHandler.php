@@ -91,6 +91,7 @@ use haddowg\JsonApiBundle\DataPersister\LinkRowPivots;
 use haddowg\JsonApiBundle\DataPersister\PositionTargets;
 use haddowg\JsonApiBundle\DataPersister\ReportsMovedMembersInterface;
 use haddowg\JsonApiBundle\DataPersister\StoresDateTimesInterface;
+use haddowg\JsonApiBundle\DataPersister\StoresDecimalsInterface;
 use haddowg\JsonApiBundle\DataPersister\WritesForeignKeysInterface;
 use haddowg\JsonApiBundle\DataPersister\WritesLinkRowsInterface;
 use haddowg\JsonApiBundle\DataPersister\WritesPositionsInterface;
@@ -3186,7 +3187,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $entity = \is_object($filled) ? $filled : $entity;
 
         if ($linkRows !== null && $linkage instanceof ToManyRelationship) {
-            LinkRowPivots::write($linkRows, $entity, $linkage, $mode, $before, $server, $request, $persister instanceof StoresDateTimesInterface ? $persister : null);
+            LinkRowPivots::write($linkRows, $entity, $linkage, $mode, $before, $server, $request, $persister instanceof StoresDateTimesInterface ? $persister : null, $persister instanceof StoresDecimalsInterface ? $persister : null);
 
             // The hook decides which rows exist; their positions follow the linkage.
             if ($column !== null) {

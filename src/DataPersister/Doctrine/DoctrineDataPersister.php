@@ -34,6 +34,7 @@ use haddowg\JsonApiBundle\DataPersister\MovedMember;
 use haddowg\JsonApiBundle\DataPersister\PositionTargets;
 use haddowg\JsonApiBundle\DataPersister\ReportsMovedMembersInterface;
 use haddowg\JsonApiBundle\DataPersister\StoresDateTimesInterface;
+use haddowg\JsonApiBundle\DataPersister\StoresDecimalsInterface;
 use haddowg\JsonApiBundle\DataPersister\TransactionalDataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\WritesForeignKeysInterface;
 use haddowg\JsonApiBundle\DataPersister\WritesLinkRowsInterface;
@@ -84,7 +85,7 @@ use Symfony\Contracts\Service\ResetInterface;
  * (`404`), rather than passing the raw wire string to `getReference` (which would
  * build a proxy that errors on initialization, surfacing as a `500`).
  */
-final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivotRowsInterface, TransactionalDataPersisterInterface, ReportsMovedMembersInterface, StoresDateTimesInterface, WritesLinkRowsInterface, WritesPositionsInterface, WritesForeignKeysInterface, ResetInterface
+final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivotRowsInterface, TransactionalDataPersisterInterface, ReportsMovedMembersInterface, StoresDateTimesInterface, StoresDecimalsInterface, WritesLinkRowsInterface, WritesPositionsInterface, WritesForeignKeysInterface, ResetInterface
 {
     private readonly DoctrineIdentifiers $ids;
 
