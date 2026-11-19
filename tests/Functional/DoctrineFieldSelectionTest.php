@@ -27,7 +27,7 @@ final class DoctrineFieldSelectionTest extends FieldSelectionConformanceTestCase
         $schemaTool->createSchema($entityManager->getMetadataFactory()->getAllMetadata());
 
         // The store-provided `AUTO` ids assign 1 to each, matching the in-memory seed.
-        $curator = new CuratorEntity(name: 'Ada', stats: FieldSelectionFactory::SEED_STATS, office: FieldSelectionFactory::SEED_OFFICE);
+        $curator = new CuratorEntity(name: 'Ada', stats: FieldSelectionFactory::SEED_STATS, office: FieldSelectionFactory::SEED_OFFICE, exhibits: FieldSelectionFactory::SEED_EXHIBITS);
         $entityManager->persist($curator);
         $entityManager->persist(new PanelEntity(
             name: 'Seed',
@@ -36,6 +36,9 @@ final class DoctrineFieldSelectionTest extends FieldSelectionConformanceTestCase
             settings: FieldSelectionFactory::SEED_SETTINGS,
             curator: $curator,
             address: FieldSelectionFactory::SEED_ADDRESS,
+            rows: FieldSelectionFactory::SEED_ROWS,
+            archive: [],
+            tags: FieldSelectionFactory::SEED_TAGS,
         ));
         $entityManager->flush();
         $entityManager->clear();

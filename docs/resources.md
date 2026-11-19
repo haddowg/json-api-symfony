@@ -559,17 +559,42 @@ Obj::make('address')->nullable()
 
 `fields[people]=address.geo.lat` renders `address` holding only `geo`, and `geo` holding
 only `lat`; the street, the postcode and `lng` stay out. Listing a key whole beside a path
-into it, `address.geo,address.geo.lat`, renders all of `geo`. A key holding a list, or an
-object that declares no selectable keys, is selected whole, and a longer path below it is
-an unknown member. The hook's `KeySelection` carries the nested selection:
-`$only->nested('geo')` is the selection inside `geo`, and `$only->paths()` lists every
-selected path, such as `postcode` and `geo.lat`.
+into it, `address.geo,address.geo.lat`, renders all of `geo`. An object that declares no
+selectable keys is selected whole, and a longer path below it is an unknown member. The
+hook's `KeySelection` carries the nested selection: `$only->nested('geo')` is the
+selection inside `geo`, and `$only->paths()` lists every selected path, such as
+`postcode` and `geo.lat`.
+
+A list reaches every item through `*` when its element is an `Obj` declaring
+`selectableKeys()`. The example's `editions` does it for a discography table:
+
+```php
+ArrayList::make('editions')->nullable()
+    ->of(Obj::make('edition')->fields(
+        Str::make('format'),
+        Integer::make('year'),
+        Str::make('label'),
+    )->selectableKeys(pattern: 'format|year|label')),
+```
+
+```
+GET /albums/1?fields[albums]=title,editions.*.format,editions.*.year
+```
+
+renders every edition, in order, each holding only `format` and `year`. The element's
+declaration decides the keys after `*`, and a path keeps going through nested objects and
+lists, as `<attribute>.*.<key>.<key>`. `editions.*` alone selects the whole list, and
+listing `editions` whole beside a wildcard path renders every item whole. `*` on a scalar,
+an object, a list of scalars or a list whose element declares no selectable keys is an
+unknown member, as is an index such as `editions.0`. A list's hook receives a
+`KeySelection` holding `*`, whose `items()` is the selection inside every item.
 
 The bundle applies the request rules core defines everywhere the type renders: primary
 data, `included`, related endpoints, a write answering with the resource, and atomic
 results. Listing the attribute itself as well renders all of it. A key the declaration
-rejects, a dotted member on any other field, a path past a key that isn't selectable and
-an empty key are the `400`
+rejects, a dotted member on any other field, a path past a key that isn't selectable, a
+`*` anywhere but after a selectable list, an index into a list and an empty key are the
+`400`
 `FIELDSET_MEMBER_UNRECOGNIZED` an [unknown member](configuration.md#unknown-sparse-fieldset-members)
 is. Request bodies are unchanged.
 
@@ -580,7 +605,8 @@ response's `Content-Type` carries `profile="https://haddowg.github.io/json-api/p
 and its `jsonapi.profile` lists the URI, while a request narrowing nothing gets the
 response it always did. The generated OpenAPI document lists the profile with the others
 and gives each `fields[type]` parameter an `anyOf` of the member enum and one pattern per
-selectable attribute or nested path, such as `^address\.geo\.(?:lat|lng)$`. Witnessed over HTTP on both providers
+selectable attribute, nested path or path through a list, such as
+`^address\.geo\.(?:lat|lng)$` and `^editions\.\*\.(?:format|year|label)$`. Witnessed over HTTP on both providers
 in `tests/Functional/FieldSelectionConformanceTestCase.php` and in the example's
 [`FieldSelectionTest`](../examples/music-catalog-symfony/tests/FieldSelectionTest.php);
 core's [field types](https://github.com/haddowg/json-api/blob/main/docs/field-types.md#selectable-keys)

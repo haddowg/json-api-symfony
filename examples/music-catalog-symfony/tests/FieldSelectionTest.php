@@ -13,7 +13,8 @@ use PHPUnit\Framework\Attributes\Test;
  * declares selectable keys, so a table showing one column per role asks for just those
  * keys with `fields[albums]=title,credits.producer`, sends no profile, and gets a
  * response that advertises the Field Selection profile. OK Computer (album 1) seeds a
- * producer, an engineer and an artwork credit.
+ * producer, an engineer and an artwork credit, and two editions whose format and year a
+ * discography table selects through `editions.*.format`.
  */
 #[Group('spec:sparse-fieldsets')]
 final class FieldSelectionTest extends MusicCatalogKernelTestCase
@@ -31,6 +32,29 @@ final class FieldSelectionTest extends MusicCatalogKernelTestCase
             $data['attributes'] ?? null,
         );
         self::assertSame('application/vnd.api+json; profile="' . FieldSelectionProfile::URI . '"', $response->headers->get('Content-Type'));
+    }
+
+    #[Test]
+    public function aDiscographyTableSelectsTheSameKeysOfEveryEdition(): void
+    {
+        $response = $this->handle('/albums/1?fields[albums]=title,editions.*.format,editions.*.year');
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $data = $this->decode($response)['data'] ?? null;
+        self::assertIsArray($data);
+        self::assertSame(
+            ['title' => 'OK Computer', 'editions' => [['format' => 'CD', 'year' => 1997], ['format' => 'Vinyl', 'year' => 2017]]],
+            $data['attributes'] ?? null,
+        );
+        self::assertSame('application/vnd.api+json; profile="' . FieldSelectionProfile::URI . '"', $response->headers->get('Content-Type'));
+    }
+
+    #[Test]
+    public function anIndexIntoTheEditionsIsA400(): void
+    {
+        $response = $this->handle('/albums/1?fields[albums]=editions.0.format');
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
     }
 
     #[Test]

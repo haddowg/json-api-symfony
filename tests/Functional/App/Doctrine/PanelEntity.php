@@ -20,6 +20,9 @@ class PanelEntity
      * @param array<string, mixed>|null $groups
      * @param array<string, mixed>|null $settings
      * @param array<string, mixed>|null $address
+     * @param list<mixed>|null          $rows
+     * @param list<mixed>|null          $archive
+     * @param list<string>|null         $tags
      */
     public function __construct(
         #[ORM\Id]
@@ -38,5 +41,11 @@ class PanelEntity
         public ?CuratorEntity $curator = null,
         #[ORM\Column(type: 'json', nullable: true)]
         public ?array $address = null,
+        #[ORM\Column(name: 'panel_rows', type: 'json', nullable: true)]
+        public ?array $rows = null,
+        #[ORM\Column(type: 'json', nullable: true)]
+        public ?array $archive = null,
+        #[ORM\Column(type: 'json', nullable: true)]
+        public ?array $tags = null,
     ) {}
 }

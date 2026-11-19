@@ -20,6 +20,12 @@ final class FieldSelectionFactory
     public const array SEED_STATS = ['rating' => 5, 'reviews' => 12, 'secret' => 1];
     public const array SEED_ADDRESS = ['street' => '1 High Street', 'postcode' => 'AB1 2CD', 'geo' => ['lat' => 51.5, 'lng' => -0.1, 'accuracy' => 'rooftop'], 'history' => [['street' => '9 Low Road']]];
     public const array SEED_OFFICE = ['city' => 'Paris', 'geo' => ['lat' => 48.8, 'lng' => 2.3]];
+    public const array SEED_ROWS = [
+        ['label' => 'A', 'size' => ['w' => 1, 'h' => 2], 'cells' => [['v' => 'x'], ['v' => 'y']], 'note' => 'first'],
+        ['label' => 'B', 'size' => ['w' => 3, 'h' => 4], 'cells' => []],
+    ];
+    public const array SEED_TAGS = ['red', 'blue'];
+    public const array SEED_EXHIBITS = [['title' => 'Light', 'year' => 2001], ['title' => 'Sound', 'year' => 2004]];
 
     private static ?InMemoryDataProvider $panels = null;
 
@@ -58,7 +64,7 @@ final class FieldSelectionFactory
 
         return new InMemoryDataProvider(
             'panels',
-            ['1' => new Panel('1', 'Seed', self::SEED_VALUES, self::SEED_GROUPS, self::SEED_SETTINGS, $curator, self::SEED_ADDRESS)],
+            ['1' => new Panel('1', 'Seed', self::SEED_VALUES, self::SEED_GROUPS, self::SEED_SETTINGS, $curator, self::SEED_ADDRESS, self::SEED_ROWS, [], self::SEED_TAGS)],
             static function (object $item): string {
                 \assert($item instanceof Panel);
 
@@ -76,7 +82,7 @@ final class FieldSelectionFactory
     {
         return new InMemoryDataProvider(
             'curators',
-            ['1' => new Curator('1', 'Ada', self::SEED_STATS, self::SEED_OFFICE)],
+            ['1' => new Curator('1', 'Ada', self::SEED_STATS, self::SEED_OFFICE, self::SEED_EXHIBITS)],
             static function (object $item): string {
                 \assert($item instanceof Curator);
 

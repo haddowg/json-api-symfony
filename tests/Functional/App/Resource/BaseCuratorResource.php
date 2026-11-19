@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\Resource;
 
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
+use haddowg\JsonApi\Resource\Field\ArrayList;
 use haddowg\JsonApi\Resource\Field\Decimal;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Integer;
@@ -14,8 +15,9 @@ use haddowg\JsonApi\Resource\Field\Str;
 
 /**
  * The related type of the field-selection witness, whose `stats` keys a predicate makes
- * selectable and whose `office` holds a nested `geo` selectable in turn, so a selection
- * reaches `included` and the related endpoint.
+ * selectable, whose `office` holds a nested `geo` selectable in turn and whose `exhibits`
+ * list selects keys of every item, so a selection reaches `included` and the related
+ * endpoint.
  */
 abstract class BaseCuratorResource extends AbstractResource
 {
@@ -32,6 +34,8 @@ abstract class BaseCuratorResource extends AbstractResource
             Obj::make('office')->nullable()
                 ->fields(Str::make('city'), Obj::make('geo')->fields(Decimal::make('lat'), Decimal::make('lng'))->selectableKeys(pattern: 'lat|lng'))
                 ->selectableKeys(pattern: '[a-z]+'),
+            ArrayList::make('exhibits')->nullable()
+                ->of(Obj::make('exhibit')->fields(Str::make('title'), Integer::make('year'))->selectableKeys(pattern: '[a-z]+')),
         ];
     }
 }

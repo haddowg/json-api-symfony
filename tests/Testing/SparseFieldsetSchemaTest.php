@@ -117,6 +117,34 @@ final class SparseFieldsetSchemaTest extends TestCase
     }
 
     #[Test]
+    public function aWildcardPathNarrowsEveryItemOfAList(): void
+    {
+        $relaxed = SparseFieldsetSchema::relax($this->document(), ['albums' => ['editions.*.format', 'editions.*.price.amount', 'editions.*.tracks.*.title']]);
+        $editions = $relaxed->components->schemas->AlbumsAttributes->properties->editions;
+
+        self::assertSame(['array', 'null'], $editions->type);
+        $item = $editions->items;
+        self::assertObjectNotHasProperty('required', $item);
+        self::assertSame(['format', 'price', 'tracks'], $item->propertyNames->enum);
+        self::assertSame(['amount'], $item->properties->price->propertyNames->enum);
+        self::assertSame(['title'], $item->properties->tracks->items->propertyNames->enum);
+        self::assertObjectNotHasProperty('required', $item->properties->tracks->items);
+        self::assertSame(['amount', 'currency'], $this->document()->components->schemas->AlbumsAttributes->properties->editions->items->properties->price->required);
+    }
+
+    #[Test]
+    public function aListsItemsListedWholeKeepTheirSchemaWhole(): void
+    {
+        foreach ([['editions.*', 'editions.*.format'], ['editions', 'editions.*.format'], ['editions.*']] as $members) {
+            $relaxed = SparseFieldsetSchema::relax($this->document(), ['albums' => $members]);
+            $item = $relaxed->components->schemas->AlbumsAttributes->properties->editions->items;
+
+            self::assertSame(['format', 'price', 'tracks'], $item->required, \implode(',', $members));
+            self::assertObjectNotHasProperty('propertyNames', $item);
+        }
+    }
+
+    #[Test]
     public function aReferencedComponentIsNarrowedInlineAndLeftWholeForItsOtherUses(): void
     {
         $relaxed = SparseFieldsetSchema::relax($this->document(), ['albums' => ['dimensions.width']]);
@@ -162,6 +190,32 @@ final class SparseFieldsetSchemaTest extends TestCase
                         },
                         "required": ["postcode", "geo"],
                         "additionalProperties": false
+                      },
+                      "editions": {
+                        "type": ["array", "null"],
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "format": {"type": "string"},
+                            "price": {
+                              "type": "object",
+                              "properties": {"amount": {"type": "number"}, "currency": {"type": "string"}},
+                              "required": ["amount", "currency"],
+                              "additionalProperties": false
+                            },
+                            "tracks": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {"title": {"type": "string"}, "length": {"type": "integer"}},
+                                "required": ["title", "length"],
+                                "additionalProperties": false
+                              }
+                            }
+                          },
+                          "required": ["format", "price", "tracks"],
+                          "additionalProperties": false
+                        }
                       }
                     }
                   },

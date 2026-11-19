@@ -81,6 +81,10 @@ final class Seed
             artist: $radiohead,
         );
         $okComputer->credits = ['producer' => 'Nigel Godrich', 'engineer' => 'Nigel Godrich', 'artwork' => 'Stanley Donwood'];
+        $okComputer->editions = [
+            ['format' => 'CD', 'year' => 1997, 'label' => 'Parlophone'],
+            ['format' => 'Vinyl', 'year' => 2017, 'label' => 'XL Recordings'],
+        ];
         $dummy = new Album(
             title: 'Dummy',
             averageRating: 9.1,

@@ -19,8 +19,9 @@ use haddowg\JsonApi\OpenApi\ComponentNaming;
  * A `<attribute>.<key>` member selects keys of an attribute, as the Field Selection
  * profile does at runtime: the attribute stays required, and its schema drops its
  * `required` keys and admits only the selected ones. A longer member such as
- * `<attribute>.<key>.<key>` narrows the nested object's schema the same way. Listing the
- * attribute, or a key, whole as well keeps its schema whole.
+ * `<attribute>.<key>.<key>` narrows the nested object's schema the same way, and
+ * `<attribute>.*.<key>` narrows the `items` of a list's schema. Listing the attribute, a
+ * key, or a list's items as `<attribute>.*`, whole as well keeps its schema whole.
  *
  * The patch targets the type's `<Base>Resource` component, so primary data and
  * `included` resources (which `$ref` the same component) follow their type's fieldset.
@@ -152,9 +153,10 @@ final class SparseFieldsetSchema
      * A copy of an attribute's schema narrowed to `$keys`: an object schema keeps only
      * the selected declared properties, requires none, and admits no other member name.
      * A dotted key is a path, so the property it starts with is narrowed in turn to the
-     * rest of it, unless the key is also selected whole. A local `$ref` is inlined so a
-     * shared component stays whole for other uses, and each branch of an `allOf`, `anyOf`
-     * or `oneOf` is narrowed in turn.
+     * rest of it, unless the key is also selected whole. A list schema selected through
+     * `*` narrows its `items` to the rest of each path, unless `*` is also selected whole.
+     * A local `$ref` is inlined so a shared component stays whole for other uses, and each
+     * branch of an `allOf`, `anyOf` or `oneOf` is narrowed in turn.
      *
      * @param list<string> $keys
      */
@@ -187,6 +189,15 @@ final class SparseFieldsetSchema
         }
 
         $type = $copy->type ?? null;
+        if ($type === 'array' || (\is_array($type) && \in_array('array', $type, true)) || isset($copy->items)) {
+            [$whole, $deeper] = self::split($keys);
+            if (!\in_array('*', $whole, true) && isset($deeper['*'])) {
+                $copy->items = self::narrow($schemas, $copy->items ?? null, $deeper['*'], $depth + 1);
+            }
+
+            return $copy;
+        }
+
         $isObject = $type === 'object' || (\is_array($type) && \in_array('object', $type, true))
             || isset($copy->properties) || isset($copy->required) || isset($copy->additionalProperties);
         if (!$isObject) {
