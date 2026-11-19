@@ -1,0 +1,6 @@
+# Analyses the hook-closure fixtures with PHPStan's defaults, as an application would.
+parameters:
+    level: 9
+    paths:
+        - tests/StaticAnalysis
+    tmpDir: .phpstan.cache/hooks

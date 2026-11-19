@@ -11,6 +11,7 @@
 /.gitignore              export-ignore
 /.php-cs-fixer.dist.php   export-ignore
 /phpstan.neon.dist        export-ignore
+/phpstan-hooks.neon       export-ignore
 /phpunit.xml.dist         export-ignore
 /.release-please-manifest.json export-ignore
 /release-please-config.json    export-ignore

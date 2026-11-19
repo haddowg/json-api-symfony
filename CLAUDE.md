@@ -116,7 +116,7 @@ decision, then 1–3 sentences of *why*).
 
 ```bash
 composer test       # PHPUnit (attributes only, no annotations)
-composer phpstan    # PHPStan level 9
+composer phpstan    # PHPStan level 9, then the hook fixtures at PHPStan's defaults
 composer cs-check   # PHP-CS-Fixer, PER-CS 2.0
 ```
 
