@@ -393,6 +393,7 @@ final class ResourceValidator
         $fields = $shape->writableFields($creating, $request);
         $errors = [...$errors, ...$this->attributeErrors($fields, $meta, $meta, $meta, $creating, $request, $additional)];
         $errors = $this->withTypeMismatches($errors, $shape->mismatches($meta, $base, $creating, $request));
+        $errors = [...$errors, ...$this->wireFormatErrors($fields, $meta, $base, $errors)];
 
         return \array_map(fn(Error $error): Error => $this->rebased($error, $base, $pointer), $errors);
     }
@@ -409,6 +410,43 @@ final class ResourceValidator
         if ($errors !== []) {
             throw new ValidationFailed($errors);
         }
+    }
+
+    /**
+     * A value of the right JSON type in a shape its field documents but does not take,
+     * such as a date-time with no offset, refused as the hydrator refuses an attribute's:
+     * one error at the member, unless another rule already reported it.
+     *
+     * @param list<FieldInterface>    $fields
+     * @param array<array-key, mixed> $values
+     * @param list<Error>             $reported
+     *
+     * @return list<Error>
+     */
+    private function wireFormatErrors(array $fields, array $values, string $base, array $reported): array
+    {
+        $pointers = [];
+        foreach ($reported as $error) {
+            $pointers[$error->source->pointer ?? ''] = true;
+        }
+
+        $errors = [];
+        foreach ($fields as $field) {
+            $value = $values[$field->name()] ?? null;
+            if ($value === null) {
+                continue;
+            }
+            try {
+                $field->castWireValue($value);
+            } catch (\haddowg\JsonApi\Exception\AttributeValueInvalid $invalid) {
+                $pointer = $base . '/' . $invalid->attribute;
+                if (!isset($pointers[$pointer])) {
+                    $errors[] = $this->errorAt($invalid->reason, $pointer);
+                }
+            }
+        }
+
+        return $errors;
     }
 
     private static function lastSegment(string $pointer): string

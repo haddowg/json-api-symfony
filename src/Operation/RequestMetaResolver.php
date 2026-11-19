@@ -98,8 +98,22 @@ final class RequestMetaResolver
         foreach ($shape->undeclared($values, $pointer) as $undeclared) {
             $errors[] = ValidationFailed::describe()->toError(detail: 'The member is not declared.', source: ErrorSource::fromPointer($undeclared));
         }
+        $mismatched = [];
         foreach ($shape->mismatches($values, $pointer, $creating, $request) as $mismatch) {
+            $mismatched[$mismatch->pointer] = true;
             $errors[] = ValidationFailed::describe()->toError(detail: \sprintf('This value should be of type %s.', $mismatch->expected), source: ErrorSource::fromPointer($mismatch->pointer));
+        }
+        // A value in a shape its member does not take, such as a date-time with no offset.
+        foreach ($shape->writableFields($creating, $request) as $field) {
+            $value = $values[$field->name()] ?? null;
+            if ($value === null || isset($mismatched[$pointer . '/' . $field->name()])) {
+                continue;
+            }
+            try {
+                $field->castWireValue($value);
+            } catch (\haddowg\JsonApi\Exception\AttributeValueInvalid $invalid) {
+                $errors[] = ValidationFailed::describe()->toError(detail: $invalid->reason, source: ErrorSource::fromPointer($pointer . '/' . $invalid->attribute));
+            }
         }
 
         return $errors;
