@@ -68,4 +68,10 @@ final class TpTrackResource extends AbstractResource
                 ->paginate(CursorPaginator::make()->withDefaultSize(1)),
         ];
     }
+
+    public function filters(): array
+    {
+        // A pivot on the type's first relation, going on past the pivot row.
+        return [Where::make('playlistAdder', 'name')->through('playlists.pivot.addedBy')];
+    }
 }

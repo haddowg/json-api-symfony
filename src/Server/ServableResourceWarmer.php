@@ -599,7 +599,7 @@ final class ServableResourceWarmer implements CacheWarmerInterface
 
         $paths = ThroughPathResolver::forResolver($server, new PivotRowRelationRouter($this->providers));
         try {
-            $paths->resolveAll($resource->allFilters(), $resource->allFields());
+            $paths->resolveAll($resource->allFilters(), $resource->allFields(), null, $type);
             foreach ($resource->allFields() as $relation) {
                 if (!$relation instanceof RelationInterface || \count($relation->relatedTypes()) !== 1) {
                     continue;
@@ -608,7 +608,7 @@ final class ServableResourceWarmer implements CacheWarmerInterface
                 $related = $this->typeMetadata->resourceFor($server, $relation->relatedTypes()[0]);
                 if ($related !== null) {
                     self::guardPivotRowFilters($relation, $related);
-                    $paths->resolveAll($relation->allFilters(), $related->allFields(), new RelationHop($relation, $type, $relation->column() ?? $relation->name()));
+                    $paths->resolveAll($relation->allFilters(), $related->allFields(), new RelationHop($relation, $type, $relation->column() ?? $relation->name()), $related::$type);
                 }
             }
         } catch (\LogicException $e) {
@@ -616,7 +616,7 @@ final class ServableResourceWarmer implements CacheWarmerInterface
         }
 
         try {
-            self::resolveSorts($paths, [...$resource->allSorts(), ...\array_map(static fn(SortDirective $directive): SortInterface => $directive->sort, $resource->defaultSort())], $resource->allFields());
+            self::resolveSorts($paths, [...$resource->allSorts(), ...\array_map(static fn(SortDirective $directive): SortInterface => $directive->sort, $resource->defaultSort())], $resource->allFields(), null, $type);
             foreach ($resource->allFields() as $relation) {
                 if (!$relation instanceof RelationInterface || \count($relation->relatedTypes()) !== 1) {
                     continue;
@@ -624,7 +624,7 @@ final class ServableResourceWarmer implements CacheWarmerInterface
 
                 $related = $this->typeMetadata->resourceFor($server, $relation->relatedTypes()[0]);
                 if ($related !== null) {
-                    self::resolveSorts($paths, [...$relation->sorts(), ...\array_map(static fn(SortDirective $directive): SortInterface => $directive->sort, $relation instanceof DefaultSortedRelationInterface ? $relation->defaultSort() : [])], $related->allFields(), new RelationHop($relation, $type, $relation->column() ?? $relation->name()));
+                    self::resolveSorts($paths, [...$relation->sorts(), ...\array_map(static fn(SortDirective $directive): SortInterface => $directive->sort, $relation instanceof DefaultSortedRelationInterface ? $relation->defaultSort() : [])], $related->allFields(), new RelationHop($relation, $type, $relation->column() ?? $relation->name()), $related::$type);
                 }
             }
         } catch (\LogicException $e) {
@@ -640,10 +640,10 @@ final class ServableResourceWarmer implements CacheWarmerInterface
      * @param list<SortInterface>      $sorts
      * @param iterable<FieldInterface> $fields
      */
-    private static function resolveSorts(ThroughPathResolver $paths, array $sorts, iterable $fields, ?RelationHop $under = null): void
+    private static function resolveSorts(ThroughPathResolver $paths, array $sorts, iterable $fields, ?RelationHop $under = null, string $type = ''): void
     {
         foreach ($sorts as $sort) {
-            $paths->resolveSort($sort, $fields, $under);
+            $paths->resolveSort($sort, $fields, $under, $type);
         }
     }
 

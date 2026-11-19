@@ -284,7 +284,7 @@ final readonly class FilterPaths
      */
     public function resolve(FilterInterface $filter): FilterInterface
     {
-        return $this->resolver->resolve($filter, $this->fields, $this->under);
+        return $this->resolver->resolve($filter, $this->fields, $this->under, $this->type ?? '');
     }
 
     /**
@@ -294,7 +294,7 @@ final readonly class FilterPaths
      */
     public function resolveSort(SortInterface $sort): SortInterface
     {
-        return $this->resolver->resolveSort($sort, $this->fields, $this->under);
+        return $this->resolver->resolveSort($sort, $this->fields, $this->under, $this->type ?? '');
     }
 
     /**

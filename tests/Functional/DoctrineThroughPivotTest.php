@@ -6,15 +6,29 @@ namespace haddowg\JsonApiBundle\Tests\Functional;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
+use haddowg\JsonApi\Resource\Field\BelongsTo;
+use haddowg\JsonApi\Resource\Field\BelongsToMany;
+use haddowg\JsonApi\Resource\Field\PivotRelationInterface;
+use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\Filter\RelationHop;
+use haddowg\JsonApi\Resource\Filter\ThroughPathResolver;
+use haddowg\JsonApi\Resource\Sort\SortByField;
+use haddowg\JsonApi\Resource\Sort\SortDirective;
+use haddowg\JsonApi\Resource\Through\PivotRowRelations;
 use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
+use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineSortHandler;
+use haddowg\JsonApiBundle\DataProvider\FilterPaths;
 use haddowg\JsonApiBundle\Tests\Functional\App\QueryCountingLogger;
 use haddowg\JsonApiBundle\Tests\Functional\App\ThroughPivot\ThroughPivotTestKernel;
 use haddowg\JsonApiBundle\Tests\Functional\App\ThroughPivot\TpAlbumEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\ThroughPivot\TpAuditorEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\ThroughPivot\TpEntryEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\ThroughPivot\TpPlaylistEntity;
+use haddowg\JsonApiBundle\Tests\Functional\App\ThroughPivot\TpPlaylistResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\ThroughPivot\TpTrackEntity;
+use haddowg\JsonApiBundle\Tests\Functional\App\ThroughPivot\TpTrackResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\ThroughPivot\TpUserEntity;
+use haddowg\JsonApiBundle\Tests\Functional\App\ThroughPivot\TpUserResource;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -166,6 +180,57 @@ final class DoctrineThroughPivotTest extends JsonApiFunctionalTestCase
     }
 
     #[Test]
+    public function aPivotOnTheFirstRelationOfACollectionGoesOnPastThePivotRow(): void
+    {
+        self::assertSame(['1', '3'], $this->ids('/tpTracks?filter[playlistAdder]=kim'));
+        self::assertSame(['1'], $this->ids('/tpTracks?filter[playlistAdder]=sam'));
+        self::assertSame([], $this->ids('/tpTracks?filter[playlistAdder]=ghost'));
+    }
+
+    #[Test]
+    public function aLeadingPivotSortUnderARelationTheCallerMayNotReadOrdersAsNull(): void
+    {
+        $relation = null;
+        foreach ((new TpTrackResource())->allFields() as $field) {
+            if ($field instanceof BelongsToMany && $field->name() === 'playlists') {
+                $relation = $field;
+            }
+        }
+        self::assertInstanceOf(BelongsToMany::class, $relation);
+        $users = (new TpUserResource())->allFields();
+        $rows = new class implements PivotRowRelations {
+            private ?RelationInterface $addedBy = null;
+
+            public function pivotRowRelation(PivotRelationInterface $relation, string $parentType, string $member): ?RelationInterface
+            {
+                return $member === 'addedBy' ? $this->addedBy ??= BelongsTo::make('addedBy', 'tpUsers')->build() : null;
+            }
+        };
+        $resolver = new ThroughPathResolver(static fn(string $type): ?array => $type === 'tpUsers' ? $users : null, $rows);
+        // The paths of a default order whose relation the caller may not read.
+        $paths = new FilterPaths($resolver, (new TpPlaylistResource())->allFields(), type: 'tpPlaylists', refused: [$relation], under: new RelationHop($relation, 'tpTracks', 'playlists'));
+        $entityManager = static::getContainer()->get('doctrine.orm.entity_manager');
+        \assert($entityManager instanceof EntityManagerInterface);
+
+        foreach (['added' => SortByField::make('added', 'addedAt')->through('pivot'), 'adder' => SortByField::make('adder', 'name')->through('pivot.addedBy')] as $key => $sort) {
+            $query = $entityManager->createQueryBuilder()
+                ->select('resource')
+                ->from(TpPlaylistEntity::class, 'resource')
+                ->innerJoin(TpEntryEntity::class, 'pivot', 'WITH', 'pivot.playlist = resource')
+                ->where('IDENTITY(pivot.track) = 1');
+            $handler = new DoctrineSortHandler();
+            $handler->withPaths($paths, static fn(): mixed => $handler->applyOn([new SortDirective($paths->resolveSort($sort), descending: true)], $query, 'resource'));
+
+            self::assertStringContainsString('1 = 0', $query->getDQL(), $key);
+            /** @var list<TpPlaylistEntity> $playlists */
+            $playlists = $query->getQuery()->getResult();
+            $ids = \array_map(static fn(TpPlaylistEntity $playlist): int => $playlist->id, $playlists);
+            \sort($ids);
+            self::assertSame([1, 2], $ids, $key);
+        }
+    }
+
+    #[Test]
     public function aRowTheReachedTypesScopeHidesNeverMatches(): void
     {
         self::assertSame([], $this->ids('/tpTracks/2/playlists?filter[addedBy]=ghost'));
@@ -245,6 +310,7 @@ final class DoctrineThroughPivotTest extends JsonApiFunctionalTestCase
         yield 'a pivot after a relation with no pivot rows' => ['pivot-after-plain-to-many', 'which has no pivot rows'];
         yield 'a relation the pivot row does not hold' => ['unknown-pivot-row-relation', 'is not a relation the pivot rows of "playlists" hold'];
         yield 'a sort through a mid-path pivot' => ['mid-path-pivot-sort', 'whose `pivot` follows a to-many relation'];
+        yield 'a pivot of an association entity with no stored pivot fields' => ['association-class-without-stored-fields', 'the Doctrine provider reads the pivot rows of a BelongsToMany with stored pivot fields over an association entity, and "barePlaylists" is not one.'];
     }
 
     #[Test]

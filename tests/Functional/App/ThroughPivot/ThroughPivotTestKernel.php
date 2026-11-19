@@ -131,7 +131,9 @@ final class ThroughPivotTestKernel extends Kernel
         foreach ([HiddenTpUserExtension::class, TpUserResource::class, TpAuditorResource::class, TpPlaylistResource::class, TpTrackResource::class, TpAlbumResource::class] as $class) {
             $services->set($class);
         }
-        if (self::$broken !== null) {
+        if (self::$broken === 'association-class-without-stored-fields') {
+            $services->set(TpBrokenTrackResource::class);
+        } elseif (self::$broken !== null) {
             TpBrokenResource::$declaration = self::$broken;
             $services->set(TpBrokenResource::class);
         }
