@@ -92,6 +92,22 @@ final class WrittenNumbersTest extends JsonApiFunctionalTestCase
     }
 
     #[Test]
+    public function anAtomicOperationsUniquenessSeesAWholeFloatAsItsInt(): void
+    {
+        $response = $this->atomic([['op' => 'add', 'data' => ['type' => 'numberCards', 'attributes' => ['counts' => [1, 1.0]]]]]);
+
+        self::assertSame(422, $response->getStatusCode(), (string) $response->getContent());
+    }
+
+    #[Test]
+    public function anActionsInputUniquenessSeesAWholeFloatAsItsInt(): void
+    {
+        $response = $this->send('/numberCards/-actions/score', ['data' => ['type' => 'numberCards', 'attributes' => ['counts' => [1, 1.0]]]]);
+
+        self::assertSame(422, $response->getStatusCode(), (string) $response->getContent());
+    }
+
+    #[Test]
     public function anActionsInputIsNormalized(): void
     {
         $response = $this->send('/numberCards/-actions/score', ['data' => ['type' => 'numberCards', 'attributes' => [
