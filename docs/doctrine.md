@@ -460,6 +460,18 @@ carries each member's pivot values (see
   written back in that shape. A field with a custom `format()` is hydrated as sent, so if
   that format carries an offset, such as `D, d M Y H:i:s O`, its column stores the wall
   clock of the offset the client wrote.
+- **Numbers are written to a `decimal` column as decimal strings.** Doctrine reads a
+  `decimal` column as a string, so its property is usually typed `string`, while a
+  `Decimal` field hydrates a `float`. A number written to a `decimal` column, as an
+  attribute, a flattened `on()` attribute or a pivot field, reaches the entity as a plain
+  decimal string at the column's `scale`: `19.99` as `"19.99"`, `20` as `"20.00"` and
+  `1.5` at scale 2 as `"1.50"`. A value with more fractional digits than the scale is
+  rounded to it. The string matches what Doctrine reads back, so writing the stored
+  value again leaves the entity unchanged. The member is the setter when the entity has
+  one, as core writes it, and the property otherwise. A member typed to refuse a string,
+  such as `float`, still gets the float. The value can't carry more digits than a PHP
+  `float` holds, since the request body is decoded as JSON first: `1.10000000000000001`
+  arrives as `1.1`.
 
 The managed-update coupling is the one constraint a custom data layer must respect:
 a provider that returns a **detached** entity from `fetchOne` would silently break

@@ -20,6 +20,7 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiSerializer;
 use haddowg\JsonApiBundle\Attribute\VendorExtensions;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterInterface;
+use haddowg\JsonApiBundle\DataPersister\Doctrine\DoctrineDecimalStorageCast;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineExtensionInterface;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineFilterArmInterface;
@@ -1528,6 +1529,9 @@ final class JsonApiBundle extends AbstractBundle
                     // Doctrine application that maps an entity, else null (core then
                     // treats every relation as loaded).
                     '$relationshipLoadState' => service(DoctrineRelationshipLoadState::class)->nullOnInvalid(),
+                    // Optional: the Doctrine decimal-column cast, present only on a
+                    // Doctrine application that maps an entity, else null.
+                    '$storageCast' => service(DoctrineDecimalStorageCast::class)->nullOnInvalid(),
                     '$relatedReads' => service(\haddowg\JsonApiBundle\DataProvider\RelatedReadRouter::class),
                     // The per-request count seam holder: a stable
                     // service threaded into the memoized Server once, whose batched

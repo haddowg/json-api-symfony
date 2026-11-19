@@ -730,6 +730,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
                 continue;
             }
 
+            $value = $this->decimalForColumn($row, $field, $value);
             if ($metadata->hasField($field) && \is_scalar($value)) {
                 $value = Type::getType($metadata->getTypeOfField($field) ?? 'string')
                     ->convertToPHPValue($value, $this->entityManager->getConnection()->getDatabasePlatform());
@@ -1088,6 +1089,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
             if ($field instanceof Union && !$this->holdsDateTimes($row, $column)) {
                 $value = $field->toStoredForm($value);
             }
+            $value = $this->decimalForColumn($row, $column, $value);
             $this->property($row, $column)->setValue($row, $this->dateTimeForColumn($row, $column, $value));
         }
     }
@@ -1108,6 +1110,11 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
         $type = $metadata->getTypeOfField($column);
 
         return $this->dates->asColumnClass($this->dates->toStorage($value, $type), $type);
+    }
+
+    public function decimalForColumn(object $entity, string $column, mixed $value): mixed
+    {
+        return (new DoctrineDecimalStorageCast($this->entityManager))->forColumn($entity, $column, $value);
     }
 
     public function holdsDateTimes(object $entity, string $column): bool

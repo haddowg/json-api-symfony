@@ -1,0 +1,3 @@
+# A number written to a Doctrine decimal column is stored as its decimal string
+
+Doctrine reads a `decimal` column as a string, so entities type it `string`, and core's strict assignment of the `float` a `Decimal` hydrates failed with a 500. The Doctrine layer now hands core's storage cast a plain decimal string at the column's scale, with no exponent, so the value matches what Doctrine reads back and an unchanged write leaves no change set. A member typed to refuse a string keeps its float, and the cast uses the column metadata rather than the field type, so an `Integer` written to a decimal column is padded the same way.

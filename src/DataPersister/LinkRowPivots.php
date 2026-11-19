@@ -118,6 +118,7 @@ final class LinkRowPivots
                 if ($field instanceof Union && $dates !== null && !$dates->holdsDateTimes($row, $column)) {
                     $value = $field->toStoredForm($value);
                 }
+                $value = $dates?->decimalForColumn($row, $column, $value) ?? $value;
                 Accessor::set($row, $column, $dates?->dateTimeForColumn($row, $column, $value) ?? $value);
             }
         }

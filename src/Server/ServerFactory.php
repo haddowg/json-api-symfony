@@ -12,6 +12,7 @@ use haddowg\JsonApi\Pagination\PaginatorInterface;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\StorageCastInterface;
 use haddowg\JsonApi\Schema\Error\ErrorMessageResolverInterface;
 use haddowg\JsonApi\Schema\Profile\CountableProfile;
 use haddowg\JsonApi\Schema\Profile\ProfileInterface;
@@ -165,6 +166,9 @@ final class ServerFactory
         private readonly ?LoggerInterface $logger = null,
         private readonly array $relatedOnlyTypes = [],
         private readonly ?RelatedReadRouter $relatedReads = null,
+        // Puts a value core writes to an entity in the form its column stores; null on
+        // an application without Doctrine.
+        private readonly ?StorageCastInterface $storageCast = null,
     ) {}
 
     /**
@@ -249,6 +253,9 @@ final class ServerFactory
             // declarations; read lazily, since the server it resolves through is the
             // one being built here.
             ->withRelationAuthorizer($this->relationAuthorizer?->forServer(fn(): ?Server => $this->server, $this->serverName))
+            // A number written to a Doctrine decimal column goes in as the string
+            // Doctrine reads it as.
+            ->withStorageCast($this->storageCast)
             ->withScopeEnforcement($this->scopeEnforcer())
             ->withContainer($this->resources);
 

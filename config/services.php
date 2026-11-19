@@ -551,6 +551,14 @@ return static function (ContainerConfigurator $container): void {
                 '$entityManager' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\Doctrine\ORM\EntityManagerInterface::class),
             ]);
 
+        // Core's storage cast for each server: a number written to a `decimal` column
+        // goes in as the decimal string Doctrine reads the column as. Removed with the
+        // provider/persister when no resource maps an entity.
+        $services->set(\haddowg\JsonApiBundle\DataPersister\Doctrine\DoctrineDecimalStorageCast::class)
+            ->args([
+                '$entityManager' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\Doctrine\ORM\EntityManagerInterface::class),
+            ]);
+
         // The Doctrine half of the build-time servability guard family (the
         // storage-aware twin of the ServableResourceWarmer / EagerLoadWarmer): at
         // cache:warmup it asserts every entity-mapped type's sortable/filterable
