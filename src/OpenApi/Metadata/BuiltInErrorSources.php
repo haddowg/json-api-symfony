@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\OpenApi\Metadata;
 
+use haddowg\JsonApi\OpenApi\Metadata\OperationType;
+use haddowg\JsonApi\Resource\ActionRequestMetaContext;
+use haddowg\JsonApi\Resource\RequestMetaContext;
+use haddowg\JsonApi\Resource\RequestMeta;
 use haddowg\JsonApi\Exception\ClassListErrorSource;
 use haddowg\JsonApi\Exception\ErrorCatalogSourceInterface;
 use haddowg\JsonApi\Exception\ErrorScope;
@@ -26,8 +30,8 @@ use haddowg\JsonApiBundle\Validation\ValidationFailed;
  * the two adapters project identical documents.
  *
  * `VALIDATION_FAILED` is scoped per server: the writes that read a document, the batch,
- * and the actions of this server that take a document. An action reading no document
- * never validates one.
+ * the deletes that declare their request meta, and the actions of this server that take a
+ * document or declare their request meta. An action reading neither never validates one.
  */
 final class BuiltInErrorSources
 {
@@ -69,12 +73,18 @@ final class BuiltInErrorSources
 
         foreach ($types as $type) {
             $operations = [];
+            // A delete declaring its request meta validates that meta.
+            if (!RequestMeta::forOperation($type, RequestMetaContext::forOperation(OperationType::Delete), $type->type())->isEmpty()) {
+                $operations[] = 'delete';
+            }
             foreach ($type->actions() as $action) {
-                if ($action->inputMode() !== ActionInputMode::Document) {
-                    continue;
-                }
                 foreach ($action->methods() as $method) {
-                    $operations[] = 'action.' . $action->path() . '.' . \strtolower($method);
+                    // An action validates a document it takes, and request meta it declares.
+                    $declaresMeta = $action->inputMode() !== ActionInputMode::Raw
+                        && !RequestMeta::forAction($action, new ActionRequestMetaContext($method))->isEmpty();
+                    if ($action->inputMode() === ActionInputMode::Document || $declaresMeta) {
+                        $operations[] = 'action.' . $action->path() . '.' . \strtolower($method);
+                    }
                 }
             }
             if ($operations !== []) {

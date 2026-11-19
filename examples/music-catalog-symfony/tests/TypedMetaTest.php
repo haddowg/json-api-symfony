@@ -77,14 +77,23 @@ final class TypedMetaTest extends MusicCatalogKernelTestCase
     #[Test]
     public function theDocumentTypesTheDeclaredMeta(): void
     {
-        $document = $this->decode($this->handle('/docs.json'));
-        $schemas = $document['components']['schemas'] ?? null;
-        self::assertIsArray($schemas);
+        $schemas = self::at($this->decode($this->handle('/docs.json')), 'components', 'schemas');
 
-        self::assertSame(['$ref' => '#/components/schemas/AlbumsResourceMeta'], $schemas['AlbumsResource']['properties']['meta'] ?? null);
-        self::assertTrue($schemas['AlbumsResourceMeta']['x-resource-meta'] ?? null);
-        self::assertTrue($schemas['AlbumsCreateRequestDocument']['x-request-meta'] ?? null);
-        self::assertTrue($schemas['AlbumsAtomicAddOperation']['x-request-meta'] ?? null);
+        self::assertSame(['$ref' => '#/components/schemas/AlbumsResourceMeta'], self::at($schemas, 'AlbumsResource', 'properties', 'meta'));
+        self::assertTrue(self::at($schemas, 'AlbumsResourceMeta', 'x-resource-meta'));
+        self::assertTrue(self::at($schemas, 'AlbumsCreateRequestDocument', 'x-request-meta'));
+        self::assertTrue(self::at($schemas, 'AlbumsAtomicAddOperation', 'x-request-meta'));
+    }
+
+    private static function at(mixed $value, string ...$keys): mixed
+    {
+        foreach ($keys as $key) {
+            self::assertIsArray($value);
+            self::assertArrayHasKey($key, $value);
+            $value = $value[$key];
+        }
+
+        return $value;
     }
 
     /**
