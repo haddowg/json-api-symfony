@@ -16,6 +16,11 @@ use haddowg\JsonApi\OpenApi\ComponentNaming;
  * `attributes` / `relationships` members at all (a fieldset can omit either entirely).
  * Members inside the fieldset stay required, and a type without a fieldset is untouched.
  *
+ * A `<attribute>.<key>` member selects keys of an attribute, as the Field Selection
+ * profile does at runtime: the attribute stays required, and its schema drops its
+ * `required` keys and admits only the selected ones. Listing the attribute whole as well
+ * keeps its schema whole.
+ *
  * The patch targets the type's `<Base>Resource` component, so primary data and
  * `included` resources (which `$ref` the same component) follow their type's fieldset.
  *
@@ -92,13 +97,110 @@ final class SparseFieldsetSchema
                 continue;
             }
 
+            [$whole, $selections] = self::split($members);
+            $kept = static fn(string $name): bool => \in_array($name, $whole, true) || isset($selections[$name]);
+
             foreach (['attributes', 'relationships'] as $member) {
                 $schema = self::resolve($schemas, $properties->{$member} ?? null);
-                if ($schema !== null) {
-                    self::keepRequired($schema, static fn(string $name): bool => \in_array($name, $members, true));
+                if ($schema === null) {
+                    continue;
+                }
+                self::keepRequired($schema, $kept);
+
+                $fields = $schema->properties ?? null;
+                if ($member !== 'attributes' || !$fields instanceof \stdClass) {
+                    continue;
+                }
+                foreach ($selections as $name => $keys) {
+                    if (isset($fields->{$name})) {
+                        $fields->{$name} = self::narrow($schemas, $fields->{$name}, $keys);
+                    }
                 }
             }
         }
+
+        return $copy;
+    }
+
+    /**
+     * Splits a fieldset into the fields it lists whole and the keys it selects per
+     * attribute, the attribute name up to the first `.` and the key after it. An attribute
+     * also listed whole is not narrowed.
+     *
+     * @param list<string> $members
+     *
+     * @return array{list<string>, array<string, list<string>>}
+     */
+    private static function split(array $members): array
+    {
+        $whole = [];
+        $selections = [];
+        foreach ($members as $member) {
+            $dot = \strpos($member, '.');
+            if ($dot === false) {
+                $whole[] = $member;
+            } else {
+                $selections[\substr($member, 0, $dot)][] = \substr($member, $dot + 1);
+            }
+        }
+
+        return [$whole, \array_diff_key($selections, \array_flip($whole))];
+    }
+
+    /**
+     * A copy of an attribute's schema narrowed to `$keys`: an object schema keeps only
+     * the selected declared properties, requires none, and admits no other member name.
+     * A local `$ref` is inlined so a shared component stays whole for other uses, and
+     * each branch of an `allOf`, `anyOf` or `oneOf` is narrowed in turn.
+     *
+     * @param list<string> $keys
+     */
+    private static function narrow(\stdClass $schemas, mixed $schema, array $keys, int $depth = 0): mixed
+    {
+        if (!$schema instanceof \stdClass || $depth > 8) {
+            return $schema;
+        }
+
+        $copy = clone $schema;
+        $ref = $copy->{'$ref'} ?? null;
+        if (\is_string($ref) && \str_starts_with($ref, self::SCHEMA_PREFIX)) {
+            $target = $schemas->{\substr($ref, \strlen(self::SCHEMA_PREFIX))} ?? null;
+            if ($target instanceof \stdClass) {
+                unset($copy->{'$ref'});
+                $target = self::narrow($schemas, $target, $keys, $depth + 1);
+                \assert($target instanceof \stdClass);
+                foreach (\get_object_vars($target) as $keyword => $value) {
+                    if (!\property_exists($copy, $keyword)) {
+                        $copy->{$keyword} = $value;
+                    }
+                }
+            }
+        }
+
+        foreach (['allOf', 'anyOf', 'oneOf'] as $keyword) {
+            if (isset($copy->{$keyword}) && \is_array($copy->{$keyword})) {
+                $copy->{$keyword} = \array_map(static fn(mixed $branch): mixed => self::narrow($schemas, $branch, $keys, $depth + 1), $copy->{$keyword});
+            }
+        }
+
+        $type = $copy->type ?? null;
+        $isObject = $type === 'object' || (\is_array($type) && \in_array('object', $type, true))
+            || isset($copy->properties) || isset($copy->required) || isset($copy->additionalProperties);
+        if (!$isObject) {
+            return $copy;
+        }
+
+        unset($copy->required, $copy->minProperties);
+        if (isset($copy->properties) && $copy->properties instanceof \stdClass) {
+            $properties = new \stdClass();
+            foreach (\get_object_vars($copy->properties) as $name => $property) {
+                if (\in_array((string) $name, $keys, true)) {
+                    $properties->{$name} = $property;
+                }
+            }
+            $copy->properties = $properties;
+        }
+        $copy->propertyNames = (object) ['enum' => \array_values(\array_unique($keys))];
 
         return $copy;
     }

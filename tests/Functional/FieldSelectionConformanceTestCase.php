@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
 use haddowg\JsonApi\Schema\Profile\FieldSelectionProfile;
+use haddowg\JsonApiBundle\Testing\SchemaConformanceTrait;
+use haddowg\JsonApiBundle\Testing\SchemaDocumentKind;
 use haddowg\JsonApiBundle\Tests\Functional\App\FieldSelection\FieldSelectionFactory;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\BasePanelResource;
 use PHPUnit\Framework\Attributes\Group;
@@ -21,6 +23,8 @@ use Symfony\Component\HttpKernel\HttpKernelInterface;
  */
 abstract class FieldSelectionConformanceTestCase extends JsonApiFunctionalTestCase
 {
+    use SchemaConformanceTrait;
+
     private const string NARROWED = 'application/vnd.api+json; profile="' . FieldSelectionProfile::URI . '"';
 
     protected function setUp(): void
@@ -115,6 +119,32 @@ abstract class FieldSelectionConformanceTestCase extends JsonApiFunctionalTestCa
 
         self::assertSame(['summary' => ['count' => 2, 'width' => 40]], $this->attributesOf($response));
         self::assertSame([null], BasePanelResource::$summaryRequests);
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    public function aMapReadByAModelTypedHookIsSelected(): void
+    {
+        self::assertSame(['layout' => ['theme' => 'grid']], $this->attributesOf($this->handle('/panels/1?fields[panels]=layout.theme')));
+        self::assertSame(['layout' => ['region' => 'EU', 'theme' => 'grid']], $this->attributesOf($this->handle('/panels/1?fields[panels]=layout')));
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    #[Group('openapi')]
+    public function aNarrowedResponseMatchesTheGeneratedSchema(): void
+    {
+        // `layout` requires both its keys in the schema, so the narrowed value only
+        // validates once the testing kit narrows the attribute's schema too.
+        $response = $this->handle('/panels/1?fields[panels]=name,layout.theme,values.cap');
+        self::assertSame(['theme' => 'grid'], $this->attributesOf($response)['layout'] ?? null);
+        $this->assertResponseMatchesGeneratedSchema($response, 'panels', SchemaDocumentKind::Single, fieldsets: ['panels' => 'name,layout.theme,values.cap']);
+
+        $collection = $this->handle('/panels?fields[panels]=layout.region');
+        $this->assertResponseMatchesGeneratedSchema($collection, 'panels', SchemaDocumentKind::Collection, fieldsets: ['panels' => 'layout.region']);
+
+        $whole = $this->handle('/panels/1?fields[panels]=layout,layout.theme');
+        $this->assertResponseMatchesGeneratedSchema($whole, 'panels', SchemaDocumentKind::Single, fieldsets: ['panels' => 'layout,layout.theme']);
     }
 
     #[Test]

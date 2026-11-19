@@ -35,7 +35,8 @@ use Symfony\Component\HttpFoundation\Response;
  * **Sparse fieldsets.** The read schemas require every member a full response carries.
  * When the request asked for `fields[<type>]`, members outside that fieldset are not
  * required for that type, in primary data and in `included` alike; members inside it
- * still are. Pass the browser that made the request in place of the response and the
+ * still are. A selected key, `<attribute>.<key>`, keeps the attribute required and
+ * narrows its schema to the selected keys. Pass the browser that made the request in place of the response and the
  * fieldsets are read from its last request, or pass them explicitly as `$fieldsets`.
  *
  * @phpstan-require-extends KernelTestCase

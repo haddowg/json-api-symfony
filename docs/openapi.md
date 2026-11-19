@@ -1487,6 +1487,11 @@ required, in primary data and in `included`. Members inside the fieldset are sti
 required, and a type without a fieldset still requires everything, so a member that goes
 missing from a full response still fails.
 
+A [selected key](resources.md#selecting-keys-of-an-object-attribute), such as
+`fields[albums]=credits.producer`, keeps `credits` required and narrows its schema the way the
+response is narrowed: the object requires none of its keys and admits only the selected ones.
+Listing `credits` whole as well keeps its schema whole.
+
 This is a real, biting guarantee: when a response diverges from its schema, the assertion
 names exactly which member diverged. The bundle's own suite runs these assertions across
 both the in-memory and Doctrine providers, so the generated document is proven against

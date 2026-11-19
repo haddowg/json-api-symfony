@@ -11,14 +11,18 @@ use haddowg\JsonApi\Resource\Field\BelongsTo;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Integer;
 use haddowg\JsonApi\Resource\Field\KeySelection;
+use haddowg\JsonApi\Resource\Field\Map;
 use haddowg\JsonApi\Resource\Field\Obj;
 use haddowg\JsonApi\Resource\Field\Str;
+use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\PanelEntity;
+use haddowg\JsonApiBundle\Tests\Functional\App\FieldSelection\Panel;
 
 /**
  * The field-selection witness, shared by both providers: `values` is an open object
  * whose keys a pattern makes selectable, `groups` holds repeating groups selected whole,
- * `summary` is computed by a hook that records the keys it was asked for, and `settings`
- * is a closed object whose keys can't be selected.
+ * `summary` is computed by a hook that records the keys it was asked for, `layout` is a
+ * `Map` read by a hook typed on the entity or the plain model, and `settings` is a closed
+ * object whose keys can't be selected.
  */
 abstract class BasePanelResource extends AbstractResource
 {
@@ -49,6 +53,18 @@ abstract class BasePanelResource extends AbstractResource
                     self::$summaryRequests[] = $only?->keys;
 
                     return ['count' => 2, 'width' => 40];
+                }),
+            Map::make('layout')->nullable()->readOnly()
+                ->fields(Str::make('region'), Str::make('theme'))
+                ->selectableKeys(pattern: '[a-z]+')
+                ->extractUsing(static function (PanelEntity|Panel $panel, JsonApiRequestInterface $request, string $name, ?KeySelection $only): ?array {
+                    $region = $panel->values['region'] ?? null;
+                    if (!\is_string($region)) {
+                        return null;
+                    }
+                    $layout = ['region' => $region, 'theme' => 'grid'];
+
+                    return $only === null ? $layout : \array_intersect_key($layout, \array_flip($only->keys));
                 }),
             Obj::make('settings')->nullable()->fields(Str::make('theme')),
             BelongsTo::make('curator', 'curators')->nullable(),
