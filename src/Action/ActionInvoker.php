@@ -309,10 +309,11 @@ final readonly class ActionInvoker
 
     /**
      * Runs the Symfony Validator bridge over the action's request document against
-     * the `inputType`'s constraints (the create context — a fresh input instance is
-     * being built), when one is wired (it is optional) and the `inputType` has a
-     * resource declaring constraints. A bare serializer/hydrator pair declares none,
-     * so there is nothing to validate — exactly the CrudOperationHandler idiom.
+     * the `inputType`'s constraints, when one is wired (it is optional) and the
+     * `inputType` has a resource declaring constraints. A bare serializer/hydrator pair
+     * declares none, so there is nothing to validate — exactly the CrudOperationHandler
+     * idiom. A `PATCH` validates in the update context and anything else in the create
+     * context, as the hydrator picks.
      */
     private function validate(ResolvingServerInterface $server, string $inputType, JsonApiRequestInterface $body): void
     {
@@ -320,13 +321,14 @@ final readonly class ActionInvoker
             return;
         }
 
+        $creating = $body->getMethod() !== 'PATCH';
         $resource = $this->types->resourceFor($server, $inputType);
-        ReadOnlyAttributeGuard::check($server, $resource, $body, creating: true);
+        ReadOnlyAttributeGuard::check($server, $resource, $body, creating: $creating);
         if ($this->validator === null || $resource === null) {
             return;
         }
 
-        $this->validator->validate($resource, $body, creating: true);
+        $this->validator->validate($resource, $body, creating: $creating);
     }
 
     /**
