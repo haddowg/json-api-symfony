@@ -80,6 +80,7 @@ final class Seed
             releaseInfo: ['label' => 'Parlophone', 'catalogueNumber' => 'NODATA 01'],
             artist: $radiohead,
         );
+        $okComputer->credits = ['producer' => 'Nigel Godrich', 'engineer' => 'Nigel Godrich', 'artwork' => 'Stanley Donwood'];
         $dummy = new Album(
             title: 'Dummy',
             averageRating: 9.1,

@@ -150,6 +150,10 @@ JSON:API service needs. Each links the page that covers it in full:
   from the *primary* request (`relatedQuery[rel][sort]`/`[filter]`), opt-in by
   negotiating the profile. See
   [relationships](relationships.md#filtering-and-sorting-a-relationship-from-the-primary-request-the-relationship-queries-profile).
+- **Field selection** — `fields[albums]=title,credits.producer` selects single keys of
+  an object attribute declaring `selectableKeys()`, for a table with one column per key;
+  the response advertises the Field Selection profile, which clients never send. See
+  [resources](resources.md#selecting-keys-of-an-object-attribute).
 - **The Countable profile** — ask for a countable relationship's size
   from the *primary* request (`?withCount=rel1,rel2` → `meta.total` per relationship
   object), opt-in by negotiating the profile. See

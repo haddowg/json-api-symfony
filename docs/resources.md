@@ -519,6 +519,51 @@ fieldset (present unless excluded), and is orthogonal to `hidden()` / `writeOnly
 (never rendered even when named). Applies to relations too. Witnessed over HTTP in
 `tests/Functional/SparseByDefaultFieldTest.php` (see core's [fields](https://github.com/haddowg/json-api/blob/main/docs/fields.md)).
 
+### Selecting keys of an object attribute
+
+A data table showing one column per key of the same object attribute reads a few keys
+for every row. An open `Obj`, or a `Map`, declaring `selectableKeys()` lets the request
+name those keys alone, as `<attribute>.<key>` members of `fields[type]`. The example's
+`AlbumResource` does it for `credits`, keyed by role:
+
+```php
+Obj::make('credits')->nullable()
+    ->additionalProperties(Str::make('*'))
+    ->selectableKeys(pattern: '[a-z][a-z_]*'),
+```
+
+```
+GET /albums/1?fields[albums]=title,credits.producer,credits.artwork
+```
+
+The album renders `title` and a `credits` object holding only `producer` and
+`artwork`. `selectableKeys()` also takes a predicate,
+`fn (string $key, JsonApiRequestInterface $request): bool`, alone or with the pattern.
+An `extractUsing()` hook on the field receives the selected keys as a fourth
+`?KeySelection $only` argument, so a reader can load only those, and the value is
+trimmed to them whatever it returns. Doctrine still loads the entity and its `json`
+column whole; only a hook can read less.
+
+The bundle applies the request rules core defines everywhere the type renders: primary
+data, `included`, related endpoints, a write answering with the resource, and atomic
+results. Listing the attribute itself as well renders all of it. A key the declaration
+rejects, a dotted member on any other field and an empty key are the `400`
+`FIELDSET_MEMBER_UNRECOGNIZED` an [unknown member](configuration.md#unknown-sparse-fieldset-members)
+is. Request bodies are unchanged.
+
+`fields[type]` lists field names in JSON:API 1.1, so a response that narrows an
+attribute applies core's [Field Selection profile](https://haddowg.github.io/json-api/profiles/field-selection/).
+A client never sends it. The bundle registers the profile by default, so a narrowed
+response's `Content-Type` carries `profile="https://haddowg.github.io/json-api/profiles/field-selection/"`
+and its `jsonapi.profile` lists the URI, while a request narrowing nothing gets the
+response it always did. The generated OpenAPI document lists the profile with the others
+and gives each `fields[type]` parameter an `anyOf` of the member enum and one
+`^<attribute>\.` pattern per selectable attribute. Witnessed over HTTP on both providers
+in `tests/Functional/FieldSelectionConformanceTestCase.php` and in the example's
+[`FieldSelectionTest`](../examples/music-catalog-symfony/tests/FieldSelectionTest.php);
+core's [field types](https://github.com/haddowg/json-api/blob/main/docs/field-types.md#selectable-keys)
+cover the declaration.
+
 ### Choosing a relationship's target type
 
 A relation declares the resource type it points at as the mandatory second argument

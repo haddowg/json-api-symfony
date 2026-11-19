@@ -15,6 +15,7 @@ use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\StorageCastInterface;
 use haddowg\JsonApi\Schema\Error\ErrorMessageResolverInterface;
 use haddowg\JsonApi\Schema\Profile\CountableProfile;
+use haddowg\JsonApi\Schema\Profile\FieldSelectionProfile;
 use haddowg\JsonApi\Schema\Profile\ProfileInterface;
 use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
 use haddowg\JsonApi\Scope\ExactScopeMatcher;
@@ -100,7 +101,7 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 final class ServerFactory
 {
     /**
-     * The JSON:API profiles registered by default (docs/configuration.md): the three
+     * The JSON:API profiles registered by default (docs/configuration.md): the four
      * built-ins in the canonical order the OpenAPI `jsonapi.profile` enum advertises
      * them. The order is significant — it is the byte-order the
      * `jsonapi.profile` enum is generated in — and MUST match the Laravel adapter's
@@ -112,6 +113,7 @@ final class ServerFactory
         CursorPaginationProfile::class,
         CountableProfile::class,
         RelationshipQueriesProfile::class,
+        FieldSelectionProfile::class,
     ];
 
     private ?Server $server = null;
@@ -261,8 +263,9 @@ final class ServerFactory
 
         // Register the JSON:API profiles this server recognizes, data-driven from
         // `json_api.profiles` (docs/configuration.md; default {@see self::DEFAULT_PROFILES} —
-        // the three built-ins in the canonical order). Registration makes the server
-        // RECOGNIZE a profile — it advertises the URI when a client negotiates it, parses
+        // the four built-ins in the canonical order). Registration makes the server
+        // RECOGNIZE a profile — it advertises the URI when a client negotiates it, or for
+        // Field Selection when a request narrows an attribute, parses
         // the profile's opt-in query family only under that negotiation, and gates the
         // profile's OpenAPI output (the `jsonapi.profile` enum, the
         // Countable `?withCount` parameter, the Relationship Queries `relatedQuery`
