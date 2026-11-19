@@ -115,6 +115,17 @@ A relation's own `security(read:)` declaration, deciding whether a caller sees t
 The top-level `meta` members a type's `documentMeta()` declares for one operation's document, or an action handler's `documentMeta()` for one response status, which the CRUD handler fills from their `extractUsing()` hooks and, in debug mode, the view listener and the atomic loop check.
 _Avoid_: response meta
 
+**Typed request meta**:
+The top-level `meta` members a type's `requestDocumentMeta()` declares for one write, or an action handler's for one HTTP method, which the handler validates as attributes before it hydrates and puts on the request as the written meta.
+_Avoid_: request options
+
+**Declared resource meta**:
+The `meta` members a type's `resourceMeta()` declares for its resource objects, rendered from their `extractUsing()` hooks on a read and validated, then filled through `fillUsing()` or left on the written meta, on a write.
+_Avoid_: resource meta (alone, it also names what `getMeta()` returns)
+
+**Written meta**:
+The typed values of a write's top-level `meta` and `data.meta`, carried on its request, which the hydrator, the lifecycle events, the hook context and an action's context read.
+
 **Exception mapper**:
 A tagged service that turns a non-JSON:API throwable into an error response on a JSON:API route.
 

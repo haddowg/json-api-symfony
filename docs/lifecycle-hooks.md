@@ -142,6 +142,11 @@ to diff against). The other hook methods differ only in what comes before the
 - `beforeRelationshipMutate` and `afterRelationshipMutate` take the parent entity.
 - The rest take `(object $entity, HookContext $context)`.
 
+`HookContext::writtenMeta()`, and `writtenMeta()` on the write events a subscriber receives,
+return the typed `meta` the write sent: `->document` for its top-level `meta` and `->resource`
+for its `data.meta`, each validated against what the type declares in
+`requestDocumentMeta()` and `resourceMeta()`. They are empty for a write that sent none.
+
 ## Two semantics: *before* aborts, *after* replaces
 
 - A **before** hook (`serving`, `BeforeSave`, `BeforeCreate`, `BeforeUpdate`,
