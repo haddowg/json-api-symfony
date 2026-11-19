@@ -288,10 +288,6 @@ final class AlbumResource extends AbstractResource
     }
 
     /**
-     * A collection of albums, here or on another type's related endpoint, says how many of
-     * its albums are explicit.
-     */
-    /**
      * A create may say where the album came from; an atomic batch's create must, since a
      * batch is an import. Nothing else carries request meta.
      */
@@ -323,6 +319,10 @@ final class AlbumResource extends AbstractResource
         ];
     }
 
+    /**
+     * A collection of albums, here or on another type's related endpoint, says how many of
+     * its albums are explicit.
+     */
     public function documentMeta(OperationType $operation, ?string $relation = null): iterable
     {
         return match ($operation) {

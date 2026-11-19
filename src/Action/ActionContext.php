@@ -165,7 +165,7 @@ final readonly class ActionContext
      * The typed top-level `meta` the call sent, validated against what the handler declares
      * for the method through
      * {@see \haddowg\JsonApi\Resource\DeclaresActionRequestMetaInterface::requestDocumentMeta()}.
-     * The `meta` as sent when it declares nothing.
+     * Empty when it declares nothing for the method.
      *
      * @return array<string, mixed>
      */
