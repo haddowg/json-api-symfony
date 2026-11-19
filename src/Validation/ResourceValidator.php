@@ -374,7 +374,8 @@ final class ResourceValidator
         if ($meta !== null && (!\is_array($meta) || (\array_is_list($meta) && $meta !== []))) {
             return [$this->errorAt(self::NOT_AN_OBJECT, $pointer)];
         }
-        $meta ??= [];
+        // Each number is validated in the type its member documents, a whole 5.0 as 5.
+        $meta = $shape->normalize($meta ?? []);
 
         $base = '/data/attributes';
         $errors = [];
