@@ -90,6 +90,33 @@ final class SparseFieldsetSchemaTest extends TestCase
     }
 
     #[Test]
+    public function aNestedPathNarrowsEachObjectAlongIt(): void
+    {
+        $relaxed = SparseFieldsetSchema::relax($this->document(), ['albums' => ['location.geo.lat']]);
+        $location = $relaxed->components->schemas->AlbumsAttributes->properties->location;
+
+        self::assertObjectNotHasProperty('required', $location);
+        self::assertSame(['geo'], $location->propertyNames->enum);
+        self::assertSame(['geo'], \array_keys((array) $location->properties));
+
+        $geo = $location->properties->geo;
+        self::assertObjectNotHasProperty('required', $geo);
+        self::assertSame(['lat'], $geo->propertyNames->enum);
+        self::assertSame(['lat'], \array_keys((array) $geo->properties));
+    }
+
+    #[Test]
+    public function aKeyListedWholeBesideAPathIntoItKeepsItsSchemaWhole(): void
+    {
+        $relaxed = SparseFieldsetSchema::relax($this->document(), ['albums' => ['location.postcode', 'location.geo.lat', 'location.geo']]);
+        $location = $relaxed->components->schemas->AlbumsAttributes->properties->location;
+
+        self::assertSame(['postcode', 'geo'], $location->propertyNames->enum);
+        self::assertSame(['lat', 'lng'], $location->properties->geo->required);
+        self::assertObjectNotHasProperty('propertyNames', $location->properties->geo);
+    }
+
+    #[Test]
     public function aReferencedComponentIsNarrowedInlineAndLeftWholeForItsOtherUses(): void
     {
         $relaxed = SparseFieldsetSchema::relax($this->document(), ['albums' => ['dimensions.width']]);
@@ -121,7 +148,21 @@ final class SparseFieldsetSchemaTest extends TestCase
                         "additionalProperties": false
                       },
                       "credits": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "string"}},
-                      "dimensions": {"anyOf": [{"$ref": "#/components/schemas/Dimensions"}, {"type": "null"}]}
+                      "dimensions": {"anyOf": [{"$ref": "#/components/schemas/Dimensions"}, {"type": "null"}]},
+                      "location": {
+                        "type": "object",
+                        "properties": {
+                          "postcode": {"type": "string"},
+                          "geo": {
+                            "type": "object",
+                            "properties": {"lat": {"type": "number"}, "lng": {"type": "number"}},
+                            "required": ["lat", "lng"],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": ["postcode", "geo"],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "Dimensions": {

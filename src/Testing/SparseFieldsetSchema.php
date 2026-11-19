@@ -18,8 +18,9 @@ use haddowg\JsonApi\OpenApi\ComponentNaming;
  *
  * A `<attribute>.<key>` member selects keys of an attribute, as the Field Selection
  * profile does at runtime: the attribute stays required, and its schema drops its
- * `required` keys and admits only the selected ones. Listing the attribute whole as well
- * keeps its schema whole.
+ * `required` keys and admits only the selected ones. A longer member such as
+ * `<attribute>.<key>.<key>` narrows the nested object's schema the same way. Listing the
+ * attribute, or a key, whole as well keeps its schema whole.
  *
  * The patch targets the type's `<Base>Resource` component, so primary data and
  * `included` resources (which `$ref` the same component) follow their type's fieldset.
@@ -124,8 +125,8 @@ final class SparseFieldsetSchema
 
     /**
      * Splits a fieldset into the fields it lists whole and the keys it selects per
-     * attribute, the attribute name up to the first `.` and the key after it. An attribute
-     * also listed whole is not narrowed.
+     * attribute, the attribute name up to the first `.` and the rest of the member after
+     * it. An attribute also listed whole is not narrowed.
      *
      * @param list<string> $members
      *
@@ -150,8 +151,10 @@ final class SparseFieldsetSchema
     /**
      * A copy of an attribute's schema narrowed to `$keys`: an object schema keeps only
      * the selected declared properties, requires none, and admits no other member name.
-     * A local `$ref` is inlined so a shared component stays whole for other uses, and
-     * each branch of an `allOf`, `anyOf` or `oneOf` is narrowed in turn.
+     * A dotted key is a path, so the property it starts with is narrowed in turn to the
+     * rest of it, unless the key is also selected whole. A local `$ref` is inlined so a
+     * shared component stays whole for other uses, and each branch of an `allOf`, `anyOf`
+     * or `oneOf` is narrowed in turn.
      *
      * @param list<string> $keys
      */
@@ -190,17 +193,23 @@ final class SparseFieldsetSchema
             return $copy;
         }
 
+        [, $deeper] = self::split($keys);
+        $selected = \array_values(\array_unique(\array_map(static fn(string $key): string => \explode('.', $key, 2)[0], $keys)));
+
         unset($copy->required, $copy->minProperties);
         if (isset($copy->properties) && $copy->properties instanceof \stdClass) {
             $properties = new \stdClass();
             foreach (\get_object_vars($copy->properties) as $name => $property) {
-                if (\in_array((string) $name, $keys, true)) {
+                $name = (string) $name;
+                if (isset($deeper[$name])) {
+                    $properties->{$name} = self::narrow($schemas, $property, $deeper[$name], $depth + 1);
+                } elseif (\in_array($name, $selected, true)) {
                     $properties->{$name} = $property;
                 }
             }
             $copy->properties = $properties;
         }
-        $copy->propertyNames = (object) ['enum' => \array_values(\array_unique($keys))];
+        $copy->propertyNames = (object) ['enum' => $selected];
 
         return $copy;
     }

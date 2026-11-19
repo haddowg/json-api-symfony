@@ -134,9 +134,9 @@ hydration ignores them, and a closed object still refuses an undeclared member w
 Doctrine stores an open object in its `json` column like any other `Obj`, the undeclared
 members beside the declared children.
 
-An open object can also let a request select its keys one at a time with
-`selectableKeys()`, `fields[type]=<attribute>.<key>`, which a table showing a few keys per
-row uses. See [selecting keys of an object attribute](resources.md#selecting-keys-of-an-object-attribute).
+An object can also let a request select its keys one at a time with `selectableKeys()`,
+`fields[type]=<attribute>.<key>`, which a table showing a few keys per row uses, and a
+nested object declaring it too takes `<attribute>.<key>.<key>`. See [selecting keys of an object attribute](resources.md#selecting-keys-of-an-object-attribute).
 
 ## Unions
 

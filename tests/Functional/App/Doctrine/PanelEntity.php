@@ -19,6 +19,7 @@ class PanelEntity
      * @param array<string, mixed>|null $values
      * @param array<string, mixed>|null $groups
      * @param array<string, mixed>|null $settings
+     * @param array<string, mixed>|null $address
      */
     public function __construct(
         #[ORM\Id]
@@ -35,5 +36,7 @@ class PanelEntity
         public ?array $settings = null,
         #[ORM\ManyToOne(targetEntity: CuratorEntity::class)]
         public ?CuratorEntity $curator = null,
+        #[ORM\Column(type: 'json', nullable: true)]
+        public ?array $address = null,
     ) {}
 }

@@ -522,7 +522,7 @@ fieldset (present unless excluded), and is orthogonal to `hidden()` / `writeOnly
 ### Selecting keys of an object attribute
 
 A data table showing one column per key of the same object attribute reads a few keys
-for every row. An open `Obj`, or a `Map`, declaring `selectableKeys()` lets the request
+for every row. An `Obj` or a `Map` declaring `selectableKeys()` lets the request
 name those keys alone, as `<attribute>.<key>` members of `fields[type]`. The example's
 `AlbumResource` does it for `credits`, keyed by role:
 
@@ -544,10 +544,32 @@ An `extractUsing()` hook on the field receives the selected keys as a fourth
 trimmed to them whatever it returns. Doctrine still loads the entity and its `json`
 column whole; only a hook can read less.
 
+A key whose own object declares `selectableKeys()` can be narrowed in turn, one key per
+level. With an `address` declared as
+
+```php
+Obj::make('address')->nullable()
+    ->fields(
+        Str::make('street'),
+        Str::make('postcode'),
+        Obj::make('geo')->fields(Decimal::make('lat'), Decimal::make('lng'))->selectableKeys(pattern: 'lat|lng'),
+    )
+    ->selectableKeys(pattern: '[a-z]+'),
+```
+
+`fields[people]=address.geo.lat` renders `address` holding only `geo`, and `geo` holding
+only `lat`; the street, the postcode and `lng` stay out. Listing a key whole beside a path
+into it, `address.geo,address.geo.lat`, renders all of `geo`. A key holding a list, or an
+object that declares no selectable keys, is selected whole, and a longer path below it is
+an unknown member. The hook's `KeySelection` carries the nested selection:
+`$only->nested('geo')` is the selection inside `geo`, and `$only->paths()` lists every
+selected path, such as `postcode` and `geo.lat`.
+
 The bundle applies the request rules core defines everywhere the type renders: primary
 data, `included`, related endpoints, a write answering with the resource, and atomic
 results. Listing the attribute itself as well renders all of it. A key the declaration
-rejects, a dotted member on any other field and an empty key are the `400`
+rejects, a dotted member on any other field, a path past a key that isn't selectable and
+an empty key are the `400`
 `FIELDSET_MEMBER_UNRECOGNIZED` an [unknown member](configuration.md#unknown-sparse-fieldset-members)
 is. Request bodies are unchanged.
 
@@ -557,8 +579,8 @@ A client never sends it. The bundle registers the profile by default, so a narro
 response's `Content-Type` carries `profile="https://haddowg.github.io/json-api/profiles/field-selection/"`
 and its `jsonapi.profile` lists the URI, while a request narrowing nothing gets the
 response it always did. The generated OpenAPI document lists the profile with the others
-and gives each `fields[type]` parameter an `anyOf` of the member enum and one
-`^<attribute>\.` pattern per selectable attribute. Witnessed over HTTP on both providers
+and gives each `fields[type]` parameter an `anyOf` of the member enum and one pattern per
+selectable attribute or nested path, such as `^address\.geo\.(?:lat|lng)$`. Witnessed over HTTP on both providers
 in `tests/Functional/FieldSelectionConformanceTestCase.php` and in the example's
 [`FieldSelectionTest`](../examples/music-catalog-symfony/tests/FieldSelectionTest.php);
 core's [field types](https://github.com/haddowg/json-api/blob/main/docs/field-types.md#selectable-keys)

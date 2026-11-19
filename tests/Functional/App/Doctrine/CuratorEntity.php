@@ -17,6 +17,7 @@ class CuratorEntity
 {
     /**
      * @param array<string, mixed>|null $stats
+     * @param array<string, mixed>|null $office
      */
     public function __construct(
         #[ORM\Id]
@@ -27,5 +28,7 @@ class CuratorEntity
         public string $name = '',
         #[ORM\Column(type: 'json', nullable: true)]
         public ?array $stats = null,
+        #[ORM\Column(type: 'json', nullable: true)]
+        public ?array $office = null,
     ) {}
 }
