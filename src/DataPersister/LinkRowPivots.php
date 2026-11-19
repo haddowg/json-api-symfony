@@ -100,6 +100,14 @@ final class LinkRowPivots
                 continue;
             }
 
+            $entry = $relation->pivotAdditionalProperties();
+            if ($entry !== null && $entry->fills()) {
+                $members = $relation->pivotMetaShape()->additionalMembers($pivot);
+                if ($members !== []) {
+                    $entry->fill($row, $relation->pivotMetaShape()->normalize($members), \array_combine(\array_map(\strval(...), \array_keys($pivot)), $pivot));
+                }
+            }
+
             foreach ($relation->writablePivotFields(!isset($before[$key])) as $field) {
                 if (!\array_key_exists($field->name(), $pivot)) {
                     continue;

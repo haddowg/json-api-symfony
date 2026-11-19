@@ -920,7 +920,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
             if ($row !== null) {
                 // Reorder / update an existing row's writable pivot fields IN PLACE
                 // (update context — the row exists).
-                $this->writePivotFields($row, $relation->writablePivotFields(false), $meta);
+                $this->writePivotFields($row, $relation->writablePivotFields(false), $meta, $relation);
                 $kept[$mapKey] = $row;
 
                 continue;
@@ -929,7 +929,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
             // A new association row: parent + far reference + the writable pivot
             // fields (create context); readOnly fields take their server default.
             $row = $this->newPivotRow($association, $parent, $reference, $meta);
-            $this->writePivotFields($row, $relation->writablePivotFields(true), $meta);
+            $this->writePivotFields($row, $relation->writablePivotFields(true), $meta, $relation);
             $this->attachPivotRow($parent, $association, $row);
             $this->entityManager->persist($row);
             $kept[$mapKey] = $row;
@@ -1063,8 +1063,17 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
      * @param list<FieldInterface> $fields the writable pivot fields for the context
      * @param array<string, mixed> $meta   the linkage member's pivot meta
      */
-    private function writePivotFields(object $row, array $fields, array $meta): void
+    private function writePivotFields(object $row, array $fields, array $meta, ?\haddowg\JsonApi\Resource\Field\PivotRelationInterface $relation = null): void
     {
+        // The members the pivot's additionalProperties entry takes go to its fillUsing() hook.
+        $entry = $relation?->pivotAdditionalProperties();
+        if ($relation !== null && $entry !== null && $entry->fills()) {
+            $members = $relation->pivotMetaShape()->additionalMembers($meta);
+            if ($members !== []) {
+                $entry->fill($row, $relation->pivotMetaShape()->normalize($members), $meta);
+            }
+        }
+
         foreach ($fields as $field) {
             if (!\array_key_exists($field->name(), $meta)) {
                 continue;
