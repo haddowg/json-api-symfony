@@ -22,6 +22,7 @@ use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\FilterMatcher;
 use haddowg\JsonApi\Resource\MetaContext;
+use haddowg\JsonApi\Resource\WireNumbers;
 use haddowg\JsonApi\Resource\WrittenMeta;
 use haddowg\JsonApi\Response\AcceptedResponse;
 use haddowg\JsonApi\Response\DataResponse;
@@ -365,6 +366,12 @@ final readonly class ActionInvoker
         ?object $entity,
     ): object {
         $inputType = $descriptor->inputType;
+
+        // Each number in the type its field documents, before anything validates it.
+        $resource = $server instanceof Server ? $this->types->resourceFor($server, $inputType) : null;
+        if ($resource !== null) {
+            $body = WireNumbers::resourceDocument($resource, $body);
+        }
 
         $instance = $handler instanceof ActionInputFactoryInterface
             ? $handler->newInput($body)
