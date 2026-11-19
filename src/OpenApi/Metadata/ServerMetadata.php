@@ -19,6 +19,7 @@ use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationScopeTable;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresOperationSecurity;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresReadOnlyAttributeRejection;
 use haddowg\JsonApi\OpenApi\Metadata\DeclaresStrictQueryParameters;
+use haddowg\JsonApi\OpenApi\Metadata\DeclaresThroughReadSecurity;
 use haddowg\JsonApi\OpenApi\Metadata\OperationKey;
 use haddowg\JsonApi\OpenApi\Metadata\ServerMetadataInterface;
 use haddowg\JsonApi\OpenApi\Metadata\TypeMetadataInterface;
@@ -26,6 +27,7 @@ use haddowg\JsonApi\OpenApi\SecurityRequirement;
 use haddowg\JsonApi\OpenApi\SecurityScheme;
 use haddowg\JsonApi\OpenApi\Server;
 use haddowg\JsonApi\OpenApi\Tag;
+use haddowg\JsonApi\Resource\Filter\RelationHop;
 use haddowg\JsonApi\Scope\ScopeTable;
 
 /**
@@ -59,7 +61,7 @@ use haddowg\JsonApi\Scope\ScopeTable;
  * layer can refuse ({@see DeclaresOperationSecurity}), whether query parameters are
  * strict, which documents are checked, and the default include depth.
  */
-final readonly class ServerMetadata implements ContributesErrorCodes, DeclaresLinkObjects, DeclaresReadOnlyAttributeRejection, DeclaresExampleGeneration, DeclaresOperationScopeTable, DeclaresMethodNotAllowed, DeclaresOperationSecurity, DeclaresStrictQueryParameters, DeclaresDocumentValidation, DeclaresMaxIncludeDepth
+final readonly class ServerMetadata implements ContributesErrorCodes, DeclaresLinkObjects, DeclaresReadOnlyAttributeRejection, DeclaresExampleGeneration, DeclaresOperationScopeTable, DeclaresMethodNotAllowed, DeclaresOperationSecurity, DeclaresThroughReadSecurity, DeclaresStrictQueryParameters, DeclaresDocumentValidation, DeclaresMaxIncludeDepth
 {
     /**
      * @param list<Server>                      $servers
@@ -72,6 +74,7 @@ final readonly class ServerMetadata implements ContributesErrorCodes, DeclaresLi
      * @param (\Closure(): ScopeTable)|null      $scopeTable   reads the server's scope table when the projection asks for it; null uses no scopes
      * @param array<string, string>             $scopeCatalog every scope the app defines, with its description
      * @param (\Closure(?TypeMetadataInterface, OperationKey, bool): bool)|null $security answers whether the security layer can refuse an operation, with `ACCESS_DENIED` when the bool is true and `AUTHENTICATION_REQUIRED` otherwise; null answers yes
+     * @param (\Closure(RelationHop): bool)|null                              $refusesThrough answers whether some caller can be refused a filter that reaches through a hop; null answers no
      */
     public function __construct(
         private string $title,
@@ -101,7 +104,13 @@ final readonly class ServerMetadata implements ContributesErrorCodes, DeclaresLi
         private bool $validatesRequestDocuments = false,
         private bool $checksResourceObjectMembers = true,
         private ?int $maxIncludeDepth = null,
+        private ?\Closure $refusesThrough = null,
     ) {}
+
+    public function canRefuseThrough(RelationHop $hop): bool
+    {
+        return $this->refusesThrough !== null && ($this->refusesThrough)($hop);
+    }
 
     public function canDenyAccess(?TypeMetadataInterface $type, OperationKey $operation): bool
     {

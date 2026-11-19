@@ -192,6 +192,7 @@ final class MetadataSource
             scopeScheme: $this->scopeScheme,
             scopeCatalog: $this->scopeCatalog?->all() ?? [],
             security: $this->securityFor(static fn(): string => $serverName, $types),
+            refusesThrough: $this->refusesThroughFor(static fn(): string => $serverName),
             strictQueryParameters: $server->strictQueryParameters(),
             validatesRequestDocuments: $this->validatesRequestDocuments,
             maxIncludeDepth: $server->maxIncludeDepth(),
@@ -217,6 +218,23 @@ final class MetadataSource
         return fn(?TypeMetadataInterface $type, \haddowg\JsonApi\OpenApi\Metadata\OperationKey $operation, bool $access): bool => $access
             ? ($this->securityFacts()?->canDenyAccess($serverOf($type?->type()), $types, $type, $operation) ?? false)
             : ($this->securityFacts()?->canRequireAuthentication($serverOf($type?->type()), $types, $type, $operation) ?? false);
+    }
+
+    /**
+     * Answers {@see ServerMetadata::canRefuseThrough()} from the declarations of the
+     * server `$serverOf` names for the type declaring the hop.
+     *
+     * @param \Closure(?string): string $serverOf
+     *
+     * @return (\Closure(\haddowg\JsonApi\Resource\Filter\RelationHop): bool)|null
+     */
+    private function refusesThroughFor(\Closure $serverOf): ?\Closure
+    {
+        if ($this->securityFacts === null) {
+            return null;
+        }
+
+        return fn(\haddowg\JsonApi\Resource\Filter\RelationHop $hop): bool => $this->securityFacts()?->canRefuseThrough($serverOf($hop->parentType), $hop->relation) ?? false;
     }
 
     /**
@@ -308,6 +326,7 @@ final class MetadataSource
             scopeCatalog: $this->scopeCatalog?->all() ?? [],
             // The one atomic endpoint the document lists is the default server's.
             security: $this->securityFor(static fn(?string $type): string => $serverOfType[$type ?? ''] ?? ServerProvider::DEFAULT_SERVER, $types),
+            refusesThrough: $this->refusesThroughFor(static fn(?string $type): string => $serverOfType[$type ?? ''] ?? ServerProvider::DEFAULT_SERVER),
             strictQueryParameters: $strict,
             validatesRequestDocuments: $this->validatesRequestDocuments,
             maxIncludeDepth: $maxIncludeDepth,

@@ -1172,7 +1172,7 @@ final class RelatedIncludeBatcher
             return $this->plainIncludeCriteria($request);
         }
 
-        return $this->relationCriteria->linkageFor($this->relatedResource($server, $relation), $relation, $request, $this->router->isPivot($relation));
+        return $this->relationCriteria->linkageFor($this->relatedResource($server, $relation), $relation, $request, $this->router->isPivot($relation), $server);
     }
 
     /**

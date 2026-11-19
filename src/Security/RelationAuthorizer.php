@@ -7,7 +7,9 @@ namespace haddowg\JsonApiBundle\Security;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\FieldInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\Filter\RelationHop;
 use haddowg\JsonApi\Resource\RelationAuthorizerInterface;
+use haddowg\JsonApi\Resource\ThroughReadGateInterface;
 use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use Symfony\Component\ExpressionLanguage\Expression;
@@ -23,7 +25,8 @@ use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
  * reads require. A `null` read inherits the parent's read gate, which the caller passed
  * to see the parent, and `true`/`false` only document the endpoints, so all three render.
  * A to-many renders no data either when any type it relates to refuses the caller its
- * collection read gate, the check `GET /{type}` makes. A flattened
+ * collection read gate, the check `GET /{type}` makes. A filter that reaches through a
+ * relation is decided by {@see ReadableRows::refusesThrough()}. A flattened
  * `on()` write needs the related type's update expression against the row it lands on,
  * and passes when that type declares none.
  *
@@ -32,7 +35,7 @@ use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
  * and names the server whose declarations apply. The unbound service
  * reads the default server's.
  */
-final class RelationAuthorizer implements RelationAuthorizerInterface
+final class RelationAuthorizer implements RelationAuthorizerInterface, ThroughReadGateInterface
 {
     /**
      * @var (\Closure(): ?Server)|null
@@ -84,6 +87,11 @@ final class RelationAuthorizer implements RelationAuthorizerInterface
         // A list holds what its query returned, so a to-many is shown whole or not at
         // all: not when any type it relates to refuses the caller its collection.
         return !$relation->isToMany() || $this->rows?->refusedCollectionType($relation, $this->serverName) === null;
+    }
+
+    public function canReadThrough(RelationHop $hop, JsonApiRequestInterface $request): bool
+    {
+        return !($this->rows?->refusesThrough($hop->relation, $this->serverName) ?? false);
     }
 
     public function canWriteRelatedAttribute(mixed $owner, RelationInterface $relation, FieldInterface $field, mixed $model, JsonApiRequestInterface $request): bool

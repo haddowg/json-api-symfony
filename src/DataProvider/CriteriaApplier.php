@@ -4,13 +4,17 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\DataProvider;
 
+use haddowg\JsonApi\Exception\AccessDenied;
 use haddowg\JsonApi\Exception\FilterParamUnrecognized;
 use haddowg\JsonApi\Exception\FilterValueInvalid;
 use haddowg\JsonApi\Exception\SortingUnsupported;
 use haddowg\JsonApi\Exception\SortParamUnrecognized;
+use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\FilterDefaults;
 use haddowg\JsonApi\Resource\Filter\FilterHandlerInterface;
+use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\FilterMatcher;
+use haddowg\JsonApi\Resource\Filter\RelationHop;
 use haddowg\JsonApi\Resource\Sort\SortDirective;
 use haddowg\JsonApi\Resource\Sort\SortHandlerInterface;
 use haddowg\JsonApi\Resource\Sort\SortMatcher;
@@ -156,12 +160,37 @@ final class CriteriaApplier
             $apply = static fn(): mixed => $alias === null || !$handler instanceof AliasAwareFilterHandler
                 ? $handler->apply($filter, $query, $value)
                 : $handler->applyOn($filter, $query, $value, $alias);
-            $query = $handler instanceof ReadsFilterPathsInterface && $criteria->paths !== null
-                ? $handler->withPaths($criteria->paths, $apply)
+            $paths = $criteria->paths === null ? null : $this->readablePaths($criteria, $criteria->paths, $filter, $key);
+            $query = $handler instanceof ReadsFilterPathsInterface && $paths !== null
+                ? $handler->withPaths($paths, $apply)
                 : $apply();
         }
 
         return $query;
+    }
+
+    /**
+     * The paths `$filter`, matched under `$key`, runs with: the request whose caller the
+     * related types' scopes narrow to, and the relations it reaches through that the
+     * caller may not read. A filter the client asked for is refused instead, with the
+     * `403` a related read of the relation gets. A filter default isn't the client's, so
+     * it matches no row through such a relation.
+     *
+     * @throws \Symfony\Component\Security\Core\Exception\AccessDeniedException when the client's filter reaches through a relation the caller may not read
+     */
+    private function readablePaths(CollectionCriteria $criteria, FilterPaths $paths, FilterInterface $filter, string $key): FilterPaths
+    {
+        $request = $criteria->request;
+        $refused = $request === null ? [] : $paths->refusedHops($paths->hopsOf($filter), $request);
+        if ($refused !== [] && \array_key_exists($key, $criteria->queryParameters->filter)) {
+            $message = \sprintf('Access denied to the relation "%s" the filter "%s" reaches through.', $refused[0]->relation->name(), $key);
+
+            throw \class_exists(\Symfony\Component\Security\Core\Exception\AccessDeniedException::class)
+                ? new \Symfony\Component\Security\Core\Exception\AccessDeniedException($message)
+                : new AccessDenied();
+        }
+
+        return $paths->scoped($request, \array_map(static fn(RelationHop $hop): RelationInterface => $hop->relation, $refused));
     }
 
     /**

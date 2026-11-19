@@ -10,6 +10,7 @@ use haddowg\JsonApi\OpenApi\Metadata\OperationKind;
 use haddowg\JsonApi\OpenApi\Metadata\RelationMetadataInterface;
 use haddowg\JsonApi\OpenApi\Metadata\TypeMetadataInterface;
 use haddowg\JsonApi\Resource\Field\ForeignKey;
+use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApiBundle\Action\ActionRegistry;
 use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataPersister\Doctrine\DoctrineDataPersister;
@@ -96,6 +97,31 @@ final class OperationSecurityFacts
             OperationKind::Action => $this->actionGated($server, $type, $operation, $declared),
             OperationKind::Atomic => false,
         };
+    }
+
+    /**
+     * Whether some caller can be refused a filter that reaches through `$relation`, as
+     * {@see ReadableRows::refusesThrough()} decides at runtime: by the relation's read
+     * permission when it declares an expression, else by a related type's collection
+     * read gate, or its single-row read gate when that never reads the row.
+     */
+    public function canRefuseThrough(string $server, RelationInterface $relation): bool
+    {
+        $read = $relation->securityRead();
+        if ($read !== null) {
+            return \is_string($read);
+        }
+
+        foreach ($relation->relatedTypes() as $related) {
+            $declared = $this->security?->securityFor($related, $server);
+            $list = $declared?->forList();
+            $single = $declared?->forRead();
+            if (\is_string($list) || (\is_string($single) && !ReadableRows::readsSubject($single))) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

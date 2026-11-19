@@ -342,6 +342,36 @@ HasMany::make('blockedPartners', 'securedWidgets')->storedAs('partners')
 
 Both run in `RelatedRowReadGateConformance`, on the Doctrine and in-memory kernels.
 
+## Filters that reach through a relation
+
+A filter that walks a relation, such as `WhereThrough`, `WhereThroughIn`, `WhereHas` or
+`WhereDoesntHave`, answers yes or no about the rows at the other end, so it follows the
+same rules as a response that shows them. They apply to a collection, a related or
+relationship endpoint, a `relatedQuery` window, a collection action's filters and a
+filter inside a `WhereAll` or `WhereAny`.
+
+- **Rows the related type's scope hides don't exist for matching**, at every hop. On
+  Doctrine the related type's [extensions](#with-a-doctrine-extension) narrow each hop of
+  the `EXISTS` under `QueryPurpose::FetchRelatedCollection`. In memory a
+  [scoped provider](#with-a-custom-scoped-provider) admits the rows each hop reaches,
+  through `AdmitsRowsInterface` or one `fetchOne()` per row.
+- **A hop the caller may not read at all refuses the filter with `403`** (`401` for an
+  anonymous caller), the `ACCESS_DENIED` a related read of a forbidden relation answers.
+  A hop's [read permission](#relation-read-permissions) decides when the relation
+  declares one, as at its endpoints. A string permission that never reads `object` is
+  evaluated without one; one that reads the parent can't answer for every parent at
+  once, so it refuses the filter for everyone. With no permission, the related type's
+  `securityList` (or `security`) refuses, and so does its `securityRead` when that never
+  reads `object`. A read gate that reads the row is left to the type's scope, as on
+  the type's own collection.
+- **A filter default is never refused.** The client didn't ask for it, so it matches no
+  row through a hop the caller may not read instead.
+
+A path segment names the relation stored under it whose name it is, so when several
+relations share a storage member, the named relation's permission applies. The OpenAPI
+document lists `ACCESS_DENIED` on every operation whose filters, or whose
+`relatedQuery` filters, reach through a hop some caller can be refused.
+
 ## Scoping access per user
 
 Permission and scope are different questions.

@@ -20,6 +20,7 @@ use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\MorphTo;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\SerializerResolverInterface;
 use haddowg\JsonApi\Resource\Sort\RelationSorts;
 use haddowg\JsonApi\Schema\Relationship\IdentifiedMember;
 use haddowg\JsonApi\Serializer\SerializerInterface;
@@ -1170,6 +1171,33 @@ final class RelatedReadRouter implements ResetInterface
         $result = $this->providers->forType($relatedType)->fetchRelatedCollection($relatedType, $parent, $relation, $unpaged, $request);
 
         return $this->queryMembers($relation, $this->narrow($server, [$this->objects($result->items)], $relation, $request)[0], $criteria);
+    }
+
+    /**
+     * The rows of `$rows`, reached through `$relation`, that each scoped related type's
+     * provider admits for the caller, in their given order: the narrowing a filter's walk
+     * through `$relation` applies in memory.
+     *
+     * @param list<object> $rows
+     *
+     * @return list<object>
+     */
+    public function admitReached(Server $server, array $rows, RelationInterface $relation, JsonApiRequestInterface $request): array
+    {
+        return $this->narrow($server, [$rows], $relation, $request)[0];
+    }
+
+    /**
+     * The narrowing {@see admitReached()} applies, as a closure for {@see FilterPaths::of()},
+     * or null when `$resources` is not a server.
+     *
+     * @return (\Closure(RelationInterface, list<object>, JsonApiRequestInterface): list<object>)|null
+     */
+    public function admissionFor(SerializerResolverInterface $resources): ?\Closure
+    {
+        return $resources instanceof Server
+            ? fn(RelationInterface $relation, array $rows, JsonApiRequestInterface $request): array => $this->admitReached($resources, \array_values($rows), $relation, $request)
+            : null;
     }
 
     /**
