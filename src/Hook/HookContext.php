@@ -38,4 +38,13 @@ final readonly class HookContext
         public ?object $linkage = null,
         public ?Mode $mode = null,
     ) {}
+
+    /**
+     * The typed `meta` the write sent: its top-level `meta` and its resource object's
+     * `data.meta`, validated against what the type declares. Empty for a write that sent none.
+     */
+    public function writtenMeta(): \haddowg\JsonApi\Resource\WrittenMeta
+    {
+        return \haddowg\JsonApi\Resource\WrittenMeta::of($this->request);
+    }
 }

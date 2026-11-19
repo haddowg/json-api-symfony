@@ -32,6 +32,7 @@ use haddowg\JsonApi\Resource\Field\Obj;
 use haddowg\JsonApi\Resource\Field\OneOf;
 use haddowg\JsonApi\Resource\Field\PivotRelationInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\MetaShape;
 use haddowg\JsonApi\Resource\ObjectValues;
 use haddowg\JsonApi\Resource\UnionValue;
 use haddowg\JsonApi\Resource\UnionValues;
@@ -201,85 +202,7 @@ final class ResourceValidator
             : $incoming;
         $wireAttributes = $stored !== [] ? \array_merge($stored, $incoming) : $incoming;
 
-        $fields = [];
-        $compares = [];
-        foreach ($resource->allFields() as $field) {
-            if ($field instanceof Id || $field instanceof RelationInterface) {
-                continue;
-            }
-            // The read-only gate is request-aware: a field the author
-            // marked `readOnly(fn)` is validated for a caller it is *writable* for and
-            // skipped for one it is *read-only* for — so validation and hydration stay
-            // consistent. Were this static, a conditionally-read-only field would be
-            // validated (e.g. required) but then never hydrated for the same caller,
-            // surfacing a spurious 422 the write could never satisfy.
-            if ($field->isReadOnlyFor($creating, $request)) {
-                continue;
-            }
-
-            // The field's incoming (merged) value, or null when absent — used to
-            // evaluate a request-aware `when()` condition during presence resolution
-            // (a conditionally-required field).
-            $value = $attributes[$field->name()] ?? null;
-            // A stored list folded in on update is not re-validated element by element:
-            // its elements render without their write-only children, so a whole-element
-            // check would fail a list the client never sent.
-            $fields[$field->name()] = $this->fieldConstraint($field, $creating, request: $request, value: $value, elements: $creating || \array_key_exists($field->name(), $incoming));
-            foreach ($this->compareConstraints($field, $creating) as $compare) {
-                $compares[] = [$field->name(), $compare];
-            }
-        }
-
-        $errors = [];
-
-        if ($fields !== []) {
-            $violations = $this->validator->validate($attributes, new Collection(fields: $fields, allowExtraFields: true));
-            foreach ($violations as $violation) {
-                $errors[] = $this->error((string) $violation->getMessage(), (string) $violation->getPropertyPath());
-            }
-
-            // Cross-field rules are validated at the document level, where the sibling
-            // value is in scope (the per-field Collection sees each value in isolation).
-            foreach ($compares as [$owner, $compare]) {
-                $error = $this->compareError($owner, $compare, $attributes);
-                if ($error !== null) {
-                    $errors[] = $error;
-                }
-            }
-        }
-
-        foreach ($this->objectValueErrors($resource, $incoming, $creating, $request) as $error) {
-            $errors[] = $error;
-        }
-
-        // A union (OneOf) validates value-dependently — the incoming value selects the
-        // variant whose children are then validated — so it
-        // runs as a document-level pass (like the cross-field compares) where the value
-        // is in scope, not through the static per-field Collection which cannot know
-        // which variant's rules apply. A variant child violation maps to
-        // /data/attributes/<field>/<child>; a value selecting no variant to
-        // /data/attributes/<field>/<discriminator>, or to the field when undiscriminated.
-        foreach ($this->oneOfErrors($resource, $attributes, $incoming, $creating, $request) as $error) {
-            $errors[] = $error;
-        }
-
-        // A Union's rules belong to the member the value's JSON type selects, so core
-        // finds each place a member applies and the member's rules run at its pointer.
-        foreach ($this->unionErrors(UnionValues::in($resource->allFields(), $incoming, $creating, $request), $creating, $request) as $error) {
-            $errors[] = $error;
-        }
-
-        // A Shape constraint carries raw JSON Schema (oneOf/anyOf/allOf of member
-        // schemas) that no Symfony rule can translate — its only validator is opis, run
-        // through the core SchemaValueValidator. Like OneOf and the compares, it runs as
-        // a document-level pass because it validates a whole field value against its
-        // composite schema; a leaf violation carries the opis instance pointer appended
-        // to /data/attributes/<field>. Skipped entirely when opis is not installed (the
-        // validator is null-wired), so a Shape then documents its OpenAPI shape but is
-        // not value-validated — the same optional-linter posture opis already has.
-        foreach ($this->shapeErrors($resource, $wireAttributes, $incoming, $creating, $request) as $error) {
-            $errors[] = $error;
-        }
+        $errors = $this->attributeErrors($resource->allFields(), $incoming, $attributes, $wireAttributes, $creating, $request);
 
         // Before any per-field format checking, reject a relationship linkage whose
         // resource `type` is not among the relation's declared related types — a
@@ -327,6 +250,193 @@ final class ResourceValidator
         }
 
         throw new ValidationFailed($errors);
+    }
+
+    /**
+     * The violations of a set of fields' values, as an attribute object validates them: each
+     * field's own constraints, presence and nullability, cross-field comparisons, open and
+     * bounded objects, `OneOf` variants, union members and `Shape` schemas, each at its
+     * `/data/attributes/...` pointer. The JSON type check is the caller's.
+     *
+     * @param list<FieldInterface>    $fields
+     * @param array<array-key, mixed> $incoming       the values the request sent
+     * @param array<array-key, mixed> $attributes     the values the constraints see, stored ones folded in on an update
+     * @param array<array-key, mixed> $wireAttributes the same in wire form, for the schema pass
+     * @param array<string, FieldInterface> $additional each undeclared member an open object takes, by name, to the field validating it
+     *
+     * @return list<Error>
+     */
+    private function attributeErrors(array $fields, array $incoming, array $attributes, array $wireAttributes, bool $creating, JsonApiRequestInterface $request, array $additional = []): array
+    {
+        $constraints = [];
+        $compares = [];
+        foreach ($fields as $field) {
+            if ($field instanceof Id || $field instanceof RelationInterface) {
+                continue;
+            }
+            // The read-only gate is request-aware: a field the author
+            // marked `readOnly(fn)` is validated for a caller it is *writable* for and
+            // skipped for one it is *read-only* for — so validation and hydration stay
+            // consistent. Were this static, a conditionally-read-only field would be
+            // validated (e.g. required) but then never hydrated for the same caller,
+            // surfacing a spurious 422 the write could never satisfy.
+            if ($field->isReadOnlyFor($creating, $request)) {
+                continue;
+            }
+
+            // The field's incoming (merged) value, or null when absent — used to
+            // evaluate a request-aware `when()` condition during presence resolution
+            // (a conditionally-required field).
+            $value = $attributes[$field->name()] ?? null;
+            // A stored list folded in on update is not re-validated element by element:
+            // its elements render without their write-only children, so a whole-element
+            // check would fail a list the client never sent.
+            $constraints[$field->name()] = $this->fieldConstraint($field, $creating, request: $request, value: $value, elements: $creating || \array_key_exists($field->name(), $incoming));
+            foreach ($this->compareConstraints($field, $creating) as $compare) {
+                $compares[] = [$field->name(), $compare];
+            }
+        }
+
+        // An open object's undeclared members each validate against the entry's value field.
+        foreach ($additional as $name => $field) {
+            $constraints[$name] ??= new Optional($this->fieldConstraint($field, $creating, request: $request, value: $attributes[$name] ?? null)->constraints);
+        }
+
+        $errors = [];
+
+        if ($constraints !== []) {
+            $violations = $this->validator->validate($attributes, new Collection(fields: $constraints, allowExtraFields: true));
+            foreach ($violations as $violation) {
+                $errors[] = $this->error((string) $violation->getMessage(), (string) $violation->getPropertyPath());
+            }
+
+            // Cross-field rules are validated at the document level, where the sibling
+            // value is in scope (the per-field Collection sees each value in isolation).
+            foreach ($compares as [$owner, $compare]) {
+                $error = $this->compareError($owner, $compare, $attributes);
+                if ($error !== null) {
+                    $errors[] = $error;
+                }
+            }
+        }
+
+        foreach ($this->objectValueErrors($fields, $incoming, $creating, $request) as $error) {
+            $errors[] = $error;
+        }
+
+        // A union (OneOf) validates value-dependently — the incoming value selects the
+        // variant whose children are then validated — so it
+        // runs as a document-level pass (like the cross-field compares) where the value
+        // is in scope, not through the static per-field Collection which cannot know
+        // which variant's rules apply. A variant child violation maps to
+        // /data/attributes/<field>/<child>; a value selecting no variant to
+        // /data/attributes/<field>/<discriminator>, or to the field when undiscriminated.
+        foreach ($this->oneOfErrors($fields, $attributes, $incoming, $creating, $request) as $error) {
+            $errors[] = $error;
+        }
+
+        // A Union's rules belong to the member the value's JSON type selects, so core
+        // finds each place a member applies and the member's rules run at its pointer.
+        foreach ($this->unionErrors(UnionValues::in($fields, $incoming, $creating, $request), $creating, $request) as $error) {
+            $errors[] = $error;
+        }
+
+        // A Shape constraint carries raw JSON Schema (oneOf/anyOf/allOf of member
+        // schemas) that no Symfony rule can translate — its only validator is opis, run
+        // through the core SchemaValueValidator. Like OneOf and the compares, it runs as
+        // a document-level pass because it validates a whole field value against its
+        // composite schema; a leaf violation carries the opis instance pointer appended
+        // to /data/attributes/<field>. Skipped entirely when opis is not installed (the
+        // validator is null-wired), so a Shape then documents its OpenAPI shape but is
+        // not value-validated — the same optional-linter posture opis already has.
+        foreach ($this->shapeErrors($fields, $wireAttributes, $incoming, $creating, $request) as $error) {
+            $errors[] = $error;
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Validates a declared `meta` object a write sent, as an attribute object is validated:
+     * each member it does not declare is refused at its pointer unless the declaration's
+     * `additionalProperties` entry opens it, and every declared member, and every member the
+     * entry's value field takes, runs its constraints and its JSON type check. `$pointer`
+     * locates the object, such as `/meta` or `/data/meta`. A declaration with nothing in it
+     * leaves the object unchecked.
+     *
+     * @return list<Error>
+     */
+    public function metaErrors(MetaShape $shape, mixed $meta, string $pointer, bool $creating, JsonApiRequestInterface $request): array
+    {
+        if ($shape->isEmpty()) {
+            return [];
+        }
+        if ($meta !== null && (!\is_array($meta) || (\array_is_list($meta) && $meta !== []))) {
+            return [$this->errorAt(self::NOT_AN_OBJECT, $pointer)];
+        }
+        $meta ??= [];
+
+        $base = '/data/attributes';
+        $errors = [];
+        foreach ($shape->undeclared($meta, $base) as $undeclared) {
+            $errors[] = $this->errorAt(\sprintf('The member "%s" is not declared.', self::lastSegment($undeclared)), $undeclared);
+        }
+
+        $additional = [];
+        $of = $shape->additional?->of();
+        if ($of !== null) {
+            foreach (\array_keys($shape->additionalMembers($meta)) as $name) {
+                $additional[$name] = $of;
+            }
+        }
+        $fields = $shape->writableFields($creating, $request);
+        $errors = [...$errors, ...$this->attributeErrors($fields, $meta, $meta, $meta, $creating, $request, $additional)];
+        $errors = $this->withTypeMismatches($errors, $shape->mismatches($meta, $base, $creating, $request));
+
+        return \array_map(fn(Error $error): Error => $this->rebased($error, $base, $pointer), $errors);
+    }
+
+    /**
+     * Validates a declared `meta` object, throwing the {@see ValidationFailed} its
+     * violations make.
+     *
+     * @throws ValidationFailed
+     */
+    public function validateMeta(MetaShape $shape, mixed $meta, string $pointer, bool $creating, JsonApiRequestInterface $request): void
+    {
+        $errors = $this->metaErrors($shape, $meta, $pointer, $creating, $request);
+        if ($errors !== []) {
+            throw new ValidationFailed($errors);
+        }
+    }
+
+    private static function lastSegment(string $pointer): string
+    {
+        $segments = \explode('/', $pointer);
+
+        return \str_replace(['~1', '~0'], ['/', '~'], (string) \end($segments));
+    }
+
+    /**
+     * `$error` with a pointer under `$from` moved under `$to`.
+     */
+    private function rebased(Error $error, string $from, string $to): Error
+    {
+        $pointer = $error->source->pointer ?? '';
+        if ($pointer !== $from && !\str_starts_with($pointer, $from . '/')) {
+            return $error;
+        }
+
+        return new Error(
+            id: $error->id,
+            status: $error->status,
+            code: $error->code,
+            title: $error->title,
+            detail: $error->detail,
+            source: ErrorSource::fromPointer($to . \substr($pointer, \strlen($from))),
+            links: $error->links,
+            meta: $error->meta,
+        );
     }
 
     /**
@@ -547,7 +657,7 @@ final class ResourceValidator
         $creating = $stored === null;
         $meta = $stored === null ? $incoming : \array_merge($stored, $incoming);
 
-        $errors = [];
+        $errors = $this->pivotMemberErrors($relation, $incoming, $this->pointers->forRelationshipEndpointLinkageMeta('', $index), $creating);
         foreach ($this->endpointPivotMetaErrors($this->pivotMetaCollection($relation, $creating), $meta, $index) as $metaError) {
             $errors[] = $metaError;
         }
@@ -1043,12 +1153,12 @@ final class ResourceValidator
         $creating = $stored === null;
         $meta = $stored === null ? $meta : \array_merge($stored, $meta);
 
+        $errors = $this->pivotMemberErrors($relation, $incomingMeta, $this->pointers->forLinkageMeta($name, '', $index), $creating);
         $collection = $this->pivotMetaCollection($relation, $creating);
         if ($collection === null) {
-            return []; // no writable pivot fields → nothing to validate
+            return $errors; // no writable pivot fields → nothing more to validate
         }
 
-        $errors = [];
         foreach ($this->validator->validate($meta, $collection) as $violation) {
             $errors[] = ValidationFailed::describe()->toError(
                 detail: (string) $violation->getMessage(),
@@ -1073,6 +1183,34 @@ final class ResourceValidator
         }
 
         return $errors;
+    }
+
+    /**
+     * The members of a linkage member's `meta.pivot` the relation does not declare, each a
+     * `422` at its pointer, unless the pivot's `additionalProperties` entry opens the
+     * object, when each such member is checked against the entry's value field instead.
+     *
+     * @param array<array-key, mixed> $incoming the member's incoming pivot meta
+     *
+     * @return list<Error>
+     */
+    private function pivotMemberErrors(PivotRelationInterface $relation, array $incoming, string $pointer, bool $creating): array
+    {
+        $shape = $relation->pivotMetaShape();
+        $errors = [];
+        foreach ($shape->undeclared($incoming, $pointer) as $undeclared) {
+            $errors[] = $this->errorAt(\sprintf('The member "%s" is not declared.', self::lastSegment($undeclared)), $undeclared);
+        }
+        $of = $shape->additional?->of();
+        if ($of === null) {
+            return $errors;
+        }
+        $mismatches = [];
+        foreach ($shape->additionalMembers($incoming) as $member => $value) {
+            $mismatches = [...$mismatches, ...ValueTypes::mismatchesOf($of, $value, $pointer . '/' . \str_replace(['~', '/'], ['~0', '~1'], $member), $creating)];
+        }
+
+        return $this->withTypeMismatches($errors, $mismatches);
     }
 
     /**
@@ -1725,12 +1863,14 @@ final class ResourceValidator
      *
      * @param array<array-key, mixed> $incoming the attributes the request sent
      *
+     * @param list<FieldInterface> $fields
+     *
      * @return list<Error>
      */
-    private function objectValueErrors(AbstractResource $resource, array $incoming, bool $creating, JsonApiRequestInterface $request): array
+    private function objectValueErrors(array $fields, array $incoming, bool $creating, JsonApiRequestInterface $request): array
     {
         $errors = [];
-        foreach (ObjectValues::in($resource->allFields(), $incoming, $creating, $request) as $object) {
+        foreach (ObjectValues::in($fields, $incoming, $creating, $request) as $object) {
             $counts = [];
             foreach ($object->memberCounts($creating) as $count) {
                 foreach ($this->translator->translate($count, $request) as $symfonyConstraint) {
@@ -1774,12 +1914,14 @@ final class ResourceValidator
      * @param array<string, mixed>    $attributes the merged incoming attribute map
      * @param array<array-key, mixed> $incoming   the attributes the request sent
      *
+     * @param list<FieldInterface> $fields
+     *
      * @return list<Error>
      */
-    private function oneOfErrors(AbstractResource $resource, array $attributes, array $incoming, bool $creating, JsonApiRequestInterface $request): array
+    private function oneOfErrors(array $fields, array $attributes, array $incoming, bool $creating, JsonApiRequestInterface $request): array
     {
         $errors = [];
-        foreach ($resource->allFields() as $field) {
+        foreach ($fields as $field) {
             if (!$field instanceof OneOf) {
                 continue;
             }
@@ -1866,9 +2008,11 @@ final class ResourceValidator
      * @param array<array-key, mixed> $attributes the merged attribute map, stored values in wire form
      * @param array<array-key, mixed> $incoming   the attributes the request sent
      *
+     * @param list<FieldInterface> $fields
+     *
      * @return list<Error>
      */
-    private function shapeErrors(AbstractResource $resource, array $attributes, array $incoming, bool $creating, JsonApiRequestInterface $request): array
+    private function shapeErrors(array $fields, array $attributes, array $incoming, bool $creating, JsonApiRequestInterface $request): array
     {
         if ($this->schemaValues === null) {
             return []; // opis not installed — a Shape documents but does not validate
@@ -1876,7 +2020,7 @@ final class ResourceValidator
 
         $objects = null;
         $errors = [];
-        foreach ($resource->allFields() as $field) {
+        foreach ($fields as $field) {
             if ($field instanceof Id || $field instanceof RelationInterface) {
                 continue;
             }

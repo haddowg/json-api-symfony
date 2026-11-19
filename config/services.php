@@ -179,7 +179,8 @@ return static function (ContainerConfigurator $container): void {
         ->arg('$dispatcher', \Symfony\Component\DependencyInjection\Loader\Configurator\service('event_dispatcher')->nullOnInvalid())
         ->arg('$filterValues', \Symfony\Component\DependencyInjection\Loader\Configurator\service(FilterValueValidator::class)->nullOnInvalid())
         ->arg('$txContext', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataPersister\WriteTransactionContext::class))
-        ->arg('$afterCommit', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataPersister\AfterCommit::class));
+        ->arg('$afterCommit', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataPersister\AfterCommit::class))
+        ->arg('$requestMeta', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Operation\RequestMetaResolver::class));
 
     // Exposes an #[AsJsonApiAction(asLink: true)] action, or one a resource links through
     // a declared ActionLink, as a security-aware `links` member on its mount type's
@@ -220,8 +221,13 @@ return static function (ContainerConfigurator $container): void {
     // is absent.
     $services->set(\haddowg\JsonApiBundle\Operation\DocumentMetaResolver::class);
 
+    // The declared request and resource object meta of each write, read once per server,
+    // type and context; the handler validates writes against it and the warmer reads it.
+    $services->set(\haddowg\JsonApiBundle\Operation\RequestMetaResolver::class);
+
     $services->set(CrudOperationHandler::class)
         ->arg('$documentMeta', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Operation\DocumentMetaResolver::class))
+        ->arg('$requestMeta', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Operation\RequestMetaResolver::class))
         ->arg('$debug', '%kernel.debug%')
         ->arg('$validator', \Symfony\Component\DependencyInjection\Loader\Configurator\service(ResourceValidator::class)->nullOnInvalid())
         ->arg('$dispatcher', \Symfony\Component\DependencyInjection\Loader\Configurator\service('event_dispatcher')->nullOnInvalid())

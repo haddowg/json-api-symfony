@@ -40,6 +40,7 @@ use haddowg\JsonApiBundle\DataPersister\WriteTransactionContext;
 use haddowg\JsonApiBundle\Operation\CrudOperationHandler;
 use haddowg\JsonApiBundle\Operation\DocumentMetaResolver;
 use haddowg\JsonApiBundle\Operation\Operation;
+use haddowg\JsonApiBundle\Operation\RequestMetaResolver;
 use haddowg\JsonApiBundle\Operation\SingletonIdResolver;
 use haddowg\JsonApiBundle\Operation\TargetResolver;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
@@ -268,7 +269,7 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
         // request carrying `{data: …}`, and dispatch it through the handler's own per-op
         // CRUD arms IN-PROCESS (handle(), never Server::dispatch — serving already fired
         // once for the batch).
-        $operation = $this->buildOperation($op->opCode, $target, $data, $op->index);
+        $operation = $this->buildOperation($op->opCode, $target, $data, $op->index, $op->meta);
         $response = $this->handler->handle($operation);
 
         // A sub-operation that resolved to a 404/400 (a missing update/delete target, an
@@ -536,7 +537,7 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
      *  - `update` → {@see UpdateResourceOperation}  | {@see UpdateRelationshipOperation};
      *  - `remove` → {@see DeleteResourceOperation}  | {@see RemoveFromRelationshipOperation}.
      */
-    private function buildOperation(AtomicOperationCode $opCode, Target $target, mixed $data, int $index): JsonApiOperationInterface
+    private function buildOperation(AtomicOperationCode $opCode, Target $target, mixed $data, int $index, mixed $meta = null): JsonApiOperationInterface
     {
         $query = new QueryParameters([], [], [], [], []);
 
@@ -547,7 +548,7 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
                 AtomicOperationCode::Update => 'PATCH',
                 AtomicOperationCode::Remove => 'DELETE',
             };
-            $body = $this->subRequest($target, $method, $data, $index);
+            $body = $this->subRequest($target, $method, $data, $index, $meta);
             $context = new OperationContext($this->server, $body);
 
             return match ($opCode) {
@@ -574,7 +575,7 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
             throw new ResourceIdConflict($bodyId, $target->id);
         }
 
-        $body = $this->subRequest($target, $method, $data, $index);
+        $body = $this->subRequest($target, $method, $data, $index, $meta);
         $context = new OperationContext($this->server, $body);
 
         return match ($opCode) {
@@ -595,15 +596,18 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
      * The raw body stays the whole batch, so the operation's object-decoded `data`
      * rides an attribute for value validation ({@see ObjectView}).
      */
-    private function subRequest(Target $target, string $method, mixed $data, int $index): JsonApiRequestInterface
+    private function subRequest(Target $target, string $method, mixed $data, int $index, mixed $meta = null): JsonApiRequestInterface
     {
         $uri = $this->request->getUri()->withPath($this->pathFor($target));
 
+        // The operation's own `meta` is the sub-request's top-level `meta`, validated against
+        // what its target declares for an atomic operation.
         $request = $this->request
             ->withMethod($method)
             ->withUri($uri, preserveHost: true)
-            ->withParsedBody(['data' => $data])
-            ->withAttribute(ObjectView::DATA_ATTRIBUTE, $this->objectDataOf($index));
+            ->withParsedBody($meta === null ? ['data' => $data] : ['data' => $data, 'meta' => $meta])
+            ->withAttribute(ObjectView::DATA_ATTRIBUTE, $this->objectDataOf($index))
+            ->withAttribute(RequestMetaResolver::ATOMIC_ATTRIBUTE, true);
         \assert($request instanceof JsonApiRequestInterface);
 
         return $request;
@@ -937,6 +941,14 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
             $document = $declared->isEmpty() ? null : \json_decode($body, true, 512, \JSON_THROW_ON_ERROR);
             if (\is_array($document)) {
                 $declared->assertSatisfiedBy(\is_array($document['meta'] ?? null) ? $document['meta'] : []);
+            }
+            $rendered = \json_decode($body, true, 512, \JSON_THROW_ON_ERROR);
+            if (\is_array($rendered)) {
+                $server = $this->server;
+                \haddowg\JsonApi\Resource\RenderedMeta::assertConforms(
+                    $rendered,
+                    static fn(string $type): ?object => $server->hasSerializerFor($type) ? $server->serializerFor($type) : null,
+                );
             }
         }
 

@@ -161,6 +161,28 @@ final readonly class ActionContext
         return \is_string($mediaType) ? $mediaType : null;
     }
 
+    /**
+     * The typed top-level `meta` the call sent, validated against what the handler declares
+     * for the method through
+     * {@see \haddowg\JsonApi\Resource\DeclaresActionRequestMetaInterface::requestDocumentMeta()}.
+     * The `meta` as sent when it declares nothing.
+     *
+     * @return array<string, mixed>
+     */
+    public function requestMeta(): array
+    {
+        return \haddowg\JsonApi\Resource\WrittenMeta::of($this->request)->document;
+    }
+
+    /**
+     * The typed `meta` the call sent: its top-level `meta`, and for a document input its
+     * resource object's `data.meta`, validated against the input type's `resourceMeta()`.
+     */
+    public function writtenMeta(): \haddowg\JsonApi\Resource\WrittenMeta
+    {
+        return \haddowg\JsonApi\Resource\WrittenMeta::of($this->request);
+    }
+
     public function request(): JsonApiRequestInterface
     {
         return $this->request;

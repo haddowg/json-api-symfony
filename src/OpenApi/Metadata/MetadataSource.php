@@ -430,7 +430,7 @@ final class MetadataSource
 
         $actions = [];
         foreach ($this->actions->forServerType($serverName, $type) as $action) {
-            $actions[] = new ActionMetadata($this->withResolvedTags($action, $descriptor['tags'], $type), $this->actions->documentMetaFor($action));
+            $actions[] = new ActionMetadata($this->withResolvedTags($action, $descriptor['tags'], $type), $this->actions->documentMetaFor($action), $this->actions->requestMetaFor($action));
         }
 
         // The resolved paginator self-describes its `page[…]` object schema (a `oneOf`
@@ -514,6 +514,8 @@ final class MetadataSource
             maxIncludeDepth: $includeControls?->maxIncludeDepth(),
             singleton: $descriptor['singleton'] ?? false,
             documentMeta: self::documentMetaDeclarer($resource ?? ($server->hasSerializerFor($type) ? $server->serializerFor($type) : null)),
+            requestMeta: $resource ?? ($server->hasHydratorFor($type) ? $server->hydratorFor($type) : null),
+            resourceMeta: $resource ?? ($server->hasSerializerFor($type) ? $server->serializerFor($type) : null),
         );
     }
 

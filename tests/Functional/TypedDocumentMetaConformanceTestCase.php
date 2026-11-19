@@ -108,7 +108,7 @@ abstract class TypedDocumentMetaConformanceTestCase extends JsonApiFunctionalTes
         $document = \json_decode((string) \json_encode($factory->forServer()->toArray()), true);
         self::assertIsArray($document);
 
-        self::assertSame(['contract' => GeneratorContract::TYPED_DOCUMENT_META], self::at($document, 'info', 'x-generator'));
+        self::assertSame(['contract' => \max(GeneratorContract::BASELINE, GeneratorContract::TYPED_DOCUMENT_META)], self::at($document, 'info', 'x-generator'));
 
         foreach ([
             ['/tm-cards', 'get', '200', 'TmCardsFetchCollectionDocument'],

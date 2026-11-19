@@ -14,6 +14,8 @@ use haddowg\JsonApi\Request\JsonApiRequestInterface;
  */
 final class BeforeDeleteEvent
 {
+    use ReadsWrittenMeta;
+
     public function __construct(
         public readonly string $type,
         public readonly JsonApiRequestInterface $request,

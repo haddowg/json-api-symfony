@@ -17,6 +17,8 @@ use haddowg\JsonApi\Resource\Field\RelationInterface;
  */
 final class BeforeMemberMoveEvent
 {
+    use ReadsWrittenMeta;
+
     public function __construct(
         public readonly string $type,
         public readonly JsonApiRequestInterface $request,
