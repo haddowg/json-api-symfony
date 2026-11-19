@@ -4,17 +4,17 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\OpenApi\Metadata;
 
-use haddowg\JsonApi\OpenApi\Metadata\OperationType;
-use haddowg\JsonApi\Resource\ActionRequestMetaContext;
-use haddowg\JsonApi\Resource\RequestMetaContext;
-use haddowg\JsonApi\Resource\RequestMeta;
 use haddowg\JsonApi\Exception\ClassListErrorSource;
 use haddowg\JsonApi\Exception\ErrorCatalogSourceInterface;
 use haddowg\JsonApi\Exception\ErrorScope;
 use haddowg\JsonApi\Exception\ScopedErrorSource;
 use haddowg\JsonApi\OpenApi\Metadata\ActionInputMode;
 use haddowg\JsonApi\OpenApi\Metadata\OperationKind;
+use haddowg\JsonApi\OpenApi\Metadata\OperationType;
 use haddowg\JsonApi\OpenApi\Metadata\TypeMetadataInterface;
+use haddowg\JsonApi\Resource\ActionRequestMetaContext;
+use haddowg\JsonApi\Resource\RequestMeta;
+use haddowg\JsonApi\Resource\RequestMetaContext;
 use haddowg\JsonApiBundle\Atomic\AtomicHrefInvalid;
 use haddowg\JsonApiBundle\Atomic\AtomicHrefUnresolvable;
 use haddowg\JsonApiBundle\Atomic\AtomicOperationNotExposed;
