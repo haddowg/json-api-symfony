@@ -151,6 +151,7 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
 use haddowg\JsonApiBundle\Validation\FilterValueValidator;
 use haddowg\JsonApiBundle\Validation\ReadOnlyAttributeGuard;
 use haddowg\JsonApiBundle\Validation\ResourceValidator;
+use haddowg\JsonApiBundle\Validation\WireTypeValidator;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
@@ -295,6 +296,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         private readonly ?DocumentMetaResolver $documentMeta = null,
         // In debug mode each atomic result's declared meta is checked as it renders.
         private readonly bool $debug = false,
+        // Checks each written value's JSON type when no validator is wired.
+        private readonly WireTypeValidator $wireTypes = new WireTypeValidator(),
     ) {}
 
     public function handle(\haddowg\JsonApi\Operation\JsonApiOperationInterface $operation): DataResponse|RelatedResponse|IdentifierResponse|MetaResponse|NoContentResponse|AcceptedResponse|SeeOtherResponse|AtomicResultsResponse|ErrorResponse|RawResponse
@@ -3500,10 +3503,6 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      */
     private function validate(Server $server, string $type, JsonApiRequestInterface $body, bool $creating, ?object $existingObject = null): void
     {
-        if ($this->validator === null) {
-            return;
-        }
-
         $resource = $this->types->resourceFor($server, $type);
         if ($resource === null) {
             return;
@@ -3517,6 +3516,13 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $existingPivots = $existingObject !== null
             ? $this->existingPivots($server, $type, $body, $existingObject)
             : [];
+
+        if ($this->validator === null) {
+            // Without symfony/validator only the constraint rules go unchecked.
+            $this->wireTypes->validate($resource, $body, $creating, $existingPivots);
+
+            return;
+        }
 
         $this->validator->validate($resource, $body, $creating, $existingObject, $existingPivots);
     }
@@ -3577,7 +3583,13 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      */
     private function validateLinkage(RelationInterface $relation, ToOneRelationship|ToManyRelationship $linkage, Mode $mode, array $existingPivot = []): void
     {
-        $this->validator?->validateRelationshipLinkage($relation, $linkage, $mode, $existingPivot);
+        if ($this->validator === null) {
+            $this->wireTypes->validateRelationshipLinkage($relation, $linkage, $mode, $existingPivot);
+
+            return;
+        }
+
+        $this->validator->validateRelationshipLinkage($relation, $linkage, $mode, $existingPivot);
     }
 
     /**

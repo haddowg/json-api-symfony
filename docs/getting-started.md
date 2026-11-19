@@ -348,7 +348,7 @@ You have a working type. To go deeper, in rough reading order:
   read/mutate relationship endpoints, `?include`, `?withCount`, pivot data, and the
   relationship-queries profile.
 - [validation](validation.md) — wire `symfony/validator` so your declared constraints
-  are actually enforced (writes run **unvalidated** until you do).
+  are actually enforced (until you do, a write is only checked for its JSON types).
 - [configuration](configuration.md) — the config reference and the optional-dependency
   matrix. Note one default a first request can trip on: **strict query parameters** is
   on by default, so an *unrecognized* query family (`?filtr=…`, a typo) is a `400`

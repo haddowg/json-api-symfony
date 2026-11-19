@@ -721,7 +721,7 @@ return match (true) {
 It is constructed with the two registries, the
 [`TypeMetadataResolver`](../src/Server/TypeMetadataResolver.php) seam (below), and
 an **optional** `ResourceValidator` — `null` when `symfony/validator` is not
-installed, in which case writes run unvalidated. See [validation](validation.md)
+installed, in which case a write's values are checked for their JSON types alone. See [validation](validation.md)
 for the validator and the silent-absence caveat.
 
 ### Reads
