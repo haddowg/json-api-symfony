@@ -170,7 +170,7 @@ return static function (ContainerConfigurator $container): void {
     // validation, the before/after gates) and is injected — optionally — into the
     // single CrudOperationHandler's CustomActionOperation arm. Its validator and
     // dispatcher are optional, so an app without the Validator bridge / the
-    // event-dispatcher still invokes actions (just unvalidated / un-hooked).
+    // event-dispatcher still invokes actions (type-checked only / un-hooked).
     $services->set(\haddowg\JsonApiBundle\Action\ActionRegistry::class)
         ->args(['$handlers' => null, '$descriptors' => []]);
 
@@ -565,10 +565,15 @@ return static function (ContainerConfigurator $container): void {
 
     // symfony/validator is a `suggest` dependency: without it the bridge stays
     // absent and the CrudOperationHandler's optional validator is null, so writes
-    // run unvalidated. With it, the ResourceValidator translates each resource's
+    // are checked for their JSON types alone. With it, the ResourceValidator translates each resource's
     // declared constraints to Symfony rules and renders violations as 422s.
+    // Core's JSON type check runs on every write whether or not symfony/validator is
+    // installed; without it, this checker refuses a value of the wrong type with the
+    // same 422 and only the declared constraint rules go unchecked.
+    $services->set(JsonPointerBuilder::class);
+    $services->set(\haddowg\JsonApiBundle\Validation\WireTypeValidator::class);
+
     if (\interface_exists(\Symfony\Component\Validator\Validator\ValidatorInterface::class)) {
-        $services->set(JsonPointerBuilder::class);
 
         // Applications register translators for their own constraint VOs by tagging
         // a ConstraintTranslatorInterface; the translator consults them for anything

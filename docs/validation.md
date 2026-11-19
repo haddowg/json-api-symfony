@@ -33,24 +33,15 @@ if (\interface_exists(\Symfony\Component\Validator\Validator\ValidatorInterface:
 
 `CrudOperationHandler` takes the `ResourceValidator` as an **optional** constructor
 argument (`->nullOnInvalid()`). When the validator is absent it resolves to `null`,
-and the handler's validation step is a no-op:
+and the handler checks each written value's JSON type alone, through the always-wired
+`WireTypeValidator`: an attribute, a nested member, a list element or a pivot value of
+the wrong type is still a `422` at its pointer, on every write, relationship endpoint and
+action input, and a date in the wrong shape is still refused before anything stores it.
 
-```php
-// src/Operation/CrudOperationHandler.php
-private function validate(Server $server, string $type, JsonApiRequestInterface $body, bool $creating): void
-{
-    if ($this->validator === null) {
-        return; // symfony/validator not installed — writes run unvalidated
-    }
-    // …
-}
-```
-
-> **Without `symfony/validator`, writes run unvalidated — silently.** No exception,
-> no warning: a `POST` with a missing required attribute or a malformed email
-> succeeds with `201`. Declared constraints are *not* enforced by default. If you
-> rely on them, install `symfony/validator` (see the optional-dependency matrix in
-> [configuration](configuration.md)).
+> **Without `symfony/validator`, declared constraints go unchecked — silently.** No
+> exception, no warning: a `POST` with a missing required attribute or a malformed email
+> succeeds with `201`. If you rely on your constraints, install `symfony/validator` (see
+> the optional-dependency matrix in [configuration](configuration.md)).
 
 There is a **second** gating condition. Validation only runs for a type backed by
 an `AbstractResource` — the handler asks `TypeMetadataResolver::resourceFor()` for

@@ -182,9 +182,11 @@ final class ResourceValidator
             return; // a missing/malformed data member is core's concern, raised in hydration
         }
 
+        // An `attributes` member that is not an object carries no attribute to check, but
+        // the linkage and pivot values still are.
         $incoming = $data['attributes'] ?? [];
         if (!\is_array($incoming)) {
-            return;
+            $incoming = [];
         }
 
         // On update, fold the stored resource's wire-form attributes under the
@@ -379,11 +381,7 @@ final class ResourceValidator
 
     private function typeMessage(ValueTypeMismatch $mismatch): string
     {
-        return match (true) {
-            $mismatch->isNull() => (new NotNull())->message,
-            $mismatch->expected === ValueTypes::OBJECT => self::NOT_AN_OBJECT,
-            default => \str_replace('{{ type }}', $mismatch->expected, (new Type('string'))->message),
-        };
+        return WireTypeValidator::message($mismatch);
     }
 
     /**

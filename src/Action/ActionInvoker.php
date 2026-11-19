@@ -37,6 +37,7 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
 use haddowg\JsonApiBundle\Validation\FilterValueValidator;
 use haddowg\JsonApiBundle\Validation\ReadOnlyAttributeGuard;
 use haddowg\JsonApiBundle\Validation\ResourceValidator;
+use haddowg\JsonApiBundle\Validation\WireTypeValidator;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
@@ -78,6 +79,7 @@ final readonly class ActionInvoker
         private ?FilterValueValidator $filterValues = null,
         private ?WriteTransactionContext $txContext = null,
         private ?AfterCommit $afterCommit = null,
+        private WireTypeValidator $wireTypes = new WireTypeValidator(),
     ) {}
 
     public function invoke(CustomActionOperation $operation): DataResponse|MetaResponse|NoContentResponse|AcceptedResponse|SeeOtherResponse|ErrorResponse|RawResponse
@@ -324,7 +326,14 @@ final readonly class ActionInvoker
         $creating = $body->getMethod() !== 'PATCH';
         $resource = $this->types->resourceFor($server, $inputType);
         ReadOnlyAttributeGuard::check($server, $resource, $body, creating: $creating);
-        if ($this->validator === null || $resource === null) {
+        if ($resource === null) {
+            return;
+        }
+
+        if ($this->validator === null) {
+            // Without symfony/validator only the constraint rules go unchecked.
+            $this->wireTypes->validate($resource, $body, $creating);
+
             return;
         }
 
