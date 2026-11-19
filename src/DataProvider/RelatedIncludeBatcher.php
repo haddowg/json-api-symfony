@@ -397,7 +397,7 @@ final class RelatedIncludeBatcher
                 continue;
             }
 
-            if (isset($loaded[$name]) || ($relation->isSparseField() && !$request->isIncludedField($type, $name))) {
+            if (isset($loaded[$name]) || !self::rendersField($request, $type, $relation)) {
                 continue;
             }
 
@@ -1324,5 +1324,15 @@ final class RelatedIncludeBatcher
         }
 
         return \array_values($unique);
+    }
+
+    /**
+     * Whether `fields[type]` renders the relation: it names it, or the relation is declared
+     * `notSparseField()` and the fieldset isn't the empty one that renders no fields.
+     */
+    private static function rendersField(JsonApiRequestInterface $request, string $type, RelationInterface $relation): bool
+    {
+        return $request->isIncludedField($type, $relation->name())
+            || (!$relation->isSparseField() && !\in_array('', $request->getIncludedFields($type), true));
     }
 }
