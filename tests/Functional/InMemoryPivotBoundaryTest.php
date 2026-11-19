@@ -45,7 +45,7 @@ final class InMemoryPivotBoundaryTest extends JsonApiFunctionalTestCase
     public function everyPivotFilterIsUnrecognisedOnEveryInMemoryPath(): void
     {
         $queries = 'application/vnd.api+json;profile="' . RelationshipQueriesProfile::URI . '",application/vnd.api+json;profile="' . CountableProfile::URI . '"';
-        foreach (['position' => '1', 'untagged' => '1', 'tagName' => 'chill'] as $key => $value) {
+        foreach (['position' => '1', 'untagged' => '1', 'tagName' => 'chill', 'pivotPosition' => '1'] as $key => $value) {
             foreach ([
                 '/playlists/1/tracks?filter[' . $key . ']=' . $value,
                 '/playlists/1/relationships/tracks?filter[' . $key . ']=' . $value,
@@ -66,6 +66,9 @@ final class InMemoryPivotBoundaryTest extends JsonApiFunctionalTestCase
         $response = $this->handle(self::BASE_URI . '/playlists/1/tracks?sort=position');
 
         self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+
+        $throughPivot = $this->handle(self::BASE_URI . '/playlists/1/tracks?sort=pivotPosition');
+        self::assertSame(400, $throughPivot->getStatusCode(), (string) $throughPivot->getContent());
     }
 
     #[Test]

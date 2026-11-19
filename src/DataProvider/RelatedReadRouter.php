@@ -74,6 +74,15 @@ final class RelatedReadRouter implements ResetInterface
     }
 
     /**
+     * The relations a pivot row holds, as the providers serving each pivot relation's
+     * related type name them.
+     */
+    public function pivotRows(): PivotRowRelationRouter
+    {
+        return new PivotRowRelationRouter($this->providers);
+    }
+
+    /**
      * Drops every batch read so far, after a write may have changed what it holds.
      */
     public function forget(): void

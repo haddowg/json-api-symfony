@@ -905,6 +905,31 @@ through its association entity), a hop into a type no entity maps or one a provi
 other than Doctrine scopes, and a leaf that is not a field or association of the reached
 entity.
 
+#### Paths through a pivot row
+
+A `pivot` segment in the path reaches the pivot rows of a `belongsToMany` with stored pivot
+fields, over the association entity behind it. A path that starts with `pivot` reads the
+pivot row of the relation it runs under, which the relation's pivot query has joined as
+`pivot`, so it applies wherever the `pivot.` column filters do: the related and relationship
+endpoints and `relatedQuery[<relation>][filter]`. Ending there, the filter applies to that
+row's pivot field. Elsewhere it is unrecognised, as a `pivot.` column filter is.
+
+A `pivot` in the middle of a path joins the association entity's rows linking the row
+before it to each member, inside the same `EXISTS`, with the member joined too and kept to
+the rows its type's query extensions admit, so a link to a hidden member never matches.
+
+After `pivot`, a segment names an association of the association entity, such as
+`pivot.addedBy`. The provider reads the type it reaches from the entity it targets: the one
+registered type whose entity that is. The warm-up refuses an association whose target no
+registered type serves, or several do, and a `pivot` after a relation the provider reads no
+pivot rows of, which includes a `morphToMany`: its link rows aren't walked by a path yet.
+From the type it reaches, the path is scoped and gated like any other hop. A `pivot` hop
+itself is gated by its relation's read permission.
+
+A sort takes only a leading `pivot`, and orders the relation's members by a pivot field or
+by a field of a to-one association of the pivot row, left-joined from `pivot`. The in-memory
+provider holds no pivot rows, so it refuses every filter whose path reaches one with a `400`.
+
 ### Relationship-existence filtering: `WhereHas`, `WhereThrough`, `WhereHasMatching`
 
 `WhereThrough` and `WhereThroughIn` are deprecated in favour of `->through()` and are

@@ -13,6 +13,7 @@ use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Filter\WhereDoesntHave;
 use haddowg\JsonApi\Resource\Filter\WhereThrough;
+use haddowg\JsonApi\Resource\Sort\SortByField;
 
 /**
  * The in-memory `playlists` resource for the pivot boundary witness. It declares
@@ -44,7 +45,9 @@ final class PivotPlaylistResource extends AbstractResource
                     Where::make('position', 'pivot.position'),
                     WhereDoesntHave::make('untagged', 'pivot.tags'),
                     WhereThrough::make('tagName', 'pivot.tags.name'),
+                    Where::make('pivotPosition', 'position')->through('pivot'),
                 )
+                ->withSorts(SortByField::make('pivotPosition', 'position')->through('pivot'))
                 ->paginate(PagePaginator::make())
                 ->countable(),
             BelongsToMany::make('dataTracks', 'tracks')

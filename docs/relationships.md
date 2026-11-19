@@ -992,6 +992,24 @@ A related type that declares a relation stored as `pivot` would make such a path
 ambiguous, so the cache warm-up fails naming the filter and the relation. Store that
 relation under another name with `storedAs()`.
 
+`WhereThrough` and `WhereThroughIn` are deprecated. Their `pivot.`-prefixed paths move to
+[`->through()`](https://github.com/haddowg/json-api/blob/main/docs/filters.md#reaching-a-pivot-row)
+with a leading `pivot` segment, and the existence filters move with them:
+
+```php
+->withFilters(
+    WhereDoesntHave::make('unused', 'targets')->through('pivot'),
+    Where::make('targetName', 'name')->through('pivot.targets'),
+    WhereIdIn::make('target')->through('pivot.targets')->acceptsList(),
+    Where::make('override', 'defaultOverride')->through('pivot'),  // a pivot field
+)
+```
+
+The migrated filters apply on the same endpoints. Each association the path walks now
+reaches a type: the registered type whose entity it targets, whose query extensions scope
+it, whose read rules gate it and whose encoder decodes its ids, so a row the old filter
+matched through a hidden target no longer matches.
+
 A [filter family](https://github.com/haddowg/json-api/blob/main/docs/filters.md#filter-families-keys-matched-by-prefix)
 on the relation can resolve to a pivot filter too. The bundle resolves the family first
 and then treats what it returns as it treats an exact pivot filter: a `pivot.` column

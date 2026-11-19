@@ -216,7 +216,18 @@ final class DoctrineSortHandler implements SortHandlerInterface, AliasAwareSortH
             ?? throw new \LogicException(\sprintf('The QueryBuilder has no entity at alias "%s" to sort on.', $alias));
         $current = $alias;
         $joined = self::joinedAliases($query);
-        foreach ($path->hops as $index => $hop) {
+        // A path starting with `pivot` reads the pivot row the relation's pivot query joined.
+        $hops = $path->hops;
+        if ($path->startsWithPivot()) {
+            if ($alias !== 'pivot') {
+                throw new \LogicException(\sprintf('Sort "%s" reaches through "%s", which starts at the pivot row of the relation it runs under, but it runs on a query that joins no pivot row.', $sort->key(), $path->path));
+            }
+            unset($hops[0]);
+        }
+        foreach ($hops as $index => $hop) {
+            if ($hop->pivot) {
+                throw new \LogicException(\sprintf('Sort "%s" reaches through "%s", whose pivot row a sort can read only at the start of its path.', $sort->key(), $path->path));
+            }
             $association = $hop->storage();
             if (!$metadata->hasAssociation($association) || !$metadata->isSingleValuedAssociation($association)) {
                 throw new \LogicException(\sprintf('Sort "%s" reaches through "%s", but "%s" is not a to-one association on "%s".', $sort->key(), $path->path, $association, $metadata->getName()));

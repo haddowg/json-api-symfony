@@ -33,6 +33,8 @@ use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApi\Resource\Sort\SortDirective;
 use haddowg\JsonApi\Resource\Sort\SortInterface;
 use haddowg\JsonApi\Resource\Sort\SortMatcher;
+use haddowg\JsonApi\Resource\Through\ReachesThrough;
+use haddowg\JsonApi\Resource\Through\RelationPath;
 use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\Filter\WhereHasMatching;
 
@@ -181,7 +183,7 @@ final class RelationCriteriaFactory
             $filters,
             SortMatcher::merge(
                 $relatedResource?->allSorts() ?? [],
-                self::relationSorts($relation, $relatedResource),
+                self::readableSorts(self::relationSorts($relation, $relatedResource), $includePivotFields || $pivotSorts),
                 $includePivotFields || $pivotSorts ? PivotFields::sortsFor($relation) : [],
             ),
             $window,
@@ -206,7 +208,7 @@ final class RelationCriteriaFactory
             // RelationCountInterface seam).
             wantsCount: $wantsCount,
             request: $request,
-            paths: $resources !== null ? FilterPaths::of($resources, $relatedResource, $parentType, $this->readRouter?->admissionFor($resources), $this->readRouter?->morphAdmissionFor($resources)) : null,
+            paths: $resources !== null ? FilterPaths::of($resources, $relatedResource, $parentType, $this->readRouter?->admissionFor($resources), $relation, $this->readRouter?->pivotRows(), $this->readRouter?->morphAdmissionFor($resources)) : null,
         );
     }
 
@@ -225,11 +227,11 @@ final class RelationCriteriaFactory
         return new CollectionCriteria(
             new QueryParameters(fields: [], includes: [], sort: [], filter: [], pagination: $request->getPagination()),
             filters: $this->linkageFilters($relatedResource, $relation),
-            sorts: SortMatcher::merge($relatedResource?->allSorts() ?? [], self::relationSorts($relation, $relatedResource), $pivotSorts ? PivotFields::sortsFor($relation) : []),
+            sorts: SortMatcher::merge($relatedResource?->allSorts() ?? [], self::readableSorts(self::relationSorts($relation, $relatedResource), $pivotSorts), $pivotSorts ? PivotFields::sortsFor($relation) : []),
             defaultSort: $this->defaultOrder($relation, $relatedResource, $pivotSorts),
             aliasOf: $pivotSorts ? $this->pivotSortAliases($relation) : [],
             request: $request,
-            paths: $resources !== null ? FilterPaths::of($resources, $relatedResource, $parentType, $this->readRouter?->admissionFor($resources), $this->readRouter?->morphAdmissionFor($resources)) : null,
+            paths: $resources !== null ? FilterPaths::of($resources, $relatedResource, $parentType, $this->readRouter?->admissionFor($resources), $relation, $this->readRouter?->pivotRows(), $this->readRouter?->morphAdmissionFor($resources)) : null,
         );
     }
 
@@ -281,7 +283,7 @@ final class RelationCriteriaFactory
         }
 
         if (!$pivot) {
-            return $own;
+            return \array_values(\array_filter($own, static fn(SortDirective $directive): bool => !self::readsPivotRow($directive->sort)));
         }
 
         $pivotSorts = [];
@@ -344,8 +346,37 @@ final class RelationCriteriaFactory
         foreach (PivotFields::sortsFor($relation) as $sort) {
             $aliasOf[$sort->key()] = 'pivot';
         }
+        $own = $relation instanceof DefaultSortedRelationInterface ? \array_map(static fn(SortDirective $directive): SortInterface => $directive->sort, $relation->defaultSort()) : [];
+        foreach ([...$relation->sorts(), ...$own] as $sort) {
+            if (self::readsPivotRow($sort)) {
+                $aliasOf[$sort->key()] = 'pivot';
+            }
+        }
 
         return $aliasOf;
+    }
+
+    /**
+     * Whether a filter or sort reaches through a path starting at `pivot`, the pivot row
+     * of the relation it runs under, which only the provider's pivot query joins.
+     */
+    public static function readsPivotRow(FilterInterface|SortInterface $item): bool
+    {
+        $through = $item instanceof ReachesThrough ? $item->throughRelations() : null;
+
+        return $through !== null && \explode('.', $through)[0] === RelationPath::PIVOT;
+    }
+
+    /**
+     * `$sorts` without those reading the pivot row, off the pivot query.
+     *
+     * @param list<SortInterface> $sorts
+     *
+     * @return list<SortInterface>
+     */
+    private static function readableSorts(array $sorts, bool $pivot): array
+    {
+        return $pivot ? $sorts : \array_values(\array_filter($sorts, static fn(SortInterface $sort): bool => !self::readsPivotRow($sort)));
     }
 
     /**
@@ -485,6 +516,10 @@ final class RelationCriteriaFactory
      */
     private function columnOf(FilterInterface $filter): string
     {
+        if (self::readsPivotRow($filter) && $filter instanceof ReachesThrough) {
+            return self::PIVOT_PREFIX . \substr((string) $filter->throughRelations(), \strlen(RelationPath::PIVOT) + 1);
+        }
+
         return match (true) {
             $filter instanceof Where,
             $filter instanceof WhereIn,
