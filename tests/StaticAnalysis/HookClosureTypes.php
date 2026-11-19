@@ -7,12 +7,15 @@ namespace haddowg\JsonApiBundle\Tests\StaticAnalysis;
 use Doctrine\ORM\QueryBuilder;
 use haddowg\JsonApi\OpenApi\Schema;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Resource\Field\AdditionalProperties;
 use haddowg\JsonApi\Resource\Field\BelongsTo;
+use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\FieldBuilderInterface;
 use haddowg\JsonApi\Resource\Field\HasMany;
 use haddowg\JsonApi\Resource\Field\Integer;
 use haddowg\JsonApi\Resource\Field\Map;
 use haddowg\JsonApi\Resource\Field\Obj;
+use haddowg\JsonApi\Resource\Field\PivotEdge;
 use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApi\Resource\Link\ActionLink;
 use haddowg\JsonApi\Resource\Link\ActionLinkBuilder;
@@ -62,6 +65,23 @@ final class HookClosureTypes
                 ->cannotBeIncluded(static fn(HookAlbum $album): bool => $album->locked)
                 ->identifierMeta(static fn(HookAlbum $parent, HookAlbum $related): array => ['parent' => $parent->id, 'at' => $related->id]),
             BelongsTo::make('parent', 'albums')->extractUsing(static fn(HookAlbum $album): ?HookAlbum => $album->parent),
+            // An open pivot's entry is handed the association entity and the extra members.
+            BelongsToMany::make('tracks', 'tracks')->fields(
+                Integer::make('position'),
+                AdditionalProperties::make()->of(Integer::make('*'))
+                    ->extractUsing(static fn(PivotEdge $edge): array => $edge->pivot)
+                    ->fillUsing(static function (HookAlbumTrack $row, array $members): HookAlbumTrack {
+                        $row->extras = $members;
+
+                        return $row;
+                    }),
+            ),
+            // A type's open resource meta, read from and written to its entity.
+            AdditionalProperties::make()->of(Str::make('*'))
+                ->extractUsing(static fn(HookAlbum $album): ?array => $album->credits)
+                ->fillUsing(static function (HookAlbum $album, array $members): HookAlbum {
+                    return $album;
+                }),
             DeclaredLink::make('store')
                 ->hrefUsing(static fn(HookAlbum $album): string => '/albums/' . $album->id)
                 ->metaUsing(static fn(?HookAlbum $album): array => ['title' => $album?->title]),
