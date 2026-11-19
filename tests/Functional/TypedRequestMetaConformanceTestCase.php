@@ -37,7 +37,7 @@ abstract class TypedRequestMetaConformanceTestCase extends JsonApiFunctionalTest
 
         $data = $this->decode($response)['data'] ?? null;
         self::assertIsArray($data);
-        self::assertSame('k-1', $data['attributes']['createdWith'] ?? null, 'the create hook read the key through HookContext::writtenMeta()');
+        self::assertSame('k-1', self::at($data, 'attributes', 'createdWith'), 'the create hook read the key through HookContext::writtenMeta()');
         self::assertSame(['revision' => 1], $data['meta'] ?? null, 'only the read-only member renders');
 
         $seen = TrMetaRecorder::$seen['tr-notes:BeforeCreateEvent'] ?? null;
@@ -80,7 +80,7 @@ abstract class TypedRequestMetaConformanceTestCase extends JsonApiFunctionalTest
     {
         $response = $this->handle('/tr-notes/1', 'PATCH', ['data' => ['type' => 'tr-notes', 'id' => '1', 'attributes' => ['title' => 'Plan again'], 'meta' => ['revision' => 7]], 'meta' => ['reason' => 'typo']]);
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
-        self::assertSame(['revision' => 1], $this->decode($response)['data']['meta'] ?? null);
+        self::assertSame(['revision' => 1], self::at($this->decode($response), 'data', 'meta'));
         self::assertSame(['document' => ['reason' => 'typo'], 'resource' => []], TrMetaRecorder::$seen['tr-notes:BeforeUpdateEvent'] ?? null);
     }
 
@@ -121,7 +121,7 @@ abstract class TypedRequestMetaConformanceTestCase extends JsonApiFunctionalTest
     {
         $response = $this->handle('/tr-items', 'POST', ['data' => ['type' => 'tr-items', 'attributes' => ['name' => 'Nib'], 'meta' => ['floor' => 3.0, 'shelf' => 2]]]);
         self::assertSame(201, $response->getStatusCode(), (string) $response->getContent());
-        self::assertSame(['floor' => 3, 'shelf' => 2], $this->decode($response)['data']['meta'] ?? null);
+        self::assertSame(['floor' => 3, 'shelf' => 2], self::at($this->decode($response), 'data', 'meta'));
 
         self::assertSame(['/data/meta/floor'], \array_keys($this->violations($this->handle('/tr-items', 'POST', ['data' => ['type' => 'tr-items', 'attributes' => ['name' => 'Nib'], 'meta' => ['floor' => 'third']]]))));
     }
@@ -130,11 +130,11 @@ abstract class TypedRequestMetaConformanceTestCase extends JsonApiFunctionalTest
     public function aLinkageIdentifierCarriesNoResourceMeta(): void
     {
         $document = $this->decode($this->handle('/tr-notes/1?include=items'));
-        $linkage = $document['data']['relationships']['items']['data'] ?? null;
+        $linkage = self::at($document, 'data', 'relationships', 'items', 'data');
         self::assertSame([['type' => 'tr-items', 'id' => '1']], $linkage);
         $included = $document['included'] ?? null;
         self::assertIsArray($included);
-        self::assertSame(['size' => 3], $included[0]['meta'] ?? null, 'the full resource object renders its declared meta');
+        self::assertSame(['size' => 3], self::at($included, 0, 'meta'), 'the full resource object renders its declared meta');
     }
 
     #[Test]
@@ -151,7 +151,7 @@ abstract class TypedRequestMetaConformanceTestCase extends JsonApiFunctionalTest
     {
         $response = $this->handle('/tr-items/-actions/import', 'POST', ['data' => ['type' => 'tr-items', 'attributes' => ['name' => 'Quill'], 'meta' => ['aisle' => 4]]]);
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
-        self::assertSame(['aisle' => 4], $this->decode($response)['data']['meta'] ?? null);
+        self::assertSame(['aisle' => 4], self::at($this->decode($response), 'data', 'meta'));
 
         self::assertSame(['/data/meta/aisle'], \array_keys($this->violations($this->handle('/tr-items/-actions/import', 'POST', ['data' => ['type' => 'tr-items', 'attributes' => ['name' => 'Quill'], 'meta' => ['aisle' => 'four']]]))));
     }
@@ -167,7 +167,7 @@ abstract class TypedRequestMetaConformanceTestCase extends JsonApiFunctionalTest
         self::assertSame('b', TrMetaRecorder::$seen['tr-notes:BeforeCreateEvent']['document']['batchTag'] ?? null);
         $results = $this->decode($ok)['atomic:results'] ?? null;
         self::assertIsArray($results);
-        self::assertSame(['count' => 2], $results[1]['meta'] ?? null, 'a relationship add answers its meta-only result');
+        self::assertSame(['count' => 2], self::at($results, 1, 'meta'), 'a relationship add answers its meta-only result');
 
         self::assertSame(['/atomic:operations/0/meta/batchTag'], \array_keys($this->violations($this->atomic(['atomic:operations' => [
             ['op' => 'add', 'data' => ['type' => 'tr-notes', 'attributes' => ['title' => 'Batch']], 'meta' => ['idempotencyKey' => 'k']],
@@ -197,7 +197,7 @@ abstract class TypedRequestMetaConformanceTestCase extends JsonApiFunctionalTest
     {
         $response = $this->handle('/tr-plains', 'POST', ['data' => ['type' => 'tr-plains', 'attributes' => ['name' => 'Free'], 'meta' => ['anything' => 1]], 'meta' => ['whatever' => ['x' => 1]]]);
         self::assertSame(201, $response->getStatusCode(), (string) $response->getContent());
-        self::assertSame(['free' => true], $this->decode($response)['data']['meta'] ?? null);
+        self::assertSame(['free' => true], self::at($this->decode($response), 'data', 'meta'));
 
         $this->bootInDebug();
         self::assertSame(200, $this->handle('/tr-plains/1')->getStatusCode(), 'getMeta() of a type declaring no resource meta is not checked');
@@ -206,8 +206,8 @@ abstract class TypedRequestMetaConformanceTestCase extends JsonApiFunctionalTest
     #[Test]
     public function productionRendersAMismatchedMetaAsItIs(): void
     {
-        self::assertSame(['revision' => 'many'], $this->decode($this->handle('/tr-notes/2'))['data']['meta'] ?? null);
-        self::assertSame(['uses' => 2, 'bogus' => true], $this->decode($this->handle('/tr-labels/urgent', extraServer: ['HTTP_X_BOGUS_META' => '1']))['data']['meta'] ?? null);
+        self::assertSame(['revision' => 'many'], self::at($this->decode($this->handle('/tr-notes/2')), 'data', 'meta'));
+        self::assertSame(['uses' => 2, 'bogus' => true], self::at($this->decode($this->handle('/tr-labels/urgent', extraServer: ['HTTP_X_BOGUS_META' => '1'])), 'data', 'meta'));
         self::assertSame(200, $this->handle('/tr-notes/1?include=lead', extraServer: ['HTTP_X_BOGUS_META' => '1'])->getStatusCode());
     }
 
@@ -217,7 +217,7 @@ abstract class TypedRequestMetaConformanceTestCase extends JsonApiFunctionalTest
         $this->bootInDebug();
 
         self::assertSame(200, $this->handle('/tr-notes/1')->getStatusCode());
-        self::assertSame(['uses' => 2], $this->decode($this->handle('/tr-labels/urgent'))['data']['meta'] ?? null);
+        self::assertSame(['uses' => 2], self::at($this->decode($this->handle('/tr-labels/urgent')), 'data', 'meta'));
 
         $wrongType = $this->handle('/tr-notes/2');
         self::assertSame(500, $wrongType->getStatusCode());
@@ -304,7 +304,7 @@ abstract class TypedRequestMetaConformanceTestCase extends JsonApiFunctionalTest
         $violations = [];
         foreach ($errors as $error) {
             self::assertIsArray($error);
-            $pointer = $error['source']['pointer'] ?? null;
+            $pointer = self::at($error, 'source', 'pointer');
             self::assertIsString($pointer);
             $violations[$pointer] = \is_string($error['detail'] ?? null) ? $error['detail'] : '';
         }

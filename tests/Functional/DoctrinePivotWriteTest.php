@@ -136,6 +136,53 @@ final class DoctrinePivotWriteTest extends JsonApiFunctionalTestCase
 
     #[Test]
     #[Group('spec:updating-relationships')]
+    public function anUndeclaredPivotMemberIs422(): void
+    {
+        $response = $this->handle(
+            self::BASE_URI . '/playlists/2/relationships/tracks',
+            'POST',
+            ['data' => [['type' => 'tracks', 'id' => '3', 'meta' => ['pivot' => ['position' => 5, 'colour' => 'red']]]]],
+        );
+        self::assertSame(422, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame('/data/0/meta/pivot/colour', $this->firstErrorPointer($response));
+        self::assertArrayNotHasKey('3', $this->byId($this->fetchDocument('/playlists/2/tracks')));
+
+        $whole = $this->handle(self::BASE_URI . '/playlists/2', 'PATCH', ['data' => [
+            'type' => 'playlists',
+            'id' => '2',
+            'relationships' => ['tracks' => ['data' => [['type' => 'tracks', 'id' => '1', 'meta' => ['pivot' => ['position' => 1, 'colour' => 'red']]]]]],
+        ]]);
+        self::assertSame(422, $whole->getStatusCode(), (string) $whole->getContent());
+        self::assertSame('/data/relationships/tracks/data/0/meta/pivot/colour', $this->firstErrorPointer($whole));
+    }
+
+    #[Test]
+    #[Group('spec:updating-relationships')]
+    public function anOpenPivotHandsItsUndeclaredMembersToItsEntry(): void
+    {
+        $response = $this->handle(
+            self::BASE_URI . '/playlists/2/relationships/orderedTracks',
+            'POST',
+            ['data' => [['type' => 'tracks', 'id' => '3', 'meta' => ['pivot' => ['position' => 5, 'floor' => 3.0]]]]],
+        );
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        $this->entityManager()->clear();
+        $row = $this->entityManager()->getRepository(PlaylistTrackEntity::class)->findOneBy(['playlist' => 2, 'track' => 3]);
+        self::assertInstanceOf(PlaylistTrackEntity::class, $row);
+        self::assertSame(['floor' => 3], $row->tempo, 'the members are normalised and handed to the entry\'s fillUsing()');
+
+        $wrong = $this->handle(
+            self::BASE_URI . '/playlists/2/relationships/orderedTracks',
+            'POST',
+            ['data' => [['type' => 'tracks', 'id' => '2', 'meta' => ['pivot' => ['position' => 6, 'floor' => 'third']]]]],
+        );
+        self::assertSame(422, $wrong->getStatusCode(), (string) $wrong->getContent());
+        self::assertSame('/data/0/meta/pivot/floor', $this->firstErrorPointer($wrong));
+    }
+
+    #[Test]
+    #[Group('spec:updating-relationships')]
     public function aPivotValueOfTheWrongJsonTypeIs422WithNoWrite(): void
     {
         // "5" is a string, not the integer `position` takes: one 422 at the linkage meta,

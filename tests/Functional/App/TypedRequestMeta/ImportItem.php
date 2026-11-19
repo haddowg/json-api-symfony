@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Functional\App\TypedRequestMeta;
 
 use haddowg\JsonApi\OpenApi\Metadata\ActionResource;
-use haddowg\JsonApiBundle\Action\ActionScope;
 use haddowg\JsonApi\Response\DataResponse;
 use haddowg\JsonApiBundle\Action\ActionContext;
 use haddowg\JsonApiBundle\Action\ActionHandlerInterface;
 use haddowg\JsonApiBundle\Action\ActionInput;
+use haddowg\JsonApiBundle\Action\ActionScope;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiAction;
 
 /**
