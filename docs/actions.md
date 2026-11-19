@@ -148,7 +148,9 @@ POST /playlists/42/-actions/archive
 `Document` mode runs the full write pipeline on the body: it is parsed,
 structurally validated, semantically validated through the [Validator
 bridge](validation.md) against `inputType`'s constraints, and **hydrated to an
-object**. A `Document` action must name its `inputType`: the type the request
+object**. A `PATCH` validates and hydrates the body in the update context, so a field
+read-only on create can be written and `onUpdate()` rules apply; any other method uses
+the create context. A `Document` action must name its `inputType`: the type the request
 document holds. Leaving it out fails the container build, naming the action. The
 usual choice is a type that exists only to be that input, declared
 [`relatedOnly`](resources.md#relatedonly-a-type-with-no-endpoints-of-its-own) so it gets
