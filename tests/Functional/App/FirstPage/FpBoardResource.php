@@ -29,7 +29,7 @@ abstract class FpBoardResource extends AbstractResource
             Id::make(),
             Str::make('name'),
             HasMany::make('cards', 'fp-cards')->paginate(PagePaginator::make()->withDefaultPerPage(2))->countable(),
-            HasMany::make('featured', 'fp-cards')->storedAs('cards')->paginate(PagePaginator::make()->withDefaultPerPage(2))->withData(),
+            HasMany::make('featured', 'fp-cards')->storedAs('cards')->paginate(PagePaginator::make()->withDefaultPerPage(2))->withData()->notSparseField(),
             BelongsToMany::make('labels', 'fp-labels')->paginate(PagePaginator::make()->withDefaultPerPage(2)),
             HasMany::make('allCards', 'fp-cards')->storedAs('cards')->withoutPagination(),
             // Every label then every card, a polymorphic set its own closure computes.

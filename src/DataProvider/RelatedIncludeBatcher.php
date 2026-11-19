@@ -397,7 +397,7 @@ final class RelatedIncludeBatcher
                 continue;
             }
 
-            if (isset($loaded[$name]) || !$request->isIncludedField($type, $name)) {
+            if (isset($loaded[$name]) || ($relation->isSparseField() && !$request->isIncludedField($type, $name))) {
                 continue;
             }
 
