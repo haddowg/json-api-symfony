@@ -216,11 +216,13 @@ final readonly class ActionInvoker
 
         $resourceShape = null;
         $resource = null;
+        // A PATCH writes its input in the update context, as its attributes validate.
+        $creating = \strtoupper($request->getMethod()) !== 'PATCH';
         if ($mode === ActionInput::Document && $server instanceof Server && $descriptor->inputType !== '') {
             $data = $request->getResource();
             $resource = \is_array($data) && \array_key_exists('meta', $data) ? $data['meta'] : null;
-            $resourceShape = $this->requestMeta->forResource($server, $descriptor->inputType, MetaContext::write(OperationType::Create));
-            $errors = [...$errors, ...RequestMetaResolver::errors($this->validator, $resourceShape, $resource, '/data/meta', true, $request)];
+            $resourceShape = $this->requestMeta->forResource($server, $descriptor->inputType, MetaContext::write($creating ? OperationType::Create : OperationType::Update));
+            $errors = [...$errors, ...RequestMetaResolver::errors($this->validator, $resourceShape, $resource, '/data/meta', $creating, $request)];
         }
         if ($errors !== []) {
             throw new ValidationFailed($errors);
@@ -228,7 +230,7 @@ final readonly class ActionInvoker
 
         return new WrittenMeta(
             \is_array($document) ? $shape->values($document, true, $request) : [],
-            $resourceShape !== null && \is_array($resource) ? $resourceShape->values($resource, true, $request) : [],
+            $resourceShape !== null && \is_array($resource) ? $resourceShape->values($resource, $creating, $request) : [],
         );
     }
 
@@ -389,7 +391,8 @@ final readonly class ActionInvoker
         $data = $body->getResource();
         $meta = \is_array($data) ? ($data['meta'] ?? null) : null;
         if (!$hydrator instanceof \haddowg\JsonApi\Resource\AbstractResource && $this->requestMeta !== null && $server instanceof Server && \is_array($meta) && $meta !== []) {
-            $filled = $this->requestMeta->forResource($server, $inputType, MetaContext::write(OperationType::Create))->fill($hydrated, $meta, true, $body);
+            $creating = \strtoupper($body->getMethod()) !== 'PATCH';
+            $filled = $this->requestMeta->forResource($server, $inputType, MetaContext::write($creating ? OperationType::Create : OperationType::Update))->fill($hydrated, $meta, $creating, $body);
             $hydrated = \is_object($filled) ? $filled : $hydrated;
         }
 
