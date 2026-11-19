@@ -476,7 +476,10 @@ carries each member's pivot values (see
   which go through core's storage cast. A pivot value written to a declared link row asks
   the persister instead, so a decorator that should store it as a decimal string
   implements `haddowg\JsonApiBundle\DataPersister\StoresDecimalsInterface` and delegates `decimalForColumn()` to the Doctrine
-  persister. Without it, that value is written as the pivot field cast it.
+  persister. Without it, that value is written as the pivot field cast it, a `float`
+  that a property typed `string` refuses. A decorator of the Doctrine persister also
+  implements `Symfony\Contracts\Service\ResetInterface` and delegates `reset()`,
+  because Symfony moves the Doctrine persister's `kernel.reset` tag onto the decorator.
 
 The managed-update coupling is the one constraint a custom data layer must respect:
 a provider that returns a **detached** entity from `fetchOne` would silently break

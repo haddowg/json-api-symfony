@@ -17,14 +17,14 @@ use Symfony\Contracts\Service\ResetInterface;
  * An application persister that decorates the Doctrine persister and implements
  * StoresDateTimesInterface as it stood before StoresDecimalsInterface existed.
  */
-final class DateTimeOnlyDecoratingPersister implements DataPersisterInterface, StoresDateTimesInterface, ResetInterface
+class DateTimeOnlyDecoratingPersister implements DataPersisterInterface, StoresDateTimesInterface, ResetInterface
 {
     /**
      * @var list<string>
      */
     public static array $calls = [];
 
-    public function __construct(private readonly DoctrineDataPersister $inner) {}
+    public function __construct(protected readonly DoctrineDataPersister $inner) {}
 
     public function supports(string $type): bool
     {
