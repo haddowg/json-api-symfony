@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Functional\App\ThroughPivot;
 
 use Doctrine\Bundle\DoctrineBundle\DoctrineBundle;
+use Doctrine\DBAL\Logging\Middleware as DbalLoggingMiddleware;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Routing\OpenApiRouteLoader;
 use haddowg\JsonApiBundle\Tests\Functional\App\PinnedConfigDefaults;
+use haddowg\JsonApiBundle\Tests\Functional\App\QueryCountingLogger;
 use haddowg\JsonApiBundle\Tests\Functional\App\Security\AccessTokenHandler;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
@@ -16,6 +18,7 @@ use Symfony\Bundle\SecurityBundle\SecurityBundle;
 use Symfony\Component\Config\Loader\LoaderInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
+use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
@@ -121,6 +124,10 @@ final class ThroughPivotTestKernel extends Kernel
 
         $services = $container->services()->defaults()->autowire()->autoconfigure();
         $services->set(AccessTokenHandler::class);
+        $services->set(QueryCountingLogger::class)->public();
+        $services->set(DbalLoggingMiddleware::class)
+            ->args([new Reference(QueryCountingLogger::class)])
+            ->tag('doctrine.middleware');
         foreach ([HiddenTpUserExtension::class, TpUserResource::class, TpAuditorResource::class, TpPlaylistResource::class, TpTrackResource::class, TpAlbumResource::class] as $class) {
             $services->set($class);
         }

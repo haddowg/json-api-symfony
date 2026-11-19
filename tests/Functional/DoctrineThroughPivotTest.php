@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
 use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
+use haddowg\JsonApiBundle\Tests\Functional\App\QueryCountingLogger;
 use haddowg\JsonApiBundle\Tests\Functional\App\ThroughPivot\ThroughPivotTestKernel;
 use haddowg\JsonApiBundle\Tests\Functional\App\ThroughPivot\TpAlbumEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\ThroughPivot\TpAuditorEntity;
@@ -121,6 +122,38 @@ final class DoctrineThroughPivotTest extends JsonApiFunctionalTestCase
         self::assertSame(['1', '2'], $this->ids('/tpTracks/1/playlists?sort=added'));
         self::assertSame(['2', '1'], $this->ids('/tpTracks/1/playlists?sort=adder'));
         self::assertSame(['1', '2'], $this->ids('/tpTracks/1/relationships/playlists?sort=-adder'));
+    }
+
+    #[Test]
+    public function aCursorPageSortsByALeadingPivotAndFollowsItsNextLink(): void
+    {
+        foreach (['/tpTracks/1/cursorPlaylists', '/tpTracks/1/relationships/cursorPlaylists'] as $base) {
+            foreach (['' => ['2', '1'], '?sort=-added' => ['2', '1'], '?sort=added' => ['1', '2'], '?sort=adder' => ['2', '1'], '?sort=-adder' => ['1', '2']] as $query => $expected) {
+                self::assertSame($expected, $this->cursorPages($base . $query), $base . $query);
+            }
+        }
+    }
+
+    #[Test]
+    public function anIncludedCursorRelationReadsItsFirstPageInOneWindowPerParent(): void
+    {
+        $default = $this->document('/tpTracks?include=cursorPlaylists');
+        self::assertSame(['1' => ['2'], '2' => ['1'], '3' => ['3']], $this->linkageByParent($default, 'cursorPlaylists'));
+
+        // The first page of every parent is one windowed query over the pivot rows, the
+        // only statement joining the users the sort reads.
+        $logger = static::getContainer()->get(QueryCountingLogger::class);
+        \assert($logger instanceof QueryCountingLogger);
+        $logger->reset();
+        $this->document('/tpTracks?include=cursorPlaylists&relatedQuery[cursorPlaylists][sort]=adder', ['HTTP_ACCEPT' => self::QUERIES_ACCEPT]);
+        $windowed = \array_values(\array_filter($logger->statements(), static fn(string $sql): bool => \str_contains($sql, 'tp_user')));
+        self::assertCount(1, $windowed, \implode("\n", $windowed));
+        self::assertStringContainsString('ROW_NUMBER', $windowed[0]);
+
+        foreach (['-added' => ['1' => ['2'], '2' => ['1'], '3' => ['3']], 'added' => ['1' => ['1'], '2' => ['1'], '3' => ['3']], 'adder' => ['1' => ['2'], '2' => ['1'], '3' => ['3']], '-adder' => ['1' => ['1'], '2' => ['1'], '3' => ['3']]] as $sort => $expected) {
+            $document = $this->document('/tpTracks?include=cursorPlaylists&relatedQuery[cursorPlaylists][sort]=' . $sort, ['HTTP_ACCEPT' => self::QUERIES_ACCEPT]);
+            self::assertSame($expected, $this->linkageByParent($document, 'cursorPlaylists'), $sort);
+        }
     }
 
     #[Test]
@@ -291,5 +324,60 @@ final class DoctrineThroughPivotTest extends JsonApiFunctionalTestCase
         }
 
         return $value;
+    }
+
+    /**
+     * The ids of every cursor page of `$path`, following each `next` link.
+     *
+     * @return list<string>
+     */
+    private function cursorPages(string $path): array
+    {
+        $ids = [];
+        for ($page = 0; $path !== null && $page < 10; ++$page) {
+            $document = $this->document($path);
+            $ids = [...$ids, ...$this->idsOf($document)];
+            $next = self::at($document, 'links', 'next');
+            $href = \is_array($next) ? $next['href'] ?? null : $next;
+            $path = \is_string($href) ? (string) \preg_replace('#^https?://[^/]+#', '', $href) : null;
+        }
+
+        return $ids;
+    }
+
+    /**
+     * Each primary resource's linkage ids for `$relation`, keyed by its id.
+     *
+     * @param array<string, mixed> $document
+     *
+     * @return array<string, list<string>>
+     */
+    private function linkageByParent(array $document, string $relation): array
+    {
+        $data = self::at($document, 'data');
+        self::assertIsArray($data);
+        $byParent = [];
+        foreach ($data as $resource) {
+            self::assertIsArray($resource);
+            $id = $resource['id'] ?? null;
+            self::assertIsString($id);
+            $byParent[$id] = $this->linkage(['data' => $resource], $relation);
+        }
+        \ksort($byParent);
+
+        return $byParent;
+    }
+
+    /**
+     * @param array<string, mixed> $document
+     *
+     * @return list<string>
+     */
+    private function idsOf(array $document): array
+    {
+        $data = self::at($document, 'data');
+        self::assertIsArray($data);
+
+        return \array_values(\array_map(static fn(mixed $row): string => \is_array($row) && \is_string($row['id'] ?? null) ? $row['id'] : '', $data));
     }
 }

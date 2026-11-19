@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App\ThroughPivot;
 
+use haddowg\JsonApi\Pagination\CursorPaginator;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\BelongsTo;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
@@ -18,6 +19,7 @@ use haddowg\JsonApi\Resource\Filter\WhereIdIn;
 use haddowg\JsonApi\Resource\Filter\WhereThrough;
 use haddowg\JsonApi\Resource\Filter\WhereThroughIn;
 use haddowg\JsonApi\Resource\Sort\SortByField;
+use haddowg\JsonApi\Resource\Sort\SortDirective;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 
 /**
@@ -54,6 +56,16 @@ final class TpTrackResource extends AbstractResource
                     SortByField::make('added', 'addedAt')->through('pivot'),
                     SortByField::make('adder', 'name')->through('pivot.addedBy'),
                 ),
+            // The same pivot rows on cursor pages, newest addition first by default.
+            BelongsToMany::make('cursorPlaylists', 'tpPlaylists')
+                ->through(TpEntryEntity::class)
+                ->fields(Integer::make('position'), DateTime::make('addedAt')->readOnly())
+                ->withSorts(
+                    SortByField::make('added', 'addedAt')->through('pivot'),
+                    SortByField::make('adder', 'name')->through('pivot.addedBy'),
+                )
+                ->defaultSort(new SortDirective(SortByField::make('added', 'addedAt')->through('pivot'), descending: true))
+                ->paginate(CursorPaginator::make()->withDefaultSize(1)),
         ];
     }
 }

@@ -212,18 +212,20 @@ final class DoctrineSortHandler implements SortHandlerInterface, AliasAwareSortH
         \assert($path !== null);
 
         $entityManager = $query->getEntityManager();
-        $metadata = $this->metadataOfAlias($query, $alias)
-            ?? throw new \LogicException(\sprintf('The QueryBuilder has no entity at alias "%s" to sort on.', $alias));
-        $current = $alias;
-        $joined = self::joinedAliases($query);
-        // A path starting with `pivot` reads the pivot row the relation's pivot query joined.
+        // A path starting with `pivot` reads the pivot row the relation's pivot query
+        // joined as `pivot`, whichever alias the sort is applied on: a cursor level asks
+        // on the root.
         $hops = $path->hops;
         if ($path->startsWithPivot()) {
-            if ($alias !== 'pivot') {
-                throw new \LogicException(\sprintf('Sort "%s" reaches through "%s", which starts at the pivot row of the relation it runs under, but it runs on a query that joins no pivot row.', $sort->key(), $path->path));
-            }
+            $alias = 'pivot';
             unset($hops[0]);
         }
+        $metadata = $this->metadataOfAlias($query, $alias)
+            ?? throw new \LogicException($path->startsWithPivot()
+                ? \sprintf('Sort "%s" reaches through "%s", which starts at the pivot row of the relation it runs under, but it runs on a query that joins no pivot row.', $sort->key(), $path->path)
+                : \sprintf('The QueryBuilder has no entity at alias "%s" to sort on.', $alias));
+        $current = $alias;
+        $joined = self::joinedAliases($query);
         foreach ($hops as $index => $hop) {
             if ($hop->pivot) {
                 throw new \LogicException(\sprintf('Sort "%s" reaches through "%s", whose pivot row a sort can read only at the start of its path.', $sort->key(), $path->path));
