@@ -86,6 +86,40 @@ abstract class PivotNumbersConformanceTestCase extends JsonApiFunctionalTestCase
         self::assertSame(['1' => [1, 1.5]], $this->links('1'));
     }
 
+    #[Test]
+    public function anActionsInputWithAPivotValueThatIsNoNumberIsA422AtItsPointer(): void
+    {
+        $this->assertRefusedAt('/data/relationships/links/data/0/meta/pivot/count', $this->send('/pn-boards/-actions/tally', 'POST', $this->tally(['count' => 5.5, 'weight' => 5])));
+        $this->assertRefusedAt('/data/relationships/links/data/0/meta/pivot/weight', $this->send('/pn-boards/-actions/tally', 'POST', $this->tally(['count' => 5, 'weight' => 'heavy'])));
+        $this->assertRefusedAt('/data/relationships/links/data/0/meta/pivot/count', $this->send('/pn-boards/-actions/tally', 'POST', $this->tally(['count' => 'five', 'weight' => 5])));
+
+        self::assertSame(['1' => [1, 1.5]], $this->links('1'));
+    }
+
+    #[Test]
+    public function anActionsInputTakesWholeFloatPivotValues(): void
+    {
+        $response = $this->send('/pn-boards/-actions/tally', 'POST', $this->tally(['count' => 5.0, 'weight' => 5]));
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+    }
+
+    /**
+     * A `pn-boards` action input linking card 2 with the given pivot values.
+     *
+     * @param array<string, mixed> $pivot
+     *
+     * @return array<string, mixed>
+     */
+    protected function tally(array $pivot): array
+    {
+        return ['data' => [
+            'type' => 'pn-boards',
+            'attributes' => ['name' => 'Tally'],
+            'relationships' => ['links' => ['data' => [['type' => 'pn-cards', 'id' => '2', 'meta' => ['pivot' => $pivot]]]]],
+        ]];
+    }
+
     /**
      * Each link row of the board as its card id, count and weight, in the PHP types the
      * store holds.

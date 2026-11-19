@@ -421,7 +421,11 @@ and a [`HookContext`](../src/Hook/HookContext.php). The context is a readonly va
 object with public properties, not getters: `$context->request`,
 `$context->serverName`, `$context->type`, and for the relationship hooks
 `$context->relation`, `$context->linkage` and `$context->mode`. The method signatures
-are listed [above](#beforeupdate-carries-the-pre-change-snapshot). A before method throws to abort; an
+are listed [above](#beforeupdate-carries-the-pre-change-snapshot). `$context->request`,
+like an event's `request`, is the request as the client sent it, a whole number sent as
+`5.0` included. The typed, normalised values are on the hydrated entity, in the values a
+field's `fillUsing()` or `deserializeUsing()` hook receives, and in an action's
+`requestMeta()`. A before method throws to abort; an
 after method returns a response to replace it. A resource that does not implement the
 interface (or a bare serializer/hydrator pair with no resource) is untouched.
 

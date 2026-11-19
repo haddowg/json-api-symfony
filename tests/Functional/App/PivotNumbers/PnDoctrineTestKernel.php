@@ -111,6 +111,7 @@ class PnDoctrineTestKernel extends Kernel
 
         $services->set(DoctrinePnBoardResource::class)->tag(JsonApiBundle::RESOURCE_TAG, ['entity' => PnBoard::class]);
         $services->set(PnCardResource::class)->tag(JsonApiBundle::RESOURCE_TAG, ['entity' => PnCard::class]);
+        $services->set(TallyPnBoard::class);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

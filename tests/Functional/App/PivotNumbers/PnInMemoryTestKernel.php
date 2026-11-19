@@ -29,6 +29,7 @@ final class PnInMemoryTestKernel extends PnDoctrineTestKernel
         $services->set(PnBoardResource::class);
         $services->set(PnCardResource::class);
         $services->set(PnFixtures::class)->public();
+        $services->set(TallyPnBoard::class);
 
         foreach (['pn-boards', 'pn-cards'] as $type) {
             $services->set('test.pn_provider.' . $type, InMemoryDataProvider::class)

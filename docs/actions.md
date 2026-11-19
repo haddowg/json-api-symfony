@@ -639,6 +639,11 @@ exposes both the resolved request state and pre-wired response factories:
 | `seeOther($url, $expiresAt)` | a `SeeOtherResponse` (`303`): an async-completion redirect, or the URL a download action hands out, with an optional expiry |
 | `afterCommit($callback)` | nothing; runs `$callback` once the action's transaction commits (see [running code after the commit](#running-code-after-the-commit)) |
 
+`request()` is the request as the client sent it, so its body keeps each value as written,
+a whole number sent as `5.0` included. The typed, normalised values come from the hydrated
+`input()`, the values a field's `fillUsing()` or `deserializeUsing()` hook receives, and
+`requestMeta()`.
+
 The `data()` / `meta()` / `noContent()` factories are the ergonomic path; reach for
 the raw response value objects directly only when you need to set a status or
 header the factories don't.
