@@ -3516,7 +3516,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         foreach ($resource->allFields() as $field) {
             if (!$field instanceof Union
                 || !\array_key_exists($field->name(), $attributes)
-                || $field->hydratesThroughHook()
+                || $field->hydratesThroughHookFor($creating)
                 || $field->relatedVia() !== null
                 || $field->isHidden()
                 || $field->isReadOnlyFor($creating, $body)) {

@@ -19,6 +19,7 @@ use haddowg\JsonApi\Exception\RemovalProhibited;
 use haddowg\JsonApi\Exception\ResourceNotFound;
 use haddowg\JsonApi\Hydrator\Relationship\ToManyRelationship;
 use haddowg\JsonApi\Hydrator\Relationship\ToOneRelationship;
+use haddowg\JsonApi\Resource\Field\AbstractFieldValue;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\FieldInterface;
 use haddowg\JsonApi\Resource\Field\ForeignKey;
@@ -926,7 +927,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
             if ($row !== null) {
                 // Reorder / update an existing row's writable pivot fields IN PLACE
                 // (update context — the row exists).
-                $this->writePivotFields($row, $relation->writablePivotFields(false), $meta, $relation);
+                $this->writePivotFields($row, $relation->writablePivotFields(false), $meta, false, $relation);
                 $kept[$mapKey] = $row;
 
                 continue;
@@ -935,7 +936,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
             // A new association row: parent + far reference + the writable pivot
             // fields (create context); readOnly fields take their server default.
             $row = $this->newPivotRow($association, $parent, $reference, $meta);
-            $this->writePivotFields($row, $relation->writablePivotFields(true), $meta, $relation);
+            $this->writePivotFields($row, $relation->writablePivotFields(true), $meta, true, $relation);
             $this->attachPivotRow($parent, $association, $row);
             $this->entityManager->persist($row);
             $kept[$mapKey] = $row;
@@ -1069,7 +1070,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
      * @param list<FieldInterface> $fields the writable pivot fields for the context
      * @param array<string, mixed> $meta   the linkage member's pivot meta
      */
-    private function writePivotFields(object $row, array $fields, array $meta, ?\haddowg\JsonApi\Resource\Field\PivotRelationInterface $relation = null): void
+    private function writePivotFields(object $row, array $fields, array $meta, bool $creating, ?\haddowg\JsonApi\Resource\Field\PivotRelationInterface $relation = null): void
     {
         // The members the pivot's additionalProperties entry takes go to its fillUsing() hook.
         $entry = $relation?->pivotAdditionalProperties();
@@ -1086,7 +1087,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
             }
 
             $column = $field->column() ?? $field->name();
-            $value = $this->coercePivotValue($field, $meta[$field->name()]);
+            $value = $this->coercePivotValue($field, $meta[$field->name()], $creating);
             if ($field instanceof Union && !$this->holdsDateTimes($row, $column)) {
                 $value = $field->toStoredForm($value);
             }
@@ -1135,12 +1136,12 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
      * value cast (an `Integer` → int, a `DateTime` → `\DateTimeImmutable`), so the
      * association entity's typed column receives the right type. A pivot field is a
      * plain field definition (no `deserializeUsing`/`fillUsing` hook), so only its
-     * declared type's value cast applies, request-independently, through the field's
-     * public {@see FieldInterface::castWireValue()} seam.
+     * declared type's value cast applies, request-independently, with the enum
+     * conversion the field declares for a new row or for an existing one.
      */
-    private function coercePivotValue(FieldInterface $field, mixed $value): mixed
+    private function coercePivotValue(FieldInterface $field, mixed $value, bool $creating): mixed
     {
-        return $field->castWireValue($value);
+        return $field instanceof AbstractFieldValue ? $field->castWireValueFor($value, $creating) : $field->castWireValue($value);
     }
 
     /**
