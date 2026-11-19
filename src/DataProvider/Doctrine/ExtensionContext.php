@@ -26,6 +26,10 @@ use haddowg\JsonApiBundle\Action\ActionDescriptor;
  *
  * `$action` is the custom action a {@see QueryPurpose::ActionCollection} query is built
  * for, which also carries the request. It is `null` for every other purpose.
+ *
+ * An extension can run several times inside one query: on the type queried and again in
+ * the subquery that scopes each relation a filter, sort or include reaches through. An
+ * alias it adds, for a join or a subselect, comes from {@see uniqueAlias()}.
  */
 final readonly class ExtensionContext
 {
@@ -34,5 +38,15 @@ final readonly class ExtensionContext
         public QueryPurpose $purpose,
         public ?JsonApiRequestInterface $request = null,
         public ?ActionDescriptor $action = null,
+        private ExtensionAliases $aliases = new ExtensionAliases(),
     ) {}
+
+    /**
+     * A DQL alias for `$name`, unique within the whole statement however many times
+     * extensions run in it: `$name` with a numeric suffix, such as `visible_thing_1`.
+     */
+    public function uniqueAlias(string $name): string
+    {
+        return $this->aliases->unique($name);
+    }
 }

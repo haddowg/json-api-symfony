@@ -375,35 +375,9 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
             return $predicateOn;
         }
 
-        $metadata = $query->getEntityManager()->getClassMetadata($class);
-        $scopeAlias = 'jsonapi_morph_scope_' . ++$this->subqueries;
-        $scope = $query->getEntityManager()->createQueryBuilder()
-            ->select(DoctrineIdentifiers::path($metadata, $scopeAlias))
-            ->from($metadata->getName(), $scopeAlias);
-        $context = new ExtensionContext($type, QueryPurpose::FetchRelatedCollection, $paths->request());
-        foreach ($extensions as $extension) {
-            $scope = $extension->apply($scope, $context);
-        }
-        $this->adoptParameters($query, $scope);
+        $admitted = ExtensionScope::admitted($query, 'jsonapi_morph_scope_' . ++$this->subqueries, $query->getEntityManager()->getClassMetadata($class), $type, $extensions, $paths->request());
 
-        return $predicateOn->andWhere(\sprintf('%s IN (%s)', $this->path($idField, $alias), $scope->getDQL()));
-    }
-
-    /**
-     * Moves the parameters a scope subquery's extensions bound onto `$query`, which
-     * executes it.
-     */
-    private function adoptParameters(QueryBuilder $query, QueryBuilder $scope): void
-    {
-        $parameters = $query->getParameters();
-        foreach ($scope->getParameters() as $parameter) {
-            // An extension binds the same name on every hop it scopes; one binding serves them all.
-            $bound = $query->getParameter($parameter->getName());
-            if ($bound !== null) {
-                $parameters->removeElement($bound);
-            }
-            $parameters->add($parameter);
-        }
+        return $admitted === null ? $predicateOn : $predicateOn->andWhere(\sprintf('%s IN (%s)', $this->path($idField, $alias), $admitted));
     }
 
     /**

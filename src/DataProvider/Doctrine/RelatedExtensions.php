@@ -47,9 +47,8 @@ final readonly class RelatedExtensions
             return $builder;
         }
 
-        $context = new ExtensionContext($this->relatedType, QueryPurpose::FetchRelatedCollection, $this->request);
-
         if ($pairRelatedClass === null) {
+            $context = new ExtensionContext($this->relatedType, QueryPurpose::FetchRelatedCollection, $this->request, aliases: ExtensionAliases::of($builder));
             foreach ($this->extensions as $extension) {
                 $builder = $extension->apply($builder, $context);
             }
@@ -64,6 +63,7 @@ final readonly class RelatedExtensions
             ->createQueryBuilder($subAlias)
             ->select(DoctrineIdentifiers::path($relatedMetadata, $subAlias));
 
+        $context = new ExtensionContext($this->relatedType, QueryPurpose::FetchRelatedCollection, $this->request, aliases: ExtensionAliases::share($builder, $sub));
         foreach ($this->extensions as $extension) {
             $sub = $extension->apply($sub, $context);
         }
@@ -87,7 +87,7 @@ final readonly class RelatedExtensions
      */
     public function hydrate(QueryBuilder $loader): QueryBuilder
     {
-        $context = new ExtensionContext($this->relatedType, QueryPurpose::IncludeHydration, $this->request);
+        $context = new ExtensionContext($this->relatedType, QueryPurpose::IncludeHydration, $this->request, aliases: ExtensionAliases::of($loader));
         foreach ($this->extensions as $extension) {
             $loader = $extension->apply($loader, $context);
         }

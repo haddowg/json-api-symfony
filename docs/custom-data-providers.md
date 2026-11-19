@@ -243,6 +243,8 @@ final readonly class ExtensionContext
         public ?JsonApiRequestInterface $request = null, // the parsed request, or null
         public ?ActionDescriptor $action = null,  // the custom action, for ActionCollection only
     ) {}
+
+    public function uniqueAlias(string $name): string; // a DQL alias unique within the statement
 }
 ```
 
@@ -256,6 +258,39 @@ your unconditional base scope when it is absent, so the primary fetch stays scop
 `$action` is set only for `QueryPurpose::ActionCollection`: the
 [`ActionDescriptor`](../src/Action/ActionDescriptor.php) of the collection action whose
 filtered rows are being read. That query carries the request too.
+
+### Aliases: `uniqueAlias()`
+
+An extension can run several times inside one DQL statement. It runs on the type
+queried, and again in the subquery that keeps each relation a filter, sort or
+`relatedQuery` reaches through to the rows your scope admits. A statement listing shelves
+filtered by their books' titles applies a books extension once inside that subquery, and
+a shelves extension once on the root and again wherever a hop reaches shelves.
+
+So an extension never names an alias it adds itself. A join, or a subselect inside a
+condition, takes its alias from `$context->uniqueAlias('name')`, which returns `name`
+with a numeric suffix (`name_1`, then `name_2`) no other call in the same statement got:
+
+```php
+public function apply(QueryBuilder $builder, ExtensionContext $context): QueryBuilder
+{
+    $root = $builder->getRootAliases()[0];
+    $hidden = $context->uniqueAlias('hidden');
+
+    return $builder->andWhere(\sprintf(
+        'NOT EXISTS (SELECT %1$s.id FROM App\Entity\HiddenRow %1$s WHERE %1$s.album = %2$s)',
+        $hidden,
+        $root,
+    ));
+}
+```
+
+The root alias comes from `getRootAliases()`, as before; the bundle names it. A fixed
+alias works only while the extension runs once in the statement. The second time,
+Doctrine refuses the query because the alias is already defined, and the bundle answers
+`500` with a `LogicException` naming the extensions applied in the request and pointing
+at `uniqueAlias()`. A parameter an extension binds is shared across those runs under its
+name, so bind one value per name and don't reuse a name for a different value.
 
 ### The `QueryPurpose` fail-closed contract
 

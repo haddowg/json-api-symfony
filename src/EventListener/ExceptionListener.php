@@ -16,6 +16,7 @@ use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Response\ErrorResponse;
 use haddowg\JsonApi\Schema\Error\Error;
 use haddowg\JsonApi\Schema\Error\InternalServerError;
+use haddowg\JsonApiBundle\DataProvider\Doctrine\AppliedExtensions;
 use haddowg\JsonApiBundle\Routing\JsonApiRoute;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Server\ServerProvider;
@@ -148,12 +149,20 @@ final class ExceptionListener
         // Tells whether the request's firewall has an entry point, so an
         // authentication failure can go to it first.
         private readonly ?\Symfony\Component\Security\Http\FirewallMapInterface $firewallMap = null,
+        // Names the query extensions behind an alias Doctrine found defined twice.
+        private readonly ?AppliedExtensions $appliedExtensions = null,
     ) {}
 
     public function onKernelException(ExceptionEvent $event): void
     {
         $request = $event->getRequest();
         $throwable = $event->getThrowable();
+
+        $explained = $this->appliedExtensions?->explain($throwable);
+        if ($explained !== null) {
+            $event->setThrowable($explained);
+            $throwable = $explained;
+        }
 
         if (JsonApiRoute::matches($request) && $this->defersToFirewall($request, $throwable)) {
             $request->attributes->set(self::DEFERRED_AUTHENTICATION_ATTRIBUTE, $throwable);

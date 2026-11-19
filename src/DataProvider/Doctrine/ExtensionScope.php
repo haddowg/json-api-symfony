@@ -27,15 +27,31 @@ final class ExtensionScope
      */
     public static function condition(QueryBuilder $bindOn, string $alias, ClassMetadata $metadata, string $type, array $extensions, ?JsonApiRequestInterface $request): ?string
     {
+        $admitted = self::admitted($bindOn, $alias . '_scope', $metadata, $type, $extensions, $request);
+
+        return $admitted === null ? null : (string) $bindOn->expr()->in(DoctrineIdentifiers::path($metadata, $alias), $admitted);
+    }
+
+    /**
+     * The DQL of a subquery selecting the ids of the entity `$metadata` names that a
+     * type's query extensions admit, rooted at `$scopeAlias`, with the extensions'
+     * parameters bound on `$bindOn`, or null when no extension scopes `$type`. A value
+     * compared with it, such as a stored morph target id, keeps to the admitted rows.
+     *
+     * @param ClassMetadata<object>            $metadata
+     * @param list<DoctrineExtensionInterface> $extensions the extensions supporting `$type`
+     */
+    public static function admitted(QueryBuilder $bindOn, string $scopeAlias, ClassMetadata $metadata, string $type, array $extensions, ?JsonApiRequestInterface $request): ?string
+    {
         if ($extensions === []) {
             return null;
         }
 
-        $scopeAlias = $alias . '_scope';
         $scope = $bindOn->getEntityManager()->createQueryBuilder()
             ->select(DoctrineIdentifiers::path($metadata, $scopeAlias))
             ->from($metadata->getName(), $scopeAlias);
-        $context = new ExtensionContext($type, QueryPurpose::FetchRelatedCollection, $request);
+        // The scope is embedded in `$bindOn`'s statement, so its extensions draw aliases from it.
+        $context = new ExtensionContext($type, QueryPurpose::FetchRelatedCollection, $request, aliases: ExtensionAliases::share($bindOn, $scope));
         foreach ($extensions as $extension) {
             $scope = $extension->apply($scope, $context);
         }
@@ -50,6 +66,6 @@ final class ExtensionScope
             $parameters->add($parameter);
         }
 
-        return (string) $bindOn->expr()->in(DoctrineIdentifiers::path($metadata, $alias), $scope->getDQL());
+        return $scope->getDQL();
     }
 }
