@@ -216,8 +216,10 @@ final class ServableResourceWarmer implements CacheWarmerInterface
 
         // An action's handler declaring members for a response that declares its own fails here.
         $actions = $this->actions;
-        foreach ($actions?->forServerType($serverName, $type) ?? [] as $action) {
-            \assert($actions !== null);
+        if ($actions === null) {
+            return;
+        }
+        foreach ($actions->forServerType($serverName, $type) as $action) {
             (new ActionMetadata($action, $actions->documentMetaFor($action)))->responds();
         }
     }
