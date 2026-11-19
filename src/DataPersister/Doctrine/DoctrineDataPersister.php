@@ -631,7 +631,8 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
      * writes anything so no two rows share an owner and position at any flush: the
      * deletes, the temporary positions, the updates, then the inserts. A new row is a
      * `through()` entity, constructed when it can be so its defaults apply, with its owner
-     * set through the association and each value converted to the field's storage form. A parent not yet stored has no rows to
+     * set through the association and each value converted to the field's storage form. An open
+     * pivot's extra members go to its entry's fill hook with each row written. A parent not yet stored has no rows to
      * delete or move, so its inserts wait for the caller's flush.
      */
     public function writeLinkRows(object $parent, MorphToMany $relation, LinkRowWritePlan $plan, bool $flush = true): object
@@ -663,6 +664,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
             foreach ($pass as $write) {
                 if (\is_object($write->member->row)) {
                     $this->writeRowValues($metadata, $write->member->row, $write->values, $fields->owner, $parent, $unions);
+                    $write->fillAdditional($relation, $write->member->row);
                 }
             }
             if ($pass !== [] && $stored) {
@@ -673,6 +675,8 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
         foreach ($plan->inserts as $insert) {
             $row = $this->newRow($metadata);
             $this->writeRowValues($metadata, $row, $insert->values, $fields->owner, $parent, $unions);
+            $filled = $insert->fillAdditional($relation, $row);
+            $row = \is_object($filled) ? $filled : $row;
             $rows?->add($row);
             $this->entityManager->persist($row);
         }

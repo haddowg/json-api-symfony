@@ -37,6 +37,7 @@ class MtmDoctrineTestKernel extends AbstractMtmKernel
             MtmPublisherResource::class => MtmPublisher::class,
             $this->userResource() => MtmUser::class,
             MtmAccountResource::class => MtmUser::class,
+            MtmTagAccountResource::class => MtmUser::class,
         ];
     }
 

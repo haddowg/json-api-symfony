@@ -599,7 +599,7 @@ final class ResourceValidator
 
         $errors = [];
 
-        $isPivot = $mode !== Mode::Remove && $relation instanceof PivotRelationInterface && $relation->pivotFields() !== [];
+        $isPivot = $mode !== Mode::Remove && $relation instanceof PivotRelationInterface && ($relation->pivotFields() !== [] || !$relation->pivotMetaShape()->isEmpty());
 
         if ($linkage instanceof ToOneRelationship) {
             $identifier = $linkage->resourceIdentifier;
@@ -1171,7 +1171,7 @@ final class ResourceValidator
      */
     private function pivotMetaErrors(RelationInterface $relation, mixed $member, string $name, ?int $index, array $existingPivot = []): array
     {
-        if (!$relation instanceof PivotRelationInterface || $relation->pivotFields() === []) {
+        if (!$relation instanceof PivotRelationInterface || ($relation->pivotFields() === [] && $relation->pivotMetaShape()->isEmpty())) {
             return [];
         }
         if (!\is_array($member)) {

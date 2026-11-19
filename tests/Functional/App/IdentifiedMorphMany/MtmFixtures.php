@@ -70,6 +70,7 @@ final class MtmFixtures
             $graph = self::graph();
             // The accounts are the users under a second type, the same objects.
             $graph['accounts'] = $graph['users'];
+            $graph['tag-accounts'] = $graph['users'];
             foreach ($graph as $name => $items) {
                 $byId = [];
                 foreach ($items as $item) {

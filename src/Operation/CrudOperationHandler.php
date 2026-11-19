@@ -2649,16 +2649,15 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         $persister = $this->persisters->forType($type);
 
-        $written = $this->writtenMeta($server, $type, $body, RequestMetaContext::forOperation(OperationType::Update, self::isAtomic($body)), OperationType::Update);
-        $body = $written->on($body);
-        $request = $written->on($request);
-
         // Everything from the first before hook to the save runs in one transaction, so a
         // refusal or a failure after a hook flushed or the body's relationships were applied
-        // leaves nothing behind.
-        $entity = WriteTransaction::run($persister, $this->txContext, afterCommit: $this->afterCommit, write: $this->withForeignKeyTransactions($server, $persister, $this->types->relationsFor($server, $type), function () use ($server, $persister, $type, $entity, $body, $request): object {
-            return $this->updateWrite($server, $persister, $type, $entity, $body, $request);
+        // leaves nothing behind. The write's typed meta, validated after the update gate,
+        // comes back for the hooks that run after it.
+        $written = new WrittenMeta();
+        $entity = WriteTransaction::run($persister, $this->txContext, afterCommit: $this->afterCommit, write: $this->withForeignKeyTransactions($server, $persister, $this->types->relationsFor($server, $type), function () use ($server, $persister, $type, $entity, $body, $request, &$written): object {
+            return $this->updateWrite($server, $persister, $type, $entity, $body, $request, $written);
         }));
+        $request = $written->on($request);
         // The write may have changed whether a related row is readable.
         $this->relationshipLinkage?->forgetReadDecisions();
         $this->readRouter?->forget();
@@ -2703,13 +2702,19 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
     /**
      * The update's write steps, run in its transaction: the update gate on the stored
      * resource, validation, the body's relationships, hydration, entity validation, the
-     * before hooks and the persister's update.
+     * before hooks and the persister's update. `$written` takes the write's typed meta.
      */
-    private function updateWrite(Server $server, DataPersisterInterface $persister, string $type, object $entity, JsonApiRequestInterface $body, JsonApiRequestInterface $request): object
+    private function updateWrite(Server $server, DataPersisterInterface $persister, string $type, object $entity, JsonApiRequestInterface $body, JsonApiRequestInterface $request, WrittenMeta &$written): object
     {
         // The update gate first judges the resource as stored: once the body is
         // applied, a caller could pass an ownership check by rewriting the owner.
         $this->dispatch(new BeforeApplyUpdateEvent($type, $request, $entity, $this->serverName($request)));
+
+        // The meta is validated after the gate, as the attributes are, so a caller it
+        // refuses learns nothing from a 422.
+        $written = $this->writtenMeta($server, $type, $body, RequestMetaContext::forOperation(OperationType::Update, self::isAtomic($body)), OperationType::Update);
+        $body = $written->on($body);
+        $request = $written->on($request);
 
         // A shallow clone of the loaded target taken before hydration, so a
         // before-update hook can diff the incoming change against the prior state.
@@ -3161,7 +3166,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         JsonApiRequestInterface $request,
         bool $endpoint,
     ): object {
-        $linkRows = RelatedReadRouter::identifiesMembers($relation) && $linkage instanceof ToManyRelationship && $relation->storedPivotFields() !== []
+        $linkRows = RelatedReadRouter::identifiesMembers($relation) && $linkage instanceof ToManyRelationship
+            && ($relation->storedPivotFields() !== [] || ($relation->pivotAdditionalProperties()?->fills() ?? false))
             ? $relation
             : null;
         $before = $linkRows !== null ? LinkRowPivots::rows($linkRows, $entity, $server, $request) : [];

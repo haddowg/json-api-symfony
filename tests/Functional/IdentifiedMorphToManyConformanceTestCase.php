@@ -267,6 +267,35 @@ abstract class IdentifiedMorphToManyConformanceTestCase extends JsonApiFunctiona
     }
 
     #[Test]
+    public function anOpenPivotsExtraMembersReachItsEntryOnTheRowsADeclaredRelationWrites(): void
+    {
+        $response = $this->handle('/tag-accounts/3/relationships/tagged', 'POST', ['data' => [
+            ['type' => 'agencies', 'id' => '1', 'meta' => ['pivot' => ['rank' => 7]]],
+            ['type' => 'advertisers', 'id' => '1', 'meta' => ['pivot' => ['rank' => 9.0]]],
+        ]]);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        // An existing row sending only extra members is updated, a new row takes them as it is written.
+        self::assertSame(['publishers:1' => 1, 'agencies:1' => 7, 'advertisers:1' => 9], $this->storedPositions(3));
+
+        $wrong = $this->handle('/tag-accounts/3/relationships/tagged', 'POST', ['data' => [
+            ['type' => 'publishers', 'id' => '1', 'meta' => ['pivot' => ['rank' => 'first']]],
+        ]]);
+        self::assertSame(422, $wrong->getStatusCode(), (string) $wrong->getContent());
+    }
+
+    #[Test]
+    public function aClosureRelationDeclaringOnlyTheEntryFillsTheRowsItsHookWrites(): void
+    {
+        $response = $this->handle('/tag-accounts/4/relationships/looseTagged', 'PATCH', ['data' => [
+            ['type' => 'publishers', 'id' => '1', 'meta' => ['pivot' => ['rank' => 5]]],
+        ]]);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        self::assertSame(['publishers:1' => 5], $this->storedPositions(4));
+    }
+
+    #[Test]
     public function aPositionedReplaceWritesIndexesAndKeepsAHiddenMemberAfterThem(): void
     {
         $response = $this->handle('/accounts/1/relationships/rankedCompanies', 'PATCH', ['data' => [

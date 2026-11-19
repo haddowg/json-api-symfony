@@ -862,7 +862,9 @@ Every declared `meta` object, pivot fields and `identifierMeta()` members includ
 a write sending an undeclared `meta.pivot` member is now a `422`. One
 `AdditionalProperties::make()` entry in a declaration opens it, its `of()` typing the extra
 members, its `extractUsing()` returning extra members to render and its `fillUsing()` taking
-the written ones.
+the written ones. On a pivot the hook receives the join row being written: the association
+entity of a `belongsToMany`, or each link row of an identified `MorphToMany`, whether the
+relation declares its link row fields or writes its rows through its own `fillUsing()`.
 
 With `kernel.debug` on, the view listener and the atomic loop check every rendered resource
 object's `meta`, and every linkage identifier's pivot and identifier meta, against the
