@@ -218,8 +218,12 @@ On an object the persister instantiated, each relationship the body names holds 
 related models, as a create of the type would: a to-one the related entity, and a to-many
 its related entities, refilling a `Collection` the object already holds. Each member is
 loaded through its type's provider, and one that doesn't exist is a `404`. A relation with
-a `fillUsing()` hook gets the linkage instead, and a to-many declared
-`cannotChangeMembership()` is checked against the blank instance first. Nothing is
+a `fillUsing()` hook gets the linkage instead. A to-many declared `cannotChangeMembership()`
+is checked first. On an action called on a resource whose `inputType` is the mount type, the
+members the body names are compared with the ones that resource holds now, so restating them
+passes and adding or removing one is a `403`. A collection action has no resource, nor does
+an action whose input reads as another type, so it compares them with the blank instance,
+which holds none. Nothing is
 persisted, so the related entities' own sides are left as they are. An input from
 `ActionInputFactoryInterface` is hydrated by core alone, so its relationships hold the
 related ids.

@@ -20,9 +20,10 @@ use Symfony\Component\HttpFoundation\Response;
  * it, so a `relatedQuery` addressing it is an unknown path, the OpenAPI document
  * describes no way to read it, and its relationship endpoint still takes writes.
  * `lockedSecretComments`, over the same column, can't change its members: a replace
- * compares the comments the article holds, and a `PATCH` action taking it as input
- * compares it with the blank instance it hydrates. An action's input holds the related
- * models its relationships name, as a write of the type does.
+ * compares the comments the article holds, and so does a `PATCH` action called on the
+ * article taking it as input. A collection action has no article and compares it with
+ * none. An action's input holds the related models its relationships name, as a write of
+ * the type does.
  */
 abstract class WriteOnlyRelationConformanceTestCase extends JsonApiFunctionalTestCase
 {
@@ -157,20 +158,56 @@ abstract class WriteOnlyRelationConformanceTestCase extends JsonApiFunctionalTes
 
     #[Test]
     #[Group('spec:actions')]
-    public function aPatchActionComparesALockedWriteOnlyToManyWithItsBlankInput(): void
+    public function aPatchActionNamingTheMembersOfALockedWriteOnlyToManyIsAccepted(): void
     {
-        // A PATCH action hydrates its input as an update onto a blank instance, so naming
-        // the very comments the article holds still changes the members it compares with.
+        // The input is compared with the article the action was called on.
         $this->pinComments(['1', '2']);
 
-        $response = $this->revise(['1', '2']);
+        $response = $this->revise(['2', '1']);
 
-        self::assertSame(Response::HTTP_FORBIDDEN, $response->getStatusCode(), (string) $response->getContent());
-        $errors = $this->decode($response)['errors'] ?? null;
-        self::assertIsArray($errors);
-        $error = $errors[0] ?? null;
-        self::assertIsArray($error);
-        self::assertSame('MEMBERSHIP_CHANGE_PROHIBITED', $error['code'] ?? null);
+        self::assertSame(Response::HTTP_OK, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['pinned' => ['2', '1']], $this->decode($response)['meta'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:actions')]
+    public function aPatchActionAddingAMemberToALockedWriteOnlyToManyIsForbidden(): void
+    {
+        $this->pinComments(['1']);
+
+        $this->assertMembershipChangeProhibited($this->revise(['1', '2']));
+    }
+
+    #[Test]
+    #[Group('spec:actions')]
+    public function aPatchActionRemovingAMemberFromALockedWriteOnlyToManyIsForbidden(): void
+    {
+        $this->pinComments(['1', '2']);
+
+        $this->assertMembershipChangeProhibited($this->revise(['1']));
+    }
+
+    #[Test]
+    #[Group('spec:actions')]
+    public function aCollectionPatchActionComparesALockedWriteOnlyToManyWithNoMembers(): void
+    {
+        // A collection action has no article, so naming any member changes the empty set,
+        // even when the document names an article holding those members.
+        $this->pinComments(['1', '2']);
+
+        $this->assertMembershipChangeProhibited($this->handle('/articles/-actions/revise-any', 'PATCH', ['data' => [
+            'type' => 'articles',
+            'id' => '1',
+            'relationships' => ['lockedSecretComments' => ['data' => [['type' => 'comments', 'id' => '1'], ['type' => 'comments', 'id' => '2']]]],
+        ]]));
+
+        $response = $this->handle('/articles/-actions/revise-any', 'PATCH', ['data' => [
+            'type' => 'articles',
+            'id' => '1',
+            'relationships' => ['lockedSecretComments' => ['data' => []]],
+        ]]);
+        self::assertSame(Response::HTTP_OK, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['pinned' => []], $this->decode($response)['meta'] ?? null);
     }
 
     #[Test]
@@ -208,6 +245,16 @@ abstract class WriteOnlyRelationConformanceTestCase extends JsonApiFunctionalTes
 
         self::assertSame(Response::HTTP_OK, $response->getStatusCode(), (string) $response->getContent());
         self::assertSame(['pinned' => []], $this->decode($response)['meta'] ?? null);
+    }
+
+    private function assertMembershipChangeProhibited(Response $response): void
+    {
+        self::assertSame(Response::HTTP_FORBIDDEN, $response->getStatusCode(), (string) $response->getContent());
+        $errors = $this->decode($response)['errors'] ?? null;
+        self::assertIsArray($errors);
+        $error = $errors[0] ?? null;
+        self::assertIsArray($error);
+        self::assertSame('MEMBERSHIP_CHANGE_PROHIBITED', $error['code'] ?? null);
     }
 
     /**
