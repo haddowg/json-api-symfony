@@ -137,7 +137,9 @@ members beside the declared children.
 ## Unions
 
 A `Union` holds a value that may be a string, a number, a boolean or a list of those,
-with at most one member per JSON type. Core's
+with at most one member per JSON type, except that an `Integer` and a `Decimal` may sit
+together, a number sent without a fraction going to the `Integer` and one sent with it to
+the `Decimal`. Core's
 [field docs](https://github.com/haddowg/json-api/blob/main/docs/field-types.md#union)
 cover the semantics. A setting whose value is a label, an amount, a flag or a short
 list of those looks like this:
@@ -166,7 +168,8 @@ only when its string or list member takes the value, so `false` and `0` pass. A 
 union takes `null` and a union that isn't nullable refuses it.
 
 Doctrine stores a union in a `json` column, which keeps a string, a number, a boolean
-and a list apart. A date member is the one case that needs care. Core hydrates a union
+and a list apart, and encodes a whole float with its fraction, so `500.0` reads back as a
+float and `500` as an int. A date member is the one case that needs care. Core hydrates a union
 attribute's date to a `\DateTimeImmutable`, which Doctrine's `json` type would encode as
 an object no member reads back. So just before the write, the bundle replaces the value
 with core's `Union::toStoredForm()` whenever the column can't hold a date-time. That is
