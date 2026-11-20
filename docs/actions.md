@@ -217,7 +217,11 @@ fresh input object and hydrates the body into it:
 On an object the persister instantiated, each relationship the body names holds the
 related models, as a create of the type would: a to-one the related entity, and a to-many
 its related entities, refilling a `Collection` the object already holds. Each member is
-loaded through its type's provider, and one that doesn't exist is a `404`. A relation with
+loaded through its type's provider, and one that doesn't exist is a `404`. A to-many declared
+with a foreign key, `HasMany::make('members', 'members', 'team')`, holds nothing on the model,
+so the object gets its members only when its class declares a property or a setter for it.
+Otherwise the handler reads the linkage from `$context->request()`, and the object gains no
+dynamic property. A relation with
 a `fillUsing()` hook gets the linkage instead. A to-many declared `cannotChangeMembership()`
 is checked first. On an action called on a resource whose `inputType` is the mount type, the
 members the body names are compared with the ones that resource holds now, read as a `PATCH` of
