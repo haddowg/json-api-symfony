@@ -380,7 +380,8 @@ final class ServableResourceWarmer implements CacheWarmerInterface
      * {@see RelationOrderValidator}, and that a key only a `belongsToMany` pivot field
      * answers is read by a provider that sorts its pivot rows. An identified
      * `MorphToMany` sorts its link rows on every provider. The in-memory provider holds no pivot
-     * data, so a pivot order would otherwise fail every read of the relation. Each foreign
+     * data, so a pivot order would otherwise fail every read of the relation, and an order
+     * that reaches through the pivot row would be dropped from every read. Each foreign
      * key is checked here too, through core's {@see RelationForeignKeyValidator}, beside
      * the provider that reads through it.
      */
@@ -429,7 +430,8 @@ final class ServableResourceWarmer implements CacheWarmerInterface
 
         foreach ($serializer->allFields() as $relation) {
             $order = $relation instanceof BelongsToMany ? RelationSorts::ownDefault($relation) : [];
-            if ($order === [] || PivotFields::sortsFor($relation) === []) {
+            $readsPivotRow = \array_filter($order, static fn(SortDirective $directive): bool => RelationCriteriaFactory::readsPivotRow($directive->sort)) !== [];
+            if ($order === [] || (PivotFields::sortsFor($relation) === [] && !$readsPivotRow)) {
                 continue;
             }
 
@@ -445,6 +447,17 @@ final class ServableResourceWarmer implements CacheWarmerInterface
 
             $vocabulary = SortMatcher::merge($this->typeMetadata->resourceFor($server, $relatedType)?->allSorts() ?? [], $relation->sorts());
             foreach ($order as $directive) {
+                if (RelationCriteriaFactory::readsPivotRow($directive->sort)) {
+                    throw new \LogicException(\sprintf(
+                        'Relation "%s" on resource type "%s" is ordered by "%s", which reaches through its pivot row, but the data provider of "%s" does not read the relation through a pivot query, so it cannot read a pivot row. Order it by a field of "%s", or serve "%s" from a provider that reads pivot rows.',
+                        $relation->name(),
+                        $type,
+                        $directive->sort->key(),
+                        $relatedType,
+                        $relatedType,
+                        $relatedType,
+                    ));
+                }
                 if (!SortMatcher::recognises($vocabulary, $directive->sort->key())) {
                     throw new \LogicException(\sprintf(
                         'Relation "%s" on resource type "%s" is ordered by the pivot field "%s", but the data provider of "%s" does not read the relation through a pivot query, so it cannot order by a pivot field. Order it by a field of "%s", or serve "%s" from a provider that reads pivot rows.',
