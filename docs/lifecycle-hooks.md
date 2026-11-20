@@ -145,7 +145,9 @@ to diff against). The other hook methods differ only in what comes before the
 `HookContext::writtenMeta()`, and `writtenMeta()` on the write events a subscriber receives,
 return the typed `meta` the write sent: `->document` for its top-level `meta` and `->resource`
 for its `data.meta`, each validated against what the type declares in
-`requestDocumentMeta()` and `resourceMeta()`. They are empty for a write that sent none.
+`requestDocumentMeta()` and `resourceMeta()`. They are empty for a write that sent none,
+and `->document` is empty for a write whose type declares no request `meta` for it, as an
+action's `requestMeta()` is; the `meta` as sent stays on the request's parsed body.
 
 ## Two semantics: *before* aborts, *after* replaces
 

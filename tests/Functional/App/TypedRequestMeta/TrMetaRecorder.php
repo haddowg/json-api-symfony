@@ -21,6 +21,13 @@ final class TrMetaRecorder implements EventSubscriberInterface
      */
     public static array $seen = [];
 
+    /**
+     * The top-level meta each event's request carries as sent.
+     *
+     * @var array<string, mixed>
+     */
+    public static array $raw = [];
+
     public static function getSubscribedEvents(): array
     {
         return [
@@ -37,5 +44,7 @@ final class TrMetaRecorder implements EventSubscriberInterface
         $meta = $event->writtenMeta();
         $name = (new \ReflectionClass($event))->getShortName();
         self::$seen[$event->type . ':' . $name] = ['document' => $meta->document, 'resource' => $meta->resource];
+        $body = $event->request->getParsedBody();
+        self::$raw[$event->type . ':' . $name] = \is_array($body) ? ($body['meta'] ?? null) : null;
     }
 }

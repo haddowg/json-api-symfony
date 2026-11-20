@@ -24,6 +24,7 @@ abstract class TypedRequestMetaConformanceTestCase extends JsonApiFunctionalTest
     {
         parent::setUp();
         TrMetaRecorder::$seen = [];
+        TrMetaRecorder::$raw = [];
     }
 
     #[Test]
@@ -237,6 +238,11 @@ abstract class TypedRequestMetaConformanceTestCase extends JsonApiFunctionalTest
         $response = $this->handle('/tr-plains', 'POST', ['data' => ['type' => 'tr-plains', 'attributes' => ['name' => 'Free'], 'meta' => ['anything' => 1]], 'meta' => ['whatever' => ['x' => 1]]]);
         self::assertSame(201, $response->getStatusCode(), (string) $response->getContent());
         self::assertSame(['free' => true], self::at($this->decode($response), 'data', 'meta'));
+
+        // Nothing declared for the create, so its typed top-level meta is empty, as an
+        // action's requestMeta() is, while the raw meta stays on the request.
+        self::assertSame([], TrMetaRecorder::$seen['tr-plains:BeforeCreateEvent']['document'] ?? null);
+        self::assertSame(['whatever' => ['x' => 1]], TrMetaRecorder::$raw['tr-plains:BeforeCreateEvent'] ?? null);
 
         $this->bootInDebug();
         self::assertSame(200, $this->handle('/tr-plains/1')->getStatusCode(), 'getMeta() of a type declaring no resource meta is not checked');
