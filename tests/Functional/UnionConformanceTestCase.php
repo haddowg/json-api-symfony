@@ -39,6 +39,8 @@ abstract class UnionConformanceTestCase extends JsonApiFunctionalTestCase
         $cases = [
             'a string' => ['value', 'gold', 'gold'],
             'a decimal' => ['value', 2.5, 2.5],
+            'a whole number to the decimal member' => ['value', 3, 3.0],
+            'a whole number in a list to the decimal member' => ['value', ['x', 1], ['x', 1.0]],
             'true' => ['value', true, true],
             'false' => ['value', false, false],
             'a list of mixed elements' => ['value', ['gold', 2.5, false], ['gold', 2.5, false]],
