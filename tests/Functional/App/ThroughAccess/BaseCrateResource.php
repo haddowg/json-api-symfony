@@ -70,6 +70,7 @@ abstract class BaseCrateResource extends AbstractResource
             WhereAny::make('anyCode', Where::make('name'), WhereThrough::make('code', 'vault.code')),
             WhereMorph::make('subject'),
             WhereMorph::make('marked', 'marks'),
+            WhereAny::make('nameOrSubject', Where::make('name'), WhereMorph::make('subject')),
         ];
     }
 }

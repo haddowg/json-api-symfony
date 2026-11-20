@@ -188,6 +188,16 @@ trait ThroughReadAccessConformance
     }
 
     #[Test]
+    public function a_morph_filter_inside_a_group_is_scoped_and_gated(): void
+    {
+        self::assertSame(['2'], $this->crateIds('ada', 'filter[nameOrSubject][type]=parcels'));
+        self::assertSame(['1'], $this->crateIds('grace', 'filter[nameOrSubject][type]=parcels'));
+        self::assertSame(['3'], $this->crateIds('admin', 'filter[nameOrSubject][type]=vaults'));
+        $this->assertForbidden('ada', '/crates?filter[nameOrSubject][type]=safes');
+        $this->assertForbidden('ada', '/crates?filter[nameOrSubject][type]=vaults&filter[nameOrSubject][id]=1');
+    }
+
+    #[Test]
     public function a_morph_type_the_relation_does_not_declare_stays_a_bad_request(): void
     {
         $response = $this->send('ada', '/crates?filter[subject][type]=ledgers');
