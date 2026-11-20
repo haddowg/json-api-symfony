@@ -16,7 +16,9 @@ use haddowg\JsonApi\Resource\Through\PivotRowRelations;
  * Names the relations a pivot row holds from its association entity's mapping, the entity
  * {@see PivotAssociationResolver} finds for the relation, as the pivot-row filters walk it.
  * An association of that entity is the relation under its property name, a to-one or a
- * to-many as mapped, reaching the one registered type whose entity it targets.
+ * to-many as mapped, reaching the one registered type whose entity it targets. The row's
+ * own ends reach the parent type and the relation's related type, even when another type
+ * serves the same entity.
  *
  * @internal
  */
@@ -41,12 +43,12 @@ final class DoctrinePivotRowRelations implements PivotRowRelations
      */
     public function pivotRowRelation(PivotRelationInterface $relation, string $parentType, string $member): ?RelationInterface
     {
-        $rowClass = $this->rowClass($relation, $parentType);
-        if ($rowClass === null) {
+        $association = $this->association($relation, $parentType);
+        if ($association === null) {
             return null;
         }
 
-        $metadata = $this->entityManager->getClassMetadata($rowClass);
+        $metadata = $this->entityManager->getClassMetadata($association->entityClass);
         if (!$metadata->hasAssociation($member)) {
             return null;
         }
@@ -57,8 +59,10 @@ final class DoctrinePivotRowRelations implements PivotRowRelations
         }
 
         $target = $this->entityManager->getClassMetadata($metadata->getAssociationTargetClass($member))->getName();
-        $types = [];
-        foreach ($this->entityClassByType as $type => $class) {
+        // The row's own ends are the parent and the member, whose types the relation names.
+        $ends = [$association->parentProperty => $parentType, $association->farProperty => $relation->relatedTypes()[0] ?? ''];
+        $types = isset($ends[$member]) ? [$ends[$member]] : [];
+        foreach (isset($ends[$member]) ? [] : $this->entityClassByType as $type => $class) {
             if ($this->entityManager->getClassMetadata($class)->getName() === $target) {
                 $types[] = $type;
             }
@@ -81,11 +85,10 @@ final class DoctrinePivotRowRelations implements PivotRowRelations
     }
 
     /**
-     * The entity backing `$relation`'s pivot rows, or `null` when this provider reads none.
-     *
-     * @return class-string|null
+     * The association entity backing `$relation`'s pivot rows, or `null` when this provider
+     * reads none.
      */
-    private function rowClass(PivotRelationInterface $relation, string $parentType): ?string
+    private function association(PivotRelationInterface $relation, string $parentType): ?PivotAssociation
     {
         if (!$relation instanceof BelongsToMany) {
             return null;
@@ -97,6 +100,6 @@ final class DoctrinePivotRowRelations implements PivotRowRelations
             return null;
         }
 
-        return $this->pivotAssociations->discover($relation, $parentClass, $farClass)->entityClass;
+        return $this->pivotAssociations->discover($relation, $parentClass, $farClass);
     }
 }
