@@ -34,7 +34,7 @@ final class TrBadgeSerializer implements SerializerInterface, DeclaresResourceMe
         ];
     }
 
-    public function documentMeta(OperationType $operation): iterable
+    public function documentMeta(OperationType $operation, ?string $relation = null): iterable
     {
         return match ($operation) {
             OperationType::FetchOne => [

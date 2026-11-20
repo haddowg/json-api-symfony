@@ -31,7 +31,7 @@ final class TrExportResource extends AbstractResource
         return [Id::make(), Str::make('name')];
     }
 
-    public function documentMeta(OperationType $operation): iterable
+    public function documentMeta(OperationType $operation, ?string $relation = null): iterable
     {
         return match ($operation) {
             OperationType::CreateAccepted => [Str::make('jobStatus')->required()->example('queued')->extractUsing(static fn(TrJob $job): string => $job->status)],
