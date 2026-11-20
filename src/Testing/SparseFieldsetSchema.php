@@ -156,9 +156,11 @@ final class SparseFieldsetSchema
      * rest of it, unless the key is also selected whole. A list schema selected through
      * `*` narrows its `items` to the rest of each path, unless `*` is also selected whole.
      * A local `$ref` is inlined so a shared component stays whole for other uses, and each
-     * branch of an `allOf`, `anyOf` or `oneOf` is narrowed in turn. A union's branches keep
-     * the discriminator every narrowed item still carries, and become an `anyOf`, since an
-     * item narrowed to fewer members can fit more than one of them.
+     * branch of an `allOf`, `anyOf` or `oneOf` is narrowed in turn. A discriminated union
+     * stays a `oneOf`, each branch keeping its discriminator required beside the selected
+     * members, so the discriminator's `const` still pins one branch. An undiscriminated
+     * union becomes an `anyOf`, since a value narrowed to fewer members can fit more than one
+     * of its branches.
      *
      * @param list<string> $keys
      * @param list<string> $kept members kept whatever the selection, as a union's discriminator
@@ -192,9 +194,9 @@ final class SparseFieldsetSchema
                 $copy->{$keyword} = \array_map(static fn(mixed $branch): mixed => self::narrow($schemas, $branch, $keys, $depth + 1, $keyword === 'allOf' ? $kept : $branchKept), $copy->{$keyword});
             }
         }
-        if (isset($copy->oneOf) && \is_array($copy->oneOf)) {
+        if (isset($copy->oneOf) && \is_array($copy->oneOf) && !$discriminator instanceof \stdClass) {
             $copy->anyOf = $copy->oneOf;
-            unset($copy->oneOf, $copy->discriminator);
+            unset($copy->oneOf);
         }
 
         $type = $copy->type ?? null;
@@ -217,6 +219,9 @@ final class SparseFieldsetSchema
         $selected = \array_values(\array_unique([...$kept, ...\array_map(static fn(string $key): string => \explode('.', $key, 2)[0], $keys)]));
 
         unset($copy->required, $copy->minProperties);
+        if ($kept !== []) {
+            $copy->required = $kept;
+        }
         if (isset($copy->properties) && $copy->properties instanceof \stdClass) {
             $properties = new \stdClass();
             foreach (\get_object_vars($copy->properties) as $name => $property) {

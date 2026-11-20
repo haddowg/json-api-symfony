@@ -24,6 +24,7 @@ class PanelEntity
      * @param list<mixed>|null          $archive
      * @param list<string>|null         $tags
      * @param list<mixed>|null          $blocks
+     * @param array<string, mixed>|null $hero
      */
     public function __construct(
         #[ORM\Id]
@@ -50,5 +51,7 @@ class PanelEntity
         public ?array $tags = null,
         #[ORM\Column(type: 'json', nullable: true)]
         public ?array $blocks = null,
+        #[ORM\Column(type: 'json', nullable: true)]
+        public ?array $hero = null,
     ) {}
 }

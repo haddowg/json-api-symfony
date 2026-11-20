@@ -577,6 +577,48 @@ abstract class FieldSelectionConformanceTestCase extends JsonApiFunctionalTestCa
 
     #[Test]
     #[Group('spec:sparse-fieldsets')]
+    public function aOneOfAttributeRendersItsDiscriminatorAndTheKeysItsVariantAccepts(): void
+    {
+        $response = $this->handle('/panels/1?fields[panels]=hero.src');
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['hero' => ['kind' => 'image', 'src' => '/h.png']], $this->attributesOf($response));
+        self::assertSame(self::NARROWED, $response->headers->get('Content-Type'));
+        $this->assertResponseMatchesGeneratedSchema($response, 'panels', SchemaDocumentKind::Single, fieldsets: ['panels' => 'hero.src']);
+        $this->assertUnrecognized('/panels/1?fields[panels]=hero.url', 'hero.url');
+
+        $video = $this->handle('/panels/1?fields[panels]=hero.src', 'PATCH', ['data' => [
+            'type' => 'panels',
+            'id' => '1',
+            'attributes' => ['hero' => ['kind' => 'video', 'url' => '/v.mp4']],
+        ]]);
+        self::assertSame(200, $video->getStatusCode(), (string) $video->getContent());
+        self::assertStringContainsString('"attributes":{"hero":{"kind":"video"}}', (string) $video->getContent());
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    public function aWriteOfAnEnumBoundUnionListIsStoredAndNarrowedThroughItsCases(): void
+    {
+        $blocks = [
+            ['type' => 'image', 'title' => 'Pic', 'url' => '/b.png'],
+            ['type' => 'text', 'title' => 'Outro', 'body' => 'Bye', 'meta' => ['lang' => 'fr', 'tone' => 'calm']],
+        ];
+        $response = $this->handle('/panels/1?fields[panels]=blocks.*.url,blocks.*.meta.lang', 'PATCH', ['data' => [
+            'type' => 'panels',
+            'id' => '1',
+            'attributes' => ['blocks' => $blocks],
+        ]]);
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['blocks' => [['type' => 'image', 'url' => '/b.png'], ['type' => 'text', 'meta' => ['lang' => 'fr']]]], $this->attributesOf($response));
+
+        $this->detachPersistedState();
+        self::assertSame($blocks, $this->attributesOf($this->handle('/panels/1?fields[panels]=blocks'))['blocks'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
     #[Group('spec:errors')]
     public function aKeyThePatternRejectsIsTheUnrecognizedFieldsetMember400(): void
     {

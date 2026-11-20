@@ -18,6 +18,7 @@ final class Panel
      * @param list<mixed>|null          $archive
      * @param list<string>|null         $tags
      * @param list<mixed>|null          $blocks
+     * @param array<string, mixed>|null $hero
      */
     public function __construct(
         public string $id = '',
@@ -31,5 +32,6 @@ final class Panel
         public ?array $archive = null,
         public ?array $tags = null,
         public ?array $blocks = null,
+        public ?array $hero = null,
     ) {}
 }

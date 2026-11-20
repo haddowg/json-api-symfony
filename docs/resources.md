@@ -590,11 +590,13 @@ an object, a list of scalars or a list whose element declares no selectable keys
 unknown member, as is an index such as `editions.0`. A list's hook receives a
 `KeySelection` holding `*`, whose `items()` is the selection inside every item.
 
-A list of a `OneOf` takes `*` once a variant opts in, each variant declaring its own keys
-on the union's builder with `selectableKeys('<variant>', ...)`. A key after `*` is accepted
-when one variant accepts it, and every item renders its discriminator and the selected keys
-its own variant accepts, so an item whose variant doesn't accept a key renders without it.
-A variant that declares no selectable keys renders only its discriminator under a
+A `OneOf` takes keys wherever it sits, as an attribute, a child of an object or the items
+of a list, once a variant opts in. Each variant declares its keys on its own `Obj`, given to
+`variant()` as the one `Obj` named for the variant or returned from `variants()` for a
+discriminator bound to an enum. A key is accepted when one variant accepts it, and every
+value renders its discriminator and the selected keys its own variant accepts, so
+`fields[panels]=hero.src` renders an image hero's `kind` and `src` and only a video hero's
+`kind`. A variant that declares no selectable keys renders only its discriminator under a
 selection.
 
 The bundle applies the request rules core defines everywhere the type renders: primary
