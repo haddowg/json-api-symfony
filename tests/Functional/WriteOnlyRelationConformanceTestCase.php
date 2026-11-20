@@ -19,6 +19,9 @@ use Symfony\Component\HttpFoundation\Response;
  * `secretComments`, a `withData()` to-many marked `writeOnly()`. Reads never render
  * it, so a `relatedQuery` addressing it is an unknown path, the OpenAPI document
  * describes no way to read it, and its relationship endpoint still takes writes.
+ * `lockedSecretComments`, over the same column, can't change its members: a replace
+ * compares the comments the article holds, and a `PATCH` action taking it as input
+ * compares it with the blank instance it hydrates.
  */
 abstract class WriteOnlyRelationConformanceTestCase extends JsonApiFunctionalTestCase
 {
@@ -112,6 +115,83 @@ abstract class WriteOnlyRelationConformanceTestCase extends JsonApiFunctionalTes
             'data' => [['type' => 'comments', 'id' => '1']],
         ]);
 
+        self::assertSame(Response::HTTP_NO_CONTENT, $response->getStatusCode(), (string) $response->getContent());
+    }
+
+    #[Test]
+    #[Group('spec:crud-updating-relationships')]
+    public function aPatchKeepingTheMembersOfALockedWriteOnlyToManyIsAccepted(): void
+    {
+        $this->pinComments(['1', '2']);
+
+        $response = $this->handle('/articles/1', 'PATCH', ['data' => [
+            'type' => 'articles',
+            'id' => '1',
+            'relationships' => ['lockedSecretComments' => ['data' => [['type' => 'comments', 'id' => '2'], ['type' => 'comments', 'id' => '1']]]],
+        ]]);
+
+        self::assertSame(Response::HTTP_OK, $response->getStatusCode(), (string) $response->getContent());
+        $data = $this->decode($response)['data'] ?? null;
+        self::assertIsArray($data);
+        $relationships = $data['relationships'] ?? [];
+        self::assertIsArray($relationships);
+        self::assertArrayNotHasKey('lockedSecretComments', $relationships);
+    }
+
+    #[Test]
+    #[Group('spec:crud-updating-relationships')]
+    public function aPatchChangingTheMembersOfALockedWriteOnlyToManyIsForbidden(): void
+    {
+        // The article holds comments 1 and 2, so naming only 1 changes its members.
+        $this->pinComments(['1', '2']);
+
+        $response = $this->handle('/articles/1', 'PATCH', ['data' => [
+            'type' => 'articles',
+            'id' => '1',
+            'relationships' => ['lockedSecretComments' => ['data' => [['type' => 'comments', 'id' => '1']]]],
+        ]]);
+
+        self::assertSame(Response::HTTP_FORBIDDEN, $response->getStatusCode(), (string) $response->getContent());
+    }
+
+    #[Test]
+    #[Group('spec:actions')]
+    public function aPatchActionComparesALockedWriteOnlyToManyWithItsBlankInput(): void
+    {
+        // A PATCH action hydrates its input as an update onto a blank instance, so naming
+        // the very comments the article holds still changes the members it compares with.
+        $this->pinComments(['1', '2']);
+
+        $response = $this->revise(['1', '2']);
+
+        self::assertSame(Response::HTTP_FORBIDDEN, $response->getStatusCode(), (string) $response->getContent());
+        $errors = $this->decode($response)['errors'] ?? null;
+        self::assertIsArray($errors);
+        $error = $errors[0] ?? null;
+        self::assertIsArray($error);
+        self::assertSame('MEMBERSHIP_CHANGE_PROHIBITED', $error['code'] ?? null);
+    }
+
+    /**
+     * @param list<string> $ids
+     */
+    private function revise(array $ids): Response
+    {
+        return $this->handle('/articles/1/-actions/revise', 'PATCH', ['data' => [
+            'type' => 'articles',
+            'id' => '1',
+            'relationships' => ['lockedSecretComments' => ['data' => \array_map(static fn(string $id): array => ['type' => 'comments', 'id' => $id], $ids)]],
+        ]]);
+    }
+
+    /**
+     * @param list<string> $ids
+     */
+    private function pinComments(array $ids): void
+    {
+        $response = $this->handle('/articles/1/relationships/secretComments', 'PATCH', [
+            'data' => \array_map(static fn(string $id): array => ['type' => 'comments', 'id' => $id], $ids),
+        ]);
         self::assertSame(Response::HTTP_NO_CONTENT, $response->getStatusCode(), (string) $response->getContent());
     }
 }
