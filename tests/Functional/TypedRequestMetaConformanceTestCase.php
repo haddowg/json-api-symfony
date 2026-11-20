@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
 use haddowg\JsonApiBundle\OpenApi\DocumentFactory;
+use haddowg\JsonApiBundle\OpenApi\JsonSchemaFactory;
 use haddowg\JsonApiBundle\Tests\Functional\App\TypedRequestMeta\TrMetaRecorder;
 use haddowg\JsonApiBundle\Tests\Functional\App\TypedRequestMeta\TrNoteResource;
 use PHPUnit\Framework\Attributes\Test;
@@ -420,6 +421,35 @@ abstract class TypedRequestMetaConformanceTestCase extends JsonApiFunctionalTest
         self::assertTrue(self::at($document, 'components', 'schemas', 'TrNotesAtomicAddOperation', 'x-request-meta'));
         self::assertTrue(self::at($document, 'components', 'schemas', 'TrNotesItemsAtomicRelationshipAddOperation', 'x-request-meta'));
         self::assertSame(['idempotencyKey', 'batchTag'], self::at($document, 'components', 'schemas', 'TrNotesAtomicAddOperation', 'properties', 'meta', 'required'));
+    }
+
+    #[Test]
+    public function theStandaloneSchemaTypesMetaAsTheDocumentDoes(): void
+    {
+        $documents = static::getContainer()->get(DocumentFactory::class);
+        self::assertInstanceOf(DocumentFactory::class, $documents);
+        $document = \json_decode((string) \json_encode($documents->forServer()->toArray()), true);
+        self::assertIsArray($document);
+        $components = self::at($document, 'components', 'schemas');
+        self::assertIsArray($components);
+        $schemas = static::getContainer()->get(JsonSchemaFactory::class);
+        self::assertInstanceOf(JsonSchemaFactory::class, $schemas);
+        $notes = \json_decode((string) \json_encode($schemas->forType('tr-notes')), true);
+        self::assertIsArray($notes);
+
+        $resourceMeta = self::at($components, 'TrNotesResourceMeta');
+        self::assertIsArray($resourceMeta);
+        unset($resourceMeta['x-resource-meta']);
+        self::assertSame($resourceMeta, self::at($notes, 'properties', 'meta'));
+
+        // Only the relation declaring identifier meta is narrowed; the rest stay open.
+        self::assertSame(['lead'], \array_keys((array) self::at($notes, 'properties', 'relationships', 'properties')));
+        self::assertSame(['object', 'null'], self::at($notes, 'properties', 'relationships', 'properties', 'lead', 'properties', 'data', 'type'));
+        self::assertSame(self::at($components, 'TrNotesLeadIdentifierMeta'), self::at($notes, 'properties', 'relationships', 'properties', 'lead', 'properties', 'data', 'properties', 'meta'));
+
+        $plains = \json_decode((string) \json_encode($schemas->forType('tr-plains')), true);
+        self::assertIsArray($plains);
+        self::assertSame(['type' => 'object'], self::at($plains, 'properties', 'meta'), 'a type declaring no resource meta keeps the open object');
     }
 
     abstract protected function bootInDebug(): void;

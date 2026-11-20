@@ -8,6 +8,7 @@ use haddowg\JsonApi\OpenApi\EnumDescriptionMode;
 use haddowg\JsonApi\OpenApi\Metadata\ServerMetadataInterface;
 use haddowg\JsonApi\OpenApi\ProjectedTypes;
 use haddowg\JsonApi\OpenApi\SchemaProjector;
+use haddowg\JsonApi\OpenApi\StandaloneResourceObject;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource;
 use haddowg\JsonApiBundle\Server\RouteDescriptorRegistry;
@@ -25,16 +26,16 @@ use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
  * {@see SchemaProjector} — wrapped with the canonical `$schema` dialect keyword and a
  * stable `$id` so the artifact is a valid, addressable schema document on its own.
  *
- * **Specificity vs the OpenAPI document.** The **attributes** are projected identically
- * to the OpenAPI document (the same {@see SchemaProjector::projectResourceObject()}), so
- * they agree exactly — typed, constrained, enum-narrowed. The **relationships**, **links**
- * and **meta** are deliberately the projector's permissive `{type: object}` placeholders:
- * the OpenAPI document narrows those by `$ref`-ing shared/per-relation components
- * ({@see \haddowg\JsonApi\OpenApi\OpenApiProjector} — the typed relationship objects,
- * `Links`/`Meta`), and a self-contained document has no `components` to reference. So for
- * relationships/links/meta the OpenAPI document is the fuller contract; the standalone
- * document is authoritative for a type's attribute shape. (Inlining the per-relation
- * linkage into the standalone form is a possible future enhancement.)
+ * **Specificity vs the OpenAPI document.** Core's {@see StandaloneResourceObject} builds
+ * it. The **attributes** are projected identically to the OpenAPI document (the same
+ * {@see SchemaProjector::projectResourceObject()}), so they agree exactly — typed,
+ * constrained, enum-narrowed. The **meta** is typed inline as the OpenAPI document's
+ * `<Type>ResourceMeta` when the type declares `resourceMeta()`, and each relation declaring
+ * identifier meta or pivot fields gets a `relationships` entry whose identifiers' `meta` is
+ * typed as its `IdentifierMeta` and `Pivot` components. The rest of each relationship
+ * object, the `links`, and the `meta` of a type declaring none stay permissive
+ * `{type: object}`, since a self-contained document has no `components` to reference; for
+ * those the OpenAPI document is the fuller contract.
  *
  * Standalone export emits backed-enum schemas **inline** (no
  * {@see \haddowg\JsonApi\OpenApi\EnumComponentCollector} — a standalone file has no
@@ -95,7 +96,7 @@ final class JsonSchemaFactory
         $resource = $this->types->resourceFor($server, $type);
         $fields = $resource instanceof AbstractResource ? $resource->allFields() : [];
 
-        $document = $this->schemaProjector->projectResourceObject($type, $fields)->toJson();
+        $document = StandaloneResourceObject::project($this->serverMetadata($serverName), $type, $fields, $this->schemaProjector)->toJson();
         // Prepend the dialect + identity keywords so the artifact is a valid,
         // addressable 2020-12 schema document on its own (toJson never sets them —
         // a component schema lives inside an OpenAPI document, this one stands alone).

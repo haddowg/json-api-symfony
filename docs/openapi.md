@@ -498,7 +498,13 @@ with stdout and `--output`. YAML has no compact form, so the OpenAPI export reje
 
 The standalone JSON Schemas are projected by the **same** core projector the OpenAPI
 document uses, so a standalone `<type>.json` and the in-document `<Type>Resource`
-component agree.
+component agree. Its `meta` is typed inline as `<Type>ResourceMeta` when the type declares
+`resourceMeta()`, and a relation declaring identifier meta or pivot fields gets a
+`relationships` entry whose identifiers' `meta` is typed as its `<Type><Rel>IdentifierMeta`,
+with the read `<Type><Rel>Pivot` inline under `pivot`. The rest of each relationship object,
+`links`, and the `meta` of a type declaring none stay open objects. A request's top-level
+`meta` and a write's `data.meta` are not part of a resource object, so it does not describe
+them.
 
 The OpenAPI export lists every [operation example](#operation-examples) it could not
 build as a warning on stderr, one line per missing value, so the document on stdout stays
