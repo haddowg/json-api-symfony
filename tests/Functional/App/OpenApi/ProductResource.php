@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\OpenApi;
 
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\BelongsTo;
+use haddowg\JsonApi\Resource\Field\Decimal;
 use haddowg\JsonApi\Resource\Field\HasMany;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Str;
@@ -73,6 +74,9 @@ final class ProductResource extends AbstractResource
             Id::make()->matchAs('[0-9]+'),
             Str::make('name')->sortable()->required()->minLength(2)->maxLength(120),
             Str::make('status')->sortable()->enum(CatalogStatus::class),
+            // A whole-valued float bound and example, which every served document keeps
+            // with their fraction.
+            Decimal::make('price')->nullable()->exclusiveMin(0.0)->example(5.0),
             // A relation description (->describedAs()) flows onto the related +
             // relationship operation descriptions for this relation (docs/openapi.md).
             BelongsTo::make('category', 'categories')->describedAs('The catalog category this product belongs to.'),

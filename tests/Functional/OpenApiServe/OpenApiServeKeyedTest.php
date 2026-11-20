@@ -158,12 +158,13 @@ final class OpenApiServeKeyedTest extends OpenApiServeTestCase
 
         $documents = static::getContainer()->get(DocumentFactory::class);
         \assert($documents instanceof DocumentFactory);
-        self::assertSame($documents->forServer()->toArray(), $exported);
+        self::assertSame(\json_decode($documents->forServer()->toJsonString(), true, 512, \JSON_THROW_ON_ERROR), $exported);
 
         $schemas = $this->command('json-api:json-schema:export');
         $schemas->execute([]);
         $schemas->assertCommandIsSuccessful();
         self::assertStringContainsString('categories', $schemas->getDisplay());
+        self::assertStringContainsString('"exclusiveMinimum": 0.0', $schemas->getDisplay());
         self::assertSame(0, FeatureGateDecorator::$decorated + FeatureGateSchemaDecorator::$decorated);
     }
 
@@ -188,6 +189,16 @@ final class OpenApiServeKeyedTest extends OpenApiServeTestCase
         $notModified = $this->get('/schemas.json', 'tenant.test', ['If-None-Match' => 'W/' . $this->etagOf($limited)]);
         self::assertSame(304, $notModified->getStatusCode());
         self::assertSame(2, FeatureGateSchemaDecorator::$decorated);
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    public function aDecoratedDocumentKeepsTheFractionOfAWholeFloat(): void
+    {
+        $body = (string) $this->get('/docs.json', 'full.tenant.test')->getContent();
+
+        self::assertStringContainsString('"exclusiveMinimum": 0.0', $body);
+        self::assertStringNotContainsString('"exclusiveMinimum": 0,', $body);
     }
 
     private function command(string $name): CommandTester
