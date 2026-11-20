@@ -108,7 +108,9 @@ shared for that reason. See
 [relationships](relationships.md#the-related-endpoints-target-must-be-registered-on-the-server).
 
 Two servers can also serve the same type name through different classes, such as a
-`v1` and a `v2` resource for `albums`. Each server then reads only its own class's
+`v1` and a `v2` resource for `albums`. The example serves `playlists` this way: its
+`PlaylistAdminResource` extends the default server's `PlaylistResource` to make `owner`
+writable on the admin server, where `users` is registered. Each server then reads only its own class's
 declarations: security, response headers, OpenAPI tags, descriptions, extensions and
 `singular`, the `uriType` its actions mount under, its `Id` field's encoder, route
 pattern and client-id policy, and for a resource-less type its

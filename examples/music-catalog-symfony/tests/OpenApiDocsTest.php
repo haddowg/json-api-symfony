@@ -194,6 +194,28 @@ final class OpenApiDocsTest extends MusicCatalogKernelTestCase
     }
 
     #[Test]
+    public function theOwnerOfAPlaylistIsWrittenOnlyOnTheAdminServer(): void
+    {
+        // A default-server client cannot name a `users` resource, so `owner` is read-only
+        // there and every write of it leaves the document. The admin server serves the
+        // type through PlaylistAdminResource, which keeps it writable.
+        $default = $this->decode($this->handle('/docs.json'));
+        $admin = $this->decode($this->handle('/admin/docs.json'));
+
+        self::assertArrayHasKey('get', $this->nested($default, 'paths', '/playlists/{id}/relationships/owner'));
+        self::assertArrayNotHasKey('patch', $this->nested($default, 'paths', '/playlists/{id}/relationships/owner'));
+        self::assertArrayHasKey('patch', $this->nested($admin, 'paths', '/playlists/{id}/relationships/owner'));
+
+        foreach (['PlaylistsCreateRequest', 'PlaylistsUpdateRequest'] as $request) {
+            $relationships = $this->nested($default, 'components', 'schemas', $request, 'properties', 'data', 'properties', 'relationships', 'properties');
+            self::assertArrayNotHasKey('owner', $relationships, $request);
+            self::assertArrayHasKey('publicOwner', $relationships, $request);
+            self::assertArrayHasKey('owner', $this->nested($admin, 'components', 'schemas', $request, 'properties', 'data', 'properties', 'relationships', 'properties'), $request);
+        }
+        self::assertArrayHasKey('owner', $this->nested($default, 'components', 'schemas', 'PlaylistsResource', 'properties', 'relationships', 'properties'));
+    }
+
+    #[Test]
     #[Group('spec:fetching-filtering')]
     public function theConvenienceFiltersProjectTheirParametersAndDescriptions(): void
     {
@@ -468,14 +490,15 @@ final class OpenApiDocsTest extends MusicCatalogKernelTestCase
         );
 
         // `playlists.owner` links to `users`, which the default server does not register,
-        // so its linkage takes the id the relation declares with exampleId().
+        // so its linkage takes the id the relation declares with exampleId(). The default
+        // server serves it read-only, so only the admin server documents its write.
         self::assertSame(
             ['type' => 'users', 'id' => '1'],
             $this->nested($document, 'paths', '/playlists/{id}/relationships/owner', 'get', 'responses', '200', 'content', $mediaType, 'example', 'data'),
         );
         self::assertSame(
             ['type' => 'users', 'id' => '1'],
-            $this->nested($document, 'paths', '/playlists/{id}/relationships/owner', 'patch', 'requestBody', 'content', $mediaType, 'example', 'data'),
+            $this->nested($this->decode($this->handle('/admin/docs.json')), 'paths', '/playlists/{id}/relationships/owner', 'patch', 'requestBody', 'content', $mediaType, 'example', 'data'),
         );
 
         // The standalone serializers switch theirs off.
