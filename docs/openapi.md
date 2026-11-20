@@ -870,8 +870,11 @@ document-input action's `data.meta` is validated and applied against its input t
 
 A relationship write answers a meta-only `200` when its type's `documentMeta()` declares
 members for that write's case, `OperationType::UpdateRelationship`, `AddRelationship` or
-`RemoveRelationship`, which covers that write on every relationship of the type. Its hooks
-receive the parent, and it is documented as `<Type><Rel><Kind>RelationshipDocument`. A
+`RemoveRelationship`, which covers that write on every relationship of the type. An override
+declaring a second parameter, `?string $relation = null`, receives the name of the relation
+written and can declare one relationship alone; the other relationships then answer their
+linkage. Its hooks receive the parent, and it is documented as
+`<Type><Rel><Kind>RelationshipDocument` on that relationship's operation. A
 create's or update's `202` job document carries what `documentMeta()` declares for
 `CreateAccepted` or `UpdateAccepted`, and an action's `202` what its handler's
 `documentMeta(202)` declares; the persister's or action's own `meta` wins.

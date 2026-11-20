@@ -190,9 +190,14 @@ final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOper
         return $declarer instanceof \haddowg\JsonApi\Serializer\DeclaresResourceMetaInterface ? $declarer->resourceMeta($context) : [];
     }
 
+    /**
+     * Passes on the relation's name core gives a relationship write case, which the
+     * type's declaration receives when its override declares it.
+     */
     public function documentMeta(OperationType $operation, ?string $relation = null): iterable
     {
-        return $this->documentMeta?->documentMeta($operation) ?? [];
+        // @phpstan-ignore arguments.count
+        return $this->documentMeta?->documentMeta($operation, $relation) ?? [];
     }
 
     public function isRelatedOnly(): bool

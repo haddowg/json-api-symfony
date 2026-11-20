@@ -1859,7 +1859,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             Mode::Add => OperationType::AddRelationship,
             Mode::Remove => OperationType::RemoveRelationship,
             default => OperationType::UpdateRelationship,
-        });
+        }, $relationshipName);
         $response = $documentMeta !== null && !$documentMeta->isEmpty()
             ? MetaResponse::fromMeta([])
             : IdentifierResponse::forRelationship($parent, $server->serializerFor($type), $relationshipName);

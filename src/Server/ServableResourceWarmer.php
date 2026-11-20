@@ -264,7 +264,7 @@ final class ServableResourceWarmer implements CacheWarmerInterface
                         Mode::Add => OperationType::AddRelationship,
                         Mode::Remove => OperationType::RemoveRelationship,
                         default => OperationType::UpdateRelationship,
-                    });
+                    }, $relation->name());
                 }
                 if ($relation instanceof PivotRelationInterface) {
                     $relation->pivotMetaShape();

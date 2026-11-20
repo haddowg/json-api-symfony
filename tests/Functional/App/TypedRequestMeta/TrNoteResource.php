@@ -20,8 +20,9 @@ use haddowg\JsonApiBundle\Hook\ResourceLifecycleHooksInterface;
 use haddowg\JsonApiBundle\Hook\ResourceLifecycleHooksTrait;
 
 /**
- * Notes declare the meta each write takes, their resource objects' meta both ways, and
- * the meta-only document adding items answers with. Inside an atomic batch a write's
+ * Notes declare the meta each write takes, their resource objects' meta both ways, the
+ * meta-only document adding items answers with, and the one replacing the lead alone
+ * answers with. Inside an atomic batch a write's
  * `data.meta` names its source `batchSource` rather than `source`.
  */
 abstract class TrNoteResource extends AbstractResource implements ResourceLifecycleHooksInterface
@@ -77,10 +78,11 @@ abstract class TrNoteResource extends AbstractResource implements ResourceLifecy
         ];
     }
 
-    public function documentMeta(OperationType $operation): iterable
+    public function documentMeta(OperationType $operation, ?string $relation = null): iterable
     {
-        return match ($operation) {
-            OperationType::AddRelationship => [Integer::make('count')->required()->example(2)->extractUsing(static fn(TrNote $note): int => $note->items->count())],
+        return match (true) {
+            $operation === OperationType::AddRelationship => [Integer::make('count')->required()->example(2)->extractUsing(static fn(TrNote $note): int => $note->items->count())],
+            $operation === OperationType::UpdateRelationship && $relation === 'lead' => [Str::make('ledBy')->required()->example('3')->extractUsing(static fn(TrNote $note): string => (string) $note->lead?->id)],
             default => [],
         };
     }

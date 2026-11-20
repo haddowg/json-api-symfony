@@ -155,6 +155,28 @@ abstract class TypedRequestMetaConformanceTestCase extends JsonApiFunctionalTest
     }
 
     #[Test]
+    public function aReplaceDeclaredForOneRelationAnswersAMetaOnlyDocumentOnThatRelationOnly(): void
+    {
+        // documentMeta() declares the replace for lead alone, by the relation's name.
+        $lead = $this->handle('/tr-notes/1/relationships/lead', 'PATCH', ['data' => ['type' => 'tr-items', 'id' => '2']]);
+        self::assertSame(200, $lead->getStatusCode(), (string) $lead->getContent());
+        $document = $this->decode($lead);
+        self::assertSame(['ledBy' => '2'], $document['meta'] ?? null);
+        self::assertArrayNotHasKey('data', $document);
+
+        $items = $this->handle('/tr-notes/1/relationships/items', 'PATCH', ['data' => [['type' => 'tr-items', 'id' => '2']]]);
+        self::assertSame(200, $items->getStatusCode(), (string) $items->getContent());
+        self::assertSame([['type' => 'tr-items', 'id' => '2']], $this->decode($items)['data'] ?? null);
+
+        $factory = static::getContainer()->get(DocumentFactory::class);
+        self::assertInstanceOf(DocumentFactory::class, $factory);
+        $openapi = \json_decode((string) \json_encode($factory->forServer()->toArray()), true);
+        self::assertIsArray($openapi);
+        self::assertSame(['$ref' => '#/components/schemas/TrNotesLeadUpdateRelationshipDocument'], self::at($openapi, 'paths', '/tr-notes/{id}/relationships/lead', 'patch', 'responses', '200', 'content', 'application/vnd.api+json', 'schema'));
+        self::assertSame(['$ref' => '#/components/schemas/TrNotesItemsRelationshipDocument'], self::at($openapi, 'paths', '/tr-notes/{id}/relationships/items', 'patch', 'responses', '200', 'content', 'application/vnd.api+json', 'schema'));
+    }
+
+    #[Test]
     public function anOpenResourceMetaTakesAnyMemberItsValueFieldAccepts(): void
     {
         $response = $this->handle('/tr-items', 'POST', ['data' => ['type' => 'tr-items', 'attributes' => ['name' => 'Nib'], 'meta' => ['floor' => 3.0, 'shelf' => 2]]]);

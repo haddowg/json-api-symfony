@@ -92,6 +92,7 @@ final class DocumentMetaResolver
                     $operation instanceof RemoveFromRelationshipOperation => OperationType::RemoveRelationship,
                     default => OperationType::UpdateRelationship,
                 },
+                (string) $operation->target()->relationship,
             ),
             default => new DocumentMeta(),
         };
@@ -106,18 +107,20 @@ final class DocumentMetaResolver
     }
 
     /**
-     * The members `$type` declares for `$operation`.
+     * The members `$type` declares for `$operation`, and for a relationship write case, for
+     * the relation `$relation`.
      */
-    public function forType(Server $server, string $type, OperationType $operation): DocumentMeta
+    public function forType(Server $server, string $type, OperationType $operation, ?string $relation = null): DocumentMeta
     {
-        $key = \spl_object_id($server) . "\0" . $type . "\0" . $operation->value;
+        $relation = $operation->isRelationshipWrite() ? $relation : null;
+        $key = \spl_object_id($server) . "\0" . $type . "\0" . $operation->value . "\0" . $relation;
 
         if (!isset($this->declared[$key])) {
             $declarer = $this->types->resourceFor($server, $type)
                 ?? ($server->hasSerializerFor($type) ? $server->serializerFor($type) : null);
             $this->declared[$key] = $declarer === null
                 ? new DocumentMeta([], $operation === OperationType::FetchCollection)
-                : DocumentMeta::forOperation($declarer, $operation, $type);
+                : DocumentMeta::forOperation($declarer, $operation, $type, $relation);
         }
 
         return $this->declared[$key];
@@ -157,13 +160,13 @@ final class DocumentMetaResolver
 
     /**
      * The members of the meta-only `200` the relationship write `$operation`, one of
-     * {@see OperationType}'s relationship cases, answers with, which the parent type `$type`
-     * declares in `documentMeta()` for every relationship. Empty when it declares none, so
-     * the write answers its linkage.
+     * {@see OperationType}'s relationship cases, answers with on the relation `$relation`,
+     * which the parent type `$type` declares in `documentMeta()`. Empty when it declares
+     * none, so the write answers its linkage.
      */
-    public function forRelationshipWrite(Server $server, string $type, OperationType $operation): DocumentMeta
+    public function forRelationshipWrite(Server $server, string $type, OperationType $operation, string $relation): DocumentMeta
     {
-        return $this->forType($server, $type, $operation);
+        return $this->forType($server, $type, $operation, $relation);
     }
 
     /**
