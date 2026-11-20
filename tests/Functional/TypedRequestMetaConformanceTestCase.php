@@ -214,6 +214,37 @@ abstract class TypedRequestMetaConformanceTestCase extends JsonApiFunctionalTest
     }
 
     #[Test]
+    public function anHrefAddressedAtomicOperationTakesItsTargetsDeclaration(): void
+    {
+        // Each is refused at its operation's pointer against its target's declaration.
+        $refused = static fn(array $operation): array => ['atomic:operations' => [$operation]];
+        self::assertSame(['/atomic:operations/0/meta/batchTag'], \array_keys($this->violations($this->atomic($refused(['op' => 'add', 'href' => '/tr-notes', 'data' => ['type' => 'tr-notes', 'attributes' => ['title' => 'Batch']], 'meta' => ['idempotencyKey' => 'k']])))));
+        self::assertSame(['/atomic:operations/0/data/meta/source' => 'The member "source" is not declared.'], $this->violations($this->atomic($refused(['op' => 'add', 'href' => '/tr-notes', 'data' => ['type' => 'tr-notes', 'attributes' => ['title' => 'Batch'], 'meta' => ['source' => 'feed']], 'meta' => ['idempotencyKey' => 'k', 'batchTag' => 'b']]))));
+        self::assertSame(['/atomic:operations/0/meta/reason'], \array_keys($this->violations($this->atomic($refused(['op' => 'update', 'href' => '/tr-notes/1', 'data' => ['type' => 'tr-notes', 'id' => '1', 'attributes' => ['title' => 'Plan']], 'meta' => ['reason' => 5]])))));
+        self::assertSame(['/atomic:operations/0/meta/bogus' => 'The member "bogus" is not declared.'], $this->violations($this->atomic($refused(['op' => 'update', 'href' => '/tr-notes/1/relationships/items', 'data' => [['type' => 'tr-items', 'id' => '1']], 'meta' => ['bogus' => true]]))));
+        self::assertSame(['/atomic:operations/0/meta/reason'], \array_keys($this->violations($this->atomic($refused(['op' => 'remove', 'href' => '/tr-notes/2'])))));
+
+        // Each typed and filled as the same operation addressed by ref would be.
+        $ok = $this->atomic(['atomic:operations' => [
+            ['op' => 'add', 'href' => '/tr-notes', 'data' => ['type' => 'tr-notes', 'attributes' => ['title' => 'Batch'], 'meta' => ['batchSource' => 'feed']], 'meta' => ['idempotencyKey' => 'k', 'batchTag' => 'b']],
+            ['op' => 'update', 'href' => '/tr-notes/1', 'data' => ['type' => 'tr-notes', 'id' => '1', 'attributes' => ['title' => 'Plan again'], 'meta' => ['label' => 'red']], 'meta' => ['reason' => 'typo']],
+            ['op' => 'add', 'href' => '/tr-notes/1/relationships/items', 'data' => [['type' => 'tr-items', 'id' => '2']], 'meta' => ['reason' => 'more']],
+            ['op' => 'remove', 'href' => '/tr-notes/2', 'meta' => ['reason' => 'duplicate']],
+        ]]);
+        self::assertSame(200, $ok->getStatusCode(), (string) $ok->getContent());
+        self::assertSame(['idempotencyKey' => 'k', 'batchTag' => 'b'], TrMetaRecorder::$seen['tr-notes:BeforeCreateEvent']['document'] ?? null);
+        self::assertSame(['document' => ['reason' => 'typo'], 'resource' => ['label' => 'red']], TrMetaRecorder::$seen['tr-notes:BeforeUpdateEvent'] ?? null);
+        self::assertSame(['reason' => 'more'], TrMetaRecorder::$seen['tr-notes:BeforeRelationshipMutateEvent']['document'] ?? null);
+        self::assertSame('duplicate', TrNoteResource::$deletedBecause);
+        $results = $this->decode($ok)['atomic:results'] ?? null;
+        self::assertIsArray($results);
+        $id = self::at($results, 0, 'data', 'id');
+        self::assertIsString($id);
+        self::assertSame('feed', $this->sourceOf($id), 'the create filled its data.meta through the atomic declaration');
+        self::assertSame(['count' => 2], self::at($results, 2, 'meta'), 'the relationship add answers its meta-only result');
+    }
+
+    #[Test]
     public function anAtomicOperationsDataMetaFillsThroughTheAtomicDeclaration(): void
     {
         $ok = $this->atomic(['atomic:operations' => [

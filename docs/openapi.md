@@ -839,8 +839,9 @@ member the declaration does not name is a `422 VALIDATION_FAILED` at `/meta/<mem
 `/data/meta/<member>`, and so is a value its constraints, its JSON type or its strict
 temporal format refuse, each number first put in its member's type. Inside an
 [atomic batch](atomic-operations.md) each operation's `meta` is checked against what its type
-declares for an atomic operation, at `/atomic:operations/<n>/meta/<member>`, and the batch's own
-`meta` stays free-form. A type declaring nothing keeps `meta` open in both directions.
+declares for an atomic operation, at `/atomic:operations/<n>/meta/<member>`, whether the
+operation names its target by `ref` or by `href`, and the batch's own `meta` stays free-form. A
+type declaring nothing keeps `meta` open in both directions.
 
 An update validates its `meta` after its security gate, as it validates its attributes, and a
 delete validates its body in a `BeforeDeleteEvent` listener below the delete gate, so a caller
