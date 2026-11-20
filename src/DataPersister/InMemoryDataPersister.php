@@ -37,13 +37,16 @@ use haddowg\JsonApiBundle\Validation\RelationshipTypeUnacceptable;
  * object through the optional `$relatedResolver` — a `(type, id) → ?object`
  * lookup the kernel wires across the related types' stores — and sets the parent's
  * association property to that object (or list of objects). A persister with no
- * resolver supports only whole-resource writes.
+ * resolver supports only whole-resource writes. `TModel` is the class of the store's
+ * rows, so the factory returns one.
+ *
+ * @template-covariant TModel of object = object
  */
 final class InMemoryDataPersister implements DataPersisterInterface, TransactionalDataPersisterInterface, WritesLinkRowsInterface, WritesPositionsInterface, WritesForeignKeysInterface
 {
     /**
-     * @param InMemoryStore                          $store           the store shared with the read provider
-     * @param \Closure(): object                     $factory         builds a fresh, unpopulated instance for create
+     * @param InMemoryStore<TModel>                    $store           the store shared with the read provider
+     * @param \Closure(): TModel                       $factory         builds a fresh, unpopulated instance for create
      * @param (\Closure(string, string): ?object)|null $relatedResolver resolves a related (type, id) to the stored object,
      *                                                                  for relationship mutation; null disables it
      */

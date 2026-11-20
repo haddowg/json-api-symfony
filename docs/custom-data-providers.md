@@ -569,23 +569,33 @@ The example app is Doctrine end-to-end, but the bundle's own conformance kernels
 the copyable factory-plus-tag wiring. A factory method builds the seeded pair:
 
 ```php
+/**
+ * @return InMemoryDataProvider<Article>
+ */
 public static function createProvider(): InMemoryDataProvider
 {
     // … build $articles keyed by id …
-    return new InMemoryDataProvider('articles', $articles, static function (object $item): string {
-        \assert($item instanceof Article);
-
-        return $item->id;
-    });
+    return new InMemoryDataProvider('articles', $articles, static fn(Article $item): string => $item->id);
 }
 
+/**
+ * @param InMemoryDataProvider<Article> $provider
+ *
+ * @return InMemoryDataPersister<Article>
+ */
 public static function createPersister(InMemoryDataProvider $provider): InMemoryDataPersister
 {
     return new InMemoryDataPersister('articles', $provider->store(), static fn(): Article => new Article());
 }
 ```
 
-and the kernel registers each as a service, hands the persister the **same**
+The provider, its store and the persister take the class of the rows as a template
+type, read from the seeded rows or from the closures, so `identify` and `assignId` can
+type their item as that class and pass PHPStan. A declaration that names the classes
+without the type, such as the return type `InMemoryDataProvider`, reads as rows of any
+object, and `InMemoryDataProvider<Article>` names one class.
+
+The kernel registers each as a service, hands the persister the **same**
 provider, and applies the two tags:
 
 ```php
