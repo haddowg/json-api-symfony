@@ -39,6 +39,7 @@ final class DoctrineFieldSelectionTest extends FieldSelectionConformanceTestCase
             rows: FieldSelectionFactory::SEED_ROWS,
             archive: [],
             tags: FieldSelectionFactory::SEED_TAGS,
+            blocks: FieldSelectionFactory::SEED_BLOCKS,
         ));
         $entityManager->flush();
         $entityManager->clear();

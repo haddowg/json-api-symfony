@@ -583,11 +583,19 @@ GET /albums/1?fields[albums]=title,editions.*.format,editions.*.year
 
 renders every edition, in order, each holding only `format` and `year`. The element's
 declaration decides the keys after `*`, and a path keeps going through nested objects and
-lists, as `<attribute>.*.<key>.<key>`. `editions.*` alone selects the whole list, and
-listing `editions` whole beside a wildcard path renders every item whole. `*` on a scalar,
+lists, as `<attribute>.*.<key>.<key>`. `editions.*` alone is read as `editions`: it
+selects the whole list, narrows nothing and brings no profile. Listing `editions` whole
+beside a wildcard path renders every item whole. `*` on a scalar,
 an object, a list of scalars or a list whose element declares no selectable keys is an
 unknown member, as is an index such as `editions.0`. A list's hook receives a
 `KeySelection` holding `*`, whose `items()` is the selection inside every item.
+
+A list of a `OneOf` takes `*` once a variant opts in, each variant declaring its own keys
+on the union's builder with `selectableKeys('<variant>', ...)`. A key after `*` is accepted
+when one variant accepts it, and every item renders its discriminator and the selected keys
+its own variant accepts, so an item whose variant doesn't accept a key renders without it.
+A variant that declares no selectable keys renders only its discriminator under a
+selection.
 
 The bundle applies the request rules core defines everywhere the type renders: primary
 data, `included`, related endpoints, a write answering with the resource, and atomic

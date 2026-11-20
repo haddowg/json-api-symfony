@@ -14,6 +14,7 @@ use haddowg\JsonApi\Resource\Field\Integer;
 use haddowg\JsonApi\Resource\Field\KeySelection;
 use haddowg\JsonApi\Resource\Field\Map;
 use haddowg\JsonApi\Resource\Field\Obj;
+use haddowg\JsonApi\Resource\Field\OneOf;
 use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\PanelEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\FieldSelection\Panel;
@@ -26,7 +27,9 @@ use haddowg\JsonApiBundle\Tests\Functional\App\FieldSelection\Panel;
  * object whose keys can't be selected, and `address` is a closed object whose `geo` is
  * selectable in turn while its `history` list is not. `rows` and `archive` are lists whose
  * items' keys are selected through `*`, each row holding an object and a list selectable in
- * turn and open to other members, and `tags` is a list of strings.
+ * turn and open to other members, `tags` is a list of strings, and `blocks` is a list of a
+ * union whose text and image variants each declare their own selectable keys and whose
+ * divider declares none.
  */
 abstract class BasePanelResource extends AbstractResource
 {
@@ -95,6 +98,14 @@ abstract class BasePanelResource extends AbstractResource
             ArrayList::make('rows')->nullable()->of(self::row()),
             ArrayList::make('archive')->nullable()->of(self::row()),
             ArrayList::make('tags')->nullable(),
+            ArrayList::make('blocks')->nullable()->of(
+                OneOf::make('block')->discriminator('type')
+                    ->variant('text', Str::make('title'), Str::make('body'), Obj::make('meta')->fields(Str::make('lang'), Str::make('tone'))->selectableKeys(pattern: 'lang|tone'))
+                    ->variant('image', Str::make('title'), Str::make('url'))
+                    ->variant('divider', Str::make('style'))
+                    ->selectableKeys('text', pattern: 'title|body|meta')
+                    ->selectableKeys('image', pattern: 'url'),
+            ),
             BelongsTo::make('curator', 'curators')->nullable(),
         ];
     }

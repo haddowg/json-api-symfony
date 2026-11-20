@@ -25,6 +25,11 @@ final class FieldSelectionFactory
         ['label' => 'B', 'size' => ['w' => 3, 'h' => 4], 'cells' => []],
     ];
     public const array SEED_TAGS = ['red', 'blue'];
+    public const array SEED_BLOCKS = [
+        ['type' => 'text', 'title' => 'Intro', 'body' => 'Hello', 'meta' => ['lang' => 'en', 'tone' => 'warm']],
+        ['type' => 'image', 'title' => 'Pic', 'url' => '/a.png'],
+        ['type' => 'divider', 'style' => 'dashed'],
+    ];
     public const array SEED_EXHIBITS = [['title' => 'Light', 'year' => 2001], ['title' => 'Sound', 'year' => 2004]];
 
     private static ?InMemoryDataProvider $panels = null;
@@ -81,7 +86,7 @@ final class FieldSelectionFactory
 
         return new InMemoryDataProvider(
             'panels',
-            ['1' => new Panel('1', 'Seed', self::SEED_VALUES, self::SEED_GROUPS, self::SEED_SETTINGS, $curator, self::SEED_ADDRESS, self::SEED_ROWS, [], self::SEED_TAGS)],
+            ['1' => new Panel('1', 'Seed', self::SEED_VALUES, self::SEED_GROUPS, self::SEED_SETTINGS, $curator, self::SEED_ADDRESS, self::SEED_ROWS, [], self::SEED_TAGS, self::SEED_BLOCKS)],
             static function (object $item): string {
                 \assert($item instanceof Panel);
 

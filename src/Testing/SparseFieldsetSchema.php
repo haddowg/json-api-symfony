@@ -156,11 +156,14 @@ final class SparseFieldsetSchema
      * rest of it, unless the key is also selected whole. A list schema selected through
      * `*` narrows its `items` to the rest of each path, unless `*` is also selected whole.
      * A local `$ref` is inlined so a shared component stays whole for other uses, and each
-     * branch of an `allOf`, `anyOf` or `oneOf` is narrowed in turn.
+     * branch of an `allOf`, `anyOf` or `oneOf` is narrowed in turn. A union's branches keep
+     * the discriminator every narrowed item still carries, and become an `anyOf`, since an
+     * item narrowed to fewer members can fit more than one of them.
      *
      * @param list<string> $keys
+     * @param list<string> $kept members kept whatever the selection, as a union's discriminator
      */
-    private static function narrow(\stdClass $schemas, mixed $schema, array $keys, int $depth = 0): mixed
+    private static function narrow(\stdClass $schemas, mixed $schema, array $keys, int $depth = 0, array $kept = []): mixed
     {
         if (!$schema instanceof \stdClass || $depth > 8) {
             return $schema;
@@ -182,10 +185,16 @@ final class SparseFieldsetSchema
             }
         }
 
+        $discriminator = $copy->discriminator ?? null;
+        $branchKept = $discriminator instanceof \stdClass && \is_string($discriminator->propertyName ?? null) ? [$discriminator->propertyName] : $kept;
         foreach (['allOf', 'anyOf', 'oneOf'] as $keyword) {
             if (isset($copy->{$keyword}) && \is_array($copy->{$keyword})) {
-                $copy->{$keyword} = \array_map(static fn(mixed $branch): mixed => self::narrow($schemas, $branch, $keys, $depth + 1), $copy->{$keyword});
+                $copy->{$keyword} = \array_map(static fn(mixed $branch): mixed => self::narrow($schemas, $branch, $keys, $depth + 1, $keyword === 'allOf' ? $kept : $branchKept), $copy->{$keyword});
             }
+        }
+        if (isset($copy->oneOf) && \is_array($copy->oneOf)) {
+            $copy->anyOf = $copy->oneOf;
+            unset($copy->oneOf, $copy->discriminator);
         }
 
         $type = $copy->type ?? null;
@@ -205,7 +214,7 @@ final class SparseFieldsetSchema
         }
 
         [, $deeper] = self::split($keys);
-        $selected = \array_values(\array_unique(\array_map(static fn(string $key): string => \explode('.', $key, 2)[0], $keys)));
+        $selected = \array_values(\array_unique([...$kept, ...\array_map(static fn(string $key): string => \explode('.', $key, 2)[0], $keys)]));
 
         unset($copy->required, $copy->minProperties);
         if (isset($copy->properties) && $copy->properties instanceof \stdClass) {
