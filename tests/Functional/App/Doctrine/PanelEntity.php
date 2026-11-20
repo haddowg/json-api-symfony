@@ -8,11 +8,11 @@ use Doctrine\ORM\Mapping as ORM;
 
 /**
  * The Doctrine-mapped panel, the same shape as the in-memory
- * {@see \haddowg\JsonApiBundle\Tests\Functional\App\FieldSelection\Panel}: each object
+ * {@see \haddowg\JsonApiBundle\Tests\Functional\App\NestedFieldsets\Panel}: each object
  * attribute is one `json` column. Not `final` so Doctrine may proxy it.
  */
 #[ORM\Entity]
-#[ORM\Table(name: 'field_selection_panel')]
+#[ORM\Table(name: 'nested_fieldsets_panel')]
 class PanelEntity
 {
     /**

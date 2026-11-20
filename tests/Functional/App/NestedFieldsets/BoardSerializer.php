@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace haddowg\JsonApiBundle\Tests\Functional\App\FieldSelection;
+namespace haddowg\JsonApiBundle\Tests\Functional\App\NestedFieldsets;
 
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Schema\Link\ResourceLinks;
@@ -12,7 +12,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\PanelEntity;
 
 /**
  * Renders a panel as a `boards` resource with every attribute whole, as a serializer
- * written before key selection would. Its field names make the server check
+ * written before nested fieldsets would. Its field names make the server check
  * `fields[boards]` strictly.
  */
 class BoardSerializer implements SerializerInterface, DeclaresFieldNamesInterface

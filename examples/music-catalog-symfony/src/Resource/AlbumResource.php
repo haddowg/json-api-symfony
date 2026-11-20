@@ -125,7 +125,7 @@ final class AlbumResource extends AbstractResource
             // those keys: `fields[albums]=title,credits.producer,credits.engineer`.
             Obj::make('credits')->example(['producer' => 'Nigel Godrich'])->nullable()
                 ->additionalProperties(Str::make('*')->example('Nigel Godrich'))
-                ->selectableKeys(pattern: '[a-z][a-z_]*'),
+                ->nestedFieldset(pattern: '[a-z][a-z_]*'),
 
             // Every edition of the album. A discography table showing the format and
             // year of each selects only those keys of every item:
@@ -135,7 +135,7 @@ final class AlbumResource extends AbstractResource
                     Str::make('format')->example('CD'),
                     Integer::make('year')->example(1997),
                     Str::make('label')->example('Parlophone'),
-                )->selectableKeys(pattern: 'format|year|label')),
+                )->nestedFieldset(pattern: 'format|year|label')),
 
             // Default relation reader: `artist` reads the ManyToOne and `tracks` the
             // OneToMany straight off the entity associations.

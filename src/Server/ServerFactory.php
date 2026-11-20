@@ -15,7 +15,7 @@ use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\StorageCastInterface;
 use haddowg\JsonApi\Schema\Error\ErrorMessageResolverInterface;
 use haddowg\JsonApi\Schema\Profile\CountableProfile;
-use haddowg\JsonApi\Schema\Profile\FieldSelectionProfile;
+use haddowg\JsonApi\Schema\Profile\NestedFieldsetsProfile;
 use haddowg\JsonApi\Schema\Profile\ProfileInterface;
 use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
 use haddowg\JsonApi\Scope\ExactScopeMatcher;
@@ -113,7 +113,7 @@ final class ServerFactory
         CursorPaginationProfile::class,
         CountableProfile::class,
         RelationshipQueriesProfile::class,
-        FieldSelectionProfile::class,
+        NestedFieldsetsProfile::class,
     ];
 
     private ?Server $server = null;
@@ -265,7 +265,7 @@ final class ServerFactory
         // `json_api.profiles` (docs/configuration.md; default {@see self::DEFAULT_PROFILES} —
         // the four built-ins in the canonical order). Registration makes the server
         // RECOGNIZE a profile — it advertises the URI when a client negotiates it, or for
-        // Field Selection when a request narrows an attribute, parses
+        // Nested Fieldsets when a request narrows an attribute, parses
         // the profile's opt-in query family only under that negotiation, and gates the
         // profile's OpenAPI output (the `jsonapi.profile` enum, the
         // Countable `?withCount` parameter, the Relationship Queries `relatedQuery`

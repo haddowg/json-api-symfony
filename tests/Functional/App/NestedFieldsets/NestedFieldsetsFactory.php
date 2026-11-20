@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace haddowg\JsonApiBundle\Tests\Functional\App\FieldSelection;
+namespace haddowg\JsonApiBundle\Tests\Functional\App\NestedFieldsets;
 
 use haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
@@ -12,7 +12,7 @@ use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
  * links curator 1, and a persister for each sharing its store. {@see reset()} drops the
  * graph so each test boots a fresh one.
  */
-final class FieldSelectionFactory
+final class NestedFieldsetsFactory
 {
     public const array SEED_VALUES = ['cap' => '10', 'countries' => 'GB,FR', 'region' => 'EU'];
     public const array SEED_GROUPS = ['rows' => [['a' => 1], ['a' => 2]], 'extra' => [['a' => 3]]];

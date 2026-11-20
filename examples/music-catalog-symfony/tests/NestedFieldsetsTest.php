@@ -4,20 +4,20 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Tests;
 
-use haddowg\JsonApi\Schema\Profile\FieldSelectionProfile;
+use haddowg\JsonApi\Schema\Profile\NestedFieldsetsProfile;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The Field Selection witness behind `docs/resources.md`: `AlbumResource`'s `credits`
- * declares selectable keys, so a table showing one column per role asks for just those
+ * The Nested Fieldsets witness behind `docs/resources.md`: `AlbumResource`'s `credits`
+ * declares a nested fieldset, so a table showing one column per role asks for just those
  * keys with `fields[albums]=title,credits.producer`, sends no profile, and gets a
- * response that advertises the Field Selection profile. OK Computer (album 1) seeds a
+ * response that advertises the Nested Fieldsets profile. OK Computer (album 1) seeds a
  * producer, an engineer and an artwork credit, and two editions whose format and year a
  * discography table selects through `editions.*.format`.
  */
 #[Group('spec:sparse-fieldsets')]
-final class FieldSelectionTest extends MusicCatalogKernelTestCase
+final class NestedFieldsetsTest extends MusicCatalogKernelTestCase
 {
     #[Test]
     public function aTableSelectsOneColumnPerCreditRole(): void
@@ -31,7 +31,7 @@ final class FieldSelectionTest extends MusicCatalogKernelTestCase
             ['title' => 'OK Computer', 'credits' => ['producer' => 'Nigel Godrich', 'artwork' => 'Stanley Donwood']],
             $data['attributes'] ?? null,
         );
-        self::assertSame('application/vnd.api+json; profile="' . FieldSelectionProfile::URI . '"', $response->headers->get('Content-Type'));
+        self::assertSame('application/vnd.api+json; profile="' . NestedFieldsetsProfile::URI . '"', $response->headers->get('Content-Type'));
     }
 
     #[Test]
@@ -46,7 +46,7 @@ final class FieldSelectionTest extends MusicCatalogKernelTestCase
             ['title' => 'OK Computer', 'editions' => [['format' => 'CD', 'year' => 1997], ['format' => 'Vinyl', 'year' => 2017]]],
             $data['attributes'] ?? null,
         );
-        self::assertSame('application/vnd.api+json; profile="' . FieldSelectionProfile::URI . '"', $response->headers->get('Content-Type'));
+        self::assertSame('application/vnd.api+json; profile="' . NestedFieldsetsProfile::URI . '"', $response->headers->get('Content-Type'));
     }
 
     #[Test]

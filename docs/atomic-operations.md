@@ -227,8 +227,8 @@ them, including those of the operations that had already succeeded.
   and no `included`. An `?include` query parameter on `/operations` is neither honoured
   nor rejected; it is simply not processed. (An *unrecognized* query parameter is still
   the endpoint's normal `400`.) A `?fields[type]` parameter does narrow each result's
-  resource, [selected keys](resources.md#selecting-keys-of-an-object-attribute) included,
-  and a batch that narrows an attribute advertises the Field Selection profile.
+  resource, [selected keys](resources.md#nested-fieldsets) included,
+  and a batch that narrows an attribute advertises the Nested Fieldsets profile.
 - **Per-operation handler decoration.** A [handler decorator](custom-serializers-hydrators.md)
   wraps the batch as a whole, not each sub-operation.
 

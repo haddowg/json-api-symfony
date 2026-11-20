@@ -8,11 +8,11 @@ use Doctrine\ORM\Mapping as ORM;
 
 /**
  * The Doctrine-mapped curator, the same shape as the in-memory
- * {@see \haddowg\JsonApiBundle\Tests\Functional\App\FieldSelection\Curator}. Not `final`
+ * {@see \haddowg\JsonApiBundle\Tests\Functional\App\NestedFieldsets\Curator}. Not `final`
  * so Doctrine may proxy it.
  */
 #[ORM\Entity]
-#[ORM\Table(name: 'field_selection_curator')]
+#[ORM\Table(name: 'nested_fieldsets_curator')]
 class CuratorEntity
 {
     /**

@@ -25,20 +25,20 @@ abstract class BaseBoardResource extends AbstractResource
             Str::make('name'),
             Obj::make('values')->nullable()
                 ->additionalProperties(Str::make('*')->nullable())
-                ->selectableKeys(pattern: '[a-z][a-z0-9_]*'),
+                ->nestedFieldset(pattern: '[a-z][a-z0-9_]*'),
             Obj::make('address')->nullable()
                 ->fields(
                     Str::make('street'),
                     Str::make('postcode'),
-                    Obj::make('geo')->fields(Decimal::make('lat'), Decimal::make('lng'), Str::make('accuracy'))->selectableKeys(pattern: '[a-z]+'),
+                    Obj::make('geo')->fields(Decimal::make('lat'), Decimal::make('lng'), Str::make('accuracy'))->nestedFieldset(pattern: '[a-z]+'),
                     ArrayList::make('history')->of(Obj::make('entry')->fields(Str::make('street'))),
                 )
-                ->selectableKeys(pattern: '[a-z]+'),
+                ->nestedFieldset(pattern: '[a-z]+'),
             ArrayList::make('rows')->nullable()->of(
                 Obj::make('row')
-                    ->fields(Str::make('label'), Obj::make('size')->fields(Integer::make('w'), Integer::make('h'))->selectableKeys(pattern: '[a-z]'))
+                    ->fields(Str::make('label'), Obj::make('size')->fields(Integer::make('w'), Integer::make('h'))->nestedFieldset(pattern: '[a-z]'))
                     ->additionalProperties(Str::make('*')->nullable())
-                    ->selectableKeys(pattern: '[a-z]+'),
+                    ->nestedFieldset(pattern: '[a-z]+'),
             ),
         ];
     }

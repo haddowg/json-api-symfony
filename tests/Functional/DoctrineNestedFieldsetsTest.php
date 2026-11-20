@@ -7,15 +7,15 @@ namespace haddowg\JsonApiBundle\Tests\Functional;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
 use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\CuratorEntity;
-use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\FieldSelectionDoctrineTestKernel;
+use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\NestedFieldsetsDoctrineTestKernel;
 use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\PanelEntity;
-use haddowg\JsonApiBundle\Tests\Functional\App\FieldSelection\FieldSelectionFactory;
+use haddowg\JsonApiBundle\Tests\Functional\App\NestedFieldsets\NestedFieldsetsFactory;
 
-final class DoctrineFieldSelectionTest extends FieldSelectionConformanceTestCase
+final class DoctrineNestedFieldsetsTest extends NestedFieldsetsConformanceTestCase
 {
     protected static function getKernelClass(): string
     {
-        return FieldSelectionDoctrineTestKernel::class;
+        return NestedFieldsetsDoctrineTestKernel::class;
     }
 
     protected function afterBoot(): void
@@ -27,20 +27,20 @@ final class DoctrineFieldSelectionTest extends FieldSelectionConformanceTestCase
         $schemaTool->createSchema($entityManager->getMetadataFactory()->getAllMetadata());
 
         // The store-provided `AUTO` ids assign 1 to each, matching the in-memory seed.
-        $curator = new CuratorEntity(name: 'Ada', stats: FieldSelectionFactory::SEED_STATS, office: FieldSelectionFactory::SEED_OFFICE, exhibits: FieldSelectionFactory::SEED_EXHIBITS);
+        $curator = new CuratorEntity(name: 'Ada', stats: NestedFieldsetsFactory::SEED_STATS, office: NestedFieldsetsFactory::SEED_OFFICE, exhibits: NestedFieldsetsFactory::SEED_EXHIBITS);
         $entityManager->persist($curator);
         $entityManager->persist(new PanelEntity(
             name: 'Seed',
-            values: FieldSelectionFactory::SEED_VALUES,
-            groups: FieldSelectionFactory::SEED_GROUPS,
-            settings: FieldSelectionFactory::SEED_SETTINGS,
+            values: NestedFieldsetsFactory::SEED_VALUES,
+            groups: NestedFieldsetsFactory::SEED_GROUPS,
+            settings: NestedFieldsetsFactory::SEED_SETTINGS,
             curator: $curator,
-            address: FieldSelectionFactory::SEED_ADDRESS,
-            rows: FieldSelectionFactory::SEED_ROWS,
+            address: NestedFieldsetsFactory::SEED_ADDRESS,
+            rows: NestedFieldsetsFactory::SEED_ROWS,
             archive: [],
-            tags: FieldSelectionFactory::SEED_TAGS,
-            blocks: FieldSelectionFactory::SEED_BLOCKS,
-            hero: FieldSelectionFactory::SEED_HERO,
+            tags: NestedFieldsetsFactory::SEED_TAGS,
+            blocks: NestedFieldsetsFactory::SEED_BLOCKS,
+            hero: NestedFieldsetsFactory::SEED_HERO,
         ));
         $entityManager->flush();
         $entityManager->clear();

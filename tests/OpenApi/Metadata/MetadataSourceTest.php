@@ -122,7 +122,7 @@ final class MetadataSourceTest extends TestCase
         // reads the live registry the ServerFactory built, not a
         // hardcoded list.
         self::assertSame(
-            [CursorPaginationProfile::URI, CountableProfile::URI, RelationshipQueriesProfile::URI, \haddowg\JsonApi\Schema\Profile\FieldSelectionProfile::URI],
+            [CursorPaginationProfile::URI, CountableProfile::URI, RelationshipQueriesProfile::URI, \haddowg\JsonApi\Schema\Profile\NestedFieldsetsProfile::URI],
             $this->source()->forServer()->profiles(),
         );
     }
@@ -138,7 +138,7 @@ final class MetadataSourceTest extends TestCase
         $document = (new OpenApiProjector())->project($this->source()->forServer())->toArray();
 
         self::assertSame(
-            [CursorPaginationProfile::URI, CountableProfile::URI, RelationshipQueriesProfile::URI, \haddowg\JsonApi\Schema\Profile\FieldSelectionProfile::URI],
+            [CursorPaginationProfile::URI, CountableProfile::URI, RelationshipQueriesProfile::URI, \haddowg\JsonApi\Schema\Profile\NestedFieldsetsProfile::URI],
             $this->at($document, 'components', 'schemas', 'JsonApi', 'properties', 'profile', 'items', 'enum'),
         );
 

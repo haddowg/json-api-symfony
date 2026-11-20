@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace haddowg\JsonApiBundle\Tests\Functional\App\FieldSelection;
+namespace haddowg\JsonApiBundle\Tests\Functional\App\NestedFieldsets;
 
 /**
  * The plain model behind the in-memory `panels` type.

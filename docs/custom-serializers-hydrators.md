@@ -47,16 +47,16 @@ instead of the field inventory. The fields you keep declaring still matter for t
 other direction and for [validation](validation.md) — `TrackResource` still declares
 `fields()` so writes validate and hydrate, even though `TrackSerializer` owns reads.
 
-The fields also decide what a request may [select by key](resources.md#selecting-keys-of-an-object-attribute).
-An attribute the resource declares with `selectableKeys()` is narrowed through the override
+The fields also decide what a request may [select by key](resources.md#nested-fieldsets).
+An attribute the resource declares with `nestedFieldset()` is narrowed through the override
 too: core calls the override's attribute callable and trims the value to the selected keys,
 so `fields[tracks]=credits.producer` renders `credits` holding only `producer`, and the
-response carries the Field Selection profile. An override that can load less implements
-core's `SelectsAttributeKeysInterface`, whose `getSelectedAttribute()` core calls with the
-`KeySelection` in place of the callable, still trimming what it returns. A key the
+response carries the Nested Fieldsets profile. An override that can load less implements
+core's `SerializesNestedFieldsetsInterface`, whose `getNestedFieldsetAttribute()` core calls with the
+`NestedFieldset` in place of the callable, still trimming what it returns. A key the
 resource doesn't accept is the usual `400` when the override implements
 `DeclaresFieldNamesInterface`, and dropped otherwise. A serializer registered with
-`#[AsJsonApiSerializer]` and no resource declares no selectable keys.
+`#[AsJsonApiSerializer]` and no resource declares no nested fieldset.
 
 ### Why hand-write one
 

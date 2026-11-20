@@ -171,8 +171,8 @@ final class DeclaredLinksTest extends MusicCatalogKernelTestCase
     {
         // The declared-links tier sits below the baseline, but the related-only reissues
         // type, the deprecated devices type, the accounts singleton, the albums
-        // collection's typed meta and the albums' selectable credits each carry a higher tier.
-        self::assertSame(\max(GeneratorContract::BASELINE, GeneratorContract::DEPRECATION, GeneratorContract::RELATED_ONLY, GeneratorContract::SINGLETONS, GeneratorContract::TYPED_DOCUMENT_META, GeneratorContract::FIELD_SELECTION), $this->nested($this->openApi(), 'info', 'x-generator')['contract'] ?? null);
+        // collection's typed meta and the albums' nested fieldset credits each carry a higher tier.
+        self::assertSame(\max(GeneratorContract::BASELINE, GeneratorContract::DEPRECATION, GeneratorContract::RELATED_ONLY, GeneratorContract::SINGLETONS, GeneratorContract::TYPED_DOCUMENT_META, GeneratorContract::NESTED_FIELDSETS), $this->nested($this->openApi(), 'info', 'x-generator')['contract'] ?? null);
     }
 
     #[Test]

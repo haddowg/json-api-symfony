@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace haddowg\JsonApiBundle\Tests\Functional\App\FieldSelection;
+namespace haddowg\JsonApiBundle\Tests\Functional\App\NestedFieldsets;
 
 use haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
@@ -19,10 +19,10 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
 /**
  * A kernel serving the {@see PanelResource} and {@see CuratorResource} over the in-memory
- * provider, the field-selection conformance witness
- * ({@see \haddowg\JsonApiBundle\Tests\Functional\FieldSelectionConformanceTestCase}).
+ * provider, the nested fieldsets conformance witness
+ * ({@see \haddowg\JsonApiBundle\Tests\Functional\NestedFieldsetsConformanceTestCase}).
  */
-final class FieldSelectionInMemoryTestKernel extends Kernel
+final class NestedFieldsetsInMemoryTestKernel extends Kernel
 {
     use MicroKernelTrait;
 
@@ -37,7 +37,7 @@ final class FieldSelectionInMemoryTestKernel extends Kernel
 
     public function getProjectDir(): string
     {
-        $dir = \sys_get_temp_dir() . '/json-api-symfony-tests/field-selection-app';
+        $dir = \sys_get_temp_dir() . '/json-api-symfony-tests/nested-fieldsets-app';
         if (!\is_dir($dir . '/config')) {
             \mkdir($dir . '/config', 0o777, true);
         }
@@ -47,12 +47,12 @@ final class FieldSelectionInMemoryTestKernel extends Kernel
 
     public function getCacheDir(): string
     {
-        return \sys_get_temp_dir() . '/json-api-symfony-tests/field-selection-cache/' . $this->environment;
+        return \sys_get_temp_dir() . '/json-api-symfony-tests/nested-fieldsets-cache/' . $this->environment;
     }
 
     public function getLogDir(): string
     {
-        return \sys_get_temp_dir() . '/json-api-symfony-tests/field-selection-log';
+        return \sys_get_temp_dir() . '/json-api-symfony-tests/nested-fieldsets-log';
     }
 
     protected function configureContainer(ContainerConfigurator $container, LoaderInterface $loader, ContainerBuilder $builder): void
@@ -85,27 +85,27 @@ final class FieldSelectionInMemoryTestKernel extends Kernel
         $services->set(EaselSerializer::class);
 
         $services->set('test.boards_provider', InMemoryDataProvider::class)
-            ->factory([FieldSelectionFactory::class, 'createBoards'])
+            ->factory([NestedFieldsetsFactory::class, 'createBoards'])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
 
         $services->set('test.easels_provider', InMemoryDataProvider::class)
-            ->factory([FieldSelectionFactory::class, 'createEasels'])
+            ->factory([NestedFieldsetsFactory::class, 'createEasels'])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
 
         $services->set('test.panels_provider', InMemoryDataProvider::class)
-            ->factory([FieldSelectionFactory::class, 'createPanels'])
+            ->factory([NestedFieldsetsFactory::class, 'createPanels'])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
 
         $services->set('test.curators_provider', InMemoryDataProvider::class)
-            ->factory([FieldSelectionFactory::class, 'createCurators'])
+            ->factory([NestedFieldsetsFactory::class, 'createCurators'])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
 
         $services->set('test.panels_persister', InMemoryDataPersister::class)
-            ->factory([FieldSelectionFactory::class, 'createPanelsPersister'])
+            ->factory([NestedFieldsetsFactory::class, 'createPanelsPersister'])
             ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
 
         $services->set('test.curators_persister', InMemoryDataPersister::class)
-            ->factory([FieldSelectionFactory::class, 'createCuratorsPersister'])
+            ->factory([NestedFieldsetsFactory::class, 'createCuratorsPersister'])
             ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
     }
 

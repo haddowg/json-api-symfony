@@ -324,8 +324,8 @@ final class CustomActionTest extends MusicCatalogKernelTestCase
         }
         // The safety tier sits below the baseline, but the related-only reissues type, the
         // deprecated devices type, the accounts singleton, the albums collection's typed
-        // meta and the albums' selectable credits each carry a higher tier.
-        self::assertSame(\max(GeneratorContract::BASELINE, GeneratorContract::DEPRECATION, GeneratorContract::RELATED_ONLY, GeneratorContract::SINGLETONS, GeneratorContract::TYPED_DOCUMENT_META, GeneratorContract::FIELD_SELECTION), self::at($document, 'info', 'x-generator', 'contract'));
+        // meta and the albums' nested fieldset credits each carry a higher tier.
+        self::assertSame(\max(GeneratorContract::BASELINE, GeneratorContract::DEPRECATION, GeneratorContract::RELATED_ONLY, GeneratorContract::SINGLETONS, GeneratorContract::TYPED_DOCUMENT_META, GeneratorContract::NESTED_FIELDSETS), self::at($document, 'info', 'x-generator', 'contract'));
     }
 
     private static function at(mixed $value, string ...$keys): mixed

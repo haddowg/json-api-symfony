@@ -41,7 +41,7 @@ page — the Laravel row below compares API Platform's Laravel bridge against th
 | [`atomic:operations` extension](#atomicoperations-extension--parsing-execution--results) | Advantage: this library |
 | [Profiles mechanism, registry & advertisement](#profiles-mechanism-registry--advertisement) | Advantage: this library |
 | [Cursor-pagination profile](#cursor-pagination-profile-ethan-resnick-spec) | Advantage: this library |
-| [Author-published/custom profiles](#author-publishedcustom-profiles-countable-relationship-queries-field-selection) | Advantage: this library |
+| [Author-published/custom profiles](#author-publishedcustom-profiles-countable-relationship-queries-nested-fieldsets) | Advantage: this library |
 | [OpenAPI engine completeness & fidelity](#openapi-engine-completeness--fidelity-paths-schemas-parameters-from-metadata) | Advantage: this library |
 | [OpenAPI response declarations & vendor extensions](#openapi-response-declarations--vendor-extension-fidelity-async-job-lifecycle-self-describing-pagination) | Advantage: this library |
 | [Typed TypeScript client + query-cache integration](#typed-typescript-client--query-cache-integration) | Advantage: this library (via a young sibling project) |
@@ -205,15 +205,15 @@ In API Platform, a cursor-pagination-profile feature request
 stale bot in December 2022 without implementation — the sole closing activity is
 the bot's comment — and there is no profile mechanism to build it on.
 
-### Author-published/custom profiles (Countable, Relationship Queries, Field Selection)
+### Author-published/custom profiles (Countable, Relationship Queries, Nested Fieldsets)
 
 Three further profiles ship in core and are auto-registered by this bundle: the
 **Countable** profile (`?withCount=_self_,rel` returns `meta.total`, opt-in per
 relation — see [relationships](relationships.md)), the **Relationship
 Queries** profile (filter and sort a relationship's linkage from the *primary*
-request via `relatedQuery[rel][…]`) and the **Field Selection** profile (select single
+request via `relatedQuery[rel][…]`) and the **Nested Fieldsets** profile (select single
 keys of an object attribute through `fields[type]=attr.key`, applied by the server
-whenever a request narrows one — see [resources](resources.md#selecting-keys-of-an-object-attribute)),
+whenever a request narrows one — see [resources](resources.md#nested-fieldsets)),
 each with its own published spec document.
 No analogous named JSON:API profiles — counting, relationship-scoped queries —
 exist in API Platform, consistent with the absence of the mechanism itself.

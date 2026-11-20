@@ -16,7 +16,7 @@ use haddowg\JsonApi\OpenApi\ComponentNaming;
  * `attributes` / `relationships` members at all (a fieldset can omit either entirely).
  * Members inside the fieldset stay required, and a type without a fieldset is untouched.
  *
- * A `<attribute>.<key>` member selects keys of an attribute, as the Field Selection
+ * A `<attribute>.<key>` member selects keys of an attribute, as the Nested Fieldsets
  * profile does at runtime: the attribute stays required, and its schema drops its
  * `required` keys and admits only the selected ones. A longer member such as
  * `<attribute>.<key>.<key>` narrows the nested object's schema the same way, and

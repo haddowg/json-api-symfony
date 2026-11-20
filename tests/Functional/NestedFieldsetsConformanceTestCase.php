@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
-use haddowg\JsonApi\Schema\Profile\FieldSelectionProfile;
+use haddowg\JsonApi\Schema\Profile\NestedFieldsetsProfile;
 use haddowg\JsonApiBundle\OpenApi\DocumentFactory;
 use haddowg\JsonApiBundle\Testing\SchemaConformanceTrait;
 use haddowg\JsonApiBundle\Testing\SchemaDocumentKind;
-use haddowg\JsonApiBundle\Tests\Functional\App\FieldSelection\EaselSerializer;
-use haddowg\JsonApiBundle\Tests\Functional\App\FieldSelection\FieldSelectionFactory;
+use haddowg\JsonApiBundle\Tests\Functional\App\NestedFieldsets\EaselSerializer;
+use haddowg\JsonApiBundle\Tests\Functional\App\NestedFieldsets\NestedFieldsetsFactory;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\BasePanelResource;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
@@ -18,16 +18,16 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 
 /**
- * The field-selection conformance witness, run against both providers: a
+ * The nested fieldsets conformance witness, run against both providers: a
  * `fields[TYPE]=<attribute>.<key>` member renders only that key of an attribute declaring
- * selectable keys, wherever the type renders, and the response applies and advertises
- * the Field Selection profile only when it narrows something.
+ * a nested fieldset, wherever the type renders, and the response applies and advertises
+ * the Nested Fieldsets profile only when it narrows something.
  */
-abstract class FieldSelectionConformanceTestCase extends JsonApiFunctionalTestCase
+abstract class NestedFieldsetsConformanceTestCase extends JsonApiFunctionalTestCase
 {
     use SchemaConformanceTrait;
 
-    private const string NARROWED = 'application/vnd.api+json; profile="' . FieldSelectionProfile::URI . '"';
+    private const string NARROWED = 'application/vnd.api+json; profile="' . NestedFieldsetsProfile::URI . '"';
 
     protected function setUp(): void
     {
@@ -67,7 +67,7 @@ abstract class FieldSelectionConformanceTestCase extends JsonApiFunctionalTestCa
     {
         $response = $this->handle('/panels/1?fields[panels]=values,values.cap');
 
-        self::assertSame(['values' => FieldSelectionFactory::SEED_VALUES], $this->attributesOf($response));
+        self::assertSame(['values' => NestedFieldsetsFactory::SEED_VALUES], $this->attributesOf($response));
         self::assertSame('application/vnd.api+json', $response->headers->get('Content-Type'));
     }
 
@@ -78,7 +78,7 @@ abstract class FieldSelectionConformanceTestCase extends JsonApiFunctionalTestCa
     {
         $response = $this->handle('/panels/1');
 
-        self::assertSame(FieldSelectionFactory::SEED_VALUES, $this->attributesOf($response)['values'] ?? null);
+        self::assertSame(NestedFieldsetsFactory::SEED_VALUES, $this->attributesOf($response)['values'] ?? null);
         self::assertSame('application/vnd.api+json', $response->headers->get('Content-Type'));
         self::assertArrayNotHasKey('profile', $this->jsonApiOf($response));
     }
@@ -100,7 +100,7 @@ abstract class FieldSelectionConformanceTestCase extends JsonApiFunctionalTestCa
         $response = $this->handle('/panels/1?fields[panels]=values.cap');
 
         self::assertSame(self::NARROWED, $response->headers->get('Content-Type'));
-        self::assertSame([FieldSelectionProfile::URI], $this->jsonApiOf($response)['profile'] ?? null);
+        self::assertSame([NestedFieldsetsProfile::URI], $this->jsonApiOf($response)['profile'] ?? null);
         self::assertStringContainsString('Accept', (string) $response->headers->get('Vary'));
     }
 
@@ -210,12 +210,12 @@ abstract class FieldSelectionConformanceTestCase extends JsonApiFunctionalTestCa
     public function aKeyListedWholeBesideAPathIntoItRendersWholeAtEveryDepth(): void
     {
         self::assertSame(
-            ['address' => ['geo' => FieldSelectionFactory::SEED_ADDRESS['geo']]],
+            ['address' => ['geo' => NestedFieldsetsFactory::SEED_ADDRESS['geo']]],
             $this->attributesOf($this->handle('/panels/1?fields[panels]=address.geo.lat,address.geo')),
         );
 
         $whole = $this->handle('/panels/1?fields[panels]=address,address.geo.lat');
-        self::assertSame(['address' => FieldSelectionFactory::SEED_ADDRESS], $this->attributesOf($whole));
+        self::assertSame(['address' => NestedFieldsetsFactory::SEED_ADDRESS], $this->attributesOf($whole));
         self::assertSame('application/vnd.api+json', $whole->headers->get('Content-Type'));
     }
 
@@ -283,7 +283,7 @@ abstract class FieldSelectionConformanceTestCase extends JsonApiFunctionalTestCa
     #[Test]
     #[Group('spec:sparse-fieldsets')]
     #[Group('spec:errors')]
-    public function aPathBelowAKeyThatIsNotSelectableIsThe400(): void
+    public function aPathBelowAKeyWithoutANestedFieldsetIsThe400(): void
     {
         $this->assertUnrecognized('/panels/1?fields[panels]=address.postcode.x', 'address.postcode.x');
         $this->assertUnrecognized('/panels/1?fields[panels]=address.history.street', 'address.history.street');
@@ -496,7 +496,7 @@ abstract class FieldSelectionConformanceTestCase extends JsonApiFunctionalTestCa
     #[Test]
     #[Group('spec:sparse-fieldsets')]
     #[Group('spec:errors')]
-    public function aWildcardOnAnythingButAListOfSelectableObjectsIsThe400(): void
+    public function aWildcardOnAnythingButAListOfObjectsWithANestedFieldsetIsThe400(): void
     {
         $this->assertUnrecognized('/panels/1?fields[panels]=name.*', 'name.*');
         $this->assertUnrecognized('/panels/1?fields[panels]=values.*', 'values.*');
@@ -533,7 +533,7 @@ abstract class FieldSelectionConformanceTestCase extends JsonApiFunctionalTestCa
         $data = $results[0]['data'] ?? null;
         self::assertIsArray($data);
         self::assertSame(['values' => ['cap' => '7']], $data['attributes'] ?? null);
-        self::assertStringContainsString('profile="' . FieldSelectionProfile::URI . '"', (string) $response->headers->get('Content-Type'));
+        self::assertStringContainsString('profile="' . NestedFieldsetsProfile::URI . '"', (string) $response->headers->get('Content-Type'));
     }
 
     #[Test]
@@ -636,7 +636,7 @@ abstract class FieldSelectionConformanceTestCase extends JsonApiFunctionalTestCa
     #[Test]
     #[Group('spec:sparse-fieldsets')]
     #[Group('spec:errors')]
-    public function aDottedMemberOnAnAttributeWithoutSelectableKeysIsThe400(): void
+    public function aDottedMemberOnAnAttributeWithoutNestedFieldsetKeysIsThe400(): void
     {
         $this->assertUnrecognized('/panels/1?fields[panels]=settings.theme', 'settings.theme');
         $this->assertUnrecognized('/panels/1?fields[panels]=name.first', 'name.first');
@@ -696,7 +696,7 @@ abstract class FieldSelectionConformanceTestCase extends JsonApiFunctionalTestCa
             'rows' => [['size' => ['w' => 1]], ['size' => ['w' => 3]]],
         ], $this->attributesOf($response));
         self::assertSame(self::NARROWED, $response->headers->get('Content-Type'));
-        self::assertSame(['version' => '1.1', 'profile' => [FieldSelectionProfile::URI]], $this->jsonApiOf($response));
+        self::assertSame(['version' => '1.1', 'profile' => [NestedFieldsetsProfile::URI]], $this->jsonApiOf($response));
     }
 
     #[Test]
@@ -718,7 +718,7 @@ abstract class FieldSelectionConformanceTestCase extends JsonApiFunctionalTestCa
     {
         $response = $this->handle('/boards/1?fields[boards]=values,values.cap');
 
-        self::assertSame(['values' => FieldSelectionFactory::SEED_VALUES], $this->attributesOf($response));
+        self::assertSame(['values' => NestedFieldsetsFactory::SEED_VALUES], $this->attributesOf($response));
         self::assertSame('application/vnd.api+json', $response->headers->get('Content-Type'));
     }
 

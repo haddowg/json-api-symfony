@@ -32,7 +32,7 @@ final class ServerFactoryProfilesTest extends TestCase
     public function itRegistersTheFourBuiltInProfilesInCanonicalOrderByDefault(): void
     {
         self::assertSame(
-            [CursorPaginationProfile::URI, CountableProfile::URI, RelationshipQueriesProfile::URI, \haddowg\JsonApi\Schema\Profile\FieldSelectionProfile::URI],
+            [CursorPaginationProfile::URI, CountableProfile::URI, RelationshipQueriesProfile::URI, \haddowg\JsonApi\Schema\Profile\NestedFieldsetsProfile::URI],
             $this->registeredUris($this->factory()),
         );
     }

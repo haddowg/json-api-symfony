@@ -17,12 +17,12 @@ use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
 /**
- * The Doctrine half of the field-selection conformance pair: serves the
+ * The Doctrine half of the nested fieldsets conformance pair: serves the
  * {@see DoctrinePanelResource} and {@see DoctrineCuratorResource} over the Doctrine
  * provider, their objects in `json` columns of an in-memory SQLite database (seeded by
- * {@see \haddowg\JsonApiBundle\Tests\Functional\DoctrineFieldSelectionTest}).
+ * {@see \haddowg\JsonApiBundle\Tests\Functional\DoctrineNestedFieldsetsTest}).
  */
-final class FieldSelectionDoctrineTestKernel extends Kernel
+final class NestedFieldsetsDoctrineTestKernel extends Kernel
 {
     use MicroKernelTrait;
 
@@ -38,7 +38,7 @@ final class FieldSelectionDoctrineTestKernel extends Kernel
 
     public function getProjectDir(): string
     {
-        $dir = \sys_get_temp_dir() . '/json-api-symfony-tests/field-selection-doctrine-app';
+        $dir = \sys_get_temp_dir() . '/json-api-symfony-tests/nested-fieldsets-doctrine-app';
         if (!\is_dir($dir . '/config')) {
             \mkdir($dir . '/config', 0o777, true);
         }
@@ -48,12 +48,12 @@ final class FieldSelectionDoctrineTestKernel extends Kernel
 
     public function getCacheDir(): string
     {
-        return \sys_get_temp_dir() . '/json-api-symfony-tests/field-selection-doctrine-cache/' . $this->environment;
+        return \sys_get_temp_dir() . '/json-api-symfony-tests/nested-fieldsets-doctrine-cache/' . $this->environment;
     }
 
     public function getLogDir(): string
     {
-        return \sys_get_temp_dir() . '/json-api-symfony-tests/field-selection-doctrine-log';
+        return \sys_get_temp_dir() . '/json-api-symfony-tests/nested-fieldsets-doctrine-log';
     }
 
     protected function configureContainer(ContainerConfigurator $container, LoaderInterface $loader, ContainerBuilder $builder): void
@@ -113,8 +113,8 @@ final class FieldSelectionDoctrineTestKernel extends Kernel
         $services->set(DoctrineCuratorResource::class);
         $services->set(DoctrineBoardResource::class);
         $services->set(DoctrineEaselResource::class);
-        $services->set(\haddowg\JsonApiBundle\Tests\Functional\App\FieldSelection\BoardSerializer::class);
-        $services->set(\haddowg\JsonApiBundle\Tests\Functional\App\FieldSelection\EaselSerializer::class);
+        $services->set(\haddowg\JsonApiBundle\Tests\Functional\App\NestedFieldsets\BoardSerializer::class);
+        $services->set(\haddowg\JsonApiBundle\Tests\Functional\App\NestedFieldsets\EaselSerializer::class);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void
