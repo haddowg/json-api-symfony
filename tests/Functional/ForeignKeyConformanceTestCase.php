@@ -349,6 +349,8 @@ abstract class ForeignKeyConformanceTestCase extends JsonApiFunctionalTestCase
 
         $kept = $revise($same);
         self::assertSame(200, $kept->getStatusCode(), (string) $kept->getContent());
+        // FkUser declares lockedItems, so its input holds the items themselves.
+        self::assertSame(['revised' => true, 'lockedItems' => ['5', '4', '3', '2', '1']], $this->decode($kept)['meta'] ?? null);
 
         $dropped = $revise([['type' => 'fk-items', 'id' => '1']]);
         self::assertSame(403, $dropped->getStatusCode(), (string) $dropped->getContent());
@@ -360,6 +362,21 @@ abstract class ForeignKeyConformanceTestCase extends JsonApiFunctionalTestCase
         $added = $revise([...$same, ['type' => 'fk-items', 'id' => '7']]);
         self::assertSame(403, $added->getStatusCode(), (string) $added->getContent());
         self::assertSame(['1', '2', '3', '4', '5'], $this->ids($this->fetch('/fk-users/ada/items?page[size]=10')['data'] ?? null));
+    }
+
+    #[Test]
+    #[Group('spec:actions')]
+    public function anActionInputWithNoPropertyForAForeignKeyToManyLeavesItsLinkageToTheHandler(): void
+    {
+        // FkTeam declares no members property, so its input gains none.
+        $regroup = fn(array $members): Response => $this->handle('/fk-teams/1/-actions/regroup', 'PATCH', ['data' => ['type' => 'fk-teams', 'id' => '1', 'relationships' => ['members' => ['data' => $members]]]]);
+        $response = $regroup([['type' => 'fk-members', 'id' => '4'], ['type' => 'fk-members', 'id' => '1']]);
+        $missing = $regroup([['type' => 'fk-members', 'id' => '99']]);
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['members' => ['4', '1'], 'inputHoldsMembers' => false], $this->decode($response)['meta'] ?? null);
+        self::assertSame(404, $missing->getStatusCode(), (string) $missing->getContent());
+        self::assertSame(['1', '2', '3'], $this->ids($this->fetch('/fk-teams/1/members?page[size]=10')['data'] ?? null));
     }
 
     #[Test]

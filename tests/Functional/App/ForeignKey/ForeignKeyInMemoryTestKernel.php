@@ -74,7 +74,7 @@ final class ForeignKeyInMemoryTestKernel extends ForeignKeyDoctrineTestKernel
         return new InMemoryDataPersister(
             $type,
             self::provider($type)->store(),
-            static fn(): object => throw new \LogicException('No ' . $type . ' is created here.'),
+            static fn(): object => $type === 'fk-teams' ? new FkTeam() : throw new \LogicException('No ' . $type . ' is created here.'),
             static fn(string $relatedType, string $id): ?object => isset(self::TYPES[$relatedType]) ? self::provider($relatedType)->fetchOne($relatedType, $id) : null,
         );
     }

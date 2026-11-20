@@ -14,6 +14,7 @@ use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Request\MediaType;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\Accessor;
+use haddowg\JsonApi\Resource\Field\ForeignKey;
 use haddowg\JsonApi\Resource\Field\GuardsMembershipInterface;
 use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
@@ -396,6 +397,11 @@ final readonly class ActionInvoker
                     $members[] = $this->related($identifier->type, $identifier->id);
                 }
             }
+            // A foreign-key to-many holds nothing on the model, so an input with nowhere to put
+            // it leaves its linkage to the handler rather than gain a dynamic property.
+            if (ForeignKey::nameOf($relation) !== null && !self::holds($instance, $property)) {
+                continue;
+            }
             $held = Accessor::get($instance, $property);
             if ($held instanceof Collection) {
                 $held->clear();
@@ -413,6 +419,17 @@ final readonly class ActionInvoker
         \assert($stripped instanceof JsonApiRequestInterface);
 
         return [$instance, $stripped];
+    }
+
+    /**
+     * Whether `$instance` takes a value for `$property`: an array access, a declared property
+     * or a setter.
+     */
+    private static function holds(object $instance, string $property): bool
+    {
+        return $instance instanceof \ArrayAccess
+            || \property_exists($instance, $property)
+            || \method_exists($instance, 'set' . \ucfirst($property));
     }
 
     /**
