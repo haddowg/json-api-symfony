@@ -47,7 +47,7 @@ final class DoctrinePivotNumbersTest extends PivotNumbersConformanceTestCase
         self::assertLessThan(300, $response->getStatusCode(), (string) $response->getContent());
 
         self::assertSame(['1' => [1, 1.5], '2' => [5, 5.0]], $this->pins('1'));
-        self::assertSame(['count' => 5, 'weight' => 5], $this->renderedPivots('/pn-boards/1/relationships/pins')['2'] ?? null);
+        self::assertSame(['count' => 5, 'weight' => 5.0], $this->renderedPivots('/pn-boards/1/relationships/pins')['2'] ?? null);
     }
 
     #[Test]
