@@ -7,7 +7,8 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\ThroughPivot;
 use Doctrine\ORM\Mapping as ORM;
 
 /**
- * The pivot row linking a track to a playlist, holding who added it and who audited it.
+ * The pivot row linking a track to a playlist, holding who added it, who audited it and a
+ * note no type serves unless a refused declaration registers one.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'tp_entry')]
@@ -33,5 +34,8 @@ class TpEntryEntity
         #[ORM\ManyToOne(targetEntity: TpAuditorEntity::class)]
         #[ORM\JoinColumn(name: 'auditor_id', referencedColumnName: 'id', nullable: true)]
         public ?TpAuditorEntity $auditor = null,
+        #[ORM\ManyToOne(targetEntity: TpNoteEntity::class)]
+        #[ORM\JoinColumn(name: 'note_id', referencedColumnName: 'id', nullable: true)]
+        public ?TpNoteEntity $note = null,
     ) {}
 }

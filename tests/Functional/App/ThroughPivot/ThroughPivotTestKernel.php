@@ -133,6 +133,13 @@ final class ThroughPivotTestKernel extends Kernel
         }
         if (self::$broken === 'association-class-without-stored-fields') {
             $services->set(TpBrokenTrackResource::class);
+        } elseif (self::$broken !== null && \str_starts_with(self::$broken, 'legacy-')) {
+            TpLegacyPivotTrackResource::$declaration = self::$broken;
+            $services->set(TpLegacyPivotTrackResource::class);
+            if (self::$broken === 'legacy-through-several') {
+                $services->set(TpNoteResource::class);
+                $services->set(TpNoteAliasResource::class);
+            }
         } elseif (self::$broken !== null) {
             TpBrokenResource::$declaration = self::$broken;
             $services->set(TpBrokenResource::class);

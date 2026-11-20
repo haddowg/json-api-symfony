@@ -1012,10 +1012,13 @@ reaches a type: the registered type whose entity it targets, whose query extensi
 it, whose read rules gate it and whose encoder decodes its ids. The deprecated
 `pivot.`-prefixed forms reach the same types, so before and after migrating a filter
 hides the same rows and answers the same `403` to a caller who may not read a hop.
-Migrating needs exactly one registered type for the entity each association past `pivot`
-targets: an entity no type serves, or several serve, fails the cache warm-up once
-migrated, so it can't move until one type owns it. The deprecated form keeps reaching
-such an entity without any type's rules, as it always has.
+The row's associations back to the parent and to the member reach the parent type and the
+relation's related type, even when another type serves the same entity. Every other
+association past `pivot` needs exactly one registered type for the entity it targets, in
+both forms. An entity no type serves, or several serve, has no type whose rules could apply,
+so a filter reaching it fails the cache warm-up in either form, naming the filter and its
+path. Register one type for that entity, or move the filter to a `->through()` path that
+doesn't reach it.
 
 A [filter family](https://github.com/haddowg/json-api/blob/main/docs/filters.md#filter-families-keys-matched-by-prefix)
 on the relation can resolve to a pivot filter too. The bundle resolves the family first

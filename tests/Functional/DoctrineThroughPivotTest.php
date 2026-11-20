@@ -334,6 +334,16 @@ final class DoctrineThroughPivotTest extends JsonApiFunctionalTestCase
         yield 'a relation the pivot row does not hold' => ['unknown-pivot-row-relation', 'is not a relation the pivot rows of "playlists" hold'];
         yield 'a sort through a mid-path pivot' => ['mid-path-pivot-sort', 'whose `pivot` follows a to-many relation'];
         yield 'a pivot of an association entity with no stored pivot fields' => ['association-class-without-stored-fields', 'the Doctrine provider reads the pivot rows of a BelongsToMany with stored pivot fields over an association entity, and "barePlaylists" is not one.'];
+        $unserved = 'which no registered type serves, so a path through it reaches no type whose rules apply.';
+        $fix = 'Register exactly one resource type for that entity, or migrate the filter to a ->through() path that does not reach it.';
+        yield 'a deprecated traversal past the pivot row to an entity no type serves' => ['legacy-through-untyped', 'declares the filter "noteText" of relation "playlists", whose deprecated path "pivot.note.text" goes on from the pivot row to an entity no single registered type serves'];
+        yield 'the fix it names' => ['legacy-through-untyped', $fix];
+        yield 'a deprecated list traversal past the pivot row' => ['legacy-through-in-untyped', 'the filter "note" of relation "playlists", whose deprecated path "pivot.note"'];
+        yield 'a deprecated WhereHas past the pivot row' => ['legacy-has-untyped', 'the filter "noted" of relation "playlists", whose deprecated path "pivot.note"'];
+        yield 'a deprecated WhereDoesntHave past the pivot row' => ['legacy-doesnt-have-untyped', 'the filter "unnoted" of relation "playlists", whose deprecated path "pivot.note"'];
+        yield 'a deprecated traversal inside a group' => ['legacy-grouped-untyped', 'the filter "noteSearch" of relation "playlists"'];
+        yield 'the entity no type serves' => ['legacy-has-untyped', $unserved];
+        yield 'an entity several types serve' => ['legacy-through-several', 'which several types serve (tpNotes, tpNoteAliases)'];
     }
 
     #[Test]

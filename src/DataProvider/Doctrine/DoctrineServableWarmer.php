@@ -13,13 +13,16 @@ use haddowg\JsonApi\Resource\Field\ForeignKey;
 use haddowg\JsonApi\Resource\Field\HasMany;
 use haddowg\JsonApi\Resource\Field\MorphTo;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
+use haddowg\JsonApi\Resource\Field\PivotRelationInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\Range;
 use haddowg\JsonApi\Resource\Filter\RelationHop;
 use haddowg\JsonApi\Resource\Filter\TraversesPath;
 use haddowg\JsonApi\Resource\Filter\Where;
+use haddowg\JsonApi\Resource\Filter\WhereDoesntHave;
 use haddowg\JsonApi\Resource\Filter\WhereGroup;
+use haddowg\JsonApi\Resource\Filter\WhereHas;
 use haddowg\JsonApi\Resource\Filter\WhereIdIn;
 use haddowg\JsonApi\Resource\Filter\WhereIdNotIn;
 use haddowg\JsonApi\Resource\Filter\WhereIn;
@@ -33,6 +36,7 @@ use haddowg\JsonApi\Resource\Filter\WhereThroughIn;
 use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApi\Resource\Sort\SortDirective;
 use haddowg\JsonApi\Resource\Sort\SortInterface;
+use haddowg\JsonApi\Resource\Through\PivotRowRelations;
 use haddowg\JsonApi\Resource\Through\ReachesThrough;
 use haddowg\JsonApiBundle\Action\ActionRegistry;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
@@ -397,6 +401,50 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
 
             $declared = [...$relation->allFilters(), ...$relation->sorts(), ...\array_map(static fn(SortDirective $d): SortInterface => $d->sort, $relation instanceof DefaultSortedRelationInterface ? $relation->defaultSort() : [])];
             $this->guardThroughOf($type, $relation, $declared, $this->entityManager->getClassMetadata($this->entityClassByType[$relatedType]), FilterPaths::of($server, $related, $type, relation: $relation, pivotRows: $pivotRows));
+            if ($pivotRows !== null && $relation instanceof PivotRelationInterface) {
+                $this->guardDeprecatedPivotPaths($type, $relation, $relation->allFilters(), $pivotRows);
+            }
+        }
+    }
+
+    /**
+     * Refuses a deprecated `pivot.`-prefixed `WhereThrough`, `WhereThroughIn`, `WhereHas` or
+     * `WhereDoesntHave` whose path goes on from the pivot row to an entity no registered
+     * type serves, or several do: no type's scope or gate could apply to the rows it
+     * reaches, as the `->through()` form already refuses.
+     *
+     * @param list<FilterInterface> $filters
+     */
+    private function guardDeprecatedPivotPaths(string $type, PivotRelationInterface $relation, array $filters, PivotRowRelations $pivotRows): void
+    {
+        foreach ($filters as $filter) {
+            if ($filter instanceof WhereGroup) {
+                $this->guardDeprecatedPivotPaths($type, $relation, $filter->children, $pivotRows);
+
+                continue;
+            }
+            $path = match (true) {
+                $filter instanceof WhereThrough, $filter instanceof WhereThroughIn => $filter->path,
+                $filter instanceof WhereHas, $filter instanceof WhereDoesntHave => $filter->relationship,
+                default => null,
+            };
+            $segments = $path !== null ? \explode('.', $path) : [];
+            if (\count($segments) < 2 || $segments[0] !== 'pivot') {
+                continue;
+            }
+
+            try {
+                $pivotRows->pivotRowRelation($relation, $type, $segments[1]);
+            } catch (\LogicException $e) {
+                throw new \LogicException(\sprintf(
+                    'The JSON:API resource for type "%s" declares the filter "%s" of relation "%s", whose deprecated path "%s" goes on from the pivot row to an entity no single registered type serves, so no type\'s read rules can apply to the rows it reaches. %s Register exactly one resource type for that entity, or migrate the filter to a ->through() path that does not reach it.',
+                    $type,
+                    $filter->key(),
+                    $relation->name(),
+                    $path,
+                    $e->getMessage(),
+                ), 0, $e);
+            }
         }
     }
 
