@@ -15,7 +15,7 @@ use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApiBundle\Tests\Functional\App\Doctrine\PanelEntity;
 
 /**
- * Never executed. The selectable-key hooks typed on a Doctrine entity: a key predicate, and read hooks
+ * Never executed. The selectable-key hooks typed on a Doctrine entity: a key predicate, and read and serialize hooks
  * taking the selected keys as a fourth argument, a list's holding the keys of every item. phpstan-hooks.neon analyses it with
  * PHPStan's default settings, as an application would.
  */
@@ -44,6 +44,13 @@ final class FieldSelectionHookTypes
             ArrayList::make('archive')
                 ->of(Obj::make('row')->fields(Str::make('label'))->selectableKeys(pattern: '[a-z]+'))
                 ->computedUsing(static fn(?PanelEntity $panel, JsonApiRequestInterface $request, string $name, ?KeySelection $only): array => $only === null ? [] : $only->paths()),
+            Obj::make('address')
+                ->fields(Str::make('postcode'), Obj::make('geo')->fields(Integer::make('lat'))->selectableKeys(pattern: 'lat'))
+                ->selectableKeys(pattern: '[a-z]+')
+                ->serializeUsing(static fn(PanelEntity $panel, JsonApiRequestInterface $request, string $name, ?KeySelection $only): ?array => $only === null ? $panel->address : ['geo' => $only->nested('geo')?->keys]),
+            ArrayList::make('cells')
+                ->of(Obj::make('cell')->fields(Str::make('v'))->selectableKeys(pattern: 'v'))
+                ->serializeUsing(static fn(PanelEntity $panel, JsonApiRequestInterface $request, string $name, ?KeySelection $only): ?array => $only?->items() === null ? $panel->rows : $only->items()->paths()),
         ];
     }
 }
