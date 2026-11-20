@@ -114,6 +114,7 @@ class TypedRequestMetaDoctrineTestKernel extends Kernel
         $services->set(DoctrineTrNoteResource::class);
         $services->set(DoctrineTrItemResource::class);
         $services->set(DoctrineTrPlainResource::class);
+        $services->set(DoctrineTrStampResource::class);
 
         $orm = [
             'auto_generate_proxy_classes' => true,

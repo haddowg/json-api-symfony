@@ -348,6 +348,37 @@ abstract class TypedRequestMetaConformanceTestCase extends JsonApiFunctionalTest
     }
 
     #[Test]
+    public function anAtomicResultRendersTheDeclaredMemberOverAClashingEntryMember(): void
+    {
+        $response = $this->atomic(['atomic:operations' => [self::renameStamp('Clash')]]);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        self::assertSame(['stamp' => 'declared', 'ink' => 'blue'], self::at($this->decode($response), 'atomic:results', 0, 'data', 'meta'));
+    }
+
+    #[Test]
+    public function debugRefusesAClashingEntryMemberInsideAnAtomicBatch(): void
+    {
+        $this->bootInDebug();
+        self::assertSame(200, $this->atomic(['atomic:operations' => [self::renameStamp('Calm')]])->getStatusCode());
+
+        $clash = $this->atomic(['atomic:operations' => [self::renameStamp('Clash')]]);
+        self::assertSame(500, $clash->getStatusCode());
+        self::assertStringContainsString('ResourceMetaMismatch', (string) $clash->getContent());
+        self::assertStringContainsString('returned the member \\"stamp\\", which a declared member of the same name replaced', (string) $clash->getContent());
+    }
+
+    /**
+     * An atomic update renaming the stamp stored as plain row 1.
+     *
+     * @return array<string, mixed>
+     */
+    private static function renameStamp(string $name): array
+    {
+        return ['op' => 'update', 'ref' => ['type' => 'tr-stamps', 'id' => '1'], 'data' => ['type' => 'tr-stamps', 'id' => '1', 'attributes' => ['name' => $name]]];
+    }
+
+    #[Test]
     public function debugRefusesADocumentEntrysMemberClashingWithADeclaredOne(): void
     {
         $this->bootInDebug();

@@ -14,7 +14,7 @@ use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 class TypedRequestMetaInMemoryTestKernel extends TypedRequestMetaDoctrineTestKernel
 {
-    private const array TYPES = ['tr-notes' => 'notes', 'tr-items' => 'items', 'tr-plains' => 'plains'];
+    private const array TYPES = ['tr-notes' => 'notes', 'tr-items' => 'items', 'tr-plains' => 'plains', 'tr-stamps' => 'plains'];
 
     /**
      * @var array<string, InMemoryDataProvider>|null
@@ -78,6 +78,7 @@ class TypedRequestMetaInMemoryTestKernel extends TypedRequestMetaDoctrineTestKer
         $services->set(InMemoryTrNoteResource::class);
         $services->set(InMemoryTrItemResource::class);
         $services->set(InMemoryTrPlainResource::class);
+        $services->set(InMemoryTrStampResource::class);
 
         foreach (\array_keys(self::TYPES) as $type) {
             $services->set('test.provider.' . $type, InMemoryDataProvider::class)
