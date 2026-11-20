@@ -27,6 +27,7 @@ abstract class TypedRequestMetaConformanceTestCase extends JsonApiFunctionalTest
         parent::setUp();
         TrMetaRecorder::$seen = [];
         TrMetaRecorder::$raw = [];
+        TrMetaRecorder::$rawResource = [];
         TrNoteResource::$deletedBecause = null;
     }
 
@@ -310,6 +311,20 @@ abstract class TypedRequestMetaConformanceTestCase extends JsonApiFunctionalTest
         // action's requestMeta() is, while the raw meta stays on the request.
         self::assertSame([], TrMetaRecorder::$seen['tr-plains:BeforeCreateEvent']['document'] ?? null);
         self::assertSame(['whatever' => ['x' => 1]], TrMetaRecorder::$raw['tr-plains:BeforeCreateEvent'] ?? null);
+
+        // Nor does it declare resource meta, so the typed data.meta is empty too, on a create
+        // and an update alike, and the data.meta as sent stays on the request.
+        self::assertSame([], TrMetaRecorder::$seen['tr-plains:BeforeCreateEvent']['resource'] ?? null);
+        self::assertSame(['anything' => 1], TrMetaRecorder::$rawResource['tr-plains:BeforeCreateEvent'] ?? null);
+        $update = $this->handle('/tr-plains/1', 'PATCH', ['data' => ['type' => 'tr-plains', 'id' => '1', 'meta' => ['other' => true]]]);
+        self::assertSame(200, $update->getStatusCode(), (string) $update->getContent());
+        self::assertSame([], TrMetaRecorder::$seen['tr-plains:BeforeUpdateEvent']['resource'] ?? null);
+        self::assertSame(['other' => true], TrMetaRecorder::$rawResource['tr-plains:BeforeUpdateEvent'] ?? null);
+
+        // An action reading a tr-plains document has an empty typed data.meta as well.
+        $check = $this->handle('/tr-plains/-actions/check', 'POST', ['data' => ['type' => 'tr-plains', 'attributes' => ['name' => 'Free'], 'meta' => ['anything' => 1]]]);
+        self::assertSame(200, $check->getStatusCode(), (string) $check->getContent());
+        self::assertSame(['typed' => [], 'sent' => ['anything' => 1]], $this->decode($check)['meta'] ?? null);
 
         $this->bootInDebug();
         self::assertSame(200, $this->handle('/tr-plains/1')->getStatusCode(), 'getMeta() of a type declaring no resource meta is not checked');

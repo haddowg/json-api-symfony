@@ -2450,11 +2450,12 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             throw new ValidationFailed($errors);
         }
 
-        // A type declaring no request meta for the write leaves the typed top-level meta
-        // empty, as an action's requestMeta() is; the raw meta stays on the request.
+        // A type declaring no request meta or resource meta for the write leaves that side of
+        // the typed meta empty, as an action's requestMeta() is; the raw meta stays on the
+        // request.
         return new WrittenMeta(
             \is_array($document) && !$shape->isEmpty() ? $shape->values($document, true, $body) : [],
-            $resourceShape !== null && \is_array($resource) ? $resourceShape->values($resource, $resourceWrite === OperationType::Create, $body) : [],
+            $resourceShape !== null && !$resourceShape->isEmpty() && \is_array($resource) ? $resourceShape->values($resource, $resourceWrite === OperationType::Create, $body) : [],
         );
     }
 

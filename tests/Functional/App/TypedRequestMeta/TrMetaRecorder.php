@@ -28,6 +28,13 @@ final class TrMetaRecorder implements EventSubscriberInterface
      */
     public static array $raw = [];
 
+    /**
+     * The resource object meta each event's request carries as sent.
+     *
+     * @var array<string, mixed>
+     */
+    public static array $rawResource = [];
+
     public static function getSubscribedEvents(): array
     {
         return [
@@ -46,5 +53,7 @@ final class TrMetaRecorder implements EventSubscriberInterface
         self::$seen[$event->type . ':' . $name] = ['document' => $meta->document, 'resource' => $meta->resource];
         $body = $event->request->getParsedBody();
         self::$raw[$event->type . ':' . $name] = \is_array($body) ? ($body['meta'] ?? null) : null;
+        $data = \is_array($body) ? ($body['data'] ?? null) : null;
+        self::$rawResource[$event->type . ':' . $name] = \is_array($data) ? ($data['meta'] ?? null) : null;
     }
 }

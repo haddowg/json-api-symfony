@@ -859,7 +859,9 @@ relationship events, `HookContext::writtenMeta()` in a resource's lifecycle hook
 `ActionContext::requestMeta()` in an action. `data.meta` members declaring `fillUsing()` are
 applied to the entity as it hydrates; the others stay on the written meta. A write whose type
 declares no request `meta` for it has an empty `writtenMeta()->document`, as an action
-declaring none has an empty `requestMeta()`, while the `meta` as sent stays on the request.
+declaring none has an empty `requestMeta()`, and one whose type declares no `resourceMeta()`
+for it has an empty `writtenMeta()->resource`. The `meta` and `data.meta` as sent stay on the
+request.
 
 An action's handler declares its request `meta` per HTTP method by implementing core's
 `DeclaresActionRequestMetaInterface`, read from the handler service like its response meta. A

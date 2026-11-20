@@ -228,9 +228,11 @@ final readonly class ActionInvoker
             throw new ValidationFailed($errors);
         }
 
+        // An input type declaring no resource meta for the write leaves the typed data.meta
+        // empty; the raw meta stays on the request.
         return new WrittenMeta(
             \is_array($document) ? $shape->values($document, true, $request) : [],
-            $resourceShape !== null && \is_array($resource) ? $resourceShape->values($resource, $creating, $request) : [],
+            $resourceShape !== null && !$resourceShape->isEmpty() && \is_array($resource) ? $resourceShape->values($resource, $creating, $request) : [],
         );
     }
 

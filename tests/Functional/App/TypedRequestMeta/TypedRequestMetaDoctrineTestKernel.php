@@ -103,6 +103,7 @@ class TypedRequestMetaDoctrineTestKernel extends Kernel
         $services->set(TrExportsPersister::class)->tag(JsonApiBundle::DATA_PERSISTER_TAG);
         $services->set(TrMetaRecorder::class);
         $services->set(ArchiveNote::class);
+        $services->set(CheckPlain::class);
         $services->set(ImportItem::class);
         $services->set(QueueNote::class);
 

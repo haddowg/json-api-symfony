@@ -624,7 +624,7 @@ exposes both the resolved request state and pre-wired response factories:
 | `input()` | the hydrated input (`Document` mode) or `null` |
 | `request()` | the JSON:API request — always; the raw body + uploaded files for `Raw` mode |
 | `requestMeta()` | the request's top-level `meta`, validated and typed against what the handler declares for the method (see [declaring request meta](#declaring-request-meta)), or empty when it declares none |
-| `writtenMeta()` | the typed top-level `meta` and, for a `Document` input, the typed `data.meta` |
+| `writtenMeta()` | the typed top-level `meta` and, for a `Document` input, the typed `data.meta`, empty when its input type declares no `resourceMeta()` for the write |
 | `requestMediaType()` | the request body's media type as matched against `accepts`, without parameters, or `null` with no body |
 | `responseMediaType()` | the media type the `Accept` header picked from `responds`: `application/vnd.api+json` or a raw result's type |
 | `queryParameters()` | the parsed, strict-validated query parameters |
