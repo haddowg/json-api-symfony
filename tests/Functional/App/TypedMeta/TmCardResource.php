@@ -37,7 +37,7 @@ abstract class TmCardResource extends AbstractResource
         ];
     }
 
-    public function documentMeta(OperationType $operation): iterable
+    public function documentMeta(OperationType $operation, ?string $relation = null): iterable
     {
         $etag = Str::make('etag')->required()->example('card-1-0')
             ->extractUsing(static fn(TmCard $card): string => 'card-' . $card->id . '-' . (int) $card->done);

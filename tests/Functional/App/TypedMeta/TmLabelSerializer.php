@@ -19,7 +19,7 @@ use haddowg\JsonApiBundle\Operation\Operation;
 #[AsJsonApiSerializer(type: 'tm-labels', operations: [Operation::FetchCollection, Operation::FetchOne])]
 final class TmLabelSerializer implements SerializerInterface, DeclaresDocumentMetaInterface
 {
-    public function documentMeta(OperationType $operation): iterable
+    public function documentMeta(OperationType $operation, ?string $relation = null): iterable
     {
         return $operation === OperationType::FetchCollection
             ? [Integer::make('labels')->required()->example(2)->extractUsing(static fn(mixed $labels): int => \is_array($labels) ? \count($labels) : 0)]
