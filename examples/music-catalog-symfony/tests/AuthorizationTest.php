@@ -255,9 +255,10 @@ final class AuthorizationTest extends MusicCatalogKernelTestCase
     {
         $mallory = $this->persistUser(self::NON_OWNER);
 
+        // `owner` is writable only on the admin server, whose class repeats the owner gate.
         $this->browser()
             ->actingAs(self::NON_OWNER)
-            ->patch('/playlists/' . self::OWNED_PLAYLIST_ID, [
+            ->patch('/admin/playlists/' . self::OWNED_PLAYLIST_ID, [
                 'data' => [
                     'type' => 'playlists',
                     'id' => self::OWNED_PLAYLIST_ID,
@@ -268,6 +269,39 @@ final class AuthorizationTest extends MusicCatalogKernelTestCase
             ->getErrors()
             ->assertStatus(403)
             ->assertHasError(status: '403', code: 'ACCESS_DENIED');
+
+        $this->assertPlaylistUnchanged();
+    }
+
+    #[Test]
+    #[Group('spec:updating-relationships')]
+    public function theDefaultServerServesTheOwnerRelationReadOnly(): void
+    {
+        $mallory = $this->persistUser(self::NON_OWNER);
+
+        // A default-server client cannot name a `users` resource, so the relation takes no
+        // write there: its relationship endpoint refuses a PATCH, and an update naming it
+        // leaves the owner as it was.
+        $this->browser()
+            ->actingAs(self::OWNER)
+            ->patch('/playlists/' . self::OWNED_PLAYLIST_ID . '/relationships/owner', [
+                'data' => ['type' => 'users', 'id' => (string) $mallory],
+            ])
+            ->getErrors()
+            ->assertStatus(403)
+            ->assertHasError(status: '403', pointer: '/data/relationships/owner', code: 'FULL_REPLACEMENT_PROHIBITED');
+
+        $this->browser()
+            ->actingAs(self::OWNER)
+            ->patch('/playlists/' . self::OWNED_PLAYLIST_ID, [
+                'data' => [
+                    'type' => 'playlists',
+                    'id' => self::OWNED_PLAYLIST_ID,
+                    'relationships' => ['owner' => ['data' => ['type' => 'users', 'id' => (string) $mallory]]],
+                ],
+            ])
+            ->getDocument()
+            ->assertStatus(200);
 
         $this->assertPlaylistUnchanged();
     }

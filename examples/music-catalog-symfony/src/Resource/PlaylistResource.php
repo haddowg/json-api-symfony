@@ -8,6 +8,7 @@ use haddowg\JsonApi\Pagination\PagePaginator;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Constraint\Comparison;
 use haddowg\JsonApi\Resource\Field\BelongsTo;
+use haddowg\JsonApi\Resource\Field\BelongsToBuilder;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\Boolean;
 use haddowg\JsonApi\Resource\Field\DateTime;
@@ -86,14 +87,17 @@ use haddowg\JsonApiBundle\Hook\ResourceLifecycleHooksTrait;
  * `belongsTo` owner; a plain `belongsToMany` `tracks`; and the pivot-backed
  * `belongsToMany` `orderedTracks`, both paginating two-per-page.
  *
- * It is registered on both servers because {@see TrackResource} is (a track's
+ * The type is served on both servers because {@see TrackResource} is (a track's
  * `playlists` relation exposes `GET /tracks/{id}/playlists`, which returns playlist
  * resource objects) and because a user's `playlists` relation does the same under
- * `/admin`.
+ * `/admin`. This class serves the default server, where `owner` is read-only, and
+ * {@see PlaylistAdminResource} extends it to serve the admin server, where `owner` stays
+ * writable. Each server reads only its own class's attribute, so the admin class
+ * repeats this one.
  */
 #[AsJsonApiResource(
     entity: Playlist::class,
-    server: ['default', 'admin'],
+    server: ['default'],
     hydrator: PlaylistHydrator::class,
     securityUpdate: "is_granted('EDIT', object)",
     securityDelete: "is_granted('ROLE_ADMIN')",
@@ -102,7 +106,7 @@ use haddowg\JsonApiBundle\Hook\ResourceLifecycleHooksTrait;
     // resolver gives every playlist write.
     operationScopes: ['delete' => ['library:write', 'library:admin']],
 )]
-final class PlaylistResource extends AbstractResource implements ResourceLifecycleHooksInterface
+class PlaylistResource extends AbstractResource implements ResourceLifecycleHooksInterface
 {
     use ResourceLifecycleHooksTrait;
 
@@ -146,11 +150,10 @@ final class PlaylistResource extends AbstractResource implements ResourceLifecyc
             //
             // `users` is not registered on the default server either, so the OpenAPI
             // examples there have no users id to build its linkage from. `exampleId()`
-            // names one.
-            BelongsTo::make('owner', 'users')
-                ->security(read: "is_granted('ROLE_ADMIN')")
-                ->withoutRelatedEndpoint()
-                ->exampleId('1'),
+            // names one. For the same reason a default-server client has no user id to
+            // write, so {@see owner()} declares it read-only here and
+            // {@see PlaylistAdminResource} keeps it writable on the admin server.
+            $this->owner(),
             // The **one-entity-two-types** witness: a SECOND relation reading the SAME
             // `owner` ManyToOne column (`storedAs('owner')`) but declaring its target as
             // the curated `public-profiles` type ({@see PublicProfileResource}, the same
@@ -249,6 +252,19 @@ final class PlaylistResource extends AbstractResource implements ResourceLifecyc
                 // `playlists.tracks` (the plain belongsToMany).
                 ->paginate(PagePaginator::make()->withDefaultPerPage(2)),
         ];
+    }
+
+    /**
+     * The `owner` relation as the default server serves it: read-only, since `users` is
+     * admin-only and a client of this server cannot name a user.
+     */
+    protected function owner(): BelongsToBuilder
+    {
+        return BelongsTo::make('owner', 'users')
+            ->security(read: "is_granted('ROLE_ADMIN')")
+            ->withoutRelatedEndpoint()
+            ->exampleId('1')
+            ->readOnly();
     }
 
     /**

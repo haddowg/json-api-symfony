@@ -49,6 +49,10 @@ is registered on both too: `artists`, `tracks`, `playlists`, `libraries`, `publi
 linkage-only (`withoutRelatedEndpoint()`) so the default surface never promises a `users`
 endpoint it cannot serve. See
 [relationships](../../docs/relationships.md#the-related-endpoints-target-must-be-registered-on-the-server).
+A default-server client has no `users` id to write either, so `owner` is read-only there.
+`playlists` is served through two classes for that: `PlaylistResource` on the default
+server and `PlaylistAdminResource`, which extends it with `owner` writable, on the admin
+server.
 
 ## The id-strategy matrix
 
