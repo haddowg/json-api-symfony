@@ -416,6 +416,7 @@ return static function (ContainerConfigurator $container): void {
     $services->set(RequestListener::class)
         ->arg('$schemaValidator', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApi\Validation\DocumentValidator::class)->nullOnInvalid())
         ->arg('$atomicPath', '%haddowg_json_api.atomic_operations.path%')
+        ->arg('$debug', '%kernel.debug%')
         ->tag('kernel.event_listener', ['event' => 'kernel.request', 'method' => 'onKernelRequest', 'priority' => 4]);
 
     // Runs right after the RouterListener (priority 32) so the `relationship` route

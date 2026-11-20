@@ -96,6 +96,7 @@ class TypedRequestMetaDoctrineTestKernel extends Kernel
             ->autoconfigure();
 
         $services->set(TrLabelSerializer::class);
+        $services->set(TrBadgeSerializer::class);
         $services->set(TrLabelsProvider::class);
         $services->set(TrJobSerializer::class);
         $services->set(TrExportResource::class);

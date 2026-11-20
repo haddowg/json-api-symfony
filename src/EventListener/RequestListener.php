@@ -18,6 +18,7 @@ use haddowg\JsonApi\Operation\Target;
 use haddowg\JsonApi\Request\JsonApiRequest;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Request\MediaType;
+use haddowg\JsonApi\Resource\RenderedMeta;
 use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApi\Validation\DocumentValidator;
 use haddowg\JsonApiBundle\Action\ActionContext;
@@ -85,6 +86,8 @@ final class RequestListener
         // `describedby` can name its `POST` operation.
         private readonly string $atomicPath = '/operations',
         private readonly SingletonIdResolver $singletons = new SingletonIdResolver(),
+        // In debug, rendering refuses an AdditionalProperties member clashing with a declared one.
+        private readonly bool $debug = false,
     ) {}
 
     public function onKernelRequest(RequestEvent $event): void
@@ -116,6 +119,9 @@ final class RequestListener
         $jsonApiRequest = $psrRequest instanceof JsonApiRequestInterface
             ? $psrRequest
             : new JsonApiRequest($psrRequest);
+        if ($this->debug) {
+            $jsonApiRequest = RenderedMeta::checking($jsonApiRequest);
+        }
 
         // A custom action route carries `_jsonapi_action`; it parses its body per the
         // action's declared input mode (None/Document/Raw) and builds a
@@ -203,6 +209,9 @@ final class RequestListener
         $jsonApiRequest = $psrRequest instanceof JsonApiRequestInterface
             ? $psrRequest
             : new JsonApiRequest($psrRequest);
+        if ($this->debug) {
+            $jsonApiRequest = RenderedMeta::checking($jsonApiRequest);
+        }
 
         // Negotiate with the atomic extension as the sole supported ext: a non-JSON:API
         // media type still 415/406s via the base rules, and a present-but-unsupported

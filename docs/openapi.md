@@ -879,8 +879,12 @@ relation declares its link row fields or writes its rows through its own `fillUs
 With `kernel.debug` on, the view listener and the atomic loop check every rendered resource
 object's `meta`, and every linkage identifier's pivot and identifier meta, against the
 declarations, and throw `ResourceMetaMismatch`, rendered as a `500`, for a missing required
-member, an undeclared member of a closed object or a value of the wrong JSON type. Production
-checks nothing.
+member, an undeclared member of a closed object or a value of the wrong JSON type. A declared
+member always wins over an `AdditionalProperties` entry's member of the same name, so with
+`kernel.debug` on the request listener also marks each request, an atomic batch's operations
+included, for core's render-time check: an entry returning a declared member's name throws
+`ResourceMetaMismatch`, or `DocumentMetaMismatch` for a document's top-level `meta`, naming
+it. Production checks nothing and renders the declared member.
 
 `getMeta()` is deprecated, for removal in the next major. A resource returning
 `[AdditionalProperties::make()->extractUsing(fn ($object, $request) => /* what getMeta() returned */)]`

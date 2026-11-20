@@ -16,7 +16,7 @@ final class TrLabelsProvider extends AbstractDataProvider
 {
     public function supports(string $type): bool
     {
-        return $type === 'tr-labels';
+        return $type === 'tr-labels' || $type === 'tr-badges';
     }
 
     public function fetchOne(string $type, string $id): ?object

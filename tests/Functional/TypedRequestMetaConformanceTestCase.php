@@ -323,6 +323,41 @@ abstract class TypedRequestMetaConformanceTestCase extends JsonApiFunctionalTest
     }
 
     #[Test]
+    public function aDeclaredMemberWinsOverAnEntrysMemberOfTheSameName(): void
+    {
+        $document = $this->decode($this->handle('/tr-badges/urgent', extraServer: ['HTTP_X_CLASH_RESOURCE_META' => '1', 'HTTP_X_CLASH_DOCUMENT_META' => '1']));
+
+        self::assertSame(['uses' => 2, 'colour' => 'red'], self::at($document, 'data', 'meta'));
+        self::assertSame(['rank' => 1, 'shelf' => 'top'], self::at($document, 'meta'));
+    }
+
+    #[Test]
+    public function debugRefusesAnEntrysMemberClashingWithADeclaredOne(): void
+    {
+        $this->bootInDebug();
+
+        $document = $this->decode($this->handle('/tr-badges/urgent'));
+        self::assertSame(['uses' => 2, 'colour' => 'red'], self::at($document, 'data', 'meta'));
+        self::assertSame(['rank' => 1, 'shelf' => 'top'], self::at($document, 'meta'));
+
+        $clash = $this->handle('/tr-badges/urgent', extraServer: ['HTTP_X_CLASH_RESOURCE_META' => '1']);
+        self::assertSame(500, $clash->getStatusCode());
+        self::assertStringContainsString('ResourceMetaMismatch', (string) $clash->getContent());
+        self::assertStringContainsString('returned the member \\"uses\\", which a declared member of the same name replaced', (string) $clash->getContent());
+    }
+
+    #[Test]
+    public function debugRefusesADocumentEntrysMemberClashingWithADeclaredOne(): void
+    {
+        $this->bootInDebug();
+        $clash = $this->handle('/tr-badges/urgent', extraServer: ['HTTP_X_CLASH_DOCUMENT_META' => '1']);
+
+        self::assertSame(500, $clash->getStatusCode());
+        self::assertStringContainsString('DocumentMetaMismatch', (string) $clash->getContent());
+        self::assertStringContainsString('of the \\"tr-badges\\" FetchOne document returned the member \\"rank\\"', (string) $clash->getContent());
+    }
+
+    #[Test]
     public function debugRefusesARenderedMetaThatDoesNotMatch(): void
     {
         $this->bootInDebug();
