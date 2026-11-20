@@ -6,5 +6,5 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\TypedRequestMeta;
 
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 
-#[AsJsonApiResource(entity: TrNote::class, securityUpdate: "object.title != 'Broken'")]
+#[AsJsonApiResource(entity: TrNote::class, securityUpdate: "object.title != 'Broken'", securityDelete: "object.title != 'Plan'")]
 final class DoctrineTrNoteResource extends TrNoteResource {}

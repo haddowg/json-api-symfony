@@ -842,6 +842,11 @@ temporal format refuse, each number first put in its member's type. Inside an
 declares for an atomic operation, at `/atomic:operations/<n>/meta/<member>`, and the batch's own
 `meta` stays free-form. A type declaring nothing keeps `meta` open in both directions.
 
+An update validates its `meta` after its security gate, as it validates its attributes, and a
+delete validates its body in a `BeforeDeleteEvent` listener below the delete gate, so a caller
+a gate refuses gets its `403` whatever the body holds. A create validates its `meta` before its
+`BeforeSave` gate, as its attributes.
+
 The typed values reach the write: `$event->writtenMeta()` on the create, update, delete and
 relationship events, `HookContext::writtenMeta()` in a resource's lifecycle hooks, and
 `ActionContext::requestMeta()` in an action. `data.meta` members declaring `fillUsing()` are

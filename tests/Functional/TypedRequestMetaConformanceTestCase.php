@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional;
 
 use haddowg\JsonApiBundle\OpenApi\DocumentFactory;
 use haddowg\JsonApiBundle\Tests\Functional\App\TypedRequestMeta\TrMetaRecorder;
+use haddowg\JsonApiBundle\Tests\Functional\App\TypedRequestMeta\TrNoteResource;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -25,6 +26,7 @@ abstract class TypedRequestMetaConformanceTestCase extends JsonApiFunctionalTest
         parent::setUp();
         TrMetaRecorder::$seen = [];
         TrMetaRecorder::$raw = [];
+        TrNoteResource::$deletedBecause = null;
     }
 
     #[Test]
@@ -90,9 +92,42 @@ abstract class TypedRequestMetaConformanceTestCase extends JsonApiFunctionalTest
     {
         self::assertSame(['/meta/reason'], \array_keys($this->violations($this->handle('/tr-notes/2', 'DELETE'))));
 
+        self::assertNull(TrNoteResource::$deletedBecause, 'an invalid body never reaches the beforeDelete() hook');
+
         $response = $this->handle('/tr-notes/2', 'DELETE', ['meta' => ['reason' => 'duplicate']]);
         self::assertSame(204, $response->getStatusCode(), (string) $response->getContent());
         self::assertSame(['reason' => 'duplicate'], TrMetaRecorder::$seen['tr-notes:BeforeDeleteEvent']['document'] ?? null);
+        self::assertSame('duplicate', TrNoteResource::$deletedBecause, 'the beforeDelete() hook reads the validated meta');
+    }
+
+    #[Test]
+    public function aForbiddenDeleteIsRefusedBeforeItsMetaIsValidated(): void
+    {
+        // A signed-in caller, so a refusal is a 403 rather than a 401.
+        $tokens = static::getContainer()->get('security.token_storage');
+        self::assertInstanceOf(\Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInterface::class, $tokens);
+        $tokens->setToken(new \Symfony\Component\Security\Core\Authentication\Token\UsernamePasswordToken(new \Symfony\Component\Security\Core\User\InMemoryUser('ada', null, ['ROLE_USER']), 'main', ['ROLE_USER']));
+
+        // Note 1's security expression refuses its delete, whose meta is missing the
+        // required reason and names an undeclared member.
+        $denied = $this->handle('/tr-notes/1', 'DELETE', ['meta' => ['bogus' => true]]);
+        self::assertSame(403, $denied->getStatusCode(), (string) $denied->getContent());
+        self::assertNull(TrNoteResource::$deletedBecause);
+
+        self::assertSame(['/meta/bogus', '/meta/reason'], $this->sortedKeys($this->violations($this->handle('/tr-notes/2', 'DELETE', ['meta' => ['bogus' => true]]))));
+    }
+
+    /**
+     * @param array<string, mixed> $violations
+     *
+     * @return list<string>
+     */
+    private function sortedKeys(array $violations): array
+    {
+        $keys = \array_keys($violations);
+        \sort($keys);
+
+        return $keys;
     }
 
     #[Test]

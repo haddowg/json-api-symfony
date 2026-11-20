@@ -107,6 +107,13 @@ a refused caller shouldn't trigger. A listener on a later event, such as
 `BeforeCreate`, `BeforeUpdate` or `BeforeRelationshipMutate`, runs after the gate whatever
 its priority.
 
+A delete's meta-only body is validated on `BeforeDeleteEvent` too, by
+`DeleteMetaSubscriber` at `DeleteMetaSubscriber::PRIORITY` (`128`), below the delete gate. A
+caller the gate refuses gets its `403` even when the body is invalid, and a valid body's typed
+`meta` is on the event's request before your listeners at the default priority and the
+resource's `beforeDelete()` hook run. A listener above `128` sees the body unvalidated and an
+empty `writtenMeta()`.
+
 One check has to come after a hook. On a relationship endpoint the changed parent is
 checked again at `BeforeRelationshipCommit`, which needs the change applied, so it runs
 after `BeforeRelationshipMutate`. By then the caller has passed the gate on the parent

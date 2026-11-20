@@ -353,6 +353,10 @@ return static function (ContainerConfigurator $container): void {
     // kernel.event_subscriber.
     $services->set(\haddowg\JsonApiBundle\EventListener\ResourceHookSubscriber::class);
 
+    // Validates a delete's meta-only body on BeforeDeleteEvent between the security gate
+    // and the hook listeners, so a refused caller gets its 403 before a 422.
+    $services->set(\haddowg\JsonApiBundle\EventListener\DeleteMetaSubscriber::class);
+
     // Core's stateless verb x target-shape dispatch factory; autowired into the
     // RequestListener so the bundle reuses core's operation-construction decision.
     $services->set(\haddowg\JsonApi\Operation\OperationFactory::class);

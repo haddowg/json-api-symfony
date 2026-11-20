@@ -3565,16 +3565,22 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return ErrorResponse::fromException(new ResourceNotFound());
         }
 
-        // A delete may carry a meta-only body, validated against what the type declares.
-        $request = $this->writtenMeta($this->server($operation->context()), $type, $request, RequestMetaContext::forOperation(OperationType::Delete, self::isAtomic($request)))->on($request);
+        // A delete may carry a meta-only body, validated against what the type declares by
+        // a BeforeDeleteEvent listener below the security gate, so a refused caller gets
+        // its 403 first, and again here for a dispatcher without that listener.
+        $server = $this->server($operation->context());
+        $validatesMeta = fn(JsonApiRequestInterface $request): JsonApiRequestInterface => $this->writtenMeta($server, $type, $request, RequestMetaContext::forOperation(OperationType::Delete, self::isAtomic($request)))->on($request);
 
         // The before-delete gate (a throw aborts before the persister deletes — a
         // delete guard's natural seam, e.g. a 409 when the resource is referenced), then
         // the delete, in one transaction: a write the gate made is undone when the delete fails.
         $persister = $this->persisters->forType($type);
-        $deletes = $this->types->resourceFor($this->server($operation->context()), $type);
-        WriteTransaction::run($persister, $this->txContext, afterCommit: $this->afterCommit, write: function () use ($type, $request, $entity, $persister, $deletes): void {
-            $this->dispatch(new BeforeDeleteEvent($type, $request, $entity, $this->serverName($request)));
+        $deletes = $this->types->resourceFor($server, $type);
+        WriteTransaction::run($persister, $this->txContext, afterCommit: $this->afterCommit, write: function () use ($type, &$request, $entity, $persister, $deletes, $validatesMeta): void {
+            $event = new BeforeDeleteEvent($type, $request, $entity, $this->serverName($request), $validatesMeta);
+            $this->dispatch($event);
+            $event->validateMeta();
+            $request = $event->request;
 
             if ($deletes instanceof DeletesEntityInterface) {
                 $deletes->delete($entity, new HookContext($request, $this->serverName($request), $type));
@@ -3584,7 +3590,6 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         });
 
         // A type that declares a meta-only 200 and its members answers with them, else 204.
-        $server = $this->server($operation->context());
         $meta = $this->documentMeta?->forDelete($server, $this->contextServerName($operation->context()), $type);
         $response = $meta !== null && !$meta->isEmpty() ? MetaResponse::fromMeta([]) : NoContentResponse::create();
 

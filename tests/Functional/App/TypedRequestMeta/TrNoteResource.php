@@ -32,6 +32,10 @@ abstract class TrNoteResource extends AbstractResource implements ResourceLifecy
 
     public static string $type = 'tr-notes';
 
+    /**
+     * The reason the last delete's beforeDelete() hook read off the typed meta.
+     */
+    public static mixed $deletedBecause = null;
     public function getType(mixed $object): string
     {
         return $object instanceof TrNote ? static::$type : '';
@@ -88,5 +92,10 @@ abstract class TrNoteResource extends AbstractResource implements ResourceLifecy
             $key = $context->writtenMeta()->document('idempotencyKey');
             $entity->createdWith = \is_string($key) ? $key : null;
         }
+    }
+
+    public function beforeDelete(object $entity, HookContext $context): void
+    {
+        self::$deletedBecause = $context->writtenMeta()->document('reason');
     }
 }
