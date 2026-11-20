@@ -9,6 +9,7 @@ use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\PivotPlaylistResource;
+use haddowg\JsonApiBundle\Tests\Functional\App\Resource\PivotSetlistResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\PivotTrackResource;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
@@ -84,6 +85,11 @@ final class PivotBoundaryTestKernel extends Kernel
 
         $services->set(PivotPlaylistResource::class);
         $services->set(PivotTrackResource::class);
+        $services->set(PivotSetlistResource::class);
+
+        $services->set('test.pivot_setlists_provider', InMemoryDataProvider::class)
+            ->factory([PivotPlaylistFactory::class, 'createSetlistsProvider'])
+            ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
 
         $services->set('test.pivot_playlists_provider', InMemoryDataProvider::class)
             ->factory([PivotPlaylistFactory::class, 'createProvider'])

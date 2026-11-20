@@ -41,6 +41,18 @@ final class InMemoryPivotBoundaryTest extends JsonApiFunctionalTestCase
     }
 
     #[Test]
+    public function aFilterDefaultWithAPivotAfterARelationIsUnrecognisedOnEveryRead(): void
+    {
+        foreach (['/setlists', '/setlists?filter[firstSlot]=2'] as $uri) {
+            $response = $this->handle(self::BASE_URI . $uri);
+            self::assertSame(400, $response->getStatusCode(), $uri . ' ' . $response->getContent());
+            self::assertStringContainsString('filter[firstSlot]', (string) $response->getContent(), $uri);
+        }
+
+        self::assertSame(200, $this->handle(self::BASE_URI . '/setlists/1')->getStatusCode());
+    }
+
+    #[Test]
     #[Group('spec:fetching-filtering')]
     public function everyPivotFilterIsUnrecognisedOnEveryInMemoryPath(): void
     {
