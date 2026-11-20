@@ -40,7 +40,6 @@ use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Request\RelatedQuery;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\DocumentMeta;
-use haddowg\JsonApi\Resource\Field\AbstractFieldValue;
 use haddowg\JsonApi\Resource\Field\Accessor;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\Date;
@@ -3031,15 +3030,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      */
     private function fillsThroughHook(RelationInterface $relation): bool
     {
-        if (!$relation instanceof AbstractFieldValue) {
-            return false;
-        }
-
-        static $state = null;
-        $state ??= new \ReflectionProperty(AbstractFieldValue::class, 'state');
-        $fieldState = $state->getValue($relation);
-
-        return \is_object($fieldState) && \property_exists($fieldState, 'fillUsing') && $fieldState->fillUsing !== null;
+        return RelationFillHook::declaredOn($relation);
     }
 
     /**

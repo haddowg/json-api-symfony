@@ -214,6 +214,16 @@ fresh input object and hydrates the body into it:
 2. otherwise the bundle instantiates via the `inputType`'s persister, which exists
    when `inputType` is a type with a create endpoint, such as the mount `type`.
 
+On an object the persister instantiated, each relationship the body names holds the
+related models, as a create of the type would: a to-one the related entity, and a to-many
+its related entities, refilling a `Collection` the object already holds. Each member is
+loaded through its type's provider, and one that doesn't exist is a `404`. A relation with
+a `fillUsing()` hook gets the linkage instead, and a to-many declared
+`cannotChangeMembership()` is checked against the blank instance first. Nothing is
+persisted, so the related entities' own sides are left as they are. An input from
+`ActionInputFactoryInterface` is hydrated by core alone, so its relationships hold the
+related ids.
+
 ### `Raw` — a non-JSON:API body (uploads, blobs)
 
 `Raw` is the escape hatch for bodies that aren't JSON:API — a file upload, a CSV,

@@ -4,11 +4,17 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Action;
 
+use Doctrine\Common\Collections\Collection;
 use haddowg\JsonApi\Exception\ResourceNotFound;
+use haddowg\JsonApi\Hydrator\Relationship\ToManyRelationship;
+use haddowg\JsonApi\Hydrator\Relationship\ToOneRelationship;
 use haddowg\JsonApi\Operation\CustomActionOperation;
 use haddowg\JsonApi\Operation\QueryParameters;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Request\MediaType;
+use haddowg\JsonApi\Resource\AbstractResource;
+use haddowg\JsonApi\Resource\Field\Accessor;
+use haddowg\JsonApi\Resource\Field\GuardsMembershipInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\FilterMatcher;
 use haddowg\JsonApi\Response\AcceptedResponse;
@@ -26,12 +32,14 @@ use haddowg\JsonApiBundle\DataPersister\DataPersisterRegistry;
 use haddowg\JsonApiBundle\DataPersister\WriteTransaction;
 use haddowg\JsonApiBundle\DataPersister\WriteTransactionContext;
 use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
+use haddowg\JsonApiBundle\DataProvider\CurrentMembers;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
 use haddowg\JsonApiBundle\DataProvider\FilterPaths;
 use haddowg\JsonApiBundle\DataProvider\QueriesFilteredCollectionInterface;
 use haddowg\JsonApiBundle\Event\AfterActionEvent;
 use haddowg\JsonApiBundle\Event\BeforeActionEvent;
 use haddowg\JsonApiBundle\Event\BeforeFetchCollectionEvent;
+use haddowg\JsonApiBundle\Operation\RelationFillHook;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
 use haddowg\JsonApiBundle\Validation\FilterValueValidator;
@@ -303,10 +311,103 @@ final readonly class ActionInvoker
 
         $this->validate($server, $inputType, $body);
 
+        $resource = $handler instanceof ActionInputFactoryInterface || !$server instanceof Server ? null : $this->types->resourceFor($server, $inputType);
+        if ($resource !== null) {
+            [$instance, $body] = $this->relateInput($server, $resource, $instance, $body);
+        }
+
         $hydrated = $server->hydratorFor($inputType)->hydrate($body, $instance);
         \assert(\is_object($hydrated));
 
         return $hydrated;
+    }
+
+    /**
+     * Sets each relationship the input document names to the related models, as a write
+     * of the type holds them, and returns the document without its relationships. Core's
+     * hydration would assign the bare ids, which a property holding a collection or an
+     * entity refuses. A relation written by its `fillUsing()` hook still gets the linkage,
+     * and a to-many that can't change its members is checked against the blank input
+     * first, as core checks it. A member that doesn't exist is a `404`.
+     *
+     * @return array{object, JsonApiRequestInterface}
+     */
+    private function relateInput(Server $server, AbstractResource $resource, object $instance, JsonApiRequestInterface $body): array
+    {
+        /** @var array<string, mixed> $document */
+        $document = (array) $body->getParsedBody();
+        $data = $document['data'] ?? null;
+        if (!\is_array($data) || !\is_array($data['relationships'] ?? null) || $data['relationships'] === []) {
+            return [$instance, $body];
+        }
+
+        $creating = $body->getMethod() === 'POST';
+        foreach (\array_keys($data['relationships']) as $name) {
+            $relation = $resource->relationNamed((string) $name);
+            if ($relation === null || $relation->isReadOnlyFor($creating, $body)) {
+                continue;
+            }
+
+            $linkage = $relation->isToMany()
+                ? ($body->hasToManyRelationship($relation->name()) ? $body->getToManyRelationship($relation->name()) : null)
+                : ($body->hasToOneRelationship($relation->name()) ? $body->getToOneRelationship($relation->name()) : null);
+            if ($linkage === null) {
+                continue;
+            }
+
+            if (!$creating && $linkage instanceof ToManyRelationship && $relation instanceof GuardsMembershipInterface
+                && !$relation->allowsMembershipChangeFor($body, $instance)) {
+                $relation->assertMembershipUnchanged($body, $instance, CurrentMembers::of($server, $this->providers, $instance, $relation, $body), $linkage);
+            }
+
+            if (RelationFillHook::declaredOn($relation)) {
+                $filled = $relation->hydrateRelationship($instance, $linkage);
+                \assert(\is_object($filled));
+                $instance = $filled;
+
+                continue;
+            }
+
+            $property = $relation->column() ?? $relation->name();
+            if ($linkage instanceof ToOneRelationship) {
+                $identifier = $linkage->resourceIdentifier;
+                Accessor::set($instance, $property, $identifier?->id === null ? null : $this->related($identifier->type, $identifier->id));
+
+                continue;
+            }
+
+            $members = [];
+            foreach ($linkage->resourceIdentifiers as $identifier) {
+                if ($identifier->id !== null) {
+                    $members[] = $this->related($identifier->type, $identifier->id);
+                }
+            }
+            $held = Accessor::get($instance, $property);
+            if ($held instanceof Collection) {
+                $held->clear();
+                foreach ($members as $member) {
+                    $held->add($member);
+                }
+            } else {
+                Accessor::set($instance, $property, $members);
+            }
+        }
+
+        unset($data['relationships']);
+        $document['data'] = $data;
+        $stripped = $body->withParsedBody($document);
+        \assert($stripped instanceof JsonApiRequestInterface);
+
+        return [$instance, $stripped];
+    }
+
+    private function related(string $type, string $id): object
+    {
+        if (!$this->providers->supportsType($type)) {
+            throw new ResourceNotFound();
+        }
+
+        return $this->providers->forType($type)->fetchOne($type, $id) ?? throw new ResourceNotFound();
     }
 
     /**

@@ -21,7 +21,8 @@ use Symfony\Component\HttpFoundation\Response;
  * describes no way to read it, and its relationship endpoint still takes writes.
  * `lockedSecretComments`, over the same column, can't change its members: a replace
  * compares the comments the article holds, and a `PATCH` action taking it as input
- * compares it with the blank instance it hydrates.
+ * compares it with the blank instance it hydrates. An action's input holds the related
+ * models its relationships name, as a write of the type does.
  */
 abstract class WriteOnlyRelationConformanceTestCase extends JsonApiFunctionalTestCase
 {
@@ -170,6 +171,43 @@ abstract class WriteOnlyRelationConformanceTestCase extends JsonApiFunctionalTes
         $error = $errors[0] ?? null;
         self::assertIsArray($error);
         self::assertSame('MEMBERSHIP_CHANGE_PROHIBITED', $error['code'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:actions')]
+    public function aPatchActionsInputHoldsTheToManyItNames(): void
+    {
+        $response = $this->handle('/articles/1/-actions/revise', 'PATCH', ['data' => [
+            'type' => 'articles',
+            'id' => '1',
+            'relationships' => ['secretComments' => ['data' => [['type' => 'comments', 'id' => '2'], ['type' => 'comments', 'id' => '1']]]],
+        ]]);
+
+        self::assertSame(Response::HTTP_OK, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['pinned' => ['2', '1']], $this->decode($response)['meta'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:actions')]
+    public function aPatchActionsInputNamingAMissingMemberIsNotFound(): void
+    {
+        $response = $this->handle('/articles/1/-actions/revise', 'PATCH', ['data' => [
+            'type' => 'articles',
+            'id' => '1',
+            'relationships' => ['secretComments' => ['data' => [['type' => 'comments', 'id' => '999']]]],
+        ]]);
+
+        self::assertSame(Response::HTTP_NOT_FOUND, $response->getStatusCode(), (string) $response->getContent());
+    }
+
+    #[Test]
+    #[Group('spec:actions')]
+    public function aPatchActionsInputHoldsAnEmptyLockedToMany(): void
+    {
+        $response = $this->revise([]);
+
+        self::assertSame(Response::HTTP_OK, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['pinned' => []], $this->decode($response)['meta'] ?? null);
     }
 
     /**
