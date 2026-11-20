@@ -464,10 +464,12 @@ carries each member's pivot values (see
   `decimal` column as a string, so its property is usually typed `string`, while a
   `Decimal` field hydrates a `float`. A number written to a `decimal` column, as an
   attribute, a flattened `on()` attribute or a pivot field, reaches the entity as a plain
-  decimal string at the column's `scale`: `19.99` as `"19.99"`, `20` as `"20.00"` and
-  `1.5` at scale 2 as `"1.50"`. A value with more fractional digits than the scale is
-  rounded to it. The string matches what Doctrine reads back, so writing the stored
-  value again leaves the entity unchanged. The member is the setter when the entity has
+  decimal string rounded and padded to the column's `scale`: at scale 2, `19.99` is stored
+  as `"19.99"`, `19.9` as `"19.90"`, `20` as `"20.00"` and `19.999` as `"20.00"`. On a
+  database with a decimal type the string matches what Doctrine reads back, so writing
+  the stored value again leaves the entity unchanged. SQLite has no decimal type and reads
+  the value back unpadded, `"19.9"` rather than `"19.90"` and `"20"` rather than `"20.00"`, so a value read back can
+  differ there from the string that was written. The member is the setter when the entity has
   one, as core writes it, and the property otherwise. A member typed to refuse a string,
   such as `float`, still gets the float. The value can't carry more digits than a PHP
   `float` holds, since the request body is decoded as JSON first: `1.10000000000000001`
