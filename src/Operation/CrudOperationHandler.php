@@ -3208,10 +3208,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      */
     private function foreignKeyMembers(Server $server, string $type, object $parent, RelationInterface $relation, JsonApiRequestInterface $request): array
     {
-        $relatedType = $relation->relatedTypes()[0] ?? '';
-        $serializer = $server->serializerFor($relatedType);
-
-        return \array_map(static fn(object $row): array => [$relatedType, $serializer->getId($row)], $this->foreignKeyRows($server, $type, $parent, $relation, $request));
+        return $this->readRouter?->foreignKeyMembers($server, $type, $parent, $relation, $request) ?? [];
     }
 
     /**

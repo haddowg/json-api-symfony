@@ -107,6 +107,7 @@ final class FixedMembershipThroughDoctrineTestKernel extends Kernel
         $services->set(FixedMembershipThroughPlaylistResource::class);
         $services->set(DoctrineTrackResource::class);
         $services->set(HiddenTracksExtension::class);
+        $services->set(RevisePlaylistTracks::class);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void
