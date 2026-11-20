@@ -712,8 +712,8 @@ so the same spec test passes on both providers.
 | `WhereNotIn` / `WhereIdNotIn` | `col NOT IN (:list)` |
 | `WhereNull` / `WhereNotNull` | `col IS NULL` / `col IS NOT NULL` (request value ignored) |
 | `WhereSet` | `col IS NOT NULL` for `true`, `col IS NULL` for `false`, no predicate for both |
-| `WhereMorph` over a `MorphTo` | `typeCol IN (:types)` and, when ids are sent, `idCol IN (:ids)` on the columns `identifiedByColumns()` names |
-| `WhereMorph` over a `MorphToMany` | a correlated `EXISTS` over the `through()` entity `identifiedByRows()` names, its owner the outer row, its type and id compared as for a `MorphTo` |
+| `WhereMorph` over a `MorphTo` | `typeCol IN (:types)` and, when ids are sent, `idCol IN (:ids)` on the columns `identifiedByColumns()` names; `idCol` is also kept to the ids the requested type's query extensions admit, when it has any |
+| `WhereMorph` over a `MorphToMany` | a correlated `EXISTS` over the `through()` entity `identifiedByRows()` names, its owner the outer row, its type and id compared and scoped as for a `MorphTo` |
 | `WhereHas` / `WhereDoesntHave` | correlated `EXISTS` / `NOT EXISTS` subquery |
 | `WhereThrough` | dotted-traversal correlated `EXISTS` (the related entity narrowed by the leaf comparison) |
 | `WhereThroughIn` | the same correlated `EXISTS` with `IN (:list)` at the leaf; an empty list is `1 = 0` |

@@ -157,12 +157,15 @@ final class ReadableRows
 
     /**
      * The first type `$relation` relates to whose collection read gate refuses the
-     * caller, or `null` when every one admits them.
+     * caller, or `null` when every one admits them. `$types` narrows the types asked
+     * about, as a polymorphic hop naming one target does.
+     *
+     * @param list<string>|null $types
      */
-    public function refusedCollectionType(RelationInterface $relation, ?string $serverName = null): ?string
+    public function refusedCollectionType(RelationInterface $relation, ?string $serverName = null, ?array $types = null): ?string
     {
         $serverName ??= $this->serverName;
-        foreach ($relation->relatedTypes() as $type) {
+        foreach ($types ?? $relation->relatedTypes() as $type) {
             $expression = $this->registry->securityFor($type, $serverName)?->forList();
             if (!\is_string($expression)) {
                 continue;
@@ -191,9 +194,12 @@ final class ReadableRows
      *    makes, and its single-row read gate when that never reads the row, refuse it.
      *
      * A read gate that reads the row is left to the type's query scope, as it is on the
-     * type's own collection.
+     * type's own collection. `$types` narrows the related types asked about, as a
+     * polymorphic hop naming one target does.
+     *
+     * @param list<string>|null $types
      */
-    public function refusesThrough(RelationInterface $relation, ?string $serverName = null): bool
+    public function refusesThrough(RelationInterface $relation, ?string $serverName = null, ?array $types = null): bool
     {
         $serverName ??= $this->serverName;
         $read = $relation->securityRead();
@@ -204,11 +210,11 @@ final class ReadableRows
             return self::readsSubject($read) || !$this->granted($read);
         }
 
-        if ($this->refusedCollectionType($relation, $serverName) !== null) {
+        if ($this->refusedCollectionType($relation, $serverName, $types) !== null) {
             return true;
         }
 
-        foreach ($relation->relatedTypes() as $type) {
+        foreach ($types ?? $relation->relatedTypes() as $type) {
             $expression = $this->registry->securityFor($type, $serverName)?->forRead();
             if (\is_string($expression) && !self::readsSubject($expression) && !$this->granted($expression)) {
                 return true;

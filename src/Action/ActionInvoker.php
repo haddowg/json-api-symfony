@@ -286,7 +286,7 @@ final readonly class ActionInvoker
         $requested = $operation->queryParameters()->filter;
         FilterMatcher::directives($requested, $filters, $request);
 
-        $paths = FilterPaths::of($server, $resource, admission: $this->readRouter?->admissionFor($server));
+        $paths = FilterPaths::of($server, $resource, admission: $this->readRouter?->admissionFor($server), morphAdmission: $this->readRouter?->morphAdmissionFor($server));
         $this->filterValues?->validate($requested, $filters, $request, $paths);
 
         $criteria = new CollectionCriteria(

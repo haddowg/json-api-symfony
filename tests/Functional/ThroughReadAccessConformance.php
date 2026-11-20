@@ -153,6 +153,47 @@ trait ThroughReadAccessConformance
         $this->assertForbidden('ada', '/crates/-actions/tally?filter[vaultCode]=v1', [], 'POST');
     }
 
+    #[Test]
+    public function a_morph_target_the_scope_hides_never_matches(): void
+    {
+        // Crate 1 is about grace's parcel 2, crate 2 about ada's parcel 3.
+        self::assertSame(['2'], $this->crateIds('ada', 'filter[subject][type]=parcels'));
+        self::assertSame(['1'], $this->crateIds('grace', 'filter[subject][type]=parcels'));
+        self::assertSame(['1', '2'], $this->crateIds('admin', 'filter[subject][type]=parcels'));
+        self::assertSame([], $this->crateIds('ada', 'filter[subject][type]=parcels&filter[subject][id]=2'));
+        self::assertSame(['2'], $this->crateIds('ada', 'filter[subject][type]=parcels&filter[subject][id]=2,3'));
+        self::assertSame(['1'], $this->crateIds('grace', 'filter[subject][type]=parcels&filter[subject][id][]=2'));
+    }
+
+    #[Test]
+    public function a_morph_member_the_scope_hides_never_matches(): void
+    {
+        // Crate 1 is marked with ada's parcel 1, crate 2 with grace's parcel 2.
+        self::assertSame(['1'], $this->crateIds('ada', 'filter[marked][type]=parcels'));
+        self::assertSame(['2'], $this->crateIds('grace', 'filter[marked][type]=parcels'));
+        self::assertSame(['1', '2'], $this->crateIds('admin', 'filter[marked][type]=parcels'));
+        self::assertSame([], $this->crateIds('ada', 'filter[marked][type]=parcels&filter[marked][id]=2'));
+    }
+
+    #[Test]
+    public function a_morph_filter_naming_a_type_the_caller_may_not_read_is_forbidden(): void
+    {
+        $this->assertForbidden('ada', '/crates?filter[subject][type]=safes');
+        $this->assertForbidden('ada', '/crates?filter[subject][type]=vaults');
+        $this->assertForbidden('ada', '/crates?filter[marked][type]=safes&filter[marked][id]=1');
+        $this->assertForbidden('ada', '/crates/-actions/tally?filter[subject][type]=vaults', [], 'POST');
+        self::assertSame(['3'], $this->crateIds('admin', 'filter[subject][type]=vaults'));
+        self::assertSame(['1'], $this->crateIds('admin', 'filter[marked][type]=safes'));
+        self::assertSame([], $this->crateIds('admin', 'filter[subject][type]=safes'));
+    }
+
+    #[Test]
+    public function a_morph_type_the_relation_does_not_declare_stays_a_bad_request(): void
+    {
+        $response = $this->send('ada', '/crates?filter[subject][type]=ledgers');
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+    }
+
     /**
      * @param array<string, string> $server
      */

@@ -160,7 +160,7 @@ final class CriteriaApplier
             $apply = static fn(): mixed => $alias === null || !$handler instanceof AliasAwareFilterHandler
                 ? $handler->apply($filter, $query, $value)
                 : $handler->applyOn($filter, $query, $value, $alias);
-            $paths = $criteria->paths === null ? null : $this->readablePaths($criteria, $criteria->paths, $filter, $key);
+            $paths = $criteria->paths === null ? null : $this->readablePaths($criteria, $criteria->paths, $filter, $key, $value);
             $query = $handler instanceof ReadsFilterPathsInterface && $paths !== null
                 ? $handler->withPaths($paths, $apply)
                 : $apply();
@@ -170,7 +170,7 @@ final class CriteriaApplier
     }
 
     /**
-     * The paths `$filter`, matched under `$key`, runs with: the request whose caller the
+     * The paths `$filter`, matched under `$key` and requested with `$value`, runs with: the request whose caller the
      * related types' scopes narrow to, and the relations it reaches through that the
      * caller may not read. A filter the client asked for is refused instead, with the
      * `403` a related read of the relation gets. A filter default isn't the client's, so
@@ -178,10 +178,10 @@ final class CriteriaApplier
      *
      * @throws \Symfony\Component\Security\Core\Exception\AccessDeniedException when the client's filter reaches through a relation the caller may not read
      */
-    private function readablePaths(CollectionCriteria $criteria, FilterPaths $paths, FilterInterface $filter, string $key): FilterPaths
+    private function readablePaths(CollectionCriteria $criteria, FilterPaths $paths, FilterInterface $filter, string $key, mixed $value): FilterPaths
     {
         $request = $criteria->request;
-        $refused = $request === null ? [] : $paths->refusedHops($paths->hopsOf($filter), $request);
+        $refused = $request === null ? [] : $paths->refusedHops($paths->hopsOfRequested($filter, $value), $request);
         if ($refused !== [] && \array_key_exists($key, $criteria->queryParameters->filter)) {
             $message = \sprintf('Access denied to the relation "%s" the filter "%s" reaches through.', $refused[0]->relation->name(), $key);
 

@@ -1201,6 +1201,37 @@ final class RelatedReadRouter implements ResetInterface
     }
 
     /**
+     * The narrowing a `WhereMorph` applies in memory, as a closure for
+     * {@see FilterPaths::of()}: of the storage keys of `$type` a polymorphic relation
+     * stores, those the type's provider admits for the caller. Null when `$resources` is
+     * not a server.
+     *
+     * @return (\Closure(RelationInterface, string, list<mixed>, JsonApiRequestInterface): list<mixed>)|null
+     */
+    public function morphAdmissionFor(SerializerResolverInterface $resources): ?\Closure
+    {
+        if (!$resources instanceof Server) {
+            return null;
+        }
+
+        return fn(RelationInterface $relation, string $type, array $keys, JsonApiRequestInterface $request): array => $this->admitMorphKeys($resources, $relation, $type, $keys, $request);
+    }
+
+    /**
+     * @param array<mixed> $keys
+     *
+     * @return list<mixed>
+     */
+    private function admitMorphKeys(Server $server, RelationInterface $relation, string $type, array $keys, JsonApiRequestInterface $request): array
+    {
+        if (!$this->isScopedType($type, $relation)) {
+            return \array_values($keys);
+        }
+
+        return $this->admittedKeys($server, $type, \array_values(\array_filter($keys, static fn(mixed $key): bool => \is_string($key) || \is_int($key))), $request);
+    }
+
+    /**
      * @param list<list<object>> $candidates each parent's candidate members
      *
      * @return list<list<object>>

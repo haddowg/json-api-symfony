@@ -8,12 +8,16 @@ use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\BelongsTo;
 use haddowg\JsonApi\Resource\Field\HasMany;
 use haddowg\JsonApi\Resource\Field\Id;
+use haddowg\JsonApi\Resource\Field\MorphTo;
+use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Filter\WhereAny;
 use haddowg\JsonApi\Resource\Filter\WhereHas;
+use haddowg\JsonApi\Resource\Filter\WhereMorph;
 use haddowg\JsonApi\Resource\Filter\WhereThrough;
 use haddowg\JsonApi\Resource\Filter\WhereThroughIn;
+use haddowg\JsonApiBundle\Tests\Functional\App\ThroughAccess\Doctrine\CrateMarkEntity;
 
 /**
  * Crates, filtered through every kind of relation the caller may or may not read.
@@ -36,6 +40,16 @@ abstract class BaseCrateResource extends AbstractResource
             BelongsTo::make('ledger', 'ledgers')->nullable()->security(read: "is_granted('ROLE_ADMIN')"),
             // A permission that reads the parent can't answer for every crate at once.
             BelongsTo::make('auditor', 'ledgers')->nullable()->security(read: "object.name == 'alpha'"),
+            MorphTo::make('subject', ['parcels', 'safes', 'vaults'])
+                ->identifiedByColumns(type: 'subjectType', id: 'subjectId')
+                ->nullable()
+                ->cannotBeIncluded()
+                ->withoutRelatedEndpoint(),
+            MorphToMany::make('marks', ['parcels', 'safes'])
+                ->through(CrateMarkEntity::class)
+                ->identifiedByRows(owner: 'crate', type: 'markType', id: 'markId')
+                ->cannotBeIncluded()
+                ->withoutRelatedEndpoint(),
         ];
     }
 
@@ -54,6 +68,8 @@ abstract class BaseCrateResource extends AbstractResource
             WhereThrough::make('auditorCode', 'auditor.code'),
             WhereAny::make('search', Where::make('name'), WhereThrough::make('label', 'parcels.label')),
             WhereAny::make('anyCode', Where::make('name'), WhereThrough::make('code', 'vault.code')),
+            WhereMorph::make('subject'),
+            WhereMorph::make('marked', 'marks'),
         ];
     }
 }

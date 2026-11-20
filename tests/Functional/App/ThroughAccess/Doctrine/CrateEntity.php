@@ -18,6 +18,12 @@ class CrateEntity
     #[ORM\OneToMany(targetEntity: ParcelEntity::class, mappedBy: 'crate')]
     public Collection $parcels;
 
+    /**
+     * @var Collection<int, CrateMarkEntity>
+     */
+    #[ORM\OneToMany(targetEntity: CrateMarkEntity::class, mappedBy: 'crate')]
+    public Collection $marks;
+
     public function __construct(
         #[ORM\Id]
         #[ORM\Column(type: 'integer')]
@@ -36,7 +42,12 @@ class CrateEntity
         #[ORM\ManyToOne(targetEntity: LedgerEntity::class)]
         #[ORM\JoinColumn(nullable: true)]
         public ?LedgerEntity $auditor = null,
+        #[ORM\Column(nullable: true)]
+        public ?string $subjectType = null,
+        #[ORM\Column(nullable: true)]
+        public ?string $subjectId = null,
     ) {
         $this->parcels = new ArrayCollection();
+        $this->marks = new ArrayCollection();
     }
 }

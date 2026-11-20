@@ -206,7 +206,7 @@ final class RelationCriteriaFactory
             // RelationCountInterface seam).
             wantsCount: $wantsCount,
             request: $request,
-            paths: $resources !== null ? FilterPaths::of($resources, $relatedResource, $parentType, $this->readRouter?->admissionFor($resources)) : null,
+            paths: $resources !== null ? FilterPaths::of($resources, $relatedResource, $parentType, $this->readRouter?->admissionFor($resources), $this->readRouter?->morphAdmissionFor($resources)) : null,
         );
     }
 
@@ -229,7 +229,7 @@ final class RelationCriteriaFactory
             defaultSort: $this->defaultOrder($relation, $relatedResource, $pivotSorts),
             aliasOf: $pivotSorts ? $this->pivotSortAliases($relation) : [],
             request: $request,
-            paths: $resources !== null ? FilterPaths::of($resources, $relatedResource, $parentType, $this->readRouter?->admissionFor($resources)) : null,
+            paths: $resources !== null ? FilterPaths::of($resources, $relatedResource, $parentType, $this->readRouter?->admissionFor($resources), $this->readRouter?->morphAdmissionFor($resources)) : null,
         );
     }
 

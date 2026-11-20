@@ -38,6 +38,7 @@ final readonly class FilterPaths
      * @param list<string>                                                                        $named      the types a filter's path may name, see {@see named()}
      * @param (\Closure(RelationInterface, list<object>, JsonApiRequestInterface): list<object>)|null $admission the rows a provider's scope admits of those a relation reached, see {@see admit()}
      * @param list<RelationInterface>                                                             $refused    the relations through which the filter being applied matches no row
+     * @param (\Closure(RelationInterface, string, list<mixed>, JsonApiRequestInterface): list<mixed>)|null $morphAdmission the storage keys of a type a polymorphic relation stores that its provider admits, see {@see admitMorphTargets()}
      */
     public function __construct(
         private ThroughPathResolver $resolver,
@@ -49,17 +50,20 @@ final readonly class FilterPaths
         private ?\Closure $admission = null,
         private ?JsonApiRequestInterface $request = null,
         private array $refused = [],
+        private ?\Closure $morphAdmission = null,
     ) {}
 
     /**
      * The paths of filters running against `$resource`'s type, read over the types
      * `$resources` registers, or `null` when there is no resource and so no inventory.
      * `$admission` narrows the rows an in-memory walk reaches through a relation to those
-     * the related type's provider admits.
+     * the related type's provider admits, and `$morphAdmission` the targets a `WhereMorph`
+     * matches to those the target type's provider admits.
      *
      * @param (\Closure(RelationInterface, list<object>, JsonApiRequestInterface): list<object>)|null $admission
+     * @param (\Closure(RelationInterface, string, list<mixed>, JsonApiRequestInterface): list<mixed>)|null $morphAdmission
      */
-    public static function of(SerializerResolverInterface $resources, ?AbstractResource $resource, ?string $parentType = null, ?\Closure $admission = null): ?self
+    public static function of(SerializerResolverInterface $resources, ?AbstractResource $resource, ?string $parentType = null, ?\Closure $admission = null, ?\Closure $morphAdmission = null): ?self
     {
         if ($resource === null) {
             return null;
@@ -73,7 +77,7 @@ final readonly class FilterPaths
             $serializer = $resources->serializerFor($type);
 
             return $serializer instanceof AbstractResource ? $serializer->allFields() : null;
-        }, $resource::$type, self::namedBy($resource, $parentType), ThroughReadAccess::forResolver($resources), $admission);
+        }, $resource::$type, self::namedBy($resource, $parentType), ThroughReadAccess::forResolver($resources), $admission, morphAdmission: $morphAdmission);
     }
 
     /**
@@ -84,7 +88,7 @@ final readonly class FilterPaths
      */
     public function scoped(?JsonApiRequestInterface $request, array $refused = []): self
     {
-        return new self($this->resolver, $this->fields, $this->fieldsOf, $this->type, $this->named, $this->access, $this->admission, $request, $refused);
+        return new self($this->resolver, $this->fields, $this->fieldsOf, $this->type, $this->named, $this->access, $this->admission, $request, $refused, $this->morphAdmission);
     }
 
     /**
@@ -113,6 +117,22 @@ final readonly class FilterPaths
         }
 
         return $this->access->hopsOf($filter, $this->fields, $this->type);
+    }
+
+    /**
+     * The relations `$filter` reaches through for the requested `$value`, as
+     * {@see ThroughReadAccess::hopsOfRequested()} lists them: a `WhereMorph` reaches only
+     * the type the value names.
+     *
+     * @return list<RelationHop>
+     */
+    public function hopsOfRequested(FilterInterface $filter, mixed $value): array
+    {
+        if ($this->access === null || $this->type === null || $filter instanceof WhereHasMatching) {
+            return $this->hopsOf($filter);
+        }
+
+        return $this->access->hopsOfRequested($filter, $value, $this->fields, $this->type);
     }
 
     /**
@@ -162,6 +182,25 @@ final readonly class FilterPaths
         }
 
         return $this->admission === null || $this->request === null ? $rows : ($this->admission)($relation, $rows, $this->request);
+    }
+
+    /**
+     * The storage keys among `$keys`, targets of `$type` stored by the polymorphic
+     * `$relation`, that the type's provider admits for the caller: none through a refused
+     * relation, and all of them when no provider narrows them or there is no request to
+     * narrow for.
+     *
+     * @param list<mixed> $keys
+     *
+     * @return list<mixed>
+     */
+    public function admitMorphTargets(RelationInterface $relation, string $type, array $keys): array
+    {
+        if ($this->refuses($relation)) {
+            return [];
+        }
+
+        return $this->morphAdmission === null || $this->request === null ? $keys : ($this->morphAdmission)($relation, $type, $keys, $this->request);
     }
 
     /**

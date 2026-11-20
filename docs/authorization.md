@@ -367,6 +367,12 @@ filter inside a `WhereAll` or `WhereAny`.
 - **A filter default is never refused.** The client didn't ask for it, so it matches no
   row through a hop the caller may not read instead.
 
+A `WhereMorph` follows the same rules for the one type a request names. A target that
+type's scope hides never matches: on Doctrine its extensions narrow the stored ids the
+filter compares, and in memory its provider admits them. When the caller may not read that
+type through the relation, `filter[subject][type]=<type>` answers `403`, while naming
+another of the relation's types still filters.
+
 A path segment names the relation stored under it whose name it is, so when several
 relations share a storage member, the named relation's permission applies. The OpenAPI
 document lists `ACCESS_DENIED` on every operation whose filters, or whose
