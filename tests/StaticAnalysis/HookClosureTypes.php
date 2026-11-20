@@ -82,19 +82,16 @@ final class HookClosureTypes
         $provider = new InMemoryDataProvider(
             'albums',
             [],
-            static function (object $item): string {
-                \assert($item instanceof HookAlbum);
-
-                return (string) $item->id;
-            },
-            static function (object $item, string $id): void {
-                \assert($item instanceof HookAlbum);
-
+            static fn(HookAlbum $item): string => (string) $item->id,
+            static function (HookAlbum $item, string $id): void {
                 $item->id = (int) $id;
             },
         );
+        $seeded = new InMemoryDataProvider('albums', ['1' => new HookAlbum()], static fn(HookAlbum $item): string => (string) $item->id);
 
         return [
+            $seeded,
+            self::persisterOver(self::albums()),
             new InMemoryDataPersister(
                 'albums',
                 $provider->store(),
@@ -107,5 +104,23 @@ final class HookClosureTypes
             KeysetExpression::repeatable(static fn(string $suffix): string => 'COALESCE(a' . $suffix . '.rank, 0)'),
             NativeConstraints::make(new NotBlank())->schema(static fn(Schema $schema): Schema => $schema),
         ];
+    }
+
+    /**
+     * @return InMemoryDataProvider<HookAlbum>
+     */
+    private static function albums(): InMemoryDataProvider
+    {
+        return new InMemoryDataProvider('albums', [], static fn(HookAlbum $item): string => (string) $item->id);
+    }
+
+    /**
+     * @param InMemoryDataProvider<HookAlbum> $provider
+     *
+     * @return InMemoryDataPersister<HookAlbum>
+     */
+    private static function persisterOver(InMemoryDataProvider $provider): InMemoryDataPersister
+    {
+        return new InMemoryDataPersister('albums', $provider->store(), static fn(): HookAlbum => new HookAlbum());
     }
 }

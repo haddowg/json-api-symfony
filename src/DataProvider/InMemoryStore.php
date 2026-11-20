@@ -27,9 +27,12 @@ namespace haddowg\JsonApiBundle\DataProvider;
  * still throws on an id-less write, and a writable store with client-supplied ids
  * is unaffected.
  *
- * Entities flow as `object` (not a templated entity type) — the registry resolves
- * a provider/persister per type and never needs a narrower static type, matching
- * how the reference Doctrine adapter implements the SPIs over `object`.
+ * Entities flow as `object` inside the store, as the reference Doctrine adapter
+ * implements the SPIs over `object`. `TModel` types only what an application passes
+ * in, the seeded rows and the closures, so a closure typed on the stored class is
+ * accepted where the store is built.
+ *
+ * @template-covariant TModel of object = object
  */
 final class InMemoryStore
 {
@@ -73,9 +76,9 @@ final class InMemoryStore
     private readonly ?InMemorySnapshotCoordinator $coordinator;
 
     /**
-     * @param iterable<int|string, object>         $items    seed objects keyed by id
-     * @param (\Closure(object): string)|null      $identify reads an item's id; required only for writes
-     * @param (\Closure(object, string): void)|null $assignId writes a minted id onto an item; enables
+     * @param iterable<int|string, TModel>         $items    seed objects keyed by id
+     * @param (\Closure(TModel): string)|null      $identify reads an item's id; required only for writes
+     * @param (\Closure(TModel, string): void)|null $assignId writes a minted id onto an item; enables
      *                                                       store-provided (auto-increment) ids when set
      * @param ?InMemorySnapshotCoordinator         $coordinator coordinates a cross-store single-pass snapshot
      */
@@ -90,6 +93,10 @@ final class InMemoryStore
             }
         }
 
+        // The read and write SPIs hand the store `object`, so it holds the closures as
+        // taking any object.
+        /** @var (\Closure(object): string)|null $identify */
+        /** @var (\Closure(object, string): void)|null $assignId */
         $this->identify = $identify ?? static function (object $item): string {
             throw new \LogicException(\sprintf(
                 'This %s was seeded for reads only and cannot key a written item: '
