@@ -127,7 +127,7 @@ final readonly class ActionInvoker
                 return ErrorResponse::fromException(new ResourceNotFound());
             }
 
-            $input = $this->resolveAndHydrateInput($server, $descriptor, $handler, $body);
+            $input = $this->resolveAndHydrateInput($server, $descriptor, $handler, $body, $entity);
         }
 
         $filtered = $descriptor->takesFilters()
@@ -295,13 +295,15 @@ final readonly class ActionInvoker
      * CrudOperationHandler's validate-then-hydrate create idiom. The blank instance
      * is supplied by the handler when it implements
      * {@see ActionInputFactoryInterface} (a bespoke command DTO with no persister),
-     * else by the `inputType` persister's `instantiate()`.
+     * else by the `inputType` persister's `instantiate()`. `$entity` is the resource a
+     * resource-scope action was called on, `null` for a collection action.
      */
     private function resolveAndHydrateInput(
         ResolvingServerInterface $server,
         ActionDescriptor $descriptor,
         ActionHandlerInterface $handler,
         JsonApiRequestInterface $body,
+        ?object $entity,
     ): object {
         $inputType = $descriptor->inputType;
 
@@ -313,7 +315,10 @@ final readonly class ActionInvoker
 
         $resource = $handler instanceof ActionInputFactoryInterface || !$server instanceof Server ? null : $this->types->resourceFor($server, $inputType);
         if ($resource !== null) {
-            [$instance, $body] = $this->relateInput($server, $resource, $instance, $body);
+            // The input's members are compared with the resource the action was called on when
+            // the input reads as that resource's type, otherwise with the blank instance.
+            $current = $entity !== null && $inputType === $descriptor->type ? $entity : $instance;
+            [$instance, $body] = $this->relateInput($server, $resource, $instance, $body, $current);
         }
 
         $hydrated = $server->hydratorFor($inputType)->hydrate($body, $instance);
@@ -327,12 +332,13 @@ final readonly class ActionInvoker
      * of the type holds them, and returns the document without its relationships. Core's
      * hydration would assign the bare ids, which a property holding a collection or an
      * entity refuses. A relation written by its `fillUsing()` hook still gets the linkage,
-     * and a to-many that can't change its members is checked against the blank input
-     * first, as core checks it. A member that doesn't exist is a `404`.
+     * and a to-many that can't change its members is checked first against the members
+     * `$current` holds: the resource the action was called on, or the blank input. A
+     * member that doesn't exist is a `404`.
      *
      * @return array{object, JsonApiRequestInterface}
      */
-    private function relateInput(Server $server, AbstractResource $resource, object $instance, JsonApiRequestInterface $body): array
+    private function relateInput(Server $server, AbstractResource $resource, object $instance, JsonApiRequestInterface $body, object $current): array
     {
         /** @var array<string, mixed> $document */
         $document = (array) $body->getParsedBody();
@@ -356,8 +362,8 @@ final readonly class ActionInvoker
             }
 
             if (!$creating && $linkage instanceof ToManyRelationship && $relation instanceof GuardsMembershipInterface
-                && !$relation->allowsMembershipChangeFor($body, $instance)) {
-                $relation->assertMembershipUnchanged($body, $instance, CurrentMembers::of($server, $this->providers, $instance, $relation, $body), $linkage);
+                && !$relation->allowsMembershipChangeFor($body, $current)) {
+                $relation->assertMembershipUnchanged($body, $current, CurrentMembers::of($server, $this->providers, $current, $relation, $body), $linkage);
             }
 
             if (RelationFillHook::declaredOn($relation)) {

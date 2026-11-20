@@ -11,6 +11,7 @@ use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\AuthorResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\CommentResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\WriteOnlyRelationArticleResource;
+use haddowg\JsonApiBundle\Tests\Functional\App\WriteOnlyRelation\ReviseAnyPinnedComments;
 use haddowg\JsonApiBundle\Tests\Functional\App\WriteOnlyRelation\RevisePinnedComments;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
@@ -81,6 +82,7 @@ final class WriteOnlyRelationInMemoryTestKernel extends Kernel
 
         $services->set(WriteOnlyRelationArticleResource::class);
         $services->set(RevisePinnedComments::class);
+        $services->set(ReviseAnyPinnedComments::class);
         $services->set(AuthorResource::class);
         $services->set(CommentResource::class);
 
