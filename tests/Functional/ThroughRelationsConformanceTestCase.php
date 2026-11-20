@@ -75,6 +75,34 @@ abstract class ThroughRelationsConformanceTestCase extends JsonApiFunctionalTest
     }
 
     #[Test]
+    public function aDeserializedListIsComparedAtTheEndOfThePath(): void
+    {
+        self::assertSame(['1', '2', '5'], $this->leadIds('filter[templateGroup]=onboarding'));
+        self::assertSame(['1', '2', '4', '5'], $this->leadIds('filter[templateGroup][]=feedback&filter[templateGroup][]=onboarding'));
+        self::assertSame(['4'], $this->leadIds('filter[notTemplateGroup]=onboarding'));
+        // The enum checks the requested group, not the names it stands for.
+        $this->assertBadValue('filter[templateGroup]=Welcome', 'filter[templateGroup]');
+    }
+
+    #[Test]
+    public function anEmptyDeserializedListMatchesNothingAndExcludesNothing(): void
+    {
+        self::assertSame([], $this->leadIds('filter[templateGroup]=retired'));
+        self::assertSame(['1', '2', '4', '5'], $this->leadIds('filter[notTemplateGroup]=retired'));
+    }
+
+    #[Test]
+    public function aDeserializedDefaultIsInTheRequestedVocabulary(): void
+    {
+        self::assertSame(['4'], $this->ids('/thrAdvertisers'));
+        self::assertSame(['7'], $this->ids('/thrAdvertisers?filter[season]=mid'));
+        self::assertSame(['4', '7'], $this->ids('/thrAdvertisers?filter[season][]=early&filter[season][]=mid'));
+        // Only the hidden advertiser runs a late campaign, and none runs one in no season.
+        self::assertSame([], $this->ids('/thrAdvertisers?filter[season]=late'));
+        self::assertSame([], $this->ids('/thrAdvertisers?filter[season]=none'));
+    }
+
+    #[Test]
     public function aMissingRelationNeverMatchesAThroughFilter(): void
     {
         // Katherine has no campaign: no null test through the campaign matches her.
@@ -191,13 +219,24 @@ abstract class ThroughRelationsConformanceTestCase extends JsonApiFunctionalTest
     {
         self::assertSame(['1'], $this->ids('/thrCampaigns/' . ThroughFixtures::SPRING . '/leads?filter[templateName]=Welcome'));
         self::assertSame(['4', '1'], $this->ids('/thrCampaigns/' . ThroughFixtures::SPRING . '/leads?sort=-name'));
+        self::assertSame(['1'], $this->ids('/thrCampaigns/' . ThroughFixtures::SPRING . '/leads?filter[templateGroup]=onboarding'));
     }
 
     #[Test]
     public function relationshipQueriesApplyAThroughFilterAndSort(): void
     {
+        self::assertSame(['4'], $this->includedLeadIds('templateName]=Survey'));
+        self::assertSame(['4'], $this->includedLeadIds('templateGroup]=feedback'));
+        self::assertSame([], $this->includedLeadIds('templateGroup]=retired'));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function includedLeadIds(string $filter): array
+    {
         $response = $this->handle(
-            '/thrCampaigns/' . ThroughFixtures::SPRING . '?include=leads&relatedQuery[leads][filter][templateName]=Survey',
+            '/thrCampaigns/' . ThroughFixtures::SPRING . '?include=leads&relatedQuery[leads][filter][' . $filter,
             'GET',
             null,
             ['HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . RelationshipQueriesProfile::URI . '"'],
@@ -210,7 +249,8 @@ abstract class ThroughRelationsConformanceTestCase extends JsonApiFunctionalTest
         self::assertIsArray($relationships);
         $leads = $relationships['leads'] ?? null;
         self::assertIsArray($leads);
-        self::assertSame(['4'], self::idsOf($leads['data'] ?? null));
+
+        return self::idsOf($leads['data'] ?? null);
     }
 
     /**

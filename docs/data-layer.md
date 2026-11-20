@@ -640,7 +640,9 @@ Mechanics, all decided in the handler before the `CollectionCriteria` is built:
   `integer()` applies to every id in `filter[id]=1,banana,3`. A filter declared with
   `acceptsList()` is read through core's `ListValue::values()` instead, so with
   `acceptsList(delimited: false)` each array member is validated whole, commas
-  included, and a single string is a `400`;
+  included, and a single string is a `400`. A `WhereIn` or `WhereNotIn` runs its
+  `deserializeUsing()` after this check, so the constraints apply to the requested
+  values and never to the list it returns;
 - a requested key resolves through core's `FilterMatcher`, so a
   [filter family's](https://github.com/haddowg/json-api/blob/main/docs/filters.md#filter-families-keys-matched-by-prefix)
   key is validated against the constraints of the filter its resolver returns;

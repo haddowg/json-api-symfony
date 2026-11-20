@@ -74,6 +74,9 @@ abstract class BaseThrLeadResource extends AbstractResource
             WhereIdNotIn::make('owningCampaign'),
             WhereIn::make('templateName', 'name')->through('templates')->acceptsList(),
             WhereNotIn::make('notTemplateName', 'name')->through('templates'),
+            // A requested group stands for the template names it covers.
+            WhereIn::make('templateGroup', 'name')->through('templates')->enum(ThrTemplateGroup::class)->acceptsList()->deserializeUsing(ThrGroups::templateNames(...)),
+            WhereNotIn::make('notTemplateGroup', 'name')->through('templates')->enum(ThrTemplateGroup::class)->acceptsList()->deserializeUsing(ThrGroups::templateNames(...)),
             WhereNull::make('unarchived', 'archivedAt')->through('owningCampaign'),
             WhereSet::make('archived', 'archivedAt')->through('owningCampaign'),
             WhereHas::make('advertised', 'advertiser')->through('owningCampaign'),

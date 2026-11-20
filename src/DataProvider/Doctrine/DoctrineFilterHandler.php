@@ -1224,13 +1224,16 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
     /**
      * The members a set filter queries for: a declared list reads its value through
      * core's `ListValue::members()`, so an array-only list keeps a delimiter inside a
-     * member; any other set filter splits leniently through {@see toList()}.
+     * member; any other set filter splits leniently through {@see toList()}. A `WhereIn`
+     * or `WhereNotIn` then maps them through its `deserializeUsing()`.
      *
      * @return list<mixed>
      */
     private function members(WhereIn|WhereNotIn|WhereIdIn|WhereIdNotIn $filter, mixed $value): array
     {
-        return $filter->list?->members($value) ?? $this->toList($value, $filter->delimiter);
+        $members = $filter->list?->members($value) ?? $this->toList($value, $filter->delimiter);
+
+        return $filter instanceof WhereIn || $filter instanceof WhereNotIn ? $filter->comparedValues($members) : $members;
     }
 
     /**

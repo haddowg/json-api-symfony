@@ -770,9 +770,12 @@ A few translations carry nuance:
   core's `ListValue::members()`, as the in-memory handler does: an array as is, a
   string split on the delimiter while the list is delimited and kept whole when it is
   array-only. Without `acceptsList()` an array passes through and a string is split.
+  A `WhereIn` or `WhereNotIn` declaring `deserializeUsing()` then hands the members to
+  that closure in one call and binds the list it returns, as the in-memory handler does.
 - **Empty-list semantics.** `WhereIn`/`WhereIdIn` with an empty list match nothing
   (`IN ()` is not valid SQL, so the handler emits `1 = 0`); the negated variants
-  then match everything (a no-op).
+  then match everything (a no-op). An empty list a `deserializeUsing()` returns is
+  treated the same way.
 - **`WhereMorph` compares declared fields.** A `MorphTo` it filters must declare
   [`identifiedByColumns()`](relationships.md#a-morphto-stored-as-a-type-and-id-pair) and a
   `MorphToMany` must declare `identifiedByRows()`, since a closure from `identifiedBy()`
