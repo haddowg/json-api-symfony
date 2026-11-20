@@ -68,7 +68,7 @@ final class JsonSchemaServingTest extends JsonApiFunctionalTestCase
         self::assertInstanceOf(\haddowg\JsonApiBundle\OpenApi\JsonSchemaFactory::class, $factory);
 
         $expected = \json_decode(
-            (string) \json_encode($factory->forType('products'), \JSON_THROW_ON_ERROR),
+            (string) \json_encode($factory->forType('products'), \JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION),
             true,
             512,
             \JSON_THROW_ON_ERROR,
@@ -94,6 +94,17 @@ final class JsonSchemaServingTest extends JsonApiFunctionalTestCase
         // Relationships: the permissive placeholder — a bare object, no per-relation
         // narrowing in the standalone form.
         self::assertSame(['type' => 'object'], $this->nested($products, 'properties', 'relationships'));
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    public function aWholeFloatKeepsItsFractionInTheServedAggregate(): void
+    {
+        $response = $this->handle('/schemas.json');
+        $body = (string) $response->getContent();
+
+        self::assertStringContainsString('"exclusiveMinimum": 0.0', $body);
+        self::assertStringContainsString('"examples":[5.0]', \str_replace([' ', "\n"], '', $body));
     }
 
     /**

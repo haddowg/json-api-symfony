@@ -18,7 +18,7 @@ use Symfony\Component\HttpKernel\EventListener\AbstractSessionListener;
  */
 final class ConditionalResponder
 {
-    public const int JSON_FLAGS = \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE | \JSON_PRETTY_PRINT;
+    public const int JSON_FLAGS = \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE | \JSON_PRETTY_PRINT | \JSON_PRESERVE_ZERO_FRACTION;
 
     public function __construct(private readonly ?string $cacheControl = null) {}
 

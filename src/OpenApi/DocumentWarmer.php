@@ -169,7 +169,7 @@ final class DocumentWarmer implements CacheWarmerInterface
 
     private function encodeSchemas(\stdClass $schemas): string
     {
-        return (string) \json_encode($schemas, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE | \JSON_PRETTY_PRINT);
+        return (string) \json_encode($schemas, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE | \JSON_PRETTY_PRINT | \JSON_PRESERVE_ZERO_FRACTION);
     }
 
     private function writeStaticSchemas(string $server, string $json): void

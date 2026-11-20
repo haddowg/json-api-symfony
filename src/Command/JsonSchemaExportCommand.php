@@ -126,7 +126,7 @@ final class JsonSchemaExportCommand extends Command
 
     private function encode(\stdClass $document, bool $compact): string
     {
-        $flags = \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE;
+        $flags = \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE | \JSON_PRESERVE_ZERO_FRACTION;
 
         return (string) \json_encode($document, $compact ? $flags : $flags | \JSON_PRETTY_PRINT);
     }
