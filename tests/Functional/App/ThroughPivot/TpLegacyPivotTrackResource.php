@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App\ThroughPivot;
 
+use Doctrine\Common\Collections\Criteria;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\Id;
@@ -16,6 +17,7 @@ use haddowg\JsonApi\Resource\Filter\WhereHas;
 use haddowg\JsonApi\Resource\Filter\WhereThrough;
 use haddowg\JsonApi\Resource\Filter\WhereThroughIn;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
+use haddowg\JsonApiBundle\DataProvider\Doctrine\Filter\WhereHasMatching;
 
 /**
  * Tracks again, whose playlists declare one deprecated `pivot.`-prefixed filter, chosen by
@@ -49,6 +51,7 @@ final class TpLegacyPivotTrackResource extends AbstractResource
             'legacy-through-in-untyped' => [WhereThroughIn::make('note', 'pivot.note')],
             'legacy-has-untyped' => [WhereHas::make('noted', 'pivot.note')],
             'legacy-doesnt-have-untyped' => [WhereDoesntHave::make('unnoted', 'pivot.note')],
+            'legacy-has-matching-untyped' => [WhereHasMatching::criteria('pinned', 'pivot.note', Criteria::create()->where(Criteria::expr()->eq('text', 'pin')))],
             'legacy-grouped-untyped' => [WhereAny::make('search', WhereThrough::make('noteSearch', 'pivot.note.text'))],
             default => [],
         };

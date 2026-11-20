@@ -341,6 +341,8 @@ final class DoctrineThroughPivotTest extends JsonApiFunctionalTestCase
         yield 'a deprecated list traversal past the pivot row' => ['legacy-through-in-untyped', 'the filter "note" of relation "playlists", whose deprecated path "pivot.note"'];
         yield 'a deprecated WhereHas past the pivot row' => ['legacy-has-untyped', 'the filter "noted" of relation "playlists", whose deprecated path "pivot.note"'];
         yield 'a deprecated WhereDoesntHave past the pivot row' => ['legacy-doesnt-have-untyped', 'the filter "unnoted" of relation "playlists", whose deprecated path "pivot.note"'];
+        yield 'a WhereHasMatching past the pivot row' => ['legacy-has-matching-untyped', 'the filter "pinned" of relation "playlists", whose path "pivot.note" goes on from the pivot row to an entity no single registered type serves'];
+        yield 'the fix a WhereHasMatching takes' => ['legacy-has-matching-untyped', 'Register exactly one resource type for that entity.'];
         yield 'a deprecated traversal inside a group' => ['legacy-grouped-untyped', 'the filter "noteSearch" of relation "playlists"'];
         yield 'the entity no type serves' => ['legacy-has-untyped', $unserved];
         yield 'an entity several types serve' => ['legacy-through-several', 'which several types serve (tpNotes, tpNoteAliases)'];

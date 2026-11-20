@@ -1017,7 +1017,7 @@ relation's related type, even when another type serves the same entity. Every ot
 association past `pivot` needs exactly one registered type for the entity it targets, in
 both forms. An entity no type serves, or several serve, has no type whose rules could apply,
 so a filter reaching it fails the cache warm-up in either form, naming the filter and its
-path. Register one type for that entity, or move the filter to a `->through()` path that
+path. A `pivot.`-prefixed `WhereHasMatching` reaching one fails it too. Register one type for that entity, or move the filter to a `->through()` path that
 doesn't reach it.
 
 A [filter family](https://github.com/haddowg/json-api/blob/main/docs/filters.md#filter-families-keys-matched-by-prefix)

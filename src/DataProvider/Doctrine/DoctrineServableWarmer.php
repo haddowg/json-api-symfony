@@ -40,6 +40,7 @@ use haddowg\JsonApi\Resource\Through\PivotRowRelations;
 use haddowg\JsonApi\Resource\Through\ReachesThrough;
 use haddowg\JsonApiBundle\Action\ActionRegistry;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
+use haddowg\JsonApiBundle\DataProvider\Doctrine\Filter\WhereHasMatching;
 use haddowg\JsonApiBundle\DataProvider\FilterPaths;
 use haddowg\JsonApiBundle\DataProvider\PivotRowRelationRouter;
 use haddowg\JsonApiBundle\DataProvider\RelatedReadRouter;
@@ -409,7 +410,8 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
 
     /**
      * Refuses a deprecated `pivot.`-prefixed `WhereThrough`, `WhereThroughIn`, `WhereHas` or
-     * `WhereDoesntHave` whose path goes on from the pivot row to an entity no registered
+     * `WhereDoesntHave`, or a `pivot.`-prefixed {@see WhereHasMatching}, whose path goes on
+     * from the pivot row to an entity no registered
      * type serves, or several do: no type's scope or gate could apply to the rows it
      * reaches, as the `->through()` form already refuses.
      *
@@ -425,7 +427,7 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
             }
             $path = match (true) {
                 $filter instanceof WhereThrough, $filter instanceof WhereThroughIn => $filter->path,
-                $filter instanceof WhereHas, $filter instanceof WhereDoesntHave => $filter->relationship,
+                $filter instanceof WhereHas, $filter instanceof WhereDoesntHave, $filter instanceof WhereHasMatching => $filter->relationship,
                 default => null,
             };
             $segments = $path !== null ? \explode('.', $path) : [];
@@ -436,13 +438,17 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
             try {
                 $pivotRows->pivotRowRelation($relation, $type, $segments[1]);
             } catch (\LogicException $e) {
+                // WhereHasMatching has no through() form to migrate to.
+                $matching = $filter instanceof WhereHasMatching;
                 throw new \LogicException(\sprintf(
-                    'The JSON:API resource for type "%s" declares the filter "%s" of relation "%s", whose deprecated path "%s" goes on from the pivot row to an entity no single registered type serves, so no type\'s read rules can apply to the rows it reaches. %s Register exactly one resource type for that entity, or migrate the filter to a ->through() path that does not reach it.',
+                    'The JSON:API resource for type "%s" declares the filter "%s" of relation "%s", whose %spath "%s" goes on from the pivot row to an entity no single registered type serves, so no type\'s read rules can apply to the rows it reaches. %s Register exactly one resource type for that entity%s.',
                     $type,
                     $filter->key(),
                     $relation->name(),
+                    $matching ? '' : 'deprecated ',
                     $path,
                     $e->getMessage(),
+                    $matching ? '' : ', or migrate the filter to a ->through() path that does not reach it',
                 ), 0, $e);
             }
         }
