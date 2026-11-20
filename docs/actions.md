@@ -229,10 +229,12 @@ it reads them: through the foreign key for a relation declared with one, and kee
 the related type's scope hides, so a client restating the members it can see changes nothing.
 Restating them passes and adding or removing one is a `403`. A collection action has no resource, nor does
 an action whose input reads as another type, so it compares them with the blank instance,
-which holds none. Nothing is
+which holds none: any member it names is a `403`, and an empty list passes. Nothing is
 persisted, so the related entities' own sides are left as they are. An input from
 `ActionInputFactoryInterface` is hydrated by core alone, so its relationships hold the
-related ids.
+related ids. Its `cannotChangeMembership()` to-manys aren't checked at all, since the object
+the factory builds is no stored resource to compare them with; the factory or the handler
+decides what a change of them means.
 
 ### `Raw` — a non-JSON:API body (uploads, blobs)
 
