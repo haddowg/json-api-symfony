@@ -567,6 +567,28 @@ final class RelatedReadRouter implements ResetInterface
     }
 
     /**
+     * The members `$relation` reads through its foreign key for `$parent`, unpaged and
+     * unfiltered, under the related type's scope, as `[type, wire id]` pairs: the members a
+     * replacement of a membership-locked to-many is compared with.
+     *
+     * @return list<array{0: string, 1: string}>
+     */
+    public function foreignKeyMembers(Server $server, string $type, object $parent, RelationInterface $relation, JsonApiRequestInterface $request): array
+    {
+        $relatedType = $relation->relatedTypes()[0] ?? '';
+        $serializer = $server->serializerFor($relatedType);
+        $criteria = new CollectionCriteria(new QueryParameters(fields: [], includes: [], sort: [], filter: [], pagination: []), request: $request);
+        $members = [];
+        foreach ($this->foreignKeyPage($server, $type, $parent, $relation, $criteria, $request)->items as $row) {
+            if (\is_object($row)) {
+                $members[] = [$relatedType, $serializer->getId($row)];
+            }
+        }
+
+        return $members;
+    }
+
+    /**
      * `$parent`'s page of `$relation` read through its foreign key, as its related and
      * relationship endpoints serve it.
      *
