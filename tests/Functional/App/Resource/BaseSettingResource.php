@@ -17,8 +17,8 @@ use haddowg\JsonApi\Resource\Field\Union;
 
 /**
  * The union witness, shared by both providers: unions at the top level, inside an `Obj`
- * and as a list's elements, one required, one with an enum member and two with a `Date`
- * member, so each member's rules and storage can be checked where the union sits. A
+ * and as a list's elements, one required, one with an enum member, two with both an
+ * `Integer` and a `Decimal` member and two with a `Date` member, so each member's rules and storage can be checked where the union sits. A
  * required field of the application's own schema sits beside them.
  */
 abstract class BaseSettingResource extends AbstractResource
@@ -41,6 +41,8 @@ abstract class BaseSettingResource extends AbstractResource
                 Boolean::make(),
                 ArrayList::make()->of(Union::of(Str::make(), Integer::make())),
             )->required(),
+            Union::make('amount')->of(Str::make(), Integer::make(), Decimal::make(), Boolean::make())->nullable(),
+            Union::make('reading')->of(Integer::make()->min(100), Decimal::make()->max(10.0))->nullable(),
             Union::make('threshold')->of(Str::make()->in(['auto', 'off']), Integer::make()->min(0))->nullable(),
             Union::make('startsOn')->of(Date::make(), Boolean::make())->nullable(),
             Obj::make('window')->nullable()->fields(

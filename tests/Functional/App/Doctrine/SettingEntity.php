@@ -30,6 +30,10 @@ class SettingEntity
         #[ORM\Column(type: 'json', nullable: true)]
         public mixed $answer = null,
         #[ORM\Column(type: 'json', nullable: true)]
+        public mixed $amount = null,
+        #[ORM\Column(type: 'json', nullable: true)]
+        public mixed $reading = null,
+        #[ORM\Column(type: 'json', nullable: true)]
         public mixed $threshold = null,
         #[ORM\Column(type: 'json', nullable: true)]
         public mixed $startsOn = null,
