@@ -23,6 +23,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\ThroughPivot\ThroughPivotTestKern
 use haddowg\JsonApiBundle\Tests\Functional\App\ThroughPivot\TpAlbumEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\ThroughPivot\TpAuditorEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\ThroughPivot\TpEntryEntity;
+use haddowg\JsonApiBundle\Tests\Functional\App\ThroughPivot\TpErrorLogger;
 use haddowg\JsonApiBundle\Tests\Functional\App\ThroughPivot\TpPlaylistEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\ThroughPivot\TpPlaylistResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\ThroughPivot\TpTrackEntity;
@@ -346,6 +347,22 @@ final class DoctrineThroughPivotTest extends JsonApiFunctionalTestCase
         yield 'a deprecated traversal inside a group' => ['legacy-grouped-untyped', 'the filter "noteSearch" of relation "playlists"'];
         yield 'the entity no type serves' => ['legacy-has-untyped', $unserved];
         yield 'an entity several types serve' => ['legacy-through-several', 'which several types serve (tpNotes, tpNoteAliases)'];
+    }
+
+    #[Test]
+    public function aFamilyResolvingADeprecatedPathNoTypeCanGateAnswers500(): void
+    {
+        $response = $this->send('admin', '/tpFamilyTracks/1/playlists?filter[note.text]=pin');
+
+        self::assertSame(500, $response->getStatusCode(), (string) $response->getContent());
+        $logger = static::getContainer()->get('logger');
+        self::assertInstanceOf(TpErrorLogger::class, $logger);
+        self::assertCount(1, $logger->errors);
+        self::assertStringContainsString('The filter family "note" of relation "playlists" on type "tpFamilyTracks" resolved the filter "note.text" to the path "pivot.note.text", which goes on from the pivot row to an entity no single registered type serves', $logger->errors[0]);
+        self::assertStringContainsString('This is a declaration fault', $logger->errors[0]);
+
+        // Without the key the relation reads as before.
+        self::assertSame(['1', '2'], $this->ids('/tpFamilyTracks/1/playlists'));
     }
 
     #[Test]

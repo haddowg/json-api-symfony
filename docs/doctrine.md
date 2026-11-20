@@ -845,7 +845,9 @@ its arm like any custom filter. The same matching runs for the primary collectio
 related and relationship endpoints, `relatedQuery[<path>][filter]`, `?withCount`
 counts and a collection action's filters. The cache warmer cannot check a family's
 columns, since it resolves them only against a request. A traversal filter a family
-returns has its path resolved then too.
+returns has its path resolved then too. On a relation read through its pivot rows, a
+`pivot.`-prefixed path that reaches an entity no single registered type serves, which the
+warmer refuses on a declared filter, answers `500` and logs the family and the path.
 
 Source: [`DoctrineFilterHandler`](../src/DataProvider/Doctrine/DoctrineFilterHandler.php).
 

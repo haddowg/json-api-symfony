@@ -1024,7 +1024,11 @@ A [filter family](https://github.com/haddowg/json-api/blob/main/docs/filters.md#
 on the relation can resolve to a pivot filter too. The bundle resolves the family first
 and then treats what it returns as it treats an exact pivot filter: a `pivot.` column
 routes to the pivot alias and gets the field's cast wherever pivot filters apply, and
-where they don't its key is unrecognised just as the exact one is.
+where they don't its key is unrecognised just as the exact one is. The warm-up can't see the
+paths a family resolves, so a `pivot.`-prefixed path a family returns that reaches an entity
+no single registered type serves is refused when the request resolves it. The request answers
+`500` and the error log names the family, the filter and the path, since the declaration
+is at fault rather than the request.
 
 Pivot filters apply wherever the Doctrine provider reads the relation through its pivot
 query: the related and relationship endpoints, a Relationship Queries

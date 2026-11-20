@@ -124,11 +124,12 @@ final class ThroughPivotTestKernel extends Kernel
 
         $services = $container->services()->defaults()->autowire()->autoconfigure();
         $services->set(AccessTokenHandler::class);
+        $services->set('logger', TpErrorLogger::class)->public();
         $services->set(QueryCountingLogger::class)->public();
         $services->set(DbalLoggingMiddleware::class)
             ->args([new Reference(QueryCountingLogger::class)])
             ->tag('doctrine.middleware');
-        foreach ([HiddenTpUserExtension::class, TpUserResource::class, TpAuditorResource::class, TpPlaylistResource::class, TpTrackResource::class, TpAlbumResource::class] as $class) {
+        foreach ([HiddenTpUserExtension::class, TpUserResource::class, TpAuditorResource::class, TpPlaylistResource::class, TpTrackResource::class, TpAlbumResource::class, TpFamilyTrackResource::class] as $class) {
             $services->set($class);
         }
         if (self::$broken === 'association-class-without-stored-fields') {

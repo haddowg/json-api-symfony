@@ -20,6 +20,7 @@ use haddowg\JsonApi\Resource\Filter\HasDefaultValue;
 use haddowg\JsonApi\Resource\Filter\RelationFilters;
 use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Filter\WhereDoesntHave;
+use haddowg\JsonApi\Resource\Filter\WhereGroup;
 use haddowg\JsonApi\Resource\Filter\WhereHas;
 use haddowg\JsonApi\Resource\Filter\WhereIn;
 use haddowg\JsonApi\Resource\Filter\WhereNotIn;
@@ -174,7 +175,7 @@ final class RelationCriteriaFactory
         ?string $parentType = null,
     ): CollectionCriteria {
         $relationFilters = $includePivotFields
-            ? $this->withPivotCasts($relation)
+            ? $this->withPivotCasts($relation, $parentType)
             : $this->withoutPivotFilters($relation->allFilters());
         $filters = $this->mergeFilters($this->relatedFilters($relatedResource, $relation), $relationFilters);
 
@@ -393,16 +394,62 @@ final class RelationCriteriaFactory
      *
      * @return list<FilterInterface>
      */
-    private function withPivotCasts(RelationInterface $relation): array
+    private function withPivotCasts(RelationInterface $relation, ?string $parentType): array
     {
         $filters = [];
         foreach ($relation->allFilters() as $filter) {
             $filters[] = $filter instanceof FilterFamilyInterface
-                ? new PivotTreatedFilterFamily($filter, fn(FilterInterface $resolved): FilterInterface => $this->withPivotCast($relation, $resolved))
+                ? new PivotTreatedFilterFamily($filter, fn(FilterInterface $resolved): FilterInterface => $this->withPivotCast($relation, $this->guardFamilyPivotPath($filter, $relation, $parentType, $resolved)))
                 : $this->withPivotCast($relation, $filter);
         }
 
         return $filters;
+    }
+
+    /**
+     * Refuses a filter `$family` resolves whose `pivot.`-prefixed path goes on from the pivot
+     * row to an entity no single registered type serves. The cache warm-up refuses such a
+     * declared filter, but a family resolves its filters per request, so the fault surfaces
+     * here as a `500` rather than walking those rows without any type's scope or read rules.
+     *
+     * @throws \LogicException
+     */
+    private function guardFamilyPivotPath(FilterFamilyInterface $family, RelationInterface $relation, ?string $parentType, FilterInterface $filter): FilterInterface
+    {
+        if ($filter instanceof WhereGroup) {
+            foreach ($filter->children as $child) {
+                $this->guardFamilyPivotPath($family, $relation, $parentType, $child);
+            }
+
+            return $filter;
+        }
+
+        $pivotRows = $this->readRouter?->pivotRows();
+        $path = match (true) {
+            $filter instanceof WhereHas, $filter instanceof WhereDoesntHave, $filter instanceof WhereHasMatching => $filter->relationship,
+            $filter instanceof WhereThrough, $filter instanceof WhereThroughIn => $filter->path,
+            default => '',
+        };
+        $segments = \explode('.', $path);
+        if ($pivotRows === null || $parentType === null || !$relation instanceof PivotRelationInterface || \count($segments) < 2 || $segments[0] !== 'pivot') {
+            return $filter;
+        }
+
+        try {
+            $pivotRows->pivotRowRelation($relation, $parentType, $segments[1]);
+        } catch (\LogicException $e) {
+            throw new \LogicException(\sprintf(
+                'The filter family "%s" of relation "%s" on type "%s" resolved the filter "%s" to the path "%s", which goes on from the pivot row to an entity no single registered type serves, so no type\'s read rules can apply to the rows it reaches. %s This is a declaration fault the cache warm-up refuses on a declared filter: register exactly one resource type for that entity, or resolve the family to a path that does not reach it.',
+                $family->key(),
+                $relation->name(),
+                $parentType,
+                $filter->key(),
+                $path,
+                $e->getMessage(),
+            ), 0, $e);
+        }
+
+        return $filter;
     }
 
     /**
