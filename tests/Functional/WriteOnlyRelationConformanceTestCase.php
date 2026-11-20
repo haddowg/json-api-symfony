@@ -212,6 +212,43 @@ abstract class WriteOnlyRelationConformanceTestCase extends JsonApiFunctionalTes
 
     #[Test]
     #[Group('spec:actions')]
+    public function aPatchActionWhoseInputIsAnotherTypeComparesALockedToManyWithNoMembers(): void
+    {
+        // The action is called on an author, so the article its input names isn't read.
+        $this->pinComments(['1']);
+        $revise = fn(array $data): Response => $this->handle('/authors/1/-actions/revise-article', 'PATCH', ['data' => [
+            'type' => 'articles',
+            'id' => '1',
+            'relationships' => ['lockedSecretComments' => ['data' => $data]],
+        ]]);
+
+        $this->assertMembershipChangeProhibited($revise([['type' => 'comments', 'id' => '1']]));
+
+        $response = $revise([]);
+        self::assertSame(Response::HTTP_OK, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['pinned' => []], $this->decode($response)['meta'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:actions')]
+    public function aPatchActionsOwnInputTakesALockedWriteOnlyToManyUnchecked(): void
+    {
+        // The handler builds its own input, which is no stored article, so it decides what a
+        // change of the members means.
+        $this->pinComments(['1']);
+
+        $response = $this->handle('/articles/1/-actions/revise-command', 'PATCH', ['data' => [
+            'type' => 'articles',
+            'id' => '1',
+            'relationships' => ['lockedSecretComments' => ['data' => [['type' => 'comments', 'id' => '2'], ['type' => 'comments', 'id' => '1']]]],
+        ]]);
+
+        self::assertSame(Response::HTTP_OK, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['pinned' => ['2', '1']], $this->decode($response)['meta'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:actions')]
     public function aPatchActionsInputHoldsTheToManyItNames(): void
     {
         $response = $this->handle('/articles/1/-actions/revise', 'PATCH', ['data' => [

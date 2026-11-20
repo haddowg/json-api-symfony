@@ -319,6 +319,10 @@ final readonly class ActionInvoker
 
         $this->validate($server, $inputType, $body);
 
+        if ($handler instanceof ActionInputFactoryInterface) {
+            [$instance, $body] = $this->fillUnguarded($server, $inputType, $instance, $body);
+        }
+
         $resource = $handler instanceof ActionInputFactoryInterface || !$server instanceof Server ? null : $this->types->resourceFor($server, $inputType);
         if ($resource !== null) {
             // The input's members are compared with the resource the action was called on when
@@ -331,6 +335,51 @@ final readonly class ActionInvoker
         \assert(\is_object($hydrated));
 
         return $hydrated;
+    }
+
+    /**
+     * Fills each to-many declared `cannotChangeMembership()` that a `PATCH` input names onto an
+     * input from {@see ActionInputFactoryInterface}, as core's hydration would but without
+     * comparing its members, and returns the document without them. The factory's object is
+     * no stored resource, so the factory or the handler decides what a change of them means.
+     *
+     * @return array{object, JsonApiRequestInterface}
+     */
+    private function fillUnguarded(ResolvingServerInterface $server, string $inputType, object $instance, JsonApiRequestInterface $body): array
+    {
+        $resource = $server instanceof Server && $body->getMethod() === 'PATCH' ? $this->types->resourceFor($server, $inputType) : null;
+        /** @var array<string, mixed> $document */
+        $document = (array) $body->getParsedBody();
+        $data = $document['data'] ?? null;
+        if ($resource === null || !\is_array($data) || !\is_array($data['relationships'] ?? null)) {
+            return [$instance, $body];
+        }
+
+        $relationships = $data['relationships'];
+        foreach (\array_keys($relationships) as $name) {
+            $relation = $resource->relationNamed((string) $name);
+            if ($relation === null || !$relation->isToMany() || !$relation instanceof GuardsMembershipInterface
+                || $relation->isReadOnlyFor(false, $body) || !$body->hasToManyRelationship($relation->name())
+                || $relation->allowsMembershipChangeFor($body, $instance)) {
+                continue;
+            }
+
+            $filled = $relation->hydrateRelationship($instance, $body->getToManyRelationship($relation->name()));
+            \assert(\is_object($filled));
+            $instance = $filled;
+            unset($relationships[$name]);
+        }
+
+        if (\count($relationships) === \count($data['relationships'])) {
+            return [$instance, $body];
+        }
+
+        $data['relationships'] = $relationships;
+        $document['data'] = $data;
+        $stripped = $body->withParsedBody($document);
+        \assert($stripped instanceof JsonApiRequestInterface);
+
+        return [$instance, $stripped];
     }
 
     /**
