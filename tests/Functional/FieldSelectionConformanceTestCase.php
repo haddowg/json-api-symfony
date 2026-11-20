@@ -8,6 +8,7 @@ use haddowg\JsonApi\Schema\Profile\FieldSelectionProfile;
 use haddowg\JsonApiBundle\OpenApi\DocumentFactory;
 use haddowg\JsonApiBundle\Testing\SchemaConformanceTrait;
 use haddowg\JsonApiBundle\Testing\SchemaDocumentKind;
+use haddowg\JsonApiBundle\Tests\Functional\App\FieldSelection\EaselSerializer;
 use haddowg\JsonApiBundle\Tests\Functional\App\FieldSelection\FieldSelectionFactory;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\BasePanelResource;
 use PHPUnit\Framework\Attributes\Group;
@@ -31,6 +32,7 @@ abstract class FieldSelectionConformanceTestCase extends JsonApiFunctionalTestCa
     protected function setUp(): void
     {
         BasePanelResource::$summaryRequests = [];
+        EaselSerializer::$selections = [];
 
         parent::setUp();
     }
@@ -564,6 +566,78 @@ abstract class FieldSelectionConformanceTestCase extends JsonApiFunctionalTestCa
      * Clears whatever the data layer keeps between requests, so the next read loads from
      * the store.
      */
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    #[Group('spec:extensions-and-profiles')]
+    public function aSerializerOverrideIsTrimmedToTheSelectedKeys(): void
+    {
+        $response = $this->handle('/boards/1?fields[boards]=name,values.cap,address.geo.lat,rows.*.size.w');
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame([
+            'name' => 'Seed',
+            'values' => ['cap' => '10'],
+            'address' => ['geo' => ['lat' => 51.5]],
+            'rows' => [['size' => ['w' => 1]], ['size' => ['w' => 3]]],
+        ], $this->attributesOf($response));
+        self::assertSame(self::NARROWED, $response->headers->get('Content-Type'));
+        self::assertSame(['version' => '1.1', 'profile' => [FieldSelectionProfile::URI]], $this->jsonApiOf($response));
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    public function aSerializerOverrideNarrowsEveryResourceOfACollection(): void
+    {
+        $response = $this->handle('/boards?fields[boards]=values.region');
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $data = $this->decode($response)['data'] ?? null;
+        self::assertIsArray($data);
+        self::assertIsArray($data[0]);
+        self::assertSame(['values' => ['region' => 'EU']], $data[0]['attributes'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    public function aSerializerOverrideRendersAnAttributeListedWholeWhole(): void
+    {
+        $response = $this->handle('/boards/1?fields[boards]=values,values.cap');
+
+        self::assertSame(['values' => FieldSelectionFactory::SEED_VALUES], $this->attributesOf($response));
+        self::assertSame('application/vnd.api+json', $response->headers->get('Content-Type'));
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    public function aSerializerSelectingKeysReceivesTheSelectionAndIsStillTrimmed(): void
+    {
+        $response = $this->handle('/easels/1?fields[easels]=name,address.postcode,address.geo.lat');
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame([['address', ['postcode', 'geo.lat']]], EaselSerializer::$selections);
+        self::assertSame(['name' => 'Seed', 'address' => ['postcode' => 'AB1 2CD', 'geo' => ['lat' => 51.5]]], $this->attributesOf($response));
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    #[Group('openapi')]
+    public function aSerializerOverridesNarrowedResponseMatchesTheGeneratedSchema(): void
+    {
+        $response = $this->handle('/boards/1?fields[boards]=address.geo.lat,rows.*.label');
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $this->assertResponseMatchesGeneratedSchema($response, 'boards', SchemaDocumentKind::Single, fieldsets: ['boards' => 'address.geo.lat,rows.*.label']);
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    #[Group('spec:errors')]
+    public function aKeyTheOverridesResourceRejectsIsThe400(): void
+    {
+        $this->assertUnrecognized('/boards/1?fields[boards]=values.Cap', 'values.Cap');
+        $this->assertUnrecognized('/boards/1?fields[boards]=name.first', 'name.first');
+    }
+
     protected function detachPersistedState(): void {}
 
     private function assertUnrecognized(string $path, string $member): void

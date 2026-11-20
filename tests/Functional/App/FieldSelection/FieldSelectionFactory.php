@@ -46,6 +46,23 @@ final class FieldSelectionFactory
         return new InMemoryDataPersister('panels', self::createPanels()->store(), static fn(): Panel => new Panel());
     }
 
+    /**
+     * The seeded panel served as the `boards` type, rendered through a serializer override.
+     */
+    public static function createBoards(): InMemoryDataProvider
+    {
+        return self::panelsAs('boards');
+    }
+
+    /**
+     * The seeded panel served as the `easels` type, rendered through a serializer override
+     * that receives the selected keys.
+     */
+    public static function createEasels(): InMemoryDataProvider
+    {
+        return self::panelsAs('easels');
+    }
+
     public static function createCuratorsPersister(): InMemoryDataPersister
     {
         return new InMemoryDataPersister('curators', self::createCurators()->store(), static fn(): Curator => new Curator());
@@ -74,6 +91,22 @@ final class FieldSelectionFactory
                 \assert($item instanceof Panel);
 
                 $item->id = $id;
+            },
+        );
+    }
+
+    private static function panelsAs(string $type): InMemoryDataProvider
+    {
+        $panel = self::createPanels()->store()->find('1');
+        \assert($panel instanceof Panel);
+
+        return new InMemoryDataProvider(
+            $type,
+            ['1' => $panel],
+            static function (object $item): string {
+                \assert($item instanceof Panel);
+
+                return $item->id;
             },
         );
     }

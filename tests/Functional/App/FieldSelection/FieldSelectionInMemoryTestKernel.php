@@ -79,6 +79,18 @@ final class FieldSelectionInMemoryTestKernel extends Kernel
 
         $services->set(PanelResource::class);
         $services->set(CuratorResource::class);
+        $services->set(BoardResource::class);
+        $services->set(EaselResource::class);
+        $services->set(BoardSerializer::class);
+        $services->set(EaselSerializer::class);
+
+        $services->set('test.boards_provider', InMemoryDataProvider::class)
+            ->factory([FieldSelectionFactory::class, 'createBoards'])
+            ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+
+        $services->set('test.easels_provider', InMemoryDataProvider::class)
+            ->factory([FieldSelectionFactory::class, 'createEasels'])
+            ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
 
         $services->set('test.panels_provider', InMemoryDataProvider::class)
             ->factory([FieldSelectionFactory::class, 'createPanels'])

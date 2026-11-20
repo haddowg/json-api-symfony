@@ -596,7 +596,9 @@ rejects, a dotted member on any other field, a path past a key that isn't select
 `*` anywhere but after a selectable list, an index into a list and an empty key are the
 `400`
 `FIELDSET_MEMBER_UNRECOGNIZED` an [unknown member](configuration.md#unknown-sparse-fieldset-members)
-is. Request bodies are unchanged.
+is. Request bodies are unchanged. A type whose resource names a `serializer:` override
+is narrowed the same way, against the resource's fields, as
+[custom serializers](custom-serializers-hydrators.md) describes.
 
 `fields[type]` lists field names in JSON:API 1.1, so a response that narrows an
 attribute applies core's [Field Selection profile](https://haddowg.github.io/json-api/profiles/field-selection/).

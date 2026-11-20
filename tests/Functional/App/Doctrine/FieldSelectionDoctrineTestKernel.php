@@ -111,6 +111,10 @@ final class FieldSelectionDoctrineTestKernel extends Kernel
 
         $services->set(DoctrinePanelResource::class);
         $services->set(DoctrineCuratorResource::class);
+        $services->set(DoctrineBoardResource::class);
+        $services->set(DoctrineEaselResource::class);
+        $services->set(\haddowg\JsonApiBundle\Tests\Functional\App\FieldSelection\BoardSerializer::class);
+        $services->set(\haddowg\JsonApiBundle\Tests\Functional\App\FieldSelection\EaselSerializer::class);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void
