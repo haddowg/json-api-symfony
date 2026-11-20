@@ -735,8 +735,10 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         $ownerEntity = $ownerMetadata->getName();
 
         $entityManager = $query->getEntityManager();
-        // A pivot row's own paths are its entity's associations, not the related type's relations.
-        $relations ??= $alias === 'pivot' ? [] : $this->paths?->relationsAlong(\implode('.', $segments)) ?? [];
+        // A pivot row's own paths walk the relations its association entity holds, not the related type's.
+        $relations ??= $alias === 'pivot'
+            ? $this->paths?->pivotRelationsAlong('pivot.' . \implode('.', $segments)) ?? []
+            : $this->paths?->relationsAlong(\implode('.', $segments)) ?? [];
 
         // The first segment is the owning relationship; resolve its target as the
         // RELATED root and split off any remaining intermediate relationships and

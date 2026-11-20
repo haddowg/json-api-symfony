@@ -1,0 +1,3 @@
+# A deprecated pivot path is scoped and gated like its through form
+
+A `pivot.`-prefixed `WhereThrough`, `WhereThroughIn` or `WhereDoesntHave` walks the same associations of the pivot row's entity as its `->through()` form, so it now reads them as the same relations, the ones `DoctrinePivotRowRelations` names for the migrated form. Each hop gets its reached type's query extensions in the `EXISTS`, and core lists the same hops for the gate, so a hidden row never matches and an unreadable hop answers `403` whichever form a resource declares. An association whose entity no registered type serves, or several do, names no relation, so the deprecated form keeps walking it unscoped rather than failing a filter that worked; the migrated form refuses it at warm-up.

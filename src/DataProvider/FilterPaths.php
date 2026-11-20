@@ -280,6 +280,26 @@ final readonly class FilterPaths
     }
 
     /**
+     * The relation each segment after the leading `pivot` of a deprecated traversal's
+     * storage path walks, from the pivot row of the relation the filters run under, as
+     * core's {@see ThroughPathResolver::pivotRelationsAlong()} names them, so each hop gets
+     * its reached type's scope. Empty off a relation's reads, and short where a segment
+     * names no relation or reaches an entity no single registered type serves.
+     *
+     * @return list<RelationInterface>
+     */
+    public function pivotRelationsAlong(string $path): array
+    {
+        if ($this->under === null) {
+            return [];
+        }
+
+        $resolver = $this->fieldsOf !== null ? new ThroughPathResolver($this->fieldsOf, $this->resolver->pivotRows()) : $this->resolver;
+
+        return \array_map(static fn(array $stored): RelationInterface => $stored[0], $resolver->pivotRelationsAlong($path, $this->under));
+    }
+
+    /**
      * @throws \LogicException when the path ends on a polymorphic relation or the filter cannot compare what it ends on
      */
     public function resolve(FilterInterface $filter): FilterInterface

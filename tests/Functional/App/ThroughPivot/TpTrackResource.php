@@ -51,6 +51,7 @@ final class TpTrackResource extends AbstractResource
                     WhereThrough::make('legacyAddedBy', 'pivot.addedBy.name'),
                     WhereThroughIn::make('legacyAdder', 'pivot.addedBy'),
                     WhereDoesntHave::make('legacyUnaudited', 'pivot.auditor'),
+                    WhereThrough::make('legacyAuditedBy', 'pivot.auditor.name'),
                 )
                 ->withSorts(
                     SortByField::make('added', 'addedAt')->through('pivot'),

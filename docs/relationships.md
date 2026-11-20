@@ -508,8 +508,10 @@ Each key must name a sort the relation accepts: one of the related type's sorts,
 `withSorts()` sort or, on a pivot `belongsToMany`, a pivot field. A pivot key orders
 by the pivot field's stored column on every path, include batching included. The
 container warm-up checks the keys, so a typo fails `cache:clear` rather than every
-read. It also refuses a pivot key on a relation whose related type is served by a
-provider that doesn't read pivot rows, such as the in-memory provider. The OpenAPI
+read. It also refuses a pivot key, or a sort that reaches through the pivot row such as
+`SortByField::make('added', 'addedAt')->through('pivot')`, on a relation whose related type
+is served by a provider that doesn't read pivot rows, such as the in-memory provider, and
+names the relation and the sort. The OpenAPI
 document states the relation's own order as the `default` of the `sort` parameter on
 its relationship and related endpoints; the related type's default isn't the
 relation's, so it isn't stated there.
@@ -1005,10 +1007,15 @@ with a leading `pivot` segment, and the existence filters move with them:
 )
 ```
 
-The migrated filters apply on the same endpoints. Each association the path walks now
+The migrated filters apply on the same endpoints. Each association the path walks
 reaches a type: the registered type whose entity it targets, whose query extensions scope
-it, whose read rules gate it and whose encoder decodes its ids, so a row the old filter
-matched through a hidden target no longer matches.
+it, whose read rules gate it and whose encoder decodes its ids. The deprecated
+`pivot.`-prefixed forms reach the same types, so before and after migrating a filter
+hides the same rows and answers the same `403` to a caller who may not read a hop.
+Migrating needs exactly one registered type for the entity each association past `pivot`
+targets: an entity no type serves, or several serve, fails the cache warm-up once
+migrated, so it can't move until one type owns it. The deprecated form keeps reaching
+such an entity without any type's rules, as it always has.
 
 A [filter family](https://github.com/haddowg/json-api/blob/main/docs/filters.md#filter-families-keys-matched-by-prefix)
 on the relation can resolve to a pivot filter too. The bundle resolves the family first

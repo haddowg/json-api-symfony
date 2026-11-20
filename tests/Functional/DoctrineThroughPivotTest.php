@@ -277,10 +277,33 @@ final class DoctrineThroughPivotTest extends JsonApiFunctionalTestCase
     }
 
     #[Test]
-    public function theMigratedFormAppliesTheReachedTypesScopeWhereThePrefixedOneDidNot(): void
+    public function bothFormsHideTheRowsTheReachedTypesScopeHides(): void
     {
-        self::assertSame(['1'], $this->ids('/tpTracks/2/playlists?filter[legacyAddedBy]=ghost'));
-        self::assertSame([], $this->ids('/tpTracks/2/playlists?filter[addedBy]=ghost'));
+        foreach ([['legacyAddedBy=ghost', 'addedBy=ghost'], ['legacyAdder=3', 'adder=3'], ['legacyAdder=1,3', 'adder=1,3']] as [$legacy, $migrated]) {
+            foreach (['/tpTracks/2/playlists', '/tpTracks/2/relationships/playlists', '/tpTracks/1/playlists'] as $path) {
+                $expected = $this->ids($path . '?filter[' . \str_replace('=', ']=', $migrated));
+                self::assertSame($expected, $this->ids($path . '?filter[' . \str_replace('=', ']=', $legacy)), $legacy . ' on ' . $path);
+            }
+        }
+        self::assertSame([], $this->ids('/tpTracks/2/playlists?filter[legacyAddedBy]=ghost'));
+    }
+
+    #[Test]
+    public function bothFormsRefuseAHopTheCallerMayNotRead(): void
+    {
+        foreach ([['legacyAuditedBy]=audrey', 'auditedBy]=audrey'], ['legacyUnaudited]', 'unaudited]']] as [$legacy, $migrated]) {
+            foreach (['ada' => 403, 'admin' => 200] as $user => $status) {
+                $legacyResponse = $this->send($user, '/tpTracks/1/playlists?filter[' . $legacy);
+                $migratedResponse = $this->send($user, '/tpTracks/1/playlists?filter[' . $migrated);
+                self::assertSame($status, $legacyResponse->getStatusCode(), $legacy . ' for ' . $user . ': ' . $legacyResponse->getContent());
+                self::assertSame($migratedResponse->getStatusCode(), $legacyResponse->getStatusCode(), $legacy . ' for ' . $user);
+                if ($status === 403) {
+                    self::assertSame(self::at($this->decode($migratedResponse), 'errors', '0', 'code'), self::at($this->decode($legacyResponse), 'errors', '0', 'code'));
+                } else {
+                    self::assertSame($this->idsOf($this->decode($migratedResponse)), $this->idsOf($this->decode($legacyResponse)), $legacy);
+                }
+            }
+        }
     }
 
     #[Test]
