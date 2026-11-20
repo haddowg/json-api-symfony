@@ -10,6 +10,7 @@ use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Tests\Functional\App\PinnedConfigDefaults;
 use haddowg\JsonApiBundle\Tests\Functional\App\QueryCountingLogger;
+use haddowg\JsonApiBundle\Tests\Functional\App\WriteOnlyRelation\RevisePinnedComments;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Component\Config\Loader\LoaderInterface;
@@ -114,6 +115,7 @@ final class WriteOnlyRelationDoctrineTestKernel extends Kernel
             ->tag('doctrine.middleware');
 
         $services->set(DoctrineWriteOnlyRelationArticleResource::class);
+        $services->set(RevisePinnedComments::class);
         $services->set(DoctrineAuthorResource::class);
         $services->set(DoctrineCommentResource::class);
     }

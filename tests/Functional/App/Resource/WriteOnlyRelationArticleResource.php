@@ -12,6 +12,8 @@ use haddowg\JsonApi\Resource\Field\HasMany;
  * over the unique `pinnedComments` column declared `writeOnly()`. Being `withData()`,
  * it would be windowed on every Relationship Queries read if the read path still saw
  * it, and its unique column makes any such load easy to spot in the SQL log.
+ * `lockedSecretComments` is the same column, write-only too, and can't change its
+ * members, so a replace compares the comments the article holds.
  *
  * Not `final` so the Doctrine variant inherits the same declarations.
  */
@@ -22,6 +24,7 @@ class WriteOnlyRelationArticleResource extends BaseArticleResource
         return [
             ...parent::fields(),
             HasMany::make('secretComments', 'comments')->storedAs('pinnedComments')->withData()->writeOnly(),
+            HasMany::make('lockedSecretComments', 'comments')->storedAs('pinnedComments')->writeOnly()->cannotChangeMembership(),
         ];
     }
 }

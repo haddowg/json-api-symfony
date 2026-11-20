@@ -11,10 +11,12 @@ use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\Guard\ComputedSecretsU
 use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\Guard\ForeignKeyGuardKernel;
 use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\Guard\ImportsUserResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\Guard\KeyedItemsUserResource;
+use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\Guard\LockedWriteOnlySecretsUserResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\Guard\MisnamedKeyUserResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\Guard\UnkeyedItemsUserResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\Guard\UnkeyedProfileUserResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\Guard\UnkeyedSecretsUserResource;
+use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\Guard\UpdatableLockedWriteOnlySecretsUserResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\Guard\UpdatableWriteOnlySecretsUserResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\Guard\WriteOnlySecretsUserResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\ForeignKey\ImportSecrets;
@@ -76,6 +78,23 @@ final class ForeignKeyWarmUpTest extends KernelTestCase
         $this->expectExceptionMessage('Relation "secrets" on resource type "fk-users" reads type "fk-secrets", which a Doctrine query extension scopes');
 
         $this->bootWithSubject(UpdatableWriteOnlySecretsUserResource::class, [FkUserPersister::class]);
+    }
+
+    #[Test]
+    public function aMembershipLockedWriteOnlyToManyOfATypeThatTakesNoUpdateBootsClean(): void
+    {
+        // With no update, no request compares the members a user holds.
+        $this->bootWithSubject(LockedWriteOnlySecretsUserResource::class);
+        self::assertNotNull(static::$kernel);
+    }
+
+    #[Test]
+    public function aMembershipLockedWriteOnlyToManyOfATypeThatTakesAnUpdateFailsWarmUp(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('Relation "secrets" on resource type "fk-users" reads type "fk-secrets", which a Doctrine query extension scopes');
+
+        $this->bootWithSubject(UpdatableLockedWriteOnlySecretsUserResource::class, [FkUserPersister::class]);
     }
 
     #[Test]
