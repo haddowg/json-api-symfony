@@ -289,7 +289,7 @@ final class AlbumResource extends AbstractResource
      * A collection of albums, here or on another type's related endpoint, says how many of
      * its albums are explicit.
      */
-    public function documentMeta(OperationType $operation): iterable
+    public function documentMeta(OperationType $operation, ?string $relation = null): iterable
     {
         return match ($operation) {
             OperationType::FetchCollection => [

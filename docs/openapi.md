@@ -725,7 +725,7 @@ The music catalog's albums count the explicit albums on each page:
 use haddowg\JsonApi\OpenApi\Metadata\OperationType;
 use haddowg\JsonApi\Resource\Field\Integer;
 
-public function documentMeta(OperationType $operation): iterable
+public function documentMeta(OperationType $operation, ?string $relation = null): iterable
 {
     return match ($operation) {
         OperationType::FetchCollection => [
