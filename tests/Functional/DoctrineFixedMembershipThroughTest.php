@@ -158,6 +158,25 @@ final class DoctrineFixedMembershipThroughTest extends JsonApiFunctionalTestCase
     }
 
     #[Test]
+    #[Group('spec:actions')]
+    public function anActionAgreesWithAReplacementOverTheTracksTheScopeHides(): void
+    {
+        // As the replacement above does, naming the visible track keeps the hidden one.
+        $revise = fn(array $tracks): \Symfony\Component\HttpFoundation\Response => $this->handle('/playlists/2/-actions/revise', 'PATCH', ['data' => [
+            'type' => 'playlists',
+            'id' => '2',
+            'relationships' => ['tracks' => ['data' => $tracks]],
+        ]]);
+
+        $kept = $revise([['type' => 'tracks', 'id' => '3']]);
+        self::assertSame(200, $kept->getStatusCode(), (string) $kept->getContent());
+
+        $this->assertProhibited($revise([]));
+        $this->assertProhibited($revise([['type' => 'tracks', 'id' => '3'], ['type' => 'tracks', 'id' => '1']]));
+        self::assertSame(['3', '4'], $this->storedTracks(2));
+    }
+
+    #[Test]
     #[Group('spec:updating-resources')]
     public function aWholeResourceUpdateThatReordersTheTracksIsAllowed(): void
     {

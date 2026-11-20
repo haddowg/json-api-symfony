@@ -8,6 +8,7 @@ use haddowg\JsonApi\Schema\Profile\CountableProfile;
 use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
  * A relation declared with a foreign key reads the related rows whose foreign key holds
@@ -332,6 +333,32 @@ abstract class ForeignKeyConformanceTestCase extends JsonApiFunctionalTestCase
         }
         self::assertSame(200, $this->handle('/fk-users/ada/relationships/lockedItems', 'PATCH', ['data' => $same])->getStatusCode());
         self::assertSame(403, $this->handle('/fk-users/ada/relationships/lockedItems', 'PATCH', ['data' => [['type' => 'fk-items', 'id' => '1']]])->getStatusCode());
+        self::assertSame(['1', '2', '3', '4', '5'], $this->ids($this->fetch('/fk-users/ada/items?page[size]=10')['data'] ?? null));
+    }
+
+    #[Test]
+    #[Group('spec:actions')]
+    public function anActionComparesALockedToManyWithTheItemsTheForeignKeyReads(): void
+    {
+        // As a PATCH of ada does, the action reads the items holding ada's key.
+        $same = [];
+        foreach (['5', '4', '3', '2', '1'] as $id) {
+            $same[] = ['type' => 'fk-items', 'id' => $id];
+        }
+        $revise = fn(array $items): Response => $this->handle('/fk-users/ada/-actions/revise', 'PATCH', ['data' => ['type' => 'fk-users', 'id' => 'ada', 'relationships' => ['lockedItems' => ['data' => $items]]]]);
+
+        $kept = $revise($same);
+        self::assertSame(200, $kept->getStatusCode(), (string) $kept->getContent());
+
+        $dropped = $revise([['type' => 'fk-items', 'id' => '1']]);
+        self::assertSame(403, $dropped->getStatusCode(), (string) $dropped->getContent());
+        $errors = $this->decode($dropped)['errors'] ?? null;
+        self::assertIsArray($errors);
+        self::assertIsArray($errors[0] ?? null);
+        self::assertSame('MEMBERSHIP_CHANGE_PROHIBITED', $errors[0]['code'] ?? null);
+
+        $added = $revise([...$same, ['type' => 'fk-items', 'id' => '7']]);
+        self::assertSame(403, $added->getStatusCode(), (string) $added->getContent());
         self::assertSame(['1', '2', '3', '4', '5'], $this->ids($this->fetch('/fk-users/ada/items?page[size]=10')['data'] ?? null));
     }
 

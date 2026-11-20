@@ -114,6 +114,7 @@ class ForeignKeyDoctrineTestKernel extends Kernel
         $services->set(FkInboxResource::class);
         $services->set(FkImportResource::class);
         $services->set(ImportSecrets::class);
+        $services->set(ReviseLockedItems::class);
 
         $this->configureData($container, $services);
     }

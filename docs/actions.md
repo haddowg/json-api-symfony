@@ -220,8 +220,10 @@ its related entities, refilling a `Collection` the object already holds. Each me
 loaded through its type's provider, and one that doesn't exist is a `404`. A relation with
 a `fillUsing()` hook gets the linkage instead. A to-many declared `cannotChangeMembership()`
 is checked first. On an action called on a resource whose `inputType` is the mount type, the
-members the body names are compared with the ones that resource holds now, so restating them
-passes and adding or removing one is a `403`. A collection action has no resource, nor does
+members the body names are compared with the ones that resource holds now, read as a `PATCH` of
+it reads them: through the foreign key for a relation declared with one, and keeping the members
+the related type's scope hides, so a client restating the members it can see changes nothing.
+Restating them passes and adding or removing one is a `403`. A collection action has no resource, nor does
 an action whose input reads as another type, so it compares them with the blank instance,
 which holds none. Nothing is
 persisted, so the related entities' own sides are left as they are. An input from
