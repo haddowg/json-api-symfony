@@ -12,10 +12,8 @@ use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\DateTime;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Integer;
-use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApi\Resource\MetaContext;
-use haddowg\JsonApi\Resource\RelationshipMetaContext;
 use haddowg\JsonApi\Resource\RequestMetaContext;
 use haddowg\JsonApiBundle\Hook\HookContext;
 use haddowg\JsonApiBundle\Hook\ResourceLifecycleHooksInterface;
@@ -79,11 +77,12 @@ abstract class TrNoteResource extends AbstractResource implements ResourceLifecy
         ];
     }
 
-    public function relationshipDocumentMeta(RelationshipMetaContext $context): iterable
+    public function documentMeta(OperationType $operation): iterable
     {
-        return $context->isRelationship('items', Mode::Add)
-            ? [Integer::make('count')->required()->example(2)->extractUsing(static fn(TrNote $note): int => $note->items->count())]
-            : [];
+        return match ($operation) {
+            OperationType::AddRelationship => [Integer::make('count')->required()->example(2)->extractUsing(static fn(TrNote $note): int => $note->items->count())],
+            default => [],
+        };
     }
 
     public function beforeCreate(object $entity, HookContext $context): void

@@ -542,7 +542,7 @@ final class MetadataSource
     private function operationDescriptions(?AbstractResource $resource, string $type, string $serverName): array
     {
         $descriptions = [];
-        foreach (OperationType::cases() as $operation) {
+        foreach (OperationType::resourceOperations() as $operation) {
             $value = $resource?->describeOperation($operation)
                 ?? $this->descriptions?->operationDescriptionFor($type, $operation, $serverName);
             if ($value !== null) {
@@ -562,7 +562,7 @@ final class MetadataSource
     private function operationExtensions(string $type, string $serverName): array
     {
         $extensions = [];
-        foreach (OperationType::cases() as $operation) {
+        foreach (OperationType::resourceOperations() as $operation) {
             $set = $this->descriptions?->operationExtensionsFor($type, $operation, $serverName) ?? [];
             if ($set !== []) {
                 $extensions[$operation->value] = $set;

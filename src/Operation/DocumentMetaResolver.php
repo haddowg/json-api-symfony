@@ -16,9 +16,7 @@ use haddowg\JsonApi\Operation\RemoveFromRelationshipOperation;
 use haddowg\JsonApi\Operation\UpdateRelationshipOperation;
 use haddowg\JsonApi\Operation\UpdateResourceOperation;
 use haddowg\JsonApi\Resource\DocumentMeta;
-use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
-use haddowg\JsonApi\Resource\RelationshipMetaContext;
 use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\DataProvider\Polymorphism;
 use haddowg\JsonApiBundle\OpenApi\Metadata\DeclaredOperationResponse;
@@ -89,15 +87,11 @@ final class DocumentMetaResolver
             $operation instanceof UpdateRelationshipOperation, $operation instanceof AddToRelationshipOperation, $operation instanceof RemoveFromRelationshipOperation => $this->forRelationshipWrite(
                 $server,
                 $operation->target()->type,
-                new RelationshipMetaContext(
-                    (string) $operation->target()->relationship,
-                    match (true) {
-                        $operation instanceof AddToRelationshipOperation => Mode::Add,
-                        $operation instanceof RemoveFromRelationshipOperation => Mode::Remove,
-                        default => Mode::Replace,
-                    },
-                    $operation->context()->httpRequest()?->getAttribute(RequestMetaResolver::ATOMIC_ATTRIBUTE) === true,
-                ),
+                match (true) {
+                    $operation instanceof AddToRelationshipOperation => OperationType::AddRelationship,
+                    $operation instanceof RemoveFromRelationshipOperation => OperationType::RemoveRelationship,
+                    default => OperationType::UpdateRelationship,
+                },
             ),
             default => new DocumentMeta(),
         };
@@ -162,25 +156,19 @@ final class DocumentMetaResolver
     }
 
     /**
-     * The members of the meta-only `200` the relationship write `$context` names answers
-     * with, which the parent type `$type` declares. Empty when it declares none, so the
-     * write answers its linkage.
+     * The members of the meta-only `200` the relationship write `$operation`, one of
+     * {@see OperationType}'s relationship cases, answers with, which the parent type `$type`
+     * declares in `documentMeta()` for every relationship. Empty when it declares none, so
+     * the write answers its linkage.
      */
-    public function forRelationshipWrite(Server $server, string $type, RelationshipMetaContext $context): DocumentMeta
+    public function forRelationshipWrite(Server $server, string $type, OperationType $operation): DocumentMeta
     {
-        $key = \spl_object_id($server) . "\0" . $type . "\0relationship\0" . $context->describe();
-        if (!isset($this->declared[$key])) {
-            $declarer = $this->types->resourceFor($server, $type)
-                ?? ($server->hasSerializerFor($type) ? $server->serializerFor($type) : null);
-            $this->declared[$key] = DocumentMeta::forRelationship($declarer ?? new \stdClass(), $context, $type);
-        }
-
-        return $this->declared[$key];
+        return $this->forType($server, $type, $operation);
     }
 
     /**
      * The members of the job document a create's or an update's `202` answers with, which
-     * `$type` declares through `acceptedDocumentMeta()`.
+     * `$type` declares in `documentMeta()` for `CreateAccepted` or `UpdateAccepted`.
      */
     public function forAccepted(Server $server, string $type, OperationType $operation): DocumentMeta
     {

@@ -25,7 +25,6 @@ use haddowg\JsonApi\Resource\Field\StoresIdentifiersInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\ThroughPathResolver;
 use haddowg\JsonApi\Resource\MetaContext;
-use haddowg\JsonApi\Resource\RelationshipMetaContext;
 use haddowg\JsonApi\Resource\RequestMetaContext;
 use haddowg\JsonApi\Resource\Sort\KeysetSortInterface;
 use haddowg\JsonApi\Resource\Sort\RelationSorts;
@@ -261,7 +260,11 @@ final class ServableResourceWarmer implements CacheWarmerInterface
             foreach ($this->typeMetadata->relationsFor($server, $type) as $relation) {
                 foreach ($relation->isToMany() ? [Mode::Replace, Mode::Add, Mode::Remove] : [Mode::Replace] as $mode) {
                     $this->requestMeta->forWrite($server, $type, RequestMetaContext::forRelationship($relation->name(), $mode, $atomic));
-                    $this->documentMeta?->forRelationshipWrite($server, $type, new RelationshipMetaContext($relation->name(), $mode, $atomic));
+                    $this->documentMeta?->forRelationshipWrite($server, $type, match ($mode) {
+                        Mode::Add => OperationType::AddRelationship,
+                        Mode::Remove => OperationType::RemoveRelationship,
+                        default => OperationType::UpdateRelationship,
+                    });
                 }
                 if ($relation instanceof PivotRelationInterface) {
                     $relation->pivotMetaShape();

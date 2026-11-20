@@ -860,10 +860,12 @@ An action's handler declares its request `meta` per HTTP method by implementing 
 document-input action's `data.meta` is validated and applied against its input type's
 `resourceMeta()`, as a create of that type is.
 
-A relationship write answers a meta-only `200` when its type declares
-`relationshipDocumentMeta()` for that relation and mutation, its hooks receiving the parent,
-documented as `<Type><Rel><Kind>RelationshipDocument`. A create's or update's `202` job document
-carries what `acceptedDocumentMeta()` declares, and an action's `202` what its handler's
+A relationship write answers a meta-only `200` when its type's `documentMeta()` declares
+members for that write's case, `OperationType::UpdateRelationship`, `AddRelationship` or
+`RemoveRelationship`, which covers that write on every relationship of the type. Its hooks
+receive the parent, and it is documented as `<Type><Rel><Kind>RelationshipDocument`. A
+create's or update's `202` job document carries what `documentMeta()` declares for
+`CreateAccepted` or `UpdateAccepted`, and an action's `202` what its handler's
 `documentMeta(202)` declares; the persister's or action's own `meta` wins.
 
 Every declared `meta` object, pivot fields and `identifierMeta()` members included, is closed:

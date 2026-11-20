@@ -138,7 +138,7 @@ abstract class TypedRequestMetaConformanceTestCase extends JsonApiFunctionalTest
         self::assertSame([['type' => 'tr-items', 'id' => '2']], $this->decode($patch)['data'] ?? null, 'a replace declares no document meta, so it answers its linkage');
         self::assertSame(['reason' => 'swap'], TrMetaRecorder::$seen['tr-notes:BeforeRelationshipMutateEvent']['document'] ?? null);
 
-        // Adding answers the meta-only document its relationshipDocumentMeta() declares.
+        // Adding answers the meta-only document its documentMeta() declares for AddRelationship.
         $add = $this->handle('/tr-notes/1/relationships/items', 'POST', ['data' => [['type' => 'tr-items', 'id' => '1']], 'meta' => ['reason' => 'more']]);
         self::assertSame(200, $add->getStatusCode(), (string) $add->getContent());
         $document = $this->decode($add);

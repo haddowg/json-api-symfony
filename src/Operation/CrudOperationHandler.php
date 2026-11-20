@@ -59,7 +59,6 @@ use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\FilterMatcher;
 use haddowg\JsonApi\Resource\Filter\SupportsSingular;
 use haddowg\JsonApi\Resource\MetaContext;
-use haddowg\JsonApi\Resource\RelationshipMetaContext;
 use haddowg\JsonApi\Resource\RequestMetaContext;
 use haddowg\JsonApi\Resource\ResolvesCompletionRedirect;
 use haddowg\JsonApi\Resource\Sort\RelationSorts;
@@ -1856,7 +1855,11 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         // A type declaring this write's document meta answers a meta-only 200 instead of the
         // linkage, its hooks receiving the parent.
-        $documentMeta = $this->documentMeta?->forRelationshipWrite($server, $type, new RelationshipMetaContext($relationshipName, $mode, self::isAtomic($body)));
+        $documentMeta = $this->documentMeta?->forRelationshipWrite($server, $type, match ($mode) {
+            Mode::Add => OperationType::AddRelationship,
+            Mode::Remove => OperationType::RemoveRelationship,
+            default => OperationType::UpdateRelationship,
+        });
         $response = $documentMeta !== null && !$documentMeta->isEmpty()
             ? MetaResponse::fromMeta([])
             : IdentifierResponse::forRelationship($parent, $server->serializerFor($type), $relationshipName);
