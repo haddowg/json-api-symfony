@@ -34,6 +34,7 @@ use haddowg\JsonApiBundle\DataPersister\MovedMember;
 use haddowg\JsonApiBundle\DataPersister\PositionTargets;
 use haddowg\JsonApiBundle\DataPersister\ReportsMovedMembersInterface;
 use haddowg\JsonApiBundle\DataPersister\StoresDateTimesInterface;
+use haddowg\JsonApiBundle\DataPersister\StoresDecimalsInterface;
 use haddowg\JsonApiBundle\DataPersister\TransactionalDataPersisterInterface;
 use haddowg\JsonApiBundle\DataPersister\WritesForeignKeysInterface;
 use haddowg\JsonApiBundle\DataPersister\WritesLinkRowsInterface;
@@ -84,7 +85,7 @@ use Symfony\Contracts\Service\ResetInterface;
  * (`404`), rather than passing the raw wire string to `getReference` (which would
  * build a proxy that errors on initialization, surfacing as a `500`).
  */
-final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivotRowsInterface, TransactionalDataPersisterInterface, ReportsMovedMembersInterface, StoresDateTimesInterface, WritesLinkRowsInterface, WritesPositionsInterface, WritesForeignKeysInterface, ResetInterface
+final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivotRowsInterface, TransactionalDataPersisterInterface, ReportsMovedMembersInterface, StoresDateTimesInterface, StoresDecimalsInterface, WritesLinkRowsInterface, WritesPositionsInterface, WritesForeignKeysInterface, ResetInterface
 {
     private readonly DoctrineIdentifiers $ids;
 
@@ -730,6 +731,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
                 continue;
             }
 
+            $value = $this->decimalForColumn($row, $field, $value);
             if ($metadata->hasField($field) && \is_scalar($value)) {
                 $value = Type::getType($metadata->getTypeOfField($field) ?? 'string')
                     ->convertToPHPValue($value, $this->entityManager->getConnection()->getDatabasePlatform());
@@ -1088,6 +1090,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
             if ($field instanceof Union && !$this->holdsDateTimes($row, $column)) {
                 $value = $field->toStoredForm($value);
             }
+            $value = $this->decimalForColumn($row, $column, $value);
             $this->property($row, $column)->setValue($row, $this->dateTimeForColumn($row, $column, $value));
         }
     }
@@ -1108,6 +1111,11 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
         $type = $metadata->getTypeOfField($column);
 
         return $this->dates->asColumnClass($this->dates->toStorage($value, $type), $type);
+    }
+
+    public function decimalForColumn(object $entity, string $column, mixed $value): mixed
+    {
+        return (new DoctrineDecimalStorageCast($this->entityManager))->forColumn($entity, $column, $value);
     }
 
     public function holdsDateTimes(object $entity, string $column): bool

@@ -8,10 +8,12 @@ use haddowg\JsonApi\Resource\DeclaresRelatedOnlyTypesInterface;
 use haddowg\JsonApi\Resource\DeclaresSingletonTypesInterface;
 use haddowg\JsonApi\Resource\ProvidesOutputTimezoneInterface;
 use haddowg\JsonApi\Resource\ProvidesRelationAuthorizerInterface;
+use haddowg\JsonApi\Resource\ProvidesStorageCastInterface;
 use haddowg\JsonApi\Resource\RejectsReadOnlyAttributesInterface;
 use haddowg\JsonApi\Resource\RelationAuthorizerInterface;
 use haddowg\JsonApi\Resource\SerializerResolverInterface;
 use haddowg\JsonApi\Resource\SingletonContext;
+use haddowg\JsonApi\Resource\StorageCastInterface;
 use haddowg\JsonApi\Serializer\RelationshipCountInterface;
 use haddowg\JsonApi\Serializer\RelationshipLinkageInterface;
 use haddowg\JsonApi\Serializer\RelationshipLoadStateInterface;
@@ -38,7 +40,7 @@ use haddowg\JsonApi\Serializer\SerializerInterface;
  * builds renders in the server's zone, is withheld from a caller the relation's read
  * expression refuses, and a resource it resolves keeps its server's write rules and links.
  */
-final class PivotSubstitutingResolver implements SerializerResolverInterface, ProvidesOutputTimezoneInterface, ProvidesRelationAuthorizerInterface, RejectsReadOnlyAttributesInterface, DeclaresRelatedOnlyTypesInterface, DeclaresSingletonTypesInterface
+final class PivotSubstitutingResolver implements SerializerResolverInterface, ProvidesOutputTimezoneInterface, ProvidesRelationAuthorizerInterface, ProvidesStorageCastInterface, RejectsReadOnlyAttributesInterface, DeclaresRelatedOnlyTypesInterface, DeclaresSingletonTypesInterface
 {
     public function __construct(
         private readonly SerializerResolverInterface $inner,
@@ -89,6 +91,11 @@ final class PivotSubstitutingResolver implements SerializerResolverInterface, Pr
     public function relationAuthorizer(): ?RelationAuthorizerInterface
     {
         return $this->inner instanceof ProvidesRelationAuthorizerInterface ? $this->inner->relationAuthorizer() : null;
+    }
+
+    public function storageCast(): ?StorageCastInterface
+    {
+        return $this->inner instanceof ProvidesStorageCastInterface ? $this->inner->storageCast() : null;
     }
 
     public function rejectsReadOnlyAttributes(): bool

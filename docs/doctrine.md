@@ -460,6 +460,28 @@ carries each member's pivot values (see
   written back in that shape. A field with a custom `format()` is hydrated as sent, so if
   that format carries an offset, such as `D, d M Y H:i:s O`, its column stores the wall
   clock of the offset the client wrote.
+- **Numbers are written to a `decimal` column as decimal strings.** Doctrine reads a
+  `decimal` column as a string, so its property is usually typed `string`, while a
+  `Decimal` field hydrates a `float`. A number written to a `decimal` column, as an
+  attribute, a flattened `on()` attribute or a pivot field, reaches the entity as a plain
+  decimal string rounded and padded to the column's `scale`: at scale 2, `19.99` is stored
+  as `"19.99"`, `19.9` as `"19.90"`, `20` as `"20.00"` and `19.999` as `"20.00"`. On a
+  database with a decimal type the string matches what Doctrine reads back, so writing
+  the stored value again leaves the entity unchanged. SQLite has no decimal type and reads
+  the value back unpadded, `"19.9"` rather than `"19.90"` and `"20"` rather than `"20.00"`, so a value read back can
+  differ there from the string that was written. The member is the setter when the entity has
+  one, as core writes it, and the property otherwise. A member typed to refuse a string,
+  such as `float`, still gets the float. The value can't carry more digits than a PHP
+  `float` holds, since the request body is decoded as JSON first: `1.10000000000000001`
+  arrives as `1.1`.
+  A persister that decorates the Doctrine persister keeps the conversion for attributes,
+  which go through core's storage cast. A pivot value written to a declared link row asks
+  the persister instead, so a decorator that should store it as a decimal string
+  implements `haddowg\JsonApiBundle\DataPersister\StoresDecimalsInterface` and delegates `decimalForColumn()` to the Doctrine
+  persister. Without it, that value is written as the pivot field cast it, a `float`
+  that a property typed `string` refuses. A decorator of the Doctrine persister also
+  implements `Symfony\Contracts\Service\ResetInterface` and delegates `reset()`,
+  because Symfony moves the Doctrine persister's `kernel.reset` tag onto the decorator.
 
 The managed-update coupling is the one constraint a custom data layer must respect:
 a provider that returns a **detached** entity from `fetchOne` would silently break

@@ -81,6 +81,7 @@ final class LinkRowPivots
         SerializerResolverInterface $resolver,
         JsonApiRequestInterface $request,
         ?StoresDateTimesInterface $dates = null,
+        ?StoresDecimalsInterface $decimals = null,
     ): void {
         if ($mode === Mode::Remove || ($relation->storedPivotFields() === [] && !($relation->pivotAdditionalProperties()?->fills() ?? false))) {
             return;
@@ -118,6 +119,7 @@ final class LinkRowPivots
                 if ($field instanceof Union && $dates !== null && !$dates->holdsDateTimes($row, $column)) {
                     $value = $field->toStoredForm($value);
                 }
+                $value = $decimals?->decimalForColumn($row, $column, $value) ?? $value;
                 Accessor::set($row, $column, $dates?->dateTimeForColumn($row, $column, $value) ?? $value);
             }
         }
