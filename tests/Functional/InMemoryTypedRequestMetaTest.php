@@ -14,16 +14,21 @@ final class InMemoryTypedRequestMetaTest extends TypedRequestMetaConformanceTest
         return TypedRequestMetaInMemoryTestKernel::class;
     }
 
-    protected function afterBoot(): void
+    /**
+     * Seeds the stores before the kernel boots: a cold container's cache warm-up already
+     * builds the providers, which would keep serving stores seeded before a later reset.
+     */
+    protected function setUp(): void
     {
         TypedRequestMetaInMemoryTestKernel::reset();
+        parent::setUp();
     }
 
     protected function bootInDebug(): void
     {
         static::ensureKernelShutdown();
+        TypedRequestMetaInMemoryTestKernel::reset();
         static::bootKernel(['debug' => true]);
-        $this->afterBoot();
     }
 
     protected function sourceOf(string $id): ?string
