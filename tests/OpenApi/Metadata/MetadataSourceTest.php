@@ -117,12 +117,12 @@ final class MetadataSourceTest extends TestCase
     #[Test]
     public function itAdvertisesTheDefaultRegisteredProfilesInCanonicalOrder(): void
     {
-        // The bundle registers the three built-in profiles by default, in the canonical
+        // The bundle registers the four built-in profiles by default, in the canonical
         // order the OpenAPI jsonapi.profile enum lists them (docs/configuration.md). profiles()
         // reads the live registry the ServerFactory built, not a
         // hardcoded list.
         self::assertSame(
-            [CursorPaginationProfile::URI, CountableProfile::URI, RelationshipQueriesProfile::URI],
+            [CursorPaginationProfile::URI, CountableProfile::URI, RelationshipQueriesProfile::URI, \haddowg\JsonApi\Schema\Profile\NestedFieldsetsProfile::URI],
             $this->source()->forServer()->profiles(),
         );
     }
@@ -131,14 +131,14 @@ final class MetadataSourceTest extends TestCase
     public function theGeneratedDocumentAdvertisesTheRegisteredProfilesRelatedQueryAndWithCount(): void
     {
         // Projected through the core registration-aware projector, the
-        // default registration pins the jsonapi.profile enum to the three URIs in order,
+        // default registration pins the jsonapi.profile enum to the four URIs in order,
         // advertises the Relationship Queries `relatedQuery` parameter (articles declares
         // relations) as a $ref to the articles type's own component, and the Countable
         // `?withCount` parameter (articles is countable).
         $document = (new OpenApiProjector())->project($this->source()->forServer())->toArray();
 
         self::assertSame(
-            [CursorPaginationProfile::URI, CountableProfile::URI, RelationshipQueriesProfile::URI],
+            [CursorPaginationProfile::URI, CountableProfile::URI, RelationshipQueriesProfile::URI, \haddowg\JsonApi\Schema\Profile\NestedFieldsetsProfile::URI],
             $this->at($document, 'components', 'schemas', 'JsonApi', 'properties', 'profile', 'items', 'enum'),
         );
 
@@ -822,7 +822,7 @@ final class MetadataSourceTest extends TestCase
 
     /**
      * @param array<string, \haddowg\JsonApi\Serializer\SerializerInterface> $snippetSerializers a type -> standalone serializer map registered on the server
-     * @param list<class-string<\haddowg\JsonApi\Schema\Profile\ProfileInterface>>|null $profiles the profiles the server registers; null uses the ServerFactory default (the three built-ins)
+     * @param list<class-string<\haddowg\JsonApi\Schema\Profile\ProfileInterface>>|null $profiles the profiles the server registers; null uses the ServerFactory default (the four built-ins)
      */
     private function serverProvider(ResourceLocator $resourceLocator, array $snippetSerializers, ?array $profiles = null): ServerProvider
     {

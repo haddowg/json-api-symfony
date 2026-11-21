@@ -19,7 +19,7 @@ use Psr\Container\ContainerInterface;
 
 /**
  * Characterizes how {@see ServerFactory} registers the server's JSON:API profiles
- * (docs/configuration.md): data-driven from `json_api.profiles`, defaulting to the three
+ * (docs/configuration.md): data-driven from `json_api.profiles`, defaulting to the four
  * built-ins in the canonical order the OpenAPI `jsonapi.profile` enum lists them, and
  * trimmable/overridable by a consumer. Registration order is
  * significant — it is the order the enum is generated in and must match the Laravel
@@ -29,10 +29,10 @@ use Psr\Container\ContainerInterface;
 final class ServerFactoryProfilesTest extends TestCase
 {
     #[Test]
-    public function itRegistersTheThreeBuiltInProfilesInCanonicalOrderByDefault(): void
+    public function itRegistersTheFourBuiltInProfilesInCanonicalOrderByDefault(): void
     {
         self::assertSame(
-            [CursorPaginationProfile::URI, CountableProfile::URI, RelationshipQueriesProfile::URI],
+            [CursorPaginationProfile::URI, CountableProfile::URI, RelationshipQueriesProfile::URI, \haddowg\JsonApi\Schema\Profile\NestedFieldsetsProfile::URI],
             $this->registeredUris($this->factory()),
         );
     }

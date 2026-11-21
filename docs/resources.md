@@ -519,6 +519,111 @@ fieldset (present unless excluded), and is orthogonal to `hidden()` / `writeOnly
 (never rendered even when named). Applies to relations too. Witnessed over HTTP in
 `tests/Functional/SparseByDefaultFieldTest.php` (see core's [fields](https://github.com/haddowg/json-api/blob/main/docs/fields.md)).
 
+### Nested fieldsets
+
+A data table showing one column per key of the same object attribute reads a few keys
+for every row. An `Obj` or a `Map` declaring `nestedFieldset()` lets the request
+name those keys alone, as `<attribute>.<key>` members of `fields[type]`. The example's
+`AlbumResource` does it for `credits`, keyed by role:
+
+```php
+Obj::make('credits')->nullable()
+    ->additionalProperties(Str::make('*'))
+    ->nestedFieldset(pattern: '[a-z][a-z_]*'),
+```
+
+```
+GET /albums/1?fields[albums]=title,credits.producer,credits.artwork
+```
+
+The album renders `title` and a `credits` object holding only `producer` and
+`artwork`. `nestedFieldset()` also takes a predicate,
+`fn (string $key, JsonApiRequestInterface $request): bool`, alone or with the pattern.
+An `extractUsing()` hook on the field receives the selected keys as a fourth
+`?NestedFieldset $fieldset` argument, so a reader can load only those, and the value is
+trimmed to them whatever it returns. Doctrine still loads the entity and its `json`
+column whole; only a hook can read less.
+
+A key whose own object declares `nestedFieldset()` can be narrowed in turn, one key per
+level. With an `address` declared as
+
+```php
+Obj::make('address')->nullable()
+    ->fields(
+        Str::make('street'),
+        Str::make('postcode'),
+        Obj::make('geo')->fields(Decimal::make('lat'), Decimal::make('lng'))->nestedFieldset(pattern: 'lat|lng'),
+    )
+    ->nestedFieldset(pattern: '[a-z]+'),
+```
+
+`fields[people]=address.geo.lat` renders `address` holding only `geo`, and `geo` holding
+only `lat`; the street, the postcode and `lng` stay out. Listing a key whole beside a path
+into it, `address.geo,address.geo.lat`, renders all of `geo`. An object that declares no
+nested fieldset is selected whole, and a longer path below it is an unknown member. The
+hook's `NestedFieldset` carries the nested fieldset inside each key: `$fieldset->nested('geo')` is
+the nested fieldset inside `geo`, and `$fieldset->paths()` lists every selected path, such as
+`postcode` and `geo.lat`.
+
+A list reaches every item through `*` when its element is an `Obj` declaring
+`nestedFieldset()`. The example's `editions` does it for a discography table:
+
+```php
+ArrayList::make('editions')->nullable()
+    ->of(Obj::make('edition')->fields(
+        Str::make('format'),
+        Integer::make('year'),
+        Str::make('label'),
+    )->nestedFieldset(pattern: 'format|year|label')),
+```
+
+```
+GET /albums/1?fields[albums]=title,editions.*.format,editions.*.year
+```
+
+renders every edition, in order, each holding only `format` and `year`. The element's
+declaration decides the keys after `*`, and a path keeps going through nested objects and
+lists, as `<attribute>.*.<key>.<key>`. `editions.*` alone is read as `editions`: it
+selects the whole list, narrows nothing and brings no profile. Listing `editions` whole
+beside a wildcard path renders every item whole. `*` on a scalar,
+an object, a list of scalars or a list whose element declares no nested fieldset is an
+unknown member, as is an index such as `editions.0`. A list's hook receives a
+`NestedFieldset` holding `*`, whose `items()` is the nested fieldset inside every item.
+
+A `OneOf` takes keys wherever it sits, as an attribute, a child of an object or the items
+of a list, once a variant opts in. Each variant declares its keys on its own `Obj`, given to
+`variant()` as the one `Obj` named for the variant or returned from `variants()` for a
+discriminator bound to an enum. A key is accepted when one variant accepts it, and every
+value renders its discriminator and the selected keys its own variant accepts, so
+`fields[panels]=hero.src` renders an image hero's `kind` and `src` and only a video hero's
+`kind`. A variant that declares no nested fieldset renders only its discriminator under a
+nested fieldset.
+
+The bundle applies the request rules core defines everywhere the type renders: primary
+data, `included`, related endpoints, a write answering with the resource, and atomic
+results. Listing the attribute itself as well renders all of it. A key the declaration
+rejects, a dotted member on any other field, a path past a key that declares no nested fieldset, a
+`*` anywhere but after a list whose element declares one, an index into a list and an empty key are the
+`400`
+`FIELDSET_MEMBER_UNRECOGNIZED` an [unknown member](configuration.md#unknown-sparse-fieldset-members)
+is. Request bodies are unchanged. A type whose resource names a `serializer:` override
+is narrowed the same way, against the resource's fields, as
+[custom serializers](custom-serializers-hydrators.md) describes.
+
+`fields[type]` lists field names in JSON:API 1.1, so a response that narrows an
+attribute applies core's [Nested Fieldsets profile](https://haddowg.github.io/json-api/profiles/nested-fieldsets/).
+A client never sends it. The bundle registers the profile by default, so a narrowed
+response's `Content-Type` carries `profile="https://haddowg.github.io/json-api/profiles/nested-fieldsets/"`
+and its `jsonapi.profile` lists the URI, while a request narrowing nothing gets the
+response it always did. The generated OpenAPI document lists the profile with the others
+and gives each `fields[type]` parameter an `anyOf` of the member enum and one pattern per
+attribute with a nested fieldset, nested path or path through a list, such as
+`^address\.geo\.(?:lat|lng)$` and `^editions\.\*\.(?:format|year|label)$`. Witnessed over HTTP on both providers
+in `tests/Functional/NestedFieldsetsConformanceTestCase.php` and in the example's
+[`NestedFieldsetsTest`](../examples/music-catalog-symfony/tests/NestedFieldsetsTest.php);
+core's [field types](https://github.com/haddowg/json-api/blob/main/docs/field-types.md#nested-fieldsets)
+cover the declaration.
+
 ### Choosing a relationship's target type
 
 A relation declares the resource type it points at as the mandatory second argument

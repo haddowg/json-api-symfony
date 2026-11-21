@@ -77,6 +77,16 @@ class Album
     #[ORM\Column(type: 'json', nullable: true)]
     public ?array $releaseInfo = null;
 
+    // Who did what on the album, keyed by role, in one JSON column.
+    /** @var array<string, string>|null */
+    #[ORM\Column(type: 'json', nullable: true)]
+    public ?array $credits = null;
+
+    // Every edition of the album, in one JSON column.
+    /** @var list<array<string, mixed>>|null */
+    #[ORM\Column(type: 'json', nullable: true)]
+    public ?array $editions = null;
+
     // Cover artwork, attached by the Raw-input `artwork` upload action. It is
     // never set through the CRUD write path — only the custom upload action fills
     // it — so it stays null until uploaded.

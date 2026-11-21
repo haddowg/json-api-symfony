@@ -65,7 +65,7 @@ witness).
 | `reject_read_only_attributes` | bool | `false` | Answer a create or update that sends an attribute the client cannot write in that request, such as a `readOnly()` or computed one, with a `403 ATTRIBUTE_WRITE_PROHIBITED` pointing at each such attribute, instead of ignoring it. The check runs before validation, so it wins over a `422`. Named servers inherit it. |
 | `exceptions` | map | `{}` | Map an exception class to an HTTP status, so a thrown instance renders as a JSON:API error with that status. See [errors](errors.md#facet-1--the-json_apiexceptions-config-map). |
 | `error_codes.paths` | list | `[]` | Directories scanned at build time for your `DescribedErrorInterface` exceptions, which the OpenAPI error catalogue then documents beside core's. See [errors](errors.md#documenting-your-own-error-codes). |
-| `profiles` | list | the three built-ins | The `ProfileInterface` classes every server recognizes: `CursorPaginationProfile`, `CountableProfile` and `RelationshipQueriesProfile` by default. Drop one to stop recognizing and advertising it (its query parameters leave the OpenAPI document too), or add your own class. |
+| `profiles` | list | the four built-ins | The `ProfileInterface` classes every server recognizes: `CursorPaginationProfile`, `CountableProfile`, `RelationshipQueriesProfile` and `NestedFieldsetsProfile` by default. Drop one to stop recognizing and advertising it (its query parameters leave the OpenAPI document too), or add your own class. Without `NestedFieldsetsProfile` a request still selects keys of an attribute declaring a [nested fieldset](resources.md#nested-fieldsets), but the response no longer advertises the profile. |
 | `openapi` | map | see [OpenAPI](openapi.md) | Document generation, serving, the viewer, `describedby` links, examples and security schemes. Every key is covered on the [OpenAPI](openapi.md) page. |
 | `servers` | map | `[]` | Additional **named** servers, keyed by name. Each takes `base_uri`, `version`, `output_timezone`, `link_objects`, `reject_read_only_attributes`, `openapi_examples` and a [`defaults`](#per-server-defaults) block of its own. |
 
@@ -386,8 +386,10 @@ declared field at all (a real typo): naming a hidden field is tolerated (a hidde
 name and a bogus name behave identically, so there is no information leak), as is `id`
 or a non-sparse field. A `fields[type]` for a type the server cannot resolve (an
 unregistered type) is left alone — only unknown *members* of *known* types are
-rejected. Setting `strict_query_parameters: false` stands this member check down too,
-restoring the silent-drop behaviour.
+rejected. An `<attribute>.<key>` member is known when the attribute declares a
+[nested fieldset](resources.md#nested-fieldsets) that accepts the key;
+any other dotted member is unknown. Setting `strict_query_parameters: false` stands this
+member check down too, restoring the silent-drop behaviour.
 
 ## Response headers (caching and deprecation)
 

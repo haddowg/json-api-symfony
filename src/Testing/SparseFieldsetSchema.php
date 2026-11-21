@@ -16,6 +16,13 @@ use haddowg\JsonApi\OpenApi\ComponentNaming;
  * `attributes` / `relationships` members at all (a fieldset can omit either entirely).
  * Members inside the fieldset stay required, and a type without a fieldset is untouched.
  *
+ * A `<attribute>.<key>` member selects keys of an attribute, as the Nested Fieldsets
+ * profile does at runtime: the attribute stays required, and its schema drops its
+ * `required` keys and admits only the selected ones. A longer member such as
+ * `<attribute>.<key>.<key>` narrows the nested object's schema the same way, and
+ * `<attribute>.*.<key>` narrows the `items` of a list's schema. Listing the attribute, a
+ * key, or a list's items as `<attribute>.*`, whole as well keeps its schema whole.
+ *
  * The patch targets the type's `<Base>Resource` component, so primary data and
  * `included` resources (which `$ref` the same component) follow their type's fieldset.
  *
@@ -92,13 +99,142 @@ final class SparseFieldsetSchema
                 continue;
             }
 
+            [$whole, $selections] = self::split($members);
+            $kept = static fn(string $name): bool => \in_array($name, $whole, true) || isset($selections[$name]);
+
             foreach (['attributes', 'relationships'] as $member) {
                 $schema = self::resolve($schemas, $properties->{$member} ?? null);
-                if ($schema !== null) {
-                    self::keepRequired($schema, static fn(string $name): bool => \in_array($name, $members, true));
+                if ($schema === null) {
+                    continue;
+                }
+                self::keepRequired($schema, $kept);
+
+                $fields = $schema->properties ?? null;
+                if ($member !== 'attributes' || !$fields instanceof \stdClass) {
+                    continue;
+                }
+                foreach ($selections as $name => $keys) {
+                    if (isset($fields->{$name})) {
+                        $fields->{$name} = self::narrow($schemas, $fields->{$name}, $keys);
+                    }
                 }
             }
         }
+
+        return $copy;
+    }
+
+    /**
+     * Splits a fieldset into the fields it lists whole and the keys it selects per
+     * attribute, the attribute name up to the first `.` and the rest of the member after
+     * it. An attribute also listed whole is not narrowed.
+     *
+     * @param list<string> $members
+     *
+     * @return array{list<string>, array<string, list<string>>}
+     */
+    private static function split(array $members): array
+    {
+        $whole = [];
+        $selections = [];
+        foreach ($members as $member) {
+            $dot = \strpos($member, '.');
+            if ($dot === false) {
+                $whole[] = $member;
+            } else {
+                $selections[\substr($member, 0, $dot)][] = \substr($member, $dot + 1);
+            }
+        }
+
+        return [$whole, \array_diff_key($selections, \array_flip($whole))];
+    }
+
+    /**
+     * A copy of an attribute's schema narrowed to `$keys`: an object schema keeps only
+     * the selected declared properties, requires none, and admits no other member name.
+     * A dotted key is a path, so the property it starts with is narrowed in turn to the
+     * rest of it, unless the key is also selected whole. A list schema selected through
+     * `*` narrows its `items` to the rest of each path, unless `*` is also selected whole.
+     * A local `$ref` is inlined so a shared component stays whole for other uses, and each
+     * branch of an `allOf`, `anyOf` or `oneOf` is narrowed in turn. A discriminated union
+     * stays a `oneOf`, each branch keeping its discriminator required beside the selected
+     * members, so the discriminator's `const` still pins one branch. An undiscriminated
+     * union becomes an `anyOf`, since a value narrowed to fewer members can fit more than one
+     * of its branches.
+     *
+     * @param list<string> $keys
+     * @param list<string> $kept members kept whatever the selection, as a union's discriminator
+     */
+    private static function narrow(\stdClass $schemas, mixed $schema, array $keys, int $depth = 0, array $kept = []): mixed
+    {
+        if (!$schema instanceof \stdClass || $depth > 8) {
+            return $schema;
+        }
+
+        $copy = clone $schema;
+        $ref = $copy->{'$ref'} ?? null;
+        if (\is_string($ref) && \str_starts_with($ref, self::SCHEMA_PREFIX)) {
+            $target = $schemas->{\substr($ref, \strlen(self::SCHEMA_PREFIX))} ?? null;
+            if ($target instanceof \stdClass) {
+                unset($copy->{'$ref'});
+                $target = self::narrow($schemas, $target, $keys, $depth + 1);
+                \assert($target instanceof \stdClass);
+                foreach (\get_object_vars($target) as $keyword => $value) {
+                    if (!\property_exists($copy, $keyword)) {
+                        $copy->{$keyword} = $value;
+                    }
+                }
+            }
+        }
+
+        $discriminator = $copy->discriminator ?? null;
+        $branchKept = $discriminator instanceof \stdClass && \is_string($discriminator->propertyName ?? null) ? [$discriminator->propertyName] : $kept;
+        foreach (['allOf', 'anyOf', 'oneOf'] as $keyword) {
+            if (isset($copy->{$keyword}) && \is_array($copy->{$keyword})) {
+                $copy->{$keyword} = \array_map(static fn(mixed $branch): mixed => self::narrow($schemas, $branch, $keys, $depth + 1, $keyword === 'allOf' ? $kept : $branchKept), $copy->{$keyword});
+            }
+        }
+        if (isset($copy->oneOf) && \is_array($copy->oneOf) && !$discriminator instanceof \stdClass) {
+            $copy->anyOf = $copy->oneOf;
+            unset($copy->oneOf);
+        }
+
+        $type = $copy->type ?? null;
+        if ($type === 'array' || (\is_array($type) && \in_array('array', $type, true)) || isset($copy->items)) {
+            [$whole, $deeper] = self::split($keys);
+            if (!\in_array('*', $whole, true) && isset($deeper['*'])) {
+                $copy->items = self::narrow($schemas, $copy->items ?? null, $deeper['*'], $depth + 1);
+            }
+
+            return $copy;
+        }
+
+        $isObject = $type === 'object' || (\is_array($type) && \in_array('object', $type, true))
+            || isset($copy->properties) || isset($copy->required) || isset($copy->additionalProperties);
+        if (!$isObject) {
+            return $copy;
+        }
+
+        [, $deeper] = self::split($keys);
+        $selected = \array_values(\array_unique([...$kept, ...\array_map(static fn(string $key): string => \explode('.', $key, 2)[0], $keys)]));
+
+        unset($copy->required, $copy->minProperties);
+        if ($kept !== []) {
+            $copy->required = $kept;
+        }
+        if (isset($copy->properties) && $copy->properties instanceof \stdClass) {
+            $properties = new \stdClass();
+            foreach (\get_object_vars($copy->properties) as $name => $property) {
+                $name = (string) $name;
+                if (isset($deeper[$name])) {
+                    $properties->{$name} = self::narrow($schemas, $property, $deeper[$name], $depth + 1);
+                } elseif (\in_array($name, $selected, true)) {
+                    $properties->{$name} = $property;
+                }
+            }
+            $copy->properties = $properties;
+        }
+        $copy->propertyNames = (object) ['enum' => $selected];
 
         return $copy;
     }

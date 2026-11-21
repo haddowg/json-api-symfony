@@ -134,6 +134,10 @@ hydration ignores them, and a closed object still refuses an undeclared member w
 Doctrine stores an open object in its `json` column like any other `Obj`, the undeclared
 members beside the declared children.
 
+An object can also let a request select its keys one at a time with `nestedFieldset()`,
+`fields[type]=<attribute>.<key>`, which a table showing a few keys per row uses, and a
+nested object declaring it too takes `<attribute>.<key>.<key>`. See [nested fieldsets](resources.md#nested-fieldsets).
+
 ## Unions
 
 A `Union` holds a value that may be a string, a number, a boolean or a list of those,

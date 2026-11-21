@@ -9,6 +9,7 @@ use haddowg\JsonApi\Pagination\PagePaginator;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Constraint\Comparison;
+use haddowg\JsonApi\Resource\Field\ArrayList;
 use haddowg\JsonApi\Resource\Field\BelongsTo;
 use haddowg\JsonApi\Resource\Field\Boolean;
 use haddowg\JsonApi\Resource\Field\Date;
@@ -18,6 +19,7 @@ use haddowg\JsonApi\Resource\Field\HasMany;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Integer;
 use haddowg\JsonApi\Resource\Field\Map;
+use haddowg\JsonApi\Resource\Field\Obj;
 use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApi\Resource\Filter\Contains;
 use haddowg\JsonApi\Resource\Filter\DateRange;
@@ -118,6 +120,22 @@ final class AlbumResource extends AbstractResource
 
                 return $model;
             }),
+
+            // Credits keyed by role. A table with one column per role selects only
+            // those keys: `fields[albums]=title,credits.producer,credits.engineer`.
+            Obj::make('credits')->example(['producer' => 'Nigel Godrich'])->nullable()
+                ->additionalProperties(Str::make('*')->example('Nigel Godrich'))
+                ->nestedFieldset(pattern: '[a-z][a-z_]*'),
+
+            // Every edition of the album. A discography table showing the format and
+            // year of each selects only those keys of every item:
+            // `fields[albums]=title,editions.*.format,editions.*.year`.
+            ArrayList::make('editions')->nullable()
+                ->of(Obj::make('edition')->fields(
+                    Str::make('format')->example('CD'),
+                    Integer::make('year')->example(1997),
+                    Str::make('label')->example('Parlophone'),
+                )->nestedFieldset(pattern: 'format|year|label')),
 
             // Default relation reader: `artist` reads the ManyToOne and `tracks` the
             // OneToMany straight off the entity associations.

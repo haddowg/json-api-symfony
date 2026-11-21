@@ -362,7 +362,7 @@ final class JsonApiBundle extends AbstractBundle
                     ->end()
                 ->end()
                 ->arrayNode('profiles')
-                    ->info('The JSON:API profiles every server recognizes: each profile\'s URI is advertised (Content-Type `profile` param + `jsonapi.profile`) when a client negotiates it, and the profile\'s opt-in query family is parsed only under that negotiation. Each entry is a ProfileInterface class-string. Default: the three built-ins — CursorPaginationProfile, CountableProfile, RelationshipQueriesProfile — in that order (the order the generated OpenAPI `jsonapi.profile` enum lists them, and the order that must match across framework adapters for byte-parity). Trim an entry to stop recognizing and advertising that profile — its OpenAPI parameters (`?withCount`, `relatedQuery`, the cursor page marker) disappear with it; add your own ProfileInterface class to recognize a custom profile.')
+                    ->info('The JSON:API profiles every server recognizes: each profile\'s URI is advertised (Content-Type `profile` param + `jsonapi.profile`) when a client negotiates it, and the profile\'s opt-in query family is parsed only under that negotiation. Each entry is a ProfileInterface class-string. Default: the four built-ins — CursorPaginationProfile, CountableProfile, RelationshipQueriesProfile, NestedFieldsetsProfile — in that order (the order the generated OpenAPI `jsonapi.profile` enum lists them, and the order that must match across framework adapters for byte-parity). Trim an entry to stop recognizing and advertising that profile — its OpenAPI parameters (`?withCount`, `relatedQuery`, the cursor page marker) disappear with it; add your own ProfileInterface class to recognize a custom profile.')
                     ->scalarPrototype()->end()
                     ->defaultValue(ServerFactory::DEFAULT_PROFILES)
                 ->end()
@@ -1570,7 +1570,7 @@ final class JsonApiBundle extends AbstractBundle
                     '$serverName' => $name,
                     '$dispatcher' => service('event_dispatcher')->nullOnInvalid(),
                     // The JSON:API profiles this server recognizes (docs/configuration.md),
-                    // data-driven from json_api.profiles (default: the three built-ins in
+                    // data-driven from json_api.profiles (default: the four built-ins in
                     // canonical order). The same list feeds the OpenAPI jsonapi.profile
                     // enum + the profile-gated parameters.
                     '$profiles' => $profiles,

@@ -1,0 +1,818 @@
+<?php
+
+declare(strict_types=1);
+
+namespace haddowg\JsonApiBundle\Tests\Functional;
+
+use haddowg\JsonApi\Schema\Profile\NestedFieldsetsProfile;
+use haddowg\JsonApiBundle\OpenApi\DocumentFactory;
+use haddowg\JsonApiBundle\Testing\SchemaConformanceTrait;
+use haddowg\JsonApiBundle\Testing\SchemaDocumentKind;
+use haddowg\JsonApiBundle\Tests\Functional\App\NestedFieldsets\EaselSerializer;
+use haddowg\JsonApiBundle\Tests\Functional\App\NestedFieldsets\NestedFieldsetsFactory;
+use haddowg\JsonApiBundle\Tests\Functional\App\Resource\BasePanelResource;
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\Test;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\HttpKernelInterface;
+
+/**
+ * The nested fieldsets conformance witness, run against both providers: a
+ * `fields[TYPE]=<attribute>.<key>` member renders only that key of an attribute declaring
+ * a nested fieldset, wherever the type renders, and the response applies and advertises
+ * the Nested Fieldsets profile only when it narrows something.
+ */
+abstract class NestedFieldsetsConformanceTestCase extends JsonApiFunctionalTestCase
+{
+    use SchemaConformanceTrait;
+
+    private const string NARROWED = 'application/vnd.api+json; profile="' . NestedFieldsetsProfile::URI . '"';
+
+    protected function setUp(): void
+    {
+        BasePanelResource::$summaryRequests = [];
+        EaselSerializer::$selections = [];
+
+        parent::setUp();
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    public function aKeyMemberRendersOnlyThatKey(): void
+    {
+        $response = $this->handle('/panels/1?fields[panels]=name,values.cap,values.countries');
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['name' => 'Seed', 'values' => ['cap' => '10', 'countries' => 'GB,FR']], $this->attributesOf($response));
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    public function aCollectionRendersTheSelectionForEveryResource(): void
+    {
+        $response = $this->handle('/panels?fields[panels]=values.region');
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $data = $this->decode($response)['data'] ?? null;
+        self::assertIsArray($data);
+        self::assertIsArray($data[0]);
+        self::assertSame(['values' => ['region' => 'EU']], $data[0]['attributes'] ?? null);
+        self::assertSame(self::NARROWED, $response->headers->get('Content-Type'));
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    public function listingTheWholeAttributeBesideAKeyRendersAllOfIt(): void
+    {
+        $response = $this->handle('/panels/1?fields[panels]=values,values.cap');
+
+        self::assertSame(['values' => NestedFieldsetsFactory::SEED_VALUES], $this->attributesOf($response));
+        self::assertSame('application/vnd.api+json', $response->headers->get('Content-Type'));
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    #[Group('spec:extensions-and-profiles')]
+    public function noFieldsetLeavesTheResponseUnchanged(): void
+    {
+        $response = $this->handle('/panels/1');
+
+        self::assertSame(NestedFieldsetsFactory::SEED_VALUES, $this->attributesOf($response)['values'] ?? null);
+        self::assertSame('application/vnd.api+json', $response->headers->get('Content-Type'));
+        self::assertArrayNotHasKey('profile', $this->jsonApiOf($response));
+    }
+
+    #[Test]
+    #[Group('spec:extensions-and-profiles')]
+    public function aFieldsetNarrowingNothingAdvertisesNoProfile(): void
+    {
+        $response = $this->handle('/panels/1?fields[panels]=name,values');
+
+        self::assertSame('application/vnd.api+json', $response->headers->get('Content-Type'));
+        self::assertArrayNotHasKey('profile', $this->jsonApiOf($response));
+    }
+
+    #[Test]
+    #[Group('spec:extensions-and-profiles')]
+    public function aNarrowedResponseAdvertisesTheProfileWithoutTheClientAskingForIt(): void
+    {
+        $response = $this->handle('/panels/1?fields[panels]=values.cap');
+
+        self::assertSame(self::NARROWED, $response->headers->get('Content-Type'));
+        self::assertSame([NestedFieldsetsProfile::URI], $this->jsonApiOf($response)['profile'] ?? null);
+        self::assertStringContainsString('Accept', (string) $response->headers->get('Vary'));
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    public function anExtractHookReceivesTheSelectedKeys(): void
+    {
+        $response = $this->handle('/panels/1?fields[panels]=summary.count');
+
+        self::assertSame(['summary' => ['count' => 2]], $this->attributesOf($response));
+        self::assertSame([['count']], BasePanelResource::$summaryRequests);
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    public function anExtractHookReceivesNullWhenTheAttributeIsTakenWhole(): void
+    {
+        $response = $this->handle('/panels/1?fields[panels]=summary');
+
+        self::assertSame(['summary' => ['count' => 2, 'width' => 40]], $this->attributesOf($response));
+        self::assertSame([null], BasePanelResource::$summaryRequests);
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    public function aMapReadByAModelTypedHookIsSelected(): void
+    {
+        self::assertSame(['layout' => ['theme' => 'grid']], $this->attributesOf($this->handle('/panels/1?fields[panels]=layout.theme')));
+        self::assertSame(['layout' => ['region' => 'EU', 'theme' => 'grid']], $this->attributesOf($this->handle('/panels/1?fields[panels]=layout')));
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    #[Group('openapi')]
+    public function aNarrowedResponseMatchesTheGeneratedSchema(): void
+    {
+        // `layout` requires both its keys in the schema, so the narrowed value only
+        // validates once the testing kit narrows the attribute's schema too.
+        $response = $this->handle('/panels/1?fields[panels]=name,layout.theme,values.cap');
+        self::assertSame(['theme' => 'grid'], $this->attributesOf($response)['layout'] ?? null);
+        $this->assertResponseMatchesGeneratedSchema($response, 'panels', SchemaDocumentKind::Single, fieldsets: ['panels' => 'name,layout.theme,values.cap']);
+
+        $collection = $this->handle('/panels?fields[panels]=layout.region');
+        $this->assertResponseMatchesGeneratedSchema($collection, 'panels', SchemaDocumentKind::Collection, fieldsets: ['panels' => 'layout.region']);
+
+        $whole = $this->handle('/panels/1?fields[panels]=layout,layout.theme');
+        $this->assertResponseMatchesGeneratedSchema($whole, 'panels', SchemaDocumentKind::Single, fieldsets: ['panels' => 'layout,layout.theme']);
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    public function aRepeatingGroupIsSelectedAsOneKey(): void
+    {
+        $response = $this->handle('/panels/1?fields[panels]=groups.rows');
+
+        self::assertSame(['groups' => ['rows' => [['a' => 1], ['a' => 2]]]], $this->attributesOf($response));
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    #[Group('spec:includes')]
+    public function aSelectionAppliesToIncludedResources(): void
+    {
+        $response = $this->handle('/panels/1?include=curator&fields[panels]=name,curator&fields[curators]=stats.rating');
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $included = $this->decode($response)['included'] ?? null;
+        self::assertIsArray($included);
+        self::assertIsArray($included[0]);
+        self::assertSame(['stats' => ['rating' => 5]], $included[0]['attributes'] ?? null);
+        self::assertSame(self::NARROWED, $response->headers->get('Content-Type'));
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    public function aSelectionAppliesToARelatedEndpoint(): void
+    {
+        $response = $this->handle('/panels/1/curator?fields[curators]=stats.reviews');
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['stats' => ['reviews' => 12]], $this->attributesOf($response));
+        self::assertSame(self::NARROWED, $response->headers->get('Content-Type'));
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    public function aNestedKeyMemberRendersOnlyItsPath(): void
+    {
+        $response = $this->handle('/panels/1?fields[panels]=address.geo.lat');
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['address' => ['geo' => ['lat' => 51.5]]], $this->attributesOf($response));
+        self::assertSame(self::NARROWED, $response->headers->get('Content-Type'));
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    public function aNestedPathSelectsNothingElseOfItsAncestors(): void
+    {
+        $response = $this->handle('/panels/1?fields[panels]=name,address.postcode,address.geo.lng');
+
+        self::assertSame(['name' => 'Seed', 'address' => ['postcode' => 'AB1 2CD', 'geo' => ['lng' => -0.1]]], $this->attributesOf($response));
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    public function aKeyListedWholeBesideAPathIntoItRendersWholeAtEveryDepth(): void
+    {
+        self::assertSame(
+            ['address' => ['geo' => NestedFieldsetsFactory::SEED_ADDRESS['geo']]],
+            $this->attributesOf($this->handle('/panels/1?fields[panels]=address.geo.lat,address.geo')),
+        );
+
+        $whole = $this->handle('/panels/1?fields[panels]=address,address.geo.lat');
+        self::assertSame(['address' => NestedFieldsetsFactory::SEED_ADDRESS], $this->attributesOf($whole));
+        self::assertSame('application/vnd.api+json', $whole->headers->get('Content-Type'));
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    #[Group('spec:includes')]
+    public function aNestedSelectionAppliesToIncludedResources(): void
+    {
+        $response = $this->handle('/panels/1?include=curator&fields[panels]=curator&fields[curators]=office.geo.lat');
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $included = $this->decode($response)['included'] ?? null;
+        self::assertIsArray($included);
+        self::assertIsArray($included[0]);
+        self::assertSame(['office' => ['geo' => ['lat' => 48.8]]], $included[0]['attributes'] ?? null);
+        self::assertSame(self::NARROWED, $response->headers->get('Content-Type'));
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    public function aNestedSelectionAppliesToARelatedEndpoint(): void
+    {
+        $response = $this->handle('/panels/1/curator?fields[curators]=office.city,office.geo.lng');
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['office' => ['city' => 'Paris', 'geo' => ['lng' => 2.3]]], $this->attributesOf($response));
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    #[Group('openapi')]
+    public function aNestedNarrowedResponseMatchesTheGeneratedSchema(): void
+    {
+        $fields = 'name,address.postcode,address.geo.lat';
+        $response = $this->handle('/panels/1?fields[panels]=' . $fields);
+
+        self::assertSame(['name' => 'Seed', 'address' => ['postcode' => 'AB1 2CD', 'geo' => ['lat' => 51.5]]], $this->attributesOf($response));
+        $this->assertResponseMatchesGeneratedSchema($response, 'panels', SchemaDocumentKind::Single, fieldsets: ['panels' => $fields]);
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    #[Group('openapi')]
+    public function theFieldsParameterDocumentsEachNestedPath(): void
+    {
+        $factory = static::getContainer()->get(DocumentFactory::class);
+        \assert($factory instanceof DocumentFactory);
+        $paths = \json_encode($factory->forServer()->toArray()['paths'] ?? [], \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES);
+
+        // Encoded as JSON, so each pattern's backslash is doubled.
+        self::assertStringContainsString('"pattern":"^address\\\\.(?:[a-z]+)$"', $paths);
+        self::assertStringContainsString('"pattern":"^address\\\\.geo\\\\.(?:[a-z]+)$"', $paths);
+        self::assertStringNotContainsString('^address\\\\.history\\\\.', $paths);
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    #[Group('spec:errors')]
+    public function aNestedKeyTheObjectRejectsIsThe400(): void
+    {
+        $this->assertUnrecognized('/panels/1?fields[panels]=address.geo.Alt', 'address.geo.Alt');
+        $this->assertUnrecognized('/panels/1/curator?fields[curators]=office.geo.alt', 'office.geo.alt');
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    #[Group('spec:errors')]
+    public function aPathBelowAKeyWithoutANestedFieldsetIsThe400(): void
+    {
+        $this->assertUnrecognized('/panels/1?fields[panels]=address.postcode.x', 'address.postcode.x');
+        $this->assertUnrecognized('/panels/1?fields[panels]=address.history.street', 'address.history.street');
+        $this->assertUnrecognized('/panels/1?fields[panels]=values.cap.x', 'values.cap.x');
+        $this->assertUnrecognized('/panels/1?fields[panels]=address..lat', 'address..lat');
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    public function aWildcardSelectsTheKeyFromEveryItem(): void
+    {
+        $response = $this->handle('/panels/1?fields[panels]=rows.*.label');
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['rows' => [['label' => 'A'], ['label' => 'B']]], $this->attributesOf($response));
+        self::assertSame(self::NARROWED, $response->headers->get('Content-Type'));
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    public function anItemLackingTheSelectedMemberRendersAsAnEmptyObject(): void
+    {
+        $response = $this->handle('/panels/1?fields[panels]=rows.*.note');
+
+        self::assertStringContainsString('"attributes":{"rows":[{"note":"first"},{}]}', (string) $response->getContent());
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    public function aWildcardKeepsAnEmptyListEmpty(): void
+    {
+        $response = $this->handle('/panels/1?fields[panels]=archive.*.label');
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertStringContainsString('"attributes":{"archive":[]}', (string) $response->getContent());
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    public function aWildcardWithNothingAfterItSelectsTheWholeList(): void
+    {
+        $whole = $this->attributesOf($this->handle('/panels/1?fields[panels]=rows'));
+
+        $wildcard = $this->handle('/panels/1?fields[panels]=rows.*');
+        self::assertSame($whole, $this->attributesOf($wildcard));
+        self::assertCount(2, \is_array($whole['rows'] ?? null) ? $whole['rows'] : []);
+        self::assertSame('application/vnd.api+json', $wildcard->headers->get('Content-Type'));
+        self::assertSame(['version' => '1.1'], $this->jsonApiOf($wildcard));
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    public function aNestedListNamedThroughAWildcardAloneIsSelectedWhole(): void
+    {
+        self::assertSame(
+            $this->attributesOf($this->handle('/panels/1?fields[panels]=rows.*.cells')),
+            $this->attributesOf($this->handle('/panels/1?fields[panels]=rows.*.cells.*')),
+        );
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    public function aListListedWholeBesideAWildcardPathRendersWhole(): void
+    {
+        $whole = $this->attributesOf($this->handle('/panels/1?fields[panels]=rows'));
+
+        $listed = $this->handle('/panels/1?fields[panels]=rows,rows.*.label');
+        self::assertSame($whole, $this->attributesOf($listed));
+        self::assertSame('application/vnd.api+json', $listed->headers->get('Content-Type'));
+
+        $wildcard = $this->handle('/panels/1?fields[panels]=rows.*,rows.*.label');
+        self::assertSame($whole, $this->attributesOf($wildcard));
+        self::assertSame('application/vnd.api+json', $wildcard->headers->get('Content-Type'));
+        self::assertSame(
+            ['rows' => [['size' => ['w' => 1, 'h' => 2]], ['size' => ['w' => 3, 'h' => 4]]]],
+            $this->attributesOf($this->handle('/panels/1?fields[panels]=rows.*.size,rows.*.size.w')),
+        );
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    public function aWildcardPathContinuesIntoNestedObjectsAndLists(): void
+    {
+        self::assertSame(
+            ['rows' => [['label' => 'A', 'size' => ['w' => 1]], ['label' => 'B', 'size' => ['w' => 3]]]],
+            $this->attributesOf($this->handle('/panels/1?fields[panels]=rows.*.label,rows.*.size.w')),
+        );
+        self::assertSame(
+            ['rows' => [['cells' => [['v' => 'x'], ['v' => 'y']]], ['cells' => []]]],
+            $this->attributesOf($this->handle('/panels/1?fields[panels]=rows.*.cells.*.v')),
+        );
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    #[Group('spec:includes')]
+    public function aWildcardSelectionAppliesToIncludedResources(): void
+    {
+        $response = $this->handle('/panels/1?include=curator&fields[panels]=curator&fields[curators]=exhibits.*.title');
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $included = $this->decode($response)['included'] ?? null;
+        self::assertIsArray($included);
+        self::assertIsArray($included[0]);
+        self::assertSame(['exhibits' => [['title' => 'Light'], ['title' => 'Sound']]], $included[0]['attributes'] ?? null);
+        self::assertSame(self::NARROWED, $response->headers->get('Content-Type'));
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    public function aWildcardSelectionAppliesToARelatedEndpoint(): void
+    {
+        $response = $this->handle('/panels/1/curator?fields[curators]=exhibits.*.year');
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['exhibits' => [['year' => 2001], ['year' => 2004]]], $this->attributesOf($response));
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    #[Group('openapi')]
+    public function aWildcardNarrowedResponseMatchesTheGeneratedSchema(): void
+    {
+        $fields = 'name,rows.*.label,rows.*.size.w,rows.*.cells.*.v,archive.*.label';
+        $response = $this->handle('/panels/1?fields[panels]=' . $fields);
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $this->assertResponseMatchesGeneratedSchema($response, 'panels', SchemaDocumentKind::Single, fieldsets: ['panels' => $fields]);
+
+        $collection = $this->handle('/panels?fields[panels]=rows.*.note');
+        $this->assertResponseMatchesGeneratedSchema($collection, 'panels', SchemaDocumentKind::Collection, fieldsets: ['panels' => 'rows.*.note']);
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    #[Group('openapi')]
+    public function theFieldsParameterDocumentsEachWildcardPath(): void
+    {
+        $factory = static::getContainer()->get(DocumentFactory::class);
+        \assert($factory instanceof DocumentFactory);
+        $paths = \json_encode($factory->forServer()->toArray()['paths'] ?? [], \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES);
+
+        // Encoded as JSON, so each pattern's backslash is doubled.
+        self::assertStringContainsString('"pattern":"^rows\\\\.\\\\*\\\\.(?:[a-z]+)$"', $paths);
+        self::assertStringContainsString('"pattern":"^rows\\\\.\\\\*\\\\.size\\\\.(?:[a-z])$"', $paths);
+        self::assertStringContainsString('"pattern":"^rows\\\\.\\\\*\\\\.cells\\\\.\\\\*\\\\.(?:v)$"', $paths);
+        self::assertStringContainsString('"pattern":"^exhibits\\\\.\\\\*\\\\.(?:[a-z]+)$"', $paths);
+        self::assertStringNotContainsString('^tags\\\\.', $paths);
+        self::assertStringNotContainsString('^address\\\\.history\\\\.', $paths);
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    public function aWildcardOverAOneOfRendersTheKeysEachItemsVariantAccepts(): void
+    {
+        $response = $this->handle('/panels/1?fields[panels]=blocks.*.title,blocks.*.url');
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(
+            ['blocks' => [['type' => 'text', 'title' => 'Intro'], ['type' => 'image', 'url' => '/a.png'], ['type' => 'divider']]],
+            $this->attributesOf($response),
+        );
+        self::assertSame(self::NARROWED, $response->headers->get('Content-Type'));
+        self::assertSame(
+            ['blocks' => [['type' => 'text', 'meta' => ['lang' => 'en']], ['type' => 'image'], ['type' => 'divider']]],
+            $this->attributesOf($this->handle('/panels/1?fields[panels]=blocks.*.meta.lang')),
+        );
+        self::assertSame(
+            $this->attributesOf($this->handle('/panels/1?fields[panels]=blocks')),
+            $this->attributesOf($this->handle('/panels/1?fields[panels]=blocks.*')),
+        );
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    #[Group('openapi')]
+    public function aOneOfListNarrowedResponseMatchesTheGeneratedSchema(): void
+    {
+        $fields = 'name,blocks.*.title,blocks.*.meta.lang,blocks.*.url';
+        $response = $this->handle('/panels/1?fields[panels]=' . $fields);
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $this->assertResponseMatchesGeneratedSchema($response, 'panels', SchemaDocumentKind::Single, fieldsets: ['panels' => $fields]);
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    #[Group('openapi')]
+    public function theFieldsParameterDocumentsEveryVariantsPaths(): void
+    {
+        $factory = static::getContainer()->get(DocumentFactory::class);
+        \assert($factory instanceof DocumentFactory);
+        $paths = \json_encode($factory->forServer()->toArray()['paths'] ?? [], \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES);
+
+        self::assertStringContainsString('"pattern":"^blocks\\\\.\\\\*\\\\.(?:title|body|meta)$"', $paths);
+        self::assertStringContainsString('"pattern":"^blocks\\\\.\\\\*\\\\.meta\\\\.(?:lang|tone)$"', $paths);
+        self::assertStringContainsString('"pattern":"^blocks\\\\.\\\\*\\\\.(?:url)$"', $paths);
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    #[Group('spec:errors')]
+    public function aWildcardKeyNoVariantAcceptsIsThe400(): void
+    {
+        $this->assertUnrecognized('/panels/1?fields[panels]=blocks.*.style', 'blocks.*.style');
+        $this->assertUnrecognized('/panels/1?fields[panels]=blocks.*.title.x', 'blocks.*.title.x');
+        $this->assertUnrecognized('/panels/1?fields[panels]=blocks.*.meta.x', 'blocks.*.meta.x');
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    #[Group('spec:errors')]
+    public function aWildcardOnAnythingButAListOfObjectsWithANestedFieldsetIsThe400(): void
+    {
+        $this->assertUnrecognized('/panels/1?fields[panels]=name.*', 'name.*');
+        $this->assertUnrecognized('/panels/1?fields[panels]=values.*', 'values.*');
+        $this->assertUnrecognized('/panels/1?fields[panels]=address.geo.*', 'address.geo.*');
+        $this->assertUnrecognized('/panels/1?fields[panels]=tags.*', 'tags.*');
+        $this->assertUnrecognized('/panels/1?fields[panels]=address.history.*', 'address.history.*');
+        $this->assertUnrecognized('/panels/1?fields[panels]=address.history.*.street', 'address.history.*.street');
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    #[Group('spec:errors')]
+    public function anIndexSegmentIsThe400(): void
+    {
+        $this->assertUnrecognized('/panels/1?fields[panels]=rows.0', 'rows.0');
+        $this->assertUnrecognized('/panels/1?fields[panels]=rows.0.label', 'rows.0.label');
+        $this->assertUnrecognized('/panels/1?fields[panels]=rows.*.cells.1.v', 'rows.*.cells.1.v');
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    #[Group('spec:atomic')]
+    public function aSelectionAppliesToAtomicResults(): void
+    {
+        $response = $this->atomic([[
+            'op' => 'add',
+            'data' => ['type' => 'panels', 'attributes' => ['name' => 'New', 'values' => ['cap' => '7', 'region' => 'NA']]],
+        ]], 'fields[panels]=values.cap');
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $results = $this->decode($response)['atomic:results'] ?? null;
+        self::assertIsArray($results);
+        self::assertIsArray($results[0]);
+        $data = $results[0]['data'] ?? null;
+        self::assertIsArray($data);
+        self::assertSame(['values' => ['cap' => '7']], $data['attributes'] ?? null);
+        self::assertStringContainsString('profile="' . NestedFieldsetsProfile::URI . '"', (string) $response->headers->get('Content-Type'));
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    #[Group('spec:atomic')]
+    public function anAtomicBatchNarrowingNothingAdvertisesNoProfile(): void
+    {
+        $response = $this->atomic([[
+            'op' => 'add',
+            'data' => ['type' => 'panels', 'attributes' => ['name' => 'New', 'values' => ['cap' => '7']]],
+        ]], 'fields[panels]=name');
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $results = $this->decode($response)['atomic:results'] ?? null;
+        self::assertIsArray($results);
+        self::assertIsArray($results[0]);
+        $data = $results[0]['data'] ?? null;
+        self::assertIsArray($data);
+        self::assertSame(['name' => 'New'], $data['attributes'] ?? null);
+        self::assertStringNotContainsString('profile=', (string) $response->headers->get('Content-Type'));
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    #[Group('spec:crud')]
+    public function aWriteStoresTheWholeValueAndAnswersWithTheSelection(): void
+    {
+        $values = ['cap' => '20', 'countries' => 'DE', 'region' => 'EU'];
+        $response = $this->handle('/panels/1?fields[panels]=values.cap', 'PATCH', ['data' => [
+            'type' => 'panels',
+            'id' => '1',
+            'attributes' => ['values' => $values],
+        ]]);
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['values' => ['cap' => '20']], $this->attributesOf($response));
+
+        $this->detachPersistedState();
+        self::assertSame($values, $this->attributesOf($this->handle('/panels/1'))['values'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    public function aOneOfAttributeRendersItsDiscriminatorAndTheKeysItsVariantAccepts(): void
+    {
+        $response = $this->handle('/panels/1?fields[panels]=hero.src');
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['hero' => ['kind' => 'image', 'src' => '/h.png']], $this->attributesOf($response));
+        self::assertSame(self::NARROWED, $response->headers->get('Content-Type'));
+        $this->assertResponseMatchesGeneratedSchema($response, 'panels', SchemaDocumentKind::Single, fieldsets: ['panels' => 'hero.src']);
+        $this->assertUnrecognized('/panels/1?fields[panels]=hero.url', 'hero.url');
+
+        $video = $this->handle('/panels/1?fields[panels]=hero.src', 'PATCH', ['data' => [
+            'type' => 'panels',
+            'id' => '1',
+            'attributes' => ['hero' => ['kind' => 'video', 'url' => '/v.mp4']],
+        ]]);
+        self::assertSame(200, $video->getStatusCode(), (string) $video->getContent());
+        self::assertStringContainsString('"attributes":{"hero":{"kind":"video"}}', (string) $video->getContent());
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    public function aWriteOfAnEnumBoundUnionListIsStoredAndNarrowedThroughItsCases(): void
+    {
+        $blocks = [
+            ['type' => 'image', 'title' => 'Pic', 'url' => '/b.png'],
+            ['type' => 'text', 'title' => 'Outro', 'body' => 'Bye', 'meta' => ['lang' => 'fr', 'tone' => 'calm']],
+        ];
+        $response = $this->handle('/panels/1?fields[panels]=blocks.*.url,blocks.*.meta.lang', 'PATCH', ['data' => [
+            'type' => 'panels',
+            'id' => '1',
+            'attributes' => ['blocks' => $blocks],
+        ]]);
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['blocks' => [['type' => 'image', 'url' => '/b.png'], ['type' => 'text', 'meta' => ['lang' => 'fr']]]], $this->attributesOf($response));
+
+        $this->detachPersistedState();
+        self::assertSame($blocks, $this->attributesOf($this->handle('/panels/1?fields[panels]=blocks'))['blocks'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    #[Group('spec:errors')]
+    public function aKeyThePatternRejectsIsTheUnrecognizedFieldsetMember400(): void
+    {
+        $this->assertUnrecognized('/panels/1?fields[panels]=values.Cap', 'values.Cap');
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    #[Group('spec:errors')]
+    public function aKeyThePredicateRejectsIsThe400(): void
+    {
+        $this->assertUnrecognized('/panels/1?include=curator&fields[curators]=stats.secret', 'stats.secret');
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    #[Group('spec:errors')]
+    public function aDottedMemberOnAnAttributeWithoutNestedFieldsetKeysIsThe400(): void
+    {
+        $this->assertUnrecognized('/panels/1?fields[panels]=settings.theme', 'settings.theme');
+        $this->assertUnrecognized('/panels/1?fields[panels]=name.first', 'name.first');
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    #[Group('spec:errors')]
+    public function aDottedMemberOnARelationshipIsThe400(): void
+    {
+        $this->assertUnrecognized('/panels/1?fields[panels]=curator.name', 'curator.name');
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    #[Group('spec:errors')]
+    public function aDeeperPathOrAnEmptyKeyIsThe400(): void
+    {
+        $this->assertUnrecognized('/panels/1?fields[panels]=groups.rows.a', 'groups.rows.a');
+        $this->assertUnrecognized('/panels/1?fields[panels]=values.', 'values.');
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    #[Group('spec:atomic')]
+    #[Group('spec:errors')]
+    public function anAtomicBatchWithARejectedKeyIsThe400(): void
+    {
+        $response = $this->atomic([[
+            'op' => 'add',
+            'data' => ['type' => 'panels', 'attributes' => ['name' => 'New']],
+        ]], 'fields[panels]=values.Bad');
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+        $errors = $this->decode($response)['errors'] ?? null;
+        self::assertIsArray($errors);
+        self::assertIsArray($errors[0]);
+        self::assertSame('FIELDSET_MEMBER_UNRECOGNIZED', $errors[0]['code'] ?? null);
+    }
+
+    /**
+     * Clears whatever the data layer keeps between requests, so the next read loads from
+     * the store.
+     */
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    #[Group('spec:extensions-and-profiles')]
+    public function aSerializerOverrideIsTrimmedToTheSelectedKeys(): void
+    {
+        $response = $this->handle('/boards/1?fields[boards]=name,values.cap,address.geo.lat,rows.*.size.w');
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame([
+            'name' => 'Seed',
+            'values' => ['cap' => '10'],
+            'address' => ['geo' => ['lat' => 51.5]],
+            'rows' => [['size' => ['w' => 1]], ['size' => ['w' => 3]]],
+        ], $this->attributesOf($response));
+        self::assertSame(self::NARROWED, $response->headers->get('Content-Type'));
+        self::assertSame(['version' => '1.1', 'profile' => [NestedFieldsetsProfile::URI]], $this->jsonApiOf($response));
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    public function aSerializerOverrideNarrowsEveryResourceOfACollection(): void
+    {
+        $response = $this->handle('/boards?fields[boards]=values.region');
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $data = $this->decode($response)['data'] ?? null;
+        self::assertIsArray($data);
+        self::assertIsArray($data[0]);
+        self::assertSame(['values' => ['region' => 'EU']], $data[0]['attributes'] ?? null);
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    public function aSerializerOverrideRendersAnAttributeListedWholeWhole(): void
+    {
+        $response = $this->handle('/boards/1?fields[boards]=values,values.cap');
+
+        self::assertSame(['values' => NestedFieldsetsFactory::SEED_VALUES], $this->attributesOf($response));
+        self::assertSame('application/vnd.api+json', $response->headers->get('Content-Type'));
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    public function aSerializerSelectingKeysReceivesTheSelectionAndIsStillTrimmed(): void
+    {
+        $response = $this->handle('/easels/1?fields[easels]=name,address.postcode,address.geo.lat');
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame([['address', ['postcode', 'geo.lat']]], EaselSerializer::$selections);
+        self::assertSame(['name' => 'Seed', 'address' => ['postcode' => 'AB1 2CD', 'geo' => ['lat' => 51.5]]], $this->attributesOf($response));
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    #[Group('openapi')]
+    public function aSerializerOverridesNarrowedResponseMatchesTheGeneratedSchema(): void
+    {
+        $response = $this->handle('/boards/1?fields[boards]=address.geo.lat,rows.*.label');
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $this->assertResponseMatchesGeneratedSchema($response, 'boards', SchemaDocumentKind::Single, fieldsets: ['boards' => 'address.geo.lat,rows.*.label']);
+    }
+
+    #[Test]
+    #[Group('spec:sparse-fieldsets')]
+    #[Group('spec:errors')]
+    public function aKeyTheOverridesResourceRejectsIsThe400(): void
+    {
+        $this->assertUnrecognized('/boards/1?fields[boards]=values.Cap', 'values.Cap');
+        $this->assertUnrecognized('/boards/1?fields[boards]=name.first', 'name.first');
+    }
+
+    protected function detachPersistedState(): void {}
+
+    private function assertUnrecognized(string $path, string $member): void
+    {
+        $response = $this->handle($path);
+
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+        $errors = $this->decode($response)['errors'] ?? null;
+        self::assertIsArray($errors);
+        self::assertIsArray($errors[0]);
+        self::assertSame('FIELDSET_MEMBER_UNRECOGNIZED', $errors[0]['code'] ?? null);
+        self::assertSame(['parameter' => 'fields'], $errors[0]['source'] ?? null);
+        self::assertIsString($errors[0]['detail'] ?? null);
+        self::assertStringContainsString($member, $errors[0]['detail']);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function attributesOf(Response $response): array
+    {
+        $data = $this->decode($response)['data'] ?? null;
+        self::assertIsArray($data, (string) $response->getContent());
+        $attributes = $data['attributes'] ?? [];
+        self::assertIsArray($attributes);
+
+        /** @var array<string, mixed> $attributes */
+        return $attributes;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function jsonApiOf(Response $response): array
+    {
+        $jsonApi = $this->decode($response)['jsonapi'] ?? [];
+        self::assertIsArray($jsonApi);
+
+        /** @var array<string, mixed> $jsonApi */
+        return $jsonApi;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $operations
+     */
+    private function atomic(array $operations, string $query): Response
+    {
+        $kernel = static::$kernel;
+        self::assertNotNull($kernel);
+
+        $ext = 'application/vnd.api+json; ext="https://jsonapi.org/ext/atomic"';
+        $request = Request::create(
+            '/operations?' . $query,
+            'POST',
+            server: ['CONTENT_TYPE' => $ext, 'HTTP_ACCEPT' => $ext],
+            content: \json_encode(['atomic:operations' => $operations], \JSON_THROW_ON_ERROR),
+        );
+        $response = $kernel->handle($request, HttpKernelInterface::MAIN_REQUEST, true);
+        $this->restoreHandlers();
+
+        return $response;
+    }
+}
