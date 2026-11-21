@@ -125,8 +125,8 @@ final class ConstraintTranslator
     public function translate(ConstraintInterface $constraint, ?JsonApiRequestInterface $request = null): array
     {
         return match (true) {
-            $constraint instanceof In => [new Choice(choices: $this->scalarList($constraint->values))],
-            $constraint instanceof NotIn => [new Choice(choices: $this->scalarList($constraint->values), match: false)],
+            $constraint instanceof In => [new Choice(choices: $this->choices($constraint->values))],
+            $constraint instanceof NotIn => [new Choice(choices: $this->choices($constraint->values), match: false)],
             $constraint instanceof Min => [new GreaterThanOrEqual(value: $constraint->value)],
             $constraint instanceof Max => [new LessThanOrEqual(value: $constraint->value)],
             $constraint instanceof ExclusiveMin => [new GreaterThan(value: $constraint->value)],
@@ -469,5 +469,29 @@ final class ConstraintTranslator
     private function scalarList(array $values): array
     {
         return \array_values($values);
+    }
+
+    /**
+     * A set's members, each whole number listed as both an `int` and a `float`: core
+     * writes a number in its field's type, an `int` for an integer and a `float` for a
+     * number, while the set may list either form.
+     *
+     * @param array<int, mixed> $values
+     *
+     * @return list<mixed>
+     */
+    private function choices(array $values): array
+    {
+        $list = [];
+        foreach ($values as $value) {
+            $list[] = $value;
+            if (\is_int($value)) {
+                $list[] = (float) $value;
+            } elseif (\is_float($value) && \is_finite($value) && \floor($value) === $value && \abs($value) < 2 ** 53) {
+                $list[] = (int) $value;
+            }
+        }
+
+        return $list;
     }
 }

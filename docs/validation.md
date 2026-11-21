@@ -289,7 +289,7 @@ for the vocabulary; this table documents only the Symfony mapping.
 
 | Core constraint | Symfony constraint | Notes |
 |---|---|---|
-| `In` / `NotIn` | `Choice` / `Choice(match: false)` | |
+| `In` / `NotIn` | `Choice` / `Choice(match: false)` | Each whole number in the set matches as an `int` and a `float`, since core writes a number in its field's type, so `in([1, 2])` on a `Decimal` takes `2`. |
 | `Min` / `Max` | `GreaterThanOrEqual` / `LessThanOrEqual` | |
 | `ExclusiveMin` / `ExclusiveMax` | `GreaterThan` / `LessThan` | |
 | `MultipleOf` | `DivisibleBy` | |

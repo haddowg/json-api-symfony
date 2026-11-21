@@ -17,6 +17,8 @@ final class Setting
         public string $id = '',
         public mixed $value = null,
         public mixed $answer = null,
+        public mixed $amount = null,
+        public mixed $reading = null,
         public mixed $threshold = null,
         public mixed $startsOn = null,
         public ?array $window = null,

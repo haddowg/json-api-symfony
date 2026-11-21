@@ -27,6 +27,7 @@ use haddowg\JsonApi\Operation\UpdateResourceOperation;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\AbstractRelationValue;
 use haddowg\JsonApi\Resource\Field\ForeignKey;
+use haddowg\JsonApi\Resource\WireNumbers;
 use haddowg\JsonApi\Response\DataResponse;
 use haddowg\JsonApi\Response\MetaResponse;
 use haddowg\JsonApi\Response\NoContentResponse;
@@ -269,7 +270,7 @@ final class AtomicLoopBackend implements AtomicLoopBackendInterface
         // request carrying `{data: …}`, and dispatch it through the handler's own per-op
         // CRUD arms IN-PROCESS (handle(), never Server::dispatch — serving already fired
         // once for the batch).
-        $operation = $this->buildOperation($op->opCode, $target, $data, $op->index, $op->meta);
+        $operation = WireNumbers::operation($this->buildOperation($op->opCode, $target, $data, $op->index, $op->meta), $this->server, atomic: true);
         $response = $this->handler->handle($operation);
 
         // A sub-operation that resolved to a 404/400 (a missing update/delete target, an

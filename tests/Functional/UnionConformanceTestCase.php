@@ -39,9 +39,15 @@ abstract class UnionConformanceTestCase extends JsonApiFunctionalTestCase
         $cases = [
             'a string' => ['value', 'gold', 'gold'],
             'a decimal' => ['value', 2.5, 2.5],
+            'a whole number to the decimal member' => ['value', 3, 3.0],
+            'a whole number in a list to the decimal member' => ['value', ['x', 1], ['x', 1.0]],
             'true' => ['value', true, true],
             'false' => ['value', false, false],
             'a list of mixed elements' => ['value', ['gold', 2.5, false], ['gold', 2.5, false]],
+            'an integer to the integer member' => ['amount', 500, 500],
+            'a whole decimal to the decimal member' => ['amount', 5.0, 5.0],
+            'a decimal to the decimal member' => ['amount', 2.5, 2.5],
+            'a string beside both numeric members' => ['amount', 'gold', 'gold'],
             'an enum string' => ['threshold', 'auto', 'auto'],
             'an integer' => ['threshold', 5, 5],
             'a date' => ['startsOn', '2026-01-02', '2026-01-02'],
@@ -107,6 +113,44 @@ abstract class UnionConformanceTestCase extends JsonApiFunctionalTestCase
         self::assertSame(['until' => '2026-03-04', 'cap' => 1], $this->stored($id, 'window'));
         self::assertSame(['2026-05-06', 2], $this->stored($id, 'marks'));
         self::assertSame(3.0, $this->stored($id, 'value'));
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function aNumberKeepsItsFormWithBothNumericMembers(): void
+    {
+        foreach ([[500, '500'], [500.0, '500.0'], [2.5, '2.5']] as [$sent, $wire]) {
+            $response = $this->create(['amount' => $sent]);
+
+            self::assertSame(201, $response->getStatusCode(), $wire . ': ' . $response->getContent());
+            self::assertStringContainsString('"amount":' . $wire . ',', (string) $response->getContent(), $wire);
+            $id = $this->at($this->decode($response), 'data', 'id');
+            self::assertIsString($id);
+            $this->detachPersistedState();
+
+            self::assertSame($sent, $this->stored($id, 'amount'), $wire . ' stored');
+            self::assertStringContainsString('"amount":' . $wire . ',', (string) $this->handle('/settings/' . $id)->getContent(), $wire . ' read back');
+        }
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function eachNumericMemberRulesApplyOnlyToItsOwnForm(): void
+    {
+        foreach ([500, 100, 2.5, 10.0, 5.0] as $accepted) {
+            $response = $this->create(['reading' => $accepted]);
+
+            self::assertSame(201, $response->getStatusCode(), \var_export($accepted, true) . ': ' . $response->getContent());
+        }
+
+        // 5 meets the decimal member's maximum but goes to the integer member, and 500.0
+        // meets the integer member's minimum but goes to the decimal member.
+        foreach ([99, 5, 500.0, 10.5] as $refused) {
+            $response = $this->create(['reading' => $refused]);
+
+            self::assertSame(422, $response->getStatusCode(), \var_export($refused, true) . ': ' . $response->getContent());
+            self::assertSame(['/data/attributes/reading'], $this->pointersOf($response), \var_export($refused, true));
+        }
     }
 
     #[Test]
@@ -254,6 +298,13 @@ abstract class UnionConformanceTestCase extends JsonApiFunctionalTestCase
                 ['type' => 'null'],
             ],
         ], $this->at($attributes, 'threshold'));
+        self::assertSame(['type' => ['string', 'number', 'boolean', 'null']], $this->at($attributes, 'amount'));
+        self::assertSame([
+            'oneOf' => [
+                ['anyOf' => [['type' => 'integer', 'minimum' => 100], ['type' => 'number', 'maximum' => 10.0]]],
+                ['type' => 'null'],
+            ],
+        ], $this->at($attributes, 'reading'));
     }
 
     /**
@@ -261,9 +312,10 @@ abstract class UnionConformanceTestCase extends JsonApiFunctionalTestCase
      */
     private function create(array $attributes): Response
     {
-        return $this->handle('/settings', 'POST', [
+        // Keeps a whole float's fraction on the wire, so 5.0 reaches the server as 5.0.
+        return $this->handleRaw('/settings', \json_encode([
             'data' => ['type' => 'settings', 'attributes' => ['answer' => 'yes', 'currency' => 'GBP', ...$attributes]],
-        ]);
+        ], \JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION), 'application/vnd.api+json');
     }
 
     /**
