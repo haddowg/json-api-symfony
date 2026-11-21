@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\DataPersister;
 
 use haddowg\JsonApi\Hydrator\Relationship\ToManyRelationship;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Resource\Field\AbstractFieldValue;
 use haddowg\JsonApi\Resource\Field\Accessor;
 use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
@@ -109,13 +110,14 @@ final class LinkRowPivots
                 }
             }
 
-            foreach ($relation->writablePivotFields(!isset($before[$key])) as $field) {
+            $creating = !isset($before[$key]);
+            foreach ($relation->writablePivotFields($creating) as $field) {
                 if (!\array_key_exists($field->name(), $pivot)) {
                     continue;
                 }
 
                 $column = $field->column() ?? $field->name();
-                $value = $field->castWireValue($pivot[$field->name()]);
+                $value = $field instanceof AbstractFieldValue ? $field->castWireValueFor($pivot[$field->name()], $creating) : $field->castWireValue($pivot[$field->name()]);
                 if ($field instanceof Union && $dates !== null && !$dates->holdsDateTimes($row, $column)) {
                     $value = $field->toStoredForm($value);
                 }
