@@ -45,6 +45,21 @@ abstract class ThroughRelationsConformanceTestCase extends JsonApiFunctionalTest
     }
 
     #[Test]
+    public function aRangeThroughAPathRefusesAValueThatIsNotAnObjectOfItsBounds(): void
+    {
+        $this->assertBadValue('filter[campaignDates]=2026-03-01', 'filter[campaignDates]');
+        $this->assertBadValue('filter[campaignDates][after]=2026-03-01', 'filter[campaignDates]');
+        $this->assertBadValue('filter[budget]=200', 'filter[budget]');
+        $this->assertBadValue('filter[budget][min]=200&filter[budget][over]=100', 'filter[budget]');
+        $this->assertBadValue('filter[budget][max][]=200', 'filter[budget]');
+
+        $related = $this->handle('/thrCampaigns/' . ThroughFixtures::SPRING . '/leads?filter[budget]=200');
+        self::assertSame(400, $related->getStatusCode(), (string) $related->getContent());
+        $included = $this->handle('/thrCampaigns/' . ThroughFixtures::SPRING . '?include=leads&relatedQuery[leads][filter][budget]=200', 'GET', null, ['HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . RelationshipQueriesProfile::URI . '"']);
+        self::assertSame(400, $included->getStatusCode(), (string) $included->getContent());
+    }
+
+    #[Test]
     public function anIdFilterThroughAPathComparesTheReachedIdWithItsFormatAndEncoder(): void
     {
         self::assertSame(['1', '4'], $this->leadIds('filter[campaign]=' . ThroughFixtures::SPRING));
