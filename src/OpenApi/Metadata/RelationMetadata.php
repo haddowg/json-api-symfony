@@ -53,7 +53,7 @@ use haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory;
  * names is resolved by the {@see MetadataSource} from the owning type's persister and
  * the related types' providers.
  */
-final readonly class RelationMetadata implements RelationMetadataInterface, DeclaresWriteOnlyRelation, DeclaresDeprecatedRelation, DeclaresRelationUriFieldName, DeclaresAlwaysCounted, DeclaresRelationExampleId, DeclaresPolymorphicRelation, DeclaresIdentifiedMembers, DeclaresIdentifierMeta, DeclaresRelationDefaultSort, DeclaresFixedMembership, DeclaresDroppedFilterDefaults, DeclaresDetachmentRefusal, DeclaresLinkageResolution
+final readonly class RelationMetadata implements RelationMetadataInterface, DeclaresWriteOnlyRelation, DeclaresDeprecatedRelation, DeclaresRelationUriFieldName, DeclaresAlwaysCounted, DeclaresRelationExampleId, DeclaresPolymorphicRelation, DeclaresIdentifiedMembers, DeclaresIdentifierMeta, DeclaresRelationDefaultSort, DeclaresFixedMembership, DeclaresDroppedFilterDefaults, DeclaresDetachmentRefusal, DeclaresLinkageResolution, \haddowg\JsonApi\OpenApi\Metadata\DeclaresOpenRelationMeta
 {
     /**
      * @param list<string> $relatedIncludablePaths the related type's includable paths (resolved by the source)
@@ -257,6 +257,16 @@ final readonly class RelationMetadata implements RelationMetadataInterface, Decl
         // sort vocabulary from. Empty for any non-pivot relation, so the projector
         // types meta.pivot only where the runtime actually renders it.
         return PivotFields::declaredFor($this->relation);
+    }
+
+    public function pivotAdditionalProperties(): ?\haddowg\JsonApi\Resource\Field\AdditionalProperties
+    {
+        return $this->relation instanceof \haddowg\JsonApi\Resource\Field\PivotRelationInterface ? $this->relation->pivotAdditionalProperties() : null;
+    }
+
+    public function identifierMetaAdditionalProperties(): ?\haddowg\JsonApi\Resource\Field\AdditionalProperties
+    {
+        return $this->relation instanceof AbstractRelationValue ? $this->relation->identifierMetaAdditionalProperties() : null;
     }
 
     public function identifierMetaFields(): array

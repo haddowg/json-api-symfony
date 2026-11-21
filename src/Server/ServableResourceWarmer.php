@@ -17,11 +17,15 @@ use haddowg\JsonApi\Resource\DocumentMetaMisdeclared;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\ForeignKey;
 use haddowg\JsonApi\Resource\Field\Id;
+use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
+use haddowg\JsonApi\Resource\Field\PivotRelationInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Field\StoresIdentifiersInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\ThroughPathResolver;
+use haddowg\JsonApi\Resource\MetaContext;
+use haddowg\JsonApi\Resource\RequestMetaContext;
 use haddowg\JsonApi\Resource\Sort\KeysetSortInterface;
 use haddowg\JsonApi\Resource\Sort\RelationSorts;
 use haddowg\JsonApi\Resource\Sort\SortByField;
@@ -45,6 +49,7 @@ use haddowg\JsonApiBundle\OpenApi\Metadata\ActionMetadata;
 use haddowg\JsonApiBundle\OpenApi\Metadata\MetadataSource;
 use haddowg\JsonApiBundle\Operation\DocumentMetaResolver;
 use haddowg\JsonApiBundle\Operation\Operation;
+use haddowg\JsonApiBundle\Operation\RequestMetaResolver;
 use haddowg\JsonApiBundle\Security\UnenforceableSecurityException;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
@@ -143,6 +148,7 @@ final class ServableResourceWarmer implements CacheWarmerInterface
         private readonly ?ActionRegistry $actions = null,
         private readonly ?LoggerInterface $logger = null,
         private readonly ?DocumentMetaResolver $documentMeta = null,
+        private readonly ?RequestMetaResolver $requestMeta = null,
     ) {}
 
     /**
@@ -185,6 +191,7 @@ final class ServableResourceWarmer implements CacheWarmerInterface
                 $this->guardRelationOrder($serverName, $type);
                 $this->guardFilterPaths($serverName, $type);
                 $this->guardDocumentMeta($serverName, $type);
+                $this->guardDeclaredMeta($serverName, $type);
                 $this->guardCursorSorts($serverName, $type);
             }
 
@@ -221,6 +228,86 @@ final class ServableResourceWarmer implements CacheWarmerInterface
         }
         foreach ($actions->forServerType($serverName, $type) as $action) {
             (new ActionMetadata($action, $actions->documentMetaFor($action)))->responds();
+        }
+    }
+
+    /**
+     * Reads every request, resource object, relationship write and `202` meta the type, its
+     * relations and its actions' handlers declare, standalone and inside an Atomic
+     * Operations batch, so a member declared twice, a member named `*`, or two
+     * `additionalProperties` entries fail the build. A resource that overrides `getMeta()`
+     * while declaring its read `resourceMeta()` is refused too, since the declaration covers
+     * the object `getMeta()` would add to; and so is an action taking a raw body that
+     * declares request meta, since its body carries no JSON:API `meta`.
+     *
+     * @throws \haddowg\JsonApi\Resource\MetaMisdeclared
+     * @throws \LogicException
+     */
+    private function guardDeclaredMeta(string $serverName, string $type): void
+    {
+        if ($this->requestMeta === null) {
+            return;
+        }
+
+        $server = $this->servers->get($serverName);
+        foreach ([false, true] as $atomic) {
+            foreach ([OperationType::Create, OperationType::Update, OperationType::Delete] as $operation) {
+                $this->requestMeta->forWrite($server, $type, RequestMetaContext::forOperation($operation, $atomic));
+            }
+            foreach ([OperationType::Create, OperationType::Update] as $operation) {
+                $this->requestMeta->forResource($server, $type, MetaContext::write($operation, $atomic));
+            }
+            foreach ($this->typeMetadata->relationsFor($server, $type) as $relation) {
+                foreach ($relation->isToMany() ? [Mode::Replace, Mode::Add, Mode::Remove] : [Mode::Replace] as $mode) {
+                    $this->requestMeta->forWrite($server, $type, RequestMetaContext::forRelationship($relation->name(), $mode, $atomic));
+                    $this->documentMeta?->forRelationshipWrite($server, $type, match ($mode) {
+                        Mode::Add => OperationType::AddRelationship,
+                        Mode::Remove => OperationType::RemoveRelationship,
+                        default => OperationType::UpdateRelationship,
+                    }, $relation->name());
+                }
+                if ($relation instanceof PivotRelationInterface) {
+                    $relation->pivotMetaShape();
+                }
+                if ($relation instanceof \haddowg\JsonApi\Resource\Field\AbstractRelationValue) {
+                    $relation->identifierMetaShape();
+                }
+            }
+        }
+        foreach ([OperationType::Create, OperationType::Update] as $operation) {
+            $this->documentMeta?->forAccepted($server, $type, $operation);
+        }
+
+        $read = $this->requestMeta->forResource($server, $type, MetaContext::read());
+        $resource = $this->typeMetadata->resourceFor($server, $type);
+        if ($resource !== null && !$read->isEmpty() && (new \ReflectionMethod($resource, 'getMeta'))->getDeclaringClass()->getName() !== AbstractResource::class) {
+            throw new \LogicException(\sprintf(
+                'Resource %s for type "%s" declares resourceMeta() and overrides the deprecated getMeta(). Move what getMeta() returns into resourceMeta(), an AdditionalProperties::make()->extractUsing() entry renders the same members, and remove the getMeta() override.',
+                $resource::class,
+                $type,
+            ));
+        }
+
+        $actions = $this->actions;
+        if ($actions === null) {
+            return;
+        }
+        foreach ($actions->forServerType($serverName, $type) as $action) {
+            $handler = $actions->requestMetaFor($action);
+            if ($handler === null) {
+                continue;
+            }
+            foreach ($action->methods as $method) {
+                $shape = $this->requestMeta->forAction($handler, $method, \sprintf('"%s" action of type "%s"', $action->path, $type));
+                if (!$shape->isEmpty() && $action->input === \haddowg\JsonApiBundle\Action\ActionInput::Raw && $action->accepts === []) {
+                    throw new \LogicException(\sprintf(
+                        'The "%s" action of type "%s" takes a raw body but declares request meta for %s; a raw body carries no JSON:API meta. Declare none, or take a document.',
+                        $action->path,
+                        $type,
+                        $method,
+                    ));
+                }
+            }
         }
     }
 

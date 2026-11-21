@@ -7,11 +7,13 @@ namespace haddowg\JsonApiBundle\Serializer;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\ResourceMeta;
 use haddowg\JsonApi\Resource\SerializerResolverAwareInterface;
 use haddowg\JsonApi\Resource\SerializerResolverInterface;
 use haddowg\JsonApi\Schema\Link\ResourceLinks;
 use haddowg\JsonApi\Serializer\IncludeControlsInterface;
 use haddowg\JsonApi\Serializer\RendersDeclaredLinksInterface;
+use haddowg\JsonApi\Serializer\RendersResourceMetaInterface;
 use haddowg\JsonApi\Serializer\SerializerInterface;
 use haddowg\JsonApi\Serializer\UriTypeAwareInterface;
 use haddowg\JsonApiBundle\DataProvider\PivotFields;
@@ -55,7 +57,7 @@ use haddowg\JsonApiBundle\DataProvider\PivotFields;
  * computed fields, evaluated with no stored values, and never a stored field, so a
  * computed field renders the same on every provider.
  */
-final class PivotMetaSerializer implements SerializerInterface, IncludeControlsInterface, RendersDeclaredLinksInterface, UriTypeAwareInterface, SerializerResolverAwareInterface
+final class PivotMetaSerializer implements SerializerInterface, IncludeControlsInterface, RendersDeclaredLinksInterface, UriTypeAwareInterface, SerializerResolverAwareInterface, RendersResourceMetaInterface
 {
     /**
      * @param SerializerInterface                  $inner    the related type's real serializer
@@ -86,8 +88,27 @@ final class PivotMetaSerializer implements SerializerInterface, IncludeControlsI
 
     public function getMeta(mixed $object, JsonApiRequestInterface $request): array
     {
-        $meta = $this->inner->getMeta($object, $request);
+        return $this->withPivot($this->inner->getMeta($object, $request), $object, $request);
+    }
 
+    public function renderResourceMeta(mixed $object, JsonApiRequestInterface $request): array
+    {
+        $meta = $this->inner instanceof RendersResourceMetaInterface
+            ? $this->inner->renderResourceMeta($object, $request)
+            : ResourceMeta::render($this->inner, $object, $request);
+
+        return $this->withPivot($meta, $object, $request);
+    }
+
+    /**
+     * `$meta` with the member's pivot values under `pivot`.
+     *
+     * @param array<string, mixed> $meta
+     *
+     * @return array<string, mixed>
+     */
+    private function withPivot(array $meta, mixed $object, JsonApiRequestInterface $request): array
+    {
         if ($this->computedOnly) {
             return $this->withComputedOnly($meta, $object, $request);
         }

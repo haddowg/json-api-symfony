@@ -70,6 +70,11 @@ final class ViewListener
             && !($operation instanceof DeleteResourceOperation && !$response instanceof MetaResponse)) {
             $this->checkDocumentMeta($this->documentMeta->forOperation($server, $operation, $psrResponse->getStatusCode()), $psrResponse);
         }
+        // Each rendered resource object's meta, and each linkage identifier's, is checked
+        // against what its type and relation declare.
+        if ($this->debug) {
+            self::checkResourceMeta($server, $psrResponse);
+        }
 
         $event->setResponse($this->httpFoundationFactory->createResponse($psrResponse));
     }
@@ -97,6 +102,33 @@ final class ViewListener
         $meta = \is_array($document) ? ($document['meta'] ?? []) : [];
 
         $declared->assertSatisfiedBy(\is_array($meta) ? $meta : []);
+    }
+
+    /**
+     * Refuses a success document whose resource objects' `meta`, or whose linkage
+     * identifiers' `meta`, does not match what their types and relations declare.
+     *
+     * @throws \haddowg\JsonApi\Resource\ResourceMetaMismatch
+     */
+    private static function checkResourceMeta(Server $server, ResponseInterface $response): void
+    {
+        if ($response->getStatusCode() >= 300) {
+            return;
+        }
+        $body = $response->getBody();
+        $content = (string) $body;
+        if ($body->isSeekable()) {
+            $body->rewind();
+        }
+        $document = $content === '' ? null : \json_decode($content, true, flags: \JSON_THROW_ON_ERROR);
+        if (!\is_array($document)) {
+            return;
+        }
+
+        \haddowg\JsonApi\Resource\RenderedMeta::assertConforms(
+            $document,
+            static fn(string $type): ?object => $server->hasSerializerFor($type) ? $server->serializerFor($type) : null,
+        );
     }
 
     /**

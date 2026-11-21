@@ -17,6 +17,8 @@ use haddowg\JsonApi\Response\NoContentResponse;
  */
 final class AfterDeleteEvent
 {
+    use ReadsWrittenMeta;
+
     private DataResponse|MetaResponse|NoContentResponse|null $response = null;
 
     public function __construct(

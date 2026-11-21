@@ -18,6 +18,8 @@ use haddowg\JsonApi\Resource\Field\RelationInterface;
  */
 final class BeforeEmbeddedRelationshipWriteEvent
 {
+    use ReadsWrittenMeta;
+
     /**
      * @param ToOneRelationship|ToManyRelationship $linkage the parsed linkage
      */

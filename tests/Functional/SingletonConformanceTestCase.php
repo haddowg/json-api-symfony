@@ -339,7 +339,7 @@ abstract class SingletonConformanceTestCase extends JsonApiFunctionalTestCase
         self::assertSame(['get', 'patch'], \array_keys(self::array(self::at($document, 'paths', '/inbox'))));
         self::assertSame('fetchOne.inboxes', self::at($document, 'paths', '/inbox', 'get', 'operationId'));
         self::assertSame('/inbox', self::at($document, 'components', 'schemas', 'InboxesResource', 'x-singleton'));
-        self::assertSame(GeneratorContract::SINGLETONS, self::at($document, 'info', 'x-generator', 'contract'));
+        self::assertSame(\max(GeneratorContract::BASELINE, GeneratorContract::SINGLETONS), self::at($document, 'info', 'x-generator', 'contract'));
         self::assertContains('/preferences', $paths);
         self::assertNotContains('/preferences/{id}', $paths);
 

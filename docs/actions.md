@@ -623,6 +623,8 @@ exposes both the resolved request state and pre-wired response factories:
 | `entity()` | the resolved entity (resource scope) or `null` (collection scope) |
 | `input()` | the hydrated input (`Document` mode) or `null` |
 | `request()` | the JSON:API request — always; the raw body + uploaded files for `Raw` mode |
+| `requestMeta()` | the request's top-level `meta`, validated and typed against what the handler declares for the method (see [declaring request meta](#declaring-request-meta)), or empty when it declares none |
+| `writtenMeta()` | the typed top-level `meta` and, for a `Document` input, the typed `data.meta`, empty when its input type declares no `resourceMeta()` for the write |
 | `requestMediaType()` | the request body's media type as matched against `accepts`, without parameters, or `null` with no body |
 | `responseMediaType()` | the media type the `Accept` header picked from `responds`: `application/vnd.api+json` or a raw result's type |
 | `queryParameters()` | the parsed, strict-validated query parameters |
@@ -640,6 +642,38 @@ exposes both the resolved request state and pre-wired response factories:
 The `data()` / `meta()` / `noContent()` factories are the ergonomic path; reach for
 the raw response value objects directly only when you need to set a status or
 header the factories don't.
+
+### Declaring request meta
+
+A handler declares the members of its request's top-level `meta` per HTTP method by
+implementing core's `DeclaresActionRequestMetaInterface`. The method comes in an
+`ActionRequestMetaContext`, which carries no request, since the OpenAPI document reads the
+declaration with none:
+
+```php
+use haddowg\JsonApi\Resource\ActionRequestMetaContext;
+use haddowg\JsonApi\Resource\DeclaresActionRequestMetaInterface;
+use haddowg\JsonApi\Resource\Field\Boolean;
+
+final class ArchiveNote implements ActionHandlerInterface, DeclaresActionRequestMetaInterface
+{
+    public function requestDocumentMeta(ActionRequestMetaContext $context): iterable
+    {
+        return $context->is('POST') ? [Boolean::make('silent')] : [];
+    }
+
+    public function handle(ActionContext $context): MetaResponse
+    {
+        $silent = $context->requestMeta()['silent'] ?? false;
+        // …
+    }
+}
+```
+
+A call sending a member the declaration does not name, or a value it refuses, is a
+`422 VALIDATION_FAILED` at `/meta/<member>`. A `Document` input's `data.meta` is validated and
+applied against its input type's `resourceMeta()`, as a create of that type is. An action taking
+a raw body carries no JSON:API `meta`, so declaring request meta on one fails the cache warm-up.
 
 ## Taking the type's filters
 

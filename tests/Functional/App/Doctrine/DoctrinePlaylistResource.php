@@ -8,6 +8,7 @@ use haddowg\JsonApi\Pagination\PagePaginator;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Constraint\Comparison;
+use haddowg\JsonApi\Resource\Field\AdditionalProperties;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\Boolean;
 use haddowg\JsonApi\Resource\Field\Date;
@@ -114,6 +115,10 @@ final class DoctrinePlaylistResource extends AbstractResource
                 ->fields(
                     Integer::make('position')->required()->min(1)->build(),
                     DateTime::make('addedAt')->readOnly()->build(),
+                    // Open to any integer member, which the row keeps in its `tempo` column.
+                    AdditionalProperties::make()->of(Integer::make('*'))->fillUsing(static function (PlaylistTrackEntity $row, array $members): void {
+                        $row->tempo = $members;
+                    }),
                 )
                 ->withFilters(Where::make('position', 'pivot.position'))
                 ->extractUsing($this->extractTracks())

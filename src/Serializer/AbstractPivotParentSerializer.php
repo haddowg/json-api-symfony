@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Serializer;
 
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\ResourceMeta;
 use haddowg\JsonApi\Resource\SerializerResolverAwareInterface;
 use haddowg\JsonApi\Resource\SerializerResolverInterface;
 use haddowg\JsonApi\Schema\Link\ResourceLinks;
@@ -16,6 +17,7 @@ use haddowg\JsonApi\Serializer\DeclaresFieldNamesInterface;
 use haddowg\JsonApi\Serializer\DeclaresRelationsInterface;
 use haddowg\JsonApi\Serializer\IncludeControlsInterface;
 use haddowg\JsonApi\Serializer\RendersDeclaredLinksInterface;
+use haddowg\JsonApi\Serializer\RendersResourceMetaInterface;
 use haddowg\JsonApi\Serializer\SelfLinkAwareInterface;
 use haddowg\JsonApi\Serializer\SerializerInterface;
 use haddowg\JsonApi\Serializer\UriTypeAwareInterface;
@@ -41,6 +43,7 @@ use haddowg\JsonApi\Serializer\UriTypeAwareInterface;
  * default.
  */
 abstract class AbstractPivotParentSerializer implements
+    RendersResourceMetaInterface,
     SerializerInterface,
     IncludeControlsInterface,
     CountableControlsInterface,
@@ -77,6 +80,15 @@ abstract class AbstractPivotParentSerializer implements
     public function getMeta(mixed $object, JsonApiRequestInterface $request): array
     {
         return $this->inner()->getMeta($object, $request);
+    }
+
+    public function renderResourceMeta(mixed $object, JsonApiRequestInterface $request): array
+    {
+        $inner = $this->inner();
+
+        return $inner instanceof RendersResourceMetaInterface
+            ? $inner->renderResourceMeta($object, $request)
+            : ResourceMeta::render($inner, $object, $request);
     }
 
     public function getLinks(mixed $object, JsonApiRequestInterface $request): ?ResourceLinks

@@ -631,7 +631,8 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
      * writes anything so no two rows share an owner and position at any flush: the
      * deletes, the temporary positions, the updates, then the inserts. A new row is a
      * `through()` entity, constructed when it can be so its defaults apply, with its owner
-     * set through the association and each value converted to the field's storage form. A parent not yet stored has no rows to
+     * set through the association and each value converted to the field's storage form. An open
+     * pivot's extra members go to its entry's fill hook with each row written. A parent not yet stored has no rows to
      * delete or move, so its inserts wait for the caller's flush.
      */
     public function writeLinkRows(object $parent, MorphToMany $relation, LinkRowWritePlan $plan, bool $flush = true): object
@@ -663,6 +664,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
             foreach ($pass as $write) {
                 if (\is_object($write->member->row)) {
                     $this->writeRowValues($metadata, $write->member->row, $write->values, $fields->owner, $parent, $unions);
+                    $write->fillAdditional($relation, $write->member->row);
                 }
             }
             if ($pass !== [] && $stored) {
@@ -673,6 +675,8 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
         foreach ($plan->inserts as $insert) {
             $row = $this->newRow($metadata);
             $this->writeRowValues($metadata, $row, $insert->values, $fields->owner, $parent, $unions);
+            $filled = $insert->fillAdditional($relation, $row);
+            $row = \is_object($filled) ? $filled : $row;
             $rows?->add($row);
             $this->entityManager->persist($row);
         }
@@ -920,7 +924,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
             if ($row !== null) {
                 // Reorder / update an existing row's writable pivot fields IN PLACE
                 // (update context — the row exists).
-                $this->writePivotFields($row, $relation->writablePivotFields(false), $meta);
+                $this->writePivotFields($row, $relation->writablePivotFields(false), $meta, $relation);
                 $kept[$mapKey] = $row;
 
                 continue;
@@ -929,7 +933,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
             // A new association row: parent + far reference + the writable pivot
             // fields (create context); readOnly fields take their server default.
             $row = $this->newPivotRow($association, $parent, $reference, $meta);
-            $this->writePivotFields($row, $relation->writablePivotFields(true), $meta);
+            $this->writePivotFields($row, $relation->writablePivotFields(true), $meta, $relation);
             $this->attachPivotRow($parent, $association, $row);
             $this->entityManager->persist($row);
             $kept[$mapKey] = $row;
@@ -1063,8 +1067,17 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
      * @param list<FieldInterface> $fields the writable pivot fields for the context
      * @param array<string, mixed> $meta   the linkage member's pivot meta
      */
-    private function writePivotFields(object $row, array $fields, array $meta): void
+    private function writePivotFields(object $row, array $fields, array $meta, ?\haddowg\JsonApi\Resource\Field\PivotRelationInterface $relation = null): void
     {
+        // The members the pivot's additionalProperties entry takes go to its fillUsing() hook.
+        $entry = $relation?->pivotAdditionalProperties();
+        if ($relation !== null && $entry !== null && $entry->fills()) {
+            $members = $relation->pivotMetaShape()->additionalMembers($meta);
+            if ($members !== []) {
+                $entry->fill($row, $relation->pivotMetaShape()->normalize($members), $meta);
+            }
+        }
+
         foreach ($fields as $field) {
             if (!\array_key_exists($field->name(), $meta)) {
                 continue;

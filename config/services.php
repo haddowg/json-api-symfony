@@ -179,7 +179,8 @@ return static function (ContainerConfigurator $container): void {
         ->arg('$dispatcher', \Symfony\Component\DependencyInjection\Loader\Configurator\service('event_dispatcher')->nullOnInvalid())
         ->arg('$filterValues', \Symfony\Component\DependencyInjection\Loader\Configurator\service(FilterValueValidator::class)->nullOnInvalid())
         ->arg('$txContext', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataPersister\WriteTransactionContext::class))
-        ->arg('$afterCommit', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataPersister\AfterCommit::class));
+        ->arg('$afterCommit', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataPersister\AfterCommit::class))
+        ->arg('$requestMeta', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Operation\RequestMetaResolver::class));
 
     // Exposes an #[AsJsonApiAction(asLink: true)] action, or one a resource links through
     // a declared ActionLink, as a security-aware `links` member on its mount type's
@@ -220,8 +221,13 @@ return static function (ContainerConfigurator $container): void {
     // is absent.
     $services->set(\haddowg\JsonApiBundle\Operation\DocumentMetaResolver::class);
 
+    // The declared request and resource object meta of each write, read once per server,
+    // type and context; the handler validates writes against it and the warmer reads it.
+    $services->set(\haddowg\JsonApiBundle\Operation\RequestMetaResolver::class);
+
     $services->set(CrudOperationHandler::class)
         ->arg('$documentMeta', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Operation\DocumentMetaResolver::class))
+        ->arg('$requestMeta', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Operation\RequestMetaResolver::class))
         ->arg('$debug', '%kernel.debug%')
         ->arg('$validator', \Symfony\Component\DependencyInjection\Loader\Configurator\service(ResourceValidator::class)->nullOnInvalid())
         ->arg('$dispatcher', \Symfony\Component\DependencyInjection\Loader\Configurator\service('event_dispatcher')->nullOnInvalid())
@@ -347,6 +353,10 @@ return static function (ContainerConfigurator $container): void {
     // kernel.event_subscriber.
     $services->set(\haddowg\JsonApiBundle\EventListener\ResourceHookSubscriber::class);
 
+    // Validates a delete's meta-only body on BeforeDeleteEvent between the security gate
+    // and the hook listeners, so a refused caller gets its 403 before a 422.
+    $services->set(\haddowg\JsonApiBundle\EventListener\DeleteMetaSubscriber::class);
+
     // Core's stateless verb x target-shape dispatch factory; autowired into the
     // RequestListener so the bundle reuses core's operation-construction decision.
     $services->set(\haddowg\JsonApi\Operation\OperationFactory::class);
@@ -406,6 +416,7 @@ return static function (ContainerConfigurator $container): void {
     $services->set(RequestListener::class)
         ->arg('$schemaValidator', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApi\Validation\DocumentValidator::class)->nullOnInvalid())
         ->arg('$atomicPath', '%haddowg_json_api.atomic_operations.path%')
+        ->arg('$debug', '%kernel.debug%')
         ->tag('kernel.event_listener', ['event' => 'kernel.request', 'method' => 'onKernelRequest', 'priority' => 4]);
 
     // Runs right after the RouterListener (priority 32) so the `relationship` route

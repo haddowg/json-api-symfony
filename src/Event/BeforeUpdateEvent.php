@@ -15,6 +15,8 @@ use haddowg\JsonApi\Request\JsonApiRequestInterface;
  */
 final class BeforeUpdateEvent
 {
+    use ReadsWrittenMeta;
+
     public function __construct(
         public readonly string $type,
         public readonly JsonApiRequestInterface $request,

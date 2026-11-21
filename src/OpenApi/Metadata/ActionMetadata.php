@@ -46,13 +46,20 @@ use haddowg\JsonApiBundle\Action\RawResults;
  * projector switches on to advertise a `200` resource document, a `200` meta document,
  * a `204`, a `202` async accept, or a `303` redirect.
  */
-final readonly class ActionMetadata implements DeclaresActionLink, DeclaresAcceptedBodies, DeclaresActionExample, DeclaresActionSafety, DeclaresActionExtensions, DeclaresActionScopes, DeclaresActionDeprecation, DeclaresActionFilters
+final readonly class ActionMetadata implements DeclaresActionLink, DeclaresAcceptedBodies, DeclaresActionExample, DeclaresActionSafety, DeclaresActionExtensions, DeclaresActionScopes, DeclaresActionDeprecation, DeclaresActionFilters, \haddowg\JsonApi\OpenApi\Metadata\DeclaresActionRequestMeta
 {
     public function __construct(
         private ActionDescriptor $descriptor,
         // The handler, when it declares its response documents' meta per status.
         private ?DeclaresActionDocumentMetaInterface $documentMeta = null,
+        // The handler, when it declares its request document's meta per method.
+        private ?\haddowg\JsonApi\Resource\DeclaresActionRequestMetaInterface $requestMeta = null,
     ) {}
+
+    public function requestDocumentMeta(\haddowg\JsonApi\Resource\ActionRequestMetaContext $context): iterable
+    {
+        return $this->requestMeta?->requestDocumentMeta($context) ?? [];
+    }
 
     public function path(): string
     {

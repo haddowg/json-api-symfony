@@ -107,6 +107,13 @@ a refused caller shouldn't trigger. A listener on a later event, such as
 `BeforeCreate`, `BeforeUpdate` or `BeforeRelationshipMutate`, runs after the gate whatever
 its priority.
 
+A delete's meta-only body is validated on `BeforeDeleteEvent` too, by
+`DeleteMetaSubscriber` at `DeleteMetaSubscriber::PRIORITY` (`128`), below the delete gate. A
+caller the gate refuses gets its `403` even when the body is invalid, and a valid body's typed
+`meta` is on the event's request before your listeners at the default priority and the
+resource's `beforeDelete()` hook run. A listener above `128` sees the body unvalidated and an
+empty `writtenMeta()`.
+
 One check has to come after a hook. On a relationship endpoint the changed parent is
 checked again at `BeforeRelationshipCommit`, which needs the change applied, so it runs
 after `BeforeRelationshipMutate`. By then the caller has passed the gate on the parent
@@ -141,6 +148,15 @@ to diff against). The other hook methods differ only in what comes before the
 - `afterFetchCollection` takes `(array $items, HookContext $context)`, the fetched items.
 - `beforeRelationshipMutate` and `afterRelationshipMutate` take the parent entity.
 - The rest take `(object $entity, HookContext $context)`.
+
+`HookContext::writtenMeta()`, and `writtenMeta()` on the write events a subscriber receives,
+return the typed `meta` the write sent: `->document` for its top-level `meta` and `->resource`
+for its `data.meta`, each validated against what the type declares in
+`requestDocumentMeta()` and `resourceMeta()`. They are empty for a write that sent none.
+`->document` is empty for a write whose type declares no request `meta` for it, as an
+action's `requestMeta()` is, and `->resource` is empty for a write whose type declares no
+`resourceMeta()` for it. The `meta` and `data.meta` as sent stay on the request's parsed
+body.
 
 ## Two semantics: *before* aborts, *after* replaces
 

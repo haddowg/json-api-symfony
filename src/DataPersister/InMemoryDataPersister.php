@@ -257,7 +257,7 @@ final class InMemoryDataPersister implements DataPersisterInterface, Transaction
             foreach ($insert->values as $field => $value) {
                 $values[$field] = $through !== null ? $this->storageValue($through, $field, $value) : $value;
             }
-            $inserts[] = new LinkRowWrite($insert->member, $values);
+            $inserts[] = new LinkRowWrite($insert->member, $values, $insert->additional, $insert->pivot);
         }
 
         $written = (new InMemoryLinkRows())->write(

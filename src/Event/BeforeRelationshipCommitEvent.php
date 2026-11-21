@@ -20,6 +20,8 @@ use haddowg\JsonApi\Resource\Field\RelationInterface;
  */
 final class BeforeRelationshipCommitEvent
 {
+    use ReadsWrittenMeta;
+
     /**
      * @param ToOneRelationship|ToManyRelationship $linkage the linkage that was applied
      */

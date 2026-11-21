@@ -82,7 +82,7 @@ final class LinkRowPivots
         JsonApiRequestInterface $request,
         ?StoresDateTimesInterface $dates = null,
     ): void {
-        if ($mode === Mode::Remove || $relation->storedPivotFields() === []) {
+        if ($mode === Mode::Remove || ($relation->storedPivotFields() === [] && !($relation->pivotAdditionalProperties()?->fills() ?? false))) {
             return;
         }
 
@@ -98,6 +98,14 @@ final class LinkRowPivots
             $row = $rows[$key] ?? null;
             if ($row === null) {
                 continue;
+            }
+
+            $entry = $relation->pivotAdditionalProperties();
+            if ($entry !== null && $entry->fills()) {
+                $members = $relation->pivotMetaShape()->additionalMembers($pivot);
+                if ($members !== []) {
+                    $entry->fill($row, $relation->pivotMetaShape()->normalize($members), \array_combine(\array_map(\strval(...), \array_keys($pivot)), $pivot));
+                }
             }
 
             foreach ($relation->writablePivotFields(!isset($before[$key])) as $field) {

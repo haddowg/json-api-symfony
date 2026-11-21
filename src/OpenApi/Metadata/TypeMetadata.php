@@ -91,7 +91,7 @@ use haddowg\JsonApi\Serializer\DeclaresDocumentMetaInterface;
  * serializer applies as a document's root, that no operation refuses `include`, that a
  * taken client id is a `409`, and that a hand-written hydrator never reads linkage.
  */
-final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOperationExtensions, DeclaresNamedOperationExtensions, DeclaresSingularName, DeclaresOperationExamples, DeclaresAlwaysCounted, DeclaresResourceLinks, DeclaresActionLinks, DeclaresOperationScopes, DeclaresResourceClass, DeclaresDeprecation, DeclaresRelatedOnly, DeclaresDefaultSort, DeclaresSortExample, DeclaresIncludeSafeguards, DeclaresInclusionUnsupported, DeclaresClientIdCollisions, DeclaresHydratorCardinality, DeclaresSingleton, DeclaresDocumentMeta
+final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOperationExtensions, DeclaresNamedOperationExtensions, DeclaresSingularName, DeclaresOperationExamples, DeclaresAlwaysCounted, DeclaresResourceLinks, DeclaresActionLinks, DeclaresOperationScopes, DeclaresResourceClass, DeclaresDeprecation, DeclaresRelatedOnly, DeclaresDefaultSort, DeclaresSortExample, DeclaresIncludeSafeguards, DeclaresInclusionUnsupported, DeclaresClientIdCollisions, DeclaresHydratorCardinality, DeclaresSingleton, DeclaresDocumentMeta, \haddowg\JsonApi\OpenApi\Metadata\DeclaresRequestDocumentMeta, \haddowg\JsonApi\OpenApi\Metadata\DeclaresResourceMeta
 {
     /**
      * @param list<FieldInterface>            $fields
@@ -171,11 +171,31 @@ final readonly class TypeMetadata implements TypeMetadataInterface, DeclaresOper
         private ?int $maxIncludeDepth = null,
         private bool $singleton = false,
         private ?DeclaresDocumentMetaInterface $documentMeta = null,
+        // The hydrator, or resource, declaring the type's request meta, and the serializer,
+        // or resource, declaring its resource object meta, relationship write documents
+        // and 202 job documents.
+        private ?object $requestMeta = null,
+        private ?object $resourceMeta = null,
     ) {}
 
+    public function requestDocumentMeta(\haddowg\JsonApi\Resource\RequestMetaContext $context): iterable
+    {
+        return $this->requestMeta instanceof \haddowg\JsonApi\Hydrator\DeclaresRequestDocumentMetaInterface ? $this->requestMeta->requestDocumentMeta($context) : [];
+    }
+
+    public function resourceMeta(\haddowg\JsonApi\Resource\MetaContext $context): iterable
+    {
+        $declarer = $context->isWrite() && $this->requestMeta instanceof \haddowg\JsonApi\Serializer\DeclaresResourceMetaInterface ? $this->requestMeta : $this->resourceMeta;
+
+        return $declarer instanceof \haddowg\JsonApi\Serializer\DeclaresResourceMetaInterface ? $declarer->resourceMeta($context) : [];
+    }
+
+    /**
+     * Passes on the relation's name core gives a relationship write case.
+     */
     public function documentMeta(OperationType $operation, ?string $relation = null): iterable
     {
-        return $this->documentMeta?->documentMeta($operation) ?? [];
+        return $this->documentMeta?->documentMeta($operation, $relation) ?? [];
     }
 
     public function isRelatedOnly(): bool

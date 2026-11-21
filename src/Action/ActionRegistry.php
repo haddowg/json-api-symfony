@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Action;
 
 use haddowg\JsonApi\Resource\DeclaresActionDocumentMetaInterface;
+use haddowg\JsonApi\Resource\DeclaresActionRequestMetaInterface;
 use Psr\Container\ContainerInterface;
 
 /**
@@ -186,6 +187,20 @@ final class ActionRegistry
         $handler = $this->handlerFor($descriptor);
 
         return $handler instanceof DeclaresActionDocumentMetaInterface ? $handler : null;
+    }
+
+    /**
+     * The handler of a resolved descriptor when it declares its request document's meta,
+     * else `null`. Only a handler whose class implements the interface is built.
+     */
+    public function requestMetaFor(ActionDescriptor $descriptor): ?DeclaresActionRequestMetaInterface
+    {
+        if ($descriptor->handlerClass === null || !\is_a($descriptor->handlerClass, DeclaresActionRequestMetaInterface::class, true)) {
+            return null;
+        }
+        $handler = $this->handlerFor($descriptor);
+
+        return $handler instanceof DeclaresActionRequestMetaInterface ? $handler : null;
     }
 
     /**

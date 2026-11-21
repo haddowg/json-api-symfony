@@ -123,6 +123,7 @@ abstract class IdentifierMetaConformanceTestCase extends JsonApiFunctionalTestCa
                 'authorName' => ['type' => ['string', 'null']],
             ],
             'required' => ['fromArticle', 'authorName'],
+            'additionalProperties' => false,
         ], $schemas['ArticlesAuthorIdentifierMeta'] ?? null);
         self::assertArrayHasKey('ArticlesCommentsIdentifierMeta', $schemas);
 
